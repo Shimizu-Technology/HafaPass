@@ -20,6 +20,9 @@ default: &default
   marketplace_retention:
     class: PurgeMarketplaceAnalyticsJob
     schedule: every day at 00:00 UTC
+  data_retention:
+    class: DataRetentionPurgeJob
+    schedule: every day at 02:00 UTC
   runtime_retention:
     class: RuntimeRetentionJob
     schedule: every day at 00:30 UTC

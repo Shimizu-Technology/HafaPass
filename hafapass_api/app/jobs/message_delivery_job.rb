@@ -52,6 +52,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
         next :done
       end
+      if delivery.template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(delivery.recipient)
+        delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Privacy deletion suppression")
+        next :done
+      end
       if delivery.undeliverable_recipient?
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
@@ -131,6 +135,15 @@ class MessageDeliveryJob < ApplicationJob
       return
     end
 
+    if delivery.template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(delivery.recipient)
+      with_delivery_lock(delivery) do
+        delivery.update!(status: :suppressed, suppressed_at: Time.current,
+          provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil,
+          last_error: "Privacy deletion suppression")
+      end
+      WaitlistDelivery.reconcile_failure!(delivery)
+      return
+    end
     if obsolete_waitlist?(delivery)
       with_delivery_lock(delivery) do
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active",

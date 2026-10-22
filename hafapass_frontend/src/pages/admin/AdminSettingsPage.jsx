@@ -176,6 +176,8 @@ function AdminSettingsSession({ identity, resourcePath }) {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(null)
+  const [purgeAcknowledged, setPurgeAcknowledged] = useState(false)
+  const [purgeSaving, setPurgeSaving] = useState(false)
   const [taxYear, setTaxYear] = useState(String(new Date().getFullYear()))
   const [effectiveAt, setEffectiveAt] = useState('')
   const [feePreview, setFeePreview] = useState(null)
@@ -260,6 +262,22 @@ function AdminSettingsSession({ identity, resourcePath }) {
       } catch { setErrors({ form: 'Could not load the affected organizer count. Try again.' }) }
     }
     else save()
+  }
+
+  const setPurgeEnabled = async enabled => {
+    const request = beginRequest()
+    if (!request) return
+    setPurgeSaving(true); setErrors({}); setNotice('')
+    try {
+      const response = await apiClient.patch('/admin/settings', { retention_purge_enabled: enabled }, request.config)
+      if (request.current()) {
+        setSaved(response.data)
+        setPurgeAcknowledged(false)
+        setNotice(enabled ? 'Scheduled retention purge is enabled. The environment dry-run flag still takes precedence.' : 'Scheduled retention purge is in dry-run mode.')
+      }
+    } catch (failure) {
+      if (request.current() && !request.handleError(failure)) setErrors({ form: failure.response?.data?.error || 'Retention setting was not saved.' })
+    } finally { request.release(); setPurgeSaving(false) }
   }
 
   if (loadError) return <AdminLayout><section role="alert" className="rounded-xl border border-neutral-200 bg-white p-5"><p className="text-neutral-700">{loadError}</p><button type="button" onClick={load} className="btn-primary mt-4">Retry settings</button></section></AdminLayout>
@@ -364,6 +382,18 @@ function AdminSettingsSession({ identity, resourcePath }) {
       </form>
 
       <PaymentModeSwitch settings={saved} beginRequest={beginRequest} onChanged={data => setSaved(previous => ({ ...previous, ...data }))} onRefresh={() => load({ keepForm: true })} />
+
+      <section aria-labelledby="retention-purge-title" className="mt-6 card p-5 sm:p-6">
+        <h2 id="retention-purge-title" className="text-lg font-semibold text-neutral-900">Data retention purge</h2>
+        <p className="mt-2 text-sm text-neutral-700">Scheduled purge and privacy request execution require this setting and DATA_RETENTION_DESTRUCTIVE_ENABLED=true on the server. DATA_RETENTION_DRY_RUN=true always forces dry run. The two-day sales-export S3 cleanup runs independently of these retention controls and still respects legal holds.</p>
+        {!saved.retention_destructive_enabled && <p className="mt-2 text-sm text-amber-800">Deletion is disabled on this server</p>}
+        <p className="mt-2 text-sm font-semibold text-neutral-900">Current mode: {saved.retention_dry_run ? 'Dry run' : 'Live purge'}</p>
+        {saved.environment === 'production' && !saved.retention_purge_enabled && <label className="mt-4 flex items-start gap-2 text-sm text-neutral-800"><input type="checkbox" checked={purgeAcknowledged} onChange={event => setPurgeAcknowledged(event.target.checked)} className="mt-1" />I have reviewed the retention schedule with counsel and the CPA.</label>}
+        <button type="button" disabled={purgeSaving || (!saved.retention_purge_enabled && saved.environment === 'production' && !purgeAcknowledged)}
+          onClick={() => setPurgeEnabled(!saved.retention_purge_enabled)} className="btn-secondary mt-4">
+          {purgeSaving ? 'Saving…' : saved.retention_purge_enabled ? 'Return to dry run' : 'Enable scheduled purge'}
+        </button>
+      </section>
 
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Schedule fee term changes?</h2>

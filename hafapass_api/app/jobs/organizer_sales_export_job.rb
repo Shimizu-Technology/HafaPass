@@ -58,17 +58,26 @@ class OrganizerSalesExportJob < ApplicationJob
     raise "Export lease expired or was superseded" unless saved == 1
     OrganizerSalesExportCleanupJob.set(wait_until: expires_at).perform_later(export_request.id)
   rescue StandardError
+    held_upload = uploaded && DataRetention.held?(export_request)
     if uploaded
-      begin
-        Aws::S3::Client.new(region: ENV.fetch("AWS_REGION", "us-west-2"),
-          credentials: Aws::Credentials.new(ENV["AWS_ACCESS_KEY_ID"], ENV["AWS_SECRET_ACCESS_KEY"], ENV["AWS_SESSION_TOKEN"]))
-          .delete_object(bucket: ENV.fetch("AWS_BUCKET"), key: key)
-      rescue StandardError => cleanup_error
-        Rails.logger.error("Sales export cleanup failed for request #{export_id}: #{cleanup_error.class}")
+      if held_upload
+        Rails.logger.info("Sales export failure cleanup skipped under legal hold: request_id=#{export_id}")
+      else
+        begin
+          LegalHold.with_retention_lock(organization_id: org.id) do
+            if RetentionGuard.protected?(export_request)
+              held_upload = true
+            else
+              S3Service.delete_private_export!(key)
+            end
+          end
+        rescue StandardError => cleanup_error
+          Rails.logger.error("Sales export cleanup failed for request #{export_id}: #{cleanup_error.class}")
+        end
       end
     end
     OrganizerSalesExportRequest.where(id: export_id, status: %w[processing ready], claimed_at: claimed_at)
-      .update_all(status: "failed", storage_key: nil, expires_at: nil,
+      .update_all(status: "failed", storage_key: held_upload ? key : nil, expires_at: nil,
         failure_reason: "Export generation failed. Run it again.", updated_at: Time.current) if claimed_at
     raise
   end

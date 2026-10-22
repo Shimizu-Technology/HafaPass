@@ -55,6 +55,24 @@ class ClerkIdentity
       target.present? && verified_email_addresses(user.clerk_id).include?(target)
     end
 
+    # Idempotent provider cleanup. A missing credential or provider failure is
+    # reported to the admin queue for manual completion.
+    def delete_user(clerk_id)
+      return false if clerk_id.blank? || ENV["CLERK_SECRET_KEY"].blank?
+
+      uri = URI("https://api.clerk.com/v1/users/#{ERB::Util.url_encode(clerk_id)}")
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: true,
+        open_timeout: DEFAULT_TIMEOUT, read_timeout: DEFAULT_TIMEOUT) do |http|
+        request = Net::HTTP::Delete.new(uri)
+        request["Authorization"] = "Bearer #{ENV.fetch('CLERK_SECRET_KEY')}"
+        http.request(request)
+      end
+      response.code == "200" || response.code == "204" || response.code == "404"
+    rescue StandardError => error
+      Rails.logger.warn("Clerk deletion unavailable (#{error.class})")
+      false
+    end
+
     private
 
     def fetch_verified_email_addresses(clerk_id)

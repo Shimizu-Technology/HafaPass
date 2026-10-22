@@ -58,6 +58,9 @@ const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
 const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
 const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage'))
+const AdminPrivacyPage = lazy(() => import('./pages/admin/AdminPrivacyPage'))
+const PrivacyRequestsPage = lazy(() => import('./pages/PrivacyRequestsPage'))
+const GuestPrivacyRequestsPage = lazy(() => import('./pages/PrivacyRequestsPage').then(module => ({ default: module.GuestPrivacyRequestsPage })))
 const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
 const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
 const AdminRefundReconciliationPage = lazy(() => import('./pages/admin/AdminRefundReconciliationPage'))
@@ -99,6 +102,9 @@ function App() {
           <Route path="/policies/:policy" element={<PolicyPage />} />
           <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
+          <Route path="/privacy" element={<ProtectedRoute><PrivacyRequestsPage /></ProtectedRoute>} />
+          <Route path="/account/settings" element={<ProtectedRoute><PrivacyRequestsPage /></ProtectedRoute>} />
+          <Route path="/privacy/guest/:orderId" element={<GuestPrivacyRequestsPage />} />
           <Route path="/saved" element={<ProtectedRoute><SavedPage /></ProtectedRoute>} />
           <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
@@ -130,6 +136,7 @@ function App() {
           <Route path="/admin/marketplace" element={<AdminRoute><MarketplaceAdminPage /></AdminRoute>} />
           <Route path="/admin/provider-readiness" element={<AdminRoute><ProviderReadinessPage /></AdminRoute>} />
           <Route path="/admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
+          <Route path="/admin/privacy" element={<AdminRoute><AdminPrivacyPage /></AdminRoute>} />
           <Route path="/admin/tax-reports" element={<AdminRoute><AdminTaxReportsPage /></AdminRoute>} />
           <Route path="/admin/tax-controls" element={<AdminRoute><AdminTaxControlsPage /></AdminRoute>} />
           <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />

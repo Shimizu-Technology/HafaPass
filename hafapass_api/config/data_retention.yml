@@ -1,0 +1,3070 @@
+# Engineering draft; counsel and CPA confirmation required before live purge.
+{
+  "version": 1,
+  "tables": {
+    "accessible_seat_releases": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence",
+        "reason"
+      ]
+    },
+    "acquisition_attributions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "admission_actions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "attendee_snapshot",
+        "credential_hash",
+        "metadata"
+      ]
+    },
+    "admission_manifests": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payload"
+      ]
+    },
+    "annual_tax_report_settings": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "annual_tax_thresholds": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "apple_wallet_registrations": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "device_library_identifier",
+        "push_token"
+      ]
+    },
+    "audit_logs": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "after_data",
+        "before_data",
+        "ip_address",
+        "metadata"
+      ]
+    },
+    "balance_adjustments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "reason"
+      ]
+    },
+    "card_present_accounts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "verification_evidence"
+      ]
+    },
+    "card_present_payment_attempts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "failure_message",
+        "provider_response"
+      ]
+    },
+    "catalog_fulfillments": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "catalog_item_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "catalog_items": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "name"
+      ]
+    },
+    "checkout_attempts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "lease_token_digest"
+      ]
+    },
+    "communication_campaigns": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "body",
+        "name",
+        "recipient_count"
+      ]
+    },
+    "connected_accounts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "details_submitted",
+        "payout_details"
+      ]
+    },
+    "disputes": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "provider_payload",
+        "reason"
+      ]
+    },
+    "distribution_links": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "distribution_partners": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "contact_email",
+        "contact_name",
+        "name"
+      ]
+    },
+    "event_cancellation_refund_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "last_error"
+      ]
+    },
+    "event_cancellation_refund_runs": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_change_responses": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_changes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "after_data",
+        "before_data",
+        "reason"
+      ]
+    },
+    "event_day_rehearsal_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "event_favorites": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_price_zones": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "seating_price_zone_id"
+      ]
+    },
+    "event_referrals": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_reminders": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_seating_configurations": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_seats": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "status_reason"
+      ]
+    },
+    "event_slug_redirects": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_staff_assignments": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "event_state_changes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "metadata",
+        "reason"
+      ]
+    },
+    "event_waivers": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "body"
+      ]
+    },
+    "events": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "policy_hold_reason",
+        "sales_suspension_reason",
+        "short_description",
+        "venue_address",
+        "venue_name"
+      ]
+    },
+    "fee_change_notices": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "recipient_email"
+      ]
+    },
+    "fee_changes": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "activation_error"
+      ]
+    },
+    "fee_components": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "metadata"
+      ]
+    },
+    "guest_list_entries": {
+      "category": "organizer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "guest_email",
+        "guest_name",
+        "guest_phone",
+        "notes"
+      ]
+    },
+    "image_upload_receipts": {
+      "category": "uploads/S3",
+      "period": "account_lifetime",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": [
+        "final_key",
+        "public_url",
+        "source_key"
+      ]
+    },
+    "inventory_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "legal_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "scope_value",
+        "reason"
+      ]
+    },
+    "live_money_proof_authorizations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "buyer_email_digest",
+        "revocation_reason"
+      ]
+    },
+    "live_money_proof_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "live_pilot_incidents": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference"
+      ]
+    },
+    "live_pilot_metric_snapshots": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference"
+      ]
+    },
+    "live_pilot_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "live_pilot_run_actions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "details"
+      ]
+    },
+    "live_pilot_runs": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "keep",
+      "pii_columns": [
+        "abort_reason",
+        "completion_evidence_digest",
+        "completion_evidence_reference",
+        "pause_reason"
+      ]
+    },
+    "marketing_unsubscribes": {
+      "category": "marketing consent",
+      "period": "3_years_after_withdrawal",
+      "trigger": "unsubscribed_at",
+      "action": "delete",
+      "pii_columns": [
+        "email"
+      ]
+    },
+    "marketplace_collection_events": {
+      "category": "logs/audit",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "marketplace_collections": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "seo_description"
+      ]
+    },
+    "marketplace_funnel_events": {
+      "category": "analytics",
+      "period": "13_months",
+      "trigger": "occurred_at",
+      "action": "delete",
+      "pii_columns": []
+    },
+    "message_deliveries": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "last_error",
+        "metadata",
+        "payload_digest",
+        "recipient",
+        "outbound_payload",
+        "send_lease_token",
+        "transport_context_digest",
+        "outbound_wire_body",
+        "wire_body_digest"
+      ],
+      "reviewed_non_pii_columns": [
+        "payload_digest"
+      ]
+    },
+    "message_provider_events": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "payload",
+        "processing_error"
+      ]
+    },
+    "order_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name",
+        "tier_name"
+      ]
+    },
+    "orders": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "completed_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "buyer_email",
+        "buyer_name",
+        "buyer_phone",
+        "refund_reason",
+        "marketing_opt_in"
+      ],
+      "pending_rule": {
+        "period": "90_days",
+        "trigger": "expired_at",
+        "action": "delete"
+      }
+    },
+    "organization_memberships": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "invited_email"
+      ]
+    },
+    "organizations": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name",
+        "marketing_mailing_address"
+      ]
+    },
+    "organizer_follows": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "organizer_profiles": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "business_description",
+        "business_name",
+        "verification_notes",
+        "verification_requested_at",
+        "verification_status"
+      ]
+    },
+    "organizer_sales_export_requests": {
+      "category": "exports",
+      "period": "2_days",
+      "trigger": "created_at",
+      "action": "delete",
+      "pii_columns": [
+        "failure_reason"
+      ]
+    },
+    "organizer_tax_informations": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "certified_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "legal_name",
+        "business_name",
+        "tin",
+        "tin_last_four",
+        "mailing_address",
+        "signer_name",
+        "backup_withholding_reason",
+        "irs_validation_document_reference",
+        "tin_digest",
+        "validation_identity_digest",
+        "tin_match_identity_digest",
+        "b_notice_identity_digest"
+      ]
+    },
+    "payment_events": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "data"
+      ]
+    },
+    "payment_readiness_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "payments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "failure_message",
+        "provider_payload"
+      ]
+    },
+    "payout_check_adjustments": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "reason"
+      ]
+    },
+    "payout_line_allocations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "payouts": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "paid_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "failure_message",
+        "payee_snapshot",
+        "tax_information_snapshot",
+        "tax_information_tin",
+        "withholding_reason",
+        "withholding_override_reason"
+      ]
+    },
+    "pilot_closeout_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "evidence_references",
+        "reason"
+      ]
+    },
+    "pilot_readiness_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "pilot_validation_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "platform_capability_reviews": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "evidence_reference",
+        "reason"
+      ]
+    },
+    "platform_invitations": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "email"
+      ]
+    },
+    "pricing_tiers": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "privacy_requests": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "guest_challenge_digest",
+        "requester_email",
+        "result",
+        "verified_emails"
+      ]
+    },
+    "promo_codes": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promo_redemptions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promoter_commission_entries": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "promoters": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "name"
+      ]
+    },
+    "reconciliation_exceptions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "details"
+      ]
+    },
+    "referral_attributions": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "code_snapshot"
+      ]
+    },
+    "refund_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "refund_tickets": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "refunds": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "failure_code",
+        "failure_message",
+        "provider_payload",
+        "reason"
+      ]
+    },
+    "registration_questions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "registration_responses": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "answer"
+      ],
+      "reviewed_non_pii_columns": [
+        "answered_at"
+      ]
+    },
+    "scanner_devices": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "identifier",
+        "metadata",
+        "name"
+      ]
+    },
+    "seat_audit_events": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "metadata"
+      ]
+    },
+    "seat_hold_sessions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "event_seating_configuration_id",
+        "token_digest"
+      ]
+    },
+    "seat_holds": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "release_reason"
+      ]
+    },
+    "seating_price_zones": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "seating_rows": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "seating_section_id"
+      ]
+    },
+    "seating_sections": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "settlement_items": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "occurred_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "metadata"
+      ]
+    },
+    "settlements": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "stripe_fee_evidences": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "evidence_digest",
+        "fee_details"
+      ]
+    },
+    "support_notes": {
+      "category": "organizer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "body"
+      ]
+    },
+    "ticket_inventory_retentions": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "retained_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "ticket_transfers": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "expires_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "recipient_email",
+        "recipient_name"
+      ],
+      "reviewed_non_pii_columns": [
+        "token_version"
+      ]
+    },
+    "ticket_types": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description",
+        "name"
+      ]
+    },
+    "tickets": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "attendee_email",
+        "attendee_name",
+        "cancellation_reason",
+        "holder_email",
+        "holder_user_id",
+        "qr_code"
+      ]
+    },
+    "tin_match_requests": {
+      "category": "tax/TIN",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "users": {
+      "category": "organizer PII",
+      "period": "inactive_no_auto_delete",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "first_name",
+        "last_name",
+        "phone",
+        "clerk_id"
+      ]
+    },
+    "venue_layouts": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "name"
+      ]
+    },
+    "venue_seats": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "seating_price_zone_id",
+        "seating_row_id",
+        "view_note"
+      ]
+    },
+    "venue_slug_redirects": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "venues": {
+      "category": "organizer PII",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "accessibility_notes",
+        "address",
+        "description",
+        "name"
+      ]
+    },
+    "waitlist_entries": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "name",
+        "phone",
+        "request_ip",
+        "request_user_agent",
+        "delivery_failure"
+      ]
+    },
+    "waitlist_offers": {
+      "category": "marketing consent",
+      "period": "account_lifetime",
+      "trigger": "expires_at",
+      "action": "keep",
+      "pii_columns": [
+        "token_version",
+        "cancel_reason"
+      ]
+    },
+    "waiver_acceptances": {
+      "category": "buyer PII",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "wallet_passes": {
+      "category": "scanner/device data",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "authentication_token_digests"
+      ]
+    },
+    "webhook_events": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "anonymize",
+      "pii_columns": [
+        "last_error",
+        "payload"
+      ]
+    }
+  },
+  "column_classifications": {
+    "accessible_seat_releases": {
+      "id": "system",
+      "created_at": "system",
+      "event_seat_id": "system",
+      "evidence": "pii",
+      "reason": "pii",
+      "release_scope": "system",
+      "released_at": "system",
+      "released_by_user_id": "system",
+      "updated_at": "system"
+    },
+    "acquisition_attributions": {
+      "id": "system",
+      "attributed_at": "system",
+      "campaign": "pii",
+      "created_at": "system",
+      "distribution_link_id": "system",
+      "event_referral_id": "system",
+      "medium": "pii",
+      "order_id": "system",
+      "source": "pii",
+      "updated_at": "system",
+      "visitor_hash": "pii"
+    },
+    "admission_actions": {
+      "id": "system",
+      "action_uuid": "system",
+      "actor_user_id": "system",
+      "attendee_snapshot": "pii",
+      "created_at": "system",
+      "credential_hash": "pii",
+      "event_id": "system",
+      "kind": "system",
+      "manifest_version": "system",
+      "metadata": "pii",
+      "occurred_at": "system",
+      "organization_id": "system",
+      "reason_code": "non-personal",
+      "received_at": "system",
+      "result": "non-personal",
+      "reverses_action_id": "system",
+      "scanner_device_id": "system",
+      "sequence": "non-personal",
+      "source": "non-personal",
+      "ticket_id": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "admission_manifests": {
+      "id": "system",
+      "algorithm": "non-personal",
+      "created_at": "system",
+      "digest": "non-personal",
+      "event_id": "system",
+      "expires_at": "system",
+      "generated_at": "system",
+      "generated_by_user_id": "system",
+      "key_id": "system",
+      "organization_id": "system",
+      "payload": "pii",
+      "signature": "non-personal",
+      "source_digest": "non-personal",
+      "ticket_count": "system",
+      "updated_at": "system",
+      "version": "system",
+      "retention_anonymized_at": "system"
+    },
+    "annual_tax_report_settings": {
+      "id": "system",
+      "organization_id": "system",
+      "year": "financial",
+      "form_type": "financial",
+      "jurisdiction": "financial",
+      "created_at": "system",
+      "updated_at": "system",
+      "payee_key": "financial"
+    },
+    "annual_tax_thresholds": {
+      "id": "system",
+      "year": "financial",
+      "form_type": "financial",
+      "amount_cents": "financial",
+      "transaction_count": "financial",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "apple_wallet_registrations": {
+      "id": "system",
+      "wallet_pass_id": "system",
+      "device_library_identifier": "pii",
+      "push_token": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "ar_internal_metadata": {
+      "key": "system",
+      "value": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "audit_logs": {
+      "id": "system",
+      "action": "system",
+      "actor_user_id": "system",
+      "after_data": "pii",
+      "auditable_id": "system",
+      "auditable_type": "non-personal",
+      "before_data": "pii",
+      "created_at": "system",
+      "ip_address": "pii",
+      "metadata": "pii",
+      "occurred_at": "system",
+      "organization_id": "system",
+      "request_id": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "balance_adjustments": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "created_by_user_id": "system",
+      "currency": "financial",
+      "dispute_id": "system",
+      "effective_at": "system",
+      "event_id": "system",
+      "kind": "system",
+      "order_id": "system",
+      "organization_id": "system",
+      "reason": "pii",
+      "reversal_of_id": "system",
+      "reversed_by_user_id": "system",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "card_present_accounts": {
+      "id": "system",
+      "connection_mode": "non-personal",
+      "created_at": "system",
+      "device_id": "system",
+      "last_seen_at": "system",
+      "merchant_id": "system",
+      "organization_id": "system",
+      "pos_id": "system",
+      "provider": "system",
+      "status": "system",
+      "updated_at": "system",
+      "verification_evidence": "pii",
+      "verified_at": "system",
+      "verified_by_user_id": "system"
+    },
+    "card_present_payment_attempts": {
+      "id": "system",
+      "amount_cents": "financial",
+      "card_present_account_id": "system",
+      "completed_at": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "event_id": "system",
+      "external_payment_id": "system",
+      "failure_code": "non-personal",
+      "failure_message": "pii",
+      "idempotency_key": "system",
+      "initiated_at": "system",
+      "initiated_by_user_id": "system",
+      "order_id": "system",
+      "organization_id": "system",
+      "payment_id": "system",
+      "provider": "system",
+      "provider_payment_id": "system",
+      "provider_response": "pii",
+      "status": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "catalog_fulfillments": {
+      "id": "system",
+      "created_at": "system",
+      "fulfilled_at": "system",
+      "fulfilled_by_user_id": "system",
+      "order_item_id": "system",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "catalog_item_holds": {
+      "id": "system",
+      "catalog_item_id": "system",
+      "consumed_at": "system",
+      "created_at": "system",
+      "expires_at": "system",
+      "order_id": "system",
+      "order_item_id": "system",
+      "quantity": "financial",
+      "release_reason": "pii",
+      "released_at": "system",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "catalog_items": {
+      "id": "system",
+      "active": "non-personal",
+      "created_at": "system",
+      "description": "pii",
+      "event_id": "system",
+      "inventory_quantity": "financial",
+      "kind": "system",
+      "maximum_price_cents": "financial",
+      "minimum_price_cents": "financial",
+      "name": "pii",
+      "position": "non-personal",
+      "price_cents": "financial",
+      "quantity_sold": "financial",
+      "updated_at": "system"
+    },
+    "checkout_attempts": {
+      "id": "system",
+      "checkout_key_digest": "pii",
+      "request_digest": "pii",
+      "status": "system",
+      "lease_token_digest": "pii",
+      "lease_expires_at": "system",
+      "order_id": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "communication_campaigns": {
+      "id": "system",
+      "body": "pii",
+      "created_at": "system",
+      "created_by_user_id": "system",
+      "event_id": "system",
+      "name": "pii",
+      "recipient_count": "pii",
+      "scheduled_at": "system",
+      "segment": "pii",
+      "sent_at": "system",
+      "started_at": "system",
+      "status": "system",
+      "subject": "pii",
+      "updated_at": "system"
+    },
+    "connected_accounts": {
+      "id": "system",
+      "capabilities": "pii",
+      "charges_enabled": "non-personal",
+      "country": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "details_submitted": "pii",
+      "last_synced_at": "system",
+      "organization_id": "system",
+      "payouts_enabled": "financial",
+      "provider": "system",
+      "provider_account_id": "system",
+      "readiness_revision": "non-personal",
+      "requirements_due": "pii",
+      "status": "system",
+      "updated_at": "system",
+      "payout_details": "pii"
+    },
+    "disputes": {
+      "id": "system",
+      "amount_cents": "financial",
+      "closed_at": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "opened_at": "system",
+      "order_id": "system",
+      "payment_id": "system",
+      "provider": "system",
+      "provider_dispute_id": "system",
+      "provider_payload": "pii",
+      "reason": "pii",
+      "status": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "distribution_links": {
+      "id": "system",
+      "active": "non-personal",
+      "campaign": "pii",
+      "code": "pii",
+      "created_at": "system",
+      "created_by_user_id": "system",
+      "distribution_partner_id": "system",
+      "event_id": "system",
+      "expires_at": "system",
+      "updated_at": "system"
+    },
+    "distribution_partners": {
+      "id": "system",
+      "active": "non-personal",
+      "contact_email": "pii",
+      "contact_name": "pii",
+      "created_at": "system",
+      "kind": "system",
+      "name": "pii",
+      "slug": "pii",
+      "updated_at": "system",
+      "website_url": "pii"
+    },
+    "event_cancellation_refund_items": {
+      "id": "system",
+      "event_cancellation_refund_run_id": "financial",
+      "order_id": "system",
+      "status": "system",
+      "amount_cents": "financial",
+      "retry_generation": "non-personal",
+      "last_error": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "event_cancellation_refund_runs": {
+      "id": "system",
+      "event_id": "system",
+      "started_by_id": "system",
+      "status": "system",
+      "completed_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "event_change_responses": {
+      "id": "system",
+      "created_at": "system",
+      "decision": "system",
+      "event_change_id": "system",
+      "order_id": "system",
+      "responded_at": "system",
+      "updated_at": "system"
+    },
+    "event_changes": {
+      "id": "system",
+      "actor_user_id": "system",
+      "after_data": "pii",
+      "before_data": "pii",
+      "change_type": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "occurred_at": "system",
+      "reason": "pii",
+      "updated_at": "system"
+    },
+    "event_day_rehearsal_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "assignments": "pii",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "device_results": "pii",
+      "door_sales_results": "pii",
+      "effective_at": "system",
+      "event_id": "system",
+      "event_state_digest": "pii",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "incident_drills": "pii",
+      "manifest_results": "pii",
+      "parent_review_id": "system",
+      "pilot_validation_review_id": "system",
+      "reason": "pii",
+      "reconciliation_results": "pii",
+      "scan_results": "pii",
+      "updated_at": "system"
+    },
+    "event_favorites": {
+      "id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "event_price_zones": {
+      "id": "system",
+      "created_at": "system",
+      "event_seating_configuration_id": "pii",
+      "seating_price_zone_id": "pii",
+      "ticket_type_id": "system",
+      "updated_at": "system"
+    },
+    "event_referrals": {
+      "id": "system",
+      "active": "non-personal",
+      "code": "pii",
+      "created_at": "system",
+      "event_id": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "event_reminders": {
+      "id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "remind_at": "system",
+      "sent_at": "system",
+      "status": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "event_seating_configurations": {
+      "id": "system",
+      "activated_at": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "provider_event_key": "system",
+      "status": "system",
+      "updated_at": "system",
+      "venue_layout_id": "system"
+    },
+    "event_seats": {
+      "id": "system",
+      "created_at": "system",
+      "event_seating_configuration_id": "pii",
+      "general_release_at": "system",
+      "operational_status": "system",
+      "status_reason": "pii",
+      "ticket_type_id": "system",
+      "updated_at": "system",
+      "venue_seat_id": "system"
+    },
+    "event_slug_redirects": {
+      "id": "system",
+      "event_id": "system",
+      "slug": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "event_staff_assignments": {
+      "id": "system",
+      "assigned_by_user_id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "expires_at": "system",
+      "organization_id": "system",
+      "role": "non-personal",
+      "status": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "event_state_changes": {
+      "id": "system",
+      "action": "system",
+      "actor_user_id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "from_status": "system",
+      "metadata": "pii",
+      "occurred_at": "system",
+      "reason": "pii",
+      "to_status": "system",
+      "updated_at": "system"
+    },
+    "event_waivers": {
+      "id": "system",
+      "active": "non-personal",
+      "body": "pii",
+      "content_digest": "pii",
+      "created_at": "system",
+      "event_id": "system",
+      "required": "non-personal",
+      "title": "pii",
+      "updated_at": "system",
+      "version": "system"
+    },
+    "events": {
+      "id": "system",
+      "age_restriction": "non-personal",
+      "buyer_fee_percent": "financial",
+      "category": "system",
+      "cover_image_url": "pii",
+      "created_at": "system",
+      "description": "pii",
+      "doors_open_at": "system",
+      "ends_at": "system",
+      "fee_policy": "financial",
+      "is_featured": "non-personal",
+      "live_money_proof_candidate": "non-personal",
+      "localized_content": "pii",
+      "max_capacity": "non-personal",
+      "organization_id": "system",
+      "organizer_profile_id": "system",
+      "published_at": "system",
+      "recurrence_end_date": "non-personal",
+      "recurrence_parent_id": "system",
+      "recurrence_rule": "pii",
+      "sales_suspended_at": "system",
+      "sales_suspension_reason": "pii",
+      "short_description": "pii",
+      "show_attendees": "non-personal",
+      "slug": "pii",
+      "starts_at": "system",
+      "status": "system",
+      "supported_locales": "pii",
+      "timezone": "system",
+      "title": "pii",
+      "transfers_enabled": "non-personal",
+      "updated_at": "system",
+      "venue_address": "pii",
+      "venue_city": "pii",
+      "venue_id": "system",
+      "venue_name": "pii",
+      "custom_slug": "non-personal",
+      "policy_hold_at": "system",
+      "policy_hold_scope": "pii",
+      "policy_hold_reason": "pii",
+      "policy_hold_by_user_id": "system",
+      "translations": "pii",
+      "translation_status": "system",
+      "translation_requested_at": "system",
+      "localized_content_sources": "pii",
+      "page_customization": "pii"
+    },
+    "fee_change_notices": {
+      "id": "system",
+      "fee_change_id": "system",
+      "organization_id": "system",
+      "owner_id": "system",
+      "recipient_email": "pii",
+      "buyer_fee_percent": "financial",
+      "fee_policy": "financial",
+      "event_id": "system",
+      "acknowledged_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "fee_changes": {
+      "id": "system",
+      "created_by_id": "system",
+      "old_terms": "financial",
+      "new_terms": "financial",
+      "effective_at": "system",
+      "activated_at": "system",
+      "created_at": "system",
+      "updated_at": "system",
+      "preapproval_id": "system",
+      "preapproved_registry_digest": "system",
+      "blocked_at": "system",
+      "activation_error": "pii"
+    },
+    "fee_components": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "estimated": "non-personal",
+      "kind": "system",
+      "metadata": "pii",
+      "order_id": "system",
+      "order_item_id": "system",
+      "provider_reference": "non-personal",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "guest_list_entries": {
+      "id": "system",
+      "added_by": "non-personal",
+      "created_at": "system",
+      "event_id": "system",
+      "guest_email": "pii",
+      "guest_name": "pii",
+      "guest_phone": "pii",
+      "notes": "pii",
+      "order_id": "system",
+      "quantity": "financial",
+      "redeemed": "non-personal",
+      "ticket_type_id": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "image_upload_receipts": {
+      "id": "system",
+      "user_id": "system",
+      "organization_id": "system",
+      "event_id": "system",
+      "source_key": "pii",
+      "final_key": "pii",
+      "public_url": "pii",
+      "completed_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "inventory_holds": {
+      "id": "system",
+      "consumed_at": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "expires_at": "system",
+      "order_id": "system",
+      "order_item_id": "system",
+      "pricing_tier_id": "system",
+      "quantity": "financial",
+      "release_reason": "pii",
+      "released_at": "system",
+      "status": "system",
+      "ticket_type_id": "system",
+      "updated_at": "system"
+    },
+    "legal_holds": {
+      "id": "system",
+      "scope_type": "pii",
+      "scope_value": "pii",
+      "reason": "pii",
+      "placed_by_id": "system",
+      "released_by_id": "system",
+      "released_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "live_money_proof_authorizations": {
+      "id": "system",
+      "application_revision": "pii",
+      "approved_at": "system",
+      "approved_by_user_id": "system",
+      "buyer_email_digest": "pii",
+      "connected_account_id": "system",
+      "consumed_at": "system",
+      "created_at": "system",
+      "event_day_rehearsal_review_id": "system",
+      "event_id": "system",
+      "event_state_digest": "pii",
+      "expires_at": "system",
+      "max_amount_cents": "financial",
+      "order_id": "system",
+      "platform_configuration_digest": "pii",
+      "provider_state_digest": "pii",
+      "requested_by_user_id": "system",
+      "revocation_reason": "pii",
+      "revoked_at": "system",
+      "updated_at": "system"
+    },
+    "live_money_proof_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "authorization_id": "system",
+      "communication_results": "pii",
+      "connected_account_id": "system",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "effective_at": "system",
+      "entity_results": "pii",
+      "event_day_rehearsal_review_id": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "final_refund_id": "financial",
+      "initial_settlement_id": "system",
+      "order_id": "system",
+      "organization_id": "system",
+      "parent_review_id": "system",
+      "partial_refund_id": "financial",
+      "payment_id": "system",
+      "payout_id": "financial",
+      "platform_configuration_digest": "pii",
+      "post_payout_settlement_id": "financial",
+      "proof_event_id": "system",
+      "provider_results": "pii",
+      "provider_state_digest": "pii",
+      "reason": "pii",
+      "reconciliation_results": "pii",
+      "updated_at": "system"
+    },
+    "live_pilot_incidents": {
+      "id": "system",
+      "action": "system",
+      "actor_user_id": "system",
+      "category": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "live_pilot_run_id": "system",
+      "occurred_at": "system",
+      "parent_incident_id": "system",
+      "severity": "non-personal",
+      "summary": "pii",
+      "updated_at": "system"
+    },
+    "live_pilot_metric_snapshots": {
+      "id": "system",
+      "breached_thresholds": "pii",
+      "created_at": "system",
+      "event_id": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "external_metrics": "pii",
+      "live_pilot_run_id": "system",
+      "local_metrics": "pii",
+      "observed_at": "system",
+      "recorded_by_user_id": "system",
+      "updated_at": "system"
+    },
+    "live_pilot_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "assignments": "pii",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "effective_at": "system",
+      "event_day_rehearsal_review_id": "system",
+      "event_id": "system",
+      "event_state_digest": "pii",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "inventory_cap": "non-personal",
+      "live_money_proof_review_id": "system",
+      "parent_review_id": "system",
+      "reason": "pii",
+      "support_coverage": "pii",
+      "thresholds": "pii",
+      "updated_at": "system"
+    },
+    "live_pilot_run_actions": {
+      "id": "system",
+      "actor_user_id": "system",
+      "created_at": "system",
+      "details": "pii",
+      "event_id": "system",
+      "kind": "system",
+      "live_pilot_run_id": "system",
+      "occurred_at": "system",
+      "updated_at": "system"
+    },
+    "live_pilot_runs": {
+      "id": "system",
+      "abort_reason": "pii",
+      "aborted_at": "system",
+      "completed_at": "system",
+      "completed_by_user_id": "system",
+      "completion_evidence_digest": "pii",
+      "completion_evidence_reference": "pii",
+      "completion_results": "pii",
+      "created_at": "system",
+      "event_id": "system",
+      "live_pilot_review_id": "system",
+      "pause_reason": "pii",
+      "paused_at": "system",
+      "started_at": "system",
+      "started_by_user_id": "system",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "marketing_unsubscribes": {
+      "id": "system",
+      "organization_id": "system",
+      "email": "pii",
+      "unsubscribed_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "marketplace_collection_events": {
+      "id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "marketplace_collection_id": "system",
+      "position": "non-personal",
+      "updated_at": "system"
+    },
+    "marketplace_collections": {
+      "id": "system",
+      "created_at": "system",
+      "created_by_user_id": "system",
+      "description": "pii",
+      "ends_at": "system",
+      "position": "non-personal",
+      "seo_description": "pii",
+      "seo_title": "pii",
+      "slug": "pii",
+      "starts_at": "system",
+      "status": "system",
+      "title": "pii",
+      "updated_at": "system"
+    },
+    "marketplace_funnel_events": {
+      "id": "system",
+      "campaign": "pii",
+      "created_at": "system",
+      "distribution_link_id": "system",
+      "event_id": "system",
+      "event_referral_id": "system",
+      "medium": "pii",
+      "occurred_at": "system",
+      "order_id": "system",
+      "source": "pii",
+      "stage": "non-personal",
+      "updated_at": "system",
+      "visitor_hash": "pii"
+    },
+    "message_deliveries": {
+      "id": "system",
+      "attempts": "non-personal",
+      "bounced_at": "system",
+      "channel": "system",
+      "communication_campaign_id": "system",
+      "complained_at": "system",
+      "created_at": "system",
+      "delivered_at": "system",
+      "event_id": "system",
+      "failed_at": "system",
+      "idempotency_key": "system",
+      "last_error": "pii",
+      "last_event_at": "system",
+      "metadata": "pii",
+      "order_id": "system",
+      "payload_digest": "pii",
+      "provider": "system",
+      "provider_id": "system",
+      "recipient": "pii",
+      "requested_by_id": "system",
+      "sent_at": "system",
+      "status": "system",
+      "suppressed_at": "system",
+      "template": "non-personal",
+      "ticket_id": "system",
+      "updated_at": "system",
+      "outbound_payload": "pii",
+      "provider_attempted_at": "system",
+      "provider_outcome_unknown": "non-personal",
+      "send_lease_token": "pii",
+      "send_lease_expires_at": "system",
+      "transport_context_digest": "pii",
+      "outbound_wire_body": "pii",
+      "wire_body_digest": "pii",
+      "organization_membership_id": "system",
+      "platform_invitation_id": "system",
+      "privacy_request_id": "system",
+      "retention_anonymized_at": "system",
+      "reconciled_at": "system"
+    },
+    "message_provider_events": {
+      "id": "system",
+      "created_at": "system",
+      "event_type": "system",
+      "message_delivery_id": "non-personal",
+      "occurred_at": "system",
+      "payload": "pii",
+      "processed_at": "system",
+      "processing_error": "pii",
+      "provider": "system",
+      "provider_event_id": "system",
+      "provider_message_id": "non-personal",
+      "received_at": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "order_items": {
+      "id": "system",
+      "catalog_item_id": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "discount_cents": "financial",
+      "fee_cents": "financial",
+      "item_kind": "non-personal",
+      "name": "pii",
+      "order_id": "system",
+      "organizer_fee_cents": "financial",
+      "organizer_proceeds_cents": "financial",
+      "pricing_tier_id": "system",
+      "quantity": "financial",
+      "subtotal_cents": "financial",
+      "tax_cents": "financial",
+      "ticket_type_id": "system",
+      "tier_name": "pii",
+      "unit_price_cents": "financial",
+      "updated_at": "system"
+    },
+    "orders": {
+      "id": "non-personal",
+      "buyer_email": "pii",
+      "buyer_fee_percent_snapshot": "money",
+      "buyer_name": "pii",
+      "buyer_phone": "pii",
+      "buyer_terms_accepted_at": "non-personal",
+      "buyer_terms_digest": "non-personal",
+      "buyer_terms_version": "non-personal",
+      "cancelled_at": "non-personal",
+      "completed_at": "non-personal",
+      "created_at": "non-personal",
+      "currency": "money",
+      "discount_cents": "money",
+      "event_id": "non-personal",
+      "expired_at": "non-personal",
+      "expires_at": "non-personal",
+      "fee_policy_snapshot": "money",
+      "guest_access_expires_at": "non-personal",
+      "guest_access_revoked_at": "non-personal",
+      "guest_access_version": "non-personal",
+      "organizer_fee_cents": "money",
+      "payment_method": "non-personal",
+      "promo_code_id": "non-personal",
+      "reference": "non-personal",
+      "refund_amount_cents": "money",
+      "refund_reason": "pii",
+      "refunded_at": "money",
+      "service_fee_cents": "money",
+      "source": "non-personal",
+      "status": "non-personal",
+      "stripe_payment_intent_id": "provider reference",
+      "stripe_refund_id": "provider reference",
+      "subtotal_cents": "money",
+      "total_cents": "money",
+      "updated_at": "non-personal",
+      "user_id": "non-personal",
+      "wallet_type": "non-personal",
+      "cash_sale_key": "non-personal",
+      "cash_sale_request_digest": "non-personal",
+      "checkout_key_digest": "non-personal",
+      "checkout_request_digest": "non-personal",
+      "checkout_recovery_expires_at": "non-personal",
+      "processing_fee_bearer_snapshot": "money",
+      "locale": "non-personal",
+      "marketing_opt_in": "pii",
+      "retention_anonymized_at": "non-personal"
+    },
+    "organization_memberships": {
+      "id": "system",
+      "accepted_at": "system",
+      "created_at": "system",
+      "expires_at": "system",
+      "invitation_version": "system",
+      "invited_at": "system",
+      "invited_by_user_id": "system",
+      "invited_email": "pii",
+      "organization_id": "system",
+      "role": "non-personal",
+      "status": "system",
+      "updated_at": "system",
+      "user_id": "system",
+      "invitation_expires_at": "system",
+      "pending_event_assignments": "pii"
+    },
+    "organizations": {
+      "id": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "name": "pii",
+      "slug": "pii",
+      "status": "system",
+      "timezone": "system",
+      "updated_at": "system",
+      "marketing_mailing_address": "pii",
+      "marketing_address_certified_at": "system"
+    },
+    "organizer_follows": {
+      "id": "system",
+      "created_at": "system",
+      "organization_id": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "organizer_profiles": {
+      "id": "system",
+      "business_description": "pii",
+      "business_name": "pii",
+      "created_at": "system",
+      "is_ambros_partner": "non-personal",
+      "logo_url": "pii",
+      "organization_id": "system",
+      "payout_ready": "financial",
+      "policy_accepted_at": "system",
+      "policy_digest": "pii",
+      "policy_version": "system",
+      "stripe_account_id": "system",
+      "updated_at": "system",
+      "user_id": "system",
+      "verification_notes": "pii",
+      "verification_requested_at": "pii",
+      "verification_status": "pii",
+      "verified_at": "system",
+      "verified_by_user_id": "system"
+    },
+    "organizer_sales_export_requests": {
+      "id": "system",
+      "event_id": "system",
+      "actor_user_id": "system",
+      "filters": "pii",
+      "columns": "pii",
+      "row_count": "system",
+      "status": "system",
+      "storage_key": "system",
+      "expires_at": "system",
+      "claimed_at": "system",
+      "failure_reason": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "organizer_tax_informations": {
+      "id": "system",
+      "organization_id": "system",
+      "legal_name": "pii",
+      "business_name": "pii",
+      "tax_classification": "financial",
+      "tin_type": "non-personal",
+      "tin": "pii",
+      "tin_last_four": "pii",
+      "mailing_address": "pii",
+      "exempt_payee_code": "non-personal",
+      "signer_name": "pii",
+      "certified_at": "system",
+      "certification_version": "system",
+      "created_at": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system",
+      "tin_match_status": "financial",
+      "tin_match_result_code": "financial",
+      "tin_matched_at": "system",
+      "b_notice_stage": "financial",
+      "b_notice_sent_at": "system",
+      "b_notice_response_due_on": "system",
+      "backup_withholding_flag": "financial",
+      "backup_withholding_reason": "pii",
+      "irs_notice_received_on": "system",
+      "b_notice_send_due_on": "system",
+      "first_b_notice_received_on": "system",
+      "irs_validation_evidence_type": "non-personal",
+      "irs_validation_recorded_on": "system",
+      "irs_validation_admin_id": "system",
+      "irs_validation_document_reference": "pii",
+      "tin_digest": "pii",
+      "validation_identity_digest": "pii",
+      "tin_match_identity_digest": "pii",
+      "b_notice_identity_digest": "pii"
+    },
+    "payment_events": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "data": "pii",
+      "event_type": "system",
+      "payment_id": "system",
+      "provider_created_at": "system",
+      "updated_at": "system",
+      "webhook_event_id": "system",
+      "retention_anonymized_at": "system"
+    },
+    "payment_readiness_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "connected_account_id": "system",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "effective_at": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "fee_tax_schedule_reference": "financial",
+      "liability_schedule_reference": "pii",
+      "merchant_of_record": "pii",
+      "parent_review_id": "system",
+      "provider_approval_reference": "pii",
+      "provider_state_digest": "pii",
+      "reason": "pii",
+      "updated_at": "system"
+    },
+    "payments": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "failed_at": "system",
+      "failure_code": "non-personal",
+      "failure_message": "pii",
+      "idempotency_key": "system",
+      "order_id": "system",
+      "provider": "system",
+      "provider_payload": "pii",
+      "provider_payment_id": "system",
+      "status": "system",
+      "succeeded_at": "system",
+      "updated_at": "system",
+      "provider_environment": "system",
+      "provider_account_id": "system",
+      "provider_platform_account_id": "system",
+      "retention_anonymized_at": "system"
+    },
+    "payout_check_adjustments": {
+      "id": "system",
+      "payout_id": "system",
+      "created_by_user_id": "system",
+      "amount_cents": "financial",
+      "reason": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "payout_line_allocations": {
+      "id": "system",
+      "payout_id": "system",
+      "order_item_id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "payouts": {
+      "id": "system",
+      "amount_cents": "financial",
+      "connected_account_id": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "event_id": "system",
+      "failure_code": "non-personal",
+      "failure_message": "pii",
+      "idempotency_key": "system",
+      "initiated_at": "system",
+      "organization_id": "system",
+      "paid_at": "system",
+      "provider": "system",
+      "provider_payout_id": "financial",
+      "settlement_id": "system",
+      "status": "system",
+      "updated_at": "system",
+      "payee_snapshot": "pii",
+      "payee_approval_digest": "non-personal",
+      "tax_information_snapshot": "pii",
+      "tax_information_tin": "pii",
+      "tax_approval_digest": "non-personal",
+      "held_from_status": "system",
+      "retention_anonymized_at": "system",
+      "withheld_cents": "financial",
+      "withholding_rate_bps": "financial",
+      "withholding_reason": "pii",
+      "withholding_override_reason": "pii",
+      "under_withheld_cents": "financial",
+      "carried_withholding_cents": "financial"
+    },
+    "pilot_closeout_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "cleanup_results": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "event_id": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "evidence_references": "pii",
+      "expansion_decision": "non-personal",
+      "expansion_scope": "pii",
+      "live_pilot_run_id": "system",
+      "local_metrics": "pii",
+      "local_state_digest": "pii",
+      "outcome_metrics": "pii",
+      "parent_review_id": "system",
+      "reason": "pii",
+      "reconciliation_results": "pii",
+      "retrospective_actions": "pii",
+      "signed_at": "system",
+      "updated_at": "system"
+    },
+    "pilot_readiness_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "assignments": "pii",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "effective_at": "system",
+      "event_id": "system",
+      "event_state_digest": "pii",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "parent_review_id": "system",
+      "reason": "pii",
+      "updated_at": "system"
+    },
+    "pilot_validation_reviews": {
+      "id": "system",
+      "accessibility_results": "pii",
+      "actor_user_id": "system",
+      "application_revision": "pii",
+      "buyer_flows": "pii",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "device_matrix": "pii",
+      "effective_at": "system",
+      "event_id": "system",
+      "event_state_digest": "pii",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "load_results": "pii",
+      "organizer_flows": "pii",
+      "parent_review_id": "system",
+      "pilot_readiness_review_id": "system",
+      "reason": "pii",
+      "updated_at": "system"
+    },
+    "platform_capability_reviews": {
+      "id": "system",
+      "actor_user_id": "system",
+      "capability": "pii",
+      "configuration_digest": "pii",
+      "controls": "pii",
+      "created_at": "system",
+      "decision": "system",
+      "effective_at": "system",
+      "evidence_digest": "pii",
+      "evidence_reference": "pii",
+      "expires_at": "system",
+      "parent_review_id": "system",
+      "reason": "pii",
+      "updated_at": "system"
+    },
+    "platform_invitations": {
+      "id": "system",
+      "email": "pii",
+      "role": "non-personal",
+      "status": "system",
+      "invitation_version": "system",
+      "invited_at": "system",
+      "expires_at": "system",
+      "accepted_at": "system",
+      "revoked_at": "system",
+      "invited_by_user_id": "system",
+      "accepted_by_user_id": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "pricing_tiers": {
+      "id": "system",
+      "created_at": "system",
+      "ends_at": "system",
+      "name": "pii",
+      "position": "non-personal",
+      "price_cents": "financial",
+      "quantity_limit": "financial",
+      "quantity_sold": "financial",
+      "starts_at": "system",
+      "ticket_type_id": "system",
+      "tier_type": "non-personal",
+      "updated_at": "system"
+    },
+    "privacy_email_suppressions": {
+      "id": "system",
+      "email_digest": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "privacy_requests": {
+      "id": "system",
+      "guest_challenge_digest": "pii",
+      "guest_challenge_expires_at": "system",
+      "guest_challenge_attempts": "non-personal",
+      "guest_challenge_passed_at": "system",
+      "kind": "system",
+      "status": "system",
+      "user_id": "system",
+      "order_id": "system",
+      "requester_email": "pii",
+      "verified_by_id": "system",
+      "verified_at": "system",
+      "executed_by_id": "system",
+      "executed_at": "system",
+      "result": "pii",
+      "created_at": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system",
+      "verified_emails": "pii"
+    },
+    "promo_codes": {
+      "id": "system",
+      "active": "non-personal",
+      "code": "pii",
+      "created_at": "system",
+      "current_uses": "non-personal",
+      "discount_type": "pii",
+      "discount_value": "non-personal",
+      "event_id": "system",
+      "expires_at": "system",
+      "max_uses": "non-personal",
+      "starts_at": "system",
+      "updated_at": "system"
+    },
+    "promo_redemptions": {
+      "id": "system",
+      "created_at": "system",
+      "discount_cents": "financial",
+      "expires_at": "system",
+      "finalized_at": "system",
+      "order_id": "system",
+      "promo_code_id": "system",
+      "released_at": "system",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "promoter_commission_entries": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "idempotency_key": "system",
+      "kind": "system",
+      "occurred_at": "system",
+      "order_id": "system",
+      "promoter_id": "system",
+      "refund_id": "financial",
+      "updated_at": "system"
+    },
+    "promoters": {
+      "id": "system",
+      "active": "non-personal",
+      "code": "pii",
+      "commission_bps": "financial",
+      "created_at": "system",
+      "email": "pii",
+      "event_id": "system",
+      "name": "pii",
+      "updated_at": "system"
+    },
+    "reconciliation_exceptions": {
+      "id": "system",
+      "actual_amount_cents": "financial",
+      "actual_currency": "financial",
+      "code": "non-personal",
+      "created_at": "system",
+      "details": "pii",
+      "expected_amount_cents": "financial",
+      "expected_currency": "financial",
+      "order_id": "system",
+      "payment_id": "system",
+      "resolved_at": "system",
+      "status": "system",
+      "updated_at": "system",
+      "webhook_event_id": "system",
+      "retention_anonymized_at": "system"
+    },
+    "referral_attributions": {
+      "id": "system",
+      "attributed_at": "system",
+      "campaign": "pii",
+      "code_snapshot": "pii",
+      "created_at": "system",
+      "medium": "pii",
+      "order_id": "system",
+      "promoter_id": "system",
+      "source": "pii",
+      "updated_at": "system"
+    },
+    "refund_items": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "fee_cents": "financial",
+      "order_item_id": "system",
+      "organizer_fee_cents": "financial",
+      "organizer_proceeds_cents": "financial",
+      "quantity": "financial",
+      "refund_id": "financial",
+      "tax_cents": "financial",
+      "updated_at": "system"
+    },
+    "refund_tickets": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "refund_id": "financial",
+      "released_at": "system",
+      "ticket_id": "system",
+      "updated_at": "system"
+    },
+    "refunds": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "failed_at": "system",
+      "failure_code": "pii",
+      "failure_message": "pii",
+      "idempotency_key": "system",
+      "order_id": "system",
+      "payment_id": "system",
+      "provider": "system",
+      "provider_payload": "pii",
+      "provider_refund_id": "financial",
+      "reason": "pii",
+      "requested_by_id": "system",
+      "status": "system",
+      "succeeded_at": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "registration_questions": {
+      "id": "system",
+      "active": "non-personal",
+      "created_at": "system",
+      "event_id": "system",
+      "kind": "system",
+      "options": "pii",
+      "position": "non-personal",
+      "prompt": "pii",
+      "required": "non-personal",
+      "updated_at": "system"
+    },
+    "registration_responses": {
+      "id": "system",
+      "answer": "pii",
+      "answered_at": "non-personal",
+      "created_at": "system",
+      "kind_snapshot": "non-personal",
+      "options_snapshot": "non-personal",
+      "order_id": "system",
+      "prompt_snapshot": "non-personal",
+      "registration_question_id": "system",
+      "required_snapshot": "non-personal",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "runtime_executions": {
+      "task_key": "system",
+      "application_revision": "pii",
+      "last_succeeded_at": "system"
+    },
+    "runtime_throttle_buckets": {
+      "key_hash": "pii",
+      "value": "non-personal",
+      "expires_at": "system"
+    },
+    "scanner_devices": {
+      "id": "system",
+      "authorization_expires_at": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "identifier": "pii",
+      "last_manifest_digest": "pii",
+      "last_manifest_version": "system",
+      "last_seen_at": "system",
+      "last_sequence": "non-personal",
+      "last_synced_at": "system",
+      "manifest_downloaded_at": "system",
+      "metadata": "pii",
+      "name": "pii",
+      "organization_id": "system",
+      "revoked_at": "system",
+      "status": "system",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "schema_migrations": {
+      "version": "system"
+    },
+    "seat_audit_events": {
+      "id": "system",
+      "action": "system",
+      "actor_user_id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "event_seat_id": "system",
+      "metadata": "pii",
+      "occurred_at": "system",
+      "seat_hold_session_id": "system",
+      "ticket_id": "system",
+      "updated_at": "system"
+    },
+    "seat_hold_sessions": {
+      "id": "system",
+      "accessibility_attested": "non-personal",
+      "claimed_at": "system",
+      "consumed_at": "system",
+      "created_at": "system",
+      "event_seating_configuration_id": "pii",
+      "expires_at": "system",
+      "order_id": "system",
+      "released_at": "system",
+      "source": "pii",
+      "status": "system",
+      "token_digest": "pii",
+      "updated_at": "system",
+      "user_id": "system"
+    },
+    "seat_holds": {
+      "id": "system",
+      "created_at": "system",
+      "event_seat_id": "system",
+      "order_item_id": "system",
+      "pricing_tier_id": "system",
+      "release_reason": "pii",
+      "released_at": "system",
+      "seat_hold_session_id": "system",
+      "status": "system",
+      "unit_price_cents": "financial",
+      "updated_at": "system"
+    },
+    "seating_price_zones": {
+      "id": "system",
+      "code": "pii",
+      "color": "pii",
+      "created_at": "system",
+      "name": "pii",
+      "position": "non-personal",
+      "updated_at": "system",
+      "venue_layout_id": "system"
+    },
+    "seating_rows": {
+      "id": "system",
+      "created_at": "system",
+      "label": "pii",
+      "position": "non-personal",
+      "seating_section_id": "pii",
+      "updated_at": "system"
+    },
+    "seating_sections": {
+      "id": "system",
+      "code": "pii",
+      "created_at": "system",
+      "name": "pii",
+      "position": "non-personal",
+      "updated_at": "system",
+      "venue_layout_id": "system"
+    },
+    "settlement_items": {
+      "id": "system",
+      "amount_cents": "financial",
+      "created_at": "system",
+      "currency": "financial",
+      "description": "pii",
+      "kind": "system",
+      "metadata": "pii",
+      "occurred_at": "system",
+      "settlement_id": "system",
+      "source_id": "system",
+      "source_type": "system",
+      "updated_at": "system"
+    },
+    "settlements": {
+      "id": "system",
+      "adjustment_cents": "financial",
+      "calculated_at": "system",
+      "created_at": "system",
+      "currency": "financial",
+      "discount_cents": "financial",
+      "event_id": "system",
+      "finalized_at": "system",
+      "gross_cents": "financial",
+      "negative_balance_cents": "financial",
+      "net_cents": "financial",
+      "organization_id": "system",
+      "organizer_proceeds_cents": "financial",
+      "paid_cents": "financial",
+      "payable_cents": "financial",
+      "platform_fee_cents": "financial",
+      "processing_fee_cents": "financial",
+      "refund_cents": "financial",
+      "reserve_cents": "financial",
+      "source_digest": "pii",
+      "status": "system",
+      "updated_at": "system",
+      "version": "system",
+      "platform_processing_fee_cents": "financial"
+    },
+    "site_settings": {
+      "id": "system",
+      "created_at": "system",
+      "payment_mode": "pii",
+      "platform_email": "pii",
+      "platform_name": "pii",
+      "platform_phone": "pii",
+      "service_fee_flat_cents": "financial",
+      "service_fee_percent": "financial",
+      "singleton_guard": "non-personal",
+      "updated_at": "system",
+      "processing_fee_bearer": "financial",
+      "payout_schedule_text": "pii",
+      "business_mailing_address": "pii",
+      "retention_purge_enabled": "non-personal",
+      "fee_notice_days": "non-personal",
+      "backup_withholding_mode": "financial",
+      "backup_withholding_rate_bps": "financial",
+      "tax_reporting_thresholds": "financial"
+    },
+    "solid_queue_batch_executions": {
+      "id": "system",
+      "job_id": "system",
+      "batch_id": "system",
+      "created_at": "system"
+    },
+    "solid_queue_batches": {
+      "id": "system",
+      "active_job_batch_id": "system",
+      "description": "pii",
+      "on_finish": "pii",
+      "on_success": "pii",
+      "on_failure": "pii",
+      "metadata": "pii",
+      "total_jobs": "financial",
+      "completed_jobs": "non-personal",
+      "failed_jobs": "non-personal",
+      "enqueued_at": "system",
+      "finished_at": "system",
+      "failed_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "solid_queue_blocked_executions": {
+      "id": "system",
+      "job_id": "system",
+      "queue_name": "pii",
+      "priority": "non-personal",
+      "concurrency_key": "financial",
+      "expires_at": "system",
+      "created_at": "system"
+    },
+    "solid_queue_claimed_executions": {
+      "id": "system",
+      "job_id": "system",
+      "process_id": "system",
+      "created_at": "system"
+    },
+    "solid_queue_failed_executions": {
+      "id": "system",
+      "job_id": "system",
+      "error": "pii",
+      "created_at": "system"
+    },
+    "solid_queue_jobs": {
+      "id": "system",
+      "queue_name": "pii",
+      "class_name": "pii",
+      "arguments": "pii",
+      "priority": "non-personal",
+      "active_job_id": "system",
+      "scheduled_at": "system",
+      "finished_at": "system",
+      "concurrency_key": "financial",
+      "created_at": "system",
+      "updated_at": "system",
+      "batch_id": "system"
+    },
+    "solid_queue_pauses": {
+      "id": "system",
+      "queue_name": "pii",
+      "created_at": "system"
+    },
+    "solid_queue_processes": {
+      "id": "system",
+      "kind": "system",
+      "last_heartbeat_at": "system",
+      "supervisor_id": "system",
+      "pid": "non-personal",
+      "hostname": "pii",
+      "metadata": "pii",
+      "created_at": "system",
+      "name": "pii"
+    },
+    "solid_queue_ready_executions": {
+      "id": "system",
+      "job_id": "system",
+      "queue_name": "pii",
+      "priority": "non-personal",
+      "created_at": "system"
+    },
+    "solid_queue_recurring_executions": {
+      "id": "system",
+      "job_id": "system",
+      "task_key": "system",
+      "run_at": "system",
+      "created_at": "system"
+    },
+    "solid_queue_recurring_tasks": {
+      "id": "system",
+      "key": "pii",
+      "schedule": "pii",
+      "command": "pii",
+      "class_name": "pii",
+      "arguments": "pii",
+      "queue_name": "pii",
+      "priority": "non-personal",
+      "static": "non-personal",
+      "description": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "solid_queue_scheduled_executions": {
+      "id": "system",
+      "job_id": "system",
+      "queue_name": "pii",
+      "priority": "non-personal",
+      "scheduled_at": "system",
+      "created_at": "system"
+    },
+    "solid_queue_semaphores": {
+      "id": "system",
+      "key": "pii",
+      "value": "non-personal",
+      "expires_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "stripe_fee_evidences": {
+      "id": "system",
+      "payment_id": "system",
+      "fee_component_id": "financial",
+      "status": "system",
+      "context_digest": "pii",
+      "provider_charge_id": "system",
+      "provider_balance_transaction_id": "financial",
+      "evidence_digest": "pii",
+      "amount_cents": "financial",
+      "fee_cents": "financial",
+      "net_cents": "financial",
+      "currency": "financial",
+      "balance_status": "financial",
+      "fee_details": "pii",
+      "attempts": "non-personal",
+      "last_error_code": "pii",
+      "next_attempt_at": "system",
+      "verified_at": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "support_notes": {
+      "id": "system",
+      "author_user_id": "system",
+      "body": "pii",
+      "created_at": "system",
+      "event_id": "system",
+      "order_id": "system",
+      "ticket_id": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "ticket_inventory_retentions": {
+      "id": "system",
+      "ticket_id": "system",
+      "refund_id": "financial",
+      "dispute_id": "system",
+      "reconciliation_exception_id": "system",
+      "retained_at": "system"
+    },
+    "ticket_transfers": {
+      "id": "system",
+      "accepted_at": "system",
+      "accepted_by_user_id": "system",
+      "cancelled_at": "system",
+      "created_at": "system",
+      "expires_at": "system",
+      "initiated_by_user_id": "system",
+      "recipient_email": "pii",
+      "recipient_name": "pii",
+      "status": "system",
+      "ticket_id": "system",
+      "token_version": "non-personal",
+      "updated_at": "system",
+      "locale": "system",
+      "retention_anonymized_at": "system"
+    },
+    "ticket_types": {
+      "id": "system",
+      "created_at": "system",
+      "description": "pii",
+      "door_allocation": "non-personal",
+      "event_id": "system",
+      "max_per_buyer": "non-personal",
+      "max_per_order": "non-personal",
+      "name": "pii",
+      "price_cents": "financial",
+      "quantity_available": "financial",
+      "quantity_sold": "financial",
+      "sales_end_at": "system",
+      "sales_start_at": "system",
+      "sort_order": "non-personal",
+      "updated_at": "system",
+      "translations": "pii",
+      "translation_status": "system",
+      "translation_requested_at": "system"
+    },
+    "tickets": {
+      "id": "system",
+      "attendee_email": "pii",
+      "attendee_name": "pii",
+      "cancellation_reason": "pii",
+      "cancelled_at": "system",
+      "checked_in_at": "system",
+      "created_at": "system",
+      "display_credential_version": "system",
+      "event_id": "system",
+      "event_seat_id": "system",
+      "holder_email": "pii",
+      "holder_user_id": "pii",
+      "order_id": "system",
+      "order_item_id": "system",
+      "pricing_tier_id": "system",
+      "qr_code": "pii",
+      "scan_credential_version": "system",
+      "status": "system",
+      "ticket_type_id": "system",
+      "updated_at": "system",
+      "first_admitted_at": "system",
+      "retention_anonymized_at": "system"
+    },
+    "tin_match_requests": {
+      "id": "system",
+      "organizer_tax_information_id": "system",
+      "account_reference": "financial",
+      "tax_information_updated_at": "system",
+      "exported_at": "system",
+      "imported_at": "system",
+      "result_code": "financial",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "users": {
+      "id": "system",
+      "clerk_id": "pii",
+      "created_at": "system",
+      "email": "pii",
+      "first_name": "pii",
+      "last_name": "pii",
+      "phone": "pii",
+      "role": "non-personal",
+      "updated_at": "system",
+      "clerk_profile_checked_at": "pii"
+    },
+    "venue_layouts": {
+      "id": "system",
+      "created_at": "system",
+      "name": "pii",
+      "organization_id": "system",
+      "provider_chart_key": "system",
+      "renderer": "non-personal",
+      "status": "system",
+      "updated_at": "system",
+      "venue_id": "system",
+      "version": "system"
+    },
+    "venue_seats": {
+      "id": "system",
+      "accessibility_kind": "non-personal",
+      "active": "non-personal",
+      "companion_group": "pii",
+      "created_at": "system",
+      "label": "pii",
+      "obstructed_view": "non-personal",
+      "position": "non-personal",
+      "seating_price_zone_id": "pii",
+      "seating_row_id": "pii",
+      "updated_at": "system",
+      "view_note": "pii",
+      "x": "non-personal",
+      "y": "non-personal"
+    },
+    "venue_slug_redirects": {
+      "id": "system",
+      "venue_id": "system",
+      "slug": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "venues": {
+      "id": "system",
+      "accessibility_notes": "pii",
+      "active": "non-personal",
+      "address": "pii",
+      "created_at": "system",
+      "description": "pii",
+      "name": "pii",
+      "slug": "pii",
+      "updated_at": "system",
+      "verified": "non-personal",
+      "village": "pii",
+      "website_url": "pii"
+    },
+    "waitlist_entries": {
+      "id": "system",
+      "created_at": "system",
+      "email": "pii",
+      "event_id": "system",
+      "expires_at": "system",
+      "management_version": "system",
+      "name": "pii",
+      "notified_at": "system",
+      "phone": "pii",
+      "position": "non-personal",
+      "quantity": "financial",
+      "status": "system",
+      "ticket_type_id": "system",
+      "updated_at": "system",
+      "user_id": "system",
+      "locale": "system",
+      "requested_at": "system",
+      "request_ip": "pii",
+      "request_user_agent": "pii",
+      "delivery_failure": "pii"
+    },
+    "waitlist_offers": {
+      "id": "system",
+      "claimed_at": "system",
+      "converted_at": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "expires_at": "system",
+      "order_id": "system",
+      "pricing_tier_id": "system",
+      "quantity": "financial",
+      "status": "system",
+      "ticket_type_id": "system",
+      "token_version": "pii",
+      "unit_price_cents": "financial",
+      "updated_at": "system",
+      "waitlist_entry_id": "system",
+      "cancel_reason": "pii"
+    },
+    "waiver_acceptances": {
+      "id": "system",
+      "accepted_at": "system",
+      "content_digest": "pii",
+      "created_at": "system",
+      "event_waiver_id": "system",
+      "order_id": "system",
+      "updated_at": "system",
+      "version": "system"
+    },
+    "wallet_passes": {
+      "id": "system",
+      "ticket_id": "system",
+      "provider": "system",
+      "serial_number": "pii",
+      "scan_credential_version": "system",
+      "authentication_token_digests": "pii",
+      "content_digest": "pii",
+      "content_updated_at": "pii",
+      "synced_digest": "pii",
+      "synced_at": "system",
+      "sync_attempts": "non-personal",
+      "last_error": "pii",
+      "created_at": "system",
+      "updated_at": "system"
+    },
+    "webhook_events": {
+      "id": "system",
+      "attempts": "non-personal",
+      "created_at": "system",
+      "event_type": "system",
+      "last_error": "pii",
+      "payload": "pii",
+      "processed_at": "system",
+      "provider": "system",
+      "provider_created_at": "system",
+      "provider_event_id": "system",
+      "status": "system",
+      "updated_at": "system",
+      "retention_anonymized_at": "system"
+    }
+  }
+}

@@ -916,6 +916,7 @@
       "refresh": " Refresh",
       "browseEvents": "Browse events",
       "myTickets": "My tickets",
+      "privacyRequests": "Privacy requests",
       "transferTicketLabel": "your {{name}} ticket",
       "ticketStatus": {
         "issued": "issued",
@@ -1033,6 +1034,7 @@
       "checkingForPurchasesMadeBeforeYouSignedIn": "Checking for purchases made before you signed in…",
       "retryGuestPurchaseRecovery": "Retry guest purchase recovery",
       "myTickets": "My Tickets",
+      "accountSettingsAndPrivacy": "Account settings and privacy",
       "yourSessionExpired": "Your session expired",
       "signInAgainToSeeYourTickets": "Sign in again to see your tickets.",
       "signInAgain": "Sign in again",

@@ -37,6 +37,20 @@ describe('AdminSettingsPage', () => {
     apiClient.patch.mockImplementation((_path, body) => Promise.resolve({ data: { ...settings, ...body } }))
   })
 
+  it('requires an explicit production acknowledgment before enabling live retention purge', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const button = await screen.findByRole('button', { name: 'Enable scheduled purge' })
+    expect(screen.getByText(/two-day sales-export S3 cleanup runs independently of these retention controls/))
+      .toHaveTextContent('still respects legal holds')
+    expect(screen.getByText('Deletion is disabled on this server')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /reviewed the retention schedule/ }))
+    await user.click(button)
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/settings',
+      { retention_purge_enabled: true }, expect.anything()))
+  })
+
   it('shows a live fee example using checkout rounding and the processing bearer', async () => {
     const user = userEvent.setup()
     renderPage()

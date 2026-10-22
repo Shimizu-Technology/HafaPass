@@ -119,6 +119,11 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
           after_data: { "payment_mode" => changes["payment_mode"].last.to_s },
           metadata: payment_mode_audit_metadata(changes["payment_mode"].last.to_s), request: request)
       end
+      if changes.key?("retention_purge_enabled")
+        AuditLogger.record!(action: "site_settings.retention_purge_changed", auditable: settings, actor: @current_user,
+          before_data: { "retention_purge_enabled" => changes["retention_purge_enabled"].first },
+          after_data: { "retention_purge_enabled" => changes["retention_purge_enabled"].last }, request: request)
+      end
       if changed_fee_terms
         FeeChange.schedule!(settings: settings, attributes: requested_fee_terms, effective_at: effective_at,
           actor: @current_user, request: request, future_terms_approved: params[:future_terms_approved] == true || params[:future_terms_approved] == "true",
@@ -144,8 +149,8 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_params
     params.permit(:payment_mode, :platform_name, :platform_email, :platform_phone,
                   :service_fee_percent, :service_fee_flat_cents, :processing_fee_bearer, :payout_schedule_text,
-                  :business_mailing_address, :backup_withholding_mode, :backup_withholding_rate_bps,
-                  :fee_notice_days)
+                  :business_mailing_address, :retention_purge_enabled, :backup_withholding_mode,
+                  :backup_withholding_rate_bps, :fee_notice_days)
   end
 
   def tax_year
@@ -162,6 +167,9 @@ class Api::V1::Admin::SettingsController < Api::V1::Admin::BaseController
   def settings_json(settings, year:)
     {
       payment_mode: settings.payment_mode,
+      retention_purge_enabled: settings.retention_purge_enabled,
+      retention_dry_run: DataRetention.dry_run?,
+      retention_destructive_enabled: !DataRetention.dry_run?,
       platform_name: settings.platform_name,
       platform_email: settings.platform_email,
       platform_phone: settings.platform_phone,

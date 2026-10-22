@@ -8,6 +8,7 @@ class MessageDelivery < ApplicationRecord
   belongs_to :requested_by, class_name: "User", optional: true
   belongs_to :organization_membership, optional: true
   belongs_to :platform_invitation, optional: true
+  belongs_to :privacy_request, optional: true
   has_many :message_provider_events, dependent: :nullify
 
   enum :status, {
@@ -100,7 +101,7 @@ class MessageDelivery < ApplicationRecord
   PLACEHOLDER_EMAIL_DOMAIN = "@hafapass.invalid"
 
   def undeliverable_recipient?
-    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN)
+    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN, "@privacy.invalid")
   end
 
   def suppressed_recipient?
@@ -158,7 +159,7 @@ class MessageDelivery < ApplicationRecord
   end
 
   def subject_present
-    subjects = [order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id]
+    subjects = [order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id, privacy_request_id]
     errors.add(:base, "Order, ticket, event, or invitation is required") if subjects.all?(&:blank?)
   end
 

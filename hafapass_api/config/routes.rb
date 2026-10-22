@@ -82,6 +82,7 @@ Rails.application.routes.draw do
 
       # Authenticated user endpoints
       namespace :me do
+        resources :privacy_requests, only: [:index, :create]
         resources :orders, only: [:index, :show] do
           collection { post :recover_guest }
         end
@@ -100,6 +101,9 @@ Rails.application.routes.draw do
         end
         resources :event_referrals, only: [:index, :create]
       end
+      post "guest_privacy_requests", to: "guest_privacy_requests#create"
+      post "guest_privacy_requests/:id/verify", to: "guest_privacy_requests#verify"
+      get "privacy_export", to: "privacy_exports#show"
 
       # Public events
       resources :events, only: [:index], param: :slug do
@@ -242,6 +246,16 @@ Rails.application.routes.draw do
 
       # Admin endpoints
       namespace :admin do
+        resources :legal_holds, only: [:index, :create] do
+          post :release, on: :member
+        end
+        resources :privacy_requests, only: [:index, :show] do
+          member do
+            post :verify
+            post :execute
+            get :export
+          end
+        end
         get "refund_reconciliation", to: "refund_reconciliations#index"
         post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
         resource :tax_reports, only: [:show] do

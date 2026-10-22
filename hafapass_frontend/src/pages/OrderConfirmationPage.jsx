@@ -607,6 +607,7 @@ function OrderConfirmationContent() {
           <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.refresh')}</button>
           <Link to="/events" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.browseEvents')}</Link>
           {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.myTickets')}</Link>}
+          <Link to={getOrderAccess(id) ? `/privacy/guest/${id}` : '/account/settings'} className="text-brand-700">{t('buyerAccount.orderConfirmationPage.privacyRequests')}</Link>
         </div>
       </div>
     </div>

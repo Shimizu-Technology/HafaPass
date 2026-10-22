@@ -78,6 +78,10 @@ class EmailService
         send_refund_reconciliation_digest(delivery, delivery: delivery)
       when "organization_invitation"
         send_organization_invitation(delivery.organization_membership, delivery: delivery)
+      when "guest_privacy_challenge"
+        raise MessageWirePayload::Unavailable, "Guest challenge codes are sent only during issuance"
+      when "privacy_request_confirmation"
+        send_privacy_request_confirmation(delivery.privacy_request, delivery: delivery)
       when "platform_invitation"
         send_platform_invitation(delivery.platform_invitation, delivery: delivery)
       when "fee_change_notice"
@@ -114,6 +118,68 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
       raise
+    end
+
+    def send_guest_privacy_challenge_now(privacy_request, code)
+      delivery = create_delivery(privacy_request: privacy_request, template: "guest_privacy_challenge",
+        recipient: privacy_request.requester_email,
+        idempotency_key: "guest-privacy-challenge/#{privacy_request.id}")
+      return delivery if delivery.suppressed?
+
+      delivery.preparing_outbound_payload = true
+      payload = send_guest_privacy_challenge(privacy_request, code: code, delivery: delivery)
+      delivery.preparing_outbound_payload = false
+      if configured?
+        if Rails.env.staging? && !ProviderRehearsal.email_payload_allowed?(payload)
+          raise ProviderDisabled, "Staging email is restricted to approved rehearsal recipients"
+        end
+        delivery.update!(provider: "resend", attempts: 1, provider_attempted_at: Time.current,
+          provider_outcome_unknown: true, transport_context_digest: transport_context_digest)
+        response = Resend::Emails.send(payload, options: { idempotency_key: delivery.idempotency_key })
+        provider_id = response[:id] || response["id"] if response.respond_to?(:[])
+        raise MessageDeliveryJob::UnknownProviderResult, "Provider acceptance did not include a message ID" if provider_id.blank?
+
+        delivery.update!(status: :sent, provider_id: provider_id, sent_at: Time.current, provider_outcome_unknown: false)
+      else
+        raise ProviderDisabled, "Production email is disabled" if Rails.env.production?
+
+        delivery.update!(provider: "simulated", attempts: 1, status: :sent, sent_at: Time.current)
+      end
+      delivery
+    rescue StandardError => error
+      delivery&.update_columns(status: MessageDelivery.statuses.fetch("failed"), last_error: error.class.name,
+        failed_at: Time.current) unless delivery&.suppressed?
+      raise
+    end
+
+    def send_guest_privacy_challenge(privacy_request, code:, delivery:)
+      html = email_wrapper("Verify your HåfaPass privacy request") do
+        "<p>Your verification code is <strong>#{ERB::Util.html_escape(code)}</strong>. It expires in 15 minutes.</p>"
+      end
+      deliver(to: privacy_request.requester_email, subject: "Verify your HåfaPass privacy request",
+        html: html, tag: "privacy_request", delivery: delivery)
+    end
+
+    def send_privacy_request_confirmation_async(privacy_request)
+      delivery = create_delivery(privacy_request: privacy_request, template: "privacy_request_confirmation",
+        recipient: privacy_request.requester_email, idempotency_key: "privacy-confirmation/#{privacy_request.id}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
+    def send_privacy_request_confirmation(privacy_request, delivery: nil)
+      subject = "Your HåfaPass privacy request is complete"
+      text = privacy_request.kind == "access" ?
+        "Your data export is ready. Use the secure link below within seven days." :
+        "We have processed your deletion request. Some financial records remain as explained in your request result."
+      if privacy_request.status == "partially_completed"
+        text += " Some provider cleanup still needs manual completion. HåfaPass support will follow up."
+      end
+      link = privacy_request.kind == "access" ?
+        "<p><a href=\"#{ERB::Util.html_escape(PrivacyRequestAccess.url(privacy_request))}\">Download your JSON export</a></p>" : ""
+      html = email_wrapper(subject) { "<p>#{ERB::Util.html_escape(text)}</p>#{link}" }
+      deliver(to: privacy_request.requester_email, subject: subject, html: html,
+        tag: "privacy_request", delivery: delivery)
     end
 
     def send_ticket_email_async(ticket, requested_by: nil)
@@ -607,25 +673,27 @@ class EmailService
     end
 
     def create_delivery(order: nil, ticket: nil, event: nil, requested_by: nil, template:, recipient:, metadata: {},
-      idempotency_key: nil, organization_membership: nil, platform_invitation: nil)
+      idempotency_key: nil, organization_membership: nil, platform_invitation: nil, privacy_request: nil)
       digest_source = [template, recipient.to_s.downcase, order&.cache_key_with_version,
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
       invitation_subject = organization_membership || platform_invitation
       digest_source = "#{digest_source}|#{invitation_subject.class.name}/#{invitation_subject.id}" if invitation_subject
+      suppressed = template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(recipient)
       attributes = {
         order: order,
         ticket: ticket,
         event: event,
         organization_membership: organization_membership,
         platform_invitation: platform_invitation,
+        privacy_request: privacy_request,
         requested_by: requested_by,
         channel: "email",
         template: template,
-        recipient: recipient.to_s.strip.downcase,
+        recipient: suppressed ? "deleted@privacy.invalid" : recipient.to_s.strip.downcase,
         provider: delivery_provider,
         payload_digest: Digest::SHA256.hexdigest(digest_source),
-        metadata: metadata,
-        status: :queued
+        metadata: suppressed ? {} : metadata,
+        status: suppressed ? :suppressed : :queued
       }
       return MessageDelivery.create!(attributes) unless idempotency_key
 
