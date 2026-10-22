@@ -14,8 +14,10 @@ class FeeChange < ApplicationRecord
   def self.affected_events(at: Time.current)
     # Open sales are published events; future drafts are included because their
     # organizer may price or announce them before the effective date.
+    # Published events that have already ended cannot sell, so they are excluded.
     Event.where.not(status: [:cancelled, :archived, :completed])
       .where("status = :published OR starts_at > :at", published: Event.statuses.fetch("published"), at: at)
+      .where("COALESCE(ends_at, starts_at) > :at OR starts_at IS NULL", at: at)
   end
 
   def self.affected_organizer_count(at: Time.current)

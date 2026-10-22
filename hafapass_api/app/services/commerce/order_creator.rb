@@ -26,7 +26,8 @@ module Commerce
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
-      checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, locale: AppLocale::DEFAULT)
+      checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
+      locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -57,6 +58,7 @@ module Commerce
       @checkout_attempt = checkout_attempt
       @checkout_lease_token = checkout_lease_token
       @expected_total_cents = expected_total_cents
+      @client_quote_required = client_quote_required
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
       # The buyer's language for receipts and ticket emails; staff-created orders stay English.
@@ -108,7 +110,9 @@ module Commerce
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
-        if @expected_total_cents.blank? && FeeChange.where.not(activated_at: nil)
+        # Only buyer checkout can come from a stale cached page; server-side
+        # callers such as guest list redemption never send a displayed total.
+        if @client_quote_required && @expected_total_cents.blank? && FeeChange.where.not(activated_at: nil)
             .where("activated_at >= ?", LEGACY_REFRESH_WINDOW_DAYS.days.ago).exists?
           raise RefreshRequired, "Prices were updated — please refresh the page to see the current total."
         end
