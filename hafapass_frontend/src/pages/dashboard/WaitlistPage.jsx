@@ -185,7 +185,7 @@ function WaitlistSession({ eventId, identity }) {
   if (!canManage) return <EventWorkspace eventId={eventId} event={event}><p role="status" className="text-neutral-700">Your event access does not include this tool.</p></EventWorkspace>
   return (
     <EventWorkspace eventId={eventId} event={event}><div className="min-w-0 w-full max-w-5xl mx-auto">
-      {!addressReady && <div id="waitlist-address-required" role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Add your business mailing address in <Link to="/dashboard/settings" className="font-semibold underline">Settings</Link> before sending waitlist alerts or offers. Ask the organization owner to certify it.</div>}
+      {!addressReady && <div id="waitlist-address-required" role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">The organization owner must add and certify the business mailing address in the Marketing postal address section of <Link to="/dashboard/settings" className="font-semibold underline">Settings</Link> before sending waitlist alerts or offers.</div>}
 
       <div className="flex flex-col items-start gap-4 mb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>

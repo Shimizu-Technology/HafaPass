@@ -408,14 +408,14 @@ function MyTicketsContent({ refreshSession, signOut }) {
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
                             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-brand-50 hover:text-brand-800"
-                            aria-label={t('buyerAccount.myTicketsPage.openTicketToDownload')}
+                            aria-label={`${t('buyerAccount.myTicketsPage.openTicketToDownload')} #${ticket.id}`}
                             title={t('buyerAccount.myTicketsPage.openTicketToDownload')}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Download aria-hidden="true" className="h-4 w-4" />
                           </Link>
                           <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
-                            aria-label={`${t('buyerAccount.myTicketsPage.tabs.tickets')}: ${ticket.ticket_type.name}`}
+                            aria-label={`${t('buyerAccount.myTicketsPage.tabs.tickets')}: ${ticket.ticket_type.name}, #${ticket.id}`}
                             className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-brand-50 hover:text-brand-800">
                             <ChevronRight aria-hidden="true" className="h-4 w-4" />
                           </Link>

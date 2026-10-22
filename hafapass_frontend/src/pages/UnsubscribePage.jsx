@@ -33,14 +33,14 @@ export default function UnsubscribePage() {
     {state.loading ? <p role="status" className="mt-4">{t('unsubscribe.loading')}</p>
       : !state.organization ? null
         : state.unsubscribed ? <>
-          <p role="status" className="mt-4">{state.scope === 'waitlist' ? (state.chosenScope === 'organizer' ? `All marketing from ${state.organization} has stopped.` : `Alerts for ${state.event} have stopped.`) : t('unsubscribe.unsubscribedConfirmation', { organization: state.organization })}</p>
-          {state.scope === 'waitlist' && state.chosenScope !== 'organizer' && <button type="button" disabled={busy} onClick={() => unsubscribe('organizer')} className="btn-secondary mt-6">Stop all marketing from this organizer</button>}
+          <p role="status" className="mt-4">{state.scope === 'waitlist' ? (state.chosenScope === 'organizer' ? t('unsubscribe.waitlistOrganizerConfirmation', { organization: state.organization }) : t('unsubscribe.waitlistEventConfirmation', { event: state.event })) : t('unsubscribe.unsubscribedConfirmation', { organization: state.organization })}</p>
+          {state.scope === 'waitlist' && state.chosenScope !== 'organizer' && <button type="button" disabled={busy} onClick={() => unsubscribe('organizer')} className="btn-secondary mt-6">{t('unsubscribe.waitlistStopOrganizer')}</button>}
         </> : <>
           {state.scope === 'waitlist' ? <>
-            <p className="mt-4">Choose which emails to stop for {state.event}.</p>
+            <p className="mt-4">{t('unsubscribe.waitlistPrompt', { event: state.event })}</p>
             <div className="mt-6 flex flex-col gap-3">
-              <button type="button" disabled={busy} onClick={() => unsubscribe('event')} className="btn-primary">Stop alerts for this event</button>
-              <button type="button" disabled={busy} onClick={() => unsubscribe('organizer')} className="btn-secondary">Stop all marketing from this organizer</button>
+              <button type="button" disabled={busy} onClick={() => unsubscribe('event')} className="btn-primary">{t('unsubscribe.waitlistStopEvent')}</button>
+              <button type="button" disabled={busy} onClick={() => unsubscribe('organizer')} className="btn-secondary">{t('unsubscribe.waitlistStopOrganizer')}</button>
             </div>
           </> : <>
             <p className="mt-4">{t('unsubscribe.prompt', { organization: state.organization })}</p>

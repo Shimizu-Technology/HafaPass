@@ -6,7 +6,7 @@ RSpec.describe WaitlistOffers::Issuer do
     ticket = create(:ticket_type, event: event, quantity_available: 2)
     entry = create(:waitlist_entry, event: event, ticket_type: ticket)
     expect { described_class.call(entry: entry) }
-      .to raise_error(described_class::OfferError, /business mailing address/)
+      .to raise_error(described_class::OfferError, /certify.*Marketing postal address/)
     expect(entry.reload).to be_waiting
     expect(WaitlistOffer.where(waitlist_entry: entry)).not_to exist
   end

@@ -578,7 +578,7 @@ class EmailService
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, attachments: nil, **log_meta)
       sender_name = log_meta[:sender_name].to_s.gsub(/[\r\n<>"\\]/, " ").squish.first(80)
-      from = sender_name.present? ? "#{sender_name} via HåfaPass <#{from_email}>" : from_email
+      from = sender_name.present? ? %("#{sender_name} via HåfaPass" <#{from_email}>) : from_email
       params = { from: from, to: delivery ? delivery.recipient : to, subject: subject, html: html }
       # Ticket PDFs travel as provider-fetched URLs (see TicketEmailAttachments).
       params[:attachments] = attachments if attachments.present?

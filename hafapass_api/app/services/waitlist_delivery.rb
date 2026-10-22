@@ -2,7 +2,7 @@
 
 # Keeps waitlist state in step with a delivery that cannot reach the buyer.
 class WaitlistDelivery
-  ADDRESS_ERROR = "Add your business mailing address in Settings before sending waitlist alerts or offers"
+  ADDRESS_ERROR = "Add and certify your business mailing address in the Marketing postal address section of Settings before sending waitlist alerts or offers"
 
   def self.address_ready?(event)
     event.organization.reload.marketing_postal_address_ready?

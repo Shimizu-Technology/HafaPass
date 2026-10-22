@@ -35,6 +35,8 @@ describe('MyTicketsPage guest recovery', () => {
     expect(apiClient.post).toHaveBeenCalledWith('/me/orders/recover_guest')
     expect(apiClient.get).toHaveBeenCalledTimes(2)
     expect(screen.getByText('General admission').closest('a')).toHaveAttribute('href', '/tickets/synthetic-display-credential')
+    expect(screen.getByRole('link', { name: 'Open ticket to download #3' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tickets: General admission, #3' })).toBeInTheDocument()
   })
 
   it('keeps known tickets visible during failed discovery and recovers on explicit retry', async () => {

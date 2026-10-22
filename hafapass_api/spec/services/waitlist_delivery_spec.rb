@@ -69,6 +69,28 @@ RSpec.describe WaitlistDelivery do
     expect(EmailService).not_to have_received(:send_delivery_payload)
   end
 
+  it "restores the prior provider uncertainty marker when a prepared alert becomes obsolete" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(provider: "simulated", provider_outcome_unknown: false)
+    job = MessageDeliveryJob.new
+    allow(job).to receive(:obsolete_waitlist?).and_return(false, true)
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    job.perform(delivery.id)
+
+    expect(delivery.reload).to have_attributes(status: "cancelled", provider_outcome_unknown: false)
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "sweeps an old failed alert that still holds a notified entry" do
+    entry.notify!
+    delivery = EmailService.send_waitlist_notification_async(entry)
+    delivery.update!(status: :failed, last_error: "provider rejected", updated_at: 4.days.ago)
+    SweepWaitlistDeliveriesJob.perform_now
+    expect(entry.reload).to be_waiting
+  end
+
   it "releases a suppressed offer even if an earlier provider result was uncertain" do
     ticket = create(:ticket_type, event: event, quantity_available: 3)
     offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)

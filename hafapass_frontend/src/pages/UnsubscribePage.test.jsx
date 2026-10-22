@@ -42,16 +42,21 @@ it('shows the confirmation and action in the buyer language', async () => {
   expect(await screen.findByText(ja.unsubscribe.unsubscribedConfirmation.replace('{{organization}}', 'Island Nights'))).toBeInTheDocument()
 })
 
-it('offers event and organizer choices for a waitlist link', async () => {
+it('offers translated event and organizer choices for a waitlist link', async () => {
+  const i18n = createInstance()
+  await i18n.init({ lng: 'en', resources: { en: { translation: { unsubscribe: {
+    ...en.unsubscribe, waitlistStopEvent: 'Event only', waitlistStopOrganizer: 'Organizer wide',
+    waitlistEventConfirmation: '{{event}} ended', waitlistOrganizerConfirmation: '{{organization}} ended',
+  } } } }, interpolation: { escapeValue: false } })
   apiClient.get.mockResolvedValue({ data: { organization: 'Island Nights', event: 'Friday Show', scope: 'waitlist', unsubscribed: false } })
   apiClient.post.mockResolvedValue({ data: { unsubscribed: true } })
-  render(<MemoryRouter initialEntries={['/unsubscribe/waitlist-token']}><Routes><Route path="/unsubscribe/:token" element={<UnsubscribePage />} /></Routes></MemoryRouter>)
-  expect(await screen.findByRole('button', { name: 'Stop alerts for this event' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Stop all marketing from this organizer' })).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: 'Stop alerts for this event' }))
+  render(<I18nextProvider i18n={i18n}><MemoryRouter initialEntries={['/unsubscribe/waitlist-token']}><Routes><Route path="/unsubscribe/:token" element={<UnsubscribePage />} /></Routes></MemoryRouter></I18nextProvider>)
+  expect(await screen.findByRole('button', { name: 'Event only' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Organizer wide' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Event only' }))
   expect(apiClient.post).toHaveBeenCalledWith('/marketing/unsubscribe/waitlist-token', { scope: 'event' })
-  expect(await screen.findByText('Alerts for Friday Show have stopped.')).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: 'Stop all marketing from this organizer' }))
+  expect(await screen.findByText('Friday Show ended')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Organizer wide' }))
   expect(apiClient.post).toHaveBeenCalledWith('/marketing/unsubscribe/waitlist-token', { scope: 'organizer' })
-  expect(await screen.findByText('All marketing from Island Nights has stopped.')).toBeInTheDocument()
+  expect(await screen.findByText('Island Nights ended')).toBeInTheDocument()
 })

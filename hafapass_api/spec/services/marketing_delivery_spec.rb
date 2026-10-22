@@ -28,7 +28,7 @@ RSpec.describe "Marketing delivery" do
     expect(delivery).not_to be_transactional
     payload = EmailService.prepare_delivery_payload(delivery)
     expect(payload.fetch("html")).to include("123 Marine Drive", "Unsubscribe", event.organization.name)
-    expect(payload.fetch("from")).to eq("#{event.organization.name} via HåfaPass <#{EmailService.from_email}>")
+    expect(payload.fetch("from")).to eq(%("#{event.organization.name} via HåfaPass" <#{EmailService.from_email}>))
     expect(payload.dig("headers", "List-Unsubscribe")).to include("/api/v1/marketing/unsubscribe/")
     expect(payload.dig("headers", "List-Unsubscribe-Post")).to eq("List-Unsubscribe=One-Click")
     one_click_path = URI(payload.dig("headers", "List-Unsubscribe").delete_prefix("<").delete_suffix(">")).path

@@ -38,6 +38,7 @@ function SettingsPageSession({ identity }) {
  const [busy, setBusy] = useState(false)
  const [error, setError] = useState(null)
  const [notice, setNotice] = useState(null)
+ const [marketingNotice, setMarketingNotice] = useState(null)
  const [payoutError, setPayoutError] = useState(null)
  const [marketingAddress, setMarketingAddress] = useState('')
  const [marketingCertified, setMarketingCertified] = useState(false)
@@ -47,7 +48,7 @@ function SettingsPageSession({ identity }) {
   verifiedAccess.current = false
   requests.current.forEach(request => request.controller.abort())
   setOrganization(null); setAccounts([]); setMemberships([])
-  setNotice(null); setBusy(false); setLoading(false)
+  setNotice(null); setMarketingNotice(null); setBusy(false); setLoading(false)
   setError(message)
  }, [])
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
@@ -90,6 +91,7 @@ function SettingsPageSession({ identity }) {
     setLoading(true)
     setBusy(false)
     setError(null)
+    setMarketingNotice(null)
     try {
       const organizationResponse = await requestApi('get', '/organizer/organization')
       if (!canApply()) return
@@ -149,13 +151,13 @@ function SettingsPageSession({ identity }) {
   const saveMarketingAddress = async event => {
     event.preventDefault()
     if (!current() || !canManageOrganization || busy) return
-    setBusy(true); setError(null); setNotice(null)
+    setBusy(true); setError(null); setMarketingNotice(null)
     try {
       const response = await requestApi('patch', '/organizer/organization', {
         organization: { marketing_mailing_address: marketingAddress.trim(), certified: marketingCertified },
       })
       setOrganization(response.data)
-      setNotice('Marketing postal address saved. Campaigns use this address until you change it.')
+      setMarketingNotice('Marketing postal address saved. Campaigns and waitlist emails use this address until you change it.')
     } catch (requestError) {
       setError(requestError.response?.data?.errors?.join(', ') || requestError.response?.data?.error || 'Could not save the marketing postal address.')
     } finally { setBusy(false) }
@@ -192,6 +194,7 @@ function SettingsPageSession({ identity }) {
         <div className="mt-8 space-y-8">
           {canManageOrganization && <section className="card p-5 sm:p-6" aria-labelledby="marketing-postal-heading">
             <h2 id="marketing-postal-heading" className="text-lg font-bold text-neutral-900">Marketing postal address</h2>
+            {marketingNotice && <p role="status" className="mt-2 text-sm text-emerald-800">{marketingNotice}</p>}
             <p className="mt-1 text-sm text-neutral-700">Your organization's address appears in campaign emails. Campaigns pause until the owner certifies a current physical postal address.</p>
             <form onSubmit={saveMarketingAddress} className="mt-4 space-y-4">
               <label className="block text-sm font-medium text-neutral-700">Physical postal address

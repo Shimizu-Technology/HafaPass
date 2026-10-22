@@ -35,10 +35,26 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
     end
 
     address = params.require(:organization).permit(:marketing_mailing_address)[:marketing_mailing_address].to_s.strip
+    before_address = organization.marketing_mailing_address
+    before_certified_at = organization.marketing_address_certified_at
+    submitted_certification = ActiveModel::Type::Boolean.new.cast(params.dig(:organization, :certified))
     organization.marketing_mailing_address = address.presence
     organization.marketing_address_certified_at =
-      ActiveModel::Type::Boolean.new.cast(params.dig(:organization, :certified)) ? Time.current : nil
-    if organization.save
+      submitted_certification ? Time.current : nil
+    saved = Organization.transaction do
+      if organization.save
+        AuditLogger.record!(action: "organization.marketing_postal_address_updated", auditable: organization,
+          actor: current_user, request: request,
+          before_data: { marketing_mailing_address: before_address, marketing_address_certified_at: before_certified_at },
+          after_data: { marketing_mailing_address: organization.marketing_mailing_address,
+            marketing_address_certified_at: organization.marketing_address_certified_at,
+            submitted_certification: submitted_certification })
+        true
+      else
+        false
+      end
+    end
+    if saved
       render json: organization_json(organization, organization.organization_memberships.find_by(user: current_user)&.role)
     else
       render json: { errors: organization.errors.full_messages }, status: :unprocessable_entity

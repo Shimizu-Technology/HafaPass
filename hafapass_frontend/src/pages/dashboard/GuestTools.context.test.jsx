@@ -421,7 +421,7 @@ it('shows address readiness and a delivery failure before organizer waitlist ret
     return load(path, config)
   })
   mount(tools[2])
-  expect(await screen.findByText(/Add your business mailing address in/)).toBeInTheDocument()
+  expect(await screen.findByText(/add and certify the business mailing address/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings')
   expect(screen.getByRole('button', { name: 'Notify Next' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Offer' })).toBeDisabled()

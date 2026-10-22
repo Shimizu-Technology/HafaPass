@@ -127,7 +127,7 @@ class MessageDeliveryJob < ApplicationJob
     if obsolete_waitlist?(delivery)
       delivery.with_lock do
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active",
-          send_lease_token: nil, send_lease_expires_at: nil)
+          provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
       end
       return
     end

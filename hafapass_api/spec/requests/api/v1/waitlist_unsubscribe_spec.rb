@@ -60,4 +60,14 @@ RSpec.describe "Event waitlist request and unsubscribe", type: :request do
     expect(another.reload).to be_cancelled
     expect(MarketingUnsubscribe.exists?(organization: event.organization, email: entry.email)).to be(true)
   end
+
+  it "does not change an inactive entry or its offer on a repeated event unsubscribe" do
+    entry = create(:waitlist_entry, event: event, status: :cancelled)
+    offer = create(:waitlist_offer, event: event, waitlist_entry: entry, status: :offered)
+    token = WaitlistUnsubscribe.token(entry)
+    post "/api/v1/marketing/unsubscribe/#{token}", params: { scope: "event" }
+    expect(response).to have_http_status(:ok)
+    expect(entry.reload).to be_cancelled
+    expect(offer.reload).to be_offered
+  end
 end

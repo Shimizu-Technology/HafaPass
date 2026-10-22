@@ -37,6 +37,14 @@ RSpec.describe "Api::V1::Waitlist", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
     end
 
+    it "reports validation errors when rejoining a cancelled entry" do
+      existing = create(:waitlist_entry, event: event, ticket_type: ga_ticket, email: "fan@example.com", status: :cancelled)
+      post "/api/v1/events/#{event.slug}/waitlist", params: valid_params.merge(quantity: 11)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("errors")).to be_present
+      expect(existing.reload).to be_cancelled
+    end
+
     it "rejects invalid email" do
       post "/api/v1/events/#{event.slug}/waitlist", params: { email: "bad", name: "Test" }
       expect(response).to have_http_status(:unprocessable_entity)

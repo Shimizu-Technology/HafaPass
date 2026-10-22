@@ -19,11 +19,13 @@ class WaitlistUnsubscribe
 
   def self.stop!(entry, all: false)
     entry.with_lock do
-      entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
-        offer.update!(status: :cancelled, token_version: offer.token_version + 1,
-          cancel_reason: "Buyer stopped waitlist alerts") unless offer.order_id
+      if entry.active?
+        entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|
+          offer.update!(status: :cancelled, token_version: offer.token_version + 1,
+            cancel_reason: "Buyer stopped waitlist alerts") unless offer.order_id
+        end
+        entry.update!(status: :cancelled, expires_at: nil, delivery_failure: nil)
       end
-      entry.update!(status: :cancelled, expires_at: nil, delivery_failure: nil)
     end
     return unless all
 

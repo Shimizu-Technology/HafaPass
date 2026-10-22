@@ -6,15 +6,15 @@ Reviewed on 2026-10-22 against the React frontend at 375px and 1440px using Chro
 | --- | --- |
 | Browse events, event page, choose tickets | Axe at both widths; keyboard link, quantity, and Buy Tickets operation; heading and landmark checks; no horizontal overflow. |
 | Checkout and Stripe payment | Checkout axe and keyboard entry at both widths. Payment element group has an accessible name; a decline alert is focused for recovery and has a unit test. Stripe's hosted iframe requires a provider-backed manual check. |
-| Order confirmation, receipt, refund request | Axe, keyboard receipt download and refund request, and announced refund status at both widths. Low-contrast checkout progress text and small controls were corrected. |
-| My Tickets, transfer, QR view | Axe, arrow-key tab navigation, transfer dialog entry and Escape restoration, QR image name and ticket link names at both widths. Icon links now meet 44px minimum targets; secondary text contrast and reduced-motion behavior improved. |
+| Order confirmation, receipt, refund request | Axe, keyboard receipt download and refund request, and announced refund status at both widths. Checkout progress contrast and control sizes were corrected during the audit; the spec does not assert their exact computed values. |
+| My Tickets, transfer, QR view | Axe, arrow-key tab navigation, transfer dialog entry and Escape restoration, QR image name and ticket link names at both widths. Icon-link target size, secondary-text contrast, and reduced-motion behavior were adjusted during the audit; their computed values and animation state need manual verification. |
 | Sign-in | Axe, keyboard focus, and an alert for the unavailable-provider fallback. Live Clerk widget semantics require a configured Clerk test environment. |
 | Organizer create/edit event and ticket types | Axe, keyboard validation focus, edit input, and ticket workspace navigation at both widths. Draft-delete action contrast and target size improved. |
 | Organizer attendees, filters, export | Axe, keyboard filters and CSV download, and attendee result status at both widths. Ticket detail text contrast improved. |
 | Scanner | Axe, keyboard manual-code admission, and result state at both widths. Camera permission, camera scanning, and a physical device remain manual checks. |
 | Box office | Axe and keyboard sale completion at both widths. Completed-sale ticket code contrast improved. |
 | Cancel and refund | Axe, keyboard disclosure and dialog, labelled reason, enabled confirmation, Escape, and focus restoration at both widths. Disclosure state is exposed with `aria-expanded`/`aria-controls`; danger-zone note contrast improved. |
-| Policy page | Axe, one main landmark, heading, keyboard skip link, and reduced-motion loading indicator at both widths. The nested main landmark was removed. |
+| Policy page | Axe, one main landmark, heading, and keyboard skip link at both widths. The nested main landmark was removed. The reduced-motion loading indicator was adjusted during the audit but its animation state is not asserted by the spec. |
 
 ## Remaining checks
 

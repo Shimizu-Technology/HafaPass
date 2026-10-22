@@ -11,7 +11,12 @@
     "prompt": "Unsubscribe from promotional emails from {{organization}}? Ticket and order updates will still arrive.",
     "saving": "Saving…",
     "action": "Unsubscribe",
-    "unsubscribedConfirmation": "You're unsubscribed from promotional emails from {{organization}}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout."
+    "unsubscribedConfirmation": "You're unsubscribed from promotional emails from {{organization}}. Ticket and order updates will still arrive. To get updates again, opt in at your next checkout.",
+    "waitlistPrompt": "Choose which emails to stop for {{event}}.",
+    "waitlistStopEvent": "Stop alerts for this event",
+    "waitlistStopOrganizer": "Stop all marketing from this organizer",
+    "waitlistEventConfirmation": "Alerts for {{event}} have stopped.",
+    "waitlistOrganizerConfirmation": "All marketing from {{organization}} has stopped."
   },
   "nav": {
     "events": "Events",

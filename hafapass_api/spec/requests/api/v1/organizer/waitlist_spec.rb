@@ -21,7 +21,7 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
       before_quantity = ga_ticket.available_quantity
       post "/api/v1/organizer/events/#{event.id}/waitlist/#{entry.id}/offer", headers: headers
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to include("business mailing address")
+      expect(response.parsed_body["error"]).to include("Marketing postal address", "certify")
       expect(entry.reload).to be_waiting
       expect(ga_ticket.reload.available_quantity).to eq(before_quantity)
     end

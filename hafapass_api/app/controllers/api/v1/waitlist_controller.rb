@@ -31,14 +31,18 @@ module Api
 
         existing = @event.waitlist_entries.find_by(email: entry.email, ticket_type_id: entry.ticket_type_id)
         if existing&.cancelled?
-          existing.with_lock do
-            existing.update!(name: entry.name, phone: entry.phone, quantity: entry.quantity,
+          reactivated = existing.with_lock do
+            existing.update(name: entry.name, phone: entry.phone, quantity: entry.quantity,
               locale: entry.locale, user: entry.user, status: :waiting, requested_at: entry.requested_at,
               request_ip: entry.request_ip, request_user_agent: entry.request_user_agent,
               management_version: existing.management_version + 1, delivery_failure: nil,
               notified_at: nil, expires_at: nil)
           end
-          render json: entry_json(existing), status: :created
+          if reactivated
+            render json: entry_json(existing), status: :created
+          else
+            render json: { errors: existing.errors.full_messages }, status: :unprocessable_entity
+          end
         elsif entry.save
           render json: entry_json(entry), status: :created
         else
