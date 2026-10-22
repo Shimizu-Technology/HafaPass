@@ -75,6 +75,40 @@ RSpec.describe PayoutWithholdingGuard do
     expect(AuditLog.where(auditable: payout, action: "payout.under_withholding_carried")).to exist
   end
 
+  context "when a paid payout has a $24 shortfall" do
+    let(:first) do
+      create(:payout, organization: organization, event: event, amount_cents: 10_000,
+        connected_account: payout.connected_account, settlement: payout.settlement)
+    end
+    let(:second) do
+      create(:payout, organization: organization, event: event, amount_cents: 10_000,
+        connected_account: payout.connected_account, settlement: payout.settlement)
+    end
+
+    before do
+      create(:payout, organization: organization, event: event, settlement: payout.settlement,
+        connected_account: payout.connected_account, status: :paid, amount_cents: 10_000,
+        under_withheld_cents: 2400)
+      organization.with_lock { first.with_lock { described_class.call(payout: first, actor: admin) } }
+      organization.with_lock { second.with_lock { described_class.call(payout: second, actor: admin) } }
+    end
+
+    it "reserves the shortfall only once across two pending payouts" do
+      expect(first.reload.carried_withholding_cents).to eq(2400)
+      expect(second.reload.carried_withholding_cents).to eq(0)
+    end
+
+    it "releases a failed pending payout's reservation for re-evaluation" do
+      PayoutReconciler.call(payout: first, actor: admin, status: "failed",
+        evidence: { reference: "Cancelled before disbursement", confirmed_at: Time.current.iso8601(6),
+          reason: "Payment request cancelled" })
+      organization.with_lock { second.with_lock { described_class.call(payout: second, actor: admin) } }
+
+      expect(first.reload).to be_status_failed
+      expect(second.reload.carried_withholding_cents).to eq(2400)
+    end
+  end
+
   it "refuses any amount rewrite after a payout starts processing" do
     payout.update!(status: :processing)
     expect { payout.update!(withheld_cents: 2400) }

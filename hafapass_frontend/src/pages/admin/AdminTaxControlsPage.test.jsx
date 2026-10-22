@@ -88,7 +88,7 @@ describe('AdminTaxControlsPage', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await userEvent.click(screen.getByRole('button', { name: 'Export full TINs' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/annual_tax_reports/export',
-      { year: String(year), include_full_tins: true, purpose: 'CPA filing preparation' }, expect.anything()))
+      { year: String(year), include_full_tins: true, purpose: 'CPA filing preparation', confirm_full_tins: true }, expect.anything()))
     vi.restoreAllMocks()
   })
 

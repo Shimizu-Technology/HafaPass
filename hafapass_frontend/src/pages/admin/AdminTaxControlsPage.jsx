@@ -50,7 +50,7 @@ function Controls({ identity }) {
     const purpose = window.prompt('Enter the purpose for exporting full taxpayer identification numbers:')?.trim()
     if (!purpose || purpose.length < 10) { setError('Enter a purpose of at least 10 characters.'); return }
     if (!window.confirm('This CSV contains full taxpayer identification numbers. Export it for the stated purpose?')) return
-    download('/admin/annual_tax_reports/export', { year, include_full_tins: true, purpose }, `annual-payees-${year}-SENSITIVE-FULL-TINS.csv`)
+    download('/admin/annual_tax_reports/export', { year, include_full_tins: true, purpose, confirm_full_tins: true }, `annual-payees-${year}-SENSITIVE-FULL-TINS.csv`)
   }
 
   const matchingDownload = () => {

@@ -37,6 +37,9 @@ class Api::V1::Admin::AnnualTaxReportsController < Api::V1::Admin::BaseControlle
   def export
     full_tins = ActiveModel::Type::Boolean.new.cast(params[:include_full_tins])
     purpose = params[:purpose].to_s.strip
+    if full_tins && params[:confirm_full_tins] != true && params[:confirm_full_tins] != "true"
+      return render json: { error: "Explicitly confirm full-TIN export" }, status: :unprocessable_entity
+    end
     if full_tins && !BackupWithholding.safe_reason?(purpose)
       error = BackupWithholding.safe_text?(purpose) ?
         "Full-TIN export requires a 10-1000 character purpose" : BackupWithholding::TIN_WARNING

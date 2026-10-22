@@ -119,11 +119,12 @@ class PayoutReconciler
         0
       end
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at", "under_withheld_cents")
-      payout.update!(status: status, provider_payout_id: external_id,
+      updates = { status: status, provider_payout_id: external_id,
         paid_at: status == "paid" ? confirmed_at : payout.paid_at,
-        under_withheld_cents: shortfall,
         failure_code: status == "failed" ? "reconciled_failure" : nil,
-        failure_message: status == "failed" ? normalized.fetch("reason") : nil)
+        failure_message: status == "failed" ? normalized.fetch("reason") : nil }
+      updates[:under_withheld_cents] = shortfall if status == "paid"
+      payout.update!(updates)
       if shortfall.positive?
         AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
           organization: payout.organization, before_data: { under_withheld_cents: 0 },

@@ -211,7 +211,8 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(row["payee_tin"]).to eq("***-**-5678")
     expect(response.body).not_to include(tax.tin)
     post "/api/v1/admin/annual_tax_reports/export",
-      params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation" }, headers: auth_headers(admin)
+      params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation", confirm_full_tins: true },
+      headers: auth_headers(admin)
     expect(CSV.parse(response.body, headers: true).first["payee_tin"]).to eq(tax.tin)
     expect(response.headers["Content-Disposition"]).to include("SENSITIVE-FULL-TINS")
     expect(row["payer_tin"]).to eq("SET_TAX_PAYER_TIN")
@@ -251,8 +252,20 @@ RSpec.describe "Admin tax operations", type: :request do
   end
 
   it "requires a purpose for a full-TIN export" do
-    post "/api/v1/admin/annual_tax_reports/export", params: { year: 2026, include_full_tins: true }, headers: auth_headers(admin)
+    post "/api/v1/admin/annual_tax_reports/export",
+      params: { year: 2026, include_full_tins: true, confirm_full_tins: true }, headers: auth_headers(admin)
     expect(response).to have_http_status(:unprocessable_entity)
+    expect(AuditLog.where(action: "annual_tax_report.exported")).not_to exist
+  end
+
+  it "requires explicit confirmation for the annual full-TIN CSV" do
+    [nil, false, "false", "1"].each do |confirmation|
+      post "/api/v1/admin/annual_tax_reports/export",
+        params: { year: 2026, include_full_tins: true, purpose: "CPA filing preparation",
+          confirm_full_tins: confirmation }.compact, headers: auth_headers(admin)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("error")).to include("Explicitly confirm")
+    end
     expect(AuditLog.where(action: "annual_tax_report.exported")).not_to exist
   end
 

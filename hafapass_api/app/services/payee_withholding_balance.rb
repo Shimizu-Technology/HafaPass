@@ -10,10 +10,12 @@ class PayeeWithholdingBalance
   end
 
   def self.outstanding(organization:, key:, excluding: nil)
-    payouts = organization.payouts.where(status: [:processing, :paid]).to_a
+    payouts = organization.payouts.where(status: [:pending, :held, :processing, :paid]).to_a
     payouts.reject! { |payout| payout.id == excluding&.id }
     matching = payouts.select { |payout| key_for(payout) == key }
-    [matching.sum(&:under_withheld_cents) - matching.sum(&:carried_withholding_cents), 0].max
+    shortfall = matching.select { |payout| payout.status_processing? || payout.status_paid? }
+      .sum(&:under_withheld_cents)
+    [shortfall - matching.sum(&:carried_withholding_cents), 0].max
   end
 
   def self.for_tax(tax)
