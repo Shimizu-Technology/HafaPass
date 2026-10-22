@@ -1,6 +1,6 @@
 # HåfaPass policy and professional review register
 
-Status: **draft, not professionally approved**. Engineering version `2026-10-counsel-draft-2`; registry status `draft-pending-legal-review`. The public text contains no bracketed counsel instructions. [Counsel review packet](COUNSEL_REVIEW_PACKET.md) contains the legal/tax issues, risk levels, sources and decision checklist. No document is certified for production by an attorney, CPA or privacy reviewer.
+Status: **draft, not professionally approved**. Engineering version `2026-10-counsel-draft-3`; registry status `draft-pending-legal-review`. The public text contains no bracketed counsel instructions. [Counsel review packet](COUNSEL_REVIEW_PACKET.md) contains the legal/tax issues, risk levels, sources and decision checklist. No document is certified for production by an attorney, CPA or privacy reviewer.
 
 | Artifact | Live route | Reviewer | Evidence needed | State |
 |---|---|---|---|---|
@@ -17,13 +17,13 @@ The linked live site may still serve an older version until this branch is integ
 
 ## Engineering verification
 
-The draft was checked against the Rails refund, transfer, dispute, tax, retention, email and translation paths and the React checkout and policy routes. After merging `main` at `dc0e282`, the full backend suite passed (2,091 examples, 0 failures); repository-wide RuboCop inspected 802 files with no offenses; Brakeman found 0 security warnings; frontend lint, all 1,632 Vitest tests and the production build passed on 2026-10-22. All eight existing live policy URLs returned HTTP 200 on 2026-10-21. These checks do not establish that the new draft is deployed, professionally approved, or fully accessible. No agent-operated browser or mobile acceptance walkthrough was run for this policy-copy change; review the rendered policy pages and checkout after deployment.
+This review started from `origin/main` at `f11e191` on 2026-10-22. The policy, refund, email, export, retention, tax and pricing paths were inspected in that tree. Local checks on the branch before commit: 89 focused Rails examples and 20 policy-related frontend tests passed; RuboCop on five changed Ruby files, frontend lint, production build and Impeccable advisory scan passed (no advisory findings). In a local test environment, the buyer terms loaded at desktop width and privacy loaded at desktop and phone widths with the new version, draft notice, legal name and contact; the phone view had no horizontal overflow. These checks do not verify production settings, real email delivery, payment/refund outcomes or an end-to-end checkout. Existing live URL checks from the prior draft do not prove this version is deployed or professionally approved. Verify the rendered pages, checkout and configured support mailbox before any operational approval.
 
 ## Engineering and acceptance controls
 
 `PolicyRegistry` renders the YAML templates with admin-set platform/contact/fee/payout values. It rejects unknown placeholders and bracketed drafting notes. The exact unrendered text and version participate in buyer, organizer and register digests; review notes do not. Changing only a support address does not change digests, but this draft's text **and version** do. Buyer checkouts record the current buyer-policy snapshot. Organizers must re-accept the Organizer Agreement before publishing, and an admin must approve the new register digest. The draft-launch acknowledgment is an operations record, not counsel approval. Verify these gates and record the approved source, effective date, reviewer and exact digest after professionals sign off. Never commit signatures, private legal advice or identity documents.
 
-This version replaces `2026-10-launch-draft`. The earlier approval and organizer acceptances are stale. The live deployment needs re-acceptance and re-approval; the lead should schedule these before serving the new text. Until deployment, do not describe these drafts as live.
+This version replaces `2026-10-counsel-draft-2`. The earlier approval and organizer acceptances are stale. The live deployment needs re-acceptance and re-approval; the lead should schedule these before serving the new text. Until deployment, do not describe these drafts as live.
 
 ## Outstanding legal-review items
 
@@ -51,3 +51,24 @@ This table mirrors `review_notes` in `hafapass_api/config/policies.yml`; the YAM
 | retention | Scanner devices | Counsel and operations to approve an enforced scanner-data deletion and lost-device procedure; current wording is an organizer instruction. |
 | cookies | Payment and error monitoring | Privacy counsel to review current Clerk, Stripe and Sentry SDK storage/cookie inventory and whether consent controls are required for any nonessential activity. |
 | accessibility | What we support | Accessibility reviewer to test actual keyboard and assistive technology journeys before making a broad conformance claim. |
+
+## October 22 implementation review
+
+Risk levels rank what must be checked before operational approval, not legal conclusions. The [counsel packet](COUNSEL_REVIEW_PACKET.md#october-22-policy-findings-and-primary-sources) links the primary sources and fuller questions.
+
+| Risk | Finding | Current disposition |
+|---|---|---|
+| High | A shared fee-setting change can affect new orders on an already published event; the agreement said changes applied only to newly published events. | The agreement now says to check current terms before further sales. Product follow-up: notify organizers with published events of fee changes. |
+| High | Cancellation refunds are automated only for eligible Stripe card payments. Cash, other card providers, disputes and failed attempts need manual reconciliation. | Buyer and organizer policies keep these exceptions explicit; assign an operator and deadline before approving the register. |
+| High | The public deletion language implied a seven-year minimum and complete deletion of other records, although neither process exists. | Public text now states the actual retention state. Counsel and CPA must approve a schedule and legal-hold procedure. |
+| Medium | A blank support setting sent policy readers to order recovery, which cannot receive privacy or accessibility requests. | Policy rendering now falls back to the mailbox in the support-email migration; confirm that mailbox is monitored. |
+| Medium | Repository README names Shimizu Technology LLC while receipts and policies used Shimizu Technology. | Seller identity now uses the LLC name. Verify the registered name and Stripe merchant record before approval. |
+| Medium | The refund page's absolute used/transfer/dispute exclusion conflicted with the cancellation promise. | Clarified ordinary requests, dispute handling and nonwaivable cancellation rights. |
+| Low | Accessibility statement promised a five-business-day response without a tracked service level. | Removed the deadline and retained a direct assistance route. |
+
+### Acceptance and deployment checks
+
+- Confirm policy register version, `draft-pending-legal-review` status, all counsel notes, no unfilled placeholders, and exact digest.
+- Confirm the legal name on policy pages, receipts and emails against registration and payment-provider records; confirm the configured support mailbox and mailing address.
+- Confirm organizers re-accept the new agreement and an admin approves the new register digest. This operational acknowledgment does not constitute counsel approval.
+- Test all-in event, ticket and checkout totals, cancellation exceptions, export permissions and two-day file expiry in the deployed build. The code inspection does not establish production configuration or delivery.

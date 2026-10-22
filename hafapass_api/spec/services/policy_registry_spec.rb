@@ -85,7 +85,7 @@ RSpec.describe PolicyRegistry do
   end
 
   it "serves the launch draft, clearly marked as pending legal review" do
-    expect(described_class.version).to eq("2026-10-counsel-draft-2")
+    expect(described_class.version).to eq("2026-10-counsel-draft-3")
     expect(described_class.status).to eq("draft-pending-legal-review")
     expect(described_class.public_documents.keys).to include(
       "buyer-terms", "refunds", "privacy", "organizer-agreement", "acceptable-use", "retention", "cookies", "accessibility"
@@ -113,17 +113,17 @@ RSpec.describe PolicyRegistry do
     text = JSON.generate(described_class.public_documents)
 
     expect(text).not_to match(/\{\{[a-z_]*\}\}/)
-    expect(text).to include("contact us at help@example.test", "Shimizu Technology", "within 5 business days after your event",
+    expect(text).to include("contact us at help@example.test", "Shimizu Technology LLC", "within 5 business days after your event",
       "4.5% of each paid ticket's price plus $0.75 per paid ticket; free tickets carry no service fee; " \
       "card processing is paid by HåfaPass out of this fee")
     expect(text).not_to include("privacy@hafapass.com")
     expect(text).not_to match(/service fee is a tax|fee \(tax\)/i)
   end
 
-  it "falls back to a plain support pointer when no support email is configured" do
+  it "falls back to a usable support mailbox when no support email is configured" do
     SiteSetting.instance.update!(platform_email: nil)
     text = described_class.public_documents.to_s
-    expect(text).to include("contact us through Find your tickets → Contact support (/orders/recover)")
+    expect(text).to include("contact us at shimizutechnology@gmail.com")
     expect(text).not_to include("Help page")
   end
 
@@ -136,7 +136,7 @@ RSpec.describe PolicyRegistry do
 
     expect(profile.reload).not_to be_policy_accepted
     expect(described_class.buyer_terms[:digest]).not_to eq(buyer_digest)
-    expect(described_class.buyer_terms[:version]).to eq("2026-10-counsel-draft-2")
+    expect(described_class.buyer_terms[:version]).to eq("2026-10-counsel-draft-3")
   end
 
   it "treats acceptance of the previous pilot draft as stale" do
