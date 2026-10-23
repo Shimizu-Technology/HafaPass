@@ -92,8 +92,8 @@ try {
         socialImages: [...document.querySelectorAll('meta[property="og:image"],meta[name="twitter:image"]')].map(tag => ({ type: tag.getAttribute('property') || tag.name, image: tag.content })) }))
       const result = { label, viewport, routePath, ...audit, frames, requests: requests.map(request => ({ ...request, at: request.at - started })), errors }
       await writeFile(path.join(dir, 'timeline.json'), JSON.stringify(result, null, 2))
-      console.log(JSON.stringify({ label, name, firstShellAt: audit.firstShellAt, replacements: audit.replacements, removals: audit.removals, cls: audit.cls, clerkLoaded: audit.clerkLoaded, clerkLoadedAt: audit.clerkLoadedAt,
-        eventsRequests: requests.filter(request => request.path === '/api/v1/events').length, configRequests: requests.filter(request => request.path === '/api/v1/config').length, frames: frames.length, errors }))
+      process.stdout.write(JSON.stringify({ label, name, firstShellAt: audit.firstShellAt, replacements: audit.replacements, removals: audit.removals, cls: audit.cls, clerkLoaded: audit.clerkLoaded, clerkLoadedAt: audit.clerkLoadedAt,
+        eventsRequests: requests.filter(request => request.path === '/api/v1/events').length, configRequests: requests.filter(request => request.path === '/api/v1/config').length, frames: frames.length, errors }) + '\n')
       await context.close()
     }
   }

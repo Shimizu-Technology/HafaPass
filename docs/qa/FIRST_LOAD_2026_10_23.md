@@ -1,6 +1,6 @@
 # First-load QA — October 23, 2026
 
-Source: implementation commit `7d63c68cbad418ee30e354d65e4f4423bb1eb730`, based on `main` at `677e46db`. Agent-executed affected-flow QA, using Node 22.22.3 and Chromium on Leon’s Mac. The later evidence commit changes documentation only.
+Source: application implementation commit `7d63c68cbad418ee30e354d65e4f4423bb1eb730`, based on `main` at `677e46db`. Agent-executed affected-flow QA, using Node 22.22.3 and Chromium on Leon’s Mac. Later commits record evidence and change audit-script reporting to intentional stdout; production application behavior is unchanged.
 
 ## Context and acceptance
 
@@ -40,10 +40,10 @@ T3 preview snapshots twice returned `Preview automation snapshot timed out after
 
 - ESLint: passed, zero warnings.
 - Vitest: 161 files, 1,733 tests passed. Tests run with `VITE_CLERK_PUBLISHABLE_KEY=''`, matching CI’s absent local env; auth tests explicitly inject a test key. Existing jsdom network-error stderr occurs in the passing suite.
-- `npm run build`: passed, including safe translation preparation and Vite/PWA output. Final build release metadata identifies `7d63c68c`.
+- `npm run build`: passed, including safe translation preparation and Vite/PWA output. The browser evidence build release metadata identifies `7d63c68c`.
 - `PLAYWRIGHT_PORT=5224 npm run test:e2e -- --workers=2`: all 91 passed. The configurable strict port avoids concurrent tasks’ listeners; an occupied 5222 was left untouched.
 - Production dependency audit: zero vulnerabilities.
-- Release freeze: inactive; hygiene check passed.
+- Release freeze: inactive; hygiene check passed after replacing the newly tracked audit script’s debug-style summary with intentional stdout reporting. CI caught that reporting issue; no application logic changed in the fix.
 - Impeccable 4.6.0 advisory scan of changed UI: no findings (`[]`).
 
 Expectation changes are intentional: pending public health now renders the marketplace; a later health failure shows the existing degraded banner rather than discarding browsing state. Scanner-only gate assertions remain. Static HTML tests now expect a wordmark inside root and `og-default.jpg` instead of an empty root and square icon.
