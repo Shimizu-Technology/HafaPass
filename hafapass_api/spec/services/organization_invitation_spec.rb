@@ -111,4 +111,13 @@ RSpec.describe OrganizationInvitation do
     expect(assignment).to have_attributes(status: "active", expires_at: nil)
     expect(assignment).to be_effective
   end
+  it "accepts a whitespace-normalized plus-address only for that exact verified address" do
+    recipient = create(:user, email: "team+door@example.com")
+    allow(ClerkIdentity).to receive(:verified_email_addresses).with(recipient.clerk_id).and_return(["team+door@example.com"])
+    pending, token = OrganizationTeam.invite!(organization: organization, actor: create(:user, :admin),
+      email: " Team+Door@Example.com  ", role: "scanner", deliver: false)
+    expect(pending.invited_email).to eq("team+door@example.com")
+    expect { described_class.accept!(token: token, user: invitee) }.to raise_error(described_class::InvitationError)
+    expect(described_class.accept!(token: token, user: recipient)).to be_effective
+  end
 end

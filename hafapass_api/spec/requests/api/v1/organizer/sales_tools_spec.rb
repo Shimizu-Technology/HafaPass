@@ -139,4 +139,32 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(item.catalog_fulfillment.reload).to be_fulfilled
     expect(item.reload.organizer_proceeds_cents).to eq(catalog.price_cents)
   end
+
+  it "lets an authorized member review a failed campaign, save a draft, then reschedule it as themselves" do
+    former = create(:user)
+    campaign = create(:communication_campaign, event: event, status: :failed,
+      scheduled_by_user: former, scheduled_at: 1.minute.ago, last_error: "Sender lost permission")
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Reviewed message", scheduled_at: nil },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "draft", subject: "Reviewed message", last_error: nil)
+    expect(campaign.message_deliveries).to be_empty
+
+    expect do
+      patch "#{base}/communication_campaigns/#{campaign.id}", params: { scheduled_at: 2.days.from_now.iso8601 }, headers: headers
+    end.to have_enqueued_job(CommunicationCampaignJob).once
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id)
+  end
+
+  it "recovers a failed future campaign even when the reviewed schedule is unchanged" do
+    former = create(:user)
+    campaign = create(:communication_campaign, event: event, status: :failed,
+      scheduled_by_user: former, scheduled_at: 2.days.from_now, last_error: "Sender lost permission")
+    expect do
+      patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Reviewed", scheduled_at: campaign.scheduled_at.iso8601(6) }, headers: headers
+    end.to have_enqueued_job(CommunicationCampaignJob).once
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
+  end
 end

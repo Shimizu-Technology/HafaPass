@@ -26,7 +26,7 @@ class OrganizationMembership < ApplicationRecord
   # pending / accepted / expired / revoked, for people reading a team list.
   def invitation_status(at: Time.current)
     return "revoked" if status_revoked?
-    return "accepted" if status_active?
+    return effective?(at: at) ? "accepted" : "access_ended" if status_active?
     return "expired" if invitation_expires_at.nil? || invitation_expires_at <= at
 
     "pending"

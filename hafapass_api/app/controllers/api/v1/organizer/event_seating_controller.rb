@@ -42,16 +42,17 @@ module Api
           reason = params[:reason].to_s.strip
           return render json: { error: "A suspension reason is required" }, status: :unprocessable_entity if reason.blank?
 
-          @event.with_lock { @event.update!(sales_suspended_at: Time.current, sales_suspension_reason: reason) }
+          @event.with_lock { @event.update!(organizer_sales_suspended_at: Time.current, organizer_sales_suspension_reason: reason) }
           Seating::Audit.record!(event: @event, action: "seating.sales_suspended", actor: current_user,
             metadata: { reason: reason })
           render json: { suspended: true, reason: reason }
         end
 
         def resume
-          @event.with_lock { @event.update!(sales_suspended_at: nil, sales_suspension_reason: nil) }
+          @event.with_lock { @event.update!(organizer_sales_suspended_at: nil, organizer_sales_suspension_reason: nil) }
           Seating::Audit.record!(event: @event, action: "seating.sales_resumed", actor: current_user)
-          render json: { suspended: false }
+          render json: { suspended: @event.sales_suspended? || @event.policy_hold?, organizer_suspended: false,
+            platform_suspended: @event.sales_suspended_at.present? || @event.policy_hold? }
         end
 
         def release_accessible

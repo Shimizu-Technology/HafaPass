@@ -113,7 +113,11 @@ module Api
         end
 
         def entry_params
-          params.permit(:guest_name, :guest_email, :guest_phone, :notes, :quantity, :ticket_type_id)
+          attributes = params.permit(:guest_name, :guest_email, :guest_phone, :notes, :quantity, :ticket_type_id)
+          if attributes.key?(:ticket_type_id)
+            attributes[:ticket_type_id] = @event.ticket_types.find(attributes[:ticket_type_id]).id
+          end
+          attributes
         end
 
         def entry_json(entry)

@@ -2,9 +2,9 @@
 
 # Team changes for one organization, shared by the organizer Settings page,
 # the event Team page and the admin organization console. Callers authorize
-# first; this service enforces the rules that hold for everyone (owners are
-# only created by an admin or an ownership transfer, revoked people lose
-# event access, every change is audited).
+# first; this service rechecks authority under the organization lock. Owners
+# are only created by an admin or an ownership transfer, revoked people lose
+# event access, and every change is audited.
 class OrganizationTeam
   class TeamError < StandardError; end
 
@@ -32,7 +32,10 @@ class OrganizationTeam
 
       membership = nil
       token = nil
-      organization.with_lock do
+      OrganizationInvitationQuota.within!(organization: organization, actor: actor, email: email) do
+        authorize_mutation!(actor, organization, event: event_assignment&.fetch(:event))
+        raise TeamError, "That person is already on this team" if active_member_for(organization, email)
+
         reusable = find_reusable(organization, email)
         if reusable&.owner? && !allow_owner
           raise TeamError, "That email has an Owner invitation. Only a HåfaPass admin can change it."
@@ -81,9 +84,12 @@ class OrganizationTeam
       raise TeamError, e.record.errors.full_messages.to_sentence
     end
 
-    def resend!(membership:, actor:, request: nil)
+    def resend!(membership:, actor:, request: nil, event: nil)
       token = nil
-      membership.with_lock do
+      OrganizationInvitationQuota.within!(organization: membership.organization, actor: actor, email: membership.invited_email) do
+        membership.lock!
+        authorize_mutation!(actor, membership.organization,
+          event: event && OrganizationRoles::EVENT_STAFF_INVITE_ROLES.include?(membership.role) ? event : nil)
         raise TeamError, "Only pending or expired invitations can be resent" unless membership.status_invited?
         if membership.owner?
           raise TeamError, "Only a HåfaPass admin can resend an Owner invitation" unless actor&.admin?
@@ -117,11 +123,13 @@ class OrganizationTeam
     end
 
     def revoke!(membership:, actor:, request: nil)
-      raise TeamError, "Transfer ownership before removing the owner" if membership.owner? && membership.status_active?
-      raise TeamError, "This person's access is already removed" if membership.status_revoked?
-      raise TeamError, "Only a HåfaPass admin can cancel an Owner invitation" if membership.owner? && !actor&.admin?
+      membership.organization.with_lock do
+        membership.lock!
+        authorize_mutation!(actor, membership.organization)
+        raise TeamError, "Transfer ownership before removing the owner" if membership.owner? && membership.status_active?
+        raise TeamError, "This person's access is already removed" if membership.status_revoked?
+        raise TeamError, "Only a HåfaPass admin can cancel an Owner invitation" if membership.owner? && !actor&.admin?
 
-      membership.with_lock do
         OrganizationInvitation.revoke!(membership)
         if membership.user_id
           membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id)
@@ -135,16 +143,21 @@ class OrganizationTeam
 
     def change_role!(membership:, role:, actor:, request: nil, expires_at: :unchanged)
       role = role.to_s
-      if membership.owner? || role == "owner"
-        raise TeamError, "Ownership changes use Transfer ownership"
-      end
-      raise TeamError, "Choose a valid team role" unless INVITABLE_ROLES.include?(role)
-      raise TeamError, "This person's access was removed. Invite them again instead." if membership.status_revoked?
+      before_data = nil
+      membership.organization.with_lock do
+        membership.lock!
+        authorize_mutation!(actor, membership.organization)
+        if membership.owner? || role == "owner"
+          raise TeamError, "Ownership changes use Transfer ownership"
+        end
+        raise TeamError, "Choose a valid team role" unless INVITABLE_ROLES.include?(role)
+        raise TeamError, "This person's access was removed. Invite them again instead." if membership.status_revoked?
 
-      before_data = snapshot(membership)
-      attributes = { role: role }
-      attributes[:expires_at] = expires_at unless expires_at == :unchanged
-      membership.update!(attributes)
+        before_data = snapshot(membership)
+        attributes = { role: role }
+        attributes[:expires_at] = expires_at unless expires_at == :unchanged
+        membership.update!(attributes)
+      end
       AuditLogger.record!(action: "organization.membership_updated", auditable: membership, actor: actor,
         organization: membership.organization, before_data: before_data, after_data: snapshot(membership),
         request: request)
@@ -168,7 +181,7 @@ class OrganizationTeam
         end
 
         owners = organization.organization_memberships.where(role: :owner).where.not(id: to_membership.id)
-        actor_owner = owners.find_by(user_id: actor.id)
+        actor_owner = owners.effective.find_by(user_id: actor.id)
         raise TeamError, "Only the owner or a HåfaPass admin can transfer ownership" unless actor_owner || actor.admin?
 
         previous = (actor_owner ? [actor_owner] : owners.to_a)
@@ -217,6 +230,14 @@ class OrganizationTeam
     end
 
     private
+
+    def authorize_mutation!(actor, organization, event: nil)
+      permission = event ? :manage_staff : :manage_members
+      return if actor && OrganizationAuthorization.allowed?(user: actor, organization: organization,
+        permission: permission, event: event)
+
+      raise TeamError, "Your permission to manage this team has changed. Refresh the team before trying again."
+    end
 
     # Active rows whose owner-chosen access end date has passed still belong
     # to that person; they are never reopened as invitations.

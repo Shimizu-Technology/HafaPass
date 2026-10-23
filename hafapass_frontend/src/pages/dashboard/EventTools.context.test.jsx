@@ -350,3 +350,53 @@ it('polls while translating, explains a paused service and flags wording whose E
     vi.useRealTimers()
   }
 })
+
+
+it.each(['draft', 'scheduled'])('recovers a failed campaign as %s after reviewing saved content', async status => {
+  const campaign = { id: 99, name: 'Door reminder', subject: 'Doors open soon', body: 'Bring your ticket.',
+    segment: { type: 'ticket_type', ticket_type_id: 17 }, status: 'failed', recipient_count: 0,
+    last_error: 'Needs attention: review and reschedule this campaign.' }
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/communication_campaigns')
+    ? Promise.resolve({ data: { communication_campaigns: [campaign] } }) : getDefault(path, config))
+  apiClient.put.mockImplementation(async (path, payload) => {
+    Object.assign(campaign, payload, { status, last_error: null })
+    return { data: campaign }
+  })
+  mount(tools[1])
+  await userEvent.click(await screen.findByRole('button', { name: 'Review and reschedule' }))
+  expect(screen.getByLabelText('Internal campaign name')).toHaveValue('Door reminder')
+  expect(screen.getByLabelText('Internal campaign name')).toHaveFocus()
+  expect(screen.getByLabelText('Email subject')).toHaveValue('Doors open soon')
+  expect(screen.getByLabelText('Message')).toHaveValue('Bring your ticket.')
+  expect(screen.getByLabelText('Ticket type')).toHaveValue('17')
+  expect(screen.getByText(/Saving does not send email/)).toBeVisible()
+  await userEvent.clear(screen.getByLabelText('Email subject'))
+  await userEvent.type(screen.getByLabelText('Email subject'), 'Reviewed subject')
+  if (status === 'scheduled') await userEvent.type(screen.getByLabelText('Send at (optional)'), '2030-10-24T18:00')
+  await userEvent.click(screen.getByRole('button', { name: 'Save campaign changes' }))
+  await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/11/communication_campaigns/99',
+    expect.objectContaining({ subject: 'Reviewed subject', segment: { type: 'ticket_type', ticket_type_id: 17 }, scheduled_at: status === 'scheduled' ? '2030-10-24T18:00' : null }), expect.anything()))
+  expect(apiClient.post).not.toHaveBeenCalled()
+  await userEvent.click(await screen.findByRole('button', { name: 'Send now' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/communication_campaigns/99/send_now', undefined, expect.anything())
+})
+
+it('retains failed campaign edits after validation fails', async () => {
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/communication_campaigns')
+    ? Promise.resolve({ data: { communication_campaigns: [{ id: 99, name: 'Reminder', body: 'Saved message', status: 'failed' }] } }) : getDefault(path, config))
+  apiClient.put.mockRejectedValue({ response: { status: 422, data: { errors: ['Subject is required'] } } })
+  mount(tools[1])
+  await userEvent.click(await screen.findByRole('button', { name: 'Review and reschedule' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save campaign changes' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Subject is required')
+  expect(screen.getByLabelText('Message')).toHaveValue('Saved message')
+  expect(screen.getByRole('button', { name: 'Save campaign changes' })).toBeEnabled()
+})
+
+it('hides campaign recovery and send actions from members without marketing permission', async () => {
+  rows[11] = { ...rows[11], permissions: { view_attendees: true } }
+  mount(tools[1]); await screen.findByRole('heading', { name: 'CRM and attendee communication' })
+  expect(screen.queryByRole('button', { name: 'Review and reschedule' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Send now' })).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Message')).not.toBeInTheDocument()
+})

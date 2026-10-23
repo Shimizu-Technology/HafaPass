@@ -17,12 +17,20 @@ module CommunicationCampaigns
 
     def call
       deliveries = []
-      CommunicationCampaign.transaction do
+      authorization_error = nil
+      organization = campaign.event.organization
+      organization.with_lock do
         campaign.lock!
         unless campaign.draft? || campaign.scheduled?
           raise CampaignError, "Only draft or scheduled campaigns can be sent"
         end
-        organization = campaign.event.organization
+        sender = @actor || campaign.scheduled_by_user || campaign.created_by_user
+        unless sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
+            permission: :manage_marketing, event: campaign.event)
+          authorization_error = "Needs attention: the person who scheduled or sent this campaign no longer has permission to send messages. Ask an authorized team member to review and reschedule it."
+          campaign.update!(status: :failed, last_error: authorization_error)
+          next
+        end
         unless organization.marketing_postal_address_ready?
           raise CampaignError, "The organization owner must certify a valid marketing postal address in Organization settings before sending email"
         end
@@ -30,13 +38,13 @@ module CommunicationCampaigns
           raise CampaignError, "PUBLIC_API_URL is required for one-click unsubscribe"
         end
 
-        campaign.update!(status: :sending, started_at: Time.current)
+        campaign.update!(status: :sending, started_at: Time.current, sent_by_user: sender, last_error: nil)
         eligible_recipients.each do |recipient|
           normalized = recipient.fetch(:email).strip.downcase
           deliveries << campaign.message_deliveries.create!(
             event: campaign.event,
             order: recipient[:order],
-            requested_by: campaign.created_by_user,
+            requested_by: sender,
             channel: "email",
             template: "communication_campaign",
             recipient: normalized,
@@ -51,6 +59,8 @@ module CommunicationCampaigns
         end
         campaign.update!(status: :sent, sent_at: Time.current, recipient_count: deliveries.length)
       end
+      raise CampaignError, authorization_error if authorization_error
+
       deliveries.each { |delivery| MessageDeliveryJob.perform_later(delivery.id) }
       campaign
     rescue ActiveRecord::RecordNotUnique

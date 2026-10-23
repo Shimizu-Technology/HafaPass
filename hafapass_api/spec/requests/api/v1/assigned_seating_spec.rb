@@ -118,7 +118,7 @@ RSpec.describe "Assigned seating APIs", type: :request do
       headers: auth_headers(marketer), params: { reason: "Unauthorized test" }
 
     expect(response).to have_http_status(:forbidden)
-    expect(event.reload.sales_suspended_at).to be_nil
+    expect(event.reload.organizer_sales_suspended_at).to be_nil
   end
 
   def create_accessible_layout(companion_group:)
@@ -174,11 +174,11 @@ RSpec.describe "Assigned seating APIs", type: :request do
   it "audits emergency sales suspension and resumption" do
     post "/api/v1/organizer/events/#{event.id}/seating/suspend", headers: headers, params: { reason: "Venue evacuation" }
     expect(response).to have_http_status(:ok)
-    expect(event.reload.sales_suspension_reason).to eq("Venue evacuation")
+    expect(event.reload.organizer_sales_suspension_reason).to eq("Venue evacuation")
 
     post "/api/v1/organizer/events/#{event.id}/seating/resume", headers: headers
     expect(response).to have_http_status(:ok)
-    expect(event.reload.sales_suspended_at).to be_nil
+    expect(event.reload.organizer_sales_suspended_at).to be_nil
     expect(event.seat_audit_events.pluck(:action)).to eq(["seating.sales_suspended", "seating.sales_resumed"])
   end
 end

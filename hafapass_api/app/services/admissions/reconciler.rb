@@ -163,6 +163,11 @@ module Admissions
       ticket.order.lock!
       ticket.lock!
       validate_authorization!
+      unless OrganizationAuthorization.allowed?(user: actor, organization: device.organization,
+          permission: :manage_attendees, event: device.event)
+        return record_action(input, ticket: ticket, result: :rejected,
+          reason_code: "reversal_not_authorized", kind: :reverse, reverses_action: original)
+      end
       if original.reversal_action.present?
         return record_action(input, ticket: ticket, result: :conflict, reason_code: "already_reversed",
           kind: :reverse, reverses_action: original)

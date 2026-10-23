@@ -6,6 +6,8 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   before_action :set_assignment, only: [:update, :destroy]
   before_action :set_staff_invitation, only: [:resend_invitation, :revoke_invitation]
 
+  around_action :serialize_staff_mutation, only: [:create, :update, :destroy, :resend_invitation, :revoke_invitation]
+
   def index
     candidates = current_organization.organization_memberships.effective.includes(:user).order(:id).filter_map do |membership|
       next unless membership.user
@@ -69,7 +71,7 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
       return render json: { error: "Only the organization owner can resend this invitation" }, status: :forbidden
     end
 
-    token = OrganizationTeam.resend!(membership: @staff_invitation, actor: current_user, request: request)
+    token = OrganizationTeam.resend!(membership: @staff_invitation, actor: current_user, request: request, event: @event)
     render json: staff_invitation_json(@staff_invitation.reload).merge(OrganizationTeam.link_json(token))
   rescue OrganizationTeam::TeamError => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -93,6 +95,16 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   end
 
   private
+
+  # Event manager assignments can grant marketing access. Share the team
+  # lock with campaign dispatch and recheck authority after any lock wait.
+  def serialize_staff_mutation
+    current_user.with_lock("FOR NO KEY UPDATE") do
+      current_organization.with_lock do
+        yield if authorize_organization!(:manage_staff, event: @event)
+      end
+    end
+  end
 
   # One step for the person running the event: invite by email with Box
   # office or Door scanner access to this event. People already on the team

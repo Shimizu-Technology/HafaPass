@@ -49,7 +49,7 @@ class Api::V1::CheckInsController < ApplicationController
     end
 
     Ticket.transaction do
-      ticket.check_in!(credential: credential)
+      ticket.check_in!(credential: credential, actor: current_user)
       AuditLogger.record!(
       action: "ticket.checked_in",
       auditable: ticket,

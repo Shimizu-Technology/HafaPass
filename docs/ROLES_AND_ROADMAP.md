@@ -40,8 +40,8 @@ Authorization is based on organization membership plus explicit event assignment
 | Role | Core permissions | Explicit exclusions |
 |---|---|---|
 | Owner | Organization, members, events, finance, payout settings | Cannot bypass platform risk/compliance controls |
-| Manager | Events, inventory, staff, attendees, communications | No ownership transfer or payout-bank changes |
-| Finance | Orders, refunds subject to policy, settlements, payouts | No event content or staff management by default |
+| Manager | Events, inventory, staff, attendees, communications | Cannot cancel events (cancellation requires refund authority), move money, transfer ownership or change payout settings |
+| Finance | Finance exports and reports, refunds, settlements and payouts; buyer contact details in refunds and finance exports | No event content or staff management by default |
 | Marketer | Event content, campaigns, promoter links, audience segments | No buyer payment data, refunds, or payout settings |
 | Box office | Door orders, guest list, attendee lookup, approved adjustments | No payout or organization administration |
 | Scanner | Check-in for assigned events only | No buyer email, revenue, refunds, or event editing |
@@ -68,7 +68,12 @@ Venue managers may see assigned venue events and coordinate venue staff. Venue a
 - Client navigation is never the security boundary.
 - Every protected API action resolves current user, membership/assignment, resource, and permitted command.
 - Organizer-controlled input cannot set partner, featured, verification, payout, admin, or arbitrary lifecycle fields.
-- Staff assignments expire and are scoped to events.
+- Event staff assignments add access for that event only; they expire or can be revoked. Event-only managers cannot clone or generate recurring events.
+- Expired memberships and assignments have no effective access, even when their stored status remains active.
+- Scanner phones that are offline keep working until they reconnect or for up to 24 hours. Removing access stops them as soon as they reconnect. Device leases end sooner if membership, assignment or the event admission window ends.
+- Organizer seating pauses are separate from platform restrictions. Organizers cannot lift or overwrite platform pauses.
+- Managers see sales, but cannot cancel events or move money. Cancellation requires both event management and refund authority.
+- Team invitations have per-person and per-organization hourly limits and a one-minute resend cooldown per recipient.
 - Scanner responses expose only minimum admission data.
 - Finance, refund, role, payout, check-in reversal, resend, and moderation actions create audit records.
 - Support access does not imply unrestricted administrator access.

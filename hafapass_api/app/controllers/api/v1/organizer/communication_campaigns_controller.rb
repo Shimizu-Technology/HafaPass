@@ -52,9 +52,9 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
   def editable_campaign
     campaign = event.communication_campaigns.find(params[:id])
-    return campaign if campaign.draft? || campaign.scheduled?
+    return campaign if campaign.draft? || campaign.scheduled? || campaign.failed?
 
-    render json: { error: "Only draft or scheduled campaigns can be changed" }, status: :unprocessable_entity
+    render json: { error: "Only draft, scheduled or failed campaigns can be changed" }, status: :unprocessable_entity
     nil
   end
 
@@ -64,21 +64,23 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
   def schedule(campaign)
     unless campaign.scheduled_at&.future?
-      campaign.update!(status: :draft) if campaign.scheduled?
+      campaign.update!(status: :draft, last_error: nil) if campaign.scheduled? || campaign.failed?
       return
     end
 
     # Content-only edits retain the existing scheduled job. Enqueuing on every
     # save would leave an unbounded number of no-op jobs in the scheduled set.
-    return unless campaign.saved_change_to_scheduled_at?
+    # Failed campaigns need a new authorized scheduler and job even if that
+    # person keeps the same future send time during review.
+    return unless campaign.saved_change_to_scheduled_at? || campaign.failed?
 
-    campaign.update!(status: :scheduled)
+    campaign.update!(status: :scheduled, scheduled_by_user: current_user, last_error: nil)
     CommunicationCampaignJob.set(wait_until: campaign.scheduled_at).perform_later(campaign.id, campaign.scheduled_at.utc.iso8601)
   end
 
   def serialize(campaign)
     result = campaign.as_json(only: [:id, :name, :subject, :body, :segment, :status, :scheduled_at,
-      :started_at, :sent_at, :recipient_count, :created_at])
+      :started_at, :sent_at, :recipient_count, :created_at, :last_error, :scheduled_by_user_id, :sent_by_user_id])
     return result unless campaign.draft? || campaign.scheduled?
 
     result.merge(audience: CommunicationCampaigns::Sender.new(campaign).audience_counts)

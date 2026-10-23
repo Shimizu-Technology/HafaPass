@@ -4,7 +4,7 @@ module Admissions
   class DeviceRegistrar
     class RegistrationError < StandardError; end
 
-    MAX_AUTHORIZATION = 72.hours
+    MAX_AUTHORIZATION = 24.hours
     EVENT_GRACE = 12.hours
 
     def self.call(**)
@@ -32,6 +32,12 @@ module Admissions
       device = nil
       ScannerDevice.transaction do
         event.lock!
+        unless OrganizationAuthorization.allowed?(user: user, organization: event.organization, permission: :scan, event: event)
+          raise RegistrationError, "You are not assigned to scan this event"
+        end
+        expires_at = authorization_expiration
+        raise RegistrationError, "Scanner authorization has expired" unless expires_at > Time.current
+
         device = event.scanner_devices.lock.find_or_initialize_by(identifier: identifier)
         if device.persisted? && device.user_id != user.id
           raise RegistrationError, "This browser identifier is already registered to another staff member"
@@ -75,6 +81,8 @@ module Admissions
       now = Time.current
       event_limit = (event.ends_at || event.starts_at || now) + EVENT_GRACE
       hard_limit = [event_limit, now + MAX_AUTHORIZATION].min
+      return hard_limit if user.admin?
+
       membership = event.organization.organization_memberships.effective(now).find_by(user: user)
       return now unless membership
 

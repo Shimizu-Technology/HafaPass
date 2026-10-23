@@ -32,6 +32,23 @@ RSpec.describe "Refund reconciliation", type: :request do
     run.items.create!(order: order, status: :needs_manual, amount_cents: 5250)
   end
 
+  it "cannot mutate another organization's cancellation item from the selected organization" do
+    item = cash_item
+    other = create(:organization)
+    create(:organization_membership, organization: other, user: profile.user, role: :owner)
+    path = "/api/v1/organizer/refund_reconciliation/cancellation/#{item.id}/manual_return"
+    expect do
+      post path, params: { reference: "LOCAL-ONLY", returned_at: Time.current.iso8601(6), note: "Local cash return evidence" },
+        headers: auth_headers(profile.user).merge("X-Organization-Id" => other.id.to_s)
+    end.not_to change(Refund, :count)
+    expect(response).to have_http_status(:not_found)
+    expect(item.reload).to be_needs_manual
+    post path, params: { reference: "LOCAL-ONLY", returned_at: Time.current.iso8601(6), note: "Local cash return evidence" },
+      headers: auth_headers(profile.user).merge("X-Organization-Id" => event.organization_id.to_s)
+    expect(response).to have_http_status(:ok), response.body
+    expect(item.reload).to be_refunded
+  end
+
   it "lists only unresolved items for an organizer's organization and filters the admin list" do
     mine = pending_refund
     another = pending_refund(event: create(:event, :published))

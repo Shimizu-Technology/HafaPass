@@ -28,6 +28,7 @@ RSpec.describe "Organizer organization management", type: :request do
 
     delete "/api/v1/organizer/memberships/#{membership.id}", headers: headers
     expect(response).to have_http_status(:no_content)
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/memberships", params: { email: "finance@example.com", role: "scanner" },
       headers: headers
     expect(response).to have_http_status(:created)
