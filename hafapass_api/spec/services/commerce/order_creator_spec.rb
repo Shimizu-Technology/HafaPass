@@ -216,6 +216,23 @@ RSpec.describe Commerce::OrderCreator do
     expect(result.payment_intent).to be_nil
   end
 
+  it "completes a free live-mode order while Stripe live readiness is unavailable" do
+    SiteSetting.instance.update!(payment_mode: "live")
+    allow(PlatformCapabilities).to receive(:enabled?).and_call_original
+    allow(PlatformCapabilities).to receive(:enabled?).with("stripe_live").and_return(false)
+    ticket_type.update!(price_cents: 0)
+    expect(StripeService).not_to receive(:create_payment_intent)
+
+    result = described_class.call(event: event,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "free@example.com", buyer_name: "Free Buyer")
+
+    expect(result.order).to have_attributes(total_cents: 0, status: "completed")
+    expect(result.order.tickets.count).to eq(1)
+    expect(result.payment).to be_nil
+    expect(result.payment_intent).to be_nil
+  end
+
   it "enforces a buyer limit across prior purchases using normalized email" do
     ticket_type.update!(max_per_buyer: 2, quantity_sold: 1)
     previous_order = create(:order, event: event, buyer_email: "BUYER@EXAMPLE.COM")
