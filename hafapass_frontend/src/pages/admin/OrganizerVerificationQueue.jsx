@@ -103,7 +103,7 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
       </div>}
       <Description value={organizer.business_description} />
       <p className="text-neutral-700">{t('adminVerification.phone', { phone: organizer.verification_phone || t('adminVerification.notProvided') })}</p>
-      {organizer.verification_link && <p className="text-neutral-700"><a href={organizer.verification_link} target="_blank" rel="noreferrer" className="underline [overflow-wrap:anywhere]">{t('adminVerification.websiteLink')}</a></p>}
+      {organizer.verification_link && <p className="text-neutral-700">{t('adminVerification.websiteLink')}: <a href={organizer.verification_link} target="_blank" rel="noreferrer" className="underline [overflow-wrap:anywhere]">{organizer.verification_link.replace(/^https?:\/\//, '')}</a></p>}
       {organizer.verification_request_note && <p className="whitespace-pre-wrap text-neutral-700">{t('adminVerification.reviewerNote', { note: organizer.verification_request_note })}</p>}
       <p className="text-neutral-700">{t('adminVerification.awaitingCount', { number: organizer.published_awaiting_events_count ?? 0, payout: organizer.payout_ready ? 'Ready' : 'Not ready' })}</p>
     </div>

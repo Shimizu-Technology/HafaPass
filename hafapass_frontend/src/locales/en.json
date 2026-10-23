@@ -52,7 +52,7 @@
     "queueExplanation": "Their published events stay in private preview until you verify them.",
     "phone": "Phone: {{phone}}",
     "notProvided": "Not provided",
-    "websiteLink": "Website or social link",
+    "websiteLink": "Link",
     "reviewerNote": "Note: {{note}}",
     "awaitingCount": "{{number}} published awaiting · Payout details: {{payout}}",
     "suspendedExplanation": "Their events are hidden. Existing buyer tickets remain valid."

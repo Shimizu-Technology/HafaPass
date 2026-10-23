@@ -45,11 +45,12 @@ describe('AdminDashboardPage', () => {
     apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [{
       profile_id: 4, business_name: 'Island Events', verification_status: 'pending',
       requested_at: '2026-10-23T00:00:00Z', business_description: 'Guam events ' + 'A'.repeat(300),
-      verification_request_note: 'Call after lunch',
+      verification_request_note: 'Call after lunch', verification_link: 'https://instagram.com/islandevents',
     }] } })
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
     expect(await screen.findByText('Business description')).toBeInTheDocument()
     expect(screen.getByText('Note: Call after lunch')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'instagram.com/islandevents' })).toHaveAttribute('href', 'https://instagram.com/islandevents')
     expect(screen.getByText('Requested Oct 23, 2026')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show more' }))
     expect(screen.getByText(/A{300}/)).toBeInTheDocument()
