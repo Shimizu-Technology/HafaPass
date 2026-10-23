@@ -116,8 +116,9 @@ The projection also drops nested objects and arrays under allowed keys.
 Audience abbreviations: **O** = `org_owner`, **M** = `org_manager`, **F** =
 `org_finance`, **A** = `admin_only`. Snapshot fields apply independently to both
 `before_data` and `after_data`; metadata fields apply only to `metadata`.
-`—` means an empty allowlist. Origin **L** means an existing literal, **D** a
-constructed enum member, and **I** an integration-worker addition.
+`—` means an empty allowlist. The table includes finite supported callback and
+enum branches; it does not assert that each branch has occurred. Legacy action
+keys remain defined so old records can still be interpreted.
 
 | Action | Logged | Area | Audience | Tenant | Event | Snapshot fields | Metadata fields | Sentence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -308,7 +309,7 @@ constructed enum member, and **I** an integration-worker addition.
 | `promoter.deleted` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count` | Deleted a promoter. |
 | `promoter.updated` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count` | Updated a promoter. |
 | `refund.buyer_requested` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record` | Requested a refund through buyer self-service. |
-| `refund.created` | yes | refunds | O/F | yes | yes | `status`, `amount_cents` | `order_id`, `amount_cents` | Requested a refund. |
+| `refund.created` | historical | refunds | O/F | yes | yes | `status`, `amount_cents` | `order_id`, `amount_cents` | Requested a refund. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record` | Recorded a pending provider refund. |
 | `refund.provider_result_conflict` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record` | Flagged conflicting refund provider results. |
