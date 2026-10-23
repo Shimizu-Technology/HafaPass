@@ -112,7 +112,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                       {tt.active_tier.tier_type === 'time_based' && tt.active_tier.ends_at && daysUntil(tt.active_tier.ends_at) <= 7 && (
                         <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {t('pricing.endsIn', { days: daysUntil(tt.active_tier.ends_at) })}
+                          {t('pricing.endsIn', { count: daysUntil(tt.active_tier.ends_at) })}
                         </p>
                       )}
                     </div>

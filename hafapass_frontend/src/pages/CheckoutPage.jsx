@@ -817,8 +817,8 @@ function CheckoutContent({ buyerId }) {
               <PaidCheckoutGate active={paidCheckoutAdminOnly}>
               <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
-                  ? (isSimulate ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
-                  : t('buyer.Checkout.placeOrderTotal', { action: isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
+                  ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
+                  : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
               </button>
               </PaidCheckoutGate>
             </form>
@@ -828,7 +828,7 @@ function CheckoutContent({ buyerId }) {
         {/* Step 2: Payment */}
         {step === 'payment' && clientSecret && stripePublishableKey && (
           <div className="card p-5 sm:p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <h2 className="text-base font-semibold text-neutral-900">{t('buyer.Checkout.payment')}</h2>
               <button disabled={submitting} onClick={async () => {
                 const context = captureContext()
@@ -879,6 +879,7 @@ function CheckoutContent({ buyerId }) {
               }}
                 className="min-h-11 text-sm font-medium text-brand-800 hover:text-brand-900">{t('checkout.editInfo')}</button>
             </div>
+            <p className="mb-4 text-xs text-neutral-600">{t('checkout.cancelAndEditExplanation')}</p>
             {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
               <span className="font-medium">{orderData?.buyer_name}</span> &middot; {orderData?.buyer_email}
@@ -906,9 +907,6 @@ function CheckoutContent({ buyerId }) {
           </div>
         )}
 
-        <p className="text-xs text-neutral-600 text-center">
-          {t('checkout.termsNotice')}
-        </p>
       </div>
     </div>
   )

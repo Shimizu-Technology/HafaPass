@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { BadgeCheck, Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
@@ -29,6 +29,7 @@ export default function OrganizerPage() {
   return <div className="mx-auto max-w-6xl px-4 py-10"><SEO title={t('buyerDiscovery.organizer.eventTitle', { name: data.name })} description={data.description || t('buyerDiscovery.organizer.eventsFromOnGuam', { name: data.name })} />
     <div className="flex flex-col gap-6 rounded-3xl border border-neutral-200 bg-white p-8 sm:flex-row sm:items-center">{approvedImageUrl(data.logo_url, data.image_asset_host) && <img src={data.logo_url} alt="" className="h-24 w-24 rounded-2xl object-cover" />}<div><div className="flex items-center gap-2"><h1 className="font-display text-4xl font-bold">{data.name}</h1>{data.verified && <BadgeCheck className="text-brand-500" aria-label={t('buyerDiscovery.organizer.verifiedOrganizer')} />}</div><p className="mt-2 text-neutral-500">{t('buyerDiscovery.organizer.completedEvents', { count: data.completed_events })} · {t('buyerDiscovery.organizer.ticketsIssued', { count: data.tickets_issued })} · {t('buyerDiscovery.organizer.followers', { count: data.followers })}</p>{data.ambros_partner && <span className="mt-3 inline-flex rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">{t('buyerDiscovery.organizer.ambrosPartner')}</span>}{data.description && <p className="mt-4 max-w-2xl text-neutral-600">{data.description}</p>}</div></div>
     <h2 className="mt-10 text-2xl font-bold">{t('buyerDiscovery.organizer.upcomingEvents')}</h2><div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{data.events.map(event => <EventCard key={event.id} event={event} />)}</div>
+    {!data.events.length && <div className="mt-5 text-neutral-600"><p>{t('buyerDiscovery.organizer.empty')}</p><Link to="/events" className="mt-3 inline-flex text-brand-700 underline">{t('buyerDiscovery.collections.browseEvents')}</Link></div>}
     <MarketplacePagination meta={data.meta} page={page} onPage={next => setSearchParams(next > 1 ? { page: next } : {})} />
   </div>
 }

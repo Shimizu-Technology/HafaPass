@@ -253,3 +253,17 @@ describe('EventDetailPage buyer polish', () => {
   })
 
 })
+
+it.each([[0, false], [100, false], [100, true]])('uses the visible fee policy for SEO and event sharing (fee %s, processing %s)', async (fee, processing) => {
+  const share = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+  const event = { ...baseEvent, service_fee_includes_processing: processing, ticket_types: [{ id: 1, name: 'Admission', price_cents: 1500, service_fee_cents: fee, all_in_price_cents: 1500 + fee, on_sale: true, quantity_remaining: 5 }] }
+  mount(event)
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  const disclosure = screen.getByTestId('all-in-note').textContent
+  expect(seo.props.description).toContain(disclosure)
+  if (!processing) expect(disclosure).not.toMatch(/card processing/)
+  await act(async () => screen.getByRole('button', { name: 'Share' }).click())
+  expect(share).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining(disclosure) }))
+  delete navigator.share
+})

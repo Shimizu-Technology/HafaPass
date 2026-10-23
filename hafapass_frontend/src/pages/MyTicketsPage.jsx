@@ -244,8 +244,9 @@ function MyTicketsContent({ refreshSession, signOut }) {
     return formatEventTime(dateStr, event?.timezone)
   }
 
-  function getStatusBadge(status) {
-    switch (status) {
+  function getStatusBadge(ticket) {
+    if (ticket.status === 'issued' && ticket.admission_allowed !== true) return <span className="text-xs text-amber-900"><span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 font-medium">{t('buyerAccount.myTicketsPage.entryPaused')}</span>{ticket.admission_block_reason && <span className="mt-1 block">{ticket.admission_block_reason}</span>}</span>
+    switch (ticket.status) {
       case 'issued':
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-900">{t('buyerAccount.myTicketsPage.valid')}</span>
       case 'checked_in':
@@ -404,7 +405,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                           </div>
                         </Link>
                         <div className="flex items-center space-x-2">
-                          {getStatusBadge(ticket.status)}
+                          {getStatusBadge(ticket)}
                           {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-900 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">{t('buyerAccount.myTicketsPage.transfer')}</button>}
                           <Link
                             to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}

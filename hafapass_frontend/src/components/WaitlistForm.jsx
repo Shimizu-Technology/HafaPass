@@ -13,6 +13,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
   const [error, setError] = useState(null)
   const [checkEmail, setCheckEmail] = useState('')
   const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState(null)
   const [existingEntries, setExistingEntries] = useState(null)
 
   const soldOutTypes = ticketTypes.filter(tt => (tt.quantity_available - tt.quantity_sold) <= 0)
@@ -43,12 +44,14 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
   const handleCheck = async () => {
     if (!checkEmail) return
     setChecking(true)
+    setCheckError(null)
+    setExistingEntries(null)
     try {
       const credentials = storedCredentials(checkEmail)
-      const responses = await Promise.all(credentials.map(value => apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { management_token: value.token } }).catch(() => null)))
+      const responses = await Promise.all(credentials.map(value => apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { management_token: value.token } })))
       setExistingEntries(responses.flatMap(response => response?.data?.entries || []))
     } catch {
-      setExistingEntries([])
+      setCheckError(t('buyer.WaitlistForm.checkFailed'))
     }
     setChecking(false)
   }
@@ -170,6 +173,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
           </button>
         </div>
 
+        {checkError && <p role="alert" className="mt-3 text-sm text-red-700">{checkError}</p>}
         {existingEntries !== null && (
           <div className="mt-3">
             {existingEntries.length > 0 ? (

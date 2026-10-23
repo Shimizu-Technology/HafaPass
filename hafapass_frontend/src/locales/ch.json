@@ -74,10 +74,8 @@
   "pricing": {
     "earlyBird": "Early Bird",
     "currentPrice": "{{name}} — {{price}}",
-    "regularPrice": "Regular na prisiu: {{price}}",
     "priceGoesUp": "I prisiu para u hånao para {{price}} despues di {{date}}",
-    "onlyLeft": "{{count}} ha' maseha na prisiu!",
-    "endsIn": "Makpo' gi {{days}} dias"
+    "onlyLeft": "{{count}} ha' maseha na prisiu!"
   },
   "checkout": {
     "title": "Checkout",
@@ -103,7 +101,6 @@
     "havePromoCode": "Guaha promo code-mu?",
     "enterCode": "Na'hålom code",
     "apply": "Aplika",
-    "editInfo": "Edit info",
     "termsNotice": "Annai un kompletu este na fåhan, un agree ni HåfaPass terms of service."
   },
   "tickets": {

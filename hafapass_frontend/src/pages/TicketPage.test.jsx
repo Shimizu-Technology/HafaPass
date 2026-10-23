@@ -34,7 +34,7 @@ describe('ticket download recovery', () => {
       <Route path="/tickets/:credential" element={<TicketPage />} />
     </Routes></MemoryRouter>)
     expect(await screen.findByRole('heading', { name: 'Ticket unavailable', level: 1 })).toBeVisible()
-    expect(screen.getByRole('alert')).toHaveTextContent(status === 404 ? 'Ticket not found' : 'Failed to load ticket')
+    expect(screen.getByRole('alert')).toHaveTextContent(status === 404 ? 'Ticket not found' : "We couldn't load this ticket.")
     expect(screen.queryByText('Entry QR')).not.toBeInTheDocument()
   })
 
@@ -50,7 +50,7 @@ describe('ticket download recovery', () => {
       </Routes></MemoryRouter>)
       expect(await screen.findByText('Access paused')).toBeInTheDocument()
       expect(screen.queryByText('Valid', { exact: true })).not.toBeInTheDocument()
-      expect(screen.getByText(reason, { exact: false })).toBeInTheDocument()
+      expect(screen.getAllByText(reason, { exact: false })[0]).toBeInTheDocument()
       expect(screen.queryByText('Entry QR')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled()
     })
@@ -118,4 +118,41 @@ it('keeps admission and expandable device instructions immediately usable with r
     expect(instructions).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('Entry QR')).toBeVisible()
   } finally { userAgent.mockRestore(); motionPreference.reduced = false }
+})
+
+const usableTicket = { id: 3, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan', event: { title: 'QA ticket', status: 'published', starts_at: '2030-01-01T08:00:00Z' }, ticket_type: { name: 'Admission' } }
+const showTicket = () => render(<MemoryRouter initialEntries={['/tickets/display?order=2']}><Routes><Route path="/tickets/:credential" element={<TicketPage />} /></Routes></MemoryRouter>)
+it('retries loading the same ticket and offers email order recovery', async () => {
+  api.get.mockReset().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: usableTicket })
+  showTicket()
+  expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load this ticket.")
+  expect(screen.getByRole('link', { name: 'Find my order' })).toHaveAttribute('href', '/orders/recover')
+  await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Entry QR')).toBeInTheDocument()
+  expect(api.get.mock.calls.map(([url]) => url)).toEqual(['/tickets/display', '/tickets/display'])
+})
+it.each([
+  ['checked_in', 'This ticket has already been used.'],
+  ['cancelled', 'This ticket is cancelled and cannot be used for entry.'],
+  ['transferred', 'This ticket has been transferred and cannot be used by the previous holder.'],
+])('shows actual %s entry state instead of account access instructions', async (status, message) => {
+  api.get.mockReset().mockResolvedValue({ data: { ...usableTicket, status, admission_allowed: false, scan_credential: null } })
+  showTicket()
+  expect(await screen.findByText(message)).toBeInTheDocument()
+  expect(screen.queryByText(/Open this ticket from your secure order confirmation/)).not.toBeInTheDocument()
+})
+it('retains authorization instructions only for an allowed ticket without a credential', async () => {
+  api.get.mockReset().mockResolvedValue({ data: { ...usableTicket, scan_credential: null } })
+  showTicket()
+  expect(await screen.findByText(/Open this ticket from your secure order confirmation/)).toBeInTheDocument()
+})
+it('shares a ticket link with an explicit non-transfer note', async () => {
+  api.get.mockReset().mockResolvedValue({ data: usableTicket })
+  const share = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+  showTicket()
+  await userEvent.click(await screen.findByRole('button', { name: 'Share ticket link' }))
+  expect(share).toHaveBeenCalledWith(expect.objectContaining({ text: 'Ticket link for QA ticket. Sharing this link does not transfer the ticket.', url: window.location.href }))
+  expect(screen.getByText('Sharing this link does not transfer the ticket.')).toBeInTheDocument()
+  delete navigator.share
 })

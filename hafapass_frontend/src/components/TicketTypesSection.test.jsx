@@ -92,3 +92,11 @@ describe('ticket selection with changing availability', () => {
     config.adminOnly = false
   })
 })
+
+it.each([1, 2])('labels the next tier and uses the correct day plural (%s)', days => {
+  render(<TicketTypesSection ticketTypes={[{ id: 3, name: 'Entry', price_cents: 3000, current_price_cents: 1500,
+    active_tier: { name: 'Early', tier_type: 'time_based', ends_at: new Date(Date.now() + days * 86400000 - 60000).toISOString() },
+    next_tier: { name: 'Second release', price_cents: 2000 }, quantity_remaining: 5, on_sale: true }]} onCheckout={vi.fn()} />)
+  expect(screen.getByText('Next price: $20.00')).toBeInTheDocument()
+  expect(screen.getByText(`Ends in ${days} ${days === 1 ? 'day' : 'days'}`)).toBeInTheDocument()
+})

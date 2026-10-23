@@ -1,17 +1,17 @@
 import { Trans, useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import Dialog from './Dialog'
-import { formatEventDate } from '../utils/eventTime'
+import { formatEventDateTime } from '../utils/eventTime'
 
 // A sent-but-unaccepted transfer on the holder's ticket, with a confirmed
 // cancel. `onCancel` performs the request; `onSettled` refreshes the list
 // whether the cancel succeeded or the transfer had already ended.
-export default function PendingTransfer({ transfer, timeZone, onCancel, onSettled }) {
+export default function PendingTransfer({ transfer, onCancel, onSettled }) {
   const { t } = useTranslation()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const expires = formatEventDate(transfer.expires_at, timeZone, { year: undefined })
+  const expires = formatEventDateTime(transfer.expires_at, 'Pacific/Guam')
 
   async function cancel() {
     if (busy) return

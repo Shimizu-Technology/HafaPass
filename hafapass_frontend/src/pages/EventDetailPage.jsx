@@ -1,3 +1,4 @@
+import { allInPriceNoteKey } from '../utils/priceDisclosure'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
@@ -279,7 +280,7 @@ function EventDetailContent() {
     if (navigator.share) {
       try {
         const from = lowestPurchasablePrice(event.ticket_types || [])
-        const priceText = from === null ? '' : from === 0 ? `${t('events.free')}. ` : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(from) })}. ${t('pricing.allInNote', { platform: 'HåfaPass' })} `
+        const priceText = from === null ? '' : from === 0 ? `${t('events.free')}. ` : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(from) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })} `
         await navigator.share({ title: event.title, text: `${priceText}${event.short_description || event.description?.slice(0, 120) || ''}`, url })
       } catch {
         // Share cancellation is user-driven; no visible error needed.
@@ -311,7 +312,7 @@ function EventDetailContent() {
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
   const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
   const advertisedDescription = lowestPrice === null ? truncatedDescription
-    : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t('pricing.allInNote', { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
+    : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
   const onSale = !event.private_preview && event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
   const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
 

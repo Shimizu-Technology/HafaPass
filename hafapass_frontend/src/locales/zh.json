@@ -23,7 +23,6 @@
     "backToEvent": "返回活动",
     "continueToPayment": "继续付款",
     "discount": "优惠",
-    "editInfo": "编辑信息",
     "emailAddress": "电子邮箱",
     "enterCode": "输入优惠码",
     "feesUnavailable": "无法加载当前服务费，暂时无法显示总额。",
@@ -162,10 +161,8 @@
   "pricing": {
     "currentPrice": "{{name}} — {{price}}",
     "earlyBird": "早鸟优惠",
-    "endsIn": "{{days}}天后结束",
     "onlyLeft": "此价位门票仅剩{{count}}张！",
-    "priceGoesUp": "{{date}}之后票价将升至{{price}}",
-    "regularPrice": "原价：{{price}}"
+    "priceGoesUp": "{{date}}之后票价将升至{{price}}"
   },
   "tickets": {
     "addToHomeScreen": "添加到主屏幕",

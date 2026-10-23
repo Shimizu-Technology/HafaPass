@@ -23,7 +23,6 @@
     "backToEvent": "イベントページに戻る",
     "continueToPayment": "お支払いへ進む",
     "discount": "割引",
-    "editInfo": "情報を編集",
     "emailAddress": "メールアドレス",
     "enterCode": "コードを入力",
     "feesUnavailable": "現在のサービス手数料を取得できなかったため、合計金額を表示できません。",
@@ -162,10 +161,8 @@
   "pricing": {
     "currentPrice": "{{name}} — {{price}}",
     "earlyBird": "早期割引",
-    "endsIn": "あと{{days}}日で終了",
     "onlyLeft": "この価格で買えるのは残り{{count}}枚！",
-    "priceGoesUp": "{{date}}を過ぎると{{price}}に値上がりします",
-    "regularPrice": "通常価格：{{price}}"
+    "priceGoesUp": "{{date}}を過ぎると{{price}}に値上がりします"
   },
   "tickets": {
     "addToHomeScreen": "ホーム画面に追加",

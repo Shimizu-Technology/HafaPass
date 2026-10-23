@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
@@ -32,6 +32,7 @@ export default function CollectionPage() {
     <h1 className="font-display text-4xl font-bold">{data.title}</h1>
     <p className="mt-2 max-w-2xl text-neutral-500">{data.description}</p>
     <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{data.events.map(event => <EventCard key={event.id} event={event} />)}</div>
+    {!data.events.length && <div className="mt-5 text-neutral-600"><p>{t('buyerDiscovery.collection.empty')}</p><Link to="/events" className="mt-3 inline-flex text-brand-700 underline">{t('buyerDiscovery.collections.browseEvents')}</Link></div>}
     <MarketplacePagination meta={data.meta} page={page} onPage={next => setSearchParams(next > 1 ? { page: next } : {})} />
   </div>
 }

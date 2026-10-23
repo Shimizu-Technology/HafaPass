@@ -78,7 +78,19 @@ describe('PaymentForm', () => {
     render(<PaymentForm totalCents={1250} returnUrl="https://example.test/confirmation"
       onSuccess={onSuccess} submitting={false} setSubmitting={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Please refresh before trying again')
+    expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't confirm your payment status. Check your order before trying again.")
+    expect(screen.getByRole('link', { name: 'Check order status' })).toHaveAttribute('href', 'https://example.test/confirmation')
+    expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeDisabled()
     expect(onSuccess).not.toHaveBeenCalled()
   })
+})
+
+it('directs a connection error to order status before permitting another payment', async () => {
+  confirmPayment.mockRejectedValue(new Error('connection lost'))
+  render(<PaymentForm totalCents={1250} returnUrl="/orders/2/confirmation" submitting={false} setSubmitting={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't confirm your payment status.")
+  expect(screen.getByRole('link', { name: 'Check order status' })).toHaveAttribute('href', '/orders/2/confirmation')
+  expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeDisabled()
+  expect(screen.getByText('Card details are handled by Stripe.')).toBeInTheDocument()
 })
