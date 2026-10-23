@@ -49,16 +49,55 @@ describe('event guide filters and recovery', () => {
     expect(screen.getByRole('combobox', { name: 'Price' })).toHaveValue('free')
   })
 
-  it('clears no-match filters and keeps direct event creation and the organizer landing page', async () => {
-    apiClient.get.mockResolvedValue({ data: { events: [], meta: { current_page: 1, total_pages: 1, total_count: 0 } } })
+  it('keeps no-match filters when the marketplace has events and restores results after clearing', async () => {
+    apiClient.get.mockImplementation((_url, { params }) => Promise.resolve(params.q
+      ? { data: { events: [], meta: { total_count: 0 } } } : result()))
     mount('/events?search=nothing&category=dining&date=tonight&price=free&village=Hag%C3%A5t%C3%B1a')
     await screen.findByRole('heading', { name: 'No matching events' })
+    expect(screen.getByRole('textbox', { name: 'Search events and venues' })).toHaveValue('nothing')
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
-    await screen.findByRole('heading', { name: 'No events yet' })
+    await screen.findByText('Event page 1')
     await waitFor(() => expect(screen.getByLabelText('Browse URL')).toHaveTextContent(/^$/))
-    expect(screen.getByRole('link', { name: 'Create an Event' })).toHaveAttribute('href', '/dashboard')
-    expect(screen.getByRole('link', { name: 'For event organizers' })).toHaveAttribute('href', '/host')
   })
+
+  it('offers hosting and hides filters for an unfiltered empty marketplace', async () => {
+    apiClient.get.mockResolvedValue({ data: { events: [], meta: { total_count: 0, total_pages: 1 } } })
+    mount('/events')
+    await screen.findByRole('heading', { name: 'Events are coming soon' })
+    expect(screen.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    'search=nothing', 'category=dining', 'date=today', 'date=tonight',
+    'date=weekend', 'date=week', 'price=free', 'village=Hag%C3%A5t%C3%B1a',
+    'search=nothing&category=dining&page=2',
+  ])('keeps controls and recovery for empty filtered inventory: %s', async query => {
+    apiClient.get.mockResolvedValue({ data: { events: [], meta: { total_count: 0 } } })
+    mount(`/events?${query}`)
+    await screen.findByRole('heading', { name: 'No matching events' })
+    expect(screen.getByRole('textbox', { name: 'Search events and venues' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument()
+    expect(screen.queryByText('Events are coming soon')).not.toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await screen.findByRole('heading', { name: 'Events are coming soon' })
+    expect(screen.getByLabelText('Browse URL')).toHaveTextContent(/^$/)
+  })
+
+  it.each([
+    ['q=music', 'music'],
+    ['q=music&search=concert', 'concert'],
+  ])('accepts q links and canonicalizes the search URL: %s', async (query, value) => {
+    mount(`/events?${query}`)
+    await screen.findByText('Event page 1')
+    expect(screen.getByRole('textbox', { name: 'Search events and venues' })).toHaveValue(value)
+    expect(apiClient.get).toHaveBeenLastCalledWith('/events', { params: { page: 1, per_page: 12, q: value } })
+    expect(screen.getByLabelText('Browse URL')).toHaveTextContent(`?search=${value}`)
+    expect(screen.getByLabelText('Browse URL')).not.toHaveTextContent('?q=')
+  })
+
   it('does not overwrite the next event’s offer URL while the listing outlet is retained', async () => {
     mount('/events?search=music&price=free')
     await screen.findByText('Event page 1')

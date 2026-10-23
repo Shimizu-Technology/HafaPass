@@ -234,7 +234,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
     <div className="flex items-center justify-between mb-4">
      <h3 className="text-lg font-semibold text-neutral-900">Edit Profile</h3>
-     <button onClick={onClose} aria-label="Close profile editor" className="p-1 text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
+     <button onClick={onClose} aria-label="Close profile editor" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-focus"><X className="w-5 h-5" /></button>
     </div>
     {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -248,7 +248,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
          <Upload className="w-5 h-5 text-neutral-400" />
         </div>
        )}
-       <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-sm text-brand-500 hover:text-brand-700 font-medium">
+       <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="inline-flex min-h-11 items-center rounded text-sm text-brand-700 hover:text-brand-900 font-medium">
         {uploading ? 'Uploading...' : logoUrl ? 'Change' : 'Upload Logo'}
        </button>
        <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={e => handleLogoUpload(e.target.files[0])} />

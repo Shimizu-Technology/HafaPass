@@ -1,4 +1,9 @@
 {
+  "preInventory": {
+    "title": "Events are coming soon",
+    "description": "No events are listed yet. Check back soon.",
+    "listEvent": "List your event"
+  },
   "organizerVerification": {
     "cardLabel": "Organizer verification",
     "unverifiedTitle": "Get verified to start selling tickets",

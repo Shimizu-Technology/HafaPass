@@ -53,10 +53,10 @@ function mount() {
 }
 
 const entryLink = async entry => {
-  await screen.findByRole('heading', { name: /No upcoming events listed/ })
+  await screen.findByRole('heading', { name: /Events are coming soon/ })
   return entry === 'footer'
     ? screen.getByRole('link', { name: "For Organizers" })
-    : screen.getAllByRole('link', { name: 'Start Hosting' })[entry === 'hero' ? 0 : 1]
+    : screen.getByRole('link', { name: 'Start Hosting' })
 }
 
 describe('hosting entry navigation', () => {
@@ -68,7 +68,7 @@ describe('hosting entry navigation', () => {
   })
 
   // The organizer journey (signup/sign-in return to setup) is covered by HostPage.test.jsx.
-  it.each(['hero', 'bottom', 'footer'])('sends the %s hosting entry to the host landing page for every visitor', async entry => {
+  it.each(['planning', 'footer'])('sends the %s hosting entry to the host landing page for every visitor', async entry => {
     for (const signedIn of [false, true]) {
       auth.isSignedIn = signedIn
       const view = mount()
@@ -79,11 +79,28 @@ describe('hosting entry navigation', () => {
     }
   })
 
+  it('keeps the product promise and planning action when inventory is empty', async () => {
+    mount()
+    await screen.findByRole('heading', { name: 'Events are coming soon' })
+    expect(screen.getByText('Your event guide on Guam')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Planning an event?' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
+    expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Next Up on Guam' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^Explore by category$/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Browse Events' })).toHaveLength(1)
+  })
+
   it('keeps event browsing separate while preserving the organizer call to action', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 37, slug: 'workshop', title: 'Workshop', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     expect(await screen.findAllByRole('link', { name: 'Browse Events' }).then(links => links[0])).toHaveAttribute('href', '/events')
     screen.getAllByRole('link', { name: 'Start Hosting' }).forEach(link => expect(link).toHaveAttribute('href', '/host'))
+    expect(screen.getByRole('searchbox', { name: 'Event or venue' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Next Up on Guam' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Explore by category$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Events are coming soon' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: "Sign In" })).toHaveAttribute('href', '/sign-in')
   })
 
@@ -93,10 +110,13 @@ describe('hosting entry navigation', () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
     expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
-    expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('No events are listed yet. Check back soon.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Events are coming soon/ })).not.toBeInTheDocument()
     await act(async () => finish({ data: { events: [] } }))
-    expect(await screen.findByText('Check back for new dates, or start setting up your own event.')).toBeInTheDocument()
+    expect(await screen.findByText('No events are listed yet. Check back soon.')).toBeInTheDocument()
+    expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^Explore by category$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View all events' })).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
@@ -105,8 +125,8 @@ describe('hosting entry navigation', () => {
       .mockResolvedValueOnce({ data: { events: [{ id: 38, slug: 'recovered-event', title: 'Recovered event', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     expect(await screen.findByRole('alert')).toHaveTextContent('Events couldn’t load')
-    expect(screen.queryByText('Check back for new dates, or start setting up your own event.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /No upcoming events listed/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('No events are listed yet. Check back soon.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Events are coming soon/ })).not.toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry events' }))
     expect(await screen.findByRole('link', { name: /Recovered event/ })).toHaveAttribute('href', '/events/recovered-event')
@@ -126,6 +146,7 @@ describe('hosting entry navigation', () => {
   })
 
   it('carries event/venue search into native browse URL filters', async () => {
+    apiClient.get.mockResolvedValue({ data: { events: [{ id: 1, title: 'Music', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const user = userEvent.setup()
     await user.type(screen.getByRole('searchbox', { name: 'Event or venue' }), '  Music & food  ')

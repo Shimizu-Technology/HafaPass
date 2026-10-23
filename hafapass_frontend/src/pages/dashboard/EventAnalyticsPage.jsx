@@ -187,7 +187,7 @@ function EventAnalyticsPageSession({ id, identity }) {
      {error}
      <button type="button" onClick={fetchData} className="ml-3 min-h-11 font-semibold underline">Retry analytics</button>
     </div>
-    <Link to="/dashboard" className="mt-4 inline-block text-brand-500 hover:text-brand-700 text-sm font-medium">
+    <Link to="/dashboard" className="mt-4 inline-flex min-h-11 items-center rounded text-brand-700 hover:text-brand-900 text-sm font-medium">
      Back to Dashboard
     </Link>
    </div>

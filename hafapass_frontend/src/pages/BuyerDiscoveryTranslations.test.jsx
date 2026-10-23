@@ -55,7 +55,8 @@ describe('buyer discovery pages translate visible chrome with a fake locale', ()
     [PolicyPage, 'policy.otherPolicies', '/policies/buyer-terms', '/policies/:policy'],
   ])('renders %s in the selected language', async (Component, heading, route, path) => {
     const view = await renderPage(Component, route, path)
-    if (heading) expect(await screen.findByText(`TEST:buyerDiscovery.${heading}`)).toBeInTheDocument()
+    if (Component === CollectionsPage) expect(await screen.findByText('TEST:preInventory.title')).toBeInTheDocument()
+    else if (heading) expect(await screen.findByText(`TEST:buyerDiscovery.${heading}`)).toBeInTheDocument()
     else expect(await screen.findByText('Fixture title')).toBeInTheDocument()
     expect(view.container.textContent).not.toMatch(/Upcoming events|Favorite events|Sign-in is temporarily unavailable|Account registration is temporarily unavailable|Please try connecting again\.|Other policies|Host your event with HåfaPass/)
     if (Component === PolicyPage) expect(await screen.findByText('English legal body')).toBeInTheDocument()

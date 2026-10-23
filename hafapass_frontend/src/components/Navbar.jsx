@@ -68,6 +68,14 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   const roleAlert = isSignedIn && currentRole?.status === 'failed'
 
+  // Determine if navbar should be in "dark/transparent" mode
+  const isDarkMode = isHomepage && !scrolled
+
+  useEffect(() => {
+    const theme = document.querySelector('meta[name="theme-color"]')
+    if (theme) theme.content = isDarkMode ? '#020617' : '#ffffff'
+  }, [isDarkMode])
+
   if (isWorkspacePath(location.pathname)) {
     return <WorkspaceNav
       authContext={accountReady ? authContext : null}
@@ -103,8 +111,6 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/')
 
-  // Determine if navbar should be in "dark/transparent" mode
-  const isDarkMode = isHomepage && !scrolled
 
   return (
     <header
@@ -326,7 +332,7 @@ function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, 
     <header className="app-nav sticky top-0 z-50 border-b border-neutral-200 bg-white">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-4">
-          <Link to="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" aria-label={t('nav.workspaceHome')}>
+          <Link to="/dashboard" className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" aria-label={t('nav.workspaceHome')}>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-700">
               <HafaPassMark className="h-5 w-5 text-white" />
             </span>

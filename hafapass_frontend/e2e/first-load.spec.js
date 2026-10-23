@@ -10,9 +10,9 @@ test('public browsing starts before health resolves and preserves the shell and 
     await json(route, {}, healthy ? 200 : 503)
   })
   await page.route('**/api/v1/config', route => json(route, {}))
-  await page.route('**/api/v1/events', route => json(route, { events: [] }))
+  await page.route('**/api/v1/events', route => json(route, { events: [{ id: 1, slug: 'recovery-event', title: 'Service recovery event', starts_at: '2099-10-11T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] }))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'No upcoming events listed' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Service recovery event/ })).toBeVisible()
   await page.evaluate(() => { window.originalShell = document.querySelector('.app-shell') })
   const search = page.getByRole('searchbox', { name: 'Event or venue' })
   await search.fill('Friday night')
@@ -52,5 +52,39 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
     await expect(page.getByRole('heading', { name: 'We couldn’t find that event' })).toBeVisible()
     expect(await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)).toBe(footerTop)
     expect(await page.evaluate(() => window.firstLoadCls)).toBeLessThan(0.1)
+  })
+}
+
+for (const width of [375, 1280]) {
+  test(`discover loading keeps the footer stable through confirmed empty inventory at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, {}))
+    await page.route('**/api/v1/events?**', route => json(route, { events: [], meta: { total_count: 0 } }))
+    let finishCollections
+    await page.route('**/api/v1/marketplace_collections', async route => {
+      await new Promise(resolve => { finishCollections = resolve })
+      await json(route, { collections: [] })
+    })
+    await page.goto('/discover')
+    await expect(page.locator('main .animate-spin')).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const footerTop = await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)
+    await expect.poll(() => Boolean(finishCollections)).toBe(true)
+    finishCollections()
+    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+    // Read the settled layout after React commits the new utility classes.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    expect(await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)).toBe(footerTop)
+  })
+}
+
+for (const [path, color] of [['/', '#020617'], ['/events', '#ffffff'], ['/discover', '#ffffff'], ['/dashboard', '#ffffff']]) {
+  test(`cold-load theme color matches ${path} before the app mounts`, async ({ page }) => {
+    await page.route('**/src/main.jsx', route => route.abort())
+    await page.goto(path)
+    await expect(page.locator('.boot-splash')).toBeVisible()
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', color)
   })
 }

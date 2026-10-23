@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
+import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice, ticketAllInCents, ticketServiceFeeCents, isTicketPurchasable } from '../utils/ticketPricing'
@@ -111,6 +112,8 @@ export default function HomePage() {
     navigate(query ? `/events?${new URLSearchParams({ search: query })}` : '/events')
   }
 
+  const inventoryEmpty = !loading && !loadError && events.length === 0
+
   return (
     <div className="min-h-screen bg-stone-50 text-content">
       <SEO />
@@ -120,7 +123,7 @@ export default function HomePage() {
             <p className="mb-3 text-sm font-semibold text-brand-800">{t('buyer.Home.yourEventGuideOnGuam')}</p>
             <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-5xl lg:text-[3.5rem]">{t('buyer.Home.findYourNextEventOnGuam')}</h1>
             <p className="mt-4 max-w-lg text-base leading-relaxed text-content-muted">{t('buyer.Home.browseWhatsComingUpChooseYourTicketsAnd')}</p>
-            <form role="search" onSubmit={browse} className="mt-6">
+            {!inventoryEmpty && <><form role="search" onSubmit={browse} className="mt-6">
               <label htmlFor="home-event-search" className="mb-2 block text-sm font-medium text-neutral-800">{t('buyer.Home.eventOrVenue')}</label>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="relative min-w-0 flex-1">
@@ -134,7 +137,7 @@ export default function HomePage() {
             <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1">
               <Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.browseEvents')}<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link>
               <Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-medium text-content-muted hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.startHosting')}</Link>
-            </div>
+            </div></>}
           </div>
 
           {showFeatured && (
@@ -154,7 +157,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section aria-busy={loading} aria-labelledby="upcoming-heading" className="py-8 sm:py-12">
+      {inventoryEmpty ? <EmptyInventory embedded /> : <section aria-busy={loading} aria-labelledby="upcoming-heading" className="py-8 sm:py-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h2 id="upcoming-heading" className="font-display text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">{t('buyer.Home.nextUpOnGuam')}</h2>
@@ -196,16 +199,16 @@ export default function HomePage() {
             </div>
           )}
         </div>
-      </section>
+      </section>}
 
-      <section aria-labelledby="categories-heading" className="border-y border-neutral-200 bg-white py-8 sm:py-12">
+      {!inventoryEmpty && <section aria-labelledby="categories-heading" className="border-y border-neutral-200 bg-white py-8 sm:py-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <h2 id="categories-heading" className="mb-5 font-display text-2xl font-bold text-neutral-950">{t('buyer.Home.exploreByCategory')}</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {categories.map(({ name, slug, icon: Icon }) => <Link key={slug} to={`/events?category=${slug}`} className="flex min-h-14 items-center gap-3 rounded-lg border border-neutral-200 px-4 py-3 text-sm font-medium text-neutral-800 hover:border-brand-600 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-brand-800" /><span>{name}</span><ArrowRight aria-hidden="true" className="ml-auto h-4 w-4 shrink-0" /></Link>)}
           </div>
         </div>
-      </section>
+      </section>}
 
       <section className="py-10 sm:py-12">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">

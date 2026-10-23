@@ -471,7 +471,7 @@ function EditEventSession({ id, identity }) {
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1"
+              className="min-h-11 rounded text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1"
             >
               <Eye className="w-4 h-4" /> Preview saved event
             </a>
@@ -496,7 +496,7 @@ function EditEventSession({ id, identity }) {
               }
             }}
             disabled={cloning}
-            className="text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1 disabled:opacity-50"
+            className="min-h-11 rounded text-action-teal hover:text-action-teal-hover text-sm font-medium flex items-center gap-1 disabled:opacity-50"
           >
             <Copy className="w-4 h-4" /> {cloning ? 'Cloning...' : 'Clone'}
           </button>}
@@ -914,7 +914,7 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Postpone Event</p>
                   <p className="text-xs text-neutral-600">Pause sales while a new date is arranged.</p>
                 </div>
-                <button onClick={() => setShowPostponeConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5">
+                <button onClick={() => setShowPostponeConfirm(true)} className="min-h-11 px-3 py-1.5 text-sm font-medium text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5">
                   <PauseCircle className="w-4 h-4" /> Postpone
                 </button>
               </div>

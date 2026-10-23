@@ -30,13 +30,29 @@ it('keeps a failed saved-items request separate from all three empty lists, then
 })
 
 it('shows a discover failure with retry, then the genuine empty state', async () => {
-  api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: { collections: [] } })
+  api.get.mockRejectedValueOnce(new Error('offline')).mockImplementation(url => Promise.resolve({ data: url === '/events' ? { events: [{ id: 1 }] } : { collections: [] } }))
   show(CollectionsPage)
   expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load featured collections.")
   expect(screen.queryByText(/No featured collections yet/)).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('No featured collections yet. Browse events to see current listings.')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Browse events' })).toHaveAttribute('href', '/events')
+})
+
+it('shows hosting on Discover when both collections and public inventory are empty', async () => {
+  api.get.mockImplementation(url => Promise.resolve({ data: url === '/events' ? { events: [], meta: { total_count: 0 } } : { collections: [] } }))
+  show(CollectionsPage)
+  expect(await screen.findByRole('heading', { name: 'Events are coming soon' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
+  expect(screen.queryByRole('link', { name: 'Browse events' })).not.toBeInTheDocument()
+})
+
+it('keeps curated Discover content when collections contain public events', async () => {
+  api.get.mockResolvedValue({ data: { collections: [{ id: 1, slug: 'weekend', title: 'Weekend picks', events: [{ id: 1, title: 'Live music' }] }] } })
+  show(CollectionsPage)
+  expect(await screen.findByText('Live music')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/collections/weekend')
+  expect(api.get).toHaveBeenCalledTimes(1)
 })
 
 it.each([
