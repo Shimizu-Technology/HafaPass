@@ -136,10 +136,8 @@ function StatusBadge({ status }) {
 function EventListCard({ event }) {
  const visibilityChip = !['published', 'completed'].includes(event.status) ? null
   : event.policy_hold_scope ? 'On hold'
-    : event.publicly_visible === false ? ({
-      unverified: 'Waiting for verification', pending: 'Waiting for verification',
-      rejected: 'Action needed', suspended: 'Suspended',
-    })[event.organizer_verification_status] : null
+    : event.sales_status?.reason === 'organizer_paused' || event.organizer_verification_status === 'suspended' ? 'Suspended'
+      : ['organizer_not_verified', 'organizer_verification_requested'].includes(event.sales_status?.reason) ? 'Waiting for verification' : null
  const permissions = event.permissions || {}
  const destination = permissions.manage_events ? `/dashboard/events/${event.id}` : permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
  const actionLabel = permissions.manage_events ? "Open event" : permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"

@@ -96,6 +96,7 @@ module Api
           notify = profile.refresh_verification_request!(before_details: before_details, was_pending: was_pending)
           updated = was_pending && notify
           profile.save!(context: :verification_request)
+          profile.organization.update!(name: profile.business_name) if profile.saved_change_to_business_name?
           AuditLogger.record!(action: updated ? "organizer.verification_request_updated" : "organizer.verification_requested",
             auditable: profile, actor: current_user, organization: profile.organization,
             before_data: before_details, after_data: profile.verification_details, request: request)
@@ -103,7 +104,8 @@ module Api
         EmailService.send_verification_request_async(profile, updated: updated) if notify
         render json: profile_json(profile)
       rescue ActiveRecord::RecordInvalid => e
-        render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
+        errors = (profile.errors.full_messages + profile.organization.errors.full_messages + e.record.errors.full_messages).uniq
+        render json: { errors: errors }, status: :unprocessable_entity
       end
 
       private

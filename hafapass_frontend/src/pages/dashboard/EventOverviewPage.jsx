@@ -102,7 +102,7 @@ function EventOverviewSession({ id, identity }) {
         return
       }
       setEvent(saved)
-      if (saved.status === 'published' && saved.permissions?.manage_events) {
+      if (saved.status === 'published' && saved.permissions?.manage_events && ['organizer_not_verified', 'organizer_verification_requested'].includes(saved.sales_status?.reason)) {
         get(`/organizer/events/${id}/preview_link`).then(response => { if (canApply()) setPreviewUrl(response.data.url) }).catch(() => {})
       }
       setLoading(false)

@@ -476,6 +476,7 @@ function EventDetailContent() {
                 {/* Waitlist form when all ticket types are sold out */}
                 {event.ticket_types?.length > 0 &&
                   event.status === 'published' &&
+                  !event.private_preview &&
                   event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
                   <div className="mt-4">
                     <WaitlistForm event={event} ticketTypes={event.ticket_types} showOriginal={content.showingOriginal} />

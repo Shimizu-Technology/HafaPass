@@ -42,6 +42,16 @@ beforeEach(() => {
 })
 
 describe('event overview', () => {
+  it('does not request a preview link for a suspended organizer', async () => {
+    mount({ ...base, publicly_visible: false, sales_status: { reason: 'organizer_paused' } }, {
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+      '/organizer_profile': { verification_status: 'suspended', organization: { role: 'owner' } },
+    })
+    await screen.findByRole('heading', { name: 'Synthetic reef night' })
+    await waitFor(() => expect(requested('/organizer_profile')).toBe(true))
+    expect(requested('/organizer/events/37/preview_link')).toBe(false)
+  })
+
   it('leaves the clipboard alone when the native preview share is cancelled', async () => {
     const user = userEvent.setup()
     const share = vi.fn(() => Promise.reject(new DOMException('Cancelled', 'AbortError')))

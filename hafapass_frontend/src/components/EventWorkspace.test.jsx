@@ -41,6 +41,16 @@ afterEach(() => {
 })
 
 describe('connected event workspace', () => {
+  it.each([
+    ['organizer_paused', 'Hidden while suspended'],
+    ['organizer_not_verified', 'Private preview'],
+    ['organizer_verification_requested', 'Private preview'],
+    ['payment_not_ready', 'Published'],
+  ])('labels %s using its sales reason', (reason, label) => {
+    mount({ event: { ...dto(), publicly_visible: false, sales_status: { reason } } })
+    expect(screen.getByRole('heading', { level: 1 }).parentElement).toHaveTextContent(label)
+  })
+
   it('shows full event identity, organization, effective access and seven actual route-backed groups', async () => {
     mount()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(dto().title)

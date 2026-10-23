@@ -59,10 +59,9 @@ for (const width of [375, 1280]) {
       events: [state], meta: { current_page: 1, total_pages: 1, total_count: 1 },
     }))
     for (const [reason, label] of [
-      [{ organizer_verification_status: 'unverified', publicly_visible: false }, 'Waiting for verification'],
-      [{ organizer_verification_status: 'pending', publicly_visible: false }, 'Waiting for verification'],
-      [{ organizer_verification_status: 'rejected', publicly_visible: false }, 'Action needed'],
-      [{ organizer_verification_status: 'suspended', publicly_visible: false }, 'Suspended'],
+      [{ sales_status: { on_sale: false, reason: 'organizer_not_verified' }, publicly_visible: false }, 'Waiting for verification'],
+      [{ sales_status: { on_sale: false, reason: 'organizer_verification_requested' }, publicly_visible: false }, 'Waiting for verification'],
+      [{ organizer_verification_status: 'suspended', sales_status: { on_sale: false, reason: 'organizer_paused' }, publicly_visible: false }, 'Suspended'],
       [{ organizer_verification_status: 'verified', publicly_visible: false, policy_hold_scope: 'hidden' }, 'On hold'],
     ]) {
       state = { ...organizerEvent, ...reason }

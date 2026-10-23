@@ -42,7 +42,8 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
 
     get "/api/v1/admin/dashboard", headers: auth_headers(admin)
     waiting = response.parsed_body.fetch("organizers_awaiting_verification")
-    expect(waiting.first).to include("profile_id" => profile.id, "verification_status" => "pending", "payout_ready" => true)
+    expect(waiting.first).to include("profile_id" => profile.id, "verification_status" => "pending", "payout_ready" => true,
+      "event_count" => 1, "published_awaiting_events_count" => 1)
 
     checkout
     expect(response).to have_http_status(:not_found)
@@ -76,6 +77,17 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     get "/api/v1/organizer/events/#{event.id}", headers: org_headers
     expect(response.parsed_body.fetch("sales_status")).to include("on_sale" => false, "reason" => "organizer_paused")
     expect(AuditLog.where(action: "organizer.verification_updated", actor_user: admin).count).to eq(2)
+  end
+
+  it "defaults event counts to zero for an organizer without events" do
+    empty_profile = create(:organizer_profile, user: create(:user, :organizer))
+    get "/api/v1/admin/dashboard", headers: auth_headers(admin)
+
+    waiting = response.parsed_body.fetch("organizers_awaiting_verification")
+    expect(waiting.find { |item| item["profile_id"] == empty_profile.id }).to include(
+      "event_count" => 0, "published_awaiting_events_count" => 0)
+    expect(waiting.find { |item| item["profile_id"] == profile.id }).to include(
+      "event_count" => 1, "published_awaiting_events_count" => 1)
   end
 
   it "lists one-click platform setup and approves the policy register" do

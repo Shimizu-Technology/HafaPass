@@ -244,7 +244,7 @@ class Event < ApplicationRecord
 
   def rotate_preview_token!
     with_lock do
-      update!(preview_token_version: preview_token_version + 1, preview_token_digest: nil)
+      update_columns(preview_token_version: preview_token_version + 1, preview_token_digest: nil)
       preview_token
     end
   end

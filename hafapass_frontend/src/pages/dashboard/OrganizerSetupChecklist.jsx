@@ -56,7 +56,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'publish', title: 'Publish', done: (progress.published_events_count || 0) > 0,
-      status: (progress.published_events_count || 0) > 0 ? profile.verification_status === 'verified' ? 'Live on HåfaPass' : t('organizerVerification.publishedInPreview') : 'Open your event and publish it when its checklist is complete',
+      status: (progress.published_events_count || 0) > 0 ? profile.verification_status === 'verified' ? 'Live on HåfaPass' : profile.verification_status === 'suspended' ? t('organizerVerification.suspendedChip') : t('organizerVerification.publishedInPreview') : 'Open your event and publish it when its checklist is complete',
       next: (progress.published_events_count || 0) > 0 ? null : 'HåfaPass may confirm launch details with you before the first sale.',
     },
   ]

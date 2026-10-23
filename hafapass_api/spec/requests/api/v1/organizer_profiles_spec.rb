@@ -51,6 +51,22 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
     expect(profile.verification_requested_at).to be_present
     expect(profile).to have_attributes(verification_phone: "+1 (671) 555-1234",
       verification_link: "https://instagram.com/islandevents")
+    expect(profile.organization.reload.name).to eq("Island Events")
+  end
+
+  it "rolls back the verification request when the organization name cannot be saved" do
+    original_name = profile.organization.name
+    profile.organization.update_columns(marketing_address_certified_at: Time.current,
+      marketing_mailing_address: "invalid")
+
+    post "/api/v1/organizer_profile/submit_verification", headers: headers,
+      params: { business_name: "Island Events", business_description: "Community events",
+        verification_phone: "+1-671-555-1234", verification_link: "https://example.com/events" }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("errors").join).to include("Marketing mailing address")
+    expect(profile.reload).to be_verification_status_unverified
+    expect(profile.organization.reload.name).to eq(original_name)
   end
 
   it "retains the profile state when verification contact details are invalid" do

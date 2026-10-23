@@ -59,6 +59,14 @@ describe('OrganizerSetupChecklist', () => {
     expect(screen.queryByRole('button', { name: 'Submit for review' })).not.toBeInTheDocument()
   })
 
+  it('labels a suspended organizer without offering a private preview', () => {
+    show({ ...base, policy_accepted: true, verification_status: 'suspended',
+      setup_progress: { events_count: 1, published_events_count: 1, payout_method: null } })
+    const publish = screen.getAllByRole('listitem').find(item => item.textContent.includes('Publish'))
+    expect(publish).toHaveTextContent('Hidden while suspended')
+    expect(publish).not.toHaveTextContent('private preview')
+  })
+
   it('asks for a description before verification can be submitted', () => {
     show({ ...base, business_description: '', policy_accepted: true })
     expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()

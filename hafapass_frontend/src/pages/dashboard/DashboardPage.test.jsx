@@ -22,11 +22,11 @@ function fixtures(organizations = [scanner], events = [event], summary = { upcom
 beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear() })
 describe('staff dashboard entry', () => {
   it.each([
-    [{ organizer_verification_status: 'unverified', publicly_visible: false }, 'Waiting for verification'],
-    [{ organizer_verification_status: 'pending', publicly_visible: false }, 'Waiting for verification'],
-    [{ organizer_verification_status: 'rejected', publicly_visible: false }, 'Action needed'],
-    [{ organizer_verification_status: 'suspended', publicly_visible: false }, 'Suspended'],
+    [{ sales_status: { reason: 'organizer_not_verified' }, publicly_visible: false }, 'Waiting for verification'],
+    [{ sales_status: { reason: 'organizer_verification_requested' }, publicly_visible: false }, 'Waiting for verification'],
+    [{ organizer_verification_status: 'suspended', sales_status: { reason: 'organizer_paused' }, publicly_visible: false }, 'Suspended'],
     [{ organizer_verification_status: 'verified', policy_hold_scope: 'hidden', publicly_visible: false }, 'On hold'],
+    [{ organizer_verification_status: 'verified', sales_status: { reason: 'payment_not_ready' }, publicly_visible: false }, 'Published'],
   ])('shows %s as %s on the event chip', async (state, label) => {
     fixtures([scanner], [{ ...event, ...state }])
     mount()

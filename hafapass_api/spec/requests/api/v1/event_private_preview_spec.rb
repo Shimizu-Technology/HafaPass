@@ -78,6 +78,19 @@ RSpec.describe "Private event previews", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "rotates a preview token for an invalid legacy event without changing its timestamp" do
+    first = event.preview_token
+    original_time = event.reload.updated_at
+    event.update_columns(timezone: "Invalid/Timezone")
+
+    expect { event.rotate_preview_token! }.not_to change { event.reload.updated_at }
+    expect(event.reload).not_to be_valid
+    expect(event.valid_preview_token?(first)).to be(false)
+    expect(event.preview_token_digest).to be_present
+    expect(event.preview_token_version).to eq(1)
+    expect(event.updated_at).to eq(original_time)
+  end
+
   it "does not issue a link to an unrelated organizer" do
     stranger = create(:user, :organizer)
     get "/api/v1/organizer/events/#{event.id}/preview_link", headers: auth_headers(stranger)

@@ -52,6 +52,18 @@ it('loads fragment previews with a header and no query token', async () => {
   expect(seo.props).toMatchObject({ noIndex: true, noSocial: true })
 })
 
+it('hides the waitlist in a sold-out private preview', async () => {
+  vi.clearAllMocks()
+  apiClient.get.mockResolvedValue({ data: { ...baseEvent, private_preview: true, purchasable: false,
+    ticket_types: baseEvent.ticket_types.map(ticket => ({ ...ticket, quantity_remaining: 0, quantity_available: 10, quantity_sold: 10 })) } })
+  render(<MemoryRouter initialEntries={['/events/reef-night/preview#t=private-secret']}><Routes>
+    <Route path="/events/:slug/preview" element={<EventDetailPage />} />
+  </Routes></MemoryRouter>)
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(screen.queryByText('Join the Waitlist')).not.toBeInTheDocument()
+  expect(screen.queryByText('Already on the waitlist?')).not.toBeInTheDocument()
+})
+
 it('replaces a legacy query preview with a fragment before requesting event data', async () => {
   vi.clearAllMocks()
   apiClient.get.mockResolvedValue({ data: { ...baseEvent, private_preview: true, purchasable: false } })
