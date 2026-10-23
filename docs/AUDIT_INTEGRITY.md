@@ -66,7 +66,24 @@ Forward migration `20261024110000` drops the actor-user nullifying FK and create
 
 Regression coverage exercises hard user deletion, draft event destruction, organization model/SQL restriction, the complete outgoing/incoming audit FK inventory, privacy/retention, synthetic purge with an audit-failure marker, partial enqueue/retry and false enqueue returns, paid-order fulfillment after a real failing audit SQL statement, dual audit/fallback failure, sanitized monitoring, and fail-closed admin/team changes.
 
-## Verification record
+## Review-fix verification
+
+Checked 2026-10-24 Guam against implementation `1d0c4f55f0f7bc7c0781525eab2c7443a0bf6023`. The following documentation commit changes no application or test code. Agent execution used isolated fixtures in `hafapass_audit_review_test`, Ruby 3.3.4, local Postgres 17, Node 22.22.3 and Chromium. CI uses Postgres 16. `origin/main` was already an ancestor; no merge or rebase was needed. Policies are unchanged.
+
+| Required scenario | Result and evidence |
+| --- | --- |
+| R01 Campaign enqueue/outcome | Passed: committed outbox visible from another DB connection before dispatch; real adapter rejection, partial enqueue failure, false return, retry reuse and initiating actor covered. No success audit appears before accepted child enqueues. |
+| R02 Historical deletion | Passed: user hard deletion and draft event destruction preserve audit IDs; organization destroy returns a dependent-audit error and SQL deletion is FK-restricted; FK inventory, privacy, retention and synthetic purge covered. |
+| R03 Money and fulfillment during audit failure | Passed: real failing audit SQL does not roll back paid-order completion, inventory or ticket QR issuance. Monitoring and minimal marker verified; audit-plus-marker failure also leaves fulfillment intact. Cash sale, admission and observed refund outage cases pass. |
+| R04 Privileged configuration | Passed: admin role/verification and organizer team role changes roll back on rejected audits; staff refund intent remains fail-closed. |
+| R05 Administrator presentation | Passed: deleted actor ID remains visible, details/search/reload persistence and overflow checked at 375 and 1280 CSS pixels with test auth/API mocks; screenshots visually inspected. |
+
+Full RSpec: **2,558 examples, zero failures**. RuboCop: **921 files, zero offenses**. Brakeman: zero warnings. Bundler Audit: no vulnerabilities. ESLint, Vite build, production dependency audit, hygiene, release/freeze and whitespace checks passed. Vitest: **165 files, 1,810 tests passed**. Playwright's CI-settings run passed all 112 cases, with one scanner case succeeding on retry (111 first-pass, one flaky). The eight event-day cases then passed with retries disabled, and both audit-page viewport cases also passed with retries disabled. Impeccable returned no findings for the changed audit page. The earlier missing marker-table retention classification is fixed and its 40-example suite and the full suite pass.
+
+Provider outcomes remain simulated. Live Clerk sign-in, physical devices, installed PWA behavior and production deployment were not tested. The prior authorization to use repository mock authentication remains the UI acceptance boundary. All owned test/browser/server processes are finished; the dedicated test database was dropped. Shared services and the held worktree remain intact. GitHub Actions and a current CodeRabbit review remain separate remote gates for the lead; this record does not claim remote approval.
+
+## Original implementation verification
+
 
 Implementation source: `efeddf0357c7ca39435b2183ac977a07d51cb16f`, verified 2026-10-23 UTC. The final full backend run passed all 2,543 examples. Earlier integration failures were retained in local test logs and corrected: fixture assertions now account for operational audit rows, and rerunning completed demo seeds keeps the existing fixture set and its audit history. Replacing demo fixtures requires an explicit database reset.
 
