@@ -55,6 +55,10 @@ module Commerce
     end
 
     def call
+      AuditContext.set(fail_open: provider_refund.present? || AuditContext.fail_open) { execute_refund }
+    end
+
+    def execute_refund
       return record_manual_return! if cash_return || manual_card_return
 
       refund = reserve_refund!
@@ -77,6 +81,8 @@ module Commerce
       mark_unknown!(refund, "provider_result_unknown", e.message)
       raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
+
+    private :execute_refund
 
     private
 
@@ -350,6 +356,12 @@ module Commerce
     end
 
     def finalize_refund!(refund, provider_refund)
+      AuditContext.set(fail_open: !(cash_return || manual_card_return)) do
+        finalize_observed_refund!(refund, provider_refund)
+      end
+    end
+
+    def finalize_observed_refund!(refund, provider_refund)
       full_refund = false
       validation_error = nil
       provider_status = provider_refund.respond_to?(:status) ? provider_refund.status.to_s : ""

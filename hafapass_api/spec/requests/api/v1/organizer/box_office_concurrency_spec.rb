@@ -83,6 +83,6 @@ RSpec.describe "Overlapping terminal requests", :non_transactional, type: :reque
   def clean_test_data
     raise "Isolated test database required" unless Rails.env.test? && ActiveRecord::Base.connection_db_config.database.end_with?("_test")
 
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE users, organizer_profiles, events, site_settings RESTART IDENTITY CASCADE")
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings RESTART IDENTITY CASCADE")
   end
 end

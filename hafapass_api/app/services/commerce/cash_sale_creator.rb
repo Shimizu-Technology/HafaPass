@@ -7,7 +7,7 @@ module Commerce
     Result = Data.define(:order, :replayed)
 
     def self.call(**)
-      new(**).call
+      AuditContext.set(fail_open: true) { new(**).call }
     end
 
     def initialize(event:, user:, parameters:, idempotency_key:)

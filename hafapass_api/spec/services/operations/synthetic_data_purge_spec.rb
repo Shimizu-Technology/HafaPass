@@ -33,6 +33,9 @@ RSpec.describe Operations::SyntheticDataPurge do
     WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_test_1", event_type: "payment_intent.succeeded",
       payload: { "livemode" => false })
     AuditLogger.record!(action: "events.published", auditable: event, actor: organizer)
+    AuditWriteFailure.create!(action: "order.completed", auditable_type: "Order", auditable_id: order.id,
+      actor_user_id: organizer.id, event_id: event.id, organization_id: event.organization_id,
+      source: "provider", failure_class: "ActiveRecord::StatementInvalid")
   end
 
   def all_counts

@@ -45,10 +45,6 @@ class CommunicationCampaign < ApplicationRecord
       "campaign.scheduled"
     elsif saved_change_to_status? && sending?
       "campaign.send_requested"
-    elsif saved_change_to_status? && sent?
-      "campaign.send_completed"
-    elsif saved_change_to_status? && failed?
-      "campaign.send_failed"
     else
       "campaign.updated"
     end

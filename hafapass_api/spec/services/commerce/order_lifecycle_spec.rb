@@ -54,6 +54,39 @@ RSpec.describe "Commerce order lifecycle" do
     )
   end
 
+  it "completes a paid order and reports a minimal gap when audit SQL fails" do
+    result = create_pending_order(quantity: 2)
+    allow(Sentry).to receive(:capture_exception)
+    # A real failing SQL statement aborts its transaction on PostgreSQL. The
+    # audit savepoint must recover before ticket/order writes can continue.
+    allow(AuditLog).to receive(:create_or_find_by!) do
+      AuditLog.connection.execute("SELECT * FROM missing_audit_storage")
+    end
+
+    expect(Commerce::OrderLifecycle.complete!(result.order, payment: result.payment)).to eq(:completed)
+    expect(result.order.reload).to be_completed
+    expect(result.payment.reload).to be_succeeded
+    expect(result.order.tickets.count).to eq(2)
+    expect(result.order.tickets.pluck(:qr_code)).to all(be_present)
+    marker = AuditWriteFailure.find_by!(action: "order.completed", auditable_id: result.order.id)
+    expect(marker).to have_attributes(event_id: event.id, organization_id: event.organization_id)
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "order.completed", auditable_id: result.order.id))
+    expect(AuditContext.fail_open).to be_nil
+  end
+
+  it "still issues tickets if both audit and fallback storage are unavailable" do
+    result = create_pending_order
+    allow(Sentry).to receive(:capture_exception)
+    allow(AuditLog).to receive(:create_or_find_by!).and_raise(ActiveRecord::ConnectionNotEstablished)
+    allow(AuditWriteFailure).to receive(:create!).and_raise(ActiveRecord::ConnectionNotEstablished)
+    expect(Commerce::OrderLifecycle.complete!(result.order, payment: result.payment)).to eq(:completed)
+    expect(result.order.reload).to be_completed
+    expect(result.order.tickets.count).to eq(1)
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "order.completed", fallback_failed: true))
+  end
+
   it "finalizes inventory and issues each entitlement exactly once" do
     result = create_pending_order(quantity: 2)
 

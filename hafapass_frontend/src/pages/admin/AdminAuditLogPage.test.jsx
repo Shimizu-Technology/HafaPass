@@ -34,6 +34,13 @@ describe('AdminAuditLogPage', () => {
     expect(screen.getByText(/request req-1/)).toBeInTheDocument()
   })
 
+  it('distinguishes a deleted historical actor from a system action', async () => {
+    apiClient.get.mockResolvedValue({ data: { audit_logs: [{ ...entry, actor: null, actor_user_id: 42 }], meta: { page: 1, total_pages: 1, total_count: 1 }, areas: [] } })
+    render(<MemoryRouter initialEntries={['/admin/audit-log']}><AdminAuditLogPage /></MemoryRouter>)
+    expect(await screen.findByText('Deleted user #42')).toBeInTheDocument()
+    expect(screen.queryByText('System')).not.toBeInTheDocument()
+  })
+
   it('searches, filters by area and paginates through the URL-backed filters', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/admin/audit-log?target_type=Event&target_id=4']}><AdminAuditLogPage /></MemoryRouter>)

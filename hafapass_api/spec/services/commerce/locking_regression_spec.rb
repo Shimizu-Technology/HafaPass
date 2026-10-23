@@ -20,7 +20,7 @@ RSpec.describe "Commerce lock order", :non_transactional do
     raise "Isolated test database required" unless Rails.env.test? &&
       ActiveRecord::Base.connection_db_config.database.end_with?("_test")
 
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE users, organizer_profiles, events, site_settings RESTART IDENTITY CASCADE")
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings RESTART IDENTITY CASCADE")
   end
 
   def worker(role, results, &block)

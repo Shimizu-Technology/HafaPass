@@ -114,18 +114,17 @@ RSpec.describe Commerce::RefundCreator do
     expect(order.reload.refunded_cents).to eq(0)
   end
 
-  it "rolls back successful allocations and order changes if the outcome audit cannot persist" do
-    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_audit_rollback", status: "succeeded"))
-    allow(AuditLogger).to receive(:record!).and_call_original
-    allow(AuditLogger).to receive(:record!).with(hash_including(action: "refund.succeeded"))
+  it "persists an observed provider refund despite failed outcome audit storage" do
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_audit_outage", status: "succeeded"))
+    allow(AuditLog).to receive(:create_or_find_by!).and_call_original
+    allow(AuditLog).to receive(:create_or_find_by!).with(hash_including(action: "refund.succeeded"))
       .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
-    expect do
-      described_class.call(order: order, amount_cents: 1000, idempotency_key: "outcome-rollback")
-    end.to raise_error(ActiveRecord::RecordInvalid)
-    expect(order.refunds.sole).to be_pending
-    expect(order.reload).to be_completed
-    expect(order.refunds.sole.refund_items).to be_empty
-    expect(AuditLog.where(action: "order.partially_refunded", auditable: order)).not_to exist
+    refund = described_class.call(order: order, amount_cents: 1000, idempotency_key: "outcome-outage")
+    expect(refund).to be_succeeded
+    expect(order.reload).to be_partially_refunded
+    expect(refund.refund_items.sum(:amount_cents)).to eq(1000)
+    expect(AuditWriteFailure.where(action: "refund.succeeded", auditable_id: refund.id)).to exist
+    expect(AuditLog.where(action: "order.partially_refunded", auditable: order)).to exist
   end
 
   it "records multiple partial refunds as additive item allocations" do

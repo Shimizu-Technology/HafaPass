@@ -28,6 +28,19 @@ RSpec.describe Admissions::Reconciler do
     }.merge(overrides)
   end
 
+  it "accepts admission and saves the result if audit storage fails" do
+    input = scan_input(sequence: 1, uuid: "audit-outage-door-scan")
+    device
+    allow(AuditLog).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    allow(Sentry).to receive(:capture_exception)
+    result = described_class.call(device: device, actor: actor, actions: [input]).first
+    expect(result.action).to be_result_accepted
+    expect(ticket.reload).to be_checked_in
+    expect(AuditWriteFailure.where(action: "ticket.admission_reconciled", auditable_id: result.action.id)).to exist
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "ticket.admission_reconciled"))
+  end
+
   it "accepts one admission, surfaces a second-device conflict, and reverses append-only" do
     first = described_class.call(device: device, actor: actor,
       actions: [scan_input(sequence: 1, uuid: "first-door-scan")]).first

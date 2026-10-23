@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -174,6 +174,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_100000) do
     t.index ["retention_anonymized_at"], name: "index_audit_logs_on_retention_anonymized_at"
     t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'unknown'::character varying::text]))", name: "audit_logs_outcome"
     t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying::text, 'system'::character varying::text, 'provider'::character varying::text, 'admin'::character varying::text]))", name: "audit_logs_source"
+  end
+
+  create_table "audit_write_failures", force: :cascade do |t|
+    t.string "action", null: false
+    t.string "auditable_type", null: false
+    t.bigint "auditable_id", null: false
+    t.bigint "organization_id"
+    t.bigint "event_id"
+    t.bigint "actor_user_id"
+    t.string "source", null: false
+    t.string "failure_class", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "balance_adjustments", force: :cascade do |t|
@@ -2761,7 +2774,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_100000) do
   add_foreign_key "annual_tax_report_settings", "organizations"
   add_foreign_key "apple_wallet_registrations", "wallet_passes"
   add_foreign_key "audit_logs", "organizations", on_delete: :restrict
-  add_foreign_key "audit_logs", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "balance_adjustments", "balance_adjustments", column: "reversal_of_id", on_delete: :restrict
   add_foreign_key "balance_adjustments", "disputes", on_delete: :restrict
   add_foreign_key "balance_adjustments", "events", on_delete: :restrict

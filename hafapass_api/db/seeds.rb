@@ -13,6 +13,10 @@ if AuditLog.exists?(action: "platform.demo_seed_completed", deduplication_key: "
   return
 end
 
+if AuditLog.where.not(action: "platform.activity_logging_started").exists?
+  raise "Demo seeds require an empty database; existing audit history must be preserved. Use an explicit db:reset for disposable data."
+end
+
 # Clear existing data in correct order (respecting foreign keys)
 Ticket.destroy_all
 Order.destroy_all

@@ -89,6 +89,10 @@ class PayoutCreator
   end
 
   def record_submission_outcome!(payout, **attributes)
+    AuditContext.set(fail_open: true) { record_observed_submission!(payout, **attributes) }
+  end
+
+  def record_observed_submission!(payout, **attributes)
     Payout.transaction do
       payout.organization.lock!
       payout.lock!

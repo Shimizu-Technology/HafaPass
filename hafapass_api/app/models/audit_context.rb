@@ -3,7 +3,7 @@
 # The initiator follows queued work; a worker must not substitute the record's
 # creator for the person who actually requested an operation.
 class AuditContext < ActiveSupport::CurrentAttributes
-  attribute :actor, :request_id, :ip_address, :source, :job_id
+  attribute :actor, :request_id, :ip_address, :source, :job_id, :fail_open
 
   def self.current
     instance

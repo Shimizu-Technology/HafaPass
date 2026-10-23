@@ -40,7 +40,7 @@ function Entry({ entry }) {
             {changes.length > 0 && <span className="text-content-muted"> · {changes.length} {changes.length === 1 ? 'field' : 'fields'} changed</span>}
           </p>
         </div>
-        <p className="min-w-0 text-sm text-neutral-700 [overflow-wrap:anywhere]">{entry.actor ? (entry.actor.name ? `${entry.actor.name} (${entry.actor.email})` : entry.actor.email) : 'System'}</p>
+        <p className="min-w-0 text-sm text-neutral-700 [overflow-wrap:anywhere]">{entry.actor ? (entry.actor.name ? `${entry.actor.name} (${entry.actor.email})` : entry.actor.email) : (entry.actor_user_id ? `Deleted user #${entry.actor_user_id}` : 'System')}</p>
         <button type="button" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}
           className="inline-flex min-h-11 items-center gap-1 justify-self-start rounded-lg px-2 text-sm font-semibold text-brand-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
           Details<span className="sr-only"> for entry {entry.id}</span>

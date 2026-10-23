@@ -5,7 +5,34 @@ class AuditLogger
   # commits a privileged mutation in an enclosing transaction.
   class WriteError < StandardError; end
 
-  def self.record!(action:, auditable:, actor: nil, organization: nil, event: nil, before_data: {}, after_data: {}, metadata: {}, request: nil,
+  # Default-deny classification: privileged configuration remains fail-closed.
+  BUYER_ACTIONS = %w[order.agreement_accepted order.completed order.cancelled order.expired
+    box_office.cash_sale_created ticket.checked_in ticket.admission_reconciled ticket.check_in_reversed
+    order.fulfillment_resent guest_purchase.recovered catalog_fulfillment.created
+    catalog_fulfillment.pending catalog_fulfillment.fulfilled
+    card_present.payment_succeeded card_present.payment_failed card_present.payment_result_unknown].freeze
+
+  PROVIDER_ACTIONS = %w[refund.pending refund.succeeded refund.failed refund.unknown refund.provider_result_conflict
+    order.refunded order.partially_refunded dispute.opened dispute.updated dispute.won dispute.lost
+    payout.pending payout.processing payout.paid payout.failed payout.reversed payout.provider_result_conflict
+    payout.late_result_held payout.late_result_ignored].freeze
+
+  def self.record!(**attributes)
+    fail_open = AuditContext.fail_open || BUYER_ACTIONS.include?(attributes[:action]) ||
+      (attributes[:source] == "provider" && PROVIDER_ACTIONS.include?(attributes[:action]))
+    return write!(**attributes) unless fail_open
+
+    # A failed SQL statement must roll back its savepoint before the surrounding
+    # order/admission transaction can continue on PostgreSQL.
+    begin
+      AuditLog.transaction(requires_new: true) { write!(**attributes) }
+    rescue StandardError => error
+      AuditWriteFailure.capture!(attributes, error)
+      nil
+    end
+  end
+
+  def self.write!(action:, auditable:, actor: nil, organization: nil, event: nil, before_data: {}, after_data: {}, metadata: {}, request: nil,
     source: nil, outcome: nil, deduplication_key: nil)
     inferred_event = related(auditable, Event)
     inferred_organization = related(auditable, Organization)
@@ -57,6 +84,8 @@ class AuditLogger
   rescue ActiveRecord::RecordInvalid => error
     raise WriteError, "Audit record could not be saved", cause: error
   end
+
+  private_class_method :write!
 
   def self.related(record, type, seen = [])
     return if record.nil? || seen.include?([record.class.name, record.id])

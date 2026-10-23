@@ -8,6 +8,13 @@ module Commerce
 
     class << self
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
+        AuditContext.set(fail_open: true) do
+          complete_with_audit!(order, payment: payment, webhook_event: webhook_event,
+            provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type)
+        end
+      end
+
+      def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
         completed_now = false
 
         Order.transaction do
@@ -94,6 +101,8 @@ module Commerce
 
         completed_now ? :completed : :unchanged
       end
+
+      private :complete_with_audit!
 
       def fail!(order, payment: nil, failure_code: nil, failure_message: nil, reason: "payment_failed")
         Order.transaction do

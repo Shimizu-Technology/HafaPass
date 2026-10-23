@@ -38,6 +38,38 @@ RSpec.describe AuditLog do
     end.to raise_error(ActiveRecord::StatementInvalid, /identity cannot be redacted/)
   end
 
+  it "allows a hard-deleted actor and subject to retain their historical ids" do
+    actor = create(:user)
+    row = AuditLogger.record!(action: "user.role_changed", auditable: actor, actor: actor)
+    actor_id = actor.id
+    actor.destroy!
+    expect(row.reload).to have_attributes(actor_user_id: actor_id, auditable_id: actor_id, auditable_type: "User")
+    expect(row.actor_user).to be_nil
+  end
+
+  it "preserves event identity through the draft event deletion path" do
+    event = create(:event)
+    row = AuditLogger.record!(action: "event.updated", auditable: event, event: event)
+    event_id = event.id
+    event.destroy!
+    expect(row.reload).to have_attributes(event_id: event_id, auditable_id: event_id)
+    expect(row.event).to be_nil
+  end
+
+  it "blocks deleting an audited organization with a clear model error and a restrictive FK" do
+    organization = Organization.create!(name: "Historical organizer", timezone: "Pacific/Guam", currency: "USD")
+    AuditLogger.record!(action: "organization.updated", auditable: organization)
+    expect(organization.destroy).to be(false)
+    expect(organization.errors.full_messages.join).to match(/audit logs/i)
+    expect { isolated_statement { Organization.where(id: organization.id).delete_all } }
+      .to raise_error(ActiveRecord::InvalidForeignKey)
+    fks = described_class.connection.foreign_keys(:audit_logs)
+    expect(fks.map(&:column)).to eq(["organization_id"])
+    expect(fks.sole.on_delete).to eq(:restrict)
+    incoming = described_class.connection.select_values("SELECT conname FROM pg_constraint WHERE contype = 'f' AND confrelid = 'audit_logs'::regclass")
+    expect(incoming).to be_empty
+  end
+
   it "includes the trigger in schema dumps for fresh databases" do
     output = StringIO.new
     ActiveRecord::SchemaDumper.dump(described_class.connection_pool, output)

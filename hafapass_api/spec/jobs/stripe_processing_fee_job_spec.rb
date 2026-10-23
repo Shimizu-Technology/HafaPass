@@ -57,6 +57,6 @@ RSpec.describe StripeProcessingFeeJob, type: :job, non_transactional: true do
     end.not_to have_enqueued_job(described_class)
   end
   def clean_test_data
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events RESTART IDENTITY CASCADE")
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings, webhook_events RESTART IDENTITY CASCADE")
   end
 end

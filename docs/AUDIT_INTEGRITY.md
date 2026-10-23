@@ -14,7 +14,7 @@ Required acceptance:
 | --- | --- | --- |
 | A01 Registry | Every emitted action is registered; unknown keys are administrator-only | Registry completeness and audience specs |
 | A02 Tenant context | Tenant actions carry organization and applicable event; mismatches fail | Logger and coverage specs |
-| A03 Atomic writes | Audit failure rolls back mutation; mutation failure leaves no audit | Service/request transaction specs |
+| A03 Audit failure policy | Privileged configuration rolls back on audit failure; buyer-critical and provider-result mutations continue, report the gap and attempt a minimal marker | Service/request transaction and SQL-savepoint specs |
 | A04 Async/provider | Actual initiator follows jobs; intent/outcome remain distinct; retries deduplicate | Context and provider specs |
 | A05 Sensitive values | TINs, card numbers, secrets, search terms and verification URL queries are removed | Sanitizer and API specs |
 | A06 Immutability | SQL updates/deletes fail; controlled privacy/retention redaction works | Postgres trigger and retention/privacy specs |
@@ -33,6 +33,38 @@ The schema dumper includes the function and trigger, so schema loads and CI test
 The migration role needs permission to create the function and trigger. Old application workers cannot perform payload redaction once the trigger is installed; roll out the new redaction-capable workers promptly and retry any interrupted retention work. Do not disable the guard to run old code. Concurrent indexes and constraint validation scan the table; nullable column additions do not backfill identities or actors.
 
 The global `platform.activity_logging_started` release marker records migration execution time with no invented actor or prior values. Historical entries are not backfilled. Deploy application and workers together and drain pre-release jobs before using this marker as the organization's complete-logging boundary. Take the displayed date from the persisted marker, not a hardcoded release date.
+
+## Review fixes: failure and deletion policy
+
+Review-fix baseline: PR #153 at `2deaa2b2`, 2026-10-24 Guam. The requested acceptance adds campaign enqueue failures, immutable foreign-key behavior and buyer fulfillment during an audit outage. Tests use a dedicated local Postgres database and simulated providers. No production data or real payment is involved.
+
+### Audit failures
+
+`AuditLogger` defaults to fail-closed. Organization/admin configuration, team roles and permissions, verification, payout settings, prices, staff refund reservations and provider-submission intent must commit with their audit. Unknown actions also default to fail-closed. Supplying a provider source alone does not exempt an unclassified action.
+
+The explicit `BUYER_ACTIONS` allowlist covers order completion/agreement/cancellation/expiry, box-office cash-sale completion, admission and reversal, fulfillment/resends and guest-purchase recovery, catalog fulfillment creation/completion, and card-present payment outcomes. The provider allowlist covers observed refund/order-refund, dispute and payout outcomes. `Commerce::OrderLifecycle.complete!`, cash-sale creation, card-present processing, admission reconciliation, Stripe webhook processing, provider refund reconciliation/finalization and payout submission outcomes additionally scope fail-open behavior across their nested callbacks, ticket changes, seating and waitlist transitions. The scope restores on exit and is not propagated as blanket permission to other jobs. Staff manual cash/card refund recording remains fail-closed; a response from an already-executed provider refund is fail-open because rolling back local state cannot undo the provider's money movement.
+
+Fail-open writes run inside a `requires_new` savepoint. A rejected SQL statement rolls back that savepoint before business writes continue. Each failure emits `audit_write_failed` to application monitoring and a generic exception to Sentry with action, subject type/ID, organization/event/actor IDs, source and exception class. Neither the exception message nor request/provider/snapshot payloads are sent by this reporting path. A separate savepoint attempts an `audit_write_failures` row with the same minimal identity. Monitoring/fallback failure is also best effort and must never roll back the buyer operation. These markers commit only if the business transaction commits.
+
+`audit_write_failures` is an administrator repair backlog, not evidence that a complete audit succeeded. Inspect it after recovery, reconcile the action/IDs against authoritative order/payment/admission state, and append an explicitly identified gap/reconciliation record if needed. Do not fabricate missing before/after values or automatically replay a payment, refund, admission or campaign from a marker. The retention inventory classifies these minimal markers as retained audit records with no payload PII to redact. There is no automatic audit replay job in this change. If the entire database is unavailable, the business write itself still cannot succeed; fail-open isolates audit-storage failures, not a database outage.
+
+### Campaign queueing
+
+Campaign status changes no longer imply successful queueing. Sender commits the recipient outbox in `sending` and registers a dispatcher after all enclosing transactions commit, preserving the initiating audit context. Only the dispatcher writes `campaign.send_completed`, atomically with `sent`, after every `MessageDeliveryJob` reports an accepted enqueue outside a business transaction. This is queue acceptance, not provider delivery. A dispatcher or child-enqueue error records `campaign.send_failed` with a fixed failure code and exception class, clears `sent_at` and leaves `failed`. Partial sends reuse the same delivery IDs and provider idempotency keys; existing delivery leases/terminal guards tolerate repeated job enqueues. The worker retries five times; after exhaustion an authorized `send_now` request on the failed campaign retries the existing outbox without rebuilding recipients. Failed/sending campaigns remain non-editable so retry cannot change already-queued content. A process crash after outbox commit but before dispatcher enqueue can leave `sending`; operators may re-enqueue `CommunicationCampaignDispatchJob` for that campaign ID after inspecting the queue. The durable outbox is retained for this recovery.
+
+### Foreign keys and deletion paths
+
+Forward migration `20261024110000` drops the actor-user nullifying FK and creates the minimal failure-marker table. The only outgoing FK on `audit_logs` is `organization_id`, with `ON DELETE RESTRICT`. No table has an incoming FK targeting `audit_logs`. `actor_user_id`, `event_id` and polymorphic `auditable_type`/`auditable_id` are immutable historical references without cascading/nullifying FKs. They may refer to deleted rows; missing associations must not be interpreted as missing identity. The admin API exposes the immutable actor ID and the page labels a missing actor as “Deleted user #ID”, rather than “System”. `audit_write_failures` also keeps IDs without FKs.
+
+- User hard deletion succeeds when other domain references permit it and preserves both actor and subject IDs. Privacy deletion normally anonymizes the local user and deletes the external Clerk identity; it redacts audit payloads through `AuditLog.redact!` while preserving all audit identity.
+- Draft event deletion and eligible subject deletion preserve historical event/subject IDs. Existing domain guards still block events with operational/financial dependents; this change does not bypass them.
+- Organizations with audit history cannot be deleted. `Organization#destroy` returns a clear dependent-audit error, and raw SQL deletion is restricted by the FK. Archive/anonymize as appropriate instead.
+- Retention redacts audit payloads; `delete_pending_order!` only purges eligible orders without audit/financial evidence. Its child deletions and privacy's saved-record removals do not nullify central audit identities.
+- `hafapass:purge_synthetic_data` is a separate, explicitly confirmed pre-launch reset. It verifies no live-money/settlement evidence, truncates all synthetic business history (including both audit tables) together without `CASCADE`, then deletes non-kept users and writes a fresh purge record. This intentional full reset is not a normal retention/deletion path. Never disable the append-only guard for ordinary cleanup.
+- Demo seeds preserve a completed seed set; other existing audit history causes a clear refusal before fixture deletion. Only an explicit disposable-database reset replaces it.
+- RSpec transaction rollback and schema reloads dispose of isolated fixtures; normal specs must not issue `AuditLog.delete_all` to clean append-only rows. The trigger continues to reject ordinary updates/deletes, including actor nullification under the redaction flag.
+
+Regression coverage exercises hard user deletion, draft event destruction, organization model/SQL restriction, the complete outgoing/incoming audit FK inventory, privacy/retention, synthetic purge with an audit-failure marker, partial enqueue/retry and false enqueue returns, paid-order fulfillment after a real failing audit SQL statement, dual audit/fallback failure, sanitized monitoring, and fail-closed admin/team changes.
 
 ## Verification record
 

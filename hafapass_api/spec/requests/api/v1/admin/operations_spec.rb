@@ -311,6 +311,17 @@ RSpec.describe "Admin operations screens", type: :request do
   end
 
   describe "audit logs" do
+    it "returns a deleted actor's immutable identity without labeling it as system" do
+      actor = create(:user)
+      entry = AuditLogger.record!(action: "user.role_changed", auditable: actor, actor: actor)
+      actor_id = actor.id
+      actor.destroy!
+      get "/api/v1/admin/audit_logs", params: { target_type: "User", target_id: actor_id }, headers: headers
+      expect(response).to have_http_status(:ok)
+      record = response.parsed_body["audit_logs"].find { |item| item["id"] == entry.id }
+      expect(record).to include("actor_user_id" => actor_id, "actor" => nil)
+    end
+
     it "searches and filters the append-only trail with pagination" do
       settings = SiteSetting.instance
       first = AuditLogger.record!(action: "site_settings.fee_terms_updated", auditable: settings, actor: admin,

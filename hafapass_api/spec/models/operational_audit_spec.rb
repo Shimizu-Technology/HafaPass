@@ -67,7 +67,12 @@ RSpec.describe "Operational audit coverage" do
     campaign.event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
       marketing_address_certified_at: Time.current)
     sender = create(:user)
-    CommunicationCampaigns::Sender.call(campaign, actor: sender)
+    AuditContext.set(actor: sender) do
+      CommunicationCampaigns::Sender.call(campaign, actor: sender)
+      job = CommunicationCampaignDispatchJob.new(campaign.id)
+      job.audit_context = AuditContext.snapshot
+      job.perform_now
+    end
     rows = AuditLog.where(auditable: campaign, action: %w[campaign.send_requested campaign.send_completed]).order(:id)
     expect(rows.map(&:actor_user_id)).to eq([sender.id, sender.id])
     expect(rows.map(&:outcome)).to eq(%w[requested succeeded])

@@ -61,6 +61,7 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
       outcome: entry.outcome,
       event_id: entry.event_id,
       occurred_at: entry.occurred_at,
+      actor_user_id: entry.actor_user_id,
       actor: user_summary(entry.actor_user),
       target: { type: entry.auditable_type, id: entry.auditable_id },
       organization: entry.organization && { id: entry.organization_id, name: entry.organization.name },

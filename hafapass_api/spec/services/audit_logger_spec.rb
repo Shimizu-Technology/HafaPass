@@ -58,4 +58,24 @@ RSpec.describe AuditLogger do
   it "keeps unknown action keys administrator-only" do
     expect(AuditActions.fetch("unknown.future_action")[:audience]).to include("admin_only")
   end
+
+  it "keeps a minimal admission gap without storing the error message or payload" do
+    event
+    allow(AuditLog).to receive(:create!).and_raise(StandardError, "secret customer@example.com")
+    allow(Sentry).to receive(:capture_exception)
+    expect(described_class.record!(action: "ticket.checked_in", auditable: event, event: event,
+      metadata: { contact: "customer@example.com" })).to be_nil
+    marker = AuditWriteFailure.find_by!(action: "ticket.checked_in")
+    expect(marker.attributes.to_json).not_to include("customer@example.com", "secret")
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "ticket.checked_in", event_id: event.id))
+  end
+
+  it "does not roll back a critical operation if monitoring itself fails" do
+    event
+    allow(AuditLog).to receive(:create!).and_raise("audit unavailable")
+    allow(Sentry).to receive(:capture_exception).and_raise("monitor unavailable")
+    expect { described_class.record!(action: "box_office.cash_sale_created", auditable: event) }
+      .to change(AuditWriteFailure, :count).by(1)
+  end
 end

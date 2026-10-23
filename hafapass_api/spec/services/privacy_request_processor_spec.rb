@@ -28,7 +28,11 @@ RSpec.describe PrivacyRequestProcessor do
 
   it "anonymizes retained records, removes account contact details, and audits execution" do
     EventFavorite.create!(user: user, event: order.event)
+    row = AuditLogger.record!(action: "retention.identity", auditable: user, actor: user, metadata: { email: user.email })
+    original_id = user.id
     described_class.new(privacy_request).execute!(actor: admin)
+    expect(row.reload).to have_attributes(actor_user_id: original_id, auditable_id: original_id)
+    expect(row.metadata).to eq({})
     expect(order.reload.buyer_email).to end_with("@privacy.invalid")
     expect(order.total_cents).to eq(5250)
     expect(user.reload.email).to be_nil

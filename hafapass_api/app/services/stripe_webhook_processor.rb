@@ -19,7 +19,7 @@ class StripeWebhookProcessor
     return receipt if receipt.processed? || receipt.ignored?
 
     receipt.update!(status: :processing, attempts: receipt.attempts + 1, last_error: nil)
-    process!(receipt)
+    AuditContext.set(source: "provider", fail_open: true) { process!(receipt) }
     receipt
   rescue StandardError => e
     receipt&.update!(status: :failed, last_error: "#{e.class}: #{e.message}")

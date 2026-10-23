@@ -16,51 +16,51 @@ module CommunicationCampaigns
     end
 
     def call
-      deliveries = []
       AuditContext.set(actor: @actor || AuditContext.actor) do
         CommunicationCampaign.transaction do
-        campaign.lock!
-        unless campaign.draft? || campaign.scheduled?
-          raise CampaignError, "Only draft or scheduled campaigns can be sent"
-        end
-        organization = campaign.event.organization
-        unless organization.marketing_postal_address_ready?
-          raise CampaignError, "The organization owner must certify a valid marketing postal address in Organization settings before sending email"
-        end
-        if PublicSiteUrl.api.blank? && !Rails.env.local?
-          raise CampaignError, "PUBLIC_API_URL is required for one-click unsubscribe"
-        end
+          campaign.lock!
+          unless campaign.draft? || campaign.scheduled? || campaign.failed?
+            raise CampaignError, "Only draft, scheduled or failed campaigns can be sent"
+          end
+          organization = campaign.event.organization
+          unless organization.marketing_postal_address_ready?
+            raise CampaignError, "The organization owner must certify a valid marketing postal address in Organization settings before sending email"
+          end
+          if PublicSiteUrl.api.blank? && !Rails.env.local?
+            raise CampaignError, "PUBLIC_API_URL is required for one-click unsubscribe"
+          end
 
-        campaign.update!(status: :sending, started_at: Time.current)
-        eligible_recipients.each do |recipient|
-          normalized = recipient.fetch(:email).strip.downcase
-          deliveries << campaign.message_deliveries.create!(
-            event: campaign.event,
-            order: recipient[:order],
-            requested_by: @actor || AuditContext.actor,
-            channel: "email",
-            template: "communication_campaign",
-            recipient: normalized,
-            provider: EmailService.configured? ? "resend" : "simulated",
-            idempotency_key: "campaign/#{campaign.id}/#{Digest::SHA256.hexdigest(normalized)}",
-            payload_digest: Digest::SHA256.hexdigest([campaign.subject, campaign.body, normalized].join("|")),
-            metadata: { subject: campaign.subject, body: campaign.body,
-              mailing_address: organization.marketing_mailing_address,
-              organizer_name: organization.name },
-            status: :queued
-          )
-        end
-        campaign.update!(status: :sent, sent_at: Time.current, recipient_count: deliveries.length)
+          retrying = campaign.failed? && campaign.started_at.present?
+          campaign.update!(status: :sending, started_at: campaign.started_at || Time.current)
+          (retrying ? [] : eligible_recipients).each do |recipient|
+            normalized = recipient.fetch(:email).strip.downcase
+            campaign.message_deliveries.create!(
+              event: campaign.event,
+              order: recipient[:order],
+              requested_by: @actor || AuditContext.actor,
+              channel: "email",
+              template: "communication_campaign",
+              recipient: normalized,
+              provider: EmailService.configured? ? "resend" : "simulated",
+              idempotency_key: "campaign/#{campaign.id}/#{Digest::SHA256.hexdigest(normalized)}",
+              payload_digest: Digest::SHA256.hexdigest([campaign.subject, campaign.body, normalized].join("|")),
+              metadata: { subject: campaign.subject, body: campaign.body,
+                mailing_address: organization.marketing_mailing_address,
+                organizer_name: organization.name },
+              status: :queued
+            )
+          end
+          campaign.update!(recipient_count: campaign.message_deliveries.count)
+          # Dispatch starts after the durable recipient outbox commits.
+          context = AuditContext.snapshot
+          ActiveRecord.after_all_transactions_commit do
+            AuditContext.restore(context) { enqueue_dispatch! }
+          end
         end
       end
-      deliveries.each { |delivery| MessageDeliveryJob.perform_later(delivery.id) }
       campaign
     rescue ActiveRecord::RecordNotUnique
       raise CampaignError, "This campaign has already been queued"
-    rescue StandardError => error
-      AuditLogger.record!(action: "campaign.send_failed", auditable: campaign, actor: @actor,
-        event: campaign.event, outcome: "failed", metadata: { error_class: error.class.name })
-      raise
     end
 
     def audience_counts
@@ -74,6 +74,18 @@ module CommunicationCampaigns
     private
 
     attr_reader :campaign
+
+    def enqueue_dispatch!
+      job = CommunicationCampaignDispatchJob.perform_later(campaign.id)
+      raise ActiveJob::EnqueueError, "Campaign dispatcher enqueue rejected" unless job && job.successfully_enqueued?
+    rescue StandardError => error
+      campaign.with_lock do
+        campaign.update!(status: :failed, sent_at: nil)
+        AuditLogger.record!(action: "campaign.send_failed", auditable: campaign, event: campaign.event,
+          outcome: "failed", metadata: { failure_code: "dispatcher_enqueue_failed", exception_type: error.class.name })
+      end
+      raise
+    end
 
     def recipients
       tickets = campaign.event.tickets.where.not(status: :cancelled).where.not(order_id: nil)

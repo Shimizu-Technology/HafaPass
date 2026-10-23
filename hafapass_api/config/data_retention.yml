@@ -75,6 +75,13 @@
         "metadata"
       ]
     },
+    "audit_write_failures": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "balance_adjustments": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -1239,6 +1246,19 @@
       "request_id": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system"
+    },
+    "audit_write_failures": {
+      "id": "system",
+      "action": "system",
+      "auditable_type": "non-personal",
+      "auditable_id": "system",
+      "organization_id": "system",
+      "event_id": "system",
+      "actor_user_id": "system",
+      "source": "system",
+      "failure_class": "non-personal",
+      "created_at": "system",
+      "updated_at": "system"
     },
     "balance_adjustments": {
       "id": "system",

@@ -15,7 +15,7 @@ for (const width of [375, 1280]) {
       return json(route, {
         audit_logs: [{
           id: 31, action: 'ticket_type.updated', occurred_at: '2026-10-24T01:00:00Z',
-          source: 'user', outcome: 'succeeded', actor: { id: 1, name: 'QA Operator', email: 'operator@example.test' },
+          source: 'user', outcome: 'succeeded', actor_user_id: 77, actor: null,
           target: { type: 'TicketType', id: 42 }, organization: { id: 7, name: 'Island Community Events' },
           before_data: { price_cents: 2000 }, after_data: { price_cents: 2500 },
           metadata: { search_used: true }, request_id: 'qa-audit-request',
@@ -23,6 +23,7 @@ for (const width of [375, 1280]) {
       })
     })
     await page.goto('/admin/audit-log')
+    await expect(page.getByText('Deleted user #77', { exact: true })).toBeVisible()
     await expect(page.getByText('Personal details may be redacted for privacy or retention.', { exact: false })).toBeVisible()
     await expect(page.getByText('Entries cannot be edited or deleted.', { exact: false })).toHaveCount(0)
     await page.getByRole('button', { name: 'Details for entry 31' }).click()

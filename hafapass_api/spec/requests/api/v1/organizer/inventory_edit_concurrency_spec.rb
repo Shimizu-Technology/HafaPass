@@ -163,7 +163,7 @@ RSpec.describe "Organizer inventory edit concurrency", type: :request, non_trans
     end
 
     ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
+      TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE
     SQL
   end
