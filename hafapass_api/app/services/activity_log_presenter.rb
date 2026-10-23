@@ -23,7 +23,7 @@ class ActivityLogPresenter
         url: "/admin/organizations/#{entry.organization_id}" },
       target: { type: entry.auditable_type, id: entry.auditable_id },
       before_data: AuditSanitizer.call(entry.before_data), after_data: AuditSanitizer.call(entry.after_data),
-      metadata: AuditSanitizer.call(entry.metadata), request_id: entry.request_id)
+      metadata: AuditSanitizer.call(entry.metadata), request_id: AuditSanitizer.call(entry.request_id))
   end
 
   private
@@ -39,7 +39,7 @@ class ActivityLogPresenter
     return { name: "System" } unless entry.actor_user
 
     member = @member_ids ? @member_ids.include?(entry.actor_user_id) :
-      organization&.organization_memberships&.exists?(user_id: entry.actor_user_id)
+      organization&.organization_memberships&.effective&.exists?(user_id: entry.actor_user_id)
     return { name: "Buyer" } unless member
 
     { name: full_name(entry.actor_user).presence || entry.actor_user.email, email: entry.actor_user.email }

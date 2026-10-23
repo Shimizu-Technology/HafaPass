@@ -6,8 +6,8 @@ class Api::V1::Organizer::ActivityLogsController < Api::V1::Organizer::BaseContr
     return render json: { error: "You do not have permission to view activity" }, status: :forbidden unless access.allowed?
 
     query = ActivityLogQuery.new(scope: access.relation, organization: current_organization, params: params)
-    entries, cursor = query.page(cursor: params[:cursor], limit: params[:limit], identity: [current_user.id, current_organization.id])
-    members = current_organization.organization_memberships.where.not(user_id: nil).pluck(:user_id).to_set
+    entries, cursor = query.page(cursor: params[:cursor], limit: params[:limit], identity: [current_user.id, current_organization.id, access.fingerprint])
+    members = current_organization.organization_memberships.effective.where.not(user_id: nil).pluck(:user_id).to_set
     actor_ids = access.relation.where.not(actor_user_id: nil).distinct.pluck(:actor_user_id)
     actors = User.where(id: actor_ids).order(:id).filter_map do |person|
       next unless members.include?(person.id) || person.staff?

@@ -149,3 +149,19 @@ it('accepts internal record paths and rejects unsafe links', () => {
   expect(activityPath('/dashboard/events/4')).toBe('/dashboard/events/4')
   for (const path of ['javascript:alert(1)', '//outside.test', '/\\outside.test', 'https://outside.test']) expect(activityPath(path)).toBeNull()
 })
+
+it('clears old audience rows and restarts pagination after an allowed-to-allowed role downgrade', async () => {
+  let downgraded = false
+  apiClient.get.mockImplementation((path) => Promise.resolve({ data: path === '/organizer/organization'
+    ? downgraded ? { ...organization, role: 'manager', activity_scope: 'manager-events', permissions: { view_activity_events: true } }
+      : { ...organization, activity_scope: 'owner-all' }
+    : downgraded ? response([{ ...entry, sentence: 'Allowed manager event.' }])
+      : response([{ ...entry, sentence: 'Owner-only team change.' }], { next_cursor: 'owner-cursor' }) }))
+  mount()
+  expect(await screen.findByText('Owner-only team change.')).toBeInTheDocument()
+  downgraded = true
+  await userEvent.click(screen.getByRole('button', { name: 'Load more' }))
+  expect(await screen.findByText('Allowed manager event.')).toBeInTheDocument()
+  expect(screen.queryByText('Owner-only team change.')).not.toBeInTheDocument()
+  expect(apiClient.get).toHaveBeenLastCalledWith('/organizer/activity_logs', expect.objectContaining({ params: { limit: 50 } }))
+})

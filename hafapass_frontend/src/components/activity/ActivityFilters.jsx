@@ -9,7 +9,7 @@ function Select({ title, value, options, onChange }) {
   const choices = value && !options.some(option => String(option.value) === value)
     ? [{ value, label: `Selected: ${value}` }, ...options] : options
   return <label className="block min-w-0 text-sm font-medium text-neutral-900">{title}
-    <select className="input mt-1 min-w-0 !py-2" value={value} onChange={event => onChange(event.target.value)}>
+    <select aria-label={title} className="input mt-1 min-w-0 !py-2" value={value} onChange={event => onChange(event.target.value)}>
       <option value="">All {allLabels[title]}</option>
       {choices.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>

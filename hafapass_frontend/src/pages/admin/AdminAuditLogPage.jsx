@@ -72,7 +72,7 @@ function Entry({ entry }) {
             <div><dt className="inline font-semibold">Source: </dt><dd className="inline">{entry.source || 'Not recorded'}</dd></div>
             <div><dt className="inline font-semibold">Outcome: </dt><dd className="inline">{entry.outcome || 'Not recorded'}</dd></div>
           </dl>
-          {metadata && <pre className="max-h-64 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-white p-3 text-xs text-neutral-800 ring-1 ring-neutral-200">{JSON.stringify(metadata, null, 2)}</pre>}
+          {(metadata || Object.keys(entry.before_data || {}).length > 0 || Object.keys(entry.after_data || {}).length > 0) && <pre className="max-h-64 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-white p-3 text-xs text-neutral-800 ring-1 ring-neutral-200">{JSON.stringify({ before: entry.before_data, after: entry.after_data, metadata }, null, 2)}</pre>}
         </details>
         <p className="text-xs text-content-muted [overflow-wrap:anywhere]">Entry #{entry.id}{entry.request_id ? ` · request ${entry.request_id}` : ''}</p>
       </div>}

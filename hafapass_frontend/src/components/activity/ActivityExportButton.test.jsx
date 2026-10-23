@@ -65,3 +65,12 @@ it('ignores a late CSV response after the filter-bound control unmounts', async 
   expect(click).not.toHaveBeenCalled()
   expect(request.release).toHaveBeenCalled()
 })
+
+it('reports a streamed incomplete CSV as a failure instead of saving it as success', async () => {
+  api.downloadExport.mockResolvedValue({ data: { text: async () => 'Activity\nEXPORT INCOMPLETE: an error stopped this file early.' } })
+  const user = userEvent.setup()
+  mount()
+  await user.click(screen.getByRole('button', { name: 'Download CSV' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('CSV could not be downloaded')
+  expect(click).not.toHaveBeenCalled()
+})

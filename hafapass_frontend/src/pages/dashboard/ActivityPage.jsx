@@ -33,6 +33,7 @@ function ActivitySession({ identity }) {
   const generation = useRef(0)
   const pending = useRef(null)
   const accessEpoch = useRef(0)
+  const activityScope = useRef(null)
   const requests = useRef(new Set())
 
   const handleDenied = useCallback(error => {
@@ -68,6 +69,19 @@ function ActivitySession({ identity }) {
       if (!current()) return
       const org = response.data
       if (org.id == null || (identity.organizationId != null && String(org.id) !== identity.organizationId)) throw new Error('Organization mismatch')
+      const scope = org.activity_scope || JSON.stringify([org.role, org.permissions, org.activity_access])
+      if (activityScope.current && activityScope.current !== scope) {
+        // A role or assignment downgrade can retain some activity access.
+        // Withdraw old rows/exports and start a new authorized snapshot.
+        activityScope.current = scope
+        ++accessEpoch.current
+        requests.current.forEach(pendingRequest => pendingRequest.controller.abort())
+        setState({ loading: true, data: null, denied: false, error: '' })
+        setOrganization(org)
+        load()
+        return
+      }
+      activityScope.current = scope
       setOrganization(org)
       if (!canViewOrganizationActivity(org)) {
         ++accessEpoch.current
@@ -94,7 +108,7 @@ function ActivitySession({ identity }) {
   const startedDate = started && new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Guam', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(started.length === 10 ? `${started}T00:00:00+10:00` : started))
   return <WorkspacePage>
     <PageHeader back={<BackLink />} eyebrow={organization?.name || 'Organization'} title="Activity" description="See what changed and who made it happen. All times are Guam time."
-      actions={!state.denied && organization && <ActivityExportButton key={filterKey} api={organizerActivityApi} params={JSON.parse(filterKey)} beginRequest={beginActivityRequest} disabled={state.loading || !state.data} />} />
+      actions={!state.denied && organization && <ActivityExportButton key={`${filterKey}:${activityScope.current}`} api={organizerActivityApi} params={JSON.parse(filterKey)} beginRequest={beginActivityRequest} disabled={state.loading || !state.data} />} />
     {organization && <SettingsNavigation organization={organization} />}
     {state.denied ? <>
       <NoAccessNotice title="Activity is not available for your role" detail="Ask your organization owner if you need access to activity. Event managers can view activity for their assigned events." />

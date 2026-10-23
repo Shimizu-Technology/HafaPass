@@ -262,11 +262,15 @@ assignment adds operations history for that event only. Marketer, box office,
 and scanner memberships alone grant no history access. `activity_access` in the
 organization summary signals that at least one audience/event grant is available;
 it does not turn an event assignment into organization-wide permissions.
+Its opaque `activity_scope` fingerprint binds loaded history to current audience
+and assignment grants; a scope change clears prior rows and pending exports
+before pagination restarts.
 
 Rows return only identity/time, registry sentence, area, outcome, safe actor
 display, event/target links and allowlisted before/after changes. Buyer actors
 appear as “Buyer”; platform staff as “HåfaPass administrator”; provider/system
-activity as “Stripe”/“HåfaPass”. Current organization members can show name/email.
+activity as “Stripe”/“HåfaPass”. Only effective, active organization members can show name/email; invited,
+revoked and expired memberships keep the “Buyer” label.
 No raw action, metadata, request/IP identifier, buyer contact, export search text,
 internal note, or review evidence enters the organizer representation. Unknown
 and admin-only actions are excluded. Organizer search uses visible sentences,

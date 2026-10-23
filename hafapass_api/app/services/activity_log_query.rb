@@ -84,7 +84,11 @@ class ActivityLogQuery
   def search(result)
     term = filters.fetch("q")
     pattern = "%#{ActiveRecord::Base.sanitize_sql_like(term)}%"
-    return result.left_joins(:actor_user).where("audit_logs.action ILIKE :q OR users.email ILIKE :q OR audit_logs.request_id = :exact", q: pattern, exact: term) if @admin
+    if @admin
+      return result.left_joins(:actor_user, :event, :organization).where(
+        "audit_logs.action ILIKE :q OR users.email ILIKE :q OR audit_logs.auditable_type ILIKE :q " \
+        "OR audit_logs.request_id = :exact OR events.title ILIKE :q OR organizations.name ILIKE :q", q: pattern, exact: term)
+    end
 
     # Search only displayed sentences, areas, event titles and safe actor labels.
     # Neither JSON payloads nor internal action/target/request IDs are searched.
@@ -92,7 +96,7 @@ class ActivityLogQuery
       definition = AuditActions.fetch(key)
       [definition[:template], definition[:area]].any? { |text| text.downcase.include?(term.downcase) }
     end
-    member_ids = organization.organization_memberships.where(user_id: User.where.not(role: [:admin, :support])
+    member_ids = organization.organization_memberships.effective.where(user_id: User.where.not(role: [:admin, :support])
       .where("concat_ws(' ', first_name, last_name) ILIKE :q OR email ILIKE :q", q: pattern)).select(:user_id)
     labels = { "provider" => "Stripe", "system" => "HåfaPass", "admin" => "HåfaPass administrator" }
       .select { |_source, name| name.downcase.include?(term.downcase) }.keys

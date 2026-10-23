@@ -48,7 +48,7 @@ module ActivityLogExports
 
     query = export_query(item.fetch("filters"))
     scope = query.relation.where("audit_logs.id <= ?", item.fetch("upper_id"))
-    member_ids = export_organization&.organization_memberships&.where&.not(user_id: nil)&.pluck(:user_id)&.to_set
+    member_ids = export_organization&.organization_memberships&.effective&.where&.not(user_id: nil)&.pluck(:user_id)&.to_set
     count = 0
     rows = Enumerator.new do |output|
       # Keyset batches avoid both unbounded memory and OFFSET shifts. IDs bound

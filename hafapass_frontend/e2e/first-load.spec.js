@@ -82,7 +82,7 @@ for (const width of [375, 1280]) {
 
 for (const [path, color] of [['/', '#020617'], ['/events', '#ffffff'], ['/discover', '#ffffff'], ['/dashboard', '#ffffff']]) {
   test(`cold-load theme color matches ${path} before the app mounts`, async ({ page }) => {
-    await page.route('**/src/main.jsx', route => route.abort())
+    await page.route('**/src/main.jsx*', route => route.abort())
     await page.goto(path)
     await expect(page.locator('.boot-splash')).toBeVisible()
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', color)

@@ -28,6 +28,9 @@ export default function ActivityExportButton({ api, params, beginRequest, disabl
       }
       const file = await api.downloadExport(job.id, request.config)
       if (!current()) return
+      const content = typeof file.data === 'string' ? file.data : await file.data.text()
+      if (!current()) return
+      if (content.includes('EXPORT INCOMPLETE: an error stopped this file early.')) throw new Error('Export incomplete')
       const url = URL.createObjectURL(new Blob([file.data], { type: 'text/csv;charset=utf-8' }))
       const link = document.createElement('a')
       link.href = url

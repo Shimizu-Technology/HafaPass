@@ -174,3 +174,31 @@ RSpec.describe "Organization activity", type: :request do
     expect(ids).not_to include(old.id)
   end
 end
+
+RSpec.describe "Activity former-member privacy", type: :request do
+  it "masks invited, revoked and expired member contact in rows, actor options, search and CSV" do
+    profile = create(:organizer_profile)
+    organization = profile.organization
+    event = create(:event, organizer_profile: profile)
+    people = [
+      create(:organization_membership, organization: organization, role: :scanner, status: :invited, accepted_at: nil).user,
+      create(:organization_membership, organization: organization, role: :scanner, status: :revoked).user,
+      create(:organization_membership, organization: organization, role: :scanner, expires_at: 1.hour.ago).user
+    ]
+    rows = people.map { |person| AuditLogger.record!(action: "event.updated", auditable: event, actor: person, source: "user") }
+    headers = auth_headers(profile.user).merge("X-Organization-Id" => organization.id.to_s)
+    get "/api/v1/organizer/activity_logs", headers: headers
+    selected = response.parsed_body.fetch("activity_logs").select { |row| rows.map(&:id).include?(row["id"]) }
+    expect(selected.map { |row| row["actor"] }).to eq([{ "name" => "Buyer" }] * 3)
+    people.each { |person| expect(response.body).not_to include(person.email) }
+    people.each do |person|
+      get "/api/v1/organizer/activity_logs", params: { q: person.email }, headers: headers
+      expect(response.parsed_body.fetch("activity_logs")).to be_empty
+    end
+    post "/api/v1/organizer/activity_log_exports", headers: headers
+    url = response.parsed_body.dig("export", "download_url")
+    get url, headers: headers
+    expect(response).to have_http_status(:ok)
+    people.each { |person| expect(response.body).not_to include(person.email) }
+  end
+end

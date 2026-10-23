@@ -64,6 +64,7 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
   private
 
   def organization_json(organization, role)
+    activity = OrganizationActivityAccess.new(user: current_user, organization: organization)
     {
       id: organization.id,
       name: organization.name,
@@ -72,7 +73,8 @@ class Api::V1::Organizer::OrganizationsController < ApplicationController
       timezone: organization.timezone,
       currency: organization.currency,
       role: role,
-      activity_access: OrganizationActivityAccess.new(user: current_user, organization: organization).allowed?,
+      activity_access: activity.allowed?,
+      activity_scope: activity.fingerprint,
       permissions: OrganizationAuthorization.permissions_for(user: current_user, organization: organization),
       payout_ready: organization.payout_ready?,
       marketing_mailing_address: organization.marketing_mailing_address,
