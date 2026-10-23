@@ -37,22 +37,11 @@ emails:
     attendee_column: "Dadalo"
     ticket_column: "Tiket"
     view_ticket: "Tingnan ang Tiket"
-    all_transferred: "Nailipat na ang lahat ng tiket sa order na ito. Mabubuksan ng
-      mga bagong may-ari ang mga ito sa %{my_tickets_link}."
-    entry_instructions: "Ipakita ang iyong QR Code sa pasukan upang makapasok.
-      Mabubuksan mo ang iyong mga tiket anumang oras sa %{my_tickets_link}."
   pdf_note:
     single: "Nakalakip din ang iyong tiket bilang PDF, kaya mabubuksan mo ito sa
       pasukan kahit walang signal."
     all: "Nakalakip din ang lahat ng %{count} tiket bilang mga PDF, kaya mabubuksan
       mo ang mga ito sa pasukan kahit walang signal."
-    capped: "Nakalakip ang unang %{count} tiket bilang mga PDF, kaya mabubuksan mo
-      ang mga ito sa pasukan kahit walang signal. Buksan ang natitira sa Mga
-      Tiket Ko."
-    partial: "Nakalakip bilang mga PDF ang %{count} sa iyong %{total} tiket, kaya
-      mabubuksan mo ang mga ito sa pasukan kahit walang signal. Hindi magagamit
-      sa pagpasok ang iba sa ngayon; tingnan ang status ng mga ito sa Mga Tiket
-      Ko."
   ticket:
     subject: "Ang Iyong Tiket - %{event}"
     heading: "Ang Iyong Tiket"
@@ -72,8 +61,6 @@ emails:
     body: "Naproseso na ang iyong refund para sa %{event}."
     full: "Buong refund"
     partial: "Bahagyang refund (%{amount})"
-    returned: "Ibabalik ang %{amount} sa ginamit mong paraan ng pagbabayad sa loob
-      ng 5-10 araw ng trabaho."
     reason: "Dahilan:"
     questions: "Kung mayroon kang mga tanong, mangyaring makipag-ugnayan sa
       tagapag-organisa ng event."

@@ -17,6 +17,23 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "restores guest access from the confirmation email without an account or prior browser storage", :webmock do
+    create(:ticket, order: order, event: event, ticket_type: ticket_type)
+    delivery = create(:message_delivery, order: order)
+    html = EmailService.prepare_delivery_payload(delivery).fetch("html")
+    link = URI.parse(Nokogiri::HTML(html).at_css("a")["href"])
+    params = Rack::Utils.parse_query(link.query)
+
+    expect(link.path).to eq("/orders/#{order.id}/confirmation")
+    get "/api/v1/orders/#{order.id}", params: params
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("id" => order.id, "status" => "completed")
+    expect(response.parsed_body.fetch("tickets").length).to eq(1)
+
+    get "/api/v1/orders/#{create(:order).id}", params: params
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "keeps frozen email wire bytes and digest out of buyer order responses" do
     payload = { "to" => "buyer@synthetic.invalid", "html" => "<a href='https://synthetic.invalid/?guest_token=private-fixture-link'>Order</a>" }
     body = JSON.generate(payload)

@@ -176,7 +176,8 @@ class EmailService
         "Your data export is ready. Use the secure link below within seven days." :
         "We have processed your deletion request. Some financial records remain as explained in your request result."
       if privacy_request.status == "partially_completed"
-        text += " Some provider cleanup still needs manual completion. HåfaPass support will follow up."
+        subject = "Update on your HåfaPass privacy request"
+        text += " Some information still needs to be removed from connected services. HåfaPass support will follow up."
       end
       link = privacy_request.kind == "access" ?
         "<p><a href=\"#{ERB::Util.html_escape(PrivacyRequestAccess.url(privacy_request))}\">Download your JSON export</a></p>" : ""
@@ -222,10 +223,14 @@ class EmailService
       end
     end
 
-    def send_refund_notification_async(order, refund: nil)
+    def send_refund_notification_async(order, refund:)
+      unless refund.order_id == order.id && refund.succeeded?
+        raise ArgumentError, "Refund notification requires a successful refund for this order"
+      end
+
       delivery = create_delivery(order: order, event: order.event, template: "refund_notification",
-        recipient: order.buyer_email, metadata: refund ? { refund_id: refund.id } : {},
-        idempotency_key: refund ? "refund-notification/#{refund.id}" : nil)
+        recipient: order.buyer_email, metadata: { refund_id: refund.id },
+        idempotency_key: "refund-notification/#{refund.id}")
       MessageDeliveryJob.perform_later(delivery.id)
       delivery
     end
@@ -470,9 +475,11 @@ class EmailService
       event = order.event
       tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
       pdfs = TicketEmailAttachments.plan(tickets)
+      current_details = delivery&.template == "fulfillment_resend" || tickets.any? { |ticket| !ticket.admission_allowed? }
       html, subject = in_locale(order.locale) do
-        [build_order_confirmation_html(order, event, tickets, pdfs: pdfs),
-          safe_subject(t("order_confirmation.subject", event: event_title(event)))]
+        key = current_details ? "order_confirmation.current_subject" : "order_confirmation.subject"
+        [build_order_confirmation_html(order, event, tickets, pdfs: pdfs, current_details: current_details),
+          safe_subject(t(key, event: event_title(event)))]
       end
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "order_confirmation", delivery: delivery,
@@ -542,16 +549,20 @@ class EmailService
 
     # ── Refund Notification ─────────────────────────────────────────
     def send_refund_notification(order, delivery: nil)
+      return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
+
       event = order.event
-      amount_cents = if event.cancelled? && delivery&.metadata&.key?("refund_id")
-        Refund.find_by(id: delivery.metadata["refund_id"], order_id: order.id)&.amount_cents || order.refund_amount_cents
-      else
-        order.refund_amount_cents
+      # The order's cumulative total may have changed while this email waited.
+      # Never guess which refund a legacy or malformed delivery describes.
+      unless delivery&.metadata&.key?("refund_id")
+        raise MessageWirePayload::Unavailable, "Refund notification requires its specific refund"
       end
+
+      refund = order.refunds.succeeded.find(delivery.metadata.fetch("refund_id"))
       html, subject = in_locale(order.locale) do
-        key = event.cancelled? ? "refund.cancelled_subject" : "refund.subject"
-        [build_refund_notification_html(order, event, amount_cents: amount_cents),
-          safe_subject(t(key, event: event_title(event), amount: money(amount_cents)))]
+        key = event.cancelled? && refund.provider == "stripe" ? "refund.cancelled_subject" : "refund.subject"
+        [build_refund_notification_html(order, event, refund: refund),
+          safe_subject(t(key, event: event_title(event), amount: money(refund.amount_cents)))]
       end
 
       deliver(to: order.buyer_email, subject: subject, html: html, tag: "refund_notification", delivery: delivery,
@@ -850,14 +861,16 @@ class EmailService
       HTML
     end
 
-    def build_order_confirmation_html(order, event, tickets, pdfs: nil)
+    def build_order_confirmation_html(order, event, tickets, pdfs: nil, current_details: false)
+      guest_order_url = order_access_url(order) if order.user_id.nil?
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h([ticket_type_name(ticket.ticket_type), ticket.seat_label].compact.join(" — "))}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.attendee_name)}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{ht("ticket_status.#{ticket.status}")}</td>
             <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">
-              <a href="#{ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_ticket')}</a>
+              <a href="#{guest_order_url || ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_ticket')}</a>
             </td>
           </tr>
         HTML
@@ -868,14 +881,14 @@ class EmailService
       else
         ""
       end
-      my_tickets_link = %(<a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">#{ht('my_tickets')}</a>)
+      tickets_link = guest_order_url ? %(<a href="#{guest_order_url}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_order')}</a>) : default_tickets_link
       header_style = "padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;"
 
       # A buyer who transferred every ticket gets no empty table or entry instructions.
       tickets_section = if tickets.empty?
         <<~HTML
           <p style="color: #6b7280; margin: 0; font-size: 14px;">
-            #{ht('order_confirmation.all_transferred', links: { my_tickets_link: my_tickets_link })}
+            #{ht('order_confirmation.all_transferred', links: { tickets_link: tickets_link })}
           </p>
         HTML
       else
@@ -886,6 +899,7 @@ class EmailService
               <tr style="background: #f9fafb;">
                 <th style="#{header_style}">#{ht('order_confirmation.type_column')}</th>
                 <th style="#{header_style}">#{ht('order_confirmation.attendee_column')}</th>
+                <th style="#{header_style}">#{ht('order_confirmation.status_column')}</th>
                 <th style="#{header_style}">#{ht('order_confirmation.ticket_column')}</th>
               </tr>
             </thead>
@@ -893,16 +907,17 @@ class EmailService
           </table>
 
           <p style="color: #6b7280; margin: 28px 0 0; font-size: 14px;">
-            #{ht('order_confirmation.entry_instructions', links: { my_tickets_link: my_tickets_link })}
+            #{ht('order_confirmation.entry_instructions', links: { tickets_link: tickets_link })}
           </p>
-          #{pdf_attachment_note(pdfs)}
+          #{pdf_attachment_note(pdfs, tickets_link: tickets_link)}
         HTML
       end
 
       seller = SellerIdentity.for_event(event)
-      email_wrapper(t("order_confirmation.title")) do
+      heading = t(current_details ? "order_confirmation.current_heading" : "order_confirmation.heading")
+      email_wrapper(current_details ? heading : t("order_confirmation.title")) do
         <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ht('order_confirmation.heading')}</h2>
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
           <p style="color: #6b7280; margin: 0 0 28px;">#{ht('order_confirmation.thanks', name: order.buyer_name)}</p>
 
           <div style="background: #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
@@ -970,27 +985,34 @@ class EmailService
       end
     end
 
-    def build_refund_notification_html(order, event, amount_cents: order.refund_amount_cents)
+    def build_refund_notification_html(order, event, refund:)
+      amount_cents = refund.amount_cents
       amount_str = if amount_cents >= order.total_cents
         t("refund.full")
       else
         t("refund.partial", amount: money(amount_cents))
       end
-      reason = if order.refund_reason.present?
-        "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>#{ht('refund.reason')}</strong> #{h(order.refund_reason)}</p>"
+      reason = if refund.reason.present?
+        "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>#{ht('refund.reason')}</strong> #{h(refund.reason)}</p>"
       else
         ""
       end
 
-      heading = event.cancelled? ? t("refund.cancelled_heading") : t("refund.heading")
+      cancellation = event.cancelled? && refund.provider == "stripe"
+      returned_key = case refund.provider
+      when "stripe" then "refund.returned"
+      when "door_cash" then "refund.returned_cash"
+      else "refund.returned_door_card"
+      end
+      heading = cancellation ? t("refund.cancelled_heading") : t("refund.heading")
       email_wrapper(heading) do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">#{event.cancelled? ? ht('refund.cancelled_body', event: event_title(event), amount: money(amount_cents)) : ht('refund.body', event: event_title(event))}</p>
+          <p style="color: #6b7280; margin: 0 0 28px;">#{cancellation ? ht('refund.cancelled_body', event: event_title(event), amount: money(amount_cents)) : ht('refund.body', event: event_title(event))}</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{h(amount_str)}</p>
-            <p style="color: #166534; margin: 0;">#{ht('refund.returned', amount: money(amount_cents))}</p>
+            <p style="color: #166534; margin: 0;">#{ht(returned_key, amount: money(amount_cents))}</p>
           </div>
 
           #{reason}
@@ -1047,18 +1069,22 @@ class EmailService
 
     # Worded from what was actually attached: everything, the first few of a
     # large order, or only the tickets that can be used right now.
-    def pdf_attachment_note(pdfs)
+    def pdf_attachment_note(pdfs, tickets_link: nil)
       return "" unless pdfs&.any?
 
       count = pdfs.attachments.length
       text = if pdfs.complete?
-        count == 1 ? t("pdf_note.single") : t("pdf_note.all", count: count)
+        count == 1 ? ht("pdf_note.single") : ht("pdf_note.all", count: count)
       elsif pdfs.capped?
-        t("pdf_note.capped", count: count)
+        ht("pdf_note.capped", count: count, links: { tickets_link: tickets_link || default_tickets_link })
       else
-        t("pdf_note.partial", count: count, total: pdfs.ticket_count)
+        ht("pdf_note.partial", count: count, total: pdfs.ticket_count, links: { tickets_link: tickets_link || default_tickets_link })
       end
-      %(<p style="color: #6b7280; margin: 12px 0 0; font-size: 14px;">#{h(text)}</p>)
+      %(<p style="color: #6b7280; margin: 12px 0 0; font-size: 14px;">#{text}</p>)
+    end
+
+    def default_tickets_link
+      %(<a href="#{frontend_url}/my-tickets" style="color: #2563eb; text-decoration: none;">#{ht('my_tickets')}</a>)
     end
 
     def ticket_url(ticket)

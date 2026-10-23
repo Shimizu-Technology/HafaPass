@@ -37,14 +37,9 @@ emails:
     attendee_column: "參加者"
     ticket_column: "票券"
     view_ticket: "查看票券"
-    all_transferred: "此訂單的所有票券均已轉讓。新持有人可透過「%{my_tickets_link}」開啟票券。"
-    entry_instructions: "入場時請出示您的 QR Code。您可隨時透過「%{my_tickets_link}」查看票券。"
   pdf_note:
     single: "另附上您的票券 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。"
     all: "另附上全部 %{count} 張票券的 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。"
-    capped: "已附上前 %{count} 張票券的 PDF 檔，方便您在入場時即使沒有網路訊號，也能開啟票券。其餘票券請至「我的票券」開啟。"
-    partial: "您的 %{total} 張票券中，已有 %{count} 張附上 PDF
-      檔，方便您在入場時即使沒有網路訊號，也能開啟票券。其餘票券目前無法用於入場，請至「我的票券」查看狀態。"
   ticket:
     subject: "您的票券 - %{event}"
     heading: "您的票券"
@@ -64,7 +59,6 @@ emails:
     body: "您在 %{event} 的退款已處理完畢。"
     full: "全額退款"
     partial: "部分退款（%{amount}）"
-    returned: "%{amount} 將於 5–10 個工作天內透過原付款方式退還。"
     reason: "原因："
     questions: "如有任何疑問，請聯絡活動主辦單位。"
   transfer:

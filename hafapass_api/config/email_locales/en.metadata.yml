@@ -15,9 +15,9 @@ emails:
     service_fee:
       context: HåfaPass's service fee for the purchase. It is not a tax; never translate it as tax.
     entry_instructions:
-      context: "%{my_tickets_link} becomes a link labelled My Tickets. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      context: "%{tickets_link} becomes a secure View your order link for a guest or a My Tickets link for an account buyer. Only tickets currently valid for admission may be used for entry."
     all_transferred:
-      context: "%{my_tickets_link} becomes a link labelled My Tickets. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      context: "%{tickets_link} becomes a secure View your order link for a guest or a My Tickets link for an account buyer. The buyer can no longer use tickets transferred to someone else."
     subject:
       context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
     heading:

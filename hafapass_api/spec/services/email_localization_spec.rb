@@ -62,7 +62,9 @@ RSpec.describe "Buyer email language" do
   it "localizes refunds from the order and writes transfers in English for the recipient" do
     store_korean_copy
     order = create(:order, event: event, locale: "ko", status: :refunded, refund_amount_cents: 5250)
-    refund = EmailService.prepare_delivery_payload(create(:message_delivery, order: order, template: "refund_notification"))
+    item = create(:refund, order: order, amount_cents: 5250)
+    refund = EmailService.prepare_delivery_payload(create(:message_delivery, order: order, template: "refund_notification",
+      metadata: { refund_id: item.id }))
     expect(refund.fetch("subject")).to eq("환불 완료 - ko:Sunset Fiesta")
 
     ticket = create(:ticket, order: create(:order, event: event), event: event, ticket_type: ticket_type)
@@ -103,7 +105,7 @@ RSpec.describe "Buyer email language" do
   end
 
   it "escapes buyer text inside translated sentences while keeping trusted links" do
-    order = create(:order, event: event, buyer_name: "<b>Jane</b>")
+    order = create(:order, :with_user, event: event, buyer_name: "<b>Jane</b>")
     html = EmailService.send(:build_order_confirmation_html, order, event, [])
 
     expect(html).to include("Thank you for your purchase, &lt;b&gt;Jane&lt;/b&gt;.")

@@ -119,7 +119,8 @@ RSpec.describe "Ticket email PDF attachments", type: :request do
     blocked.update_columns(status: Ticket.statuses[:issued])
     stub_const("TicketEmailAttachments::MAX_ATTACHMENTS", 1)
     html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order.reload, recipient: order.buyer_email)).fetch("html")
-    expect(html).to include("The first 1 tickets are attached as PDFs").and include("Open the rest from My Tickets")
+    expect(html).to include("The first 1 tickets are attached as PDFs", "Open the rest from ", "View your order")
+    expect(html).not_to include("/my-tickets")
 
     stub_const("TicketEmailAttachments::MAX_ATTACHMENTS", 10)
     html = EmailService.prepare_delivery_payload(create(:message_delivery, order: order.reload, recipient: order.buyer_email)).fetch("html")

@@ -200,11 +200,11 @@ RSpec.describe EmailService do
     expect(ticket_html).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass")
   end
 
-  it "keeps the ticket table and entry instructions while the buyer holds tickets" do
+  it "keeps the ticket table and validity instructions while the buyer holds tickets" do
     ticket = create(:ticket)
     html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
 
-    expect(html).to include("Your Tickets", "Present your QR code", "View Ticket")
+    expect(html).to include("Your Tickets", "Only valid tickets can be used for entry.", "View Ticket")
     expect(html).not_to include("were transferred")
   end
 
