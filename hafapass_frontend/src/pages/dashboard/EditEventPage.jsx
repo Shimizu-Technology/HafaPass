@@ -438,6 +438,8 @@ function EditEventSession({ id, identity }) {
   const readyToPublish = publishChecklist.length > 0 && publishChecklist.filter(blocksPublishing).every(item => item.complete)
   // Verification that only holds back ticket sales, not publishing.
   const salesWaitOnVerification = publishChecklist.some(item => item.code === 'organizer_verified' && !item.complete && !blocksPublishing(item))
+  const hiddenPublished = ['published', 'completed'].includes(event?.status) && event?.publicly_visible === false
+  const privatePreviewPublished = hiddenPublished && ['unverified', 'pending', 'rejected'].includes(event?.organizer_verification_status)
 
   if (loading) {
     return (
@@ -464,7 +466,7 @@ function EditEventSession({ id, identity }) {
       {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
-          {event?.slug && event.publicly_visible !== false && (
+          {event?.slug && !hiddenPublished && (
             <a
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
@@ -583,7 +585,7 @@ function EditEventSession({ id, identity }) {
       )}
 
       {successMessage && (
-        <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{successMessage}{event.publicly_visible === false && <p className="mt-2"><Link to={`/dashboard/events/${id}`} className="inline-flex min-h-11 items-center font-semibold underline">Open Overview to copy or share your preview link</Link></p>}</div>
+        <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{successMessage}{privatePreviewPublished && <p className="mt-2"><Link to={`/dashboard/events/${id}`} className="inline-flex min-h-11 items-center font-semibold underline">Open Overview to copy or share your preview link</Link></p>}</div>
       )}
 
       {submitError && (
@@ -652,9 +654,9 @@ function EditEventSession({ id, identity }) {
           />
           <p id="slug-preview" className="mt-2 flex min-w-0 items-start gap-2 text-sm text-neutral-700">
             <Link2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
-            <span className="min-w-0 break-all"><span className="sr-only">{event.publicly_visible === false ? 'Public link (works after verification): ' : 'Full link: '}</span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
+            <span className="min-w-0 break-all"><span className="sr-only">{hiddenPublished ? privatePreviewPublished ? 'Public link (works after verification): ' : 'Public link (currently hidden): ' : 'Full link: '}</span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
           </p>
-          {event.publicly_visible === false && <p className="mt-1 text-sm text-amber-900">Public link (works after verification). Share the private preview link from Overview for now.</p>}
+          {hiddenPublished && <p className="mt-1 text-sm text-amber-900">{privatePreviewPublished ? 'Public link (works after verification). Share the private preview link from Overview for now.' : 'This event is hidden right now. The public link will work when it becomes visible.'}</p>}
           <div aria-live="polite">
             {linkError ? <p id="slug-error" className="mt-1 text-sm text-red-600">{linkError}</p>
               : linkChanged && currentLinkCheck?.status === 'checking' ? <p className="mt-1 text-sm text-neutral-500">Checking this link…</p>

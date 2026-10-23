@@ -78,6 +78,49 @@ RSpec.describe "Private event previews", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "revokes private previews when an admin hides the event" do
+    get "/api/v1/organizer/events/#{event.id}/preview_link", headers: headers
+    token = response.parsed_body.fetch("url").split("#t=").last
+    EventPolicyHold.place!(event: event, actor: create(:user, :admin), scope: "hidden", reason: "Safety review")
+
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => token }
+    expect(response).to have_http_status(:not_found)
+    get "/api/v1/organizer/events/#{event.id}/preview_link", headers: headers
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/organizer/events/#{event.id}/rotate_preview_link", headers: headers
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "does not issue a preview for a live-money proof candidate" do
+    event.update_columns(live_money_proof_candidate: true)
+
+    get "/api/v1/organizer/events/#{event.id}/preview_link", headers: headers
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/organizer/events/#{event.id}/rotate_preview_link", headers: headers
+    expect(response).to have_http_status(:not_found)
+    token = event.preview_token
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => token }
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "lets a buyer remove a favorite after its event becomes hidden" do
+    buyer = create(:user)
+    favorite = buyer.event_favorites.create!(event: event)
+
+    delete "/api/v1/me/event_favorites/#{event.id}", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:no_content)
+    expect(EventFavorite.exists?(favorite.id)).to be(false)
+  end
+
+  it "lets a buyer cancel a reminder after its event becomes hidden" do
+    buyer = create(:user)
+    reminder = create(:event_reminder, event: event, user: buyer)
+
+    delete "/api/v1/me/event_reminders/#{event.id}", headers: auth_headers(buyer)
+    expect(response).to have_http_status(:no_content)
+    expect(reminder.reload.status).to eq("cancelled")
+  end
+
   it "rotates a preview token for an invalid legacy event without changing its timestamp" do
     first = event.preview_token
     original_time = event.reload.updated_at

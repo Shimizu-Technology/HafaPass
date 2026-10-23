@@ -17,7 +17,8 @@ const deferred = () => {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-let profiles, clearAuth
+let profiles, clearAuth, scrollIntoView
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
 const mount = () => render(<MemoryRouter initialEntries={['/dashboard']}><DashboardPage /></MemoryRouter>)
 const closeEditor = () => userEvent.click(screen.getByRole('heading', { name: 'Edit Profile' }).parentElement.querySelector('button'))
 const bind = (userId = 'actor-a', sessionId = 'session-a', getToken = () => Promise.resolve('synthetic-token')) => {
@@ -34,6 +35,8 @@ const switchTo = async id => {
 }
 
 beforeEach(() => {
+  scrollIntoView = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
   vi.clearAllMocks()
   apiClient.get.mockReset(); apiClient.post.mockReset(); apiClient.put.mockReset()
   uploadImage.mockReset()
@@ -49,17 +52,28 @@ beforeEach(() => {
     throw new Error(`Unexpected ${path}`)
   })
 })
-afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
+afterEach(() => {
+  cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs()
+  if (originalScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView)
+  else delete Element.prototype.scrollIntoView
+})
 
 describe('dashboard mutation ownership', () => {
   it('opens and scrolls to the same inline verification form from the checklist', async () => {
-    const scrollIntoView = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoView
     mount()
     await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
     expect(screen.getByRole('textbox', { name: /Website or social media link/ })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Request verification' })).toHaveLength(2)
+  })
+
+  it('does not reopen an old verification request after switching organizations', async () => {
+    mount()
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
+    expect(screen.getByRole('textbox', { name: /Contact phone/ })).toBeInTheDocument()
+    await switchTo(2)
+    await switchTo(1)
+    expect(screen.queryByRole('textbox', { name: /Contact phone/ })).not.toBeInTheDocument()
   })
 
   it('lets a long event title wrap and keeps the mobile action reachable', async () => {

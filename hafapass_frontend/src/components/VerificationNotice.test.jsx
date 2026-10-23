@@ -29,6 +29,10 @@ it('validates inline, retains entered fields, then submits the fixed request', a
   apiClient.post.mockResolvedValue({ data: { ...profile, verification_status: 'pending' } })
   render(<VerificationNotice profile={profile} beginRequest={beginRequest} />)
   await user.click(screen.getByRole('button', { name: 'Request verification' }))
+  for (const name of [/Business or organizer name/, /Short description/, /Contact phone/, /Website or social media link/]) {
+    expect(screen.getByRole('textbox', { name })).toHaveAttribute('aria-required', 'true')
+  }
+  expect(screen.getByRole('textbox', { name: /Note for the reviewer/ })).toHaveAttribute('aria-required', 'false')
   await user.type(screen.getByRole('textbox', { name: /Contact phone/ }), '123')
   await user.type(screen.getByRole('textbox', { name: /Website or social media link/ }), 'invalid')
   await user.click(screen.getByRole('button', { name: 'Send request' }))

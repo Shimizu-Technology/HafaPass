@@ -36,7 +36,8 @@ module Api
             if profile.verification_status_pending?
               verification_updated = profile.refresh_verification_request!(before_details: before_details, was_pending: true)
             end
-            profile.save!(context: verification_updated ? :verification_request : nil)
+            contact_changed = profile.will_save_change_to_verification_phone? || profile.will_save_change_to_verification_link?
+            profile.save!(context: verification_updated && contact_changed ? :verification_request : nil)
             profile.organization.update!(name: profile.business_name)
           end
           current_user.update!(role: :organizer) if current_user.attendee?
@@ -117,6 +118,7 @@ module Api
       def verification_request_params
         params.permit(:business_name, :business_description, :verification_phone,
           :verification_link, :verification_request_note)
+          .to_h.transform_values { |value| value.is_a?(String) ? value.strip.presence : value }
       end
 
       def require_requested_profile_context

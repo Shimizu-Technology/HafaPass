@@ -524,6 +524,7 @@ function DashboardSession({ authContext }) {
  }, [])
 
  useLayoutEffect(() => {
+  setVerificationRequestSignal(null)
   if (loadingOrganization.current !== selectedOrganizationId) fetchDashboardRef.current()
  }, [selectedOrganizationId])
 

@@ -21,8 +21,7 @@ class Api::V1::Me::EventRemindersController < ApplicationController
   end
 
   def destroy
-    event = Event.publicly_visible.find(params[:event_id])
-    reminder = current_user.event_reminders.find_by!(event: event)
+    reminder = current_user.event_reminders.find_by!(event_id: params[:event_id])
     reminder.update!(status: :cancelled)
     head :no_content
   end

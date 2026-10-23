@@ -100,8 +100,7 @@ module Api
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         event = Event.find_by_public_slug!(params[:slug])
-        raise ActiveRecord::RecordNotFound unless event.published? &&
-          !event.organizer_profile.verification_status_suspended? &&
+        raise ActiveRecord::RecordNotFound unless event.private_preview_eligible? &&
           params[:token].blank? && event.valid_preview_token?(request.headers["X-Preview-Token"])
 
         if event.publicly_visible?

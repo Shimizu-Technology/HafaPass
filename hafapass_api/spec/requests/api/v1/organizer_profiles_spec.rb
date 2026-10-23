@@ -153,6 +153,37 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
       "verification_request_note" => nil)
   end
 
+  it "lets a legacy pending organizer edit its name while contact fields remain blank" do
+    profile.update!(verification_status: :pending, verification_phone: nil, verification_link: nil)
+    original_name = profile.business_name
+    before_version = profile.verification_request_version
+
+    put "/api/v1/organizer_profile", headers: headers,
+      params: { business_name: "Legacy Island Events", business_description: "Community events" }
+
+    expect(response).to have_http_status(:ok)
+    expect(profile.reload.verification_request_version).to eq(before_version + 1)
+    expect(profile.verification_change_diff).to include("business_name" => {
+      "before" => original_name, "after" => "Legacy Island Events" })
+  end
+
+  it "ignores an empty reviewer note when a pending request is otherwise unchanged" do
+    admin = create(:user, :admin)
+    details = { business_name: "Island Events", business_description: "Community events",
+      verification_phone: "+1-671-555-1234", verification_link: "https://example.com/events" }
+    post "/api/v1/organizer_profile/submit_verification", headers: headers, params: details
+    version = profile.reload.verification_request_version
+    notices = MessageDelivery.where(template: "verification_request", recipient: admin.email).count
+
+    post "/api/v1/organizer_profile/submit_verification", headers: headers,
+      params: details.merge(verification_request_note: "")
+
+    expect(response).to have_http_status(:ok)
+    expect(profile.reload.verification_request_version).to eq(version)
+    expect(profile.verification_change_diff).to eq({})
+    expect(MessageDelivery.where(template: "verification_request", recipient: admin.email).count).to eq(notices)
+  end
+
   it "reopens review for a pending verification form edit even within the notice interval" do
     admin = create(:user, :admin)
     create(:event, :published, organizer_profile: profile, organization: profile.organization)

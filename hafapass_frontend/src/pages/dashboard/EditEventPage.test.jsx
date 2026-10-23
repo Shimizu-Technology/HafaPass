@@ -213,7 +213,7 @@ describe('published event content and schedule edits', () => {
 })
 
 it('requires saving before publishing, names the saved preview and confirms the saved title', async () => {
-  const draft = { ...event, status: 'draft', slug: 'workshop', publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
+  const draft = { ...event, status: 'draft', publicly_visible: false, slug: 'workshop', publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
   apiClient.get.mockResolvedValue({ data: draft })
   apiClient.put.mockResolvedValue({ data: { ...draft, title: 'Saved new title' } })
   apiClient.post.mockResolvedValue({ data: { ...draft, title: 'Saved new title', status: 'published' } })
@@ -227,6 +227,8 @@ it('requires saving before publishing, names the saved preview and confirms the 
   expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Save Changes' }))
   await screen.findByText('Event updated successfully.')
+  expect(screen.queryByRole('link', { name: /Open Overview to copy or share/ })).not.toBeInTheDocument()
+  expect(screen.queryByText(/Public link \(works after verification\)/)).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Publish Event' }))
   expect(screen.getByRole('dialog')).toHaveTextContent('Publish the saved event “Saved new title”?')
   await user.click(screen.getByRole('button', { name: 'Yes, Publish' }))

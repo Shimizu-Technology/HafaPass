@@ -53,6 +53,18 @@ async function tabTo(page, locator) {
 }
 
 for (const width of [375, 1280]) {
+  test(`draft keeps its saved preview link at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await setup(page)
+    await page.route('**/api/v1/organizer/events/601', route => json(route, {
+      ...organizerEvent, status: 'draft', publicly_visible: false,
+    }))
+    await page.goto('/dashboard/events/601/edit')
+    await expect(page.getByRole('link', { name: 'Preview saved event' })).toHaveAttribute('href', '/events/private-island-show?preview=true')
+    await expect(page.getByText(/Public link \(works after verification\)/)).toHaveCount(0)
+    await accessible(page)
+  })
+
   test(`dashboard event chips match visibility reason at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await setup(page)

@@ -46,14 +46,14 @@ module Api
 
         def preview_link
           return unless authorize_organization!(:manage_events, event: @event)
-          return head :not_found if @event.organizer_profile.verification_status_suspended?
+          return head :not_found unless @event.private_preview_eligible?
 
           render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}/preview#t=#{@event.preview_token}" }
         end
 
         def rotate_preview_link
           return unless authorize_organization!(:manage_events, event: @event)
-          return head :not_found if @event.organizer_profile.verification_status_suspended?
+          return head :not_found unless @event.private_preview_eligible?
 
           token = @event.rotate_preview_token!
           AuditLogger.record!(action: "event.preview_link_rotated", auditable: @event, actor: current_user,

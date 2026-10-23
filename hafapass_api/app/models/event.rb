@@ -226,6 +226,11 @@ class Event < ApplicationRecord
       policy_hold_scope != "hidden" && organizer_sales_verified?
   end
 
+  def private_preview_eligible?
+    published? && !organizer_profile.verification_status_suspended? &&
+      policy_hold_scope != "hidden" && !live_money_proof_candidate?
+  end
+
   def preview_token
     token = Rails.application.message_verifier("event-preview").generate([id, preview_token_version])
     digest = Digest::SHA256.hexdigest(token)
