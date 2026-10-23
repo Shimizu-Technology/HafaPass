@@ -20,6 +20,7 @@ module Api
           return render json: { error: "Owner permission required" }, status: :forbidden
         end
 
+        verification_updated = false
         ActiveRecord::Base.transaction do
           if created
             organization = Organization.create!(name: profile_params[:business_name])
@@ -29,7 +30,14 @@ module Api
               user: current_user, role: :owner, status: :active, accepted_at: Time.current
             )
           else
-            profile.update!(profile_params)
+            profile.lock!
+            before_details = profile.verification_details
+            profile.assign_attributes(profile_params)
+            if profile.verification_status_pending?
+              verification_updated = profile.refresh_verification_request!(before_details: before_details, was_pending: true)
+            end
+            contact_changed = profile.will_save_change_to_verification_phone? || profile.will_save_change_to_verification_link?
+            profile.save!(context: verification_updated && contact_changed ? :verification_request : nil)
             profile.organization.update!(name: profile.business_name)
           end
           current_user.update!(role: :organizer) if current_user.attendee?
@@ -40,7 +48,13 @@ module Api
             after_data: profile_params.to_h,
             request: request
           )
+          if verification_updated
+            AuditLogger.record!(action: "organizer.verification_request_updated", auditable: profile,
+              actor: current_user, organization: profile.organization, before_data: before_details,
+              after_data: profile.verification_details, request: request)
+          end
         end
+        EmailService.send_verification_request_async(profile, updated: true) if verification_updated
 
         if profile.persisted?
           status = created ? :created : :ok
@@ -61,40 +75,50 @@ module Api
         render json: profile_json(profile)
       end
 
-      VERIFICATION_NOTICE_INTERVAL = 24.hours
-
       def submit_verification
         profile = current_profile
         return render json: { error: "Organizer profile not found" }, status: :not_found unless profile
         return render json: { error: "Owner permission required" }, status: :forbidden unless owner?(profile)
-
-        unless profile.business_name.present? && profile.business_description.present?
-          return render json: { error: "Add a business name and description before requesting verification" },
-            status: :unprocessable_entity
-        end
 
         if profile.verification_status_verified? || profile.verification_status_suspended?
           return render json: { error: "This organizer profile cannot be submitted for verification" },
             status: :unprocessable_entity
         end
 
-        # Admins are emailed only when the profile moves into pending, and at
-        # most once a day per profile, so repeated clicks cannot flood inboxes.
-        previously_requested_at = profile.verification_requested_at
-        notify = !profile.verification_status_pending? || previously_requested_at.nil? ||
-          previously_requested_at < VERIFICATION_NOTICE_INTERVAL.ago
-        profile.update!(verification_status: :pending, verification_requested_at: notify ? Time.current : previously_requested_at,
-          verification_notes: nil)
-        AuditLogger.record!(action: "organizer.verification_requested", auditable: profile, actor: current_user,
-          request: request)
-        EmailService.send_verification_request_async(profile) if notify
+        notify = false
+        updated = false
+        ActiveRecord::Base.transaction do
+          profile.lock!
+          was_pending = profile.verification_status_pending?
+          before_details = profile.verification_details
+          profile.assign_attributes(verification_request_params)
+          profile.verification_status = :pending
+          profile.verification_notes = nil
+          notify = profile.refresh_verification_request!(before_details: before_details, was_pending: was_pending)
+          updated = was_pending && notify
+          profile.save!(context: :verification_request)
+          profile.organization.update!(name: profile.business_name) if profile.saved_change_to_business_name?
+          AuditLogger.record!(action: updated ? "organizer.verification_request_updated" : "organizer.verification_requested",
+            auditable: profile, actor: current_user, organization: profile.organization,
+            before_data: before_details, after_data: profile.verification_details, request: request)
+        end
+        EmailService.send_verification_request_async(profile, updated: updated) if notify
         render json: profile_json(profile)
+      rescue ActiveRecord::RecordInvalid => e
+        errors = (profile.errors.full_messages + profile.organization.errors.full_messages + e.record.errors.full_messages).uniq
+        render json: { errors: errors }, status: :unprocessable_entity
       end
 
       private
 
       def profile_params
         params.permit(:business_name, :business_description, :logo_url)
+      end
+
+      def verification_request_params
+        params.permit(:business_name, :business_description, :verification_phone,
+          :verification_link, :verification_request_note)
+          .to_h.transform_values { |value| value.is_a?(String) ? value.strip.presence : value }
       end
 
       def require_requested_profile_context
@@ -150,8 +174,12 @@ module Api
           is_ambros_partner: profile.is_ambros_partner,
           verification_status: profile.verification_status,
           verification_requested_at: profile.verification_requested_at,
+          verification_request_version: profile.verification_request_version,
           verified_at: profile.verified_at,
           verification_notes: owner?(profile) ? profile.verification_notes : nil,
+          verification_phone: owner?(profile) ? profile.verification_phone : nil,
+          verification_link: owner?(profile) ? profile.verification_link : nil,
+          verification_request_note: owner?(profile) ? profile.verification_request_note : nil,
           policy_accepted_at: profile.policy_accepted_at,
           policy_version: profile.policy_version,
           current_policy_version: PolicyRegistry.organizer_agreement[:version],

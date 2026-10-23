@@ -1,4 +1,5 @@
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe EmailService, "guest privacy challenge" do
   it "sends synchronously without persisting the verification code or an email body" do
@@ -35,6 +36,57 @@ RSpec.describe EmailService, "guest privacy challenge" do
 end
 
 RSpec.describe EmailService do
+  it "links a suspended buyer's reminder to their order instead of the hidden event" do
+    buyer = create(:user)
+    profile = create(:organizer_profile, verification_status: :verified)
+    event = create(:event, :published, organizer_profile: profile, organization: profile.organization)
+    order = create(:order, event: event, user: buyer, status: :completed)
+    reminder = create(:event_reminder, event: event, user: buyer)
+    allow(Rails.env).to receive(:production?).and_return(true)
+    profile.update!(verification_status: :suspended)
+    allow(described_class).to receive(:deliver)
+
+    described_class.send_event_reminder(reminder)
+
+    expect(described_class).to have_received(:deliver).with(hash_including(
+      html: include("/orders/#{order.id}/confirmation", "View your order")))
+    expect(described_class).not_to have_received(:deliver).with(hash_including(html: include("/events/#{event.slug}")))
+  end
+
+  it "links only currently public events from the verified decision email" do
+    profile = create(:organizer_profile, verification_status: :verified)
+    public_event = create(:event, :published, organizer_profile: profile, organization: profile.organization)
+    held_event = create(:event, :published, organizer_profile: profile, organization: profile.organization,
+      policy_hold_at: Time.current, policy_hold_scope: "hidden")
+    allow(Rails.env).to receive(:production?).and_return(true)
+    delivery = OpenStruct.new(metadata: { "status" => "verified", "note" => "" }, recipient: "owner@example.com")
+    allow(described_class).to receive(:deliver)
+
+    described_class.send_verification_decision(profile, delivery: delivery)
+
+    expect(described_class).to have_received(:deliver).with(hash_including(html: include(
+      "/events/#{public_event.slug}", "Some events need attention", "/dashboard")))
+    expect(described_class).not_to have_received(:deliver).with(hash_including(html: include("/events/#{held_event.slug}")))
+  end
+
+  it "cancels a queued waitlist offer email when its public event becomes hidden" do
+    profile = create(:organizer_profile, verification_status: :verified)
+    event = create(:event, :published, organizer_profile: profile, organization: profile.organization)
+    ticket_type = create(:ticket_type, event: event)
+    entry = create(:waitlist_entry, event: event, ticket_type: ticket_type)
+    offer = create(:waitlist_offer, event: event, ticket_type: ticket_type, waitlist_entry: entry)
+    delivery = create(:message_delivery, event: event, template: "waitlist_offer",
+      metadata: { waitlist_offer_id: offer.id })
+    allow(Rails.env).to receive(:production?).and_return(true)
+    profile.update!(verification_status: :suspended)
+    allow(described_class).to receive(:prepare_delivery_payload)
+
+    MessageDeliveryJob.new.perform(delivery.id)
+
+    expect(delivery.reload).to be_cancelled
+    expect(described_class).not_to have_received(:prepare_delivery_payload)
+  end
+
   it "groups large USD amounts in English and localized receipt emails" do
     order = create(:order, subtotal_cents: 1_000_00, service_fee_cents: 11_345_67, total_cents: 12_345_67)
     english = I18n.with_locale(:en) { described_class.send(:build_order_confirmation_html, order, order.event, []) }

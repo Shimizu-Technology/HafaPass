@@ -79,7 +79,7 @@ module Api
 
       def set_event
         @event = Event.find_by_public_slug!(params[:slug],
-          scope: Event.published.where(live_money_proof_candidate: false).without_hidden_policy_hold)
+          scope: Event.publicly_visible.published)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end

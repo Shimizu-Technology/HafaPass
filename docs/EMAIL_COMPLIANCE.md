@@ -17,6 +17,7 @@ Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its emai
 | `ticket_transfer` | Transactional | Gives the named recipient access to a transferred ticket. |
 | `event_reminder` | Transactional/relationship | Sends a reminder the user specifically requested. |
 | `verification_request` | Transactional/relationship | Notifies staff of an organizer's verification request. |
+| `verification_decision` | Transactional/relationship | Tells the organizer when a review verifies, rejects, or suspends the account. |
 | `organization_invitation` | Transactional/relationship | Invites a named person to a specific organization role. |
 | `platform_invitation` | Transactional/relationship | Invites a named person to a specific platform role. |
 | `fee_change_notice` | Transactional/relationship | Notifies an organizer owner of a specific scheduled fee change. |

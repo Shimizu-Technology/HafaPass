@@ -2,6 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        var url = new URL(window.location.href)
+        var token = url.searchParams.get('preview_token')
+        if (!token || !/^\/events\/[^/]+\/?$/.test(url.pathname)) return
+        url.searchParams.delete('preview_token')
+        url.pathname = url.pathname.replace(/\/$/, '') + '/preview'
+        url.hash = 't=' + encodeURIComponent(token)
+        window.location.replace(url.href)
+      })()
+    </script>
     <!-- Browser page translation stays available while buyer pages are only
          partly extracted into locale files. Phase 2 can restore translate="no"
          and <meta name="google" content="notranslate"> once HåfaPass

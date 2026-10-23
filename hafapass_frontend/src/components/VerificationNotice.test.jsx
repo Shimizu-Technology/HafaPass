@@ -1,63 +1,68 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import apiClient from '../api/client'
+import { beforeEach, expect, it, vi } from 'vitest'
 import VerificationNotice from './VerificationNotice'
+import apiClient from '../api/client'
 
-vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { post: vi.fn(), get: vi.fn(() => Promise.resolve({ data: {} })) } }))
+vi.mock('../api/client', () => ({ default: { post: vi.fn() } }))
+const profile = { business_name: 'Island Events', business_description: 'Community shows',
+  verification_status: 'unverified', organization: { role: 'owner' } }
+const beginRequest = () => ({ config: {}, current: () => true, release: () => {} })
+beforeEach(() => vi.clearAllMocks())
 
-const config = { organizationId: '1' }
-const beginRequest = () => ({ config, current: () => true, release: () => {} })
-const owner = { organization: { role: 'owner' } }
+it.each([
+  ['unverified', 'Get verified to start selling tickets'],
+  ['pending', "We're reviewing your account"],
+  ['rejected', 'Your verification needs an update'],
+  ['suspended', 'Your organizer account is suspended'],
+  ['verified', 'Your organizer account is verified'],
+])('explains the %s state', (status, title) => {
+  render(<VerificationNotice profile={{ ...profile, verification_status: status,
+    verification_requested_at: '2026-10-23T00:00:00Z', verification_notes: 'Add a website.' }} beginRequest={beginRequest} />)
+  expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+  if (status === 'pending') expect(screen.getByText(/Submitted Oct 23, 2026/)).toBeInTheDocument()
+  if (status === 'rejected') expect(screen.getByText('Add a website.')).toBeInTheDocument()
+})
 
-beforeEach(() => { vi.clearAllMocks(); vi.stubEnv('VITE_SUPPORT_EMAIL', 'help@example.test') })
+it('validates inline, retains entered fields, then submits the fixed request', async () => {
+  const user = userEvent.setup()
+  apiClient.post.mockResolvedValue({ data: { ...profile, verification_status: 'pending' } })
+  render(<VerificationNotice profile={profile} beginRequest={beginRequest} />)
+  await user.click(screen.getByRole('button', { name: 'Request verification' }))
+  for (const name of [/Business or organizer name/, /Short description/, /Contact phone/, /Website or social media link/]) {
+    expect(screen.getByRole('textbox', { name })).toHaveAttribute('aria-required', 'true')
+  }
+  expect(screen.getByRole('textbox', { name: /Note for the reviewer/ })).toHaveAttribute('aria-required', 'false')
+  await user.type(screen.getByRole('textbox', { name: /Contact phone/ }), '123')
+  await user.type(screen.getByRole('textbox', { name: /Website or social media link/ }), 'invalid')
+  await user.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
+  expect(screen.getByRole('textbox', { name: /Contact phone/ })).toHaveFocus()
+  expect(screen.getByText(/Check 2 highlighted verification fields/)).toHaveAttribute('aria-live', 'assertive')
+  expect(apiClient.post).not.toHaveBeenCalled()
+  expect(screen.getByRole('textbox', { name: /Contact phone/ })).toHaveValue('123')
+  await user.clear(screen.getByRole('textbox', { name: /Contact phone/ }))
+  await user.type(screen.getByRole('textbox', { name: /Contact phone/ }), '+1-671-555-1234')
+  await user.clear(screen.getByRole('textbox', { name: /Website or social media link/ }))
+  await user.type(screen.getByRole('textbox', { name: /Website or social media link/ }), 'https://instagram.com/islandevents')
+  await user.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({
+    business_name: 'Island Events', business_description: 'Community shows', verification_phone: '+1-671-555-1234',
+    verification_link: 'https://instagram.com/islandevents',
+  }), {})
+  expect(await screen.findByRole('heading', { name: "We're reviewing your account" })).toBeInTheDocument()
+})
 
-describe('VerificationNotice', () => {
-  it('lets the owner request verification and confirms when it was requested', async () => {
-    const user = userEvent.setup()
-    const onUpdated = vi.fn()
-    const profile = { ...owner, verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z' }
-    apiClient.post.mockResolvedValue({ data: profile })
-    render(<VerificationNotice profile={{ ...owner, verification_status: 'unverified' }} beginRequest={beginRequest} onUpdated={onUpdated} />)
-    expect(screen.getByText('Waiting for HåfaPass to verify your organization before tickets go on sale.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Request verification' }))
-    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, config)
-    expect(await screen.findByText(/^Verification requested .*2026.*\. HåfaPass will review it soon\.$/)).toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(onUpdated).toHaveBeenCalledWith(profile)
-  })
 
-  it('shows the server reason when the request is refused', async () => {
-    const user = userEvent.setup()
-    apiClient.post.mockRejectedValue({ response: { status: 422, data: { error: 'Add a business description first.' } } })
-    render(<VerificationNotice profile={{ ...owner, verification_status: 'unverified' }} beginRequest={beginRequest} />)
-    await user.click(screen.getByRole('button', { name: 'Request verification' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Add a business description first.')
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Request verification' })).toBeEnabled())
-  })
-
-  it('shows review notes after a rejection and lets the owner ask again', () => {
-    render(<VerificationNotice profile={{ ...owner, verification_status: 'rejected', verification_notes: 'Business name does not match.' }} beginRequest={beginRequest} />)
-    expect(screen.getByText('Business name does not match.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Request verification' })).toBeInTheDocument()
-  })
-
-  it('explains a pause with the note and a way to contact HåfaPass, with no request button', async () => {
-    render(<VerificationNotice profile={{ ...owner, verification_status: 'suspended', verification_notes: 'Refund complaints.' }} beginRequest={beginRequest} />)
-    expect(screen.getByText('HåfaPass paused sales for your organization.')).toBeInTheDocument()
-    expect(screen.getByText('Refund complaints.')).toBeInTheDocument()
-    expect(await screen.findByRole('link', { name: 'Contact HåfaPass' })).toHaveAttribute('href', expect.stringContaining('mailto:'))
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  })
-
-  it('tells team members who cannot request it who can', () => {
-    render(<VerificationNotice profile={{ organization: { role: 'manager' }, verification_status: 'unverified' }} beginRequest={beginRequest} />)
-    expect(screen.getByText('Ask the organization owner to request verification.')).toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  })
-
-  it('renders nothing once verified', () => {
-    const { container } = render(<VerificationNotice profile={{ ...owner, verification_status: 'verified' }} beginRequest={beginRequest} />)
-    expect(container).toBeEmptyDOMElement()
-  })
+it.each(['instagram.com/islandevents', 'www.instagram.com/islandevents'])('normalizes %s on blur and submits it', async bare => {
+  const user = userEvent.setup()
+  apiClient.post.mockResolvedValue({ data: { ...profile, verification_status: 'pending' } })
+  render(<VerificationNotice profile={{ ...profile, verification_phone: '+1-671-555-1234' }} beginRequest={beginRequest} />)
+  await user.click(screen.getByRole('button', { name: 'Request verification' }))
+  const link = screen.getByRole('textbox', { name: /Website or social media link/ })
+  await user.type(link, bare)
+  await user.tab()
+  expect(link).toHaveValue(`https://${bare}`)
+  await user.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_link: `https://${bare}` }), {})
 })

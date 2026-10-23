@@ -1,76 +1,110 @@
-import { useState } from 'react'
-import { Clock3 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
 import SupportLink from './SupportLink'
+import { formatEventDate } from '../utils/eventTime'
 
-const formatTime = value => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+const validPhone = value => /^(?:1671|671)\d{7}$|^1[2-9]\d{9}$/.test(value.replace(/\D/g, ''))
+const normalizeLink = value => {
+  const trimmed = value.trim()
+  return /^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/:?#].*)?$/i.test(trimmed) ? `https://${trimmed}` : trimmed
+}
+const validLink = value => {
+  try {
+    const url = new URL(normalizeLink(value))
+    return ['http:', 'https:'].includes(url.protocol) && /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(url.hostname) && !url.username && !url.password
+  } catch { return false }
 }
 
-// Where HåfaPass verification of the organizer stands. Ticket sales start once
-// HåfaPass verifies the organization; the owner requests it with the same
-// endpoint as the dashboard's organizer readiness checks. `profile` is the
-// GET /organizer_profile payload. `showSummary={false}` drops the "Waiting…"
-// sentence when the surrounding text already says it, and `inline` drops the
-// notice box when it sits inside another one.
-export default function VerificationNotice({ profile, beginRequest, onUpdated, showSummary = true, inline = false, className = '' }) {
+export default function VerificationNotice({ profile, beginRequest, onUpdated, requestSignal = null, organizationId = profile?.organization?.id, inline = false, className = '' }) {
+  const { t } = useTranslation()
   const [updated, setUpdated] = useState(null)
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const current = updated || profile
   const status = current?.verification_status
-  if (!status || status === 'verified') return null
+  const owner = current?.organization?.role === 'owner'
+  const [fields, setFields] = useState(() => ({
+    business_name: profile?.business_name || '', business_description: profile?.business_description || '',
+    verification_phone: profile?.verification_phone || '', verification_link: profile?.verification_link || '',
+    verification_request_note: profile?.verification_request_note || '',
+  }))
+  const [errors, setErrors] = useState({})
+  const fieldRefs = useRef({})
+  const [errorSummary, setErrorSummary] = useState('')
+  useEffect(() => { if (requestSignal && requestSignal.organizationId === organizationId) setOpen(true) }, [requestSignal, organizationId])
+  useEffect(() => {
+    if (open) return
+    setFields({ business_name: profile?.business_name || '', business_description: profile?.business_description || '',
+      verification_phone: profile?.verification_phone || '', verification_link: profile?.verification_link || '',
+      verification_request_note: profile?.verification_request_note || '' })
+  }, [profile?.business_name, profile?.business_description, profile?.verification_phone,
+    profile?.verification_link, profile?.verification_request_note, open])
+  if (!status) return null
 
-  const owner = current.organization?.role === 'owner'
-  const requestVerification = async () => {
-    if (busy) return
+  const labels = {
+    business_name: t('organizerVerification.name'), business_description: t('organizerVerification.description'),
+    verification_phone: t('organizerVerification.phone'), verification_link: t('organizerVerification.link'),
+    verification_request_note: t('organizerVerification.note'),
+  }
+  const validate = normalizedFields => {
+    const next = {}
+    for (const key of ['business_name', 'business_description', 'verification_phone', 'verification_link']) {
+      if (!normalizedFields[key].trim()) next[key] = t('organizerVerification.required', { field: labels[key] })
+    }
+    if (normalizedFields.verification_phone.trim() && !validPhone(normalizedFields.verification_phone)) next.verification_phone = t('organizerVerification.phoneError')
+    if (normalizedFields.verification_link.trim() && !validLink(normalizedFields.verification_link)) next.verification_link = t('organizerVerification.linkError')
+    setErrors(next)
+    const firstInvalid = Object.keys(next)[0]
+    setErrorSummary(firstInvalid ? `Check ${Object.keys(next).length} highlighted verification ${Object.keys(next).length === 1 ? 'field' : 'fields'}. ${next[firstInvalid]}` : '')
+    if (firstInvalid) fieldRefs.current[firstInvalid]?.focus()
+    return Object.keys(next).length === 0
+  }
+  const submit = async event => {
+    event.preventDefault()
+    const normalizedFields = { ...fields, verification_link: normalizeLink(fields.verification_link) }
+    setFields(normalizedFields)
+    if (!validate(normalizedFields) || busy) return
     const request = beginRequest?.()
     if (!request) return
     setBusy(true)
     setError('')
     try {
-      const response = await apiClient.post('/organizer_profile/submit_verification', {}, request.config)
+      const response = await apiClient.post('/organizer_profile/submit_verification', normalizedFields, request.config)
       if (!request.current()) return
-      setUpdated({ ...current, verification_requested_at: new Date().toISOString(), ...response.data, verification_status: response.data?.verification_status || 'pending' })
+      setUpdated(response.data)
+      setOpen(false)
       onUpdated?.(response.data)
     } catch (failure) {
-      if (!request.current()) return
-      setError(failure.response?.data?.error || failure.response?.data?.errors?.join(' ') || 'The request was not sent. Check your connection and try again.')
+      if (request.current()) setError(failure.response?.data?.errors?.join(' ') || failure.response?.data?.error || t('organizerVerification.sendError'))
     } finally {
       request.release()
       if (request.current()) setBusy(false)
     }
   }
 
-  const notes = current.verification_notes
-  const note = notes && <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{notes}</p>
-  let body
-  if (status === 'pending') {
-    const requestedAt = formatTime(current.verification_requested_at)
-    body = <p className="flex items-start gap-2"><Clock3 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-      <span>Verification requested{requestedAt ? ` ${requestedAt}` : ''}. HåfaPass will review it soon.</span></p>
-  } else if (status === 'suspended') {
-    body = <>
-      <p className="font-semibold">HåfaPass paused sales for your organization.</p>
-      {note}
-      <SupportLink subject="HåfaPass organizer verification" className="btn-secondary mt-3 min-h-11 text-sm">Contact HåfaPass</SupportLink>
-    </>
-  } else {
-    body = <>
-      {showSummary && <p>Waiting for HåfaPass to verify your organization before tickets go on sale.</p>}
-      {status === 'rejected' && <>{<p className={showSummary ? 'mt-1' : ''}>HåfaPass could not verify your organization yet.</p>}{note}</>}
-      {owner
-        ? <button type="button" disabled={busy} onClick={requestVerification} className={`btn-secondary min-h-11 text-sm ${showSummary || status === 'rejected' ? 'mt-3' : ''}`}>
-          {busy ? 'Sending…' : 'Request verification'}
-        </button>
-        : <p className={showSummary || status === 'rejected' ? 'mt-1' : ''}>Ask the organization owner to request verification.</p>}
-    </>
-  }
-  return <div className={`${inline ? '' : 'rounded-xl border border-amber-200 bg-amber-50 p-3 '}text-sm text-amber-950 ${className}`}>
-    {body}
+  return <section id="verification-request" className={`${inline ? '' : 'rounded-xl border border-amber-200 bg-amber-50 p-4 '}text-sm text-amber-950 ${className}`} aria-label={t('organizerVerification.cardLabel')}>
+    <h3 className="font-semibold">{t(`organizerVerification.${status}Title`)}</h3>
+    {status === 'unverified' && <p className="mt-1">{t('organizerVerification.unverifiedBody')}</p>}
+    {status === 'pending' && <p className="mt-1">{t('organizerVerification.pendingBody', { date: current.verification_requested_at ? formatEventDate(current.verification_requested_at) : '' })}</p>}
+    {status === 'rejected' && <><p className="mt-1">{t('organizerVerification.rejectedBody')}</p><p className="mt-1 whitespace-pre-wrap">{current.verification_notes}</p></>}
+    {status === 'suspended' && <><p className="mt-1">{t('organizerVerification.suspendedBody')}</p><p className="mt-1 whitespace-pre-wrap">{current.verification_notes}</p><SupportLink subject="HåfaPass organizer verification" className="btn-secondary mt-3 min-h-11">{t('organizerVerification.contactSupport')}</SupportLink></>}
+    {status === 'verified' && <p className="mt-1">{t('organizerVerification.verifiedBody')}</p>}
+    {['unverified', 'pending', 'rejected'].includes(status) && (owner
+      ? <button type="button" className="btn-secondary mt-3 min-h-11" onClick={() => setOpen(value => !value)}>{status === 'rejected' ? t('organizerVerification.resubmit') : status === 'pending' ? 'Update request' : t('organizerVerification.request')}</button>
+      : <p className="mt-2">{t('organizerVerification.askOwner')}</p>)}
+    {open && <form noValidate onSubmit={submit} className="mt-4 grid gap-4">
+      <p role="alert" aria-live="assertive" className={errorSummary ? 'text-red-800' : 'sr-only'}>{errorSummary}</p>
+      {Object.keys(labels).map(key => <label key={key} className="grid gap-1 font-medium">
+        <span>{labels[key]}{key !== 'verification_request_note' && ' *'}</span>
+        {['business_description', 'verification_request_note'].includes(key)
+          ? <textarea ref={element => { fieldRefs.current[key] = element }} className="input min-h-11" rows={key === 'business_description' ? 3 : 2} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} aria-required={key !== 'verification_request_note'} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />
+          : <input ref={element => { fieldRefs.current[key] = element }} className="input min-h-11" type={key === 'verification_phone' ? 'tel' : key === 'verification_link' ? 'url' : 'text'} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} onBlur={key === 'verification_link' ? () => setFields(currentFields => ({ ...currentFields, verification_link: normalizeLink(currentFields.verification_link) })) : undefined} aria-required={key !== 'verification_request_note'} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />}
+        {errors[key] && <span id={`${key}-error`} role="alert" className="text-red-800">{errors[key]}</span>}
+      </label>)}
+      <button type="submit" disabled={busy} className="btn-primary min-h-11">{busy ? t('organizerVerification.sending') : t('organizerVerification.send')}</button>
+    </form>}
     {error && <p role="alert" className="mt-2 text-red-800">{error}</p>}
-  </div>
+  </section>
 }

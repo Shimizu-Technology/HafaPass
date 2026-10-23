@@ -127,12 +127,19 @@ class Event < ApplicationRecord
   scope :past, -> { where("starts_at <= ?", Time.current) }
   scope :featured, -> { where(is_featured: true) }
   scope :without_hidden_policy_hold, -> { where("events.policy_hold_scope IS DISTINCT FROM 'hidden'") }
+  # Keep discovery and direct public URLs on the same production gate as sales.
+  # Buyer-owned records deliberately do not use this scope.
+  scope :with_public_organizer, -> {
+    OrganizerProfile.verification_gate_enabled? ? where(organizer_profile_id: OrganizerProfile.verification_status_verified.select(:id)) : all
+  }
   scope :publicly_visible, -> {
-    where(status: [:published, :completed], live_money_proof_candidate: false).without_hidden_policy_hold
+    where(status: [:published, :completed], live_money_proof_candidate: false)
+      .without_hidden_policy_hold.with_public_organizer
   }
   scope :discoverable, ->(at = Time.current) {
     published
       .where(live_money_proof_candidate: false)
+      .with_public_organizer
       .where(policy_hold_at: nil)
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil)
@@ -211,7 +218,40 @@ class Event < ApplicationRecord
   end
 
   def organizer_sales_verified?
-    !Rails.env.production? || organizer_profile.verification_status_verified?
+    !OrganizerProfile.verification_gate_enabled? || organizer_profile.verification_status_verified?
+  end
+
+  def publicly_visible?
+    !live_money_proof_candidate? && %w[published completed].include?(status) &&
+      policy_hold_scope != "hidden" && organizer_sales_verified?
+  end
+
+  def private_preview_eligible?
+    published? && !organizer_profile.verification_status_suspended? &&
+      policy_hold_scope != "hidden" && !live_money_proof_candidate?
+  end
+
+  def preview_token
+    token = Rails.application.message_verifier("event-preview").generate([id, preview_token_version])
+    digest = Digest::SHA256.hexdigest(token)
+    update_column(:preview_token_digest, digest) if preview_token_digest != digest
+    token
+  end
+
+  def valid_preview_token?(token)
+    return false if token.blank? || preview_token_digest.blank?
+
+    digest = Digest::SHA256.hexdigest(token.to_s)
+    return false unless ActiveSupport::SecurityUtils.secure_compare(preview_token_digest, digest)
+
+    Rails.application.message_verifier("event-preview").verified(token) == [id, preview_token_version]
+  end
+
+  def rotate_preview_token!
+    with_lock do
+      update_columns(preview_token_version: preview_token_version + 1, preview_token_digest: nil)
+      preview_token
+    end
   end
 
   def paid_event?
@@ -230,16 +270,16 @@ class Event < ApplicationRecord
 
   def sales_blocker(at: Time.current, context: nil)
     return :not_published unless published?
-    return :event_paused if policy_hold?
-    return :sales_paused if sales_suspended_at.present?
-    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
-
     unless organizer_sales_verified?
       return :organizer_paused if organizer_profile.verification_status_suspended?
       return :organizer_verification_requested if organizer_profile.verification_status_pending?
 
       return :organizer_not_verified
     end
+    return :event_paused if policy_hold?
+    return :sales_paused if sales_suspended_at.present?
+    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+
     context ||= self.class.sales_context
     return :platform_setup unless context[:policy_approved]
     return nil unless paid_event?
@@ -257,9 +297,9 @@ class Event < ApplicationRecord
     not_published: "Not on sale: the event is not published.",
     event_paused: "Visible but not on sale: sales paused by HåfaPass.",
     sales_closed: "Not on sale: sales for this event have ended.",
-    organizer_not_verified: "Visible but not on sale yet: waiting for HåfaPass to verify your organization before tickets go on sale.",
-    organizer_verification_requested: "Visible but not on sale yet: verification requested. HåfaPass will review it soon.",
-    organizer_paused: "Visible but not on sale: HåfaPass paused sales for your organization.",
+    organizer_not_verified: "Private preview only: request organizer verification to go public and start selling.",
+    organizer_verification_requested: "Private preview only: HåfaPass is reviewing your organizer account.",
+    organizer_paused: "Hidden from public pages: HåfaPass suspended your organizer account and paused sales.",
     platform_setup: "Visible but not on sale yet: HåfaPass is finishing platform setup.",
     payments_off: "Visible but not on sale yet: HåfaPass has not turned on payments.",
     payout_details_missing: "Visible but not on sale yet: add your payout details in Settings → Payouts for paid tickets."
@@ -381,7 +421,7 @@ class Event < ApplicationRecord
       # share); tickets go on sale once HåfaPass verifies them. Elsewhere
       # verification is still required to publish.
       checklist_item("organizer_verified", "Organizer identity verified", organizer_profile.verification_status_verified?,
-        required_to_publish: !Rails.env.production?),
+        required_to_publish: !OrganizerProfile.verification_gate_enabled?),
       checklist_item("policy_accepted", "Organizer policy accepted",
         organizer_profile.policy_accepted?(current: organizer_agreement || PolicyRegistry.organizer_agreement)),
       checklist_item("title", "Event title added", title.present?),

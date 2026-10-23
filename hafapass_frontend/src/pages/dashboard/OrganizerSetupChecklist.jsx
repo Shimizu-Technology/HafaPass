@@ -1,5 +1,6 @@
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import OrganizerAgreementDialog from '../../components/OrganizerAgreementDialog'
 import SupportLink from '../../components/SupportLink'
@@ -9,13 +10,14 @@ const VERIFICATION = {
   pending: { done: false, status: 'Submitted — HåfaPass is reviewing it', next: 'Nothing to do right now. HåfaPass contacts you if anything is missing.' },
   verified: { done: true, status: 'Verified by HåfaPass' },
   rejected: { done: false, status: 'Changes needed', next: 'Read the review note, update your profile, then submit again.' },
-  suspended: { done: false, status: 'Sales paused by HåfaPass', next: 'Your events stay visible but can’t sell. Contact the HåfaPass team to resolve this.' },
+  suspended: { done: false, status: 'Sales paused by HåfaPass' },
 }
 
 // The organizer's guided setup: one list, in order, with the next action
 // and what HåfaPass does at each step. Only the owner can accept the
 // agreement or submit for review; an admin viewing the workspace sees status.
 export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, agreementError = null, onOpenAgreement, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
+  const { t } = useTranslation()
   const [agreementOpen, setAgreementOpen] = useState(false)
   const progress = profile.setup_progress || {}
   const verification = VERIFICATION[profile.verification_status] || VERIFICATION.unverified
@@ -35,11 +37,11 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'verification', title: 'HåfaPass verifies your organization (tickets go on sale after this)', done: verification.done,
-      status: verification.status, next: verification.next,
+      status: verification.status, next: profile.verification_status === 'suspended' ? t('organizerVerification.suspendedChecklist') : verification.next,
       action: !adminView && (['unverified', 'rejected'].includes(profile.verification_status)
-        ? <button type="button" disabled={busy || !hasDescription} onClick={onSubmitVerification} className="btn-secondary !px-4 !py-2 text-sm">{profile.verification_status === 'rejected' ? 'Submit again' : 'Submit for review'}</button>
+        ? <button type="button" disabled={busy} onClick={onSubmitVerification} className="btn-secondary min-h-11 !px-4 text-sm">{profile.verification_status === 'rejected' ? 'Submit again' : 'Request verification'}</button>
         : profile.verification_status === 'suspended' ? <SupportLink subject={`Organizer review — ${profile.business_name}`} className="btn-secondary !px-4 !py-2 text-sm">Contact HåfaPass</SupportLink> : null),
-      hint: !hasDescription && ['unverified', 'rejected'].includes(profile.verification_status) ? 'Add a profile description first.' : null,
+      hint: !hasDescription && ['unverified', 'rejected'].includes(profile.verification_status) ? 'Add a short description in the request form.' : null,
     },
     {
       key: 'payout', title: 'How you get paid', done: profile.payout_ready,
@@ -49,12 +51,12 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'event', title: 'Create your first event', done: (progress.events_count || 0) > 0,
-      status: (progress.events_count || 0) > 0 ? `${progress.events_count} event${progress.events_count === 1 ? '' : 's'} created` : 'Start a draft — nothing is public until you publish',
+      status: (progress.events_count || 0) > 0 ? `${progress.events_count} event${progress.events_count === 1 ? '' : 's'} created` : profile.verification_status === 'verified' ? 'Start a draft — nothing is public until you publish' : "Start a draft. When you publish, you'll get a private preview link; it goes public once you're verified.",
       action: !(progress.events_count > 0) && canCreate && <Link to="/dashboard/events/new" className="btn-primary !px-4 !py-2 text-sm">Start a draft</Link>,
     },
     {
       key: 'publish', title: 'Publish', done: (progress.published_events_count || 0) > 0,
-      status: (progress.published_events_count || 0) > 0 ? 'Live on HåfaPass' : 'Open your event and publish it when its checklist is complete',
+      status: (progress.published_events_count || 0) > 0 ? profile.verification_status === 'verified' ? 'Live on HåfaPass' : profile.verification_status === 'suspended' ? t('organizerVerification.suspendedChip') : t('organizerVerification.publishedInPreview') : 'Open your event and publish it when its checklist is complete',
       next: (progress.published_events_count || 0) > 0 ? null : 'HåfaPass may confirm launch details with you before the first sale.',
     },
   ]
@@ -83,7 +85,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
                 <div className="flex min-w-0 gap-3">
                   {step.done ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /> : <Circle aria-hidden="true" className={`mt-0.5 h-5 w-5 shrink-0 ${isNext ? 'text-brand-600' : 'text-neutral-300'}`} />}
                   <div className="min-w-0">
-                    <p className="font-medium text-neutral-900">{step.title}{isNext && <span className="ml-2 rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white">Next</span>}<span className="sr-only">{step.done ? ' (done)' : ''}</span></p>
+                    <p className="font-medium text-neutral-900">{step.title}{isNext && profile.verification_status !== 'suspended' && <span className="ml-2 rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white">Next</span>}<span className="sr-only">{step.done ? ' (done)' : ''}</span></p>
                     <p className="text-sm text-neutral-700 [overflow-wrap:anywhere]">{step.status}</p>
                     {!step.done && step.next && <p className="mt-1 text-sm text-content-muted">{step.next}</p>}
                     {step.key === 'verification' && profile.verification_notes && !step.done && <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Review note: {profile.verification_notes}</p>}

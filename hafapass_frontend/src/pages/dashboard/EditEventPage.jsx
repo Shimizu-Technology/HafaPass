@@ -358,7 +358,9 @@ function EditEventSession({ id, identity }) {
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
       setShowPublishConfirm(false)
-      setSuccessMessage('Event published successfully!')
+      setSuccessMessage(res.data.publicly_visible === false && ['unverified', 'pending', 'rejected'].includes(res.data.organizer_verification_status)
+        ? "Published as a private preview — share your preview link. It goes public automatically once you're verified."
+        : 'Event published successfully!')
     } catch (err) {
       if (!request.current()) return
       const msg = err.response?.data?.error || 'Failed to publish event'
@@ -436,6 +438,8 @@ function EditEventSession({ id, identity }) {
   const readyToPublish = publishChecklist.length > 0 && publishChecklist.filter(blocksPublishing).every(item => item.complete)
   // Verification that only holds back ticket sales, not publishing.
   const salesWaitOnVerification = publishChecklist.some(item => item.code === 'organizer_verified' && !item.complete && !blocksPublishing(item))
+  const hiddenPublished = ['published', 'completed'].includes(event?.status) && event?.publicly_visible === false
+  const privatePreviewPublished = hiddenPublished && ['unverified', 'pending', 'rejected'].includes(event?.organizer_verification_status)
 
   if (loading) {
     return (
@@ -462,7 +466,7 @@ function EditEventSession({ id, identity }) {
       {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
-          {event?.slug && (
+          {event?.slug && !hiddenPublished && (
             <a
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
@@ -519,7 +523,7 @@ function EditEventSession({ id, identity }) {
                 {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : blocksPublishing(item) ? <XCircle className="w-4 h-4 shrink-0" /> : <Clock3 aria-hidden="true" className="w-4 h-4 shrink-0 text-amber-700" />}
                 <div className="min-w-0">{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
                   {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
-                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">You can publish now. Tickets go on sale once HåfaPass verifies your organization.</p>}
+                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">Your event will be visible through a private preview link now, and goes public automatically once you're verified.</p>}
                   {item.requestVerification && <VerificationNotice profile={organizerProfile} beginRequest={beginRequest} showSummary={false} className="mt-2" />}
                 </div>
               </li>
@@ -533,7 +537,7 @@ function EditEventSession({ id, identity }) {
         <ConfirmModal
           title="Publish Event?"
           message={salesWaitOnVerification
-            ? `Publish the saved event “${event.title}”? Attendees will be able to find it. Tickets go on sale once HåfaPass verifies your organization.`
+            ? `Publish the saved event “${event.title}”? Your event will be visible through a private preview link now, and goes public automatically once you're verified.`
             : `Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
           confirmClass="bg-action-teal hover:bg-action-teal-hover"
@@ -581,7 +585,7 @@ function EditEventSession({ id, identity }) {
       )}
 
       {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm" role="status">{successMessage}</div>
+        <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{successMessage}{privatePreviewPublished && <p className="mt-2"><Link to={`/dashboard/events/${id}`} className="inline-flex min-h-11 items-center font-semibold underline">Open Overview to copy or share your preview link</Link></p>}</div>
       )}
 
       {submitError && (
@@ -650,8 +654,9 @@ function EditEventSession({ id, identity }) {
           />
           <p id="slug-preview" className="mt-2 flex min-w-0 items-start gap-2 text-sm text-neutral-700">
             <Link2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
-            <span className="min-w-0 break-all"><span className="sr-only">Full link: </span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
+            <span className="min-w-0 break-all"><span className="sr-only">{hiddenPublished ? privatePreviewPublished ? 'Public link (works after verification): ' : 'Public link (currently hidden): ' : 'Full link: '}</span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
           </p>
+          {hiddenPublished && <p className="mt-1 text-sm text-amber-900">{privatePreviewPublished ? 'Public link (works after verification). Share the private preview link from Overview for now.' : 'This event is hidden right now. The public link will work when it becomes visible.'}</p>}
           <div aria-live="polite">
             {linkError ? <p id="slug-error" className="mt-1 text-sm text-red-600">{linkError}</p>
               : linkChanged && currentLinkCheck?.status === 'checking' ? <p className="mt-1 text-sm text-neutral-500">Checking this link…</p>

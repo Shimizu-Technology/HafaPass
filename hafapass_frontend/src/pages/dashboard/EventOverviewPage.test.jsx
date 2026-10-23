@@ -42,6 +42,78 @@ beforeEach(() => {
 })
 
 describe('event overview', () => {
+  it('does not request a preview link for a suspended organizer', async () => {
+    mount({ ...base, publicly_visible: false, sales_status: { reason: 'organizer_paused' } }, {
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+      '/organizer_profile': { verification_status: 'suspended', organization: { role: 'owner' } },
+    })
+    await screen.findByRole('heading', { name: 'Synthetic reef night' })
+    await waitFor(() => expect(requested('/organizer_profile')).toBe(true))
+    expect(requested('/organizer/events/37/preview_link')).toBe(false)
+  })
+
+  it('uses a preview link for an unverified published event even with a sales-only hold', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'unverified',
+      sales_status: { on_sale: false, reason: 'event_paused', message: 'Sales paused.' } }, {
+      '/organizer/events/37/preview_link': { url: 'https://example.test/events/synthetic-reef-night/preview#t=secret' },
+      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(await within(next).findByRole('link', { name: 'Preview event' })).toBeInTheDocument()
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: 'Copy event link' })).not.toBeInTheDocument()
+  })
+
+  it('offers no dead public link for an event hidden by a platform hold', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'verified',
+      sales_status: { on_sale: false, reason: 'event_paused', message: 'Sales paused.' },
+      policy_hold_scope: 'hidden' }, {
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: 'Copy event link' })).not.toBeInTheDocument()
+    expect(next).toHaveTextContent('This event has no public link right now.')
+  })
+
+  it('confirms before replacing a private preview link', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { url: 'https://example.test/new-preview' } })
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'pending',
+      sales_status: { on_sale: false, reason: 'organizer_verification_requested' } }, {
+      '/organizer/events/37/preview_link': { url: 'https://example.test/old-preview' },
+      '/organizer_profile': { verification_status: 'pending', organization: { role: 'owner' } },
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    await user.click(await screen.findByRole('button', { name: 'Get a new preview link' }))
+    expect(screen.getByText('Anyone using the old link will lose access.')).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Get new link' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/37/rotate_preview_link', {}, expect.anything())
+  })
+
+  it('leaves the clipboard alone when the native preview share is cancelled', async () => {
+    const user = userEvent.setup()
+    const share = vi.fn(() => Promise.reject(new DOMException('Cancelled', 'AbortError')))
+    const writeText = vi.fn()
+    const previousShare = Object.getOwnPropertyDescriptor(window.navigator, 'share')
+    Object.defineProperty(window.navigator, 'share', { configurable: true, value: share })
+    setClipboard({ writeText })
+    try {
+      mount({ ...base, publicly_visible: false, sales_status: { on_sale: false, reason: 'organizer_not_verified' } }, {
+        '/organizer/events/37/preview_link': { url: 'https://example.test/events/synthetic-reef-night/preview#t=secret' },
+        '/organizer_profile': { verification_status: 'pending', organization: { role: 'owner' } },
+        '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+      })
+      await user.click(await screen.findByRole('button', { name: 'Share preview' }))
+      expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/preview#t=') }))
+      expect(writeText).not.toHaveBeenCalled()
+    } finally {
+      if (previousShare) Object.defineProperty(window.navigator, 'share', previousShare)
+      else delete window.navigator.share
+    }
+  })
   it('shows live sales, check-ins, sharing and every manager tool for a published event', async () => {
     mount(base, { '/organizer/events/37/stats': { total_tickets_sold: 42, total_revenue_cents: 105000, tickets_checked_in: 10 } })
     const sales = await screen.findByRole('region', { name: 'Sales so far' })
@@ -152,18 +224,19 @@ describe('event overview', () => {
     apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
     mount({ ...base, sales_status: { on_sale: false, reason: 'organizer_not_verified', message: 'Visible but not on sale yet: waiting for HåfaPass to verify your organization.' } }, {
       '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
-      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+      '/organizer_profile': { business_name: 'Island Events', business_description: 'Island events', verification_phone: '+1-671-555-1234', verification_link: 'https://example.com', verification_status: 'unverified', organization: { role: 'owner' } },
     })
     const next = await screen.findByRole('region', { name: 'Next steps' })
-    expect(next).toHaveTextContent('Visible but not on sale yet.')
-    expect(next).toHaveTextContent('Waiting for HåfaPass to verify your organization.')
+    expect(next).toHaveTextContent('Waiting for verification')
+    expect(next).toHaveTextContent('Get verified to start selling tickets')
     expect(next).not.toHaveTextContent('Your event is live')
-    expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('tickets are not on sale yet')
-    expect(within(next).getByRole('link', { name: 'View public page' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('private preview link')
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
     expect(within(next).getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
     await user.click(await within(next).findByRole('button', { name: 'Request verification' }))
-    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
-    expect(await within(next).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+    await user.click(within(next).getByRole('button', { name: 'Send request' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_phone: '+1-671-555-1234' }), expect.objectContaining({ organizationId: '1' }))
+    expect(await within(next).findByText(/We're reviewing your account/)).toBeInTheDocument()
   })
 
   it('shows the server reason when HåfaPass suspended sales for the event', async () => {

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::OrdersController < ApplicationController
+  prepend_before_action :ensure_public_checkout_event, only: :create
   CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
     terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents].freeze
@@ -9,7 +10,7 @@ class Api::V1::OrdersController < ApplicationController
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :optional_authenticate_user!, only: [
-    :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
+    :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
   ]
   before_action :set_accessible_order, only: [
@@ -36,7 +37,7 @@ class Api::V1::OrdersController < ApplicationController
       request_digest: checkout_digest) if checkout_key
     existing_order = @checkout_claim&.attempt&.order
 
-    event = existing_order&.event || Event.published.find_by(id: params[:event_id])
+    event = checkout_event_scope.find_by(id: existing_order&.event_id || params[:event_id])
     unless event
       render_checkout_rejection("Event not found", status: :not_found)
       return
@@ -372,6 +373,22 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   private
+
+  def ensure_public_checkout_event
+    optional_authenticate_user!
+    return if checkout_event_scope.exists?(id: params[:event_id])
+
+    response.headers["Cache-Control"] = "private, no-store"
+    render json: { error: "Event not found" }, status: :not_found
+  end
+
+  def checkout_event_scope
+    if ActiveModel::Type::Boolean.new.cast(params[:live_money_proof]) && @current_user&.admin?
+      Event.published.where(live_money_proof_candidate: true)
+    else
+      Event.publicly_visible.published
+    end
+  end
 
   def transferable_order_ticket
     ticket = @order.tickets.find_by(id: params[:ticket_id])

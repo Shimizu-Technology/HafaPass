@@ -66,11 +66,13 @@ RSpec.describe "Production launch behaviour", type: :request do
     profile.update!(verification_status: :unverified, verified_at: nil)
     event
 
-    post "/api/v1/organizer_profile/submit_verification", headers: org_headers
+    details = { business_name: profile.business_name, business_description: profile.business_description,
+      verification_phone: "+1-671-555-1234", verification_link: "https://example.com/organizer" }
+    post "/api/v1/organizer_profile/submit_verification", headers: org_headers, params: details
     expect(MessageDelivery.where(template: "verification_request", recipient: admin.email).count).to eq(1)
 
     expect do
-      post "/api/v1/organizer_profile/submit_verification", headers: org_headers
+      post "/api/v1/organizer_profile/submit_verification", headers: org_headers, params: details
     end.not_to change(MessageDelivery, :count)
   end
 
@@ -134,12 +136,11 @@ RSpec.describe "Production launch behaviour", type: :request do
     expect(response.parsed_body.fetch("suspended_organizers").pluck("profile_id")).to include(profile.id)
   end
 
-  it "marks events of unverified organizers as not purchasable on organizer pages" do
+  it "hides events of unverified organizers from organizer pages" do
     create(:ticket_type, :free, event: event, quantity_available: 20)
     profile.update!(verification_status: :pending)
 
     get "/api/v1/organizers/#{profile.organization.slug}"
-    listed = response.parsed_body.fetch("events").find { |item| item["id"] == event.id }
-    expect(listed).to include("purchasable" => false) if listed
+    expect(response).to have_http_status(:not_found)
   end
 end

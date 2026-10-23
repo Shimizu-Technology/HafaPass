@@ -3,7 +3,8 @@
 class Api::V1::EventSeatingController < ApplicationController
   skip_before_action :authenticate_user!
   before_action :optional_authenticate_user!
-  before_action :set_event
+  # Resolve public visibility before the capability gate can reveal that a hidden event exists.
+  prepend_before_action :set_event
 
   def show
     configuration = @event.event_seating_configuration
@@ -48,6 +49,6 @@ class Api::V1::EventSeatingController < ApplicationController
 
   def set_event
     @event = Event.find_by_public_slug!(params[:slug],
-      scope: Event.published.where(live_money_proof_candidate: false).without_hidden_policy_hold)
+      scope: Event.publicly_visible.published)
   end
 end

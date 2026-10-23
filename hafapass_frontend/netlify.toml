@@ -5,6 +5,12 @@
   publish = "dist"
   command = "npm run build"
 
+[[headers]]
+  for = "/events/*/preview"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
 # Edge functions in netlify/edge-functions/ declare their own paths inline
 # (og-redirect: /events/*, sitemap: /sitemap.xml). They read the Rails API
 # origin from the HAFAPASS_API_ORIGIN environment variable.

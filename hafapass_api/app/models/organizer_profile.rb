@@ -1,4 +1,35 @@
 class OrganizerProfile < ApplicationRecord
+  VERIFICATION_DETAILS = %w[business_name business_description verification_phone verification_link verification_request_note].freeze
+
+  def verification_details
+    attributes.slice(*VERIFICATION_DETAILS)
+  end
+
+  def refresh_verification_request!(before_details:, was_pending:)
+    normalize_verification_link!
+    changes = (was_pending ? (verification_change_diff || {}).deep_dup : {}).with_indifferent_access
+    before_details.each do |field, before|
+      after = public_send(field)
+      next if before == after
+
+      original = changes.key?(field) ? changes.dig(field, "before") : before
+      if original == after
+        changes.delete(field)
+      else
+        changes[field] = { "before" => original, "after" => after }
+      end
+    end
+    return false if was_pending && before_details.all? { |field, before| before == public_send(field) }
+
+    self.verification_request_version += 1
+    self.verification_requested_at = Time.current
+    self.verification_change_diff = was_pending ? changes : {}
+    true
+  end
+
+  def self.verification_gate_enabled?
+    Rails.env.production? || ENV["HAFAPASS_ENFORCE_ORGANIZER_VERIFICATION"] == "true"
+  end
   # The person who set up the profile. Admin-created organizations have none
   # until the invited owner accepts.
   belongs_to :user, optional: true
@@ -9,6 +40,9 @@ class OrganizerProfile < ApplicationRecord
   enum :verification_status, { unverified: 0, pending: 1, verified: 2, rejected: 3, suspended: 4 }, prefix: true
 
   validates :business_name, presence: true
+  validates :business_description, :verification_phone, :verification_link, presence: true,
+    on: :verification_request
+  validate :verification_contact_format, on: :verification_request
   validate :logo_image_is_approved
   validates :user_id, uniqueness: true, allow_nil: true
 
@@ -22,6 +56,25 @@ class OrganizerProfile < ApplicationRecord
   # is one admin action; its note is optional.
   validates :verification_notes, presence: true, if: -> { verification_status_rejected? }
 
+  def verification_contact_format
+    digits = verification_phone.to_s.gsub(/\D/, "")
+    unless digits.match?(/\A(?:1671|671)\d{7}\z/) || digits.match?(/\A1[2-9]\d{9}\z/)
+      errors.add(:verification_phone, "must be a valid phone number (Guam +1-671 is accepted)")
+    end
+    normalize_verification_link!
+    uri = URI.parse(verification_link.to_s)
+    unless %w[http https].include?(uri.scheme) && uri.host.present? && uri.host.match?(/\A(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\z/i) && uri.userinfo.nil?
+      errors.add(:verification_link, "must be a full website or social media URL")
+    end
+  rescue URI::InvalidURIError
+    errors.add(:verification_link, "must be a full website or social media URL")
+  end
+
+  def normalize_verification_link!
+    value = verification_link.to_s.strip
+    self.verification_link = "https://#{value}" if value.match?(/\A(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[\/:?#].*)?\z/i)
+  end
+
   def policy_accepted?(current: PolicyRegistry.organizer_agreement)
     policy_accepted_at.present? && policy_version == current[:version] && policy_digest == current[:digest]
   end
@@ -29,7 +82,7 @@ class OrganizerProfile < ApplicationRecord
   # Production lets unverified organizers publish (tickets sell only once
   # verified); elsewhere verification is still needed to publish.
   def ready_to_publish_free_events?
-    (verification_status_verified? || Rails.env.production?) && policy_accepted?
+    (verification_status_verified? || self.class.verification_gate_enabled?) && policy_accepted?
   end
 
   def ready_to_publish_paid_events?

@@ -22,6 +22,54 @@ const dashboard = {
 describe('AdminDashboardPage', () => {
   beforeEach(() => { vi.clearAllMocks(); apiClient.get.mockResolvedValue({ data: dashboard }) })
 
+  it('shows pending edits and sends the reviewed version with approval', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [{
+      profile_id: 4, business_name: 'Island Events', verification_status: 'pending', requested_at: '2026-10-23T00:00:00Z',
+      verification_request_version: 3, verification_change_diff: {
+        verification_phone: { before: '+1-671-555-1234', after: '+1-671-555-5678' },
+      },
+    }] } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'verified' } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    expect(await screen.findByText('Updated after submission — review again')).toBeInTheDocument()
+    expect(screen.getByText(/verification phone:.*555-1234.*555-5678/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verify Island Events' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Verify' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', {
+      verification_status: 'verified', verification_request_version: 3,
+    }, expect.anything())
+  })
+
+  it('shows descriptions and notes with an expandable long description', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [{
+      profile_id: 4, business_name: 'Island Events', verification_status: 'pending',
+      requested_at: '2026-10-23T00:00:00Z', business_description: 'Guam events ' + 'A'.repeat(300),
+      verification_request_note: 'Call after lunch', verification_link: 'https://instagram.com/islandevents',
+    }] } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    expect(await screen.findByText('Business description')).toBeInTheDocument()
+    expect(screen.getByText('Note: Call after lunch')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'instagram.com/islandevents' })).toHaveAttribute('href', 'https://instagram.com/islandevents')
+    expect(screen.getByText('Requested Oct 23, 2026')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(screen.getByText(/A{300}/)).toBeInTheDocument()
+  })
+
+  it('keeps real requests above a collapsed not-requested section', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [
+      { profile_id: 1, business_name: 'No request', verification_status: 'unverified' },
+      { profile_id: 4, business_name: 'Rejected without a request', verification_status: 'rejected' },
+      { profile_id: 2, business_name: 'Older request', verification_status: 'pending', requested_at: '2026-10-21T00:00:00Z' },
+      { profile_id: 3, business_name: 'Newest request', verification_status: 'pending', requested_at: '2026-10-23T00:00:00Z' },
+    ] } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: 'Requested (newest first) (2)' })).toBeInTheDocument()
+    const names = screen.getAllByRole('button', { name: /^Verify / }).map(button => button.getAttribute('aria-label') || button.textContent)
+    expect(names.slice(0, 2).join(' ')).toContain('Newest request')
+    expect(screen.getByText('Not requested yet (2)').closest('details')).not.toHaveAttribute('open')
+  })
+
   it('uses a defined color token for every stat card icon', async () => {
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
     const tickets = (await screen.findByText('Tickets Sold')).nextElementSibling
@@ -107,21 +155,44 @@ describe('AdminDashboardPage', () => {
       .mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [], verified_organizers: [{ profile_id: 4, business_name: 'Reef Nights', verified_at: '2026-10-21T00:00:00Z', verified_by: 'admin@hafapass.test' }] } })
     apiClient.patch.mockResolvedValue({ data: { id: 4, verification_status: 'verified' } })
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
-    const section = await screen.findByRole('region', { name: 'Organizers waiting for verification' })
+    const section = await screen.findByRole('region', { name: /Requested \(newest first\)/ })
     expect(section).toHaveTextContent('Owner: owner@reef.test')
     expect(section).toHaveTextContent('Requested')
-    expect(section).toHaveTextContent('Payout details on file: No · 2 events')
+    expect(section).toHaveTextContent('0 published awaiting · Payout details: Not ready')
     expect(section).toHaveTextContent('Not requested yet')
     await user.click(within(section).getByRole('button', { name: 'Verify Reef Nights' }))
     const dialog = screen.getByRole('dialog', { name: 'Verify Reef Nights?' })
-    expect(dialog).toHaveTextContent('Their published events can sell tickets right away.')
+    expect(dialog).toHaveTextContent('Their published events become public and can sell tickets right away.')
     expect(dialog).toHaveTextContent('Paid tickets won’t sell until they do')
     await user.type(within(dialog).getByRole('textbox', { name: /Note/ }), 'Checked with the owner.')
     await user.click(within(dialog).getByRole('button', { name: 'Verify' }))
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', { verification_status: 'verified', verification_notes: 'Checked with the owner.' }, expect.anything())
-    expect(await screen.findByText('Reef Nights is verified. Their published events can sell tickets.')).toBeInTheDocument()
-    expect(await within(section).findByText('No organizers are waiting.')).toBeInTheDocument()
+    expect(await screen.findByText('Reef Nights is verified. Their published events are public.')).toBeInTheDocument()
+    expect(await within(section).findByText('No requests yet.')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Verified organizers' })).toHaveTextContent('Verified')
+  })
+
+  it('requires a review note before rejecting an organizer', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [{ profile_id: 4,
+      business_name: 'Reef Nights', verification_status: 'pending', requested_at: '2026-10-23T00:00:00Z', verification_phone: '+1-671-555-1234',
+      verification_link: 'https://instagram.com/reef', verification_request_note: 'First show in Tumon',
+      published_awaiting_events_count: 2 }] } })
+    apiClient.patch.mockResolvedValue({ data: { id: 4, verification_status: 'rejected' } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    const section = await screen.findByRole('region', { name: /Requested \(newest first\)/ })
+    expect(section).toHaveTextContent('+1-671-555-1234')
+    expect(section).toHaveTextContent('First show in Tumon')
+    expect(section).toHaveTextContent('2 published awaiting')
+    await user.click(within(section).getByRole('button', { name: 'Reject Reef Nights' }))
+    const dialog = screen.getByRole('dialog', { name: "Reject Reef Nights's request?" })
+    await user.click(within(dialog).getByRole('button', { name: 'Reject request' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Add a note')
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.type(within(dialog).getByRole('textbox', { name: /Note/ }), 'Link the event social page.')
+    await user.click(within(dialog).getByRole('button', { name: 'Reject request' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4',
+      { verification_status: 'rejected', verification_notes: 'Link the event social page.' }, expect.anything())
   })
 
   it('pauses all sales for a verified organizer after explaining what pausing does', async () => {
@@ -130,15 +201,15 @@ describe('AdminDashboardPage', () => {
     apiClient.patch.mockRejectedValueOnce({ response: { status: 422, data: { error: 'Verification status is invalid.' } } }).mockResolvedValue({ data: { id: 4 } })
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
     const section = await screen.findByRole('region', { name: 'Verified organizers' })
-    await user.click(within(section).getByRole('button', { name: 'Pause all sales for Reef Nights' }))
-    const dialog = screen.getByRole('dialog', { name: 'Pause all sales for Reef Nights?' })
-    expect(dialog).toHaveTextContent('Their events stay visible but stop selling until you verify them again.')
-    await user.click(within(dialog).getByRole('button', { name: 'Pause all sales' }))
+    await user.click(within(section).getByRole('button', { name: 'Suspend Reef Nights' }))
+    const dialog = screen.getByRole('dialog', { name: 'Suspend Reef Nights?' })
+    expect(dialog).toHaveTextContent('Their events disappear from public pages and new sales stop. Tickets already sold stay valid.')
+    await user.click(within(dialog).getByRole('button', { name: 'Suspend' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Verification status is invalid.')
     await user.type(within(dialog).getByRole('textbox', { name: /Note/ }), 'Refund complaints')
-    await user.click(within(dialog).getByRole('button', { name: 'Pause all sales' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Suspend' }))
     expect(apiClient.patch).toHaveBeenLastCalledWith('/admin/organizer_profiles/4', { verification_status: 'suspended', verification_notes: 'Refund complaints' }, expect.anything())
-    expect(await screen.findByText('All sales are paused for Reef Nights.')).toBeInTheDocument()
+    expect(await screen.findByText("Reef Nights's events are hidden and sales are paused.")).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -147,18 +218,18 @@ describe('AdminDashboardPage', () => {
     apiClient.get.mockResolvedValue({ data: { ...dashboard, suspended_organizers: [{ profile_id: 6, business_name: 'Night Market', owner_email: 'owner@market.test', suspended_at: null, verification_notes: 'Refund complaints.' }] } })
     apiClient.patch.mockResolvedValue({ data: { id: 6, verification_status: 'verified' } })
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
-    const section = await screen.findByRole('region', { name: 'Sales paused' })
+    const section = await screen.findByRole('region', { name: 'Suspended organizers' })
     expect(section).toHaveTextContent('Refund complaints.')
-    await user.click(within(section).getByRole('button', { name: 'Resume sales for Night Market' }))
-    const dialog = screen.getByRole('dialog', { name: 'Resume sales for Night Market?' })
-    await user.click(within(dialog).getByRole('button', { name: 'Resume sales' }))
+    await user.click(within(section).getByRole('button', { name: 'Restore Night Market' }))
+    const dialog = screen.getByRole('dialog', { name: 'Restore Night Market?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Restore' }))
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/6', { verification_status: 'verified' }, expect.anything())
-    expect(await screen.findByText('Sales resumed for Night Market.')).toBeInTheDocument()
+    expect(await screen.findByText("Night Market's events are public again.")).toBeInTheDocument()
   })
 
   it('says when no organizers are waiting', async () => {
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
-    expect(await screen.findByText('No organizers are waiting.')).toBeInTheDocument()
+    expect(await screen.findByText('No requests yet.')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

@@ -34,19 +34,23 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     expect(response.parsed_body.fetch("sales_status")).to include("on_sale" => false, "reason" => "organizer_not_verified")
 
     expect do
-      post "/api/v1/organizer_profile/submit_verification", headers: org_headers
+      post "/api/v1/organizer_profile/submit_verification", headers: org_headers,
+        params: { business_name: profile.business_name, business_description: "Island events",
+          verification_phone: "+1-671-555-1234", verification_link: "https://example.com/organizer" }
     end.to change { MessageDelivery.where(template: "verification_request", recipient: admin.email).count }.by(1)
     expect(response).to have_http_status(:ok), response.body
 
     get "/api/v1/admin/dashboard", headers: auth_headers(admin)
     waiting = response.parsed_body.fetch("organizers_awaiting_verification")
-    expect(waiting.first).to include("profile_id" => profile.id, "verification_status" => "pending", "payout_ready" => true)
+    expect(waiting.first).to include("profile_id" => profile.id, "verification_status" => "pending", "payout_ready" => true,
+      "event_count" => 1, "published_awaiting_events_count" => 1)
 
     checkout
-    expect(response).to have_http_status(:service_unavailable)
-    expect(response.parsed_body.fetch("error")).to eq("Tickets for this event are not on sale yet")
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body.fetch("error")).to eq("Event not found")
 
-    patch "/api/v1/admin/organizer_profiles/#{profile.id}", params: { verification_status: "verified" },
+    patch "/api/v1/admin/organizer_profiles/#{profile.id}", params: { verification_status: "verified",
+      verification_request_version: profile.reload.verification_request_version },
       headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     get "/api/v1/admin/dashboard", headers: auth_headers(admin)
@@ -73,6 +77,17 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     get "/api/v1/organizer/events/#{event.id}", headers: org_headers
     expect(response.parsed_body.fetch("sales_status")).to include("on_sale" => false, "reason" => "organizer_paused")
     expect(AuditLog.where(action: "organizer.verification_updated", actor_user: admin).count).to eq(2)
+  end
+
+  it "defaults event counts to zero for an organizer without events" do
+    empty_profile = create(:organizer_profile, user: create(:user, :organizer))
+    get "/api/v1/admin/dashboard", headers: auth_headers(admin)
+
+    waiting = response.parsed_body.fetch("organizers_awaiting_verification")
+    expect(waiting.find { |item| item["profile_id"] == empty_profile.id }).to include(
+      "event_count" => 0, "published_awaiting_events_count" => 0)
+    expect(waiting.find { |item| item["profile_id"] == profile.id }).to include(
+      "event_count" => 1, "published_awaiting_events_count" => 1)
   end
 
   it "lists one-click platform setup and approves the policy register" do

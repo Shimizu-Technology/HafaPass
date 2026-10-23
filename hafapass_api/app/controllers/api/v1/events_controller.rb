@@ -95,6 +95,23 @@ module Api
         render json: { error: "Event not found" }, status: :not_found
       end
 
+      def private_preview
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        event = Event.find_by_public_slug!(params[:slug])
+        raise ActiveRecord::RecordNotFound unless event.private_preview_eligible? &&
+          params[:token].blank? && event.valid_preview_token?(request.headers["X-Preview-Token"])
+
+        if event.publicly_visible?
+          render json: { redirect_to: event.slug }
+        else
+          render json: show_json(event).merge(private_preview: true, purchasable: false)
+        end
+      rescue ActiveRecord::RecordNotFound
+        render json: { error: "Event not found" }, status: :not_found
+      end
+
       private
 
       def show_json(event)

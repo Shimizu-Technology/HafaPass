@@ -66,17 +66,28 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
   # Organizers whose events cannot sell in production until an admin verifies
   # them (one action on this dashboard). Requested ones first.
   def organizers_awaiting_verification_json
-    OrganizerProfile.where(verification_status: %i[pending unverified rejected])
+    profiles = OrganizerProfile.where(verification_status: %i[pending unverified rejected])
       .includes(:user, organization: { organization_memberships: :user })
       .order(Arel.sql("organizer_profiles.verification_requested_at IS NULL, " \
-        "organizer_profiles.verification_requested_at, organizer_profiles.created_at"))
-      .limit(100).map do |profile|
+        "organizer_profiles.verification_requested_at DESC, organizer_profiles.created_at DESC"))
+      .limit(100).to_a
+    ids = profiles.map(&:id)
+    event_counts = Event.where(organizer_profile_id: ids).group(:organizer_profile_id).count
+    published_counts = Event.published.where(organizer_profile_id: ids).group(:organizer_profile_id).count
+    profiles.map do |profile|
         owner = profile.organization.organization_memberships.find { |membership| membership.role == "owner" }&.user
         {
           profile_id: profile.id, business_name: profile.business_name, organization_id: profile.organization_id,
           owner_email: owner&.email || profile.user&.email, requested_at: profile.verification_requested_at,
+          verification_request_version: profile.verification_request_version,
+          verification_change_diff: profile.verification_change_diff,
           verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
-          event_count: profile.events.count
+          event_count: event_counts.fetch(profile.id, 0),
+          published_awaiting_events_count: published_counts.fetch(profile.id, 0),
+          business_description: profile.business_description,
+          verification_phone: profile.verification_phone, verification_link: profile.verification_link,
+          verification_request_note: profile.verification_request_note,
+          verification_notes: profile.verification_notes
         }
       end
   end

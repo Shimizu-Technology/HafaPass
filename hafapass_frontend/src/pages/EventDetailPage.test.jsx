@@ -39,6 +39,47 @@ function mount(event) {
   </Routes></MemoryRouter>)
 }
 
+it('loads fragment previews with a header and no query token', async () => {
+  vi.clearAllMocks()
+  apiClient.get.mockResolvedValue({ data: { ...baseEvent, private_preview: true, purchasable: false } })
+  render(<MemoryRouter initialEntries={['/events/reef-night/preview#t=private-secret']}><Routes>
+    <Route path="/events/:slug/preview" element={<EventDetailPage />} />
+  </Routes></MemoryRouter>)
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(apiClient.get).toHaveBeenCalledWith('/events/reef-night/private_preview', {
+    headers: { 'X-Preview-Token': 'private-secret' },
+  })
+  expect(seo.props).toMatchObject({ noIndex: true, noSocial: true })
+})
+
+it('hides the waitlist in a sold-out private preview', async () => {
+  vi.clearAllMocks()
+  apiClient.get.mockResolvedValue({ data: { ...baseEvent, private_preview: true, purchasable: false,
+    ticket_types: baseEvent.ticket_types.map(ticket => ({ ...ticket, quantity_remaining: 0, quantity_available: 10, quantity_sold: 10 })) } })
+  render(<MemoryRouter initialEntries={['/events/reef-night/preview#t=private-secret']}><Routes>
+    <Route path="/events/:slug/preview" element={<EventDetailPage />} />
+  </Routes></MemoryRouter>)
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(screen.queryByText('Join the Waitlist')).not.toBeInTheDocument()
+  expect(screen.queryByText('Already on the waitlist?')).not.toBeInTheDocument()
+  expect(screen.getAllByText(/Tickets aren't available in this private preview/)).toHaveLength(1)
+})
+
+it('replaces a legacy query preview with a fragment before requesting event data', async () => {
+  vi.clearAllMocks()
+  apiClient.get.mockResolvedValue({ data: { ...baseEvent, private_preview: true, purchasable: false } })
+  render(<MemoryRouter initialEntries={['/events/reef-night?preview_token=old-secret']}><Routes>
+    <Route path="/events/:slug" element={<EventDetailPage />} />
+    <Route path="/events/:slug/preview" element={<><EventDetailPage /><span data-testid="preview-route">Preview route</span></>} />
+  </Routes></MemoryRouter>)
+  await screen.findByTestId('preview-route')
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(apiClient.get).toHaveBeenCalledWith('/events/reef-night/private_preview', {
+    headers: { 'X-Preview-Token': 'old-secret' },
+  })
+  expect(apiClient.get.mock.calls.some(([url]) => url.includes('old-secret'))).toBe(false)
+})
+
 describe('EventDetailPage all-in pricing and seller identity', () => {
   beforeEach(() => {
     vi.clearAllMocks()

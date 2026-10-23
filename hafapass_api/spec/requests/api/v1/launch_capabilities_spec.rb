@@ -18,14 +18,16 @@ RSpec.describe "General admission launch scope", type: :request do
   end
 
   it "refuses direct seat reservation requests" do
-    post "/api/v1/events/example/seat_holds", params: { seat_ids: [1] }, as: :json
+    event = create(:event, :published)
+    post "/api/v1/events/#{event.slug}/seat_holds", params: { seat_ids: [1] }, as: :json
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
   end
 
   it "refuses add-on checkout requests before creating an order" do
+    event = create(:event, :published)
     expect do
-      post "/api/v1/orders", params: { catalog_items: [{ catalog_item_id: 1, quantity: 1 }] }, as: :json
+      post "/api/v1/orders", params: { event_id: event.id, catalog_items: [{ catalog_item_id: 1, quantity: 1 }] }, as: :json
     end.not_to change(Order, :count)
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
@@ -133,7 +135,8 @@ RSpec.describe "Per-capability launch control", type: :request do
   end
 
   it "keeps other general-admission guards in place" do
-    post "/api/v1/events/example/seat_holds", params: { seat_ids: [1] }, as: :json
+    event = create(:event, :published)
+    post "/api/v1/events/#{event.slug}/seat_holds", params: { seat_ids: [1] }, as: :json
     expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
   end
 

@@ -10,19 +10,24 @@ vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal(
 vi.mock('../../utils/uploads', () => ({ uploadImage: vi.fn() }))
 const owners = [1, 2].map(id => ({ id, name: id === 1 ? 'Alpha organization' : 'Beta organization', role: 'owner', permissions: { manage_organization: true, manage_events: true } }))
 // Verification needs a description (the API refuses it otherwise), so the
-// fixture has one and the setup checklist's Submit for review is available.
-const profile = name => ({ business_name: name, business_description: 'Island events', policy_accepted: true, verification_status: 'unverified' })
+// fixture has one and the setup checklist's Request verification is available.
+const profile = name => ({ business_name: name, business_description: 'Island events', verification_phone: '+1-671-555-1234', verification_link: 'https://example.com/organizer', organization: { role: 'owner' }, policy_accepted: true, verification_status: 'unverified' })
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-let profiles, clearAuth
+let profiles, clearAuth, scrollIntoView
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
 const mount = () => render(<MemoryRouter initialEntries={['/dashboard']}><DashboardPage /></MemoryRouter>)
 const closeEditor = () => userEvent.click(screen.getByRole('heading', { name: 'Edit Profile' }).parentElement.querySelector('button'))
 const bind = (userId = 'actor-a', sessionId = 'session-a', getToken = () => Promise.resolve('synthetic-token')) => {
   window.localStorage.setItem('hafapass_scanner_user_id', userId)
   clearAuth = setAuthTokenGetter(getToken, { userId, sessionId, ready: true })
+}
+const submitVerification = async () => {
+  await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
+  await userEvent.click(screen.getByRole('button', { name: 'Send request' }))
 }
 const switchTo = async id => {
   await userEvent.selectOptions(screen.getByLabelText('Organization'), String(id))
@@ -30,6 +35,8 @@ const switchTo = async id => {
 }
 
 beforeEach(() => {
+  scrollIntoView = vi.fn()
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
   vi.clearAllMocks()
   apiClient.get.mockReset(); apiClient.post.mockReset(); apiClient.put.mockReset()
   uploadImage.mockReset()
@@ -45,9 +52,43 @@ beforeEach(() => {
     throw new Error(`Unexpected ${path}`)
   })
 })
-afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
+afterEach(() => {
+  cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs()
+  if (originalScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView)
+  else delete Element.prototype.scrollIntoView
+})
 
 describe('dashboard mutation ownership', () => {
+  it('opens and scrolls to the same inline verification form from the checklist', async () => {
+    mount()
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(screen.getByRole('textbox', { name: /Website or social media link/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Request verification' })).toHaveLength(2)
+  })
+
+  it('does not reopen an old verification request after switching organizations', async () => {
+    mount()
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
+    expect(screen.getByRole('textbox', { name: /Contact phone/ })).toBeInTheDocument()
+    await switchTo(2)
+    await switchTo(1)
+    expect(screen.queryByRole('textbox', { name: /Contact phone/ })).not.toBeInTheDocument()
+  })
+
+  it('lets a long event title wrap and keeps the mobile action reachable', async () => {
+    const normalGet = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, config) => path === '/organizer/events'
+      ? Promise.resolve({ data: { events: [{ id: 37, title: 'A long community event title for every village on Guam',
+        status: 'published', publicly_visible: false, organizer_verification_status: 'unverified', permissions: { manage_events: true },
+        sales_status: { reason: 'organizer_not_verified' } }] } }) : normalGet(path, config))
+    mount()
+    const title = await screen.findByRole('heading', { name: 'A long community event title for every village on Guam' })
+    expect(title).toHaveClass('line-clamp-2', 'break-words')
+    expect(title.closest('a')).toHaveTextContent('Waiting for verification')
+    expect(title.closest('a').querySelector('.min-h-11')).toHaveTextContent('Open event')
+  })
+
   it.each([
     ['https://storage.invalid/uploads/logo.webp', 'storage.invalid', true],
     ['https://off-host.invalid/uploads/logo.webp', 'storage.invalid', false],
@@ -65,7 +106,7 @@ describe('dashboard mutation ownership', () => {
         meta: { current_page: config.params.page, total_pages: 2, total_count: 21 } } }) : normalGet(path, config))
     apiClient.post.mockReturnValueOnce(pending.promise)
     mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     const readinessConfig = apiClient.post.mock.calls[0][2]
     const profileReads = apiClient.get.mock.calls.filter(([path]) => path !== '/organizer/events')
     if (navigation === 'page') await userEvent.click(screen.getByRole('button', { name: 'Next', exact: true }))
@@ -77,10 +118,10 @@ describe('dashboard mutation ownership', () => {
       params: { q: navigation === 'search' ? 'venue' : '', page: navigation === 'page' ? 2 : 1 }, organizationId: '1',
     })))
     expect(readinessConfig.signal.aborted).toBe(false)
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled()
     expect(apiClient.get.mock.calls.filter(([path]) => path !== '/organizer/events')).toEqual(profileReads)
     await act(async () => pending.resolve({ data: { ...profiles[1], verification_status: 'pending' } }))
-    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
+    expect(screen.getByText("We're reviewing your account")).toBeInTheDocument()
     expect(screen.getByLabelText('Find an event')).toHaveValue(navigation === 'search' ? 'venue' : '')
     expect(screen.getByText(`Page ${navigation === 'page' ? 2 : 1} of 2 · 21 results`)).toBeInTheDocument()
   })
@@ -160,32 +201,32 @@ describe('dashboard mutation ownership', () => {
     const old = deferred(), current = deferred()
     apiClient.post.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
     mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     const oldConfig = apiClient.post.mock.calls[0][2]
     await switchTo(2)
-    await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     await act(async () => outcome === 'success' ? old.resolve({ data: profile('Stale Alpha') }) : old.reject({ response: { data: { error: 'Old Alpha failure' } } }))
     expect(screen.getByRole('heading', { name: 'Welcome, Beta' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled()
     expect(screen.queryByText('Old Alpha failure')).not.toBeInTheDocument()
     expect(oldConfig.organizationId).toBe('1')
     expect(oldConfig.signal.aborted).toBe(true)
     await act(async () => current.resolve({ data: { ...profiles[2], verification_status: 'pending' } }))
-    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
+    expect(screen.getByText("We're reviewing your account")).toBeInTheDocument()
   })
 
   it('does not revive an old Alpha operation after switching away and back', async () => {
     const old = deferred(), current = deferred()
     apiClient.post.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
     mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     await switchTo(2); await switchTo(1)
-    await userEvent.click(screen.getByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     await act(async () => old.resolve({ data: profile('Old Alpha visit') }))
     expect(screen.getByRole('heading', { name: 'Welcome, Alpha' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled()
     await act(async () => current.resolve({ data: { ...profiles[1], verification_status: 'pending' } }))
-    expect(screen.getByText('Submitted — HåfaPass is reviewing it')).toBeInTheDocument()
+    expect(screen.getByText("We're reviewing your account")).toBeInTheDocument()
   })
 
   it.each(['success', 'error'])('keeps a new Beta editor draft when an old Alpha save completes with %s', async outcome => {
@@ -218,7 +259,7 @@ describe('dashboard mutation ownership', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
     await closeEditor()
     await userEvent.click(screen.getByTitle('Edit Profile'))
-    await userEvent.type(screen.getByDisplayValue('Alpha'), ' newer draft')
+    await userEvent.type(screen.getAllByDisplayValue('Alpha').at(-1), ' newer draft')
     await act(async () => old.resolve({ data: profiles[1] }))
     expect(screen.getByDisplayValue('Alpha newer draft')).toBeInTheDocument()
   })
@@ -246,14 +287,14 @@ describe('dashboard mutation ownership', () => {
     const old = deferred()
     apiClient.post.mockReturnValueOnce(old.promise)
     const first = mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+    await submitVerification()
     profiles[1] = profile('Fresh owner context')
     if (kind === 'remount') { first.unmount(); mount() }
     else await act(async () => bind(kind === 'account' ? 'actor-b' : 'actor-a', 'session-b'))
     await screen.findByRole('heading', { name: 'Welcome, Fresh owner context' })
     await act(async () => old.resolve({ data: profile('Stale owner context') }))
     expect(screen.getByRole('heading', { name: 'Welcome, Fresh owner context' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: 'Request verification' })[0]).toBeEnabled()
   })
 
   it.each([false, true])('binds readiness before token acquisition and never transports a withdrawn visit (return to Alpha: %s)', async returnToAlpha => {
@@ -266,7 +307,7 @@ describe('dashboard mutation ownership', () => {
     apiClient.post.mockImplementation((...args) => actual.default.post(...args))
     try {
       mount()
-      await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+      await submitVerification()
       expect(apiClient.post.mock.calls[0][2].authContext).toBe(getApiAuthContext())
       await switchTo(2)
       if (returnToAlpha) await switchTo(1)

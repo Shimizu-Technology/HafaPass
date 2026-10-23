@@ -21,6 +21,18 @@ function fixtures(organizations = [scanner], events = [event], summary = { upcom
 }
 beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear() })
 describe('staff dashboard entry', () => {
+  it.each([
+    [{ sales_status: { reason: 'organizer_not_verified' }, publicly_visible: false }, 'Waiting for verification'],
+    [{ sales_status: { reason: 'organizer_verification_requested' }, publicly_visible: false }, 'Waiting for verification'],
+    [{ organizer_verification_status: 'suspended', sales_status: { reason: 'organizer_paused' }, publicly_visible: false }, 'Suspended'],
+    [{ organizer_verification_status: 'verified', policy_hold_scope: 'hidden', publicly_visible: false }, 'On hold'],
+    [{ organizer_verification_status: 'verified', sales_status: { reason: 'payment_not_ready' }, publicly_visible: false }, 'Published'],
+  ])('shows %s as %s on the event chip', async (state, label) => {
+    fixtures([scanner], [{ ...event, ...state }])
+    mount()
+    const link = await screen.findByRole('link', { name: /Assigned night market/ })
+    expect(link).toHaveTextContent(label)
+  })
   it('shows a scheduled fee notice after acknowledgment without blocking owner actions', async () => {
     const notice = { id: 7, effective_at: '2027-12-01T02:00:00Z', acknowledged_at: null,
       old_terms: { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 days' },
