@@ -3,7 +3,8 @@
 class Api::V1::EventSeatingController < ApplicationController
   skip_before_action :authenticate_user!
   before_action :optional_authenticate_user!
-  before_action :set_event
+  # Resolve public visibility before the capability gate can reveal that a hidden event exists.
+  prepend_before_action :set_event
 
   def show
     configuration = @event.event_seating_configuration

@@ -40,7 +40,7 @@ RSpec.describe "Private event previews", type: :request do
 
     profile.update!(verification_status: :suspended)
     get "/api/v1/events/#{event.slug}"
-    expect(response).to have_http_status(:not_found)
+    expect(response).to have_http_status(:not_found), response.body
     get "/api/v1/events"
     expect(response.body).not_to include(event.slug)
   end
@@ -48,29 +48,33 @@ RSpec.describe "Private event previews", type: :request do
   it "uses a digest-backed token and revokes old links on rotation" do
     get "/api/v1/organizer/events/#{event.id}/preview_link", headers: headers
     expect(response).to have_http_status(:ok)
-    first = response.parsed_body.fetch("url").split("preview_token=").last
+    expect(response.parsed_body.fetch("url")).to include("/preview#t=")
+    first = response.parsed_body.fetch("url").split("#t=").last
     expect(event.reload.preview_token_digest).to eq(Digest::SHA256.hexdigest(first))
-    get "/api/v1/events/#{event.slug}/private_preview", params: { token: first }
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => first }
     expect(response).to have_http_status(:ok)
     expect(response.headers["X-Robots-Tag"]).to include("noindex", "nofollow")
+    expect(response.headers["Referrer-Policy"]).to eq("no-referrer")
     expect(response.parsed_body).to include("private_preview" => true, "purchasable" => false)
     get "/api/v1/events/#{event.slug}/private_preview", params: { token: "wrong" }
     expect(response).to have_http_status(:not_found)
-
-    post "/api/v1/organizer/events/#{event.id}/rotate_preview_link", headers: headers
-    second = response.parsed_body.fetch("url").split("preview_token=").last
-    expect(second).not_to eq(first)
     get "/api/v1/events/#{event.slug}/private_preview", params: { token: first }
     expect(response).to have_http_status(:not_found)
-    get "/api/v1/events/#{event.slug}/private_preview", params: { token: second }
+
+    post "/api/v1/organizer/events/#{event.id}/rotate_preview_link", headers: headers
+    second = response.parsed_body.fetch("url").split("#t=").last
+    expect(second).not_to eq(first)
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => first }
+    expect(response).to have_http_status(:not_found)
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => second }
     expect(response).to have_http_status(:ok)
     expect(AuditLog.where(action: "event.preview_link_rotated", actor_user: owner)).to exist
 
     profile.update!(verification_status: :verified)
-    get "/api/v1/events/#{event.slug}/private_preview", params: { token: second }
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => second }
     expect(response.parsed_body).to eq("redirect_to" => event.slug)
     profile.update!(verification_status: :suspended)
-    get "/api/v1/events/#{event.slug}/private_preview", params: { token: second }
+    get "/api/v1/events/#{event.slug}/private_preview", headers: { "X-Preview-Token" => second }
     expect(response).to have_http_status(:not_found)
   end
 
@@ -79,6 +83,63 @@ RSpec.describe "Private event previews", type: :request do
     get "/api/v1/organizer/events/#{event.id}/preview_link", headers: auth_headers(stranger)
     expect(response).not_to have_http_status(:ok)
     expect(event.reload.preview_token_digest).to be_nil
+  end
+
+  ["unverified", "pending", "suspended"].each do |status|
+    it "returns the exact unknown-event checkout response for a #{status} organizer" do
+      profile.update!(verification_status: status)
+      [{}, { seat_hold_token: "invalid" }, { catalog_items: [{ catalog_item_id: -1 }] }].each do |extra|
+        post "/api/v1/orders", params: { event_id: event.id }.merge(extra).to_json,
+          headers: { "Content-Type" => "application/json" }
+        hidden_response = [response.status, response.body.dup]
+        post "/api/v1/orders", params: { event_id: -1 }.merge(extra).to_json,
+          headers: { "Content-Type" => "application/json" }
+        expect(hidden_response).to eq([response.status, response.body])
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
+  it "hides event-id and slug buyer endpoints before validation details are returned" do
+    buyer = create(:user)
+    get "/api/v1/events/#{event.slug}/seating"
+    expect(response).to have_http_status(:not_found), response.body
+    post "/api/v1/events/#{event.slug}/seat_holds", params: { event_seat_ids: [] }
+    expect(response).to have_http_status(:not_found)
+    get "/api/v1/events/#{event.slug}/waitlist/status"
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/events/#{event.slug}/waitlist", params: { email: "buyer@example.com" }
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "ANY" }
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/me/event_favorites", params: { event_id: event.id }, headers: auth_headers(buyer)
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/me/event_referrals", params: { event_id: event.id }, headers: auth_headers(buyer)
+    expect(response).to have_http_status(:not_found)
+    post "/api/v1/me/event_reminders", params: { event_id: event.id }, headers: auth_headers(buyer)
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "hides an existing waitlist offer until its event becomes public again" do
+    ticket_type = event.ticket_types.first
+    entry = create(:waitlist_entry, event: event, ticket_type: ticket_type)
+    offer = create(:waitlist_offer, waitlist_entry: entry, event: event, ticket_type: ticket_type)
+    token = WaitlistCredential.offer(offer)
+    get "/api/v1/waitlist_offers/#{token}"
+    hidden_response = [response.status, response.body.dup]
+    get "/api/v1/waitlist_offers/unknown"
+    expect(hidden_response).to eq([response.status, response.body])
+    expect(response).to have_http_status(:not_found)
+
+    profile.update!(verification_status: :verified)
+    get "/api/v1/waitlist_offers/#{token}"
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("event_slug" => event.slug,
+      "ticket_type_name" => ticket_type.name, "unit_price_cents" => offer.unit_price_cents)
+
+    profile.update!(verification_status: :suspended)
+    get "/api/v1/waitlist_offers/#{token}"
+    expect([response.status, response.body]).to eq(hidden_response)
   end
 
   it "keeps existing buyer records, receipts, tickets, QR codes and scanning after suspension" do

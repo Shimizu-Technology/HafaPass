@@ -7,9 +7,9 @@ class Api::V1::Me::EventRemindersController < ApplicationController
   end
 
   def create
+    event = Event.discoverable.find(params[:event_id])
     return render json: { error: "Add an email address before creating reminders" }, status: :unprocessable_entity if current_user.email.blank?
 
-    event = Event.discoverable.find(params[:event_id])
     remind_at = parse_remind_at(event)
     reminder = current_user.event_reminders.find_or_initialize_by(event: event)
     reminder.assign_attributes(remind_at: remind_at, status: :pending, sent_at: nil)
@@ -21,7 +21,8 @@ class Api::V1::Me::EventRemindersController < ApplicationController
   end
 
   def destroy
-    reminder = current_user.event_reminders.find_by!(event_id: params[:event_id])
+    event = Event.publicly_visible.find(params[:event_id])
+    reminder = current_user.event_reminders.find_by!(event: event)
     reminder.update!(status: :cancelled)
     head :no_content
   end

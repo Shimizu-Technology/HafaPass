@@ -26,7 +26,10 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
     if (!request) return
     setBusy(true)
     setError('')
-    const body = { verification_status: rejecting ? 'rejected' : pausing ? 'suspended' : 'verified', ...(note.trim() ? { verification_notes: note.trim() } : {}) }
+    const body = { verification_status: rejecting ? 'rejected' : pausing ? 'suspended' : 'verified',
+      ...(organizer.verification_status === 'pending' && !rejecting && Number.isInteger(organizer.verification_request_version)
+        ? { verification_request_version: organizer.verification_request_version } : {}),
+      ...(note.trim() ? { verification_notes: note.trim() } : {}) }
     try {
       await apiClient.patch(`/admin/organizer_profiles/${organizer.profile_id}`, body, request.config)
       if (request.current()) onSaved(rejecting ? t('adminVerification.rejectedSaved', { name }) : pausing ? t('adminVerification.suspendedSaved', { name }) : resuming ? t('adminVerification.restoredSaved', { name }) : t('adminVerification.verifiedSaved', { name }))
@@ -89,6 +92,12 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
               <p className="text-neutral-700">{organizer.verification_status === 'pending' && organizer.requested_at
                 ? `Requested ${formatDateTime(organizer.requested_at)}`
                 : STATUS_COPY[organizer.verification_status] || 'Not requested yet'}</p>
+              {organizer.verification_status === 'pending' && Object.keys(organizer.verification_change_diff || {}).length > 0 && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-950">
+                <p className="font-semibold">Updated after submission — review again</p>
+                <ul className="mt-1 list-disc space-y-1 pl-4">{Object.entries(organizer.verification_change_diff).map(([field, change]) => <li key={field} className="[overflow-wrap:anywhere]">
+                  {field.replaceAll('_', ' ')}: {change.before || 'Not provided'} → {change.after || 'Not provided'}
+                </li>)}</ul>
+              </div>}
               <p className="text-neutral-700">{t('adminVerification.phone', { phone: organizer.verification_phone || t('adminVerification.notProvided') })}</p>
               {organizer.verification_link && <p className="text-neutral-700"><a href={organizer.verification_link} target="_blank" rel="noreferrer" className="underline [overflow-wrap:anywhere]">{t('adminVerification.websiteLink')}</a></p>}
               {organizer.verification_request_note && <p className="whitespace-pre-wrap text-neutral-700">{t('adminVerification.reviewerNote', { note: organizer.verification_request_note })}</p>}

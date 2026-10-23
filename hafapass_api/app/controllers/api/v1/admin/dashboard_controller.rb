@@ -75,6 +75,8 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
         {
           profile_id: profile.id, business_name: profile.business_name, organization_id: profile.organization_id,
           owner_email: owner&.email || profile.user&.email, requested_at: profile.verification_requested_at,
+          verification_request_version: profile.verification_request_version,
+          verification_change_diff: profile.verification_change_diff,
           verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
           event_count: profile.events.count,
           published_awaiting_events_count: profile.events.published.count,

@@ -20,6 +20,7 @@ module Api
           return render json: { error: "Owner permission required" }, status: :forbidden
         end
 
+        verification_updated = false
         ActiveRecord::Base.transaction do
           if created
             organization = Organization.create!(name: profile_params[:business_name])
@@ -29,7 +30,13 @@ module Api
               user: current_user, role: :owner, status: :active, accepted_at: Time.current
             )
           else
-            profile.update!(profile_params)
+            profile.lock!
+            before_details = profile.verification_details
+            profile.assign_attributes(profile_params)
+            if profile.verification_status_pending?
+              verification_updated = profile.refresh_verification_request!(before_details: before_details, was_pending: true)
+            end
+            profile.save!(context: verification_updated ? :verification_request : nil)
             profile.organization.update!(name: profile.business_name)
           end
           current_user.update!(role: :organizer) if current_user.attendee?
@@ -40,7 +47,13 @@ module Api
             after_data: profile_params.to_h,
             request: request
           )
+          if verification_updated
+            AuditLogger.record!(action: "organizer.verification_request_updated", auditable: profile,
+              actor: current_user, organization: profile.organization, before_data: before_details,
+              after_data: profile.verification_details, request: request)
+          end
         end
+        EmailService.send_verification_request_async(profile, updated: true) if verification_updated
 
         if profile.persisted?
           status = created ? :created : :ok
@@ -61,8 +74,6 @@ module Api
         render json: profile_json(profile)
       end
 
-      VERIFICATION_NOTICE_INTERVAL = 24.hours
-
       def submit_verification
         profile = current_profile
         return render json: { error: "Organizer profile not found" }, status: :not_found unless profile
@@ -73,22 +84,26 @@ module Api
             status: :unprocessable_entity
         end
 
-        # Admins are emailed only when the profile moves into pending, and at
-        # most once a day per profile, so repeated clicks cannot flood inboxes.
-        previously_requested_at = profile.verification_requested_at
-        notify = !profile.verification_status_pending? || previously_requested_at.nil? ||
-          previously_requested_at < VERIFICATION_NOTICE_INTERVAL.ago
-        profile.assign_attributes(verification_request_params)
-        profile.verification_status = :pending
-        profile.verification_requested_at = notify ? Time.current : previously_requested_at
-        profile.verification_notes = nil
-        unless profile.save(context: :verification_request)
-          return render json: { errors: profile.errors.full_messages }, status: :unprocessable_entity
+        notify = false
+        updated = false
+        ActiveRecord::Base.transaction do
+          profile.lock!
+          was_pending = profile.verification_status_pending?
+          before_details = profile.verification_details
+          profile.assign_attributes(verification_request_params)
+          profile.verification_status = :pending
+          profile.verification_notes = nil
+          notify = profile.refresh_verification_request!(before_details: before_details, was_pending: was_pending)
+          updated = was_pending && notify
+          profile.save!(context: :verification_request)
+          AuditLogger.record!(action: updated ? "organizer.verification_request_updated" : "organizer.verification_requested",
+            auditable: profile, actor: current_user, organization: profile.organization,
+            before_data: before_details, after_data: profile.verification_details, request: request)
         end
-        AuditLogger.record!(action: "organizer.verification_requested", auditable: profile, actor: current_user,
-          request: request)
-        EmailService.send_verification_request_async(profile) if notify
+        EmailService.send_verification_request_async(profile, updated: updated) if notify
         render json: profile_json(profile)
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
       end
 
       private
@@ -155,6 +170,7 @@ module Api
           is_ambros_partner: profile.is_ambros_partner,
           verification_status: profile.verification_status,
           verification_requested_at: profile.verification_requested_at,
+          verification_request_version: profile.verification_request_version,
           verified_at: profile.verified_at,
           verification_notes: owner?(profile) ? profile.verification_notes : nil,
           verification_phone: owner?(profile) ? profile.verification_phone : nil,

@@ -208,8 +208,8 @@ RSpec.describe "Api::V1::Orders", type: :request do
 
       post_json "/api/v1/orders", params: valid_params
 
-      expect(response).to have_http_status(:service_unavailable)
-      expect(response.parsed_body.fetch("error")).to eq("Tickets for this event are not on sale yet")
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body.fetch("error")).to eq("Event not found")
       expect(Order.count).to eq(0)
     end
 

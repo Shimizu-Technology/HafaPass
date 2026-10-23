@@ -42,6 +42,27 @@ beforeEach(() => {
 })
 
 describe('event overview', () => {
+  it('leaves the clipboard alone when the native preview share is cancelled', async () => {
+    const user = userEvent.setup()
+    const share = vi.fn(() => Promise.reject(new DOMException('Cancelled', 'AbortError')))
+    const writeText = vi.fn()
+    const previousShare = Object.getOwnPropertyDescriptor(window.navigator, 'share')
+    Object.defineProperty(window.navigator, 'share', { configurable: true, value: share })
+    setClipboard({ writeText })
+    try {
+      mount({ ...base, publicly_visible: false, sales_status: { on_sale: false, reason: 'organizer_not_verified' } }, {
+        '/organizer/events/37/preview_link': { url: 'https://example.test/events/synthetic-reef-night/preview#t=secret' },
+        '/organizer_profile': { verification_status: 'pending', organization: { role: 'owner' } },
+        '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+      })
+      await user.click(await screen.findByRole('button', { name: 'Share preview' }))
+      expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/preview#t=') }))
+      expect(writeText).not.toHaveBeenCalled()
+    } finally {
+      if (previousShare) Object.defineProperty(window.navigator, 'share', previousShare)
+      else delete window.navigator.share
+    }
+  })
   it('shows live sales, check-ins, sharing and every manager tool for a published event', async () => {
     mount(base, { '/organizer/events/37/stats': { total_tickets_sold: 42, total_revenue_cents: 105000, tickets_checked_in: 10 } })
     const sales = await screen.findByRole('region', { name: 'Sales so far' })

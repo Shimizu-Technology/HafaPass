@@ -139,7 +139,9 @@ function EventOverviewSession({ id, identity }) {
   const sharePreview = async () => {
     if (!previewUrl) return
     if (navigator.share) {
-      try { await navigator.share({ title: event.title, url: previewUrl }); return } catch { /* Copy fallback */ }
+      try { await navigator.share({ title: event.title, url: previewUrl }); return } catch (error) {
+        if (error?.name === 'AbortError') return
+      }
     }
     await copyLink(previewUrl)
   }

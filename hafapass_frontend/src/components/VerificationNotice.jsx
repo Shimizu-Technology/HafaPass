@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import apiClient from '../api/client'
 import SupportLink from './SupportLink'
@@ -26,6 +26,8 @@ export default function VerificationNotice({ profile, beginRequest, onUpdated, r
     verification_request_note: profile?.verification_request_note || '',
   }))
   const [errors, setErrors] = useState({})
+  const fieldRefs = useRef({})
+  const [errorSummary, setErrorSummary] = useState('')
   useEffect(() => { if (requestSignal && requestSignal.organizationId === organizationId) setOpen(true) }, [requestSignal, organizationId])
   useEffect(() => {
     if (open) return
@@ -49,6 +51,9 @@ export default function VerificationNotice({ profile, beginRequest, onUpdated, r
     if (fields.verification_phone.trim() && !validPhone(fields.verification_phone)) next.verification_phone = t('organizerVerification.phoneError')
     if (fields.verification_link.trim() && !validLink(fields.verification_link)) next.verification_link = t('organizerVerification.linkError')
     setErrors(next)
+    const firstInvalid = Object.keys(next)[0]
+    setErrorSummary(firstInvalid ? `Check ${Object.keys(next).length} highlighted verification ${Object.keys(next).length === 1 ? 'field' : 'fields'}. ${next[firstInvalid]}` : '')
+    if (firstInvalid) fieldRefs.current[firstInvalid]?.focus()
     return Object.keys(next).length === 0
   }
   const submit = async event => {
@@ -79,15 +84,16 @@ export default function VerificationNotice({ profile, beginRequest, onUpdated, r
     {status === 'rejected' && <><p className="mt-1">{t('organizerVerification.rejectedBody')}</p><p className="mt-1 whitespace-pre-wrap">{current.verification_notes}</p></>}
     {status === 'suspended' && <><p className="mt-1">{t('organizerVerification.suspendedBody')}</p><p className="mt-1 whitespace-pre-wrap">{current.verification_notes}</p><SupportLink subject="HåfaPass organizer verification" className="btn-secondary mt-3 min-h-11">{t('organizerVerification.contactSupport')}</SupportLink></>}
     {status === 'verified' && <p className="mt-1">{t('organizerVerification.verifiedBody')}</p>}
-    {['unverified', 'rejected'].includes(status) && (owner
-      ? <button type="button" className="btn-secondary mt-3 min-h-11" onClick={() => setOpen(value => !value)}>{status === 'rejected' ? t('organizerVerification.resubmit') : t('organizerVerification.request')}</button>
+    {['unverified', 'pending', 'rejected'].includes(status) && (owner
+      ? <button type="button" className="btn-secondary mt-3 min-h-11" onClick={() => setOpen(value => !value)}>{status === 'rejected' ? t('organizerVerification.resubmit') : status === 'pending' ? 'Update request' : t('organizerVerification.request')}</button>
       : <p className="mt-2">{t('organizerVerification.askOwner')}</p>)}
     {open && <form noValidate onSubmit={submit} className="mt-4 grid gap-4">
+      <p role="alert" aria-live="assertive" className={errorSummary ? 'text-red-800' : 'sr-only'}>{errorSummary}</p>
       {Object.keys(labels).map(key => <label key={key} className="grid gap-1 font-medium">
         <span>{labels[key]}{key !== 'verification_request_note' && ' *'}</span>
         {['business_description', 'verification_request_note'].includes(key)
-          ? <textarea className="input min-h-11" rows={key === 'business_description' ? 3 : 2} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />
-          : <input className="input min-h-11" type={key === 'verification_phone' ? 'tel' : key === 'verification_link' ? 'url' : 'text'} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />}
+          ? <textarea ref={element => { fieldRefs.current[key] = element }} className="input min-h-11" rows={key === 'business_description' ? 3 : 2} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />
+          : <input ref={element => { fieldRefs.current[key] = element }} className="input min-h-11" type={key === 'verification_phone' ? 'tel' : key === 'verification_link' ? 'url' : 'text'} value={fields[key]} onChange={event => setFields({ ...fields, [key]: event.target.value })} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${key}-error` : undefined} />}
         {errors[key] && <span id={`${key}-error`} role="alert" className="text-red-800">{errors[key]}</span>}
       </label>)}
       <button type="submit" disabled={busy} className="btn-primary min-h-11">{busy ? t('organizerVerification.sending') : t('organizerVerification.send')}</button>

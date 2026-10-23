@@ -19,7 +19,8 @@ class Api::V1::Me::EventFavoritesController < ApplicationController
   end
 
   def destroy
-    current_user.event_favorites.find_by!(event_id: params[:event_id]).destroy!
+    event = Event.publicly_visible.find(params[:event_id])
+    current_user.event_favorites.find_by!(event: event).destroy!
     head :no_content
   end
 end

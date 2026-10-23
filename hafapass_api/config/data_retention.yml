@@ -598,6 +598,7 @@
         "verification_phone",
         "verification_link",
         "verification_request_note",
+        "verification_change_diff",
         "verification_notes",
         "verification_requested_at",
         "verification_status"
@@ -2083,6 +2084,8 @@
       "verification_phone": "pii",
       "verification_link": "pii",
       "verification_request_note": "pii",
+      "verification_change_diff": "pii",
+      "verification_request_version": "system",
       "created_at": "system",
       "is_ambros_partner": "non-personal",
       "logo_url": "pii",

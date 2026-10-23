@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
-import { useParams, useNavigate, useSearchParams, useMatch, useLocation, Link } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
@@ -85,10 +85,11 @@ let resolvedEventHandoff = null
 export default function EventDetailPage() {
   const { slug } = useParams()
   const [params] = useSearchParams()
+  const location = useLocation()
   // Public pages can reuse their outlet when reduced motion is enabled.
   // Event inventory and offer selections belong to this specific route/context.
-  return <EventDetailContent key={JSON.stringify([slug, params.get('preview') === 'true',
-    params.get('preview_token'), params.get('live_money_proof') === 'true', params.get('waitlist_offer')])} />
+  return <EventDetailContent key={JSON.stringify([slug, location.pathname.endsWith('/preview'), location.hash,
+    params.get('preview'), params.get('preview_token'), params.get('live_money_proof'), params.get('waitlist_offer')])} />
 }
 
 function EventDetailContent() {
@@ -100,17 +101,18 @@ function EventDetailContent() {
   const navigate = useNavigate()
   const location = useLocation()
   const browseFrom = eventBrowseReturn(location.state?.browseFrom)
-  const match = useMatch('/events/:slug')
   const liveRoute = useRef(null)
   const mounted = useRef(false)
-  liveRoute.current = { slug: match?.params.slug }
+  liveRoute.current = { slug }
   useLayoutEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
-  const previewToken = searchParams.get('preview_token')
+  const legacyPreviewToken = searchParams.get('preview_token')
+  const tokenRoute = location.pathname.endsWith('/preview')
+  const previewToken = tokenRoute ? new URLSearchParams(location.hash.slice(1)).get('t') : null
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
   const handedOffEvent = useRef(resolvedEventHandoff?.slug === slug ? resolvedEventHandoff.event : null)
   const liveLocation = useRef(location)
@@ -122,6 +124,12 @@ function EventDetailContent() {
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
   const [waitlistOffer, setWaitlistOffer] = useState(null)
+  useEffect(() => {
+    if (!legacyPreviewToken) return
+    const remaining = new URLSearchParams(location.search)
+    remaining.delete('preview_token')
+    navigate(`/events/${encodeURIComponent(slug)}/preview${remaining.size ? `?${remaining}` : ''}#t=${encodeURIComponent(legacyPreviewToken)}`, { replace: true })
+  }, [legacyPreviewToken, location.search, navigate, slug])
   const heroTicketsLink = useRef(null)
   const ticketPanel = useRef(null)
   const pageEnd = useRef(null)
@@ -134,7 +142,7 @@ function EventDetailContent() {
   useEffect(() => {
     let active = true
     const current = () => active && liveRoute.current.slug === slug
-    if (!current()) return undefined
+    if (!current() || legacyPreviewToken) return undefined
     if (!previewToken) captureQueryAttribution(window.location.search)
     const initialEvent = handedOffEvent.current
     if (initialEvent && loadAttempt === 0) {
@@ -146,9 +154,10 @@ function EventDetailContent() {
     setLoading(true)
     setEvent(null)
     setError(null)
-    const url = previewToken ? `/events/${slug}/private_preview?token=${encodeURIComponent(previewToken)}` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+    const url = tokenRoute ? `/events/${slug}/private_preview` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
-    apiClient.get(url)
+    const request = tokenRoute ? apiClient.get(url, { headers: { 'X-Preview-Token': previewToken || '' } }) : apiClient.get(url)
+    request
       .then(res => {
         if (!current()) return
         if (res.data.redirect_to) {
@@ -159,7 +168,7 @@ function EventDetailContent() {
           // An old link: show the event at its current address.
           const { search, hash, state } = liveLocation.current
           resolvedEventHandoff = { slug: res.data.slug, event: res.data }
-          navigate(`/events/${encodeURIComponent(res.data.slug)}${search}${hash}`, { replace: true, state })
+          navigate(`/events/${encodeURIComponent(res.data.slug)}${tokenRoute ? '/preview' : ''}${search}${hash}`, { replace: true, state })
           return
         }
         if (res.data.slug !== slug) throw new Error('Event response does not match its route')
@@ -174,7 +183,7 @@ function EventDetailContent() {
         setLoading(false)
       } })
     return () => { active = false }
-  }, [slug, isPreview, previewToken, isLiveMoneyProof, loadAttempt, navigate])
+  }, [slug, isPreview, previewToken, tokenRoute, legacyPreviewToken, isLiveMoneyProof, loadAttempt, navigate])
 
   // Switching language reloads the event text quietly, keeping the page (and any
   // ticket selection) in place; the first load already used the current language.
@@ -183,13 +192,14 @@ function EventDetailContent() {
     loadedLanguage.current = contentLanguage
     if (!event) return undefined
     let active = true
-    const url = previewToken ? `/events/${slug}/private_preview?token=${encodeURIComponent(previewToken)}` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+    const url = tokenRoute ? `/events/${slug}/private_preview` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
-    apiClient.get(url)
+    const request = tokenRoute ? apiClient.get(url, { headers: { 'X-Preview-Token': previewToken || '' } }) : apiClient.get(url)
+    request
       .then(res => { if (active && liveRoute.current.slug === slug && res.data.slug === slug) setEvent(res.data) })
       .catch(() => { /* Keep the text already shown; the next navigation retries. */ })
     return () => { active = false }
-  }, [contentLanguage, event, slug, isPreview, previewToken, isLiveMoneyProof])
+  }, [contentLanguage, event, slug, isPreview, previewToken, tokenRoute, isLiveMoneyProof])
 
   useEffect(() => {
     if (!waitlistOfferToken) return undefined

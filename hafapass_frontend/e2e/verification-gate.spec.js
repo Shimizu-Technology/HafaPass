@@ -21,7 +21,10 @@ async function setup(page) {
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
   await page.route('**/api/v1/config', route => json(route, { launch_capabilities: {}, payment_mode: 'simulate' }))
   await page.route('**/api/v1/event_categories', route => json(route, { categories: [] }))
-  await page.route('**/api/v1/events/private-island-show/private_preview?*', route => json(route, event))
+  await page.route('**/api/v1/events/private-island-show/private_preview', route => {
+    expect(route.request().headers()['x-preview-token']).toBe('synthetic-secret')
+    return json(route, event)
+  })
   await page.route('**/api/v1/events/private-island-show', route => json(route, { error: 'Event not found' }, 404))
   await page.route(/\/api\/v1\/events(?:\?.*)?$/, route => json(route, { events: [], meta: { current_page: 1, total_pages: 1, total_count: 0 } }))
   await page.route('**/api/v1/organizer/organizations', route => json(route, [{ id: 1, name: 'Island Events', role: 'owner', permissions: { manage_organization: true, manage_events: true } }]))
@@ -29,7 +32,7 @@ async function setup(page) {
   await page.route('**/api/v1/organizer/events/summary', route => json(route, { upcoming_events_count: 1, tickets_sold: 0, next_event: { id: 601, title: event.title } }))
   await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [organizerEvent], meta: { current_page: 1, total_pages: 1, total_count: 1 } }))
   await page.route('**/api/v1/organizer/events/601', route => json(route, organizerEvent))
-  await page.route('**/api/v1/organizer/events/601/preview_link', route => json(route, { url: 'http://127.0.0.1:4173/events/private-island-show?preview_token=synthetic-secret' }))
+  await page.route('**/api/v1/organizer/events/601/preview_link', route => json(route, { url: 'http://127.0.0.1:4173/events/private-island-show/preview#t=synthetic-secret' }))
   await page.route('**/api/v1/organizer/events/601/stats', route => json(route, { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 }))
 }
 
@@ -48,6 +51,28 @@ async function tabTo(page, locator) {
 }
 
 for (const width of [375, 1280]) {
+  test(`dashboard event chips match visibility reason at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await setup(page)
+    let state = organizerEvent
+    await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, {
+      events: [state], meta: { current_page: 1, total_pages: 1, total_count: 1 },
+    }))
+    for (const [reason, label] of [
+      [{ organizer_verification_status: 'unverified', publicly_visible: false }, 'Waiting for verification'],
+      [{ organizer_verification_status: 'pending', publicly_visible: false }, 'Waiting for verification'],
+      [{ organizer_verification_status: 'rejected', publicly_visible: false }, 'Action needed'],
+      [{ organizer_verification_status: 'suspended', publicly_visible: false }, 'Suspended'],
+      [{ organizer_verification_status: 'verified', publicly_visible: false, policy_hold_scope: 'hidden' }, 'On hold'],
+    ]) {
+      state = { ...organizerEvent, ...reason }
+      await page.goto('/dashboard')
+      const card = page.locator('a[href="/dashboard/events/601"]').filter({ hasText: 'Private Island Show' })
+      await expect(card).toContainText(label)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    }
+  })
+
   test(`private preview and verification request at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await setup(page)
@@ -57,7 +82,9 @@ for (const width of [375, 1280]) {
     await page.getByRole('textbox', { name: /Contact phone/ }).fill('123')
     await page.getByRole('textbox', { name: /Website or social media link/ }).fill('not a link')
     await page.getByRole('button', { name: 'Send request' }).click()
-    await expect(page.getByText(/Enter a valid phone number/)).toBeVisible()
+    await expect(page.locator('#verification_phone-error')).toContainText('Enter a valid phone number')
+    await expect(page.getByRole('textbox', { name: /Contact phone/ })).toBeFocused()
+    await expect(page.getByText(/Check 2 highlighted verification fields/)).toBeVisible()
     await expect(page.getByRole('textbox', { name: /Contact phone/ })).toHaveValue('123')
     await page.getByRole('textbox', { name: /Contact phone/ }).fill('+1-671-555-1234')
     await page.getByRole('textbox', { name: /Website or social media link/ }).fill('https://instagram.com/islandevents')
@@ -72,12 +99,13 @@ for (const width of [375, 1280]) {
 
     await page.goto('/dashboard/events/601')
     await expect(page.getByText('Waiting for verification').first()).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Preview event' })).toHaveAttribute('href', /preview_token=/)
+    await expect(page.getByRole('link', { name: 'Preview event' })).toHaveAttribute('href', /\/preview#t=/)
     await expect(page.getByRole('link', { name: 'View public page' })).toHaveCount(0)
     await accessible(page)
     await page.screenshot({ path: `/tmp/hafapass-verification-overview-${width}.png`, fullPage: true })
 
     await page.goto('/events/private-island-show?preview_token=synthetic-secret')
+    await expect(page).toHaveURL(/\/events\/private-island-show\/preview#t=synthetic-secret$/)
     await expect(page.getByRole('heading', { name: 'Private Island Show' })).toBeVisible()
     await expect(page.getByText(/Preview — this event isn't public yet/)).toBeVisible()
     await expect(page.getByText(/Tickets aren't available in this private preview/).first()).toBeVisible()
@@ -113,8 +141,8 @@ for (const width of [375, 1280]) {
     const liveEvent = { ...event, private_preview: false, purchasable: true,
       ticket_types: event.ticket_types.map(type => ({ ...type, on_sale: true })) }
     await page.route('**/api/v1/events/private-island-show', route => json(route, liveEvent))
-    await page.route('**/api/v1/events/private-island-show/private_preview?*', route => json(route, { redirect_to: event.slug }))
-    await page.goto('/events/private-island-show?preview_token=synthetic-secret')
+    await page.route('**/api/v1/events/private-island-show/private_preview', route => json(route, { redirect_to: event.slug }))
+    await page.goto('/events/private-island-show/preview#t=synthetic-secret')
     await expect(page).toHaveURL(/\/events\/private-island-show$/)
     await expect(page.getByRole('heading', { name: 'Private Island Show' })).toBeVisible()
     await expect(page.getByText(/Preview — this event isn't public yet/)).toHaveCount(0)

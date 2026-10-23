@@ -48,7 +48,7 @@ module Api
           return unless authorize_organization!(:manage_events, event: @event)
           return head :not_found if @event.organizer_profile.verification_status_suspended?
 
-          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}?preview_token=#{@event.preview_token}" }
+          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}/preview#t=#{@event.preview_token}" }
         end
 
         def rotate_preview_link
@@ -58,7 +58,7 @@ module Api
           token = @event.rotate_preview_token!
           AuditLogger.record!(action: "event.preview_link_rotated", auditable: @event, actor: current_user,
             organization: current_organization, request: request)
-          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}?preview_token=#{token}" }
+          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}/preview#t=#{token}" }
         end
 
         # Organization-wide home totals, scoped to the events this user may see.
@@ -594,6 +594,8 @@ module Api
             timezone: event.timezone,
             status: event.status,
             publicly_visible: event.publicly_visible?,
+            organizer_verification_status: event.organizer_profile.verification_status,
+            policy_hold_scope: event.policy_hold_scope,
             category: event.category,
             category_label: event.category_label,
             age_restriction: event.age_restriction,

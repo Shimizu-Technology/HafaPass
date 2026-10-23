@@ -31,4 +31,15 @@ RSpec.describe "Sentry configuration" do
 
     expect(event.request.data).to be_nil
   end
+
+  it "filters the preview header in Rails parameters and Sentry request headers" do
+    secret = "signed-private-preview"
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    expect(filter.filter("X-Preview-Token" => secret, "HTTP_X_PREVIEW_TOKEN" => secret).values)
+      .to eq(["[FILTERED]", "[FILTERED]"])
+    event = event_with_data({})
+    event.request.headers = { "X-Preview-Token" => secret, "HTTP_X_PREVIEW_TOKEN" => secret }
+    Sentry.configuration.before_send.call(event, nil)
+    expect(event.request.headers.values).to eq(["[FILTERED]", "[FILTERED]"])
+  end
 end

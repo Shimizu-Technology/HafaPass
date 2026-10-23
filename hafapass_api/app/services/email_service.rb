@@ -314,21 +314,19 @@ class EmailService
 
     # Tells every platform administrator an organizer asked to be verified,
     # which is what lets their published events sell in production.
-    # Deliveries are stored against an event, so the notice rides on the
-    # organizer's latest event. The admin dashboard's verification queue is the
-    # source of truth: an organizer with no events yet appears there only.
-    def send_verification_request_async(profile)
+    # Attach the latest event when one exists; requests without events still notify admins.
+    def send_verification_request_async(profile, updated: false)
       requested_at = profile.verification_requested_at || Time.current
       event = profile.events.order(created_at: :desc).first
-      return unless event
-
+      owner_membership = profile.organization.organization_memberships.effective.find_by(role: :owner) unless event
       admins = User.where(role: :admin).where.not(email: [nil, ""]).order(:id).to_a.uniq { |admin| admin.email.downcase }
       admins.each do |admin|
         delivery = nil
-        delivery = create_delivery(event: event, requested_by: profile.user, template: "verification_request",
+        delivery = create_delivery(event: event, organization_membership: owner_membership,
+          requested_by: profile.user, template: "verification_request",
           recipient: admin.email,
-          metadata: { organizer_profile_id: profile.id, requested_at: requested_at.iso8601(6) },
-          idempotency_key: "verification-request/#{profile.id}/#{requested_at.to_i}/#{admin.id}")
+          metadata: { organizer_profile_id: profile.id, requested_at: requested_at.iso8601(6), updated: updated },
+          idempotency_key: "verification-request/#{profile.id}/v#{profile.verification_request_version}/#{admin.id}")
         MessageDeliveryJob.perform_later(delivery.id)
       rescue StandardError => e
         record_enqueue_failure(delivery, e) if delivery
@@ -357,8 +355,8 @@ class EmailService
       note = delivery.metadata["note"].to_s
       subject, heading, body = case status
       when "verified"
-        ["You're verified — your events are now live", "You're verified — your events are now live",
-          "Your published events are public now. Tickets can go on sale when their sales windows open."]
+        ["Your organizer account is verified", "Your organizer account is verified",
+          "Your public events can now sell tickets when their sales windows open."]
       when "rejected"
         ["Your organizer verification needs an update", "Please update your verification request",
           "Review the note below, then resubmit from your dashboard."]
@@ -367,16 +365,18 @@ class EmailService
           "Your events are no longer public and new ticket sales are paused. Existing buyer tickets remain valid. Contact support for help."]
       end
       links = if status == "verified"
-        profile.events.published.order(:starts_at).map do |event|
+        profile.events.merge(Event.publicly_visible).order(:starts_at).map do |event|
           %(<li><a href="#{h(PublicSiteUrl.event(event))}">#{h(event.title)}</a></li>)
         end.join
       end
+      held_events = status == "verified" && profile.events.published.where.not(id: profile.events.merge(Event.publicly_visible).select(:id)).exists?
       html = email_wrapper(heading) do
         <<~HTML
           <h2>#{h(heading)}</h2>
           <p>#{h(body)}</p>
           #{note.present? ? "<p>HåfaPass note: #{h(note)}</p>" : ""}
           #{links.present? ? "<ul>#{links}</ul>" : ""}
+          #{held_events ? "<p>Some events need attention. Review them in your dashboard.</p>" : ""}
           <p><a href="#{h(frontend_url)}/dashboard">Open your dashboard</a></p>
         HTML
       end
@@ -421,16 +421,17 @@ class EmailService
 
     def send_verification_request(profile, recipient, delivery: nil)
       name = ERB::Util.html_escape(profile.business_name)
+      updated = delivery&.metadata&.fetch("updated", false)
       html = <<~HTML
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-          <h2 style="color: #1f2937; margin: 0 0 12px; font-size: 20px;">#{name} asked to be verified</h2>
+          <h2 style="color: #1f2937; margin: 0 0 12px; font-size: 20px;">#{name} #{updated ? 'updated a verification request' : 'asked to be verified'}</h2>
           <p style="color: #4b5563; margin: 0 0 20px;">Review this organizer so their published events can become public and sell tickets.</p>
           <p>Phone: #{h(profile.verification_phone)}<br>Website or social link: #{h(profile.verification_link)}</p>
           <p>Reviewer note: #{h(profile.verification_request_note.presence || "None")}</p>
           <p><a href="#{frontend_url}/admin" style="display:inline-block;background:#0e7c7b;color:white;padding:12px 24px;border-radius:10px;text-decoration:none">Open the admin dashboard</a></p>
         </div>
       HTML
-      deliver(to: recipient, subject: safe_subject("Verification requested: #{profile.business_name}"), html: html,
+      deliver(to: recipient, subject: safe_subject("#{updated ? 'Updated request' : 'Verification requested'}: #{profile.business_name}"), html: html,
         tag: "verification_request", delivery: delivery, organizer_profile_id: profile.id)
     end
 
@@ -637,11 +638,18 @@ class EmailService
 
     def send_event_reminder(reminder, delivery: nil)
       event = reminder.event
+      order = reminder.user.orders.where(event: event, status: [:completed, :partially_refunded, :refunded])
+        .order(created_at: :desc).first
+      url = if event.publicly_visible?
+        "#{frontend_url}/events/#{ERB::Util.url_encode(event.slug)}"
+      elsif order
+        order_access_url(order)
+      end
       html = email_wrapper("Event reminder") do
         <<~HTML
           <h2 style="color:#1f2937">#{h(event.title)} is coming up</h2>
           <p style="color:#6b7280">#{h(event.venue_name)} · #{h(event.starts_at.in_time_zone(event.timezone).strftime('%A, %B %-d at %-I:%M %p %Z'))}</p>
-          <p><a href="#{frontend_url}/events/#{ERB::Util.url_encode(event.slug)}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">View event</a></p>
+          #{url ? %(<p><a href="#{h(url)}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{order && !event.publicly_visible? ? 'View your order' : 'View event'}</a></p>) : '<p>Contact the organizer for event details.</p>'}
         HTML
       end
       deliver(to: reminder.user.email, subject: safe_subject("Reminder: #{event.title}"), html: html,

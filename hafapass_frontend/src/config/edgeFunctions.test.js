@@ -27,6 +27,16 @@ describe('edge function API origin', () => {
 })
 
 describe('share preview edge function', () => {
+  it('marks the first private preview response as noindex with no referrer for people and crawlers', async () => {
+    for (const ua of ['Mozilla/5.0', 'facebookexternalhit/1.1']) {
+      const ctx = context()
+      const response = await ogRedirect(crawl('/events/private-show/preview', ua), ctx)
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
+      expect(await response.text()).toBe(SPA_HTML)
+      expect(ctx.next).toHaveBeenCalledOnce()
+    }
+  })
   it('serves the API OG page to social preview crawlers', async () => {
     vi.stubGlobal('Netlify', { env: env('https://api.example.test') })
     const fetchMock = vi.fn(async () => new Response('<meta property="og:title">', { status: 200 }))

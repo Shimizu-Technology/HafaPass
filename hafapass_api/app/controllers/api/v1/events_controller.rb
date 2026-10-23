@@ -96,15 +96,17 @@ module Api
       end
 
       def private_preview
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
         event = Event.find_by_public_slug!(params[:slug])
         raise ActiveRecord::RecordNotFound unless event.published? &&
-          !event.organizer_profile.verification_status_suspended? && event.valid_preview_token?(params[:token])
+          !event.organizer_profile.verification_status_suspended? &&
+          params[:token].blank? && event.valid_preview_token?(request.headers["X-Preview-Token"])
 
         if event.publicly_visible?
           render json: { redirect_to: event.slug }
         else
-          response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
-          response.headers["Cache-Control"] = "private, no-store"
           render json: show_json(event).merge(private_preview: true, purchasable: false)
         end
       rescue ActiveRecord::RecordNotFound

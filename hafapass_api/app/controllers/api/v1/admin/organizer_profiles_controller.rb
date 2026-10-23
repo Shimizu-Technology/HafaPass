@@ -1,11 +1,17 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseController
+  class StaleVerificationRequest < StandardError; end
+
   def update
     profile = OrganizerProfile.find(params[:id])
     before_data = profile_json(profile)
     previous_status = profile.verification_status
     profile.with_lock do
+      if params[:verification_status] == "verified" && profile.verification_status_pending? &&
+          params[:verification_request_version].to_s != profile.verification_request_version.to_s
+        raise StaleVerificationRequest
+      end
       apply_verification!(profile) if params[:verification_status].present?
       profile.verification_notes = params[:verification_notes] if params.key?(:verification_notes)
       profile.verification_notes = nil if profile.verification_status_verified? && !params.key?(:verification_notes)
@@ -29,6 +35,8 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
     render json: profile_json(profile)
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
+  rescue StaleVerificationRequest
+    render json: { error: "This request changed — reload to review the latest details." }, status: :conflict
   end
 
   private
@@ -55,6 +63,8 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
       business_name: profile.business_name,
       verification_status: profile.verification_status,
       verification_requested_at: profile.verification_requested_at,
+      verification_request_version: profile.verification_request_version,
+      verification_change_diff: profile.verification_change_diff,
       verified_at: profile.verified_at,
       verification_notes: profile.verification_notes,
       verification_phone: profile.verification_phone,

@@ -5,10 +5,12 @@ class Api::V1::WaitlistOffersController < ApplicationController
 
   def show
     offer = WaitlistCredential.find_offer(params[:token])
-    if !offer && (withdrawn = WaitlistCredential.find_withdrawn_offer(params[:token]))
+    if !offer && (withdrawn = WaitlistCredential.find_withdrawn_offer(params[:token])) &&
+        withdrawn.event.publicly_visible?
       return render json: { code: "offer_withdrawn", event_slug: withdrawn.event.slug }, status: :gone
     end
-    return render json: { error: "Waitlist offer not found" }, status: :not_found unless offer&.active?
+    return render json: { error: "Waitlist offer not found" }, status: :not_found unless offer&.active? &&
+      offer.event.publicly_visible?
 
     fee = Commerce::ServiceFee.for_event(offer.event, offer.unit_price_cents)
     render json: {

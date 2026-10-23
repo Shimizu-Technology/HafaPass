@@ -32,6 +32,8 @@ it('validates inline, retains entered fields, then submits the fixed request', a
   await user.type(screen.getByRole('textbox', { name: /Website or social media link/ }), 'invalid')
   await user.click(screen.getByRole('button', { name: 'Send request' }))
   expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
+  expect(screen.getByRole('textbox', { name: /Contact phone/ })).toHaveFocus()
+  expect(screen.getByText(/Check 2 highlighted verification fields/)).toHaveAttribute('aria-live', 'assertive')
   expect(apiClient.post).not.toHaveBeenCalled()
   expect(screen.getByRole('textbox', { name: /Contact phone/ })).toHaveValue('123')
   await user.clear(screen.getByRole('textbox', { name: /Contact phone/ }))

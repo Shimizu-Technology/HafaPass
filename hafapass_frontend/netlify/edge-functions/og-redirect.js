@@ -33,7 +33,15 @@ async function spa(context) {
 }
 
 export default async (request, context) => {
-  const match = new URL(request.url).pathname.match(/^\/(events|policies)\/([^/]+)\/?$/)
+  const pathname = new URL(request.url).pathname
+  if (/^\/events\/[^/]+\/preview\/?$/.test(pathname)) {
+    const response = await context.next()
+    const privateResponse = new Response(response.body, response)
+    privateResponse.headers.set('X-Robots-Tag', 'noindex, nofollow')
+    privateResponse.headers.set('Referrer-Policy', 'no-referrer')
+    return privateResponse
+  }
+  const match = pathname.match(/^\/(events|policies)\/([^/]+)\/?$/)
   if (!match) return context.next()
   if (!isPreviewCrawler(request.headers.get('user-agent'))) return spa(context)
 

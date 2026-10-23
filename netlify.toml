@@ -22,3 +22,10 @@
   command = "npm run build"
   publish = "hafapass_frontend/dist"
   edge_functions = "hafapass_frontend/netlify/edge-functions"
+
+# Legacy single-pass builds use this root configuration.
+[[headers]]
+  for = "/events/*/preview"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"

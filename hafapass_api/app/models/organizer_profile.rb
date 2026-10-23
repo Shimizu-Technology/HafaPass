@@ -1,4 +1,23 @@
 class OrganizerProfile < ApplicationRecord
+  VERIFICATION_DETAILS = %w[business_name business_description verification_phone verification_link verification_request_note].freeze
+
+  def verification_details
+    attributes.slice(*VERIFICATION_DETAILS)
+  end
+
+  def refresh_verification_request!(before_details:, was_pending:)
+    changes = before_details.each_with_object({}) do |(field, before), diff|
+      after = public_send(field)
+      diff[field] = { "before" => before, "after" => after } if before != after
+    end
+    return false if was_pending && changes.empty?
+
+    self.verification_request_version += 1
+    self.verification_requested_at = Time.current
+    self.verification_change_diff = was_pending ? changes : {}
+    true
+  end
+
   def self.verification_gate_enabled?
     Rails.env.production? || ENV["HAFAPASS_ENFORCE_ORGANIZER_VERIFICATION"] == "true"
   end

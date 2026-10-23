@@ -45,10 +45,11 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     expect(waiting.first).to include("profile_id" => profile.id, "verification_status" => "pending", "payout_ready" => true)
 
     checkout
-    expect(response).to have_http_status(:service_unavailable)
-    expect(response.parsed_body.fetch("error")).to eq("Tickets for this event are not on sale yet")
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body.fetch("error")).to eq("Event not found")
 
-    patch "/api/v1/admin/organizer_profiles/#{profile.id}", params: { verification_status: "verified" },
+    patch "/api/v1/admin/organizer_profiles/#{profile.id}", params: { verification_status: "verified",
+      verification_request_version: profile.reload.verification_request_version },
       headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     get "/api/v1/admin/dashboard", headers: auth_headers(admin)

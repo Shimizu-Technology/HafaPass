@@ -22,6 +22,25 @@ const dashboard = {
 describe('AdminDashboardPage', () => {
   beforeEach(() => { vi.clearAllMocks(); apiClient.get.mockResolvedValue({ data: dashboard }) })
 
+  it('shows pending edits and sends the reviewed version with approval', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { ...dashboard, organizers_awaiting_verification: [{
+      profile_id: 4, business_name: 'Island Events', verification_status: 'pending',
+      verification_request_version: 3, verification_change_diff: {
+        verification_phone: { before: '+1-671-555-1234', after: '+1-671-555-5678' },
+      },
+    }] } })
+    apiClient.patch.mockResolvedValue({ data: { verification_status: 'verified' } })
+    render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
+    expect(await screen.findByText('Updated after submission — review again')).toBeInTheDocument()
+    expect(screen.getByText(/verification phone:.*555-1234.*555-5678/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verify Island Events' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Verify' }))
+    expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', {
+      verification_status: 'verified', verification_request_version: 3,
+    }, expect.anything())
+  })
+
   it('uses a defined color token for every stat card icon', async () => {
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
     const tickets = (await screen.findByText('Tickets Sold')).nextElementSibling

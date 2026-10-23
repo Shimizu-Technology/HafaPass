@@ -52,6 +52,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
         next :done
       end
+      if waitlist_delivery?(delivery) && !delivery.event&.publicly_visible?
+        delivery.update!(status: :cancelled, last_error: "Event is no longer public")
+        next :done
+      end
       if delivery.template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(delivery.recipient)
         delivery.update!(status: :suppressed, suppressed_at: Time.current, last_error: "Privacy deletion suppression")
         next :done
