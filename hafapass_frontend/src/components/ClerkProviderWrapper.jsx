@@ -78,10 +78,17 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
     <button className="btn-primary mt-4" onClick={() => setBindingAttempt(attempt => attempt + 1)}>Retry account preparation</button>
   </div>
   const currentVerification = verifiedWithdrawal.current === scannerWithdrawalRevision()
+  // Clerk resolving is not an account change. Decide this during render so
+  // the existing routes never disappear while the layout effect confirms it.
+  // A withdrawal (including a peer tab's) or unreadable storage must still lock.
+  const bindingContext = captureScannerBindingContext()
+  const unchangedBinding = currentVerification && !bindingWithdrawn && !hasPendingScannerBinding()
+    && bindingContext && bindingContext.owner === currentUserId
+    && authLoaded !== false && (!authLoaded || userId === currentUserId)
   const savedOwner = currentVerification && !bindingWithdrawn && !hasPendingScannerBinding()
     && (!bindingReady || (boundUser && boundUser === currentScannerOwner())) ? currentScannerOwner() : null
   if (!isLoaded && loadingFallback && savedOwner && savedOwner === (loadingFallbackOwner ?? initialFallbackOwner.current)) return loadingFallback
-  if (isLoaded && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  if (isLoaded && !unchangedBinding && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
   return typeof children === 'function' ? children({ scannerOwner: isLoaded ? (currentVerification && currentUserId === currentScannerOwner() ? currentUserId : null) : savedOwner }) : children
 }
 
