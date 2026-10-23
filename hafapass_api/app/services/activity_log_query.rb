@@ -19,14 +19,23 @@ class ActivityLogQuery
 
   def relation
     result = base
-    %w[actor_user_id event_id outcome].each { |key| result = result.where(key => filters[key]) if filters[key] }
+    %w[actor_user_id event_id].each { |key| result = result.where(key => filters[key]) if filters[key] }
+    if filters["outcome"]
+      result = result.where(outcome: filters["outcome"] == "unknown" ? [nil, "unknown"] : filters["outcome"])
+    end
     if @admin
       %w[organization_id action source auditable_type auditable_id].each do |key|
         input = { "auditable_type" => "target_type", "auditable_id" => "target_id" }.fetch(key, key)
         result = result.where(key => filters[input]) if filters[input]
       end
     end
-    result = result.where(action: AuditActions.keys.select { |key| AuditActions.fetch(key)[:area] == filters["area"] }) if filters["area"]
+    if filters["area"]
+      area = result.where(action: AuditActions.keys.select { |key| AuditActions.fetch(key)[:area] == filters["area"] })
+      # Unknown actions use the registry's private platform fallback. They
+      # remain visible to admins under the area displayed on their row.
+      area = area.or(result.where.not(action: AuditActions.keys)) if @admin && filters["area"] == "platform"
+      result = area
+    end
     result = result.where("audit_logs.occurred_at >= ?", day("from")) if filters["from"]
     result = result.where("audit_logs.occurred_at < ?", day("to") + 1.day) if filters["to"]
     filters["q"] ? search(result) : result

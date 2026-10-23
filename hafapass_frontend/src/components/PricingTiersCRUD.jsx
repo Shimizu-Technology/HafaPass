@@ -217,7 +217,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
   }
   const handleDelete = tierId => mutate('delete', config => apiClient.delete(`${basePath}/${tierId}`, config), () => {}, tierId)
 
-  if (loading) return <div className="text-sm text-neutral-400 py-2"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading tiers...</div>
+  if (loading) return <div className="text-sm text-neutral-600 py-2"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading tiers...</div>
 
   return (
     <div className="mt-3 ml-4 border-l-2 border-brand-200 pl-4">

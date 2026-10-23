@@ -40,3 +40,38 @@ RSpec.describe "Admin activity filters and exports", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 end
+
+RSpec.describe "Legacy unknown activity outcomes", type: :request do
+  it "includes null historical outcomes and explicit unknown outcomes in admin lists and CSV" do
+    admin = create(:user, :admin)
+    event = create(:event)
+    explicit = AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, outcome: "unknown")
+    # Reproduce a pre-integrity row. Historical NULL is intentional, not a
+    # reconstructed outcome; the schema permits it for precisely this case.
+    historical = AuditLog.new(action: "event.updated", auditable: event, event: event, organization: event.organization,
+      actor_user: admin, source: nil, outcome: nil, occurred_at: 1.year.ago)
+    historical.save!(validate: false)
+    headers = auth_headers(admin)
+    filters = { action: "event.updated", outcome: "unknown" }
+    get "/api/v1/admin/audit_logs", params: filters, headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("audit_logs").pluck("id")).to contain_exactly(explicit.id, historical.id)
+    expect(response.parsed_body.fetch("audit_logs").pluck("outcome")).to eq(%w[unknown unknown])
+    post "/api/v1/admin/activity_log_exports", params: filters, headers: headers
+    get response.parsed_body.dig("export", "download_url"), headers: headers
+    expect(response).to have_http_status(:ok)
+    rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+    expect(rows.length).to eq(2)
+    expect(rows.map { |row| row["Outcome"] }).to eq(%w[unknown unknown])
+  end
+end
+
+RSpec.describe "Admin unknown action areas", type: :request do
+  it "finds private unknown actions using their displayed platform fallback area" do
+    admin = create(:user, :admin)
+    entry = AuditLogger.record!(action: "unregistered.private_action", auditable: SiteSetting.instance, actor: admin)
+    get "/api/v1/admin/audit_logs", params: { area: "platform", action: entry.action }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("audit_logs").pluck("id")).to eq([entry.id])
+  end
+end

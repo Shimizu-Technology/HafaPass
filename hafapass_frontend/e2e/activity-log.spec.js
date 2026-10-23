@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 // with isolated mocked API responses; no real audit records are modified.
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 const organization = { id: 7, name: 'Island Community Events', role: 'owner', activity_access: true, permissions: { manage_members: true, view_activity_all: true } }
-const event = { id: 4, title: `Reef Night ${'LongEventName'.repeat(12)}`, url: '/dashboard/events/4' }
+const event = { id: 4, title: 'Reef Night — Celebrating Guam’s Music, Food and Community at Tumon Bay, with Island Performers and Guests from across the Marianas', url: '/dashboard/events/4' }
 const activity = { id: 31, occurred_at: '2026-10-23T18:00:00Z', sentence: 'Updated the ticket price.', area: 'events', outcome: 'succeeded',
   actor: { name: 'Mina Cruz' }, event, target: null, changes: [{ field: 'Price', before: '$20', after: '$25' }] }
 const options = { actors: [{ id: 11, name: 'Mina Cruz', email: 'mina@example.test' }], areas: ['events', 'payouts'], events: [{ id: 4, title: event.title }] }
@@ -201,5 +201,24 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('radio', { name: /^Finance/ })).toBeChecked()
     await page.getByRole('link', { name: 'Activity', exact: true }).click()
     await expect(page).toHaveURL('/dashboard/settings/activity')
+  })
+}
+
+for (const width of [375, 1280]) {
+  test(`event overview opens activity with its event filter at ${width}px`, async ({ page }) => {
+    await prepare(page, width)
+    await page.route('**/api/v1/organizer/events/4', route => json(route, {
+      ...event, organization_id: 7, organization_name: organization.name, status: 'published', slug: 'reef-night',
+      publicly_visible: true, starts_at: '2026-11-20T09:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Tumon pavilion',
+      ticket_types: [], publish_checklist: [], permissions: { view_events: true, view_activity_events: true },
+    }))
+    await page.route('**/api/v1/organizer/activity_logs*', route => json(route, { activity_logs: [activity], meta: {}, filters: options }))
+    await page.goto('/dashboard/events/4')
+    await page.getByRole('link', { name: 'View activity', exact: true }).click()
+    await expect(page).toHaveURL('/dashboard/settings/activity?event_id=4')
+    await expect(page.getByText(activity.sentence, { exact: true })).toBeVisible()
+    await openFilters(page, width)
+    await expect(page.getByLabel('Event', { exact: true })).toHaveValue('4')
+    await accessibleAndFits(page)
   })
 }
