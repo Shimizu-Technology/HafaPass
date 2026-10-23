@@ -1,3 +1,4 @@
+import { payoutAccountLabel, payoutRequirementLabel } from '../../utils/payoutLabels'
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -53,7 +54,7 @@ function ConfirmChangeDialog({ change, busy, onCancel, onConfirm }) {
         <span className="rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-800">{change.kind === 'role' ? accessLabel(change.to) : verificationLabel(change.to)}</span>
       </p>
       {change.kind === 'role' && change.to === 'admin' && <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This grants full platform access.</p>}
-      {change.kind === 'verification' && change.to === 'suspended' && <p className="mt-4 text-sm text-neutral-700">Their events stay visible but stop selling until you verify them again.</p>}
+      {change.kind === 'verification' && change.to === 'suspended' && <p className="mt-4 text-sm text-neutral-700">Their events are hidden from public pages and new ticket sales stop. Existing tickets remain valid until you restore the organizer.</p>}
       {noteOffered && (
         <label className="mt-4 block text-sm font-medium text-neutral-800">
           {noteRequired ? 'Review note' : 'Review note (optional)'}
@@ -106,12 +107,12 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
       </select>
       {account ? (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
-          <p className="break-words font-semibold text-neutral-800">{account.provider} · {account.status}</p>
+          <p className="break-words font-semibold text-neutral-800">{payoutAccountLabel(account)}</p>
           {account.provider === 'check' && account.payout_details?.payee_name && <p className="mt-1 [overflow-wrap:anywhere] text-neutral-800">Check to {account.payout_details.payee_name} · {account.payout_details.delivery_method === 'pickup' ? 'pickup' : 'mail'}</p>}
-          <p className="mt-1 [overflow-wrap:anywhere] text-content-muted">{account.requirements_due?.length ? `Due: ${account.requirements_due.join(', ')}` : 'No outstanding requirements'}</p>
+          <p className="mt-1 [overflow-wrap:anywhere] text-content-muted">{account.requirements_due?.length ? `Still needed: ${account.requirements_due.map(payoutRequirementLabel).join(', ')}` : 'No outstanding requirements'}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {!profile.payout_ready && <button onClick={() => {
-              if (window.confirm('Record the provider capability sync? Gate B evidence approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
+              if (window.confirm('Record the provider capability sync? Finance approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
             }} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
             {account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Disable</button>}
           </div>

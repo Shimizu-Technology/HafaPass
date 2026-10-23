@@ -13,7 +13,7 @@ import ScannerPage from './ScannerPage'
 async function findManifest(version) {
   const summary = await screen.findByText('Device details', { exact: true })
   if (!summary.closest('details').open) await userEvent.click(summary)
-  return screen.findByText(new RegExp(`Manifest v${version}`))
+  return screen.findByText(new RegExp(`Saved ticket list · version ${version}`))
 }
 
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() }, getApiAuthContext: () => null, subscribeApiAuthContext: () => () => {} }))

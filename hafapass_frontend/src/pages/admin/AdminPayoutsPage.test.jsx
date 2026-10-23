@@ -28,6 +28,53 @@ const renderAt = path => render(<MemoryRouter initialEntries={[path]}><AdminPayo
 describe('AdminPayoutsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); respond() })
 
+  it.each([
+    ['check', 'Recorded as paid with the date on the check. This does not confirm the check has cleared.'],
+    ['manual', 'Recorded as paid after bank or provider payment confirmation.'],
+  ])('describes recorded payment accurately for %s', async (provider, explanation) => {
+    respond({ payouts: [{ ...payout, provider }] })
+    renderAt('/admin/payouts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    expect(within(screen.getByRole('dialog')).getByText(explanation)).toBeInTheDocument()
+  })
+
+  it.each([{}, { legal_name: 'Approved Payee' }])('records withholding-only evidence without inventing a check, with tax snapshot %j', async taxSnapshot => {
+    const user = userEvent.setup()
+    apiClient.patch.mockResolvedValue({ data: {} })
+    respond({ payouts: [{ ...payout, provider: 'check', disbursement_cents: 0,
+      withheld_cents: 1008, carried_withholding_cents: 3192, confirmed_check_amount_cents: 0,
+      provider_payout_id: 'withholding_only_12', tax_information_snapshot: taxSnapshot }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/This is a withholding-only payout/)).toHaveTextContent('No check is issued and no money is sent to the payee.')
+    expect(dialog.getByText('Recorded as settled through withholding only. No check is issued and no money is sent to the payee.')).toBeInTheDocument()
+    expect(dialog.queryByLabelText('Date on the check')).not.toBeInTheDocument()
+    expect(dialog.queryByText(/date written on the check|check has cleared|Recorded check amount/)).not.toBeInTheDocument()
+    expect(dialog.queryByLabelText('Payee actually paid')).not.toBeInTheDocument()
+    expect(dialog.getByLabelText(/Withholding-only reference/)).toHaveValue('withholding_only_12')
+    expect(dialog.getByLabelText(/Withholding-only reference/)).toBeDisabled()
+    expect(dialog.getByLabelText('Withholding confirmed at')).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(dialog.getByText('Enter the withholding record reference.')).toBeInTheDocument()
+    expect(dialog.getByText('Enter 0.00 to confirm no money was sent to the payee.')).toBeInTheDocument()
+    await user.type(dialog.getByLabelText('Withholding record reference'), 'Withholding ledger line 12')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Full amount allocated to withholding and prior shortfall; no check issued')
+    await user.type(dialog.getByLabelText('Actual amount sent to payee (USD)'), '1.00')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    expect(dialog.getByText('Enter 0.00 to confirm no money was sent to the payee.')).toBeInTheDocument()
+    expect(dialog.queryByLabelText('Check amount adjustment reason')).not.toBeInTheDocument()
+    expect(apiClient.patch).not.toHaveBeenCalled()
+    await user.clear(dialog.getByLabelText('Actual amount sent to payee (USD)'))
+    await user.type(dialog.getByLabelText('Actual amount sent to payee (USD)'), '0.00')
+    await user.click(dialog.getByRole('button', { name: 'Record as paid' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', {
+      status: 'paid', provider_payout_id: 'withholding_only_12',
+      evidence: { reference: 'Withholding ledger line 12', reason: 'Full amount allocated to withholding and prior shortfall; no check issued',
+        confirmed_at: expect.stringMatching(/Z$/), actual_check_amount_cents: 0 },
+    }, expect.anything()))
+  })
+
   it('blocks release while buyer refunds remain unresolved and points to recording an already sent transfer', async () => {
     const user = userEvent.setup()
     respond({ payouts: [{ ...payout, status: 'held', held_from_status: 'processing',

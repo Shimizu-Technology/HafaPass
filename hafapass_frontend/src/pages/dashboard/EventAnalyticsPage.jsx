@@ -1,3 +1,4 @@
+import { payoutAccountLabel, payoutProviderLabel } from '../../utils/payoutLabels'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
 import { CheckCircle2, CircleAlert, Download, Loader2, WalletCards } from 'lucide-react'
@@ -286,7 +287,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        <div><h2 id="finance-heading" className="text-lg font-semibold text-neutral-900">Settlement and payout</h2><p className="mt-1 text-sm text-neutral-500">Built from recorded sales, refunds, processing costs, disputes, reserves, adjustments, and payouts. Past records are never changed.</p></div>
       </div>
       {finance.connected_account?.payout_ready ? (
-       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> {finance.connected_account.provider} ready</span>
+       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> {payoutAccountLabel(finance.connected_account)}</span>
       ) : (
        <Link to="/dashboard/settings" className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700"><CircleAlert className="h-4 w-4" /> Complete payout setup</Link>
       )}
@@ -311,7 +312,7 @@ function EventAnalyticsPageSession({ id, identity }) {
       {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {latestSettlement.status} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
      </div>
 
-     {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payout.provider} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
+     {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payoutProviderLabel(payout.provider)} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
 
      <div className="mt-5 border-t border-neutral-100 pt-5">
       <h3 className="text-sm font-semibold text-neutral-900">Exports</h3>

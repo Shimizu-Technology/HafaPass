@@ -217,7 +217,7 @@ function FinancesSession({ identity }) {
           <ul className="mt-3 space-y-1 text-sm text-neutral-700">
             <li>{totals.requestable_cents > 0 ? `${money(totals.requestable_cents)} can be requested now from finalized statements.` : 'Nothing can be requested right now. Payouts open once an event’s statement is finalized and any refunds, disputes or payment checks are settled.'}</li>
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
-            {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} is on its way in a payout that has been requested.</li>}
+            {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} has been requested for payout. Payment hasn't been confirmed yet.</li>}
             {totals.held_cents > 0 && <li>{money(totals.held_cents)} is on hold — event cancelled, refunds in progress.</li>}
             {payoutTiming && <li>Payout timing: {payoutTiming}.</li>}
           </ul>
@@ -270,7 +270,7 @@ function FinancesSession({ identity }) {
               <div><dt className="font-semibold text-neutral-900">Finalized</dt><dd>The statement is approved and locked. If a refund or adjustment happens later, it shows as changed and a new version is needed. Earlier versions never change.</dd></div>
               <div><dt className="font-semibold text-neutral-900">Finalize new version</dt><dd>Money is still owed, but a refund, adjustment or the last payout came after the latest version. Finalize a new version on the event page to request the rest.</dd></div>
               <div><dt className="font-semibold text-neutral-900">Payout in progress</dt><dd>A payout was requested. Requesting does not mean the money has arrived yet.</dd></div>
-              <div><dt className="font-semibold text-neutral-900">Paid</dt><dd>The payout provider confirmed the transfer.</dd></div>
+              <div><dt className="font-semibold text-neutral-900">Paid</dt><dd>Checks are recorded as paid with the date on the check; this does not confirm clearance. Bank transfers are recorded as paid after payment is confirmed.</dd></div>
             </dl>
             {notes.length > 0 && (
               <div className="mt-4 border-t border-neutral-200 pt-4">

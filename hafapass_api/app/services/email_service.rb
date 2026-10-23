@@ -361,7 +361,7 @@ class EmailService
       subject, heading, body = case status
       when "verified"
         ["Your organizer account is verified", "Your organizer account is verified",
-          "Your public events can now sell tickets when their sales windows open."]
+          "Eligible published events can now appear publicly. Ticket sales still depend on event setup, sales dates, availability and any holds."]
       when "rejected"
         ["Your organizer verification needs an update", "Please update your verification request",
           "Review the note below, then resubmit from your dashboard."]
@@ -406,14 +406,14 @@ class EmailService
       new_example = notice.example(change.new_terms)
       format_terms = lambda do |terms|
         "#{terms.fetch('service_fee_percent')}% + #{money(terms.fetch('service_fee_flat_cents'))} per paid ticket; " \
-          "card processing paid by #{terms.fetch('processing_fee_bearer')}; payouts #{terms.fetch('payout_schedule_text')}"
+          "#{terms.fetch('processing_fee_bearer') == 'platform' ? 'Card processing paid by HåfaPass' : 'Card processing deducted from your proceeds'}; payouts #{terms.fetch('payout_schedule_text')}"
       end
       html = email_wrapper("Scheduled fee change") do
         <<~HTML
           <h2>Fee terms are changing for #{h(notice.organization.name)}</h2>
           <p>Your current terms: #{h(format_terms.call(change.old_terms))}.</p>
-          <p>New terms from #{h(change.effective_at.in_time_zone('Pacific/Guam').strftime('%B %-d, %Y at %-I:%M %p ChST'))}: #{h(format_terms.call(change.new_terms))}.</p>
-          <p>For a $25.00 #{h(notice.fee_policy.tr('_', ' '))} ticket, the buyer total changes from
+          <p>New terms from #{h(change.effective_at.in_time_zone('Pacific/Guam').strftime('%B %-d, %Y at %-I:%M %p Guam time'))}: #{h(format_terms.call(change.new_terms))}.</p>
+          <p>For a $25.00 ticket with your current fee choice, the buyer total changes from
           <strong>#{money(old_example.fetch(:all_in_price_cents))}</strong> (includes #{money(old_example.fetch(:service_fee_cents))} service fee)
           to <strong>#{money(new_example.fetch(:all_in_price_cents))}</strong> (includes #{money(new_example.fetch(:service_fee_cents))} service fee).</p>
           <p>Orders placed before the effective date keep their recorded fee terms. You can acknowledge this notice in your organizer dashboard; sales continue while it is unacknowledged.</p>
@@ -430,9 +430,9 @@ class EmailService
       html = <<~HTML
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
           <h2 style="color: #1f2937; margin: 0 0 12px; font-size: 20px;">#{name} #{updated ? 'updated a verification request' : 'asked to be verified'}</h2>
-          <p style="color: #4b5563; margin: 0 0 20px;">Review this organizer so their published events can become public and sell tickets.</p>
+          <p style="color: #4b5563; margin: 0 0 20px;">Review this organizer so eligible published events can become public. Ticket sales still depend on event setup, sales dates, availability and any holds.</p>
           <p>Phone: #{h(profile.verification_phone)}<br>Website or social link: #{h(profile.verification_link)}</p>
-          <p>Reviewer note: #{h(profile.verification_request_note.presence || "None")}</p>
+          <p>Note from the organizer: #{h(profile.verification_request_note.presence || "None")}</p>
           <p><a href="#{frontend_url}/admin" style="display:inline-block;background:#0e7c7b;color:white;padding:12px 24px;border-radius:10px;text-decoration:none">Open the admin dashboard</a></p>
         </div>
       HTML

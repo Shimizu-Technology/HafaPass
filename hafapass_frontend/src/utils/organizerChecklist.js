@@ -9,11 +9,11 @@ const organizerSteps = {
   tickets: ['Add at least one ticket type', '#ticket-types'],
   capacity: ['Set capacity and ticket quantities that fit', '#max_capacity'],
   sales_window: ['Set valid ticket sales dates', '#ticket-types'],
-  payout: ['Add your payout details in Settings → Payouts', '/dashboard/settings'],
+  payout: ['Complete Tax information and How you get paid in Settings, then wait for finance approval.', '/dashboard/settings'],
 }
 
 const completeLabels = {
-  payout: 'Payout details on file, or not needed for free tickets',
+  payout: 'Paid-ticket setup approved, or not needed for free tickets',
   organizer_verified: 'HåfaPass verified your organization',
 }
 

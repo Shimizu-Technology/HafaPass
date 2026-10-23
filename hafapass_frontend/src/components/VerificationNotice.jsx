@@ -77,7 +77,12 @@ export default function VerificationNotice({ profile, beginRequest, onUpdated, r
       setOpen(false)
       onUpdated?.(response.data)
     } catch (failure) {
-      if (request.current()) setError(failure.response?.data?.errors?.join(' ') || failure.response?.data?.error || t('organizerVerification.sendError'))
+      if (request.current()) {
+        const status = failure.response?.status
+        setError(status >= 400 && status < 500
+          ? failure.response?.data?.errors?.join(' ') || failure.response?.data?.error || t('organizerVerification.sendError')
+          : t('organizerVerification.sendError'))
+      }
     } finally {
       request.release()
       if (request.current()) setBusy(false)

@@ -7,7 +7,7 @@ import { feeExample } from '../utils/feeTerms'
 const EXAMPLE_PRICE_CENTS = 2500
 
 const POLICIES = [
-  { value: 'buyer_pays', label: 'Buyer pays the fee', hint: 'Recommended. The fee is added at checkout.' },
+  { value: 'buyer_pays', label: 'Buyer pays the fee', hint: 'Recommended. The fee is included in the ticket price buyers see.' },
   { value: 'organizer_absorbs', label: 'I cover the fee', hint: 'Buyers pay only the ticket price.' },
   { value: 'split_fees', label: 'Split the fee', hint: 'Choose the share buyers pay.' },
 ]

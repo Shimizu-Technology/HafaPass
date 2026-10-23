@@ -1,21 +1,9 @@
+import { payoutRequirementLabel } from '../../utils/payoutLabels'
 import { CheckCircle2, CircleAlert, Landmark, Mail, WalletCards } from 'lucide-react'
 import { useState } from 'react'
 import SupportLink from '../../components/SupportLink'
 import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 
-const REQUIREMENT_LABELS = {
-  business_verification: 'HåfaPass confirms your organization',
-  payee_details_review: 'HåfaPass finance checks who the check is made out to',
-  payout_agreement: 'Payout terms are confirmed with you',
-  bank_account_review: 'HåfaPass finance reviews your bank details',
-  independent_readiness_approval: 'HåfaPass finance gives final approval',
-  partner_approval: 'PayPal marketplace approval',
-  seller_onboarding: 'PayPal seller setup',
-  payout_method: 'PayPal payout method',
-  guam_eligibility_review: 'Stripe Guam eligibility review',
-  provider_onboarding: 'Stripe onboarding',
-}
-const requirementLabel = code => REQUIREMENT_LABELS[code] || code.replaceAll('_', ' ')
 const emptyCheck = { payee_name: '', delivery_method: 'mail', mailing_address: '', pickup_note: '', memo: '' }
 
 function AccountStatus({ account }) {
@@ -24,13 +12,13 @@ function AccountStatus({ account }) {
     <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm">
       <p className={`flex items-center gap-2 font-semibold ${account.payout_ready ? 'text-emerald-800' : 'text-amber-900'}`}>
         {account.payout_ready ? <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> : <CircleAlert aria-hidden="true" className="h-4 w-4" />}
-        {account.payout_ready ? 'Approved — paid events can go live' : 'Saved — waiting for HåfaPass review'}
+        {account.payout_ready ? 'Paid-ticket setup approved' : 'Saved — waiting for HåfaPass review'}
       </p>
       {!account.payout_ready && account.requirements_due?.length > 0 && (
         <>
           <p className="mt-2 text-neutral-700">What HåfaPass does next:</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-neutral-700">{account.requirements_due.map(code => <li key={code}>{requirementLabel(code)}</li>)}</ul>
-          <p className="mt-2 text-neutral-700">You don’t need to do anything else unless we contact you. Free events can go live without this.</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-neutral-700">{account.requirements_due.map(code => <li key={code}>{payoutRequirementLabel(code)}</li>)}</ul>
+          <p className="mt-2 text-neutral-700">Complete and certify your W-9 in Tax information too. Free events do not need paid-ticket setup.</p>
         </>
       )}
     </div>
@@ -149,7 +137,7 @@ export default function PayoutMethodSection({ organizationId, accounts, busy, on
           <ol className="list-decimal space-y-2 pl-5">
             <li><strong>You:</strong> choose bank transfer below, then contact the HåfaPass team.</li>
             <li><strong>HåfaPass finance:</strong> arranges a secure way to collect your bank details. Never email bank details or ID documents.</li>
-            <li><strong>HåfaPass finance:</strong> approves the account. Paid events can go live after that.</li>
+            <li><strong>HåfaPass finance:</strong> approves the account. Complete and certify your W-9 in Tax information too.</li>
           </ol>
           <div className="flex flex-wrap gap-3">
             {!bankAccount && <button type="button" disabled={busy} onClick={() => onSave({ provider: 'manual' })} className="btn-primary">Choose bank transfer</button>}

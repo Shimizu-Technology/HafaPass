@@ -9,7 +9,7 @@ const auth = vi.hoisted(() => ({ userId: 'staff-a', sessionId: 'session-a', getT
 async function findManifest(version) {
   const summary = await screen.findByText('Device details', { exact: true })
   if (!summary.closest('details').open) await userEvent.click(summary)
-  return screen.findByText(new RegExp(`Manifest v${version}`))
+  return screen.findByText(new RegExp(`Saved ticket list · version ${version}`))
 }
 
 vi.mock('@clerk/clerk-react', () => ({
@@ -283,8 +283,8 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await screen.findByText('Scanner access is being checked. Admission is paused; saved scans remain on this device.')
     expect(await store.loadAuthorizedScanner(eventId)).not.toBeNull()
     expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Check ticket', exact: true })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    expect(screen.getByRole('button', { name: 'Check in ticket', exact: true })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
     expect((await store.queuedActions(eventId, 91)).map(item => item.action_uuid)).toEqual([unknown.action_uuid])
     await act(async () => held.resolve())
     await screen.findByText('Access withdrawn')
@@ -536,7 +536,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await findManifest(1)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Ticket QR code'), 'terminal-qr-501')
-    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
     await waitFor(() => expect(action).toBeDefined())
     await store.saveDevice(eventId, renewedDevice, { context: await store.captureAdmissionAccessContext(eventId) })
     currentManifest = await signedManifest(eventId, [{ ...tickets[0], state: 'admitted' }, tickets[1]],
@@ -556,7 +556,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     const entry = screen.getByLabelText('Ticket QR code')
     if (!entry.disabled) {
       await user.type(entry, 'terminal-qr-503')
-      await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+      await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
       await screen.findByText('Admitted offline')
     }
     expect(entry).toBeDisabled()
@@ -589,7 +589,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await findManifest(1)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Ticket QR code'), 'manifest-refusal-qr')
-    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
     await waitFor(() => expect(action).toBeDefined())
     await store.saveDevice(eventId, renewedDevice, { context: await store.captureAdmissionAccessContext(eventId) })
     await store.saveVerifiedManifest(await signedManifest(eventId, [{ ...firstTicket, state: 'admitted' }],
@@ -647,7 +647,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await findManifest(1)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Ticket QR code'), 'late-ACK-qr')
-    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
     await waitFor(() => expect(original).toBeDefined())
     const peerContext = await store.captureAdmissionAccessContext(eventId)
     await store.saveDevice(eventId, renewedDevice, { context: peerContext })
@@ -669,7 +669,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
     vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
     await user.type(screen.getByLabelText('Ticket QR code'), 'peer-guard-qr')
-    await user.click(screen.getByRole('button', { name: 'Check ticket', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))
     await screen.findByText('Already scanned on this device')
     expect(screen.queryByText('Scanner unavailable')).not.toBeInTheDocument()
     expect((await store.loadAuthorizedScanner(eventId)).device.authorization_expires_at).toBe(renewedDevice.authorization_expires_at)

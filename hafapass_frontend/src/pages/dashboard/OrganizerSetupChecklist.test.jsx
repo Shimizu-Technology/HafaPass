@@ -26,12 +26,19 @@ describe('OrganizerSetupChecklist', () => {
     expect(within(steps[3]).getByRole('link', { name: 'Choose check or bank transfer' })).toHaveAttribute('href', '/dashboard/settings')
   })
 
+  it('makes tax and payout setup conditional on selling paid tickets', () => {
+    show()
+    const payoutStep = screen.getAllByRole('listitem')[3]
+    expect(payoutStep).toHaveTextContent('Free events can skip this.')
+    expect(payoutStep).toHaveTextContent('Only needed for paid tickets: complete Tax information and How you get paid in Settings, then wait for finance approval.')
+  })
+
   it('accepts the agreement in the shared agreement dialog, never window.confirm', async () => {
     const confirm = vi.spyOn(window, 'confirm')
     const { onAcceptPolicy } = show()
     await userEvent.click(screen.getByRole('button', { name: 'Review and accept' }))
     const dialog = within(screen.getByRole('dialog', { name: 'Accept the organizer agreement' }))
-    expect(dialog.getByText(/Payouts are made by check/)).toBeInTheDocument()
+    expect(dialog.getByText(/Payouts are made by check/)).toHaveTextContent('unless another payout method has been approved')
     await userEvent.click(dialog.getByRole('button', { name: 'Accept version 2026-10' }))
     expect(onAcceptPolicy).toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()

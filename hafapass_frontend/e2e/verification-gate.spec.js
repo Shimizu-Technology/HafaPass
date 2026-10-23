@@ -185,7 +185,7 @@ for (const width of [375, 1280]) {
     await page.screenshot({ path: `/tmp/hafapass-verification-admin-${width}.png`, fullPage: true })
     await page.getByRole('button', { name: 'Verify Island Events' }).click()
     await page.getByRole('dialog', { name: 'Verify Island Events?' }).getByRole('button', { name: 'Verify' }).click()
-    await expect(page.getByText('Island Events is verified. Their published events are public.')).toBeVisible()
+    await expect(page.getByText('Island Events is verified. Eligible published events can appear publicly.')).toBeVisible()
     const liveEvent = { ...event, private_preview: false, purchasable: true,
       ticket_types: event.ticket_types.map(type => ({ ...type, on_sale: true })) }
     await page.route('**/api/v1/events/private-island-show', route => json(route, liveEvent))

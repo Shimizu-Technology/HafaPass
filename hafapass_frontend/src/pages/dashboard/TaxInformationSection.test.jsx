@@ -19,6 +19,10 @@ describe('TaxInformationSection', () => {
     fireEvent.change(screen.getByLabelText('Taxpayer identification number (9 digits)'), { target: { value: '012345678' } })
     await userEvent.click(screen.getByRole('button', { name: 'Use check mailing address' }))
     expect(screen.getByLabelText('Tax mailing address')).toHaveValue('PO Box 1')
+    expect(screen.getByLabelText('Taxpayer ID type')).toHaveValue('ein')
+    expect(screen.getByRole('option', { name: 'Employer identification number (EIN)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Social Security number (SSN)' })).toBeInTheDocument()
+    expect(screen.getByText(/Before publishing a paid event/)).toHaveTextContent('complete and certify your W-9 and get your payout method approved')
     await userEvent.click(screen.getByRole('checkbox'))
     fireEvent.change(screen.getByLabelText('Signer’s typed name'), { target: { value: 'Alex Owner' } })
     await userEvent.click(screen.getByRole('button', { name: 'Sign and save tax information' }))
@@ -31,10 +35,10 @@ describe('TaxInformationSection', () => {
     expect(screen.getByRole('checkbox')).not.toBeChecked()
   })
 
-  it('shows masked saved identity and disables editing while a check is in flight', async () => {
+  it('shows masked saved identity and disables editing while any payout is unresolved', async () => {
     render(<TaxInformationSection request={respond(saved, true)} />)
     expect(await screen.findByRole('button', { name: 'Change tax information' })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('check payout is in progress')
+    expect(screen.getByRole('status')).toHaveTextContent('payout is pending, in progress or on hold')
     expect(screen.queryByText('012345678')).not.toBeInTheDocument()
   })
 
@@ -44,11 +48,11 @@ describe('TaxInformationSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add tax information' }))
     const form = screen.getByRole('button', { name: 'Sign and save tax information' }).closest('form')
     fireEvent.submit(form)
-    expect(screen.getByRole('alert')).toHaveTextContent('exactly 9 digits')
-    request.mockRejectedValueOnce({ response: { data: { error: 'A check payout is in progress.' } } })
+    expect(screen.getByRole('alert')).toHaveTextContent('9-digit taxpayer identification number')
+    request.mockRejectedValueOnce({ response: { data: { error: 'A payout is pending, in progress or on hold.' } } })
     fireEvent.change(screen.getByLabelText('Taxpayer identification number (9 digits)'), { target: { value: '012345678' } })
     fireEvent.submit(form)
-    expect(await screen.findByRole('alert')).toHaveTextContent('check payout is in progress')
+    expect(await screen.findByRole('alert')).toHaveTextContent('payout is pending, in progress or on hold')
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await userEvent.click(screen.getByRole('button', { name: 'Add tax information' }))
     expect(screen.getByLabelText('Taxpayer identification number (9 digits)')).toHaveValue('')
