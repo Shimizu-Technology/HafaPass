@@ -261,7 +261,7 @@ export default function PageDesignEditor({
               </label>
               <button
                 type="button"
-                className="rounded-lg border p-2.5 disabled:opacity-40"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border p-2.5 disabled:opacity-40"
                 aria-label={`Move ${TITLES[section.type]} up`}
                 disabled={index === 0}
                 onClick={() => moveSection(index, -1)}
@@ -270,7 +270,7 @@ export default function PageDesignEditor({
               </button>
               <button
                 type="button"
-                className="rounded-lg border p-2.5 disabled:opacity-40"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border p-2.5 disabled:opacity-40"
                 aria-label={`Move ${TITLES[section.type]} down`}
                 disabled={index === sections.length - 1}
                 onClick={() => moveSection(index, 1)}

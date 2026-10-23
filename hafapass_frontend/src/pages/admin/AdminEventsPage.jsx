@@ -183,7 +183,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
         ) : loadError ? (
           <div role="alert" className="p-5 text-red-700">{loadError} <button onClick={fetchEvents} className="min-h-11 rounded px-3 font-semibold underline focus-visible:ring-2 focus-visible:ring-focus">Try again</button></div>
         ) : (
-          <div className="overflow-x-auto">
+          <div role="region" aria-label="Event results" tabIndex={0} className="relative overflow-x-auto focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 text-left text-neutral-500">
@@ -238,8 +238,8 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                     <td className="hidden whitespace-nowrap px-3 py-3 text-right text-neutral-700 md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
                     <td className="px-3 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
                     <td className="px-3 py-3 text-center">
-                      <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="p-1 rounded-lg hover:bg-neutral-100 transition-colors">
-                        <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-400 text-amber-400' : 'text-neutral-300'}`} />
+                      <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
+                        <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-700 text-amber-700' : 'text-neutral-500'}`} />
                       </button>
                     </td>
                   </tr>
@@ -253,11 +253,11 @@ function AdminEventsPageSession({ identity, resourcePath }) {
 
       {meta.total_pages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-6">
-          <button onClick={() => changeListing(() => setPage(p => Math.max(1, p - 1)))} disabled={page === 1} className="p-2 rounded-xl border border-neutral-200/50 bg-white/70 disabled:opacity-40 hover:bg-neutral-50 transition-colors">
+          <button aria-label="Previous page" onClick={() => changeListing(() => setPage(p => Math.max(1, p - 1)))} disabled={page === 1} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-200/50 bg-white/70 disabled:opacity-40 hover:bg-neutral-50 transition-colors">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-sm text-neutral-600">Page {meta.page} of {meta.total_pages}</span>
-          <button onClick={() => changeListing(() => setPage(p => Math.min(meta.total_pages, p + 1)))} disabled={page === meta.total_pages} className="p-2 rounded-xl border border-neutral-200/50 bg-white/70 disabled:opacity-40 hover:bg-neutral-50 transition-colors">
+          <button aria-label="Next page" onClick={() => changeListing(() => setPage(p => Math.min(meta.total_pages, p + 1)))} disabled={page === meta.total_pages} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-neutral-200/50 bg-white/70 disabled:opacity-40 hover:bg-neutral-50 transition-colors">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Calendar, MapPin, ArrowRight, Clock, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
+import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice, ticketAllInCents, ticketServiceFeeCents, isTicketPurchasable } from '../utils/ticketPricing'
@@ -110,6 +111,14 @@ export default function HomePage() {
     const query = search.trim()
     navigate(query ? `/events?${new URLSearchParams({ search: query })}` : '/events')
   }
+
+  if (!loading && !loadError && events.length === 0) return (
+    <div className="bg-stone-50 text-content">
+      <SEO />
+      <EmptyInventory headingAs="h1" />
+      <Footer />
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-stone-50 text-content">

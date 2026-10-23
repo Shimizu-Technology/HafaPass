@@ -5,6 +5,7 @@ import { Search, CalendarPlus, Ticket } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
+import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
@@ -29,6 +30,7 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
+  const [inventoryEmpty, setInventoryEmpty] = useState(false)
   const [meta, setMeta] = useState({ current_page: 1, total_pages: 1, total_count: 0 })
   const onListingRoute = Boolean(useMatch('/events'))
   const [searchParams, setSearchParams] = useSearchParams()
@@ -66,9 +68,19 @@ export default function EventsPage() {
       }
 
       apiClient.get('/events', { params })
-      .then(res => {
+      .then(async res => {
         if (!active) return
         const data = res.data.events || res.data
+        const filtered = Boolean(params.q || params.category || params.price || params.village || params.date_from || params.window)
+        let empty = !filtered && Array.isArray(data) && data.length === 0 && (res.data.meta?.total_count ?? 0) === 0
+        if (filtered && Array.isArray(data) && data.length === 0) {
+          // An empty search is different from an empty marketplace. Check a
+          // single unfiltered result before replacing the browsing controls.
+          const inventory = await apiClient.get('/events', { params: { page: 1, per_page: 1 } }).catch(() => null)
+          if (!active) return
+          empty = Boolean(inventory && (inventory.data.events || inventory.data).length === 0 && (inventory.data.meta?.total_count ?? 0) === 0)
+        }
+        setInventoryEmpty(empty)
         setEvents(Array.isArray(data) ? data : [])
         setMeta(res.data.meta || { current_page: 1, total_pages: 1, total_count: data.length })
       })
@@ -102,6 +114,11 @@ export default function EventsPage() {
   const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
 
   if (!onListingRoute) return null
+
+  if (!loading && !loadError && inventoryEmpty) return <div className="min-h-[28rem] bg-stone-50">
+    <SEO title={t('buyer.Events.browseEvents')} description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')} url={`${PUBLIC_WEB_URL}/events`} />
+    <EmptyInventory headingAs="h1" />
+  </div>
 
   return (
     <div className="min-h-screen bg-stone-50">

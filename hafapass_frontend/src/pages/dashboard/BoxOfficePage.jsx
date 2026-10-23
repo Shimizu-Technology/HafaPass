@@ -325,14 +325,14 @@ function BoxOfficePageSession({ id, identity }) {
                 aria-label="Buyer name" disabled={saleLocked} placeholder="Name"
                 value={buyerName}
                 onChange={e => setBuyerName(e.target.value)}
-                className="px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                className="min-h-11 px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
               />
               <input
                 type="email"
                 aria-label="Buyer email" disabled={saleLocked} placeholder="Email"
                 value={buyerEmail}
                 onChange={e => setBuyerEmail(e.target.value)}
-                className="px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                className="min-h-11 px-4 py-2.5 rounded-xl border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
               />
             </div>
           </div>

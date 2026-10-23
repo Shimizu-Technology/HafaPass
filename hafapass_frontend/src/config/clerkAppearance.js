@@ -14,9 +14,13 @@ export const clerkAppearance = {
     borderRadius: '0.75rem',
   },
   elements: {
-    card: 'shadow-card border border-neutral-200/60',
+    rootBox: 'w-full max-w-md',
+    cardBox: 'w-full max-w-full',
+    card: 'w-full max-w-full shadow-card border border-neutral-200/60',
     formButtonPrimary: 'min-h-11 font-semibold normal-case shadow-none transition-[background-color,transform] duration-150 ease-out-strong hover:bg-action-hover active:scale-[0.97]',
-    footerActionLink: 'font-semibold text-brand-800 hover:text-brand-900',
+    socialButtonsBlockButton: 'min-h-11',
+    formFieldInputShowPasswordButton: 'min-h-11 min-w-11 inline-flex items-center justify-center',
+    footerActionLink: 'inline-flex min-h-11 min-w-11 items-center font-semibold text-brand-800 hover:text-brand-900',
     formFieldInput: 'min-h-11',
   },
 }

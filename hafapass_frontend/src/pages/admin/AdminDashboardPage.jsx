@@ -204,7 +204,7 @@ function AdminDashboardSession({ identity }) {
         <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-neutral-100">
             <h2 className="font-semibold text-neutral-900">Recent Events</h2>
-            <Link to="/admin/events" className="text-sm text-brand-500 hover:text-brand-600 flex items-center gap-1">
+            <Link to="/admin/events" className="min-h-11 rounded text-sm text-brand-700 hover:text-brand-900 flex items-center gap-1">
               View all <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -232,7 +232,7 @@ function AdminDashboardSession({ identity }) {
         <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-neutral-100">
             <h2 className="font-semibold text-neutral-900">Recent Orders</h2>
-            <Link to="/admin/orders" className="text-sm text-brand-500 hover:text-brand-600 flex items-center gap-1">
+            <Link to="/admin/orders" className="min-h-11 rounded text-sm text-brand-700 hover:text-brand-900 flex items-center gap-1">
               View all <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>

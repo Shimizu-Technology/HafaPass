@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { Loader2, ArrowRight } from 'lucide-react'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
+import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 
 export default function CollectionsPage() {
@@ -11,16 +12,29 @@ export default function CollectionsPage() {
   const [collections, setCollections] = useState(null)
   const [error, setError] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [inventoryEmpty, setInventoryEmpty] = useState(false)
   useEffect(() => {
     let active = true
     setError(false)
     setCollections(null)
     apiClient.get('/marketplace_collections')
-      .then(res => { if (active) setCollections(res.data.collections) })
+      .then(async res => {
+        const next = res.data.collections
+        let empty = false
+        if (next.length === 0) {
+          const inventory = await apiClient.get('/events', { params: { page: 1, per_page: 1 } })
+          empty = (inventory.data.events || inventory.data).length === 0 && (inventory.data.meta?.total_count ?? 0) === 0
+        }
+        if (active) { setInventoryEmpty(empty); setCollections(next) }
+      })
       .catch(() => { if (active) setError(true) })
     return () => { active = false }
   }, [attempt])
-  return <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+  if (!error && collections && inventoryEmpty) return <div className="bg-stone-50">
+    <SEO title={t('buyerDiscovery.collections.discoverGuam')} description={t('buyerDiscovery.collections.curatedEventsForTonightThisWeekendFamilies')} />
+    <EmptyInventory headingAs="h1" />
+  </div>
+  return <div className="mx-auto public-listing-min-height max-w-6xl px-4 py-10 sm:px-6">
     <SEO title={t('buyerDiscovery.collections.discoverGuam')} description={t('buyerDiscovery.collections.curatedEventsForTonightThisWeekendFamilies')} />
     <h1 className="font-display text-4xl font-bold text-neutral-950">{t('buyerDiscovery.collections.discoverGuam')}</h1>
     <p className="mt-2 text-neutral-500">{t('buyerDiscovery.collections.usefulLocalPicksCuratedByPeopleNot')}</p>
