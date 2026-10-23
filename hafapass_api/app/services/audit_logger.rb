@@ -7,10 +7,19 @@ class AuditLogger
 
   # Default-deny classification: privileged configuration remains fail-closed.
   BUYER_ACTIONS = %w[order.agreement_accepted order.completed order.cancelled order.expired
+    waiver.accepted ticket_transfer.created ticket_transfer.accepted ticket_transfer.cancelled ticket_transfer.expired
+    ticket.scan_credential_rotated ticket.display_credential_revoked ticket.cancelled
+    seat.exchanged seat.released_from_ticket refund.buyer_requested privacy_request.submitted
+    waitlist.joined waitlist.rejoined waitlist.cancelled waitlist.requeued waitlist.converted waitlist.expired
+    waitlist.notification_requested waitlist_offer.updated waitlist_offer.claimed waitlist_offer.converted waitlist_offer.cancelled waitlist_offer.expired
     box_office.cash_sale_created ticket.checked_in ticket.admission_reconciled ticket.check_in_reversed
     order.fulfillment_resent guest_purchase.recovered catalog_fulfillment.created
     catalog_fulfillment.pending catalog_fulfillment.fulfilled
     card_present.payment_succeeded card_present.payment_failed card_present.payment_result_unknown].freeze
+
+  # Guest verification records proof already supplied by the buyer. The same
+  # action used by an administrator remains fail-closed.
+  GUEST_ACTIONS = %w[privacy_request.verified].freeze
 
   PROVIDER_ACTIONS = %w[refund.pending refund.succeeded refund.failed refund.unknown refund.provider_result_conflict
     order.refunded order.partially_refunded dispute.opened dispute.updated dispute.won dispute.lost
@@ -18,7 +27,8 @@ class AuditLogger
     payout.late_result_held payout.late_result_ignored].freeze
 
   def self.record!(**attributes)
-    fail_open = AuditContext.fail_open || BUYER_ACTIONS.include?(attributes[:action]) ||
+    guest_action = GUEST_ACTIONS.include?(attributes[:action]) && attributes[:actor].nil? && AuditContext.actor.nil?
+    fail_open = AuditContext.fail_open || BUYER_ACTIONS.include?(attributes[:action]) || guest_action ||
       (attributes[:source] == "provider" && PROVIDER_ACTIONS.include?(attributes[:action]))
     return write!(**attributes) unless fail_open
 

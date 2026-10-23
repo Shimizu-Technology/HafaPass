@@ -250,14 +250,19 @@ class DataRetention
 
   def self.update_unheld(scope, **attributes)
     ensure_destructive_enabled!
-    scope.find_each do |record|
+    scope.find_each(batch_size: BATCH_SIZE) do |record|
       record.with_lock do
         ensure_destructive_enabled!
         if RetentionGuard.protected?(record)
           Rails.logger.info("[DataRetention] skipped protected #{record.class.table_name} record")
           next
         end
-        record.class.where(id: record.id).update_all(attributes)
+        row = record.class.where(id: record.id)
+        if record.is_a?(AuditLog)
+          AuditLog.redact!(row, attributes)
+        else
+          row.update_all(attributes)
+        end
       end
     end
   end

@@ -55,6 +55,19 @@ RSpec.describe AuditLogger do
     expect(membership.reload).to be_finance
   end
 
+  it "keeps administrator privacy verification fail-closed for explicit and contextual actors" do
+    request = PrivacyRequest.create!(kind: "access", user: create(:user), requester_email: "buyer@example.test")
+    admin = create(:user, :admin)
+    allow(AuditLog).to receive(:create!).and_raise("audit unavailable")
+    expect { described_class.record!(action: "privacy_request.verified", auditable: request, actor: admin) }
+      .to raise_error("audit unavailable")
+    AuditContext.set(actor: admin) do
+      expect { described_class.record!(action: "privacy_request.verified", auditable: request) }
+        .to raise_error("audit unavailable")
+    end
+    expect(AuditWriteFailure.where(action: "privacy_request.verified")).not_to exist
+  end
+
   it "keeps unknown action keys administrator-only" do
     expect(AuditActions.fetch("unknown.future_action")[:audience]).to include("admin_only")
   end

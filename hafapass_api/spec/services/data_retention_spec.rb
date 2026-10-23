@@ -153,6 +153,36 @@ RSpec.describe DataRetention do
     expect { described_class.anonymize_order!(order) }.not_to change { order.reload.buyer_email }
   end
 
+  it "redacts old audited orders in batches while preserving identity and held audit rows" do
+    order = create(:order, completed_at: 8.years.ago)
+    admin = create(:user, :admin)
+    held_actor = create(:user)
+    attributes = { auditable: order, event: order.event,
+      before_data: { email: "before@example.test" }, after_data: { email: order.buyer_email },
+      metadata: { contact: order.buyer_email } }
+    unheld = AuditLogger.record!(**attributes, action: "order.completed")
+    held = AuditLogger.record!(**attributes, action: "order.completed", actor: held_actor)
+    refund = create(:refund, order: order, status: :succeeded)
+    reconciliation = AuditLogger.record!(action: "refund.succeeded", auditable: refund, **attributes.except(:auditable))
+    LegalHold.place!(scope_type: "user", scope_value: held_actor.id.to_s,
+      reason: "Preserve this actor's audit history", actor: admin)
+    identities = [unheld, reconciliation].to_h do |row|
+      [row.id, row.attributes.except(*AuditLog::REDACTABLE_COLUMNS)]
+    end
+    original_held = held.attributes
+    stub_const("DataRetention::BATCH_SIZE", 1)
+
+    expect(described_class.anonymize_order!(order)).to be(true)
+    expect(order.reload.buyer_email).to end_with("@privacy.invalid")
+    [unheld, reconciliation].each do |row|
+      expect(row.reload).to have_attributes(before_data: {}, after_data: {}, metadata: {}, ip_address: nil)
+      expect(row.retention_anonymized_at).to be_present
+      expect(row.attributes.except(*AuditLog::REDACTABLE_COLUMNS)).to eq(identities.fetch(row.id))
+    end
+    expect(held.reload.attributes).to eq(original_held)
+    expect(AuditLog.connection.select_value("SELECT current_setting('hafapass.audit_redaction', true)")).not_to eq("on")
+  end
+
   it "rolls back child anonymization when a hold appears before the final order write" do
     order = create(:order, completed_at: 8.years.ago)
     ticket = create(:ticket, order: order, event: order.event,
