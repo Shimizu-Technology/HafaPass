@@ -125,8 +125,48 @@ scanner lease changes; registry completeness; and trigger/schema protection.
 Required browser cases are the complete CI Playwright suite, including team
 invitation/review recovery and existing audit views. Provider sends are
 simulated. Live Clerk, physical/mobile installed-app behavior and deployment
-remain outside this integration's acceptance scope. Final results follow
-when the gate finishes; earlier verification below describes earlier commits.
+remain outside this integration's acceptance scope. Final integrated verification (2026-10-24 Guam) used implementation
+`194a0e0a85c857a8edd0d1cff2144cf091a8a824`; the following documentation-only
+commit changes no implementation or tests. Ruby 3.3.4, Postgres 17, Node
+22.22.3 and Chromium were used; CI uses Postgres 16. Earlier verification
+sections below describe earlier commits.
+
+| Integrated check/scenario | Result |
+| --- | --- |
+| Full RSpec / affected authorization, audit, recovery, schema and outage paths | 3,123 examples, zero failures; focused integration suite 106 examples, zero failures |
+| Organization lock waits, ownership/membership authority and atomic audit rollback | Passed, including committed concurrency fixtures and invitation quota rollback |
+| Campaign sender/execution reauthorization, adapter rejection, completion after enqueue, recovery/outbox reuse and obsolete-job guards | Passed; request and service/job specs verify saved outcomes; browser review/reschedule uses synthetic API fixtures |
+| Organizer/platform seating separation and scanner lease history | Passed; central seating audit rollback and scanner expiration/actor/context verified |
+| Registry completeness, both migration sets, schema reload and append-only trigger/FK policy | Passed; migrated from common-base schema, then loaded the generated schema into the isolated test database |
+| RuboCop / Brakeman / Bundler Audit | 931 files clean / zero warnings / no vulnerabilities |
+| ESLint / Vitest / production build / production dependency audit | Passed / 166 files and 1,824 tests passed / passed / zero vulnerabilities |
+| Full CI-settings Playwright | 118 cases passed: 116 first-pass, two offline scanner cases passed on retry |
+| Additional no-retry browser check | 15 passed, one failed across audit views, team recovery and event-day flows; mobile offline scanner did not show “Admitted offline” after entry |
+| Audit page at 375/1280 CSS pixels | Passed search, expanded details, reload, deleted-actor attribution and overflow checks; screenshots visually inspected |
+| Release/freeze, hygiene and whitespace | Passed; freeze inactive |
+
+The no-retry scanner failure remains unresolved. It also flaked in the full
+suite; its screenshot and accessibility context show no queued admission.
+The integration changes only scanner explanatory text in that frontend
+behavior. This record does not claim the failed no-retry scenario passed or
+establish its root cause. Evidence is retained locally under
+`.codex/evidence/audit-main-integration/`; command logs are under
+`/tmp/hafapass-audit-merge/`.
+
+The first integrated backend run exposed an unauthorized sender fixture and a
+Rails-parameters iteration error in the new payload guard; both were fixed
+before the final full run. Earlier focused runs also found the documentation
+inventory and append-only test-cleanup incompatibilities, now fixed. An
+intermediate full run was stopped when the obsolete-job guards changed code;
+its partial results are not final evidence. The first local Vitest run used a
+configured Clerk key and failed readiness fixtures; the complete passing run
+used the repository's blank-key mock-auth setting.
+
+No live Clerk, physical device, installed PWA, production deployment or real
+provider send was tested. PR 153 remains explicitly held. The implementation
+child returns the exact-head Actions snapshot to the parent; remote monitoring
+and actual CodeRabbit review remain separate gates. A skipped CodeRabbit
+status is not approval.
 
 ## Review-fix verification
 
