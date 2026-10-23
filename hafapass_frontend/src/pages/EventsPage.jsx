@@ -35,7 +35,7 @@ export default function EventsPage() {
   const onListingRoute = Boolean(useMatch('/events'))
   const [searchParams, setSearchParams] = useSearchParams()
   const contentLanguage = useContentLanguage()
-  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [search, setSearch] = useState(searchParams.get('search') ?? searchParams.get('q') ?? '')
   const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'all')
   const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
   const [price, setPrice] = useState(searchParams.get('price') || 'all')
@@ -68,18 +68,11 @@ export default function EventsPage() {
       }
 
       apiClient.get('/events', { params })
-      .then(async res => {
+      .then(res => {
         if (!active) return
         const data = res.data.events || res.data
         const filtered = Boolean(params.q || params.category || params.price || params.village || params.date_from || params.window)
-        let empty = !filtered && Array.isArray(data) && data.length === 0 && (res.data.meta?.total_count ?? 0) === 0
-        if (filtered && Array.isArray(data) && data.length === 0) {
-          // An empty search is different from an empty marketplace. Check a
-          // single unfiltered result before replacing the browsing controls.
-          const inventory = await apiClient.get('/events', { params: { page: 1, per_page: 1 } }).catch(() => null)
-          if (!active) return
-          empty = Boolean(inventory && (inventory.data.events || inventory.data).length === 0 && (inventory.data.meta?.total_count ?? 0) === 0)
-        }
+        const empty = !filtered && Array.isArray(data) && data.length === 0 && (res.data.meta?.total_count ?? 0) === 0
         setInventoryEmpty(empty)
         setEvents(Array.isArray(data) ? data : [])
         setMeta(res.data.meta || { current_page: 1, total_pages: 1, total_count: data.length })

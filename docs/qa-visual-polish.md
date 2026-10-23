@@ -1,6 +1,6 @@
 # Visual polish acceptance — 2026-10-23
 
-> The round-two record below supersedes the original zero-event and footer design acceptance. Earlier captures and results remain as history.
+> The round-three record below supersedes the filtered-empty acceptance from rounds one and two. Round two remains the approved Home/footer design. Earlier captures and results remain as history.
 
 Base: `1548e8f3` (PRs #147–149 included). Branch: `codex/hafapass-visual-polish`. Hold; do not merge.
 
@@ -91,3 +91,31 @@ Validation: ESLint, 164 Vitest files / 1,784 tests, production build, production
 Do not merge. CodeRabbit is a required repository check; a rate-limited success-labelled result is not completed review. Final CI/review status and resource cleanup are recorded in the round-two handoff.
 
 Round-two cleanup: the owned Rails API and all owned Vite/Playwright/browser processes were stopped or confirmed exited, the T3 tab was closed and released, `hafapass_visual_r2` was dropped, and copied env/auth files were removed. No runtime handoff; shared/protected services and the requested ports 3000/3088/3011 were left unchanged.
+
+
+## Independent review fixes — round three, 2026-10-23
+
+Started at `44d142ba` in the existing worktree. Merged `origin/main` at `06a13116` with merge commit `d17e3197`; no conflicts, rebase or force push. PR #150's footer, tagline, SEO, Guam time and admin wording remain in place alongside the approved layout. `hafapass_api/config/policies.yml` is unchanged against main.
+
+The Events page now shows the marketplace panel only for an unfiltered empty listing. An active search, category, date, price or village keeps the controls, No matching events and Clear filters even when there are no public events. Removed the extra unfiltered confirmation request. Direct `?q=music` links hydrate the search and canonicalize to `?search=music`; explicit `search` takes precedence when both parameters exist. Home fetches unfiltered events. Discover checks unfiltered inventory only when collections are empty; neither shares the filtered-list bug.
+
+The initial theme-color is set synchronously from pathname before React loads: `#020617` at `/`, `#ffffff` elsewhere. Navbar's route/scroll updates remain. The #147 splash, preview-token redirect and stale-shell-recovery scripts remain intact. Four browser cases abort the app entry module and verify that the splash and route-appropriate metadata still render.
+
+Agent-executed affected-flow QA used Node 22.22.3, Ruby 3.3.4, Chromium, Vite 5225, Rails 3055 and newly created/seeded `hafapass_visual_r3`. Preflight confirmed nine public events; their saved statuses were restored after every empty-fixture phase. Sources for the refreshed orientation are README, the Home/Events/Collections implementations, PR #150 and Brain Dump `work/shimizu-tech/company-positioning-and-project-review-2026-10-04.md:108`. Launch/pilot money gates remain outside this change.
+
+| Case | Fixture, actions and expected outcome | 375×812 | 1280×800 |
+| --- | --- | --- | --- |
+| R31 | Zero public events; open /events. Marketplace message and hosting/recovery links appear; filters are absent. | Passed | Passed |
+| R32 | Zero public events; open search=music, category=concert and q=music. Controls and No matching events remain; q becomes search; Clear filters returns to /events and the marketplace message. | Passed | Passed |
+| R33 | Nine public events, then zero; open Home. Normal listing/search returns with inventory; empty Home retains the hero and hosting section. | Passed | Passed |
+| R34 | Zero public events; open Discover. Confirmed empty marketplace panel appears. | Passed | Passed |
+| R35 | Open footer. #150's Built on Guam by Shimizu Technology is visible; all six policy links are reachable, with keyboard disclosure on mobile. No page overflow. | Passed | Passed |
+| R36 | Existing Clerk test account; repeat populated Home, empty Home and q-linked empty Events. Signed-in shell remains usable and has no page overflow. | Passed | Passed |
+
+R31–R36 passed for every requested viewport. The existing Clerk test identity was looked up using environment credentials and authenticated with a short-lived sign-in ticket, without creating an account. Signed-in captures stay local. No commerce, email or payout action was submitted. Physical phone chrome, keyboard, gestures and installed PWA remain not run; the earlier full admin/organizer visual pass was not repeated for these public-page fixes.
+
+Public screenshots: `docs/qa/visual-polish/r3/after/{375,1280}-{home-events,home-empty,events-empty,events-search-empty,events-category-empty,events-q-empty,discover-empty,footer}.png`, plus `375-footer-expanded.png`. Local evidence and execution scripts/logs: `/tmp/hafapass-visual-r3`; signed-in images use `{375,1280}-signed-in-{home-events,home-empty,events-q-empty}.png`. `journeys.json` records the fourteen public route/viewport captures and zero-overflow results. Footer checks additionally exercised policy visibility and keyboard expansion. The T3 preview snapshot failed twice with `Preview automation snapshot timed out after 15000ms.`, so the live-stack pass used repository Playwright.
+
+Validation after the main merge and review fixes: ESLint passed; 165 Vitest files / 1,809 tests passed; all 110 Playwright tests passed (55.3s), including axe, no-results recovery and pre-React theme colors; production build passed; production audit reported zero vulnerabilities. Release-freeze contract (inactive), secret/debug hygiene and diff whitespace checks passed. Pinned Impeccable 4.6.0 returned `[]` for the changed UI paths. Backend source was not changed by this revision; required backend checks run in GitHub Actions.
+
+The PR remains held and unmerged. GitHub/CodeRabbit status and exact cleanup are recorded in the round-three handoff. CodeRabbit is required; a rate-limited success-labelled status does not establish review.

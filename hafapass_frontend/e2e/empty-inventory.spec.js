@@ -18,7 +18,7 @@ for (const width of [375, 1280]) {
       const events = hasEvents && !filtered ? [event] : []
       return json(route, { events, meta: { total_count: events.length, total_pages: 1, current_page: 1 } })
     })
-    for (const path of ['/', '/events', '/events?search=music', '/discover']) {
+    for (const path of ['/', '/events', '/discover']) {
       await page.goto(path)
       await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
       const main = page.getByRole('main')
@@ -43,6 +43,20 @@ for (const width of [375, 1280]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([])
+    }
+    for (const query of ['search=music', 'category=concert', 'q=music']) {
+      await page.goto(`/events?${query}`)
+      await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()
+      await expect(page.getByRole('textbox', { name: 'Search events and venues' })).toBeVisible()
+      if (query.includes('music')) {
+        await expect(page.getByRole('textbox', { name: 'Search events and venues' })).toHaveValue('music')
+        await expect(page).toHaveURL(/search=music/)
+      }
+      const results = await new AxeBuilder({ page }).analyze()
+      expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([])
+      await page.getByRole('button', { name: 'Clear filters' }).click()
+      await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+      await expect(page).toHaveURL(/\/events$/)
     }
     hasEvents = true
     await page.goto('/')

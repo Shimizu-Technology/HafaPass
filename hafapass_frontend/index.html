@@ -79,7 +79,11 @@
     <!-- Fonts are bundled with the app and use font-display: swap. -->
 
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0e7c7b" />
+    <meta name="theme-color" content="#ffffff" />
+    <script>
+      // Match Navbar before React loads; Navbar keeps this in sync on scroll.
+      document.querySelector('meta[name="theme-color"]').content = window.location.pathname === '/' ? '#020617' : '#ffffff'
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
