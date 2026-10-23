@@ -265,16 +265,16 @@ class Event < ApplicationRecord
 
   def sales_blocker(at: Time.current, context: nil)
     return :not_published unless published?
-    return :event_paused if policy_hold?
-    return :sales_paused if sales_suspended_at.present?
-    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
-
     unless organizer_sales_verified?
       return :organizer_paused if organizer_profile.verification_status_suspended?
       return :organizer_verification_requested if organizer_profile.verification_status_pending?
 
       return :organizer_not_verified
     end
+    return :event_paused if policy_hold?
+    return :sales_paused if sales_suspended_at.present?
+    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+
     context ||= self.class.sales_context
     return :platform_setup unless context[:policy_approved]
     return nil unless paid_event?

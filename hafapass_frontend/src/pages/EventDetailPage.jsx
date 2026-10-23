@@ -456,9 +456,8 @@ function EventDetailContent() {
                 <div className="card p-3 sm:p-5">
                   {event.private_preview ? (
                     <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-950">
-                      <p>{t('organizerVerification.previewTicketsDisabled')}</p>
-                      <button type="button" disabled aria-describedby="preview-ticket-explanation" className="btn-primary mt-3 w-full min-h-11 opacity-60">{t('buyer.EventDetail.getTickets')}</button>
-                      <span id="preview-ticket-explanation" className="sr-only">{t('organizerVerification.previewTicketsDisabled')}</span>
+                      <button type="button" disabled aria-describedby="preview-ticket-explanation" className="btn-primary w-full min-h-11 opacity-60">{t('buyer.EventDetail.getTickets')}</button>
+                      <p id="preview-ticket-explanation" className="mt-2">{t('organizerVerification.previewTicketsDisabled')}</p>
                     </div>
                   ) : event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />

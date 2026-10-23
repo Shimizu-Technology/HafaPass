@@ -22,7 +22,7 @@
     "note": "Note for the reviewer (optional)",
     "required": "{{field}} is required.",
     "phoneError": "Enter a valid phone number, such as +1-671-555-1234.",
-    "linkError": "Enter a full link beginning with https://.",
+    "linkError": "Enter a valid website or social link, such as instagram.com/yourname.",
     "send": "Send request",
     "sending": "Sending…",
     "sendError": "The request was not sent. Check your connection and try again.",
@@ -35,7 +35,7 @@
     "suspendedChecklist": "Your events are hidden, but existing tickets stay valid. Contact the HåfaPass team to resolve this.",
     "sharePreview": "Share preview",
     "copyPreview": "Copy preview link",
-    "rotatePreview": "Rotate preview link",
+    "rotatePreview": "Get a new preview link",
     "copied": "Copied",
     "publishExplanation": "Your event will be visible through a private preview link now, and goes public automatically once you're verified."
   },

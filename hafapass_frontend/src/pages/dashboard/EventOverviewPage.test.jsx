@@ -52,6 +52,47 @@ describe('event overview', () => {
     expect(requested('/organizer/events/37/preview_link')).toBe(false)
   })
 
+  it('uses a preview link for an unverified published event even with a sales-only hold', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'unverified',
+      sales_status: { on_sale: false, reason: 'event_paused', message: 'Sales paused.' } }, {
+      '/organizer/events/37/preview_link': { url: 'https://example.test/events/synthetic-reef-night/preview#t=secret' },
+      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(await within(next).findByRole('link', { name: 'Preview event' })).toBeInTheDocument()
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: 'Copy event link' })).not.toBeInTheDocument()
+  })
+
+  it('offers no dead public link for an event hidden by a platform hold', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'verified',
+      sales_status: { on_sale: false, reason: 'event_paused', message: 'Sales paused.' },
+      policy_hold_scope: 'hidden' }, {
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    const next = await screen.findByRole('region', { name: 'Next steps' })
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: 'Copy event link' })).not.toBeInTheDocument()
+    expect(next).toHaveTextContent('This event has no public link right now.')
+  })
+
+  it('confirms before replacing a private preview link', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { url: 'https://example.test/new-preview' } })
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'pending',
+      sales_status: { on_sale: false, reason: 'organizer_verification_requested' } }, {
+      '/organizer/events/37/preview_link': { url: 'https://example.test/old-preview' },
+      '/organizer_profile': { verification_status: 'pending', organization: { role: 'owner' } },
+      '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
+    })
+    await user.click(await screen.findByRole('button', { name: 'Get a new preview link' }))
+    expect(screen.getAllByText(/Anyone using the old link will lose access/).length).toBeGreaterThan(0)
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Get new link' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/37/rotate_preview_link', {}, expect.anything())
+  })
+
   it('leaves the clipboard alone when the native preview share is cancelled', async () => {
     const user = userEvent.setup()
     const share = vi.fn(() => Promise.reject(new DOMException('Cancelled', 'AbortError')))

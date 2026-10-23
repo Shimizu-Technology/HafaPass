@@ -20,6 +20,7 @@ it.each([
   render(<VerificationNotice profile={{ ...profile, verification_status: status,
     verification_requested_at: '2026-10-23T00:00:00Z', verification_notes: 'Add a website.' }} beginRequest={beginRequest} />)
   expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+  if (status === 'pending') expect(screen.getByText(/Submitted Oct 23, 2026/)).toBeInTheDocument()
   if (status === 'rejected') expect(screen.getByText('Add a website.')).toBeInTheDocument()
 })
 
@@ -46,4 +47,18 @@ it('validates inline, retains entered fields, then submits the fixed request', a
     verification_link: 'https://instagram.com/islandevents',
   }), {})
   expect(await screen.findByRole('heading', { name: "We're reviewing your account" })).toBeInTheDocument()
+})
+
+
+it.each(['instagram.com/islandevents', 'www.instagram.com/islandevents'])('normalizes %s on blur and submits it', async bare => {
+  const user = userEvent.setup()
+  apiClient.post.mockResolvedValue({ data: { ...profile, verification_status: 'pending' } })
+  render(<VerificationNotice profile={{ ...profile, verification_phone: '+1-671-555-1234' }} beginRequest={beginRequest} />)
+  await user.click(screen.getByRole('button', { name: 'Request verification' }))
+  const link = screen.getByRole('textbox', { name: /Website or social media link/ })
+  await user.type(link, bare)
+  await user.tab()
+  expect(link).toHaveValue(`https://${bare}`)
+  await user.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_link: `https://${bare}` }), {})
 })

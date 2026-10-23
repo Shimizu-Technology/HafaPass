@@ -28,7 +28,7 @@ test('a received Alpha review can finish without replacing Beta or losing its ed
     await json(route, profiles[submittedOrganization]).catch(() => {})
   })
   await page.goto('/dashboard')
-  await page.getByRole('button', { name: 'Submit for review' }).click()
+  await page.getByRole('region', { name: 'Get ready to sell tickets' }).getByRole('button', { name: 'Request verification' }).click()
   await page.getByRole('textbox', { name: /Contact phone/ }).fill('+1-671-555-1234')
   await page.getByRole('textbox', { name: /Website or social media link/ }).fill('https://example.com')
   await page.getByRole('button', { name: 'Send request' }).click()

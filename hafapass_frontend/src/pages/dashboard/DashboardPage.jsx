@@ -150,15 +150,17 @@ function EventListCard({ event }) {
    to={destination}
    className="block bg-white rounded-xl shadow-sm border border-neutral-200 hover:shadow-md hover:border-brand-200 transition-[border-color,box-shadow] duration-200 ease-out-strong p-4"
   >
-   <div className="flex items-start justify-between gap-3">
+   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
     <div className="min-w-0 flex-1">
-     <h3 className="text-lg font-semibold text-neutral-900 truncate">{event.title}</h3>
+     <h3 className="line-clamp-2 break-words text-lg font-semibold text-neutral-900">{event.title}</h3>
      <p className="text-sm text-neutral-500 mt-0.5">
       {formatEventDate(event.starts_at, event.timezone)} {event.venue_name && `· ${event.venue_name}`}
      </p>
     </div>
-    {visibilityChip ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950">{visibilityChip}</span> : <StatusBadge status={event.status} />}
-    <span className="text-sm font-semibold text-brand-600">{actionLabel}</span>
+    <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+     {visibilityChip ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-950">{visibilityChip}</span> : <StatusBadge status={event.status} />}
+     <span className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-600">{actionLabel}</span>
+    </div>
    </div>
    <div className="mt-3 flex items-center gap-4 text-sm text-neutral-600">
     <span className="flex items-center gap-1">
@@ -642,7 +644,7 @@ function DashboardSession({ authContext }) {
     agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
     onEditProfile={openEditor}
     onAcceptPolicy={() => updateReadiness('accept_policy')}
-    onSubmitVerification={() => setVerificationRequestSignal({ organizationId: organization?.id })} />}
+    onSubmitVerification={() => { setVerificationRequestSignal({ organizationId: organization?.id }); document.getElementById('verification-request')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />}
    {/* Agreement errors show inside the agreement dialog only. */}
    {actionError && actionError.path !== 'accept_policy' && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError.message}</p>}
 

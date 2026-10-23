@@ -56,6 +56,8 @@ function EventOverviewSession({ id, identity }) {
   const [error, setError] = useState(null)
   const [copyState, setCopyState] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [confirmNewPreview, setConfirmNewPreview] = useState(false)
+  const [previewError, setPreviewError] = useState('')
   const generation = useRef(0)
   const extrasGeneration = useRef(0)
   const capabilities = useLaunchCapabilities()
@@ -102,12 +104,14 @@ function EventOverviewSession({ id, identity }) {
         return
       }
       setEvent(saved)
-      if (saved.status === 'published' && saved.permissions?.manage_events && ['organizer_not_verified', 'organizer_verification_requested'].includes(saved.sales_status?.reason)) {
+      if (saved.status === 'published' && saved.permissions?.manage_events && saved.publicly_visible === false &&
+        (['unverified', 'pending', 'rejected'].includes(saved.organizer_verification_status) ||
+          (!saved.organizer_verification_status && ['organizer_not_verified', 'organizer_verification_requested'].includes(saved.sales_status?.reason)))) {
         get(`/organizer/events/${id}/preview_link`).then(response => { if (canApply()) setPreviewUrl(response.data.url) }).catch(() => {})
       }
       setLoading(false)
       void loadExtras(saved)
-      if (verificationReasons[saved.sales_status?.reason]) {
+      if (verificationReasons[saved.sales_status?.reason] || ['unverified', 'pending', 'rejected', 'suspended'].includes(saved.organizer_verification_status)) {
         setProfile({ status: 'loading' })
         get('/organizer_profile').then(response => { if (canApply()) setProfile({ status: 'ready', data: response.data }) })
           .catch(() => { if (canApply()) setProfile({ status: 'error' }) })
@@ -148,12 +152,14 @@ function EventOverviewSession({ id, identity }) {
 
   const rotatePreview = async () => {
     const request = beginRequest()
-    if (!request) return
+    if (!request) return false
+    setPreviewError('')
     try {
       const response = await apiClient.post(`/organizer/events/${id}/rotate_preview_link`, {}, request.config)
-      if (request.current()) { setPreviewUrl(response.data.url); setCopyState(null) }
-    } catch { if (request.current()) setCopyState('failed') }
+      if (request.current()) { setPreviewUrl(response.data.url); setCopyState(null); return true }
+    } catch { if (request.current()) setPreviewError('Could not get a new preview link. Try again.') }
     finally { request.release() }
+    return false
   }
 
   if (loading && !event) {
@@ -186,10 +192,12 @@ function EventOverviewSession({ id, identity }) {
   const salesStatus = event.sales_status
   const onSale = !salesStatus || salesStatus.on_sale === true
   const salesPaused = ['event_paused', 'sales_paused'].includes(salesStatus?.reason)
-  const verificationState = verificationReasons[salesStatus?.reason]
+  const verificationState = event.organizer_verification_status && event.organizer_verification_status !== 'verified'
+    ? event.organizer_verification_status : verificationReasons[salesStatus?.reason]
   const verificationProfile = verificationState && (profile.status === 'ready' ? profile.data
     : profile.status === 'error' ? { verification_status: verificationState } : null)
   const suspendedOrganizer = verificationProfile?.verification_status === 'suspended'
+  const publiclyVisible = event.publicly_visible == null ? !verificationState : event.publicly_visible
   const publicPath = event.slug ? `/events/${event.slug}` : null
   const tools = eventToolLinks(event, capabilities)
 
@@ -259,14 +267,17 @@ function EventOverviewSession({ id, identity }) {
               {verificationProfile && <VerificationNotice profile={verificationProfile} beginRequest={beginRequest} showSummary={false} inline className="mt-2 pl-6" />}
             </div>}
           <div className="mt-4 flex flex-wrap gap-2">
-            {publicPath && !verificationState && <Link to={publicPath} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />View public page</Link>}
-            {publicPath && !verificationState && <button type="button" onClick={() => copyLink(`${PUBLIC_WEB_URL}${publicPath}`)} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />{copyState === 'copied' ? 'Link copied' : 'Copy event link'}</button>}
-            {previewUrl && verificationState && !suspendedOrganizer && <><a href={previewUrl} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />Preview event</a>
+            {publicPath && publiclyVisible && <Link to={publicPath} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />View public page</Link>}
+            {publicPath && publiclyVisible && <button type="button" onClick={() => copyLink(`${PUBLIC_WEB_URL}${publicPath}`)} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />{copyState === 'copied' ? 'Link copied' : 'Copy event link'}</button>}
+            {previewUrl && !publiclyVisible && !suspendedOrganizer && <><a href={previewUrl} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />Preview event</a>
               <button type="button" onClick={sharePreview} className="btn-secondary min-h-11 text-sm">{t('organizerVerification.sharePreview')}</button>
               <button type="button" onClick={() => copyLink(previewUrl)} className="btn-secondary min-h-11 text-sm">{copyState === 'copied' ? t('organizerVerification.copied') : t('organizerVerification.copyPreview')}</button>
-              <button type="button" onClick={rotatePreview} className="btn-secondary min-h-11 text-sm">{t('organizerVerification.rotatePreview')}</button></>}
+              <button type="button" onClick={() => setConfirmNewPreview(true)} className="btn-secondary min-h-11 text-sm">Get a new preview link</button></>}
             {has('scan') && <Link to={`/dashboard/scanner?event=${event.id}`} className="btn-secondary inline-flex min-h-11 text-sm">Scan tickets</Link>}
           </div>
+          {previewUrl && !publiclyVisible && <p className="mt-2 text-sm text-neutral-700">Anyone using the old link will lose access if you get a new one.</p>}
+          {!publiclyVisible && !previewUrl && <p className="mt-2 text-sm text-neutral-700">This event has no public link right now.</p>}
+          {confirmNewPreview && <div role="group" aria-label="Confirm new preview link" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>Anyone using the old link will lose access. Get a new preview link?</p><div className="mt-2 flex gap-2"><button type="button" className="btn-secondary min-h-11" onClick={() => { setConfirmNewPreview(false); setPreviewError('') }}>Cancel</button><button type="button" className="btn-primary min-h-11" onClick={async () => { if (await rotatePreview()) setConfirmNewPreview(false) }}>Get new link</button></div>{previewError && <p role="alert" className="mt-2 text-red-800">{previewError}</p>}</div>}
           <p className={copyState === 'failed' ? 'mt-3 text-sm text-neutral-700' : 'sr-only'} aria-live="polite">
             {copyState === 'copied' ? t('organizerVerification.copied') : copyState === 'failed' ? "Couldn't copy. Select the link below." : ''}
           </p>

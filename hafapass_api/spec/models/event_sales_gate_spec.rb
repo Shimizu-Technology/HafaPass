@@ -65,6 +65,13 @@ RSpec.describe "Event sales gate in production" do
     expect(event.reload.sales_status).to include(on_sale: false, reason: "event_paused")
   end
 
+  it "keeps organizer verification first when a sales-only event hold also exists" do
+    profile.update!(verification_status: :unverified, verified_at: nil)
+    EventPolicyHold.place!(event: event, actor: create(:user, :admin), scope: "sales", reason: "Venue permit check")
+    expect(event.reload.sales_blocker).to eq(:organizer_not_verified)
+    expect(event.publicly_visible?).to be(false)
+  end
+
   it "requires test or live payments and payout details for paid tickets only" do
     SiteSetting.instance.update!(payment_mode: "simulate")
     expect(event.sales_blocker).to eq(:payments_off)

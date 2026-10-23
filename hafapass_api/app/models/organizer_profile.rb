@@ -6,11 +6,20 @@ class OrganizerProfile < ApplicationRecord
   end
 
   def refresh_verification_request!(before_details:, was_pending:)
-    changes = before_details.each_with_object({}) do |(field, before), diff|
+    normalize_verification_link!
+    changes = (was_pending ? (verification_change_diff || {}).deep_dup : {}).with_indifferent_access
+    before_details.each do |field, before|
       after = public_send(field)
-      diff[field] = { "before" => before, "after" => after } if before != after
+      next if before == after
+
+      original = changes.key?(field) ? changes.dig(field, "before") : before
+      if original == after
+        changes.delete(field)
+      else
+        changes[field] = { "before" => original, "after" => after }
+      end
     end
-    return false if was_pending && changes.empty?
+    return false if was_pending && before_details.all? { |field, before| before == public_send(field) }
 
     self.verification_request_version += 1
     self.verification_requested_at = Time.current
@@ -52,12 +61,18 @@ class OrganizerProfile < ApplicationRecord
     unless digits.match?(/\A(?:1671|671)\d{7}\z/) || digits.match?(/\A1[2-9]\d{9}\z/)
       errors.add(:verification_phone, "must be a valid phone number (Guam +1-671 is accepted)")
     end
+    normalize_verification_link!
     uri = URI.parse(verification_link.to_s)
-    unless %w[http https].include?(uri.scheme) && uri.host.present? && uri.host.include?(".")
+    unless %w[http https].include?(uri.scheme) && uri.host.present? && uri.host.match?(/\A(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\z/i) && uri.userinfo.nil?
       errors.add(:verification_link, "must be a full website or social media URL")
     end
   rescue URI::InvalidURIError
     errors.add(:verification_link, "must be a full website or social media URL")
+  end
+
+  def normalize_verification_link!
+    value = verification_link.to_s.strip
+    self.verification_link = "https://#{value}" if value.match?(/\A(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[\/:?#].*)?\z/i)
   end
 
   def policy_accepted?(current: PolicyRegistry.organizer_agreement)

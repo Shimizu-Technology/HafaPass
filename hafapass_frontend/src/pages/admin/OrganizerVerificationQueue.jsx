@@ -2,7 +2,8 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import apiClient from '../../api/client'
 import Dialog from '../../components/Dialog'
-import { errorMessage, formatDateTime } from './adminOperations'
+import { errorMessage } from './adminOperations'
+import { formatEventDate } from '../../utils/eventTime'
 
 const STATUS_COPY = { pending: 'Requested', unverified: 'Not requested yet', rejected: 'Not verified last time' }
 
@@ -63,6 +64,17 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
   </Dialog>
 }
 
+function Description({ value }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!value) return null
+  const long = value.length > 240
+  return <div className="mt-2 text-neutral-700">
+    <p className="font-medium">Business description</p>
+    <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{long && !expanded ? `${value.slice(0, 240)}…` : value}</p>
+    {long && <button type="button" onClick={() => setExpanded(!expanded)} className="min-h-11 font-semibold text-brand-700 underline">{expanded ? 'Show less' : 'Show more'}</button>}
+  </div>
+}
+
 // Organizers waiting for HåfaPass verification, and those already verified.
 // Self-contained so it can move to its own admin page later.
 export default function OrganizerVerificationQueue({ awaiting = [], verified = [], suspended = [], beginRequest, onChanged }) {
@@ -77,36 +89,37 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
   }
   const open = (action, organizer) => { setNotice(''); setDialog({ action, organizer }) }
 
+  const requested = awaiting.filter(organizer => organizer.requested_at)
+    .sort((a, b) => new Date(b.requested_at || 0) - new Date(a.requested_at || 0))
+  const notRequested = awaiting.filter(organizer => !organizer.requested_at)
+  const renderRows = organizers => organizers.map(organizer => <li key={organizer.profile_id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="min-w-0 text-sm">
+      <p className="font-semibold text-neutral-900 [overflow-wrap:anywhere]">{organizer.business_name}</p>
+      {organizer.owner_email && <p className="text-neutral-700 [overflow-wrap:anywhere]">Owner: {organizer.owner_email}</p>}
+      <p className="text-neutral-700">{organizer.requested_at ? `Requested ${formatEventDate(organizer.requested_at)}` : STATUS_COPY[organizer.verification_status] || 'Not requested yet'}</p>
+      {Object.keys(organizer.verification_change_diff || {}).length > 0 && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-950">
+        <p className="font-semibold">Updated after submission — review again</p>
+        <ul className="mt-1 list-disc space-y-1 pl-4">{Object.entries(organizer.verification_change_diff).map(([field, change]) => <li key={field} className="[overflow-wrap:anywhere]">{field.replaceAll('_', ' ')}: {change.before || 'Not provided'} → {change.after || 'Not provided'}</li>)}</ul>
+      </div>}
+      <Description value={organizer.business_description} />
+      <p className="text-neutral-700">{t('adminVerification.phone', { phone: organizer.verification_phone || t('adminVerification.notProvided') })}</p>
+      {organizer.verification_link && <p className="text-neutral-700"><a href={organizer.verification_link} target="_blank" rel="noreferrer" className="underline [overflow-wrap:anywhere]">{t('adminVerification.websiteLink')}</a></p>}
+      {organizer.verification_request_note && <p className="whitespace-pre-wrap text-neutral-700">{t('adminVerification.reviewerNote', { note: organizer.verification_request_note })}</p>}
+      <p className="text-neutral-700">{t('adminVerification.awaitingCount', { number: organizer.published_awaiting_events_count ?? 0, payout: organizer.payout_ready ? 'Ready' : 'Not ready' })}</p>
+    </div>
+    <div className="flex flex-wrap gap-2"><button type="button" onClick={() => open('verify', organizer)} className="btn-primary min-h-11 shrink-0 text-sm">Verify<span className="sr-only"> {organizer.business_name}</span></button>
+      <button type="button" onClick={() => open('reject', organizer)} className="btn-secondary min-h-11 shrink-0 text-sm">Reject<span className="sr-only"> {organizer.business_name}</span></button></div>
+  </li>)
+
   return <div className="mb-8 grid gap-6 lg:grid-cols-2">
     {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 lg:col-span-2">{notice}</p>}
     <section aria-labelledby="awaiting-verification-title" className="card min-w-0 p-5">
-      <h2 id="awaiting-verification-title" className="font-semibold text-neutral-900">Organizers waiting for verification</h2>
+      <h2 id="awaiting-verification-title" className="font-semibold text-neutral-900">Requested (newest first) ({requested.length})</h2>
       <p className="mt-1 text-sm text-content-muted">{t('adminVerification.queueExplanation')}</p>
-      {awaiting.length === 0
-        ? <p className="mt-4 text-sm text-content-muted">No organizers are waiting.</p>
-        : <ul className="mt-4 space-y-3">
-          {awaiting.map(organizer => <li key={organizer.profile_id} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 text-sm">
-              <p className="font-semibold text-neutral-900 [overflow-wrap:anywhere]">{organizer.business_name}</p>
-              {organizer.owner_email && <p className="text-neutral-700 [overflow-wrap:anywhere]">Owner: {organizer.owner_email}</p>}
-              <p className="text-neutral-700">{organizer.verification_status === 'pending' && organizer.requested_at
-                ? `Requested ${formatDateTime(organizer.requested_at)}`
-                : STATUS_COPY[organizer.verification_status] || 'Not requested yet'}</p>
-              {organizer.verification_status === 'pending' && Object.keys(organizer.verification_change_diff || {}).length > 0 && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-950">
-                <p className="font-semibold">Updated after submission — review again</p>
-                <ul className="mt-1 list-disc space-y-1 pl-4">{Object.entries(organizer.verification_change_diff).map(([field, change]) => <li key={field} className="[overflow-wrap:anywhere]">
-                  {field.replaceAll('_', ' ')}: {change.before || 'Not provided'} → {change.after || 'Not provided'}
-                </li>)}</ul>
-              </div>}
-              <p className="text-neutral-700">{t('adminVerification.phone', { phone: organizer.verification_phone || t('adminVerification.notProvided') })}</p>
-              {organizer.verification_link && <p className="text-neutral-700"><a href={organizer.verification_link} target="_blank" rel="noreferrer" className="underline [overflow-wrap:anywhere]">{t('adminVerification.websiteLink')}</a></p>}
-              {organizer.verification_request_note && <p className="whitespace-pre-wrap text-neutral-700">{t('adminVerification.reviewerNote', { note: organizer.verification_request_note })}</p>}
-              <p className="text-neutral-700">{t('adminVerification.awaitingCount', { number: organizer.published_awaiting_events_count ?? 0, payout: organizer.payout_ready ? 'Ready' : 'Not ready' })}</p>
-            </div>
-            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => open('verify', organizer)} className="btn-primary min-h-11 shrink-0 text-sm">Verify<span className="sr-only"> {organizer.business_name}</span></button>
-              <button type="button" onClick={() => open('reject', organizer)} className="btn-secondary min-h-11 shrink-0 text-sm">Reject<span className="sr-only"> {organizer.business_name}</span></button></div>
-          </li>)}
-        </ul>}
+      {requested.length === 0 ? <p className="mt-4 text-sm text-content-muted">No requests yet.</p> : <ul className="mt-4 space-y-3">{renderRows(requested)}</ul>}
+      <details className="mt-5 border-t border-neutral-200 pt-4"><summary className="min-h-11 cursor-pointer font-semibold text-neutral-900">Not requested yet ({notRequested.length})</summary>
+        {notRequested.length === 0 ? <p className="mt-2 text-sm text-content-muted">None.</p> : <ul className="mt-3 space-y-3">{renderRows(notRequested)}</ul>}
+      </details>
     </section>
 
     <section aria-labelledby="verified-organizers-title" className="card min-w-0 p-5">
@@ -117,7 +130,7 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
           {verified.map(organizer => <li key={organizer.profile_id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 text-sm">
               <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{organizer.business_name}</p>
-              {organizer.verified_at && <p className="text-content-muted [overflow-wrap:anywhere]">Verified {formatDateTime(organizer.verified_at)}{organizer.verified_by ? ` by ${organizer.verified_by}` : ''}</p>}
+              {organizer.verified_at && <p className="text-content-muted [overflow-wrap:anywhere]">Verified {formatEventDate(organizer.verified_at)}{organizer.verified_by ? ` by ${organizer.verified_by}` : ''}</p>}
             </div>
             <button type="button" onClick={() => open('pause', organizer)} className="btn-secondary min-h-11 shrink-0 text-sm">Suspend<span className="sr-only"> {organizer.business_name}</span></button>
           </li>)}
@@ -132,7 +145,7 @@ export default function OrganizerVerificationQueue({ awaiting = [], verified = [
           <div className="min-w-0 text-sm">
             <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{organizer.business_name}</p>
             {organizer.owner_email && <p className="text-neutral-700 [overflow-wrap:anywhere]">Owner: {organizer.owner_email}</p>}
-            {organizer.suspended_at && <p className="text-content-muted">Paused {formatDateTime(organizer.suspended_at)}</p>}
+            {organizer.suspended_at && <p className="text-content-muted">Paused {formatEventDate(organizer.suspended_at)}</p>}
             {organizer.verification_notes && <p className="mt-1 whitespace-pre-wrap text-neutral-700 [overflow-wrap:anywhere]">{organizer.verification_notes}</p>}
           </div>
           <button type="button" onClick={() => open('resume', organizer)} className="btn-primary min-h-11 shrink-0 text-sm">Restore<span className="sr-only"> {organizer.business_name}</span></button>

@@ -10,7 +10,7 @@ vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal(
 vi.mock('../../utils/uploads', () => ({ uploadImage: vi.fn() }))
 const owners = [1, 2].map(id => ({ id, name: id === 1 ? 'Alpha organization' : 'Beta organization', role: 'owner', permissions: { manage_organization: true, manage_events: true } }))
 // Verification needs a description (the API refuses it otherwise), so the
-// fixture has one and the setup checklist's Submit for review is available.
+// fixture has one and the setup checklist's Request verification is available.
 const profile = name => ({ business_name: name, business_description: 'Island events', verification_phone: '+1-671-555-1234', verification_link: 'https://example.com/organizer', organization: { role: 'owner' }, policy_accepted: true, verification_status: 'unverified' })
 const deferred = () => {
   let resolve, reject
@@ -25,7 +25,7 @@ const bind = (userId = 'actor-a', sessionId = 'session-a', getToken = () => Prom
   clearAuth = setAuthTokenGetter(getToken, { userId, sessionId, ready: true })
 }
 const submitVerification = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: 'Submit for review' }))
+  await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
   await userEvent.click(screen.getByRole('button', { name: 'Send request' }))
 }
 const switchTo = async id => {
@@ -52,6 +52,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllEnvs() })
 
 describe('dashboard mutation ownership', () => {
+  it('opens and scrolls to the same inline verification form from the checklist', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    mount()
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(screen.getByRole('textbox', { name: /Website or social media link/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Request verification' })).toHaveLength(2)
+  })
+
+  it('lets a long event title wrap and keeps the mobile action reachable', async () => {
+    const normalGet = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, config) => path === '/organizer/events'
+      ? Promise.resolve({ data: { events: [{ id: 37, title: 'A long community event title for every village on Guam',
+        status: 'published', publicly_visible: false, organizer_verification_status: 'unverified', permissions: { manage_events: true },
+        sales_status: { reason: 'organizer_not_verified' } }] } }) : normalGet(path, config))
+    mount()
+    const title = await screen.findByRole('heading', { name: 'A long community event title for every village on Guam' })
+    expect(title).toHaveClass('line-clamp-2', 'break-words')
+    expect(title.closest('a')).toHaveTextContent('Waiting for verification')
+    expect(title.closest('a').querySelector('.min-h-11')).toHaveTextContent('Open event')
+  })
+
   it.each([
     ['https://storage.invalid/uploads/logo.webp', 'storage.invalid', true],
     ['https://off-host.invalid/uploads/logo.webp', 'storage.invalid', false],
@@ -257,7 +280,7 @@ describe('dashboard mutation ownership', () => {
     await screen.findByRole('heading', { name: 'Welcome, Fresh owner context' })
     await act(async () => old.resolve({ data: profile('Stale owner context') }))
     expect(screen.getByRole('heading', { name: 'Welcome, Fresh owner context' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: 'Request verification' })[0]).toBeEnabled()
   })
 
   it.each([false, true])('binds readiness before token acquisition and never transports a withdrawn visit (return to Alpha: %s)', async returnToAlpha => {

@@ -62,6 +62,7 @@ it('hides the waitlist in a sold-out private preview', async () => {
   await screen.findByRole('heading', { name: 'Reef Night' })
   expect(screen.queryByText('Join the Waitlist')).not.toBeInTheDocument()
   expect(screen.queryByText('Already on the waitlist?')).not.toBeInTheDocument()
+  expect(screen.getAllByText(/Tickets aren't available in this private preview/)).toHaveLength(1)
 })
 
 it('replaces a legacy query preview with a fragment before requesting event data', async () => {

@@ -65,12 +65,20 @@ describe('OrganizerSetupChecklist', () => {
     const publish = screen.getAllByRole('listitem').find(item => item.textContent.includes('Publish'))
     expect(publish).toHaveTextContent('Hidden while suspended')
     expect(publish).not.toHaveTextContent('private preview')
+    expect(screen.getByText('HåfaPass verifies your organization (tickets go on sale after this)').closest('li')).not.toHaveTextContent('Next')
   })
 
-  it('asks for a description before verification can be submitted', () => {
+  it('uses one verification action and explains private previews to new organizers', async () => {
+    const { onSubmitVerification } = show({ ...base, policy_accepted: true })
+    expect(screen.getByText("Start a draft. When you publish, you'll get a private preview link; it goes public once you're verified.")).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Request verification' }))
+    expect(onSubmitVerification).toHaveBeenCalledOnce()
+  })
+
+  it('lets an organizer open the request form to add a missing description', () => {
     show({ ...base, business_description: '', policy_accepted: true })
-    expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled()
-    expect(screen.getByText('Add a profile description first.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Request verification' })).toBeEnabled()
+    expect(screen.getByText('Add a short description in the request form.')).toBeInTheDocument()
   })
 
   it('shows status only to an admin viewing the workspace', () => {

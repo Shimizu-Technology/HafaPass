@@ -69,7 +69,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
     profiles = OrganizerProfile.where(verification_status: %i[pending unverified rejected])
       .includes(:user, organization: { organization_memberships: :user })
       .order(Arel.sql("organizer_profiles.verification_requested_at IS NULL, " \
-        "organizer_profiles.verification_requested_at, organizer_profiles.created_at"))
+        "organizer_profiles.verification_requested_at DESC, organizer_profiles.created_at DESC"))
       .limit(100).to_a
     ids = profiles.map(&:id)
     event_counts = Event.where(organizer_profile_id: ids).group(:organizer_profile_id).count
@@ -84,6 +84,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
           verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
           event_count: event_counts.fetch(profile.id, 0),
           published_awaiting_events_count: published_counts.fetch(profile.id, 0),
+          business_description: profile.business_description,
           verification_phone: profile.verification_phone, verification_link: profile.verification_link,
           verification_request_note: profile.verification_request_note,
           verification_notes: profile.verification_notes

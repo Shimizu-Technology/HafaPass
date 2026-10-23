@@ -54,6 +54,20 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
     expect(profile.organization.reload.name).to eq("Island Events")
   end
 
+  it "normalizes bare social links and rejects unsafe schemes and invalid hosts" do
+    details = { business_name: "Island Events", business_description: "Community events",
+      verification_phone: "+1-671-555-1234", verification_link: "instagram.com/islandevents" }
+    post "/api/v1/organizer_profile/submit_verification", headers: headers, params: details
+    expect(response).to have_http_status(:ok)
+    expect(profile.reload.verification_link).to eq("https://instagram.com/islandevents")
+
+    %w[javascript:alert(1) https://localhost https://bad_host/path].each do |unsafe|
+      post "/api/v1/organizer_profile/submit_verification", headers: headers,
+        params: details.merge(verification_link: unsafe)
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+  end
+
   it "rolls back the verification request when the organization name cannot be saved" do
     original_name = profile.organization.name
     profile.organization.update_columns(marketing_address_certified_at: Time.current,
@@ -113,9 +127,30 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
     refreshed = response.parsed_body.fetch("organizers_awaiting_verification").find { |item| item["profile_id"] == profile.id }
     expect(refreshed.fetch("verification_change_diff")).to include("business_name" => {
       "before" => "Island Events", "after" => "Island Events Guam" })
+    expect(refreshed).to include("business_description" => "Community events")
     patch "/api/v1/admin/organizer_profiles/#{profile.id}", headers: auth_headers(admin),
       params: { verification_status: "verified", verification_request_version: refreshed.fetch("verification_request_version") }
     expect(response).to have_http_status(:ok)
+  end
+
+  it "keeps all pending field changes until an admin reviews the current request" do
+    admin = create(:user, :admin)
+    details = { business_name: "Island Events", business_description: "Community events",
+      verification_phone: "+1-671-555-1234", verification_link: "www.instagram.com/islandevents" }
+    post "/api/v1/organizer_profile/submit_verification", headers: headers, params: details
+    put "/api/v1/organizer_profile", headers: headers,
+      params: { business_name: "Island Events Guam", business_description: "Community events" }
+    post "/api/v1/organizer_profile/submit_verification", headers: headers,
+      params: details.merge(business_name: "Island Events Guam", verification_phone: "+1-671-555-5678")
+
+    get "/api/v1/admin/dashboard", headers: auth_headers(admin)
+    pending = response.parsed_body.fetch("organizers_awaiting_verification").find { |item| item["profile_id"] == profile.id }
+    expect(pending.fetch("verification_change_diff")).to include(
+      "business_name" => { "before" => "Island Events", "after" => "Island Events Guam" },
+      "verification_phone" => { "before" => "+1-671-555-1234", "after" => "+1-671-555-5678" }
+    )
+    expect(pending).to include("business_description" => "Community events",
+      "verification_request_note" => nil)
   end
 
   it "reopens review for a pending verification form edit even within the notice interval" do

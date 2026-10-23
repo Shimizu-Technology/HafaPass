@@ -358,7 +358,9 @@ function EditEventSession({ id, identity }) {
       if (!request.current()) return
       setEvent(current => ({ ...current, ...res.data }))
       setShowPublishConfirm(false)
-      setSuccessMessage('Event published successfully!')
+      setSuccessMessage(res.data.publicly_visible === false && ['unverified', 'pending', 'rejected'].includes(res.data.organizer_verification_status)
+        ? "Published as a private preview — share your preview link. It goes public automatically once you're verified."
+        : 'Event published successfully!')
     } catch (err) {
       if (!request.current()) return
       const msg = err.response?.data?.error || 'Failed to publish event'
@@ -462,7 +464,7 @@ function EditEventSession({ id, identity }) {
       {event.status === 'cancelled' && <div className="mb-6"><CancellationRefundProgress eventId={id} status={event.status} eventTimeZone={event.timezone} prominent canRefund={permissions.refund === true} canMarkCash={permissions.refund === true} /></div>}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 sm:justify-end">
-          {event?.slug && (
+          {event?.slug && event.publicly_visible !== false && (
             <a
               href={`/events/${event.slug}${event.status === 'published' || event.status === 'completed' ? '' : '?preview=true'}`}
               target="_blank"
@@ -581,7 +583,7 @@ function EditEventSession({ id, identity }) {
       )}
 
       {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm" role="status">{successMessage}</div>
+        <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{successMessage}{event.publicly_visible === false && <p className="mt-2"><Link to={`/dashboard/events/${id}`} className="inline-flex min-h-11 items-center font-semibold underline">Open Overview to copy or share your preview link</Link></p>}</div>
       )}
 
       {submitError && (
@@ -650,8 +652,9 @@ function EditEventSession({ id, identity }) {
           />
           <p id="slug-preview" className="mt-2 flex min-w-0 items-start gap-2 text-sm text-neutral-700">
             <Link2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
-            <span className="min-w-0 break-all"><span className="sr-only">Full link: </span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
+            <span className="min-w-0 break-all"><span className="sr-only">{event.publicly_visible === false ? 'Public link (works after verification): ' : 'Full link: '}</span>{eventLinkUrl(linkSlug || event?.slug || '')}</span>
           </p>
+          {event.publicly_visible === false && <p className="mt-1 text-sm text-amber-900">Public link (works after verification). Share the private preview link from Overview for now.</p>}
           <div aria-live="polite">
             {linkError ? <p id="slug-error" className="mt-1 text-sm text-red-600">{linkError}</p>
               : linkChanged && currentLinkCheck?.status === 'checking' ? <p className="mt-1 text-sm text-neutral-500">Checking this link…</p>

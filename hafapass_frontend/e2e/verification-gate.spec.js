@@ -8,15 +8,17 @@ const event = { id: 601, organization_id: 1, slug: 'private-island-show', title:
   category: 'other', fee_policy: 'organizer_absorbs', buyer_fee_percent: 0, purchasable: false,
   ticket_types: [{ id: 10, name: 'Admission', price_cents: 0, current_price_cents: 0,
     quantity_remaining: 50, on_sale: false }], private_preview: true }
-const organizerEvent = { ...event, private_preview: undefined, publicly_visible: false,
+const organizerEvent = { ...event, private_preview: undefined, publicly_visible: false, organizer_verification_status: 'unverified',
   publish_checklist: [], sales_status: { on_sale: false, reason: 'organizer_not_verified',
     message: 'Private preview only: request organizer verification to go public and start selling.' },
   permissions: { view_events: true, manage_events: true, edit_event_content: true, scan: true } }
 const profile = { id: 1, business_name: 'Island Events', business_description: 'Community shows',
   verification_status: 'unverified', policy_accepted: true, organization: { id: 1, role: 'owner' },
   setup_progress: { events_count: 1, published_events_count: 1 } }
+const initialProfile = { ...profile }
 
 async function setup(page) {
+  Object.assign(profile, initialProfile)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
   await page.route('**/api/v1/config', route => json(route, { launch_capabilities: {}, payment_mode: 'simulate' }))
@@ -70,6 +72,22 @@ for (const width of [375, 1280]) {
       await expect(card).toContainText(label)
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     }
+    state = { ...organizerEvent, title: 'A long community event title for every village on Guam' }
+    await page.goto('/dashboard')
+    const title = page.getByRole('heading', { name: state.title })
+    const card = page.locator('a[href="/dashboard/events/601"]').filter({ has: title })
+    const chip = card.getByText('Waiting for verification')
+    const action = card.getByText('Open event')
+    const titleBox = await title.boundingBox()
+    const chipBox = await chip.boundingBox()
+    expect(titleBox.height).toBeGreaterThan(20)
+    if (width === 375) expect(chipBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height)
+    expect((await action.boundingBox()).height).toBeGreaterThanOrEqual(44)
+    profile.verification_status = 'suspended'
+    await page.goto('/dashboard')
+    const verificationStep = page.getByRole('listitem').filter({ hasText: 'HåfaPass verifies your organization' })
+    await expect(verificationStep).toContainText('Sales paused by HåfaPass')
+    await expect(verificationStep).not.toContainText('Next')
   })
 
   test(`private preview and verification request at ${width}px`, async ({ page }) => {
@@ -77,7 +95,7 @@ for (const width of [375, 1280]) {
     await setup(page)
     await page.goto('/dashboard')
     await expect(page.getByRole('heading', { name: 'Get verified to start selling tickets' })).toBeVisible()
-    await page.getByRole('button', { name: 'Request verification' }).click()
+    await page.getByRole('region', { name: 'Get ready to sell tickets' }).getByRole('button', { name: 'Request verification' }).click()
     await page.getByRole('textbox', { name: /Contact phone/ }).fill('123')
     await page.getByRole('textbox', { name: /Website or social media link/ }).fill('not a link')
     await page.getByRole('button', { name: 'Send request' }).click()
@@ -86,13 +104,16 @@ for (const width of [375, 1280]) {
     await expect(page.getByText(/Check 2 highlighted verification fields/)).toBeVisible()
     await expect(page.getByRole('textbox', { name: /Contact phone/ })).toHaveValue('123')
     await page.getByRole('textbox', { name: /Contact phone/ }).fill('+1-671-555-1234')
-    await page.getByRole('textbox', { name: /Website or social media link/ }).fill('https://instagram.com/islandevents')
+    await page.getByRole('textbox', { name: /Website or social media link/ }).fill('instagram.com/islandevents')
+    await page.getByRole('textbox', { name: /Contact phone/ }).focus()
+    await expect(page.getByRole('textbox', { name: /Website or social media link/ })).toHaveValue('https://instagram.com/islandevents')
     await page.route('**/api/v1/organizer_profile/submit_verification', route => {
       Object.assign(profile, route.request().postDataJSON(), { verification_status: 'pending', verification_requested_at: '2026-10-23T00:00:00Z' })
       return json(route, profile)
     })
     await page.getByRole('button', { name: 'Send request' }).click()
     await expect(page.getByRole('heading', { name: "We're reviewing your account" })).toBeVisible()
+    await expect(page.getByText(/Submitted Oct 23, 2026/)).toBeVisible()
     await accessible(page)
     await page.screenshot({ path: `/tmp/hafapass-verification-dashboard-${width}.png`, fullPage: true })
 
@@ -100,14 +121,23 @@ for (const width of [375, 1280]) {
     await expect(page.getByText('Waiting for verification').first()).toBeVisible()
     await expect(page.getByRole('link', { name: 'Preview event' })).toHaveAttribute('href', /\/preview#t=/)
     await expect(page.getByRole('link', { name: 'View public page' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Get a new preview link' }).click()
+    await expect(page.getByRole('group', { name: 'Confirm new preview link' })).toContainText('Anyone using the old link will lose access')
+    await page.getByRole('button', { name: 'Cancel' }).click()
     await accessible(page)
     await page.screenshot({ path: `/tmp/hafapass-verification-overview-${width}.png`, fullPage: true })
+
+    await page.goto('/dashboard/events/601/edit')
+    await expect(page.getByText(/Public link \(works after verification\)/).first()).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Preview saved event' })).toHaveCount(0)
+    await accessible(page)
+    await page.screenshot({ path: `/tmp/hafapass-verification-edit-${width}.png`, fullPage: true })
 
     await page.goto('/events/private-island-show?preview_token=synthetic-secret')
     await expect(page).toHaveURL(/\/events\/private-island-show\/preview#t=synthetic-secret$/)
     await expect(page.getByRole('heading', { name: 'Private Island Show' })).toBeVisible()
     await expect(page.getByText(/Preview — this event isn't public yet/)).toBeVisible()
-    await expect(page.getByText(/Tickets aren't available in this private preview/).first()).toBeVisible()
+    await expect(page.getByText(/Tickets aren't available in this private preview/)).toHaveCount(1)
     await expect(page.getByRole('button', { name: /Get tickets/i })).toBeDisabled()
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
     await expect(page.locator('meta[property="og:title"][content="Private Island Show"]')).toHaveCount(0)
@@ -124,9 +154,10 @@ for (const width of [375, 1280]) {
       recent_events: [], recent_orders: [], financials: {}, operational_signals: {},
       organizers_awaiting_verification: profile.verification_status === 'pending' ? [{
         profile_id: 1, business_name: 'Island Events', verification_status: 'pending',
+        business_description: 'Community shows', verification_request_note: 'Please call after lunch.',
         verification_phone: profile.verification_phone, verification_link: profile.verification_link,
         published_awaiting_events_count: 1, requested_at: profile.verification_requested_at,
-      }] : [], verified_organizers: [],
+      }, { profile_id: 2, business_name: 'No request yet', verification_status: 'unverified' }] : [], verified_organizers: [],
     }))
     await page.route('**/api/v1/admin/organizer_profiles/1', route => {
       expect(route.request().postDataJSON().verification_status).toBe('verified')
@@ -134,6 +165,12 @@ for (const width of [375, 1280]) {
       return json(route, profile)
     })
     await page.goto('/admin')
+    await expect(page.getByRole('heading', { name: 'Requested (newest first) (1)' })).toBeVisible()
+    await expect(page.getByText('Not requested yet (1)')).toBeVisible()
+    await expect(page.getByText('Business description')).toBeVisible()
+    await expect(page.getByText('Note: Please call after lunch.')).toBeVisible()
+    await accessible(page)
+    await page.screenshot({ path: `/tmp/hafapass-verification-admin-${width}.png`, fullPage: true })
     await page.getByRole('button', { name: 'Verify Island Events' }).click()
     await page.getByRole('dialog', { name: 'Verify Island Events?' }).getByRole('button', { name: 'Verify' }).click()
     await expect(page.getByText('Island Events is verified. Their published events are public.')).toBeVisible()
