@@ -17,7 +17,7 @@ Required browser coverage: local API 3052 / Vite 5222 / isolated DB `hafapass_bu
 
 ## Execution
 
-Pending: regression tests, complete local gate, responsive browser scenarios, email rendering, final review and cleanup. This record is updated as each phase runs; pending coverage is not acceptance.
+Implementation, local gates, responsive browser scenarios and email rendering are complete. Required remote review is tracked separately from local acceptance below.
 
 ## Implementation and audit decisions
 
@@ -71,3 +71,12 @@ Code at `b59ad675` (rebased equivalent in this branch) passed **2,433 RSpec exam
 Independent review round 1 found two material waitlist issues (unsupported management-link guidance and premature “sent” label); both fixed with API/UI regression coverage. Round 2 reviewed the fixes and free checkout/payment/recovery interactions and found no material findings. No unavailable bot review is represented as approval.
 
 Main advanced to `6c1c5b2b` with the separate first-load PR. This branch rebased cleanly onto it; backend content is unchanged by that rebase. Final integrated frontend and browser checks are recorded below after execution. PR is held for the lead; no merge or production deployment is authorized for this agent.
+
+
+## Final integration and resource disposition
+
+Integrated source `2e6440407aefb8e770ab1e7e4f7c72ecb5c81be0` (code equivalent to `10a26c7b`, plus this record) passed ESLint, **1,758 Vitest tests in 162 files**, production build and **91 Playwright tests** after rebasing onto `6c1c5b2b`. All 15 local-stack cases passed again at both widths. The supplemental collection fixture is set to draft before Discover's genuine-empty case, then recreated for pagination recovery; this keeps the fixture preconditions explicit. No API/boot behavior was changed for test convenience.
+
+PR: https://github.com/Shimizu-Technology/HafaPass/pull/149 — **held for lead merge**. CodeRabbit reported its free OSS review allowance exhausted and the next review available in about 40 minutes at inspection. No CodeRabbit review or inline threads existed. CodeRabbit remains a required gate; the two completed independent reviews do not replace it. The lead should request the review after reset, inspect required CI on the final head, handle any material findings and then make the merge decision. No production deployment was performed. A Netlify deploy preview was automatically created but was not used for payment or acceptance testing.
+
+Owned Rails 3052, Vite 5222, browser tabs and Playwright processes are cleaned. The three isolated databases (`hafapass_buyer_truth`, `hafapass_buyer_truth_test`, `hafapass_buyer_truth_emails_test`) were dropped after verifying zero connections; absence was verified. Lifecycle session `01a167f2-8919-7332-9e89-75c78adab8d9` reports no active owned resources. Protected/shared PostgreSQL, Redis, Docker services, simulators and existing ports were left unchanged. The clean task branch/worktree is retained for the lead. No runtime handoff.
