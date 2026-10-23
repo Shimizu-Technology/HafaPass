@@ -9,17 +9,17 @@ RSpec.describe "Organizer endpoint-by-role contract", type: :request do
   CONTRACT = {
     owner: %i[view create edit publish content cancel clone recurrence inventory prices seating attendees search crm finance_export
       guests waitlist resend door scan undo refunds reports settlements payouts payout_settings tax_settings
-      invite remove role transfer staff promo promoters campaigns organization profile verification],
+      invite remove role transfer staff promo promoters campaigns organization profile verification activity],
     manager: %i[view create edit publish content clone recurrence inventory prices seating attendees search crm finance_export
-      guests waitlist resend door scan undo reports staff promo promoters campaigns],
-    finance: %i[view attendees finance_export refunds reports settlements payouts],
+      guests waitlist resend door scan undo reports staff promo promoters campaigns activity],
+    finance: %i[view attendees finance_export refunds reports settlements payouts activity],
     marketer: %i[view content promo promoters campaigns],
     box_office_assigned: %i[view attendees search crm guests waitlist resend door scan undo],
     box_office_unassigned: [],
     scanner_assigned: %i[view search scan],
     scanner_unassigned: [],
     event_manager: %i[view edit publish content inventory prices seating attendees search crm finance_export
-      guests waitlist resend door scan undo reports staff promo promoters campaigns]
+      guests waitlist resend door scan undo reports staff promo promoters campaigns activity]
   }.freeze
 
   let(:profile) { create(:organizer_profile) }
@@ -39,6 +39,7 @@ RSpec.describe "Organizer endpoint-by-role contract", type: :request do
   def probe(capability, selected_event = event)
     path = "/api/v1/organizer/events/#{selected_event.id}"
     case capability
+    when :activity then get "/api/v1/organizer/activity_logs", params: { event_id: selected_event.id }, headers: headers
     when :view then get path, headers: headers
     when :create then post "/api/v1/organizer/events", params: { title: "Contract draft" }, headers: headers
     when :edit then patch path, params: { max_capacity: 600 }, headers: headers
@@ -105,6 +106,18 @@ RSpec.describe "Organizer endpoint-by-role contract", type: :request do
           assignment_role = role == :event_manager ? :manager : membership_role
           create(:event_staff_assignment, event: event, user: actor, role: assignment_role)
         end
+      end
+
+      it "pins explicit activity permission expectations independently" do
+        expected = {
+          owner: [true, true, true], manager: [false, true, false], finance: [false, false, true],
+          marketer: [false, false, false], box_office_assigned: [false, false, false], box_office_unassigned: [false, false, false],
+          scanner_assigned: [false, false, false], scanner_unassigned: [false, false, false], event_manager: [false, true, false]
+        }.fetch(role)
+        actual = %i[view_activity_all view_activity_events view_activity_finance].map do |permission|
+          OrganizationAuthorization.allowed?(user: actor, organization: organization, event: event, permission: permission)
+        end
+        expect(actual).to eq(expected)
       end
 
       CONTRACT.fetch(:owner).each do |capability|

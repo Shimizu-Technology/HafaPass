@@ -4,10 +4,10 @@ class OrganizationAuthorization
   PERMISSIONS = {
     owner: %i[manage_organization manage_members manage_payout_settings view_events manage_events edit_event_content
       manage_inventory manage_staff view_attendees manage_attendees manage_marketing box_office scan
-      view_finance manage_finance refund payout],
+      view_finance manage_finance refund payout view_activity_all view_activity_events view_activity_finance],
     manager: %i[view_events manage_events edit_event_content manage_inventory manage_staff view_attendees view_finance
-      manage_attendees manage_marketing box_office scan],
-    finance: %i[view_events view_finance manage_finance refund payout],
+      manage_attendees manage_marketing box_office scan view_activity_events],
+    finance: %i[view_events view_finance manage_finance refund payout view_activity_finance],
     marketer: %i[view_events edit_event_content manage_marketing],
     box_office: %i[view_events view_attendees manage_attendees box_office scan],
     scanner: %i[view_events scan]

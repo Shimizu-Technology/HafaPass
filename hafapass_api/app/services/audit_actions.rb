@@ -88,6 +88,15 @@ class AuditActions
 
   DEFINITIONS = begin
     registry = {}
+    # Platform-wide admin exports have no organization; organizer exports always
+    # pass an explicit tenant and are projected only inside that tenant.
+    define registry, area: "exports", audience: %w[org_owner org_manager org_finance],
+      tenant: false, event_required: false, metadata: %w[export_request_id row_count], actions: {
+        "activity_log.export_requested" => "Requested an activity log export.",
+        "activity_log.export_generated" => "Generated an activity log export.",
+        "activity_log.export_downloaded" => "Downloaded an activity log export.",
+        "activity_log.export_failed" => "Failed to export the activity log."
+      }
     define registry, area: "organization", audience: %w[org_owner],
       tenant: true, event_required: false,
       snapshots: %w[name business_name business_description], metadata: %w[], actions: {

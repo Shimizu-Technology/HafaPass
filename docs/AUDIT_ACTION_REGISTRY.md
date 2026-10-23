@@ -417,3 +417,17 @@ This table is generated from the 288 registered definitions. The
 completeness spec requires a row for each definition. See
 [AUDIT_INTEGRITY.md](AUDIT_INTEGRITY.md) for combined test results, deployment and
 privacy/retention behavior. Organization Activity endpoints and UI are a later PR.
+
+## Activity export lifecycle
+
+These summaries contain an opaque export request ID and row count only. Raw
+filters and search text stay inside an encrypted ticket, never audit metadata.
+Admin exports may be platform-wide; organizer exports always pass the selected
+organization. Download requires the same requester and current permissions.
+
+| Action | Area | Audience | Tenant | Event | Organization fields |
+| --- | --- | --- | --- | --- | --- |
+| `activity_log.export_requested` | exports | org_owner, org_manager, org_finance | optional (admin exports) | optional | export_request_id, row_count |
+| `activity_log.export_generated` | exports | org_owner, org_manager, org_finance | optional (admin exports) | optional | export_request_id, row_count |
+| `activity_log.export_downloaded` | exports | org_owner, org_manager, org_finance | optional (admin exports) | optional | export_request_id, row_count |
+| `activity_log.export_failed` | exports | org_owner, org_manager, org_finance | optional (admin exports) | optional | export_request_id, row_count |

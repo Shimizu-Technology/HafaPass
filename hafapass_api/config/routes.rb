@@ -128,6 +128,10 @@ Rails.application.routes.draw do
 
       # Organizer events (protected)
       namespace :organizer do
+        resources :activity_logs, only: [:index]
+        resources :activity_log_exports, only: [:create, :show] do
+          get :download, on: :member
+        end
         post "fee_change_notices/:id/acknowledge", to: "fee_change_notices#acknowledge"
         get "refund_reconciliation", to: "refund_reconciliations#index"
         post "refund_reconciliation/:type/:id/:operation", to: "refund_reconciliations#action"
@@ -413,6 +417,9 @@ Rails.application.routes.draw do
         end
         resources :disputes, only: [:index]
         resources :audit_logs, only: [:index]
+        resources :activity_log_exports, only: [:create, :show] do
+          get :download, on: :member
+        end
         resource :marketplace, only: [:show], controller: "marketplace"
         resources :marketplace_collections, except: [:show]
         resources :distribution_partners, except: [:show]
