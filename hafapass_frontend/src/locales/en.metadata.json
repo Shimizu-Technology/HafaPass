@@ -1294,6 +1294,12 @@
       },
       "empty": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No featured collections yet. Browse events to see current listings."
+      },
+      "emptyPage": {
+        "context": "An out-of-range paginated event listing has no rows on this page, but other pages contain events. No events on this page."
+      },
+      "firstPage": {
+        "context": "An out-of-range paginated event listing has no rows on this page, but other pages contain events. Back to first page"
       }
     },
     "policy": {

@@ -12,6 +12,7 @@ import PrivacyRequestsPage from './PrivacyRequestsPage'
 
 vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
+vi.mock('../components/EventCard', () => ({ default: ({ event }) => <p>{event.title}</p> }))
 const show = (Component, path = '/', route = '/') => render(<MemoryRouter initialEntries={[route]}><Routes><Route path={path} element={<Component />} /></Routes></MemoryRouter>)
 beforeEach(() => { api.get.mockReset(); vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '') })
 
@@ -62,4 +63,20 @@ it('shows privacy loading, failure and retry without falsely reporting an empty 
   await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('No requests yet.')).toBeInTheDocument()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+
+it.each([
+  [VenuePage, '/venues/:slug', '/venues/fixture?page=2'],
+  [OrganizerPage, '/organizers/:slug', '/organizers/fixture?page=2'],
+  [CollectionPage, '/collections/:slug', '/collections/fixture?page=2'],
+])('recovers an empty pagination page without claiming the whole listing is empty', async (Page, path, route) => {
+  const data = { name: 'QA', title: 'QA', events: [], meta: { total_count: 1, current_page: 2, total_pages: 1 } }
+  api.get.mockResolvedValueOnce({ data }).mockResolvedValue({ data: { ...data, events: [{ id: 1, title: 'Current event' }], meta: { total_count: 1, current_page: 1, total_pages: 1 } } })
+  show(Page, path, route)
+  expect(await screen.findByText('No events on this page.')).toBeInTheDocument()
+  expect(screen.queryByText(/no upcoming events|No upcoming events|no events listed right now/)).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Back to first page' }))
+  expect(await screen.findByText('Current event')).toBeInTheDocument()
+  expect(api.get).toHaveBeenLastCalledWith(expect.any(String), { params: { page: 1 } })
 })
