@@ -6,7 +6,7 @@ emails:
   footer: "Pinapagana ng HåfaPass · Shimizu Technology"
   my_tickets: "Mga Tiket Ko"
   formats:
-    event_datetime: "%{month_name} %{day}, %{year} sa ganap na %{hour}:%{minute} %{meridiem}"
+    event_datetime: "%{month_name} %{day}, %{year} sa ganap na %{hour}:%{minute} %{meridiem} %{zone}"
     month_names:
       - Enero
       - Pebrero

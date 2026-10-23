@@ -31,7 +31,7 @@ describe('LivePilotOperationsDialog', () => {
     } })
     render(<LivePilotOperationsDialog event={event} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate I bounded pilot' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare a limited live pilot' }))
 
     expect(await screen.findByText(/exact current Gate G rehearsal/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Submit Gate I plan' })).toBeDisabled()

@@ -14,9 +14,9 @@ vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tools = [
   { path: 'guest-list', endpoint: 'guest_list', Component: GuestListPage, title: 'Guest List', retry: 'Retry guest list',
-    permission: 'manage_attendees', dialogButton: 'Redeem', row: owner => ({ id: 5, guest_name: `${owner} private guest`, guest_email: `${owner}@example.invalid`, redeemed: false, quantity: 1, ticket_type: { id: 8, name: 'Admission' } }),
-    result: rows => ({ guest_list: rows }), button: 'Redeem', confirmation: 'Redeem tickets', notice: 'Guest tickets created.', method: 'post', tail: '/5/redeem' },
-  { path: 'promo-codes', endpoint: 'promo_codes', Component: PromoCodesPage, title: 'Promo Codes', retry: 'Retry promo codes',
+    permission: 'manage_attendees', dialogButton: 'Create tickets', row: owner => ({ id: 5, guest_name: `${owner} private guest`, guest_email: `${owner}@example.invalid`, redeemed: false, quantity: 1, ticket_type: { id: 8, name: 'Admission' } }),
+    result: rows => ({ guest_list: rows }), button: 'Create tickets', confirmation: 'Create tickets', notice: 'Tickets created. Check these tickets in separately when the guest arrives.', method: 'post', tail: '/5/redeem' },
+  { path: 'promo-codes', endpoint: 'promo_codes', Component: PromoCodesPage, title: 'Promo codes', retry: 'Retry promo codes',
     permission: 'manage_marketing', dialogButton: /Delete promo code/, row: owner => ({ id: 5, code: `${owner} private code`, active: true, discount_type: 'percentage', discount_value: 20, current_uses: 0 }),
     result: rows => rows, button: /Deactivate promo code/, notice: 'Promo code updated.', method: 'patch', tail: '/5' },
   { path: 'waitlist', endpoint: 'waitlist', Component: WaitlistPage, title: 'Waitlist', retry: 'Retry waitlist',
@@ -103,7 +103,7 @@ for (const tool of tools) describe(`${tool.title} context ownership`, () => {
     mount(tool)
     await screen.findByText(tool.row('actor-a').guest_name || tool.row('actor-a').code || tool.row('actor-a').name)
     await userEvent.click(screen.getByRole('button', { name: tool.button }))
-    if (tool.confirmation) await userEvent.click(screen.getByRole('button', { name: tool.confirmation }))
+    if (tool.confirmation) await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: tool.confirmation }))
     const write = apiClient[tool.method].mock.calls[0]
     const config = write.at(-1)
     expect(write[0]).toBe(`/organizer/events/11/${tool.endpoint}${tool.tail}`)
@@ -124,7 +124,7 @@ for (const tool of tools) describe(`${tool.title} context ownership`, () => {
     mount(tool)
     await screen.findByText(tool.row('actor-a').guest_name || tool.row('actor-a').code || tool.row('actor-a').name)
     await userEvent.click(screen.getByRole('button', { name: tool.button }))
-    if (tool.confirmation) await userEvent.click(screen.getByRole('button', { name: tool.confirmation }))
+    if (tool.confirmation) await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: tool.confirmation }))
     const originalConfig = apiClient[tool.method].mock.calls[0].at(-1)
     rows[11] = 'current-private'
     await act(async () => {
@@ -205,7 +205,7 @@ for (const tool of tools) describe(`${tool.title} context ownership`, () => {
     const first = mount(tool)
     await screen.findByText(tool.row('actor-a').guest_name || tool.row('actor-a').code || tool.row('actor-a').name)
     await userEvent.click(screen.getByRole('button', { name: tool.button }))
-    if (tool.confirmation) await userEvent.click(screen.getByRole('button', { name: tool.confirmation }))
+    if (tool.confirmation) await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: tool.confirmation }))
     await screen.findByRole('region', { name: 'Unconfirmed operation' })
     const reads = apiClient.get.mock.calls.length
     await userEvent.click(screen.getByRole('button', { name: 'Refresh latest list' }))
@@ -308,16 +308,16 @@ describe('draft retention and current waitlist view', () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { errors: ['Synthetic validation rejected'] } } })
     mount(activeTool)
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New Code' }))
-    const form = screen.getByRole('heading', { name: path === 'guest-list' ? 'Add to Guest List' : 'Create Promo Code' }).closest('form')
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
+    const form = screen.getByRole('heading', { name: path === 'guest-list' ? 'Add to Guest List' : 'Create promo code' }).closest('form')
     const field = within(form).getByLabelText(path === 'guest-list' ? 'Name' : 'Code')
     await userEvent.type(field, path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     if (path === 'promo-codes') await userEvent.type(within(form).getByLabelText('Discount (%)'), '20')
-    await userEvent.click(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create Code' }))
+    await userEvent.click(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create code' }))
     await screen.findByText('Synthetic validation rejected')
     expect(field).toHaveValue(path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     await userEvent.click(screen.getByRole('button', { name: 'Check latest list' }))
-    await waitFor(() => expect(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create Code' })).toBeEnabled())
+    await waitFor(() => expect(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create code' })).toBeEnabled())
     expect(field).toHaveValue(path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     expect(apiClient.post).toHaveBeenCalledTimes(1)
   })
@@ -326,13 +326,13 @@ describe('draft retention and current waitlist view', () => {
     activeTool = tools.find(tool => tool.path === path)
     mount(activeTool)
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New Code' }))
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
     const label = path === 'guest-list' ? 'Name' : 'Code'
     await userEvent.type(screen.getByLabelText(label), 'PRIVATE-DRAFT')
     await act(async () => bind('actor-b', 'two'))
     expect(screen.queryByDisplayValue('PRIVATE-DRAFT')).not.toBeInTheDocument()
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New Code' }))
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
     expect(screen.getByLabelText(label)).toHaveValue('')
     expect(apiClient.post).not.toHaveBeenCalled()
   })
@@ -452,4 +452,40 @@ it('shows address readiness and a delivery failure before organizer waitlist ret
   expect(screen.getByRole('button', { name: 'Offer' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Offer' })).toHaveAttribute('aria-describedby', 'waitlist-address-required')
   expect(screen.getByText(/Couldn't send: mailing address missing/)).toBeInTheDocument()
+})
+
+describe('promo code dollar amounts', () => {
+  it('creates $5.00 as 500 cents and edits the saved amount without changing units', async () => {
+    activeTool = tools[1]
+    let saved = []
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/promo_codes') ? saved : { ...event(11), timezone: 'Pacific/Guam' } }))
+    apiClient.post.mockImplementation((_path, payload) => {
+      saved = [{ id: 55, active: true, current_uses: 0, ...payload, expires_at: '2026-11-20T09:00:42.000Z' }]
+      return Promise.resolve({ data: saved[0] })
+    })
+    apiClient.patch.mockImplementation((_path, payload) => {
+      saved = [{ ...saved[0], ...payload }]
+      return Promise.resolve({ data: saved[0] })
+    })
+    mount(activeTool)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'New code' }))
+    await user.type(screen.getByLabelText('Code'), 'FIVE')
+    await user.selectOptions(screen.getByLabelText('Discount type'), 'fixed')
+    await user.type(screen.getByLabelText('Discount ($)'), '5.00')
+    fireEvent.change(screen.getByLabelText(/Expires \(Guam time\)/), { target: { value: '2026-11-20T19:00' } })
+    await user.click(screen.getByRole('button', { name: 'Create code' }))
+    await screen.findByText('Promo code created.')
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/promo_codes', expect.objectContaining({ discount_type: 'fixed', discount_value: 500, expires_at: '2026-11-20T09:00:00.000Z' }), expect.anything())
+    expect(await screen.findByText(/\$5.00 off/)).toHaveTextContent('Expires Nov 20, 2026, 7:00 PM Guam time')
+    await user.click(screen.getByRole('button', { name: 'Edit promo code FIVE' }))
+    expect(screen.getByLabelText('Discount ($)')).toHaveValue(5)
+    expect(screen.getByLabelText(/Expires \(Guam time\)/)).toHaveValue('2026-11-20T19:00')
+    await user.clear(screen.getByLabelText('Discount ($)'))
+    await user.type(screen.getByLabelText('Discount ($)'), '7.25')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Promo code updated.')
+    expect(apiClient.patch).toHaveBeenCalledWith('/organizer/events/11/promo_codes/55', expect.objectContaining({ discount_value: 725, expires_at: '2026-11-20T09:00:42.000Z' }), expect.anything())
+    expect(await screen.findByText(/\$7.25 off/)).toBeInTheDocument()
+  })
 })

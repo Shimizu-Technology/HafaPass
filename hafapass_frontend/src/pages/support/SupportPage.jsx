@@ -101,7 +101,7 @@ function SupportSession({ identity, resourcePath }) {
     try {
       await apiClient.post(`/support/message_deliveries/${delivery.id}/resend`, {}, request.config)
       if (!request.current() || accessDenied.current) return
-      setMessage(`Delivery #${delivery.id} queued with its original idempotency key.`)
+      setMessage('The original message was queued for another delivery attempt.')
       loadDeliveries()
     } catch (error) {
       if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Replay failed') }
@@ -122,7 +122,7 @@ function SupportSession({ identity, resourcePath }) {
     try {
       await apiClient.post(`/support/message_deliveries/orders/${order.id}/fulfill`, {}, request.config)
       if (!request.current() || accessDenied.current) return
-      setMessage(`A consolidated fulfillment message was queued for ${order.reference}.`)
+      setMessage("The order's ticket email was queued.")
       loadDeliveries()
     } catch (error) {
       if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Fulfillment resend failed') }
@@ -157,7 +157,7 @@ function SupportSession({ identity, resourcePath }) {
               <article key={order.id} className="rounded-xl border border-neutral-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3"><div><p className="font-mono text-xs text-neutral-500">{order.reference}</p><h3 className="font-semibold text-neutral-900">{order.event_title}</h3></div><span className="rounded-full bg-neutral-100 px-2 py-1 text-xs">{order.status}</span></div>
                 <p className="mt-2 break-words text-sm text-neutral-600">{order.buyer_name} · {order.buyer_email} · {order.ticket_count} tickets</p>
-                <button disabled={Boolean(busyAction)} onClick={() => fulfill(order)} className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-brand-700 disabled:opacity-50"><Send className="h-4 w-4" /> {busyAction === `order:${order.id}` ? 'Queuing…' : 'Resend consolidated tickets'}</button>
+                <button disabled={Boolean(busyAction)} onClick={() => fulfill(order)} className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-brand-700 disabled:opacity-50"><Send className="h-4 w-4" /> {busyAction === `order:${order.id}` ? 'Queuing…' : 'Resend order tickets'}</button>
               </article>
             ))}
           </div>
@@ -193,7 +193,7 @@ function SupportSession({ identity, resourcePath }) {
               <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500"><tr><th className="px-4 py-3">Message</th><th className="px-4 py-3">Recipient</th><th className="px-4 py-3">State</th><th className="px-4 py-3">Attempts</th><th className="px-4 py-3">Action</th></tr></thead>
               <tbody className="divide-y divide-neutral-100">
                 {deliveries.map(delivery => (
-                  <tr key={delivery.id}><td className="px-4 py-3"><p className="font-medium text-neutral-900">{delivery.template.replaceAll('_', ' ')}</p><p className="text-xs text-neutral-500">#{delivery.id}{delivery.provider_id ? ` · ${delivery.provider_id}` : ''}</p></td><td className="px-4 py-3">{delivery.recipient}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${badge[delivery.status] || badge.queued}`}>{delivery.status}</span>{delivery.last_error && <p className="mt-1 max-w-xs text-xs text-red-700"><AlertTriangle className="mr-1 inline h-3 w-3" />{delivery.last_error}</p>}</td><td className="px-4 py-3">{delivery.attempts}</td><td className="px-4 py-3"><button disabled={Boolean(busyAction) || delivery.status !== 'failed' || Boolean(delivery.provider_id)} onClick={() => replay(delivery)} className="text-sm font-medium text-brand-700 disabled:text-neutral-300">Replay safely</button></td></tr>
+                  <tr key={delivery.id}><td className="px-4 py-3"><p className="font-medium text-neutral-900">{delivery.template.replaceAll('_', ' ')}</p><p className="text-xs text-neutral-500">#{delivery.id}{delivery.provider_id ? ` · ${delivery.provider_id}` : ''}</p></td><td className="px-4 py-3">{delivery.recipient}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${badge[delivery.status] || badge.queued}`}>{delivery.status}</span>{delivery.last_error && <p className="mt-1 max-w-xs text-xs text-red-700"><AlertTriangle className="mr-1 inline h-3 w-3" />{delivery.last_error}</p>}</td><td className="px-4 py-3">{delivery.attempts}</td><td className="px-4 py-3"><button disabled={Boolean(busyAction) || delivery.status !== 'failed' || Boolean(delivery.provider_id)} onClick={() => replay(delivery)} className="text-sm font-medium text-brand-700 disabled:text-neutral-300">Retry delivery</button></td></tr>
                 ))}
               </tbody>
             </table>

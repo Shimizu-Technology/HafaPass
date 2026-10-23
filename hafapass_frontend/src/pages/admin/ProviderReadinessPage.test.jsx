@@ -40,7 +40,7 @@ describe('ProviderReadinessPage', () => {
     expect(screen.getByTestId('policy-register-review-notes')).toHaveTextContent("Organizer Agreement · Tax information: Accountant to confirm")
     expect(screen.getByTestId('policy-register-review-notes')).toHaveTextContent("These don’t block approval")
 
-    const approve = screen.getByRole('button', { name: 'Approve exact snapshot' })
+    const approve = screen.getByRole('button', { name: 'Approve submitted evidence' })
     expect(approve).toBeEnabled()
     fireEvent.click(approve)
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/platform_capability_reviews/77/approve',
@@ -64,7 +64,7 @@ describe('ProviderReadinessPage', () => {
 
     expect(screen.getByText('Off until approved')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Evidence reference'), { target: { value: 'legal-register-17' } })
-    fireEvent.change(screen.getByLabelText('SHA-256 evidence digest'), { target: { value: 'a'.repeat(64) } })
+    fireEvent.change(screen.getByLabelText('Evidence file checksum (SHA-256)'), { target: { value: 'a'.repeat(64) } })
     fireEvent.click(screen.getByText('Policy owner approved'))
     fireEvent.click(screen.getByText('Effective dates approved'))
     fireEvent.click(screen.getByRole('button', { name: 'Submit evidence (can’t be edited later)' }))
@@ -89,6 +89,6 @@ describe('ProviderReadinessPage', () => {
     render(<MemoryRouter initialEntries={['/admin/provider-readiness']}><ProviderReadinessPage /></MemoryRouter>)
 
     expect(await screen.findByText(/Admin #7 submitted evidence provider-report-4/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Approve exact snapshot' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve submitted evidence' })).toBeInTheDocument()
   })
 })

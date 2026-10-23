@@ -232,7 +232,7 @@ function LivePilotOperationsDialogSession({ event, onComplete }) {
 
   const triggerLabel = event.live_pilot?.run_status ? `Gate I pilot · ${event.live_pilot.run_status}` :
     event.live_pilot?.approval_recorded ? 'Operate Gate I bounded pilot' :
-      event.live_pilot?.pending_submission ? 'Review Gate I pilot plan' : 'Prepare Gate I bounded pilot'
+      event.live_pilot?.pending_submission ? 'Review Gate I pilot plan' : 'Prepare a limited live pilot'
 
   return <>
     <button ref={triggerRef} type="button" onClick={openDialog} className="min-h-11 text-left text-xs font-semibold text-sky-800 underline decoration-sky-300 underline-offset-4 hover:text-sky-950">{triggerLabel}</button>

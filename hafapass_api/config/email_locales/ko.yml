@@ -6,7 +6,7 @@ emails:
   footer: "제공: HåfaPass · Shimizu Technology"
   my_tickets: "내 티켓"
   formats:
-    event_datetime: "%{year}년 %{month_name} %{day}일 %{meridiem} %{hour}:%{minute}"
+    event_datetime: "%{year}년 %{month_name} %{day}일 %{meridiem} %{hour}:%{minute} %{zone}"
     month_names:
       - 1월
       - 2월

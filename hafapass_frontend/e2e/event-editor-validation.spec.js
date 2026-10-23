@@ -63,14 +63,14 @@ for (const width of [390, 1440]) {
             await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic save failure' }) })
             return
           }
-          saved = { ...saved, ...payload, venue_city: payload.venue_city || 'Guam', max_capacity: Number(payload.max_capacity) }
+          saved = { ...saved, ...payload, venue_city: payload.venue_city, max_capacity: Number(payload.max_capacity) }
         }
         body = saved
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto('/dashboard/events/602/edit')
-    const city = page.getByLabel('City', { exact: true })
+    const city = page.getByLabel('Village or city', { exact: true })
     const capacity = page.getByLabel('Max Capacity', { exact: true })
     const save = page.getByRole('button', { name: 'Save Changes', exact: true })
     const publish = page.getByRole('button', { name: 'Publish Event', exact: true })
@@ -85,11 +85,11 @@ for (const width of [390, 1440]) {
     await expect(publish).toBeDisabled()
     await save.click()
     await expect(page.getByRole('status').filter({ hasText: 'Event updated successfully.' })).toBeVisible()
-    await expect(city).toHaveValue('Guam')
+    await expect(city).toHaveValue('')
     await expect(capacity).toHaveValue('200')
     await expect(publish).toBeEnabled()
     await expect(page.getByText(/Preview shows the last saved event/)).toHaveCount(0)
-    expect(saved).toMatchObject({ venue_city: 'Guam', max_capacity: 200 })
+    expect(saved).toMatchObject({ venue_city: '', max_capacity: 200 })
     await capacity.fill('200.2')
     await expect(publish).toBeDisabled()
     await save.click()

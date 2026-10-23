@@ -303,12 +303,12 @@ describe('canonical saved event form', () => {
     apiClient.get.mockResolvedValue({ data: readyDraft })
   })
 
-  it.each(['full', 'partial'])('clears saved default-city and leading-zero edits from a %s response', async response => {
-    const normalized = { id: readyDraft.id, venue_city: 'Guam', max_capacity: 200 }
+  it.each(['full', 'partial'])('keeps a blank village and clears saved leading-zero edits from a %s response', async response => {
+    const normalized = { id: readyDraft.id, venue_city: '', max_capacity: 200 }
     apiClient.put.mockResolvedValue({ data: response === 'full' ? { ...readyDraft, ...normalized } : normalized })
     const user = userEvent.setup()
     mount()
-    const city = await screen.findByLabelText('City')
+    const city = await screen.findByLabelText('Village or city')
     const capacity = screen.getByLabelText('Max Capacity')
     await user.clear(city)
     fireEvent.change(capacity, { target: { value: '0200' } })
@@ -316,8 +316,8 @@ describe('canonical saved event form', () => {
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Event updated successfully.')
-    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ venue_city: 'Guam', max_capacity: 200 })
-    expect(city).toHaveValue('Guam')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ venue_city: '', max_capacity: 200 })
+    expect(city).toHaveValue('')
     expect(capacity.value).toBe('200')
     expect(screen.getByLabelText('Description')).toHaveValue('Keep this event description')
     expect(screen.getByText('Saved admission')).toBeInTheDocument()
@@ -329,12 +329,12 @@ describe('canonical saved event form', () => {
     apiClient.put.mockRejectedValue(new Error('Synthetic failure'))
     const user = userEvent.setup()
     mount()
-    await user.clear(await screen.findByLabelText('City'))
+    await user.clear(await screen.findByLabelText('Village or city'))
     const capacity = screen.getByLabelText('Max Capacity')
     fireEvent.change(capacity, { target: { value: '0200' } })
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Failed to update event')
-    expect(screen.getByLabelText('City')).toHaveValue('')
+    expect(screen.getByLabelText('Village or city')).toHaveValue('')
     expect(capacity.value).toBe('0200')
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
     expect(screen.getByText(/Preview shows the last saved event/)).toBeInTheDocument()

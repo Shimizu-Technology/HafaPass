@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -33,7 +33,7 @@ describe('support record lookup', () => {
     expect(await screen.findByText('HP-T501 · Order HP-923')).toBeInTheDocument()
     expect(screen.getByText('Published Event')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open event page' })).toHaveAttribute('href', '/events/published-event')
-    await user.click(screen.getByRole('button', { name: 'Resend order tickets' }))
+    await user.click(within(screen.getByText('HP-T501 · Order HP-923').closest('article')).getByRole('button', { name: 'Resend order tickets' }))
     expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/orders/923/fulfill', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 

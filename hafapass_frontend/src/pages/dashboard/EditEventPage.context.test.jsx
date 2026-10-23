@@ -270,7 +270,7 @@ describe('event editor context ownership with the real router', () => {
       publish_checklist: [{ code: 'event_details', label: 'Details', complete: true }] }
     apiClient.put.mockReturnValueOnce(pending.promise)
     mount()
-    await userEvent.clear(await screen.findByLabelText('City'))
+    await userEvent.clear(await screen.findByLabelText('Village or city'))
     fireEvent.change(screen.getByLabelText('Max Capacity'), { target: { value: '0200' } })
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     expect(apiClient.put.mock.calls[0][1].cover_image_url).toBeNull()
@@ -278,7 +278,7 @@ describe('event editor context ownership with the real router', () => {
     await act(async () => uploads.get('11')('https://synthetic.invalid/new-cover.png'))
     await act(async () => pending.resolve({ data: { ...rows[11], cover_image_url: null, venue_city: 'Guam', max_capacity: 200 } }))
     await screen.findByText('Event updated successfully.')
-    expect(screen.getByLabelText('City')).toHaveValue('Guam')
+    expect(screen.getByLabelText('Village or city')).toHaveValue('Guam')
     expect(screen.getByLabelText('Max Capacity').value).toBe('200')
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))

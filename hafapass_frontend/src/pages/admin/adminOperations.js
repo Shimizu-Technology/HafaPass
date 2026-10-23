@@ -1,3 +1,4 @@
+import { formatPlatformDateTime } from '../../utils/eventTime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import apiClient from '../../api/client'
 import { usePlatformRequests } from '../../hooks/usePlatformContext'
@@ -5,12 +6,7 @@ import { formatMoneyCents } from '../../utils/money'
 
 export const money = (cents, currency = 'usd') => formatMoneyCents(cents, String(currency || 'usd').toUpperCase())
 
-export function formatDateTime(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-}
+export const formatDateTime = formatPlatformDateTime
 
 export function formatDate(value) {
   if (!value) return ''

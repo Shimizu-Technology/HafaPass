@@ -174,7 +174,7 @@ function LiveMoneyProofReviewDialogSession({ event, onComplete }) {
   return <>
     <button ref={triggerRef} type="button" onClick={openCaptured} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
       {proof.approval_recorded ? <ShieldCheck className="h-4 w-4" /> : <Banknote className="h-4 w-4" />}
-      {proof.approval_recorded ? 'Review Gate H approval' : proof.pending_submission ? 'Review Gate H evidence' : 'Prepare Gate H live-money proof'}
+      {proof.approval_recorded ? 'Review Gate H approval' : proof.pending_submission ? 'Review Gate H evidence' : 'Prepare live-payment validation'}
     </button>
     {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={mouseEvent => { if (mouseEvent.target === mouseEvent.currentTarget && !busy) closeCaptured() }}>
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="live-money-title" className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-6xl sm:rounded-3xl">

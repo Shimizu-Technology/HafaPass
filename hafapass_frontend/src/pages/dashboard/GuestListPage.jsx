@@ -149,7 +149,7 @@ function GuestListSession({ eventId, identity }) {
     })
   }
   const handleRedeem = entry => {
-    askConfirmation('redeem_guest', `Redeem ${entry.quantity} ticket(s) for ${entry.guest_name}?`, 'Redeem tickets', config => apiClient.post(`/organizer/events/${eventId}/guest_list/${entry.id}/redeem`, {}, config), () => setNotice('Guest tickets created.'))
+    askConfirmation('redeem_guest', `Create complimentary tickets for ${entry.guest_name}? Check these tickets in separately when the guest arrives.`, 'Create tickets', config => apiClient.post(`/organizer/events/${eventId}/guest_list/${entry.id}/redeem`, {}, config), () => setNotice('Tickets created. Check these tickets in separately when the guest arrives.'))
   }
   const handleDelete = entry => {
     askConfirmation('remove_guest', `Remove ${entry.guest_name} from guest list?`, 'Remove guest', config => apiClient.delete(`/organizer/events/${eventId}/guest_list/${entry.id}`, config), () => setNotice('Guest removed.'))
@@ -251,7 +251,7 @@ function GuestListSession({ eventId, identity }) {
        </div>
        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
         <button disabled={mutationsLocked} onClick={() => handleRedeem(entry)} className="btn-primary text-sm !px-3 gap-1.5">
-         <Check className="w-3 h-3" /> Redeem
+         <Check className="w-3 h-3" /> Create tickets
         </button>
         <button disabled={mutationsLocked} aria-label={`Remove guest ${entry.guest_name}`} onClick={() => handleDelete(entry)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors">
          <Trash2 className="w-4 h-4" />
@@ -261,7 +261,7 @@ function GuestListSession({ eventId, identity }) {
      ))}
      {redeemed.length > 0 && (
       <>
-       <h3 className="text-sm font-medium text-content-muted pt-4">Redeemed</h3>
+       <h3 className="text-sm font-medium text-content-muted pt-4">Tickets created</h3>
        {redeemed.map(entry => (
         <div key={entry.id} className="card p-4 sm:p-5 min-w-0 bg-neutral-50">
          <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">

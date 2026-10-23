@@ -1,7 +1,7 @@
 {
   "nav": {
     "hostEvent": {
-      "context": "Call to action for event organizers: create and sell tickets for your own event on HåfaPass. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition. The organizer is the person or business hosting the event and selling its tickets."
+      "context": "Call to action for event organizers: create and sell tickets for your own event on HåfaPass. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events. The organizer is the person or business hosting the event and selling its tickets."
     },
     "scanner": {
       "context": "Tool that door staff use to scan ticket QR codes at the entrance."
@@ -10,54 +10,54 @@
       "context": "HåfaPass is the product name; keep it as written."
     },
     "events": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "search": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     }
   },
   "home": {
     "hero": {
-      "context": "Headline for HåfaPass, the event ticketing site for Guam, a US island territory in the Pacific. Keep 'Guam' as written. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "Headline for HåfaPass, the event ticketing site for Guam, a US island territory in the Pacific. Keep 'Guam' as written. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "guam": {
       "context": "Place name: Guam. Keep as written in Latin letters unless the language has an established name."
     },
     "aboutToTakeOff": {
-      "context": "First half of a headline that ends with the separate key 'takeOff' ('...is about to take off'), meaning to grow quickly. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "First half of a headline that ends with the separate key 'takeOff' ('...is about to take off'), meaning to grow quickly. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "takeOff": {
       "context": "Second half of the headline 'Guam's event scene is about to take off' — to grow quickly, not an airplane."
     },
     "subtitle": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "browseEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "startHosting": {
       "context": "The organizer is the person or business hosting the event and selling its tickets."
     },
     "featured": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "discoverEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "platformHere": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "viewAllEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noEventsYet": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "wantToBring": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "beTheFirst": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition. The organizer is the person or business hosting the event and selling its tickets."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events. The organizer is the person or business hosting the event and selling its tickets."
     },
     "createProfile": {
       "context": "The organizer is the person or business hosting the event and selling its tickets."
@@ -65,58 +65,58 @@
   },
   "events": {
     "from": {
-      "context": "Price prefix: 'From $25', the lowest ticket price. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "Price prefix: 'From $25', the lowest ticket price. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "title": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "subtitle": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "search": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "allEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noResults": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noMatchingEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noEventsYet": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noEventsDesc": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noMatchDesc": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "clearFilters": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "createEvent": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "learnMore": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "pastEvent": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "soldOut": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "ticketsAvailable": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "completed": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "free": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     }
   },
   "pricing": {
@@ -144,7 +144,7 @@
       "context": "Legal notice. HåfaPass is the product name; keep it as written."
     },
     "backToEvent": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "cancelAndEditExplanation": {
       "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This cancels your current order and releases your ticket hold. Availability and prices may change when you start again."
@@ -167,27 +167,27 @@
       "context": "Google's product name 'Google Wallet'; use Google's official name in the target language."
     },
     "subtitle": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "browseEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "browseEventsBtn": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     }
   },
   "footer": {
     "madeWith": {
-      "context": "Friendly sign-off; 'aloha' is a Hawaiian greeting kept as written."
+      "context": "Company sign-off naming where the product was built. Keep the company name."
     },
     "copyright": {
       "context": "Shimizu Technology is a company name; keep it as written."
     },
     "tagline": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "browseEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "forOrganizers": {
       "context": "The organizer is the person or business hosting the event and selling its tickets."
@@ -195,25 +195,25 @@
   },
   "categories": {
     "festival": {
-      "context": "Event category for community festivals and cultural events. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "Event category for community festivals and cultural events. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "all": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "concert": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "dining": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "sports": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "nightlife": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "other": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     }
   },
   "translation": {
@@ -237,37 +237,37 @@
   },
   "eventDetail": {
     "allEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "addToCalendar": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "share": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "copied": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "about": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "location": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "openInGoogleMaps": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "noTickets": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "buyTickets": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "joinWaitlist": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     },
     "browseEvents": {
-      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+      "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
     }
   },
   "buyer": {

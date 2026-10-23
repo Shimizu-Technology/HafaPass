@@ -37,7 +37,7 @@ test('admin monitors an active Gate I pilot and reports a mandatory-pause incide
   })
 
   await page.goto('/admin/events')
-  await page.getByRole('button', { name: /^Release gates for / }).click()
+  await page.getByRole('button', { name: /^Launch reviews for / }).click()
   await page.getByRole('button', { name: 'Gate I pilot · active' }).click()
   await page.getByLabel('Checkpoint evidence reference').fill('restricted-pilot/checkpoints/91')
   await page.getByLabel('Evidence SHA-256').first().fill('a'.repeat(64))

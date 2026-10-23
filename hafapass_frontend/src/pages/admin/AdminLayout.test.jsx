@@ -35,7 +35,7 @@ describe('admin workspace navigation', () => {
     const view = shell()
     await userEvent.click(screen.getByRole('button', { name: 'Collapse admin sidebar' }))
     expect(window.localStorage.getItem('hafapass_admin_sidebar_collapsed')).toBe('true')
-    const link = within(screen.getByRole('navigation', { name: 'Admin sidebar' })).getByRole('link', { name: 'Provider readiness' })
+    const link = within(screen.getByRole('navigation', { name: 'Admin sidebar' })).getByRole('link', { name: 'Integrations & policies' })
     expect(link).toHaveAttribute('href', '/admin/provider-readiness')
     expect(link.querySelector('span')).toHaveAttribute('aria-hidden', 'true')
     view.unmount(); shell()

@@ -1,3 +1,4 @@
+import { formatPlatformDateTime } from '../../utils/eventTime'
 import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
@@ -346,7 +347,7 @@ function RefundsPageSession({ eventId, identity }) {
         )}
        </div>
 
-       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {refund.cash_return?.returned_at} · Recorded {refund.recorded_at} · Organizer custody. No money transferred by HåfaPass.</p>)}
+       {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {formatPlatformDateTime(refund.cash_return?.returned_at)} · Recorded {formatPlatformDateTime(refund.recorded_at)} · Organizer custody. No money transferred by HåfaPass.</p>)}
        {refundingId === order.id && (
         <div className="mt-4 pt-4 border-t border-neutral-100">
          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">

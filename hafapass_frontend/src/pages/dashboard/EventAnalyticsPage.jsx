@@ -1,3 +1,5 @@
+import { adminLabel as readableLabel } from '../admin/adminLabels'
+import { formatPlatformDateTime as formatDate } from '../../utils/eventTime'
 import { payoutAccountLabel, payoutProviderLabel } from '../../utils/payoutLabels'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
@@ -14,17 +16,6 @@ import { saveBlob } from '../../utils/download'
 function formatCents(cents) {
  const safe = Number.isFinite(cents) ? cents : 0
  return `$${(safe / 100).toFixed(2)}`
-}
-
-function formatDate(isoString) {
- if (!isoString) return ''
- return new Date(isoString).toLocaleString('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit'
- })
 }
 
 export default function EventAnalyticsPage() {
@@ -309,10 +300,10 @@ function EventAnalyticsPageSession({ id, identity }) {
      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-5">
       {permissions.manage_finance === true && ['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}
       {permissions.payout === true && latestSettlement?.available_to_payout_cents > 0 && <button disabled={financeBusy || !finance.connected_account?.payout_ready} onClick={() => createPayout(latestSettlement)} className="btn-primary text-sm disabled:opacity-50">Request payout {formatCents(latestSettlement.available_to_payout_cents)}</button>}
-      {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {latestSettlement.status} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
+      {latestSettlement && <p className="text-xs text-neutral-500">Version {latestSettlement.version} · {readableLabel(latestSettlement.status)} · {formatCents(latestSettlement.available_to_payout_cents)} available</p>}
      </div>
 
-     {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payoutProviderLabel(payout.provider)} · {payout.status}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
+     {finance.payouts?.length > 0 && <div className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">{finance.payouts.map(payout => <div key={payout.id} className="flex items-center justify-between px-4 py-3 text-sm"><span className="text-neutral-600">{payoutProviderLabel(payout.provider)} · {readableLabel(payout.status)}</span><span className="font-semibold text-neutral-900">{formatCents(payout.amount_cents)}</span></div>)}</div>}
 
      <div className="mt-5 border-t border-neutral-100 pt-5">
       <h3 className="text-sm font-semibold text-neutral-900">Exports</h3>
@@ -324,7 +315,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-neutral-700">Statement
          <select value={statementValue} onChange={changeEvent => setStatementChoice(changeEvent.target.value)} className="input min-h-11 !py-2 text-sm sm:w-56">
-          {(finance.settlements || []).map(item => <option key={item.id} value={String(item.id)}>Version {item.version} ({item.status})</option>)}
+          {(finance.settlements || []).map(item => <option key={item.id} value={String(item.id)}>Version {item.version} ({readableLabel(item.status)})</option>)}
           <option value="current">Current, not finalized</option>
          </select>
         </label>

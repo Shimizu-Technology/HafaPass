@@ -1,3 +1,4 @@
+import { formatEventDateTime } from '../../utils/eventTime'
 import EventWorkspace from '../../components/EventWorkspace'
 import Dialog from '../../components/Dialog'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -177,7 +178,7 @@ function WaitlistSession({ eventId, identity }) {
   const handleRemove = entry => {
     askConfirmation('remove_entry', `Remove ${entry.name || entry.email} from the waitlist?`, 'Remove entry', config => apiClient.delete(`/organizer/events/${eventId}/waitlist/${entry.id}`, config), () => setNotice('Waitlist entry removed.'))
   }
-  const formatDate = date => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const formatDate = date => formatEventDateTime(date, event?.timezone, { locale: 'en-US' })
   if (loading) return <div className="flex justify-center py-20" role="status"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /> Loading waitlist…</div>
   if (!event) return <main className="mx-auto max-w-3xl px-4 py-8">
     <Link to="/dashboard" className="inline-flex min-h-11 items-center font-medium text-brand-800">All events</Link>

@@ -1,3 +1,4 @@
+import { adminLabel as readableLabel } from '../admin/adminLabels'
 import EventWorkspace from '../../components/EventWorkspace'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -261,7 +262,7 @@ function SeatingSession({ id, identity }) {
             <section className="card p-5">
               <h2 className="font-semibold text-neutral-900">Audit trail</h2>
               <ol className="mt-3 max-h-72 space-y-3 overflow-auto text-xs text-neutral-600">
-                {seating.audit_events?.map(entry => <li key={entry.id} className="border-l-2 border-neutral-200 pl-3"><p className="font-semibold text-neutral-800">{entry.action}</p><p>{new Date(entry.occurred_at).toLocaleString()}</p></li>)}
+                {seating.audit_events?.map(entry => <li key={entry.id} className="border-l-2 border-neutral-200 pl-3"><p className="font-semibold text-neutral-800">{readableLabel(entry.action)}</p><p>{new Date(entry.occurred_at).toLocaleString()}</p></li>)}
               </ol>
             </section>
           </aside>
