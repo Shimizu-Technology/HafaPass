@@ -112,15 +112,17 @@ RSpec.describe "Buyer orders and receipts", type: :request do
   it "returns compact cards with ticket, add-on, and merchandise counts and all purchased items" do
     type = create(:ticket_type, event: event)
     create(:order_item, order: order, ticket_type: type, quantity: 2, name: "Admission")
+    expected_names = ["Admission"]
     %i[add_on merchandise].each do |kind|
       catalog_item = create(:catalog_item, event: event, kind: kind)
+      expected_names << catalog_item.name
       create(:order_item, order: order, ticket_type: nil, catalog_item: catalog_item,
         item_kind: kind, name: catalog_item.name, quantity: 3)
     end
     get "/api/v1/me/orders", headers: auth_headers(buyer)
     card = response.parsed_body.fetch("orders").find { |entry| entry.fetch("id") == order.id }
     expect(card.fetch("item_counts")).to eq("ticket" => 2, "add_on" => 3, "merchandise" => 3)
-    expect(card.fetch("order_items").pluck("name")).to eq(["Admission", "Event add-on 1", "Event add-on 2"])
+    expect(card.fetch("order_items").pluck("name")).to eq(expected_names)
     expect(card).to include("subtotal_cents" => 5000, "service_fee_cents" => 250,
       "discount_cents" => 500, "total_cents" => 4750, "refunded_cents" => 0,
       "receipt_available" => true, "refund_pending" => false)

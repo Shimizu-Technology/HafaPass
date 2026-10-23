@@ -57,15 +57,17 @@ module TicketTransfers
           end
           validate_transferable!(transfer.ticket)
 
-          transfer.ticket.update!(
-            holder_user: user,
-            holder_email: transfer.recipient_email,
-            attendee_name: transfer.recipient_name.presence ||
-              [user.first_name, user.last_name].compact.join(" ").presence || transfer.ticket.attendee_name,
-            attendee_email: transfer.recipient_email,
-            display_credential_version: transfer.ticket.display_credential_version + 1,
-            scan_credential_version: transfer.ticket.scan_credential_version + 1
-          )
+          AuditContext.set(actor: user) do
+            transfer.ticket.update!(
+              holder_user: user,
+              holder_email: transfer.recipient_email,
+              attendee_name: transfer.recipient_name.presence ||
+                [user.first_name, user.last_name].compact.join(" ").presence || transfer.ticket.attendee_name,
+              attendee_email: transfer.recipient_email,
+              display_credential_version: transfer.ticket.display_credential_version + 1,
+              scan_credential_version: transfer.ticket.scan_credential_version + 1
+            )
+          end
           transfer.update!(status: :accepted, accepted_by_user: user, accepted_at: Time.current,
             token_version: transfer.token_version + 1)
           audit_seat!(transfer.ticket, "seat.transfer_accepted", user, ticket_transfer_id: transfer.id)

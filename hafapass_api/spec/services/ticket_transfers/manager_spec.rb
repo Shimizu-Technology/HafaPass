@@ -49,4 +49,19 @@ RSpec.describe TicketTransfers::Manager do
     expect { described_class.create!(ticket: ticket, recipient_email: "other@example.com") }
       .to raise_error(described_class::TransferError, /already has a pending transfer/)
   end
+
+  it "audits retries once and attributes acceptance and credential rotation to the recipient" do
+    transfer = described_class.create!(ticket: ticket, recipient_email: recipient.email, initiated_by: owner)
+    expect(described_class.create!(ticket: ticket, recipient_email: recipient.email, initiated_by: owner).id).to eq(transfer.id)
+    initiated = AuditLog.where(action: "ticket_transfer.created", auditable: transfer).sole
+    expect(initiated.actor_user).to eq(owner)
+
+    described_class.accept!(token: TicketTransferCredential.issue(transfer), user: recipient)
+    accepted = AuditLog.where(action: "ticket_transfer.accepted", auditable: transfer).sole
+    rotated = AuditLog.where(action: "ticket.scan_credential_rotated", auditable: ticket).sole
+    expect(accepted.actor_user).to eq(recipient)
+    expect(rotated.actor_user).to eq(recipient)
+    expect(accepted.attributes.to_json).not_to include(recipient.email)
+    expect(rotated.after_data.keys).to contain_exactly("scan_credential_version", "display_credential_version")
+  end
 end

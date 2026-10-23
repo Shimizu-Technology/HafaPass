@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class CatalogItem < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :catalog_item,
+    fields: %w[event_id kind price_cents minimum_price_cents maximum_price_cents inventory_quantity active position],
+    observe: %w[name description]
+
   belongs_to :event
   has_many :order_items, dependent: :restrict_with_error
   has_many :catalog_item_holds, dependent: :restrict_with_error

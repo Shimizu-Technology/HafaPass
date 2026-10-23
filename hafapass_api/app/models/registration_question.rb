@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class RegistrationQuestion < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :registration_question,
+    fields: %w[event_id kind required active position],
+    observe: %w[prompt options]
+
   belongs_to :event
   has_many :registration_responses, dependent: :restrict_with_error
 

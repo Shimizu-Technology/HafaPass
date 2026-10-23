@@ -1,4 +1,10 @@
 class TicketType < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :ticket_type,
+    fields: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at],
+    observe: %w[name description]
+
   include Translatable
 
   translates :name, :description, context: "Ticket option for an event sold on HåfaPass, a ticketing site in Guam. " \

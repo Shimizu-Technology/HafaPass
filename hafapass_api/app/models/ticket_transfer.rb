@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class TicketTransfer < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :ticket_transfer,
+    fields: %w[ticket_id status expires_at accepted_at cancelled_at]
+
   belongs_to :ticket
   belongs_to :initiated_by_user, class_name: "User", optional: true
   belongs_to :accepted_by_user, class_name: "User", optional: true
@@ -20,6 +25,23 @@ class TicketTransfer < ApplicationRecord
   end
 
   private
+
+  def operational_audit_event
+    ticket.event
+  end
+
+  def operational_audit_actor(operation)
+    return initiated_by_user || super if operation == :create
+    return accepted_by_user || super if operation == :update && saved_change_to_status? && accepted?
+
+    super
+  end
+
+  def operational_audit_action(operation)
+    return "ticket_transfer.#{status}" if operation == :update && saved_change_to_status?
+
+    super
+  end
 
   def normalize_recipient
     self.recipient_email = recipient_email.to_s.strip.downcase

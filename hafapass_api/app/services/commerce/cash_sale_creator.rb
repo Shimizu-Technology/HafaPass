@@ -44,6 +44,10 @@ module Commerce
           cash_sale_request_digest: key ? request_digest : nil,
           expected_total_cents: parameters["expected_total_cents"]
         ).order
+        AuditLogger.record!(action: "box_office.cash_sale_created", auditable: order, event: event,
+          actor: user, source: user ? (AuditContext.current.source.presence || "user") : "system", outcome: "succeeded",
+          after_data: order.attributes.slice("status", "subtotal_cents", "service_fee_cents", "discount_cents", "total_cents", "payment_method"),
+          metadata: { ticket_count: order.tickets.count }, deduplication_key: "cash_sale/#{order.id}")
         Result.new(order: order, replayed: false)
       end
     rescue ActiveRecord::RecordNotUnique

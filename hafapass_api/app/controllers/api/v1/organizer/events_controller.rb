@@ -499,6 +499,7 @@ module Api
           ).merge(overrides.stringify_keys)
 
           new_event = Event.new(attrs)
+          new_event.audit_clone_source = source
           if new_event.save
             source.ticket_types.each do |tt|
               cloned_ticket_type = new_event.ticket_types.create!(

@@ -1,4 +1,16 @@
 class Event < ApplicationRecord
+  include OperationalAuditable
+
+  # Source identity is transient, supplied by the clone operation before save.
+  attr_accessor :audit_clone_source
+
+  audits_operations :event,
+    fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
+      category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees
+      transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
+    observe: %w[title slug description short_description cover_image_url venue_name venue_address venue_city
+      localized_content]
+
   has_one :event_cancellation_refund_run, dependent: :restrict_with_error
   include PublicSlug
   include Translatable
@@ -488,6 +500,21 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def operational_audit_action(operation)
+    if operation == :create
+      return "event.recurrence_created" if recurrence_parent_id.present?
+      return "event.cloned" if audit_clone_source
+    end
+
+    super
+  end
+
+  def operational_audit_metadata(operation)
+    return { source_event_id: audit_clone_source.id } if operation == :create && audit_clone_source
+
+    super
+  end
 
   def active_seat_holds_count(at: Time.current)
     return 0 unless event_seating_configuration

@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class PromoCode < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :promo_code,
+    fields: %w[event_id discount_type discount_value max_uses active starts_at expires_at],
+    observe: %w[code]
+
   belongs_to :event
   has_many :orders, dependent: :restrict_with_error
   has_many :promo_redemptions, dependent: :restrict_with_error
