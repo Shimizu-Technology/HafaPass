@@ -30,6 +30,8 @@ export default function SEO({
       {!noSocial && <meta property="og:title" content={title || DEFAULT_TITLE} />}
       {!noSocial && <meta property="og:description" content={description} />}
       {!noSocial && <meta property="og:image" content={image} />}
+      {!noSocial && image === DEFAULT_IMAGE && <meta property="og:image:width" content="1200" />}
+      {!noSocial && image === DEFAULT_IMAGE && <meta property="og:image:height" content="630" />}
       {!noSocial && <meta property="og:url" content={canonicalUrl} />}
       {!noSocial && <meta property="og:type" content={type} />}
       {!noSocial && <meta property="og:site_name" content={SITE_NAME} />}

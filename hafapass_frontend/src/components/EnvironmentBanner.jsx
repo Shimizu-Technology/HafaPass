@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
-import apiClient from '../api/client'
+import { loadPublicConfig } from '../api/publicConfig'
 
 const ENVIRONMENT_KEY = 'hafapass_runtime_environment'
 const PAYMENT_MODE_KEY = 'hafapass_runtime_payment_mode'
@@ -26,7 +26,7 @@ export default function EnvironmentBanner({ offlineOnly = false }) {
   useEffect(() => {
     if (offlineOnly) return
     let active = true
-    apiClient.get('/config').then(response => {
+    loadPublicConfig().then(response => {
       if (!active) return
       const environment = response.data.environment || null
       const paymentMode = response.data.payment_mode || null

@@ -9,6 +9,7 @@ import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
 import WaitlistForm from '../components/WaitlistForm'
 import SEO from '../components/SEO'
+import RouteLoading from '../components/RouteLoading'
 import EventDescription from '../components/EventDescription'
 import EventPageSections from '../components/EventPageSections'
 import { normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
@@ -295,8 +296,8 @@ function EventDetailContent() {
     return `https://www.google.com/maps/search/?api=1&query=${q}`
   }
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /></div>
-  if (error && !error.retryable) return <NotFound kind="event" backTo={browseFrom} />
+  if (loading) return <RouteLoading />
+  if (error && !error.retryable) return <div className="route-loading"><NotFound kind="event" backTo={browseFrom} /></div>
   if (error) return (
     <div className="max-w-2xl mx-auto px-4 py-16 text-center">
       <p role="alert" className="text-neutral-700 text-lg mb-4">{error.message}</p>

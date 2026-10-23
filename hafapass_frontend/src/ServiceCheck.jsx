@@ -73,6 +73,8 @@ function ConnectedApp({ owner, onMount, degraded, onRetry }) {
 export default function ServiceCheck() {
   const { status: checkedStatus, retry } = useBackendAvailability(HEALTH_URL)
   const location = useLocation()
+  // Match React Router's optional trailing slash and case-insensitive paths.
+  const isScannerRoute = /^\/dashboard\/scanner\/?$/i.test(location.pathname)
   // Read once per mount: a failed check clears it, so retries show the gate again.
   const [recentSuccess, setRecentSuccess] = useState(readRecentSuccess)
   // The scanner owner the application last rendered for. A confirmed account
@@ -81,7 +83,7 @@ export default function ServiceCheck() {
   const markAppMounted = useCallback(owner => setAppOwner(owner), [])
   // The door scanner never uses the session shortcut: while checking, saved
   // door access must open first instead of being swapped in mid-scan.
-  const useRecentSuccess = recentSuccess && location.pathname !== '/dashboard/scanner'
+  const useRecentSuccess = recentSuccess && !isScannerRoute
   const status = checkedStatus === 'checking' && useRecentSuccess ? 'available' : checkedStatus
   useEffect(() => {
     if (checkedStatus === 'checking') return
@@ -94,7 +96,7 @@ export default function ServiceCheck() {
   useEffect(() => {
     let current = true
     const owner = currentScannerOwner()
-    if (location.pathname !== '/dashboard/scanner') { setCachedScanner(null); return }
+    if (!isScannerRoute) { setCachedScanner(null); return }
     const requestedEventId = new URLSearchParams(location.search).get('event')
     let eventId = requestedEventId
     try { eventId ??= window.localStorage.getItem('hafapass_scanner_event_id') } catch { /* Unavailable storage cannot authorize a fallback. */ }
@@ -106,10 +108,10 @@ export default function ServiceCheck() {
       }
     }).catch(() => { if (current) setCachedScanner(null) })
     return () => { current = false }
-  }, [location.pathname, location.search, scannerRoute, status])
+  }, [isScannerRoute, location.search, scannerRoute, status])
 
   // Previously authorized door access must survive an API or authentication-service outage.
-  const cachedDoor = location.pathname === '/dashboard/scanner' && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
+  const cachedDoor = isScannerRoute && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
       <EnvironmentBanner offlineOnly />
       <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
         Using this device’s saved event access. Saved scans stay on this device. When services return, reload to reconnect.
@@ -123,7 +125,10 @@ export default function ServiceCheck() {
     // the online one, and the online scanner never opens until a check passes.
     // Elsewhere a mounted application stays mounted for its owner.
     if (cachedDoor && cachedScanner.owner === scannerOwner && status !== 'available') return cachedDoor
-    if (location.pathname !== '/dashboard/scanner' && appOwner !== undefined && appOwner === scannerOwner) return app
+    if (!isScannerRoute && appOwner !== undefined && appOwner === scannerOwner) return app
+    // Public browsing can start while health is pending. A later failure adds
+    // the degraded banner without discarding the mounted page or its state.
+    if (!isScannerRoute && status === 'checking') return app
     if (status === 'checking') return <ServiceGate />
     if (status === 'unavailable') return <PrivatePreviewPage onRetry={retry} />
     return app

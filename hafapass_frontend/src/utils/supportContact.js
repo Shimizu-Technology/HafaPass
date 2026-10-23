@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import apiClient from '../api/client'
+import { loadPublicConfig } from '../api/publicConfig'
 
 // Support contact details are data: admins manage SiteSetting platform_email /
 // platform_phone and /config exposes them. VITE_SUPPORT_EMAIL is an optional
@@ -45,7 +45,7 @@ export function setSupportContact(value) {
 
 export function loadSupportContact() {
   loading ||= Promise.resolve()
-    .then(() => apiClient.get('/config'))
+    .then(loadPublicConfig)
     .then(response => {
       const data = response?.data
       if (!data || typeof data !== 'object') throw new Error('Configuration unavailable')
