@@ -160,6 +160,7 @@ describe('event editor context ownership with the real router', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     await screen.findByText('Event updated successfully.')
     expect(apiClient.put.mock.calls[0][1].cover_image_url).toBeNull()
+    expect(apiClient.put.mock.calls[0][1].venue_city).toBe('')
   })
 
   it('does not navigate Beta away when an old Alpha clone completes', async () => {
@@ -274,11 +275,12 @@ describe('event editor context ownership with the real router', () => {
     fireEvent.change(screen.getByLabelText('Max Capacity'), { target: { value: '0200' } })
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
     expect(apiClient.put.mock.calls[0][1].cover_image_url).toBeNull()
+    expect(apiClient.put.mock.calls[0][1].venue_city).toBe('')
     // An upload begun before the save can finish while form inputs are disabled.
     await act(async () => uploads.get('11')('https://synthetic.invalid/new-cover.png'))
-    await act(async () => pending.resolve({ data: { ...rows[11], cover_image_url: null, venue_city: 'Guam', max_capacity: 200 } }))
+    await act(async () => pending.resolve({ data: { ...rows[11], cover_image_url: null, venue_city: '', max_capacity: 200 } }))
     await screen.findByText('Event updated successfully.')
-    expect(screen.getByLabelText('Village or city')).toHaveValue('Guam')
+    expect(screen.getByLabelText('Village or city')).toHaveValue('')
     expect(screen.getByLabelText('Max Capacity').value).toBe('200')
     expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))

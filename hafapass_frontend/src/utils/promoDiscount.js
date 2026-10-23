@@ -4,7 +4,7 @@ export function promoDiscountToApi(value, type) {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null
   const [dollars, fraction = ''] = value.split('.')
   const cents = Number(dollars) * 100 + Number(fraction.padEnd(2, '0'))
-  return Number.isSafeInteger(cents) && cents > 0 ? cents : null
+  return Number.isSafeInteger(cents) && cents > 0 && cents <= 2147483647 ? cents : null
 }
 
 export function promoDiscountFromApi(value, type) {

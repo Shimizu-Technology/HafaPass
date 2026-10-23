@@ -102,7 +102,7 @@ describe('AdminEventsPage', () => {
 
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    const actions = within(screen.getByRole('group', { name: 'Release gate actions for [LIVE MONEY TEST] Proof' }))
+    const actions = within(screen.getByRole('group', { name: 'Launch review actions for [LIVE MONEY TEST] Proof' }))
     for (const name of ['Prepare pilot readiness', 'Prepare Gate F evidence', 'Prepare Gate G rehearsal', 'Prepare live-payment validation',
       'Prepare a limited live pilot', 'Prepare pilot closeout', 'Mark as hidden proof candidate']) {
       expect(actions.getByRole('button', { name })).toBeInTheDocument()

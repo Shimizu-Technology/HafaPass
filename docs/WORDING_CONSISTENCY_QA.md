@@ -56,3 +56,40 @@ Evidence is local and ignored by Git: `screenshots/wording/`. Files include `hom
 No complete item was skipped. Unused legacy home locale keys and parallel-owned zero-event copy/layouts were left unchanged. Policies and routes were not changed.
 
 Local engineering gate results are recorded in the PR test plan. The tested working tree is the source committed on this branch; runtime release metadata still identified the base commit because the implementation was uncommitted during UI execution. The final head SHA is reported with the PR. UI coverage is scoped to the listed journeys, with no physical-mobile-device claim.
+
+## Review fixes — 2026-10-23
+
+Verified all 12 CodeRabbit comments against `745687ce580b44da2fecd5f4e264f24b2aa103de`. At the start of this round, `origin/main` was still `1548e8f31f6dd5bae11f4f7330f8d2c77d9cc898`; the task branch was one commit ahead and zero behind, so no integration merge was needed. The scope and product rules above still apply. No policy configuration or CHamoru text changed.
+
+All 12 findings were valid and addressed:
+
+1. Updated only the five supported locales' footer taglines and their GT postprocessing hashes. Retained the service's actual translation version IDs and download timestamps.
+2. Renamed the expanded admin action group's accessible label to Launch review actions; updated its component assertion.
+3. Added create-flow browser assertions for submitted blank `venue_city` and the blank field after navigation to the saved draft.
+4. Corrected the edit-save fixture to return a blank city and asserted both the submitted and displayed blank value. The API has no unconditional Guam fallback.
+5. Kept `redeem_guest` as the recovery operation ID and mapped its visible label to create guest tickets; tested paused writes and retained journal identity.
+6. Changed the guest completion summary to tickets created; tested the summary and matching section heading.
+7. Rendered composed checklist sentences directly. Only the raw payout enum passes through the readable-label helper. Regression cases preserve `eBay_Events` and `island_nights` exactly.
+8. Reused one normalized event time zone for promo conversion, editing and display. Explicit null zones now use Pacific/Guam. Component and browser tests cover create/edit/reload and retained sub-minute expiry precision.
+9. Enabled assigned seating in a component fixture and supplied two audit events to exercise both mapped and unknown underscore-action labels. No audit behavior changed.
+10. Added support tests for the enabled Retry delivery action and both queued-success messages. These use simulated transport; no message was sent.
+11. Added a direct platform formatter test with Japanese active and a fixed UTC instant crossing Guam midnight; output remains US English and Guam time.
+12. Limited fixed discounts to 2,147,483,647 cents in the frontend and API. Request tests persist the maximum, reject overflowing creates/edits without changing saved data, and reject percentages above 100 or fractional points.
+
+### Affected-flow acceptance
+
+Executor: agent. Source: the review-fix commit containing this record. Browser: local Vite on port 5236, desktop Chromium at 390 and 1440 CSS pixels. Playwright owns isolated in-memory API fixtures and browser contexts; its existing no-Clerk test mode is used. This round does not repeat the prior live Clerk, physical-device, email-rendering or production checks.
+
+- R1: At each width, open the promo form for an event with `timezone: null`; reject $21,474,836.48 without sending a write; correct to $5.00 and save with a Guam expiry; reopen, edit to $7.25 and another expiry; reload. Passed: fixtures retained 500/725 cents and the expected UTC instants, and the list/form used Guam time. Evidence: `e2e/wording-review.spec.js` and `/tmp/hafapass-150-playwright-final.log`. Database persistence of range boundaries is separately established by the Rails request specs against disposable `hafapass_150_review_test`.
+- R2: At each width, load one pending and one completed guest; inspect the completion summary; start Create tickets, interrupt its response, then reload. Passed: create guest tickets wording remains visible, further writes stay disabled and `redeem_guest` stays in the recovery journal. Same browser evidence as R1; no claim that the interrupted write reached a real backend.
+- R3: Create a draft without touching Village or city; verify the submitted fixture and saved editor field remain blank. Passed in the existing event-editor browser scenario. The component edit test also preserves the blank response while retaining a concurrent cover upload.
+
+Required affected-flow cases: 3 passed, 0 failed, 0 blocked, 0 not run. Resized Chromium coverage does not establish physical-phone keyboard, gesture or installed-app behavior.
+
+### Engineering verification
+
+Final local gate passed: 2,445 RSpec examples, 165 Vitest files / 1,795 tests, all 99 Playwright scenarios, ESLint, production build, RuboCop (897 files), Brakeman, Bundler Audit, npm production audit, release-freeze check, repository hygiene and `git diff --check`. Logs are `/tmp/hafapass-150-{rspec,vitest,playwright-final,lint-final,build-direct,rubocop,brakeman,bundle-audit,npm-audit}.log`. The selected-path advisory Impeccable scan returned `[]`; its initial npx install stalled, so the identical cached 4.6.0 CLI completed the scan (`/tmp/hafapass-150-impeccable-cached.json`).
+
+The first two-worker Playwright run had 98 passes and one unchanged offline-scanner timeout. Both scanner variants then passed twice in isolation. The full serial rerun passed all 99 scenarios; the original failure remains in `/tmp/hafapass-150-playwright.log`. No scanner source or timeout was changed. The final remote fetch still showed zero commits behind main.
+
+The collaborative preview could not initialize automation (`Preview automation status timed out after 15000ms.`); its exact task-created idle tab was closed. Browser acceptance above was executed through the repository's Playwright suite.

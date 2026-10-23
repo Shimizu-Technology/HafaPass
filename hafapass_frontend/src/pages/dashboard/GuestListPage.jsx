@@ -171,7 +171,7 @@ function GuestListSession({ eventId, identity }) {
    <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between">
     <div>
      <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Guest List</h2>
-     <p className="text-sm text-neutral-500 mt-1">{unredeemed.length} pending, {redeemed.length} redeemed</p>
+     <p className="text-sm text-neutral-500 mt-1">{unredeemed.length} pending, {redeemed.length} tickets created</p>
     </div>
     <button disabled={mutationsLocked} onClick={() => setShowForm(!showForm)} className="btn-primary text-sm !py-2.5 gap-1.5">
      <UserPlus className="w-4 h-4" /> Add Guest
@@ -187,7 +187,7 @@ function GuestListSession({ eventId, identity }) {
    {refreshing && <p role="status" className="mb-4 text-sm text-neutral-700">Updating the list…</p>}
    {loadError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{loadError} The previous list and your draft are retained; actions are paused until the list is refreshed.</p><button type="button" disabled={refreshing} onClick={fetchData} className="mt-2 min-h-11 font-semibold underline">Retry list</button></div>}
    {mutationError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p>{mutationError}</p><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="mt-2 min-h-11 font-semibold underline">Check latest list</button></div>}
-   {unconfirmed && <section aria-label="Unconfirmed operation" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>An earlier {unconfirmed.operation.replaceAll('_', ' ')} request is not confirmed. Changes are paused to avoid repeating an unconfirmed request. Refresh the list and contact support before repeating it.</p><div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="min-h-11 font-semibold underline">Refresh latest list</button><SupportLink subject="Verify an unconfirmed event-tool operation" className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div></section>}
+   {unconfirmed && <section aria-label="Unconfirmed operation" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>An earlier {unconfirmed.operation === 'redeem_guest' ? 'create guest tickets' : unconfirmed.operation.replaceAll('_', ' ')} request is not confirmed. Changes are paused to avoid repeating an unconfirmed request. Refresh the list and contact support before repeating it.</p><div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="min-h-11 font-semibold underline">Refresh latest list</button><SupportLink subject="Verify an unconfirmed event-tool operation" className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div></section>}
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
    {showForm && (

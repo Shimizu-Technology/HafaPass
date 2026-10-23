@@ -46,7 +46,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'payout', title: 'How you get paid', done: profile.payout_ready,
-      status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : payoutMethod} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
+      status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : readableLabel(payoutMethod)} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
       next: !profile.payout_ready ? 'Only needed for paid tickets: complete Tax information and How you get paid in Settings, then wait for finance approval.' : null,
       action: !profile.payout_ready && <Link to="/dashboard/settings" className="btn-secondary !px-4 !py-2 text-sm">{payoutMethod ? 'View payout details' : 'Choose check or bank transfer'}</Link>,
     },
@@ -87,7 +87,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
                   {step.done ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /> : <Circle aria-hidden="true" className={`mt-0.5 h-5 w-5 shrink-0 ${isNext ? 'text-brand-600' : 'text-neutral-300'}`} />}
                   <div className="min-w-0">
                     <p className="font-medium text-neutral-900">{step.title}{isNext && profile.verification_status !== 'suspended' && <span className="ml-2 rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white">Next</span>}<span className="sr-only">{step.done ? ' (done)' : ''}</span></p>
-                    <p className="text-sm text-neutral-700 [overflow-wrap:anywhere]">{readableLabel(step.status)}</p>
+                    <p className="text-sm text-neutral-700 [overflow-wrap:anywhere]">{step.status}</p>
                     {!step.done && step.next && <p className="mt-1 text-sm text-content-muted">{step.next}</p>}
                     {step.key === 'verification' && profile.verification_notes && !step.done && <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Review note: {profile.verification_notes}</p>}
                     {step.hint && <p className="mt-1 text-sm text-amber-900">{step.hint}</p>}

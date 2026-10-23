@@ -12,6 +12,13 @@ describe('promo discount units', () => {
     }
     expect(promoDiscountFromApi(500, 'fixed')).toBe('5.00')
   })
+  it('limits fixed discounts to the API integer column range', () => {
+    expect(promoDiscountToApi('21474836.47', 'fixed')).toBe(2147483647)
+    expect(promoDiscountToApi('21474836.48', 'fixed')).toBeNull()
+    expect(promoDiscountToApi('999999999999999999', 'fixed')).toBeNull()
+    expect(promoDiscountToApi('100', 'percentage')).toBe(100)
+    expect(promoDiscountToApi('2147483647', 'percentage')).toBeNull()
+  })
   it('keeps percentage units and rejects ambiguous or invalid amounts', () => {
     expect(promoDiscountToApi('20', 'percentage')).toBe(20)
     for (const value of ['', '-1', '0', '5.001', 'Infinity', '1e2']) expect(promoDiscountToApi(value, 'fixed')).toBeNull()

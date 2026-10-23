@@ -33,7 +33,7 @@ function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCan
         Launch reviews
         <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div id={panelId} role="group" aria-label={`Release gate actions for ${event.title}`} className="mt-2 flex flex-col items-start gap-1 border-l-2 border-neutral-200 pl-3">
+      {open && <div id={panelId} role="group" aria-label={`Launch review actions for ${event.title}`} className="mt-2 flex flex-col items-start gap-1 border-l-2 border-neutral-200 pl-3">
         <PilotReadinessReviewDialog event={event} onComplete={onComplete} />
         <PilotValidationReviewDialog event={event} onComplete={onComplete} />
         <EventDayRehearsalReviewDialog event={event} onComplete={onComplete} />

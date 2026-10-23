@@ -35,6 +35,18 @@ describe('support record lookup', () => {
     expect(screen.getByRole('link', { name: 'Open event page' })).toHaveAttribute('href', '/events/published-event')
     await user.click(within(screen.getByText('HP-T501 · Order HP-923').closest('article')).getByRole('button', { name: 'Resend order tickets' }))
     expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/orders/923/fulfill', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(await screen.findByText("The order's ticket email was queued.")).toBeVisible()
+  })
+
+  it('enables Retry delivery for an unsent failed message and reports queueing', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [{ id: 42, template: 'order_confirmation', recipient: 'buyer@example.invalid', status: 'failed', provider_id: null, attempts: 1 }] } })
+    apiClient.post.mockResolvedValue({ data: {} })
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const retry = await screen.findByRole('button', { name: 'Retry delivery' })
+    expect(retry).toBeEnabled()
+    await userEvent.click(retry)
+    expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/42/resend', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(await screen.findByText('The original message was queued for another delivery attempt.')).toBeVisible()
   })
 
   it('offers a way back to the admin panel only to an admin of the current account', async () => {

@@ -141,5 +141,7 @@ test('new event capacity uses the validated number and retains draft recovery un
   await expect(page).toHaveURL(/\/dashboard\/events\/603\/edit$/)
   await expect(page.getByLabel('Max Capacity', { exact: true })).toHaveValue('100')
   expect(created.max_capacity).toBe(100)
+  expect(created.venue_city).toBe('')
+  await expect(page.getByLabel('Village or city')).toHaveValue('')
   expect(await page.evaluate(() => Object.keys(sessionStorage).some(key => key.startsWith('hafapass:new-event:')))).toBe(false)
 })

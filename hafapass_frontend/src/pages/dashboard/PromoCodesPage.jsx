@@ -6,7 +6,7 @@ import { Plus, Tag, Trash2, Pencil, ToggleLeft, ToggleRight, Loader2 } from 'luc
 import apiClient from '../../api/client'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import SupportLink from '../../components/SupportLink'
-import { formatEventDateTime, toEventLocalInput, fromEventLocalInput } from '../../utils/eventTime'
+import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime, toEventLocalInput, fromEventLocalInput } from '../../utils/eventTime'
 import { promoDiscountToApi, promoDiscountFromApi } from '../../utils/promoDiscount'
 
 const readPendingOperation = key => {
@@ -75,6 +75,7 @@ function PromoCodesSession({ eventId, identity }) {
     }
   }, [beginRequest, clearPrivateState, eventId])
   useEffect(() => { fetchData() }, [fetchData])
+  const eventTimeZone = event?.timezone || DEFAULT_EVENT_TIME_ZONE
   const canManage = event?.permissions?.manage_marketing === true
   const mutationsLocked = !canManage || refreshing || Boolean(loadError) || Boolean(activeMutation) || Boolean(unconfirmed)
 
@@ -137,8 +138,8 @@ function PromoCodesSession({ eventId, identity }) {
   const handleCreate = submitEvent => {
     submitEvent.preventDefault()
     const payload = { code: form.code, discount_type: form.discount_type, discount_value: promoDiscountToApi(form.discount_value, form.discount_type),
-      max_uses: form.max_uses ? parseInt(form.max_uses, 10) : null, expires_at: editingCode && form.expires_at === toEventLocalInput(editingCode.expires_at, event?.timezone)
-        ? editingCode.expires_at : form.expires_at ? fromEventLocalInput(form.expires_at, event?.timezone)?.toISOString() : null }
+      max_uses: form.max_uses ? parseInt(form.max_uses, 10) : null, expires_at: editingCode && form.expires_at === toEventLocalInput(editingCode.expires_at, eventTimeZone)
+        ? editingCode.expires_at : form.expires_at ? fromEventLocalInput(form.expires_at, eventTimeZone)?.toISOString() : null }
     if (payload.discount_value === null || (form.expires_at && !payload.expires_at)) { setMutationError('Enter a valid discount and expiration time.'); return }
     const codeId = editingCode?.id
     performMutation(codeId ? 'edit_code' : 'create_code', config => codeId
@@ -150,7 +151,7 @@ function PromoCodesSession({ eventId, identity }) {
   }
   const editCode = code => {
     setEditingCode(code)
-    setForm({ code: code.code, discount_type: code.discount_type, discount_value: promoDiscountFromApi(code.discount_value, code.discount_type), max_uses: code.max_uses ? String(code.max_uses) : '', expires_at: toEventLocalInput(code.expires_at, event?.timezone) })
+    setForm({ code: code.code, discount_type: code.discount_type, discount_value: promoDiscountFromApi(code.discount_value, code.discount_type), max_uses: code.max_uses ? String(code.max_uses) : '', expires_at: toEventLocalInput(code.expires_at, eventTimeZone) })
     setShowForm(true)
   }
   const toggleActive = code => performMutation('update_code', config => apiClient.patch(`/organizer/events/${eventId}/promo_codes/${code.id}`, { active: !code.active }, config), () => setNotice('Promo code updated.'))
@@ -249,7 +250,7 @@ function PromoCodesSession({ eventId, identity }) {
          <p className="text-sm text-content-muted [overflow-wrap:anywhere]">
           {pc.discount_type === 'percentage' ? `${pc.discount_value}% off` : `$${promoDiscountFromApi(pc.discount_value, pc.discount_type)} off`}
           {' '}&middot; {pc.current_uses}{pc.max_uses ? `/${pc.max_uses}` : ''} used
-          {pc.expires_at && ` · Expires ${formatEventDateTime(pc.expires_at, event.timezone)}`}
+          {pc.expires_at && ` · Expires ${formatEventDateTime(pc.expires_at, eventTimeZone)}`}
          </p>
         </div>
        </div>

@@ -454,11 +454,36 @@ it('shows address readiness and a delivery failure before organizer waitlist ret
   expect(screen.getByText(/Couldn't send: mailing address missing/)).toBeInTheDocument()
 })
 
+describe('guest ticket wording', () => {
+  it('names an interrupted ticket creation without changing its operation ID', async () => {
+    activeTool = tools[0]
+    const key = 'hafapass:pending-guest-list:actor-a:1:11'
+    window.sessionStorage.setItem(key, JSON.stringify({ operation: 'redeem_guest' }))
+    mount(activeTool)
+    const pending = await screen.findByRole('region', { name: 'Unconfirmed operation' })
+    expect(pending).toHaveTextContent('An earlier create guest tickets request is not confirmed.')
+    expect(screen.getByRole('button', { name: 'Create tickets' })).toBeDisabled()
+    expect(JSON.parse(window.sessionStorage.getItem(key)).operation).toBe('redeem_guest')
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  it('describes completed entries as tickets created in the summary and section', async () => {
+    activeTool = tools[0]
+    apiClient.get.mockImplementation((path, config) => path.endsWith('/guest_list') ? Promise.resolve({ data: {
+      guest_list: [{ ...activeTool.row('actor-a'), redeemed: true }],
+    } }) : load(path, config))
+    mount(activeTool)
+    expect(await screen.findByText('0 pending, 1 tickets created')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Tickets created' })).toBeVisible()
+    expect(screen.queryByText(/\bredeemed\b/)).not.toBeInTheDocument()
+  })
+})
+
 describe('promo code dollar amounts', () => {
-  it('creates $5.00 as 500 cents and edits the saved amount without changing units', async () => {
+  it.each(['Pacific/Guam', null])('creates and edits dollar amounts and expiry with timezone %s', async timezone => {
     activeTool = tools[1]
     let saved = []
-    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/promo_codes') ? saved : { ...event(11), timezone: 'Pacific/Guam' } }))
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/promo_codes') ? saved : { ...event(11), timezone } }))
     apiClient.post.mockImplementation((_path, payload) => {
       saved = [{ id: 55, active: true, current_uses: 0, ...payload, expires_at: '2026-11-20T09:00:42.000Z' }]
       return Promise.resolve({ data: saved[0] })
@@ -487,5 +512,20 @@ describe('promo code dollar amounts', () => {
     await screen.findByText('Promo code updated.')
     expect(apiClient.patch).toHaveBeenCalledWith('/organizer/events/11/promo_codes/55', expect.objectContaining({ discount_value: 725, expires_at: '2026-11-20T09:00:42.000Z' }), expect.anything())
     expect(await screen.findByText(/\$7.25 off/)).toBeInTheDocument()
+  })
+
+  it('retains an oversized discount draft without sending an unconfirmed write', async () => {
+    activeTool = tools[1]
+    mount(activeTool)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'New code' }))
+    await user.type(screen.getByLabelText('Code'), 'TOOBIG')
+    await user.selectOptions(screen.getByLabelText('Discount type'), 'fixed')
+    await user.type(screen.getByLabelText('Discount ($)'), '21474836.48')
+    await user.click(screen.getByRole('button', { name: 'Create code' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid discount and expiration time.')
+    expect(screen.getByLabelText('Discount ($)')).toHaveValue(21474836.48)
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('hafapass:pending-promo-codes:actor-a:1:11')).toBeNull()
   })
 })
