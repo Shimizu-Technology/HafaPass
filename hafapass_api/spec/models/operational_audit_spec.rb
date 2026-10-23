@@ -67,6 +67,7 @@ RSpec.describe "Operational audit coverage" do
     campaign.event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
       marketing_address_certified_at: Time.current)
     sender = create(:user)
+    create(:organization_membership, organization: campaign.event.organization, user: sender, role: :marketer)
     AuditContext.set(actor: sender) do
       CommunicationCampaigns::Sender.call(campaign, actor: sender)
       job = CommunicationCampaignDispatchJob.new(campaign.id)

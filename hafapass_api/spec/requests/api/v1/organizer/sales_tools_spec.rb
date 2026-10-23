@@ -180,6 +180,7 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
     expect(AuditLog.where(auditable: campaign, action: "campaign.recovered", actor_user: user)).to exist
   end
+
   it "rechecks editability after waiting for outbox preparation" do
     campaign = create(:communication_campaign, event: event, status: :failed)
     allow_any_instance_of(Organization).to receive(:lock!).and_wrap_original do |method, *args|

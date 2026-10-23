@@ -24,7 +24,7 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
     # Once a durable outbox exists, retries preserve its frozen message and
     # idempotency keys. Content/audience changes require a new campaign.
-    if campaign.started_at? && record_params.slice(:subject, :body, :segment).any? { |key, value| campaign.public_send(key) != value }
+    if campaign.started_at? && record_params.slice(:subject, :body, :segment).to_h.any? { |key, value| campaign.public_send(key) != value }
       render json: { error: "This campaign already has queued messages. Create a new campaign to change its content or audience." }, status: :unprocessable_entity
       return
     end
