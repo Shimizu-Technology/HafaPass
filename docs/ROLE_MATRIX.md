@@ -32,7 +32,7 @@ This table describes role permissions for active memberships. Event lifecycle, v
 | Assign staff to events | Yes | Yes | No | No | No | No |
 | Organization profile & verification | Yes | No | No | No | No | No |
 | Transfer ownership | Yes | No | No | No | No | No |
-| View activity log (all / events / money) | No | No | No | No | No | No |
+| View activity log (all / events / money) | All activity | Events | Money | No | No | No |
 
 ## Access notes
 

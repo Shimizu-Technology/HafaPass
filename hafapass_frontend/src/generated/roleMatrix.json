@@ -43,7 +43,10 @@
       "view_finance",
       "manage_finance",
       "refund",
-      "payout"
+      "payout",
+      "view_activity_all",
+      "view_activity_events",
+      "view_activity_finance"
     ],
     "manager": [
       "view_events",
@@ -56,14 +59,16 @@
       "manage_attendees",
       "manage_marketing",
       "box_office",
-      "scan"
+      "scan",
+      "view_activity_events"
     ],
     "finance": [
       "view_events",
       "view_finance",
       "manage_finance",
       "refund",
-      "payout"
+      "payout",
+      "view_activity_finance"
     ],
     "marketer": [
       "view_events",
@@ -94,7 +99,8 @@
       "manage_attendees",
       "manage_marketing",
       "box_office",
-      "scan"
+      "scan",
+      "view_activity_events"
     ],
     "box_office": [
       "view_events",
@@ -397,9 +403,9 @@
       "label": "View activity log (all / events / money)",
       "note": "Event activity for event managers is limited to assigned events.",
       "values": {
-        "owner": "No",
-        "manager": "No",
-        "finance": "No",
+        "owner": "All activity",
+        "manager": "Events",
+        "finance": "Money",
         "marketer": "No",
         "box_office": "No",
         "scanner": "No"
