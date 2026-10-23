@@ -25,6 +25,42 @@ RSpec.describe "Organization activity", type: :request do
 
   def ids = response.parsed_body.fetch("activity_logs").pluck("id")
 
+  it "searches allowlisted display context while excluding buyer/private and nested values" do
+    ticket_type = create(:ticket_type, event: event, name: "General Admission")
+    row = record("ticket_type.updated", subject: ticket_type,
+      metadata: { subject_label: "General Admission", buyer_email: "private-search@example.test" })
+    record("ticket_type.updated", subject: ticket_type, metadata: { subject_label: { hidden: "nested-secret" } })
+    get path, params: { q: "General Admission" }, headers: headers
+    expect(ids).to include(row.id)
+    %w[private-search nested-secret].each do |term|
+      get path, params: { q: term }, headers: headers
+      expect(ids).to be_empty
+    end
+  end
+
+  it "omits platform staff IDs and rejects exact staff filters even for staff members" do
+    staff = create(:user, :admin)
+    create(:organization_membership, organization: organization, user: staff, role: :manager)
+    entry = record("event.updated", actor: staff, source: "admin")
+    get path, headers: headers
+    expect(ids).to include(entry.id)
+    expect(response.parsed_body.dig("filters", "actors").pluck("id")).not_to include(staff.id)
+    get path, params: { actor_user_id: staff.id }, headers: headers
+    expect(ids).to be_empty
+  end
+
+  it "omits filter aggregations on cursor pages" do
+    2.times { record("event.updated") }
+    get path, params: { limit: 1 }, headers: headers
+    cursor = response.parsed_body.dig("meta", "next_cursor")
+    expect(cursor).to be_present
+    expect(response.parsed_body).to have_key("filters")
+    get path, params: { limit: 1, cursor: cursor }, headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).not_to have_key("filters")
+    expect(ids.size).to eq(1)
+  end
+
   it "starts with the selected tenant even when the actor also owns a different organization" do
     mine = record("event.updated")
     foreign = create(:event)
@@ -48,7 +84,7 @@ RSpec.describe "Organization activity", type: :request do
     row = response.parsed_body.fetch("activity_logs").find { |item| item["id"] == log.id }
     expect(row.keys).to contain_exactly("id", "occurred_at", "sentence", "area", "outcome", "actor", "event", "target", "changes")
     expect(row["changes"]).to eq([{ "field" => "Status", "before" => "draft", "after" => "published" }])
-    expect(row["sentence"]).to eq("Updated an event.")
+    expect(row["sentence"]).to eq("John Doe changed #{event.title} from draft to published.")
     expect(row["actor"]).to include("email" => owner.email)
     expect(response.body).not_to match(/buyer@example|private-note|private-request|10\.1\.2\.3|private-search|private-evidence|policy_hold|unregistered/)
   end

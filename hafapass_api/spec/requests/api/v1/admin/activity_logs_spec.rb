@@ -8,6 +8,17 @@ RSpec.describe "Admin activity filters and exports", type: :request do
   let(:event) { create(:event) }
   let(:path) { "/api/v1/admin/audit_logs" }
 
+  it "omits options on later pages and scopes first-page actor options to the current filters" do
+    AuditLogger.record!(action: "event.updated", auditable: event, actor: admin)
+    other = create(:user, :admin)
+    AuditLogger.record!(action: "event.created", auditable: event, actor: other)
+    get path, params: { action: "event.updated" }, headers: headers
+    expect(response.parsed_body.dig("filters", "actors").pluck("id")).to eq([admin.id])
+    get path, params: { page: 2, per_page: 1 }, headers: headers
+    expect(response.parsed_body).not_to have_key("filters")
+    expect(response).to have_http_status(:ok)
+  end
+
   it "combines exact organization, actor, action, event, outcome and source filters with registry area" do
     selected = AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, source: "admin", outcome: "failed")
     AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, source: "admin", outcome: "succeeded")
@@ -15,7 +26,7 @@ RSpec.describe "Admin activity filters and exports", type: :request do
       event_id: event.id, outcome: "failed", source: "admin", area: "events" }, headers: headers
     expect(response).to have_http_status(:ok), response.body
     row = response.parsed_body.fetch("audit_logs").sole
-    expect(row).to include("id" => selected.id, "sentence" => "Updated an event.", "action" => "event.updated")
+    expect(row).to include("id" => selected.id, "sentence" => "John Doe updated #{event.title}.", "action" => "event.updated")
     expect(row.dig("organization", "url")).to eq("/admin/organizations/#{event.organization_id}")
     expect(row.dig("event", "url")).to eq("/admin/events/#{event.id}")
     expect(response.parsed_body.dig("filters", "actions")).to include("event.updated")

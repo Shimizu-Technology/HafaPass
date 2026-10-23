@@ -93,6 +93,7 @@ function ActivitySession({ identity }) {
       if (!current()) return
       setState(previous => ({ loading: false, error: '', denied: false, data: {
         ...result.data,
+        filters: result.data.filters || (cursor ? previous.data?.filters : undefined),
         activity_logs: cursor ? [...new Map([...(previous.data?.activity_logs || []), ...result.data.activity_logs].map(entry => [entry.id, entry])).values()] : result.data.activity_logs,
       } }))
     } catch (error) {

@@ -141,3 +141,110 @@ The worktree/branch remain available for the requested held PR. Production was
 not deployed or changed. GitHub Actions/CodeRabbit status is recorded with the
 PR and local handoff; local checks and independent review do not substitute for
 those required remote gates.
+
+## Design and CodeRabbit revision, October 24
+
+Revision base: `fdbb034488c4c9db1ddd4c25848c7253c6d31b4c` in the same
+held PR #154. `origin/main` was already an ancestor at revision start; no merge
+was needed. The acceptance scope remains the organization roles and activity
+journeys above. The owner’s priority for this revision is understandable activity
+and efficient role comparison on phones and desktop.
+
+Activity sentences now start with the audience-safe actor and identify the
+record, including captured price/inventory changes, team roles, guest-list entry
+and ticket counts, order references, refund/dispute/payout amounts, campaign
+names and recipient counts, export row counts, and safe settings/status details.
+The shared logger captures only registry-allowlisted display context. Older
+records use stable IDs. Private actions keep empty display projections, buyer
+contacts remain excluded, and both UI and CSV use the same sentence presenter.
+Search can find the allowed names/references. Exact actor filters cannot reveal
+platform staff or nonmember identities.
+
+Filters show their active count, a reachable Clear button and a 44px chevron
+control on phones; desktop controls stay visible. Mobile Compare roles defaults
+to the invite draft’s role and shows its Can/Can’t lists, with relevant scope
+notes. The desktop table has text and icons, sticky headings/first column, and a
+keyboard-focusable scroll region. Role permissions and the generated matrix are
+unchanged. No new motion was needed for these operational controls.
+
+### Revision acceptance (agent executed)
+
+All browser cases require both 375px and 1280px Chromium viewports. Cases use
+isolated test-auth/API fixtures, a controlled clock and reduced motion. The live
+Clerk credential attempt again reached `/sign-in/factor-two`; the extra code was
+not supplied. These results do not establish live Clerk-to-API or native phone
+acceptance. No real provider, payment or message delivery was exercised.
+
+| Case | Observable outcome | Result |
+| --- | --- | --- |
+| R21 | Price/inventory, amount/reference, invite-role and historical sentences; private/nested values excluded; safe search and CSV agree | Passed in request/model/service regressions; full gate recorded below |
+| R22 | Activity details, exact filters/count, reload, pagination, CSV failure/retry/download, empty/error recovery and clear | Passed at 375/1280, including saved CSV and axe |
+| R23 | Invite draft preserved; Finance preselected; switch to Scanner; Can/Can’t and assigned-event notes; Escape/focus return; desktop keyboard scrolling | Passed at 375/1280, including axe and overflow checks |
+| R24 | Admin exact filters, safe links/details, escaped text, CSV, empty/error recovery and clear | Passed at 375/1280, including saved CSV and axe |
+| R25 | Event overview View activity preserves the event filter | Passed at 375/1280, including axe |
+
+The owned local stack used API 3058/Vite 5228 and disposable databases
+`hafapass_activity_r2` / `hafapass_activity_r2_test`. Demo seeding plus 65
+post-marker `AuditLogger` fixtures verified the named context with no provider
+calls. The captured screenshots use the browser fixtures, not account data:
+
+- `activity-evidence/activity-375.png` (mobile filters closed)
+- `activity-evidence/activity-filters-open-375.png`
+- `activity-evidence/activity-1280.png`
+- `activity-evidence/role-matrix-375.png`
+- `activity-evidence/role-matrix-1280.png`
+- `activity-evidence/admin-log-375.png`
+- `activity-evidence/admin-log-1280.png`
+
+The first browser pass found a missing keyboard focus target for the scrollable
+desktop matrix; this was fixed and retested. Later broad failures exposed stale
+filter locators and an admin recovery fixture that injected failure before the
+preceding Clear request settled. The fixture now waits for the saved filter and
+load state before injecting the next error. A broad backend run exposed legacy
+expectations that treated ticket/promo display names as private; tests now allow
+those named labels while still forbidding guest contacts and free text. Display
+capture is restricted to each action’s allowlist, preserving private/unknown
+actions. Another regression fixes numeric-looking generated export UUIDs being
+redacted, which could make a failed streamed export appear ready.
+
+### Review disposition
+
+CodeRabbit completed its initial review of `fdbb0344`: five inline findings plus
+one outside-diff finding. Each was verified against code and addressed:
+
+| Finding | Disposition |
+| --- | --- |
+| Stale “later PR” statement in action registry docs | Replaced with the Activity projection reference |
+| Unbounded/repeated admin filter options | First page or explicit initial request only; bounded, query-scoped IDs cached one minute; contact labels read fresh; client preserves options on later pages |
+| Repeated organizer options on Load more | Options omitted on cursor pages; client preserves the initial options |
+| Staff IDs exposed in actor options | Excluded; guessed exact staff IDs also return no organizer matches |
+| Repeated authorization/assignment queries | Per-request permission, assignment and relation memoization |
+| Outside-diff stale scope in audit-integrity docs | Clearly attributed to the earlier PR and linked to the current projection |
+
+Final engineering results, head and resource disposition follow below.
+
+### Final revision gate and cleanup
+
+Tested source: the revision commit containing this section, with application
+source held unchanged during the successful final gate.
+
+- Full RSpec: **3,209 examples, 0 failures**.
+- RuboCop: **949 files, no offenses**. Brakeman: **no warnings**.
+- Bundler Audit and production npm audit: **no vulnerabilities**.
+- ESLint and production build: **passed**.
+- Vitest: **170 files, 1,860 tests passed**.
+- Complete Playwright: **127 passed**, one worker; includes the expanded
+  375/1280 Activity/admin/matrix/overview cases and axe checks.
+- Matrix freshness, freeze contract, secret/debug hygiene and whitespace:
+  **passed**. Advisory design scan: **no findings**.
+
+Owned API/Vite processes and browser tabs/daemons were stopped or closed.
+Lifecycle session `01a169c1-4d50-7850-8853-0116306c1a3a` reports no active owned
+resources. Both disposable databases were dropped. Shared/protected services
+and the specified Docker/3011 resources were untouched. No runtime handoff.
+The worktree and branch are preserved for the held PR; `policies.yml` is unchanged.
+
+CodeRabbit's completed initial review covered `fdbb0344`; all six verified
+findings were fixed in this revision. Final-head Actions and incremental review
+are separate remote gates owned by the lead after the delegated implementation
+returns. No merge or production verification is claimed.

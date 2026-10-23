@@ -6,7 +6,7 @@ Baseline: `main` at `b4679ad0`, checked 2026-10-23 (Guam). HåfaPass sells event
 
 Sources: `docs/ROLES_AND_ROADMAP.md`, `docs/COMMERCE_LEDGER_OPERATIONS.md`, application models/controllers/services, `.github/workflows/ci.yml`. The Brain Dump's `work/shimizu-tech/company-positioning-and-project-review-2026-10-04.md` describes paid launch and pilot closeout as gated. No production or real-money verification is part of this change.
 
-This PR supplies backend activity records and safe visibility definitions. It does not add an organization Activity endpoint or page. Owner can see all organization-visible actions; Manager and Finance receive only their registered operational or financial summaries. Unknown actions remain administrator-only.
+The earlier audit-integrity PR supplied backend activity records and safe visibility definitions. The organization Activity endpoint and page are described in [Organization activity projection](#organization-activity-projection) below. Owner can see all organization-visible actions; Manager and Finance receive only their registered operational or financial summaries. Unknown actions remain administrator-only.
 
 Required acceptance:
 
@@ -273,8 +273,12 @@ activity as “Stripe”/“HåfaPass”. Only effective, active organization me
 revoked and expired memberships keep the “Buyer” label.
 No raw action, metadata, request/IP identifier, buyer contact, export search text,
 internal note, or review evidence enters the organizer representation. Unknown
-and admin-only actions are excluded. Organizer search uses visible sentences,
-areas, event titles and safe actor labels, never private payloads or action keys.
+and admin-only actions are excluded. Organizer search uses action descriptions, areas, event titles, safe actor labels
+and allowlisted display context (ticket/campaign names, team invitees and order
+references), never private payloads or action keys. Sentences use that same
+allowlist to identify who changed which record, including prices, inventory and
+financial amounts when captured. Historical rows fall back to record IDs. Staff
+IDs are omitted from options and cannot be selected through exact actor filters.
 
 Date filters are Pacific/Guam calendar days with an exclusive next-day upper
 bound. Exact actor, area, event and outcome filters run after authorization.

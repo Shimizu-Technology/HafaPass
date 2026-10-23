@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # The organizer representation is deliberately constructed, never an AuditLog
-# as_json with a blacklist. Templates are fixed registry text; private values
-# cannot be interpolated into a sentence.
+# as_json with a blacklist. Sentences interpolate only registry-allowlisted
+# scalar snapshots, never the private audit payload.
 class ActivityLogPresenter
   def initialize(entry, organization: nil, member_ids: nil)
     @entry = entry
@@ -11,14 +11,14 @@ class ActivityLogPresenter
   end
 
   def organization_json
-    { id: entry.id, occurred_at: entry.occurred_at, sentence: definition[:template],
+    { id: entry.id, occurred_at: entry.occurred_at, sentence: sentence,
       area: definition[:area], outcome: entry.outcome || "unknown", actor: actor,
       event: event_json, target: target, changes: changes }
   end
 
   def admin_json
     organization_json.merge(action: entry.action, source: entry.source, event_id: entry.event_id,
-      actor_user_id: entry.actor_user_id, actor: admin_actor,
+      actor_user_id: entry.actor_user_id, actor: admin_actor, sentence: sentence(actor_name: admin_actor&.dig(:name).presence || admin_actor&.dig(:email).presence || actor[:name]),
       organization: entry.organization && { id: entry.organization_id, name: entry.organization.name,
         url: "/admin/organizations/#{entry.organization_id}" },
       target: { type: entry.auditable_type, id: entry.auditable_id },
@@ -31,6 +31,10 @@ class ActivityLogPresenter
   attr_reader :entry, :organization
 
   def definition = AuditActions.fetch(entry.action)
+
+  def sentence(actor_name: actor[:name])
+    ActivityLogSentence.new(entry, actor_name: actor_name).call
+  end
 
   def actor
     return { name: "Stripe" } if entry.source == "provider"

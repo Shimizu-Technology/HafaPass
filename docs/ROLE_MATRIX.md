@@ -59,6 +59,6 @@ ruby hafapass_api/script/generate_role_matrix.rb
 ruby hafapass_api/script/generate_role_matrix.rb --check
 ```
 
-The Ruby contract spec checks both generated files against the backend, including all organization and event-assignment permission grants. The focused Vitest tests check the frontend label contract, desktop and stacked mobile content, and opening/closing the comparison without changing an invite draft or a teammate's role.
+The Ruby contract spec checks both generated files against the backend, including all organization and event-assignment permission grants. The focused Vitest tests check the frontend label contract, desktop columns and selected-role mobile lists, and opening/closing the comparison without changing an invite draft or a teammate's role.
 
 Activity categories are read from `view_activity_all`, `view_activity_events` and `view_activity_finance`. A category appears only when the backend grants it; adding those permissions requires regeneration.

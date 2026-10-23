@@ -15,6 +15,10 @@ class OrganizationActivityAccess
   end
 
   def relation
+    @relation ||= build_relation
+  end
+
+  def build_relation
     tenant = AuditLog.where(organization_id: organization.id)
     started_at = ActivityLogQuery.started_at
     tenant = tenant.where("occurred_at >= ?", started_at) if started_at
@@ -36,7 +40,10 @@ class OrganizationActivityAccess
   private
 
   def permitted?(permission)
-    OrganizationAuthorization.allowed?(user: user, organization: organization, permission: permission)
+    @permitted ||= {}
+    return @permitted[permission] if @permitted.key?(permission)
+
+    @permitted[permission] = OrganizationAuthorization.allowed?(user: user, organization: organization, permission: permission)
   end
 
   def all? = permitted?(:view_activity_all)
@@ -44,9 +51,11 @@ class OrganizationActivityAccess
   def finance? = permitted?(:view_activity_finance)
 
   def assigned_event_ids
-    return [] unless organization.organization_memberships.effective.exists?(user: user)
-
-    @assigned_event_ids ||= organization.event_staff_assignments.effective.where(user: user, role: :manager).pluck(:event_id)
+    @assigned_event_ids ||= if organization.organization_memberships.effective.exists?(user: user)
+      organization.event_staff_assignments.effective.where(user: user, role: :manager).pluck(:event_id)
+    else
+      []
+    end
   end
 
   def keys(audience)

@@ -37,6 +37,11 @@ class AuditSanitizer
   end
 
   def self.sanitize_text(value, key: nil)
+    # A generated UUID is an export identity, not pasted numeric PII. Keep it
+    # intact so streamed failures can be matched to their encrypted ticket.
+    if key.to_s == "export_request_id" && value.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i)
+      return value
+    end
     text = value.dup
     # Strip URL credentials, query strings and fragments in every snapshot,
     # including verification links nested in a verification diff.

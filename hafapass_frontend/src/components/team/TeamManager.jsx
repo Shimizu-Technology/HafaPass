@@ -201,7 +201,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
         </details>
       )}
 
-      {comparingRoles && <RoleComparison onClose={() => setComparingRoles(false)} />}
+      {comparingRoles && <RoleComparison initialRole={role} onClose={() => setComparingRoles(false)} />}
       {confirm && (
         <Dialog labelledBy="team-confirm-title" onClose={() => setConfirm(null)} busy={busy} className="max-w-md">
           <h2 id="team-confirm-title" className="text-lg font-semibold text-neutral-900">

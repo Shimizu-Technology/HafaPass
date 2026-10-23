@@ -30,19 +30,22 @@ describe('RoleComparison', () => {
     })
   })
 
-  it('provides stacked comparisons with every capability and the same restrictions for phones', () => {
-    render(<RoleComparison onClose={vi.fn()} />)
-    const cards = screen.getByLabelText('Stacked role comparison').querySelectorAll('section')
-    expect(cards).toHaveLength(23)
-    for (const [index, card] of [...cards].entries()) {
-      expect(within(card).getByRole('heading')).toHaveTextContent(roleMatrix.rows[index].label)
-      expect([...card.querySelectorAll('dt')].map(item => item.textContent)).toEqual(roleMatrix.roles.map(role => role.label))
-      expect([...card.querySelectorAll('dd')].map(item => item.textContent)).toEqual(roleMatrix.roles.map(role => roleMatrix.rows[index].values[role.key]))
-    }
+  it('shows the invite role and switches its Can and Can’t lists on phones', async () => {
+    const user = userEvent.setup()
+    render(<RoleComparison initialRole="finance" onClose={vi.fn()} />)
+    const mobile = screen.getByLabelText('Role permissions')
+    expect(within(mobile).getByRole('combobox', { name: 'Role' })).toHaveValue('finance')
+    expect(within(mobile).getAllByRole('listitem')).toHaveLength(23)
+    const can = within(mobile).getByRole('heading', { name: 'Can', exact: true }).closest('section')
+    expect(within(can).getByText('Issue refunds')).toBeInTheDocument()
+    expect(within(can).queryByText('Ticket types & prices')).not.toBeInTheDocument()
+    await user.selectOptions(within(mobile).getByRole('combobox'), 'scanner')
+    expect(within(can).getByText('Scan tickets')).toBeInTheDocument()
+    expect(within(can).getAllByText('Assigned events only').length).toBeGreaterThan(0)
+    expect(within(can).queryByText('Issue refunds')).not.toBeInTheDocument()
     const notes = within(screen.getByRole('list', { name: 'Role access notes' }))
     expect(notes.getByText("Managers can't cancel events or move money.")).toBeInTheDocument()
     expect(notes.getByText(OFFLINE_SCANNER_ACCESS_NOTE)).toBeInTheDocument()
-    expect(notes.getByText(EVENT_ASSIGNMENT_DESCRIPTION)).toBeInTheDocument()
   })
 
   it('closes with Escape and restores focus to its trigger', async () => {
@@ -55,7 +58,7 @@ describe('RoleComparison', () => {
     const view = render(<RoleComparison onClose={close} />)
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
+    expect(screen.getByRole('combobox', { name: 'Role' })).toHaveFocus()
     await user.tab({ shift: true })
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
     await user.keyboard('{Escape}')

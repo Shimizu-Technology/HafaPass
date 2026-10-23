@@ -40,7 +40,7 @@ RSpec.describe "Activity CSV exports", type: :request do
     expect(response).to have_http_status(:ok), response.body
     rows = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
     expect(rows.length).to eq(2) # event.created plus the explicit update
-    update = rows.find { |row| row["Activity"] == "Updated an event." }
+    update = rows.find { |row| row["Activity"] == "John Doe changed #{event.title} from draft to published." }
     expect(update["Event"]).to start_with("\t=")
     expect(update["What changed"]).to include("draft", "published")
     expect(response.body).not_to include("buyer-secret", "secret-note", "private-query", "secret-request", "Request ID", foreign.title)
@@ -81,7 +81,7 @@ RSpec.describe "Activity CSV exports", type: :request do
     AuditLog.redact!(AuditLog.where(id: log.id), before_data: {}, after_data: {})
     get item.fetch("download_url"), headers: headers
     expect(response).to have_http_status(:ok)
-    row = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).find { |value| value["Activity"] == "Updated an event." }
+    row = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).find { |value| value["Activity"] == "John Doe updated #{event.title}." }
     expect(row["What changed"]).to be_blank
   end
 
@@ -97,6 +97,7 @@ RSpec.describe "Activity CSV exports", type: :request do
 
   it "records failures without returning partial success and exposes failed status" do
     record
+    allow(SecureRandom).to receive(:uuid).and_return("12345678-1234-4123-8123-123456789012")
     item = request_export
     allow_any_instance_of(ActivityLogPresenter).to receive(:organization_json).and_raise(StandardError, "controlled failure")
     get item.fetch("download_url"), headers: headers
@@ -106,7 +107,7 @@ RSpec.describe "Activity CSV exports", type: :request do
     expect(response.parsed_body.dig("export", "status")).to eq("failed")
   end
 
-  { manager: "Updated an event.", finance: "Requested a refund." }.each do |role, sentence|
+  %i[manager finance].each do |role|
     it "projects only #{role} history into CSV" do
       person = create(:organization_membership, organization: organization, role: role).user
       record
@@ -114,8 +115,8 @@ RSpec.describe "Activity CSV exports", type: :request do
       item = request_export(person)
       get item.fetch("download_url"), headers: headers(person)
       csv = response.body
-      expect(csv).to include(sentence)
-      excluded = role == :manager ? "Requested a refund." : "Updated an event."
+      expect(csv).to include(role == :manager ? "John Doe changed #{event.title} from draft to published." : "John Doe requested refund ##{event.id}.")
+      excluded = role == :manager ? "John Doe requested refund ##{event.id}." : "John Doe changed #{event.title} from draft to published."
       expect(csv).not_to include(excluded, "metadata", "buyer-secret")
     end
   end

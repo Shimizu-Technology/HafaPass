@@ -2,6 +2,9 @@ import { Link } from 'react-router-dom'
 import { formatEventTime } from '../../utils/eventTime'
 import { activityDateKey, activityDay, activityPath } from '../../utils/activity'
 
+const areaLabels = { scanning: 'Check-in', door: 'Door sales', attendees: 'Guest list', messaging: 'Campaigns', payout_settings: 'Payout settings', marketing_partners: 'Marketing partners' }
+const humanLabel = value => areaLabels[value] || String(value).replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase())
+
 const TIME_ZONE = 'Pacific/Guam'
 const text = value => value == null || value === '' ? 'empty' : typeof value === 'object' ? JSON.stringify(value) : String(value)
 
@@ -18,7 +21,7 @@ export function ActivityChanges({ changes }) {
 }
 
 export function ActivityOutcome({ outcome }) {
-  return outcome && !['succeeded', 'success'].includes(outcome) ? <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{String(outcome).replaceAll('_', ' ')}</span> : null
+  return outcome && !['succeeded', 'success'].includes(outcome) ? <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${outcome === 'failed' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900'}`}>{outcome === 'unknown' ? 'Needs review' : humanLabel(outcome)}</span> : null
 }
 
 export default function ActivityTimeline({ entries }) {
@@ -37,7 +40,7 @@ export default function ActivityTimeline({ entries }) {
             <time dateTime={entry.occurred_at} className="text-xs text-neutral-600">{formatEventTime(entry.occurred_at, TIME_ZONE, { locale: 'en-US', timeZoneName: undefined })}</time>
             <div className="min-w-0 space-y-2 text-sm [overflow-wrap:anywhere]">
               <p className="font-medium text-neutral-900">{entry.sentence}</p>
-              <p className="text-neutral-600">{entry.actor?.name || entry.actor?.email || 'System'}{entry.area && ` · ${entry.area.replaceAll('_', ' ')}`}</p>
+              {entry.area && <span className="inline-flex rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-600">{humanLabel(entry.area)}</span>}
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                 {entry.event && (activityPath(entry.event.url) ? <Link className="inline-flex min-h-11 max-w-full items-center font-medium text-brand-700 underline" to={entry.event.url}>{entry.event.title}</Link> : <span>{entry.event.title}</span>)}
                 <ActivityOutcome outcome={entry.outcome} />

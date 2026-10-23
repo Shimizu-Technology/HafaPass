@@ -84,7 +84,7 @@ function AdminAuditLogSession({ identity, resourcePath }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = readFilters(searchParams, FILTERS)
   const setFilter = changes => setSearchParams(compactParams({ ...filters, ...changes }), { replace: true })
-  const list = useAdminList(identity, resourcePath, '/admin/audit_logs', compactParams({ ...filters, page: filters.page || 1 }))
+  const list = useAdminList(identity, resourcePath, '/admin/audit_logs', compactParams({ ...filters, page: filters.page || 1 }), { preserveFilters: true })
   const entries = list.data?.audit_logs || []
   const filtered = FILTERS.some(name => name !== 'page' && filters[name])
   const scopeQuery = new URLSearchParams(compactParams({ ...filters, target_type: '', target_id: '', organization_id: '', page: '' }))

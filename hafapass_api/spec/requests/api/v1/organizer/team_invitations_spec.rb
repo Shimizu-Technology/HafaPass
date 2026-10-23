@@ -201,6 +201,8 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
       delete "/api/v1/organizer/events/#{event.id}/staff_invitations/#{membership_id}", headers: headers_for(owner)
       expect(response).to have_http_status(:no_content)
       expect(OrganizationMembership.find(membership_id)).to be_status_revoked
+      audit = AuditLog.where(action: "event_staff.invitation_revoked", auditable_id: membership_id).last!
+      expect(audit.metadata).to include("team_role" => "scanner", "team_member_label" => "door@example.com")
 
       other_event = create(:event, organizer_profile: profile)
       delete "/api/v1/organizer/events/#{other_event.id}/staff_invitations/#{membership_id}", headers: headers_for(owner)

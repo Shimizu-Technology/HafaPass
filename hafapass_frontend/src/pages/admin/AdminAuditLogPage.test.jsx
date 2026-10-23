@@ -47,7 +47,7 @@ describe('AdminAuditLogPage', () => {
     expect(await screen.findByText('Showing entries for Event #4')).toBeInTheDocument()
     await user.type(screen.getByRole('searchbox', { name: 'Search the audit log' }), 'payout')
     await user.click(screen.getByRole('button', { name: 'Search' }))
-    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: { q: 'payout', target_type: 'Event', target_id: '4', page: 1 } })))
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: expect.objectContaining({ q: 'payout', target_type: 'Event', target_id: '4', page: 1 }) })))
     await user.selectOptions(screen.getByLabelText('Area'), 'payout')
     await user.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: expect.objectContaining({ area: 'payout', page: '2' }) })))
@@ -67,7 +67,7 @@ describe('AdminAuditLogPage', () => {
     expect(screen.getByText(entry.action)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Island Events' })).toHaveAttribute('href', '/admin/organizations/7')
     expect(screen.getByRole('link', { name: 'Reef Night' })).toHaveAttribute('href', '/admin/events/4')
-    expect(screen.getByText('failed')).toBeInTheDocument()
+    expect(screen.getByText('Failed', { selector: 'span' })).toBeInTheDocument()
   })
 
   it('locally searches organization choices and submits exact structured filters', async () => {

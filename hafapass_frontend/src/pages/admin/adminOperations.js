@@ -30,11 +30,12 @@ export function mutationErrorMessage(failure) {
 
 // Shared read for the admin list screens. Each read is fenced to the current
 // account and visit; a stale response never replaces newer rows.
-export function useAdminList(identity, resourcePath, endpoint, params, { enabled = true } = {}) {
+export function useAdminList(identity, resourcePath, endpoint, params, { enabled = true, preserveFilters = false } = {}) {
   const { beginRequest } = usePlatformRequests(identity, resourcePath)
   const generation = useRef(0)
   const pending = useRef(null)
   const [state, setState] = useState({ data: null, loading: enabled, error: '' })
+  const filterOptions = useRef(null)
   const key = JSON.stringify(params)
 
   const load = useCallback(() => {
@@ -46,14 +47,19 @@ export function useAdminList(identity, resourcePath, endpoint, params, { enabled
     const read = ++generation.current
     const active = () => request.current() && read === generation.current
     setState(previous => ({ ...previous, loading: true, error: '' }))
-    apiClient.get(endpoint, { ...request.config, params: JSON.parse(key) })
-      .then(response => { if (active()) setState({ data: response.data, loading: false, error: '' }) })
+    apiClient.get(endpoint, { ...request.config, params: { ...JSON.parse(key), ...(preserveFilters && !filterOptions.current ? { include_filters: true } : {}) } })
+      .then(response => {
+        if (!active()) return
+        if (response.data.filters) filterOptions.current = response.data.filters
+        setState(previous => ({ data: preserveFilters && !response.data.filters
+          ? { ...response.data, filters: filterOptions.current || previous.data?.filters } : response.data, loading: false, error: '' }))
+      })
       .catch(failure => {
         if (!active() || request.handleError(failure)) return
         setState(previous => ({ ...previous, loading: false, error: 'This list could not be loaded. Your filters have been kept.' }))
       })
       .finally(() => request.release())
-  }, [beginRequest, endpoint, key, enabled])
+  }, [beginRequest, endpoint, key, enabled, preserveFilters])
 
   useEffect(() => { load(); return () => pending.current?.abort() }, [load])
   return { ...state, reload: load, beginRequest }

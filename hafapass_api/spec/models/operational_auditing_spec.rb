@@ -65,7 +65,7 @@ RSpec.describe "Event operational auditing", type: :model do
         end
       end
 
-      it "records text/contact changes by field name without copying their values" do
+      it "captures display labels while observing private text/contact changes without copying values" do
         as_operator do
           item = record
           item.update!(private_update)
@@ -75,7 +75,13 @@ RSpec.describe "Event operational auditing", type: :model do
             expect(entry.before_data).not_to have_key(field.to_s)
             expect(entry.after_data).not_to have_key(field.to_s)
           end
-          private_update.each_value { |value| expect(entry.attributes.to_json).not_to include(value) }
+          private_update.each do |field, value|
+            if %w[ticket_type pricing_tier promo_code catalog_item].include?(prefix) && %i[name code].include?(field)
+              expect(entry.metadata["subject_label"]).to eq(value)
+            else
+              expect(entry.attributes.to_json).not_to include(value)
+            end
+          end
         end
       end
     end

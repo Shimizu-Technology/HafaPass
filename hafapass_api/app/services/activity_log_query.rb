@@ -20,6 +20,12 @@ class ActivityLogQuery
   def relation
     result = base
     %w[actor_user_id event_id].each { |key| result = result.where(key => filters[key]) if filters[key] }
+    if filters["actor_user_id"] && organization && !@admin
+      # Staff and buyers have deliberately shared display identities. Exact
+      # actor filters must not let guessed IDs undo that masking.
+      members = organization.organization_memberships.effective.where(user_id: User.where.not(role: [:admin, :support])).select(:user_id)
+      result = result.where(actor_user_id: members)
+    end
     if filters["outcome"]
       result = result.where(outcome: filters["outcome"] == "unknown" ? [nil, "unknown"] : filters["outcome"])
     end
@@ -100,7 +106,8 @@ class ActivityLogQuery
     end
 
     # Search only displayed sentences, areas, event titles and safe actor labels.
-    # Neither JSON payloads nor internal action/target/request IDs are searched.
+    # Only registry-allowlisted display context is searched in JSON; never
+    # private payloads, buyer contacts, internal action/target/request IDs.
     matching_actions = AuditActions.keys.select do |key|
       definition = AuditActions.fetch(key)
       [definition[:template], definition[:area]].any? { |text| text.downcase.include?(term.downcase) }
@@ -110,7 +117,13 @@ class ActivityLogQuery
     labels = { "provider" => "Stripe", "system" => "HåfaPass", "admin" => "HåfaPass administrator" }
       .select { |_source, name| name.downcase.include?(term.downcase) }.keys
     matching_events = organization.events.where("title ILIKE ?", pattern).select(:id)
-    result.where(action: matching_actions).or(result.where(event_id: matching_events))
+    matches = result.where(action: matching_actions).or(result.where(event_id: matching_events))
       .or(result.where(source: "user", actor_user_id: member_ids)).or(result.where(source: labels))
+    AuditActions::DISPLAY_FIELDS.each do |key|
+      actions = AuditActions.keys.select { |action| AuditActions.fetch(action)[:organization_fields][:metadata].include?(key) }
+      matches = matches.or(result.where(action: actions).where(
+        "jsonb_typeof(audit_logs.metadata -> ?) = 'string' AND audit_logs.metadata ->> ? ILIKE ?", key, key, pattern))
+    end
+    matches
   end
 end

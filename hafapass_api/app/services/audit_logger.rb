@@ -74,7 +74,7 @@ class AuditLogger
       outcome: outcome || (action.end_with?("failed") ? "failed" : (action.end_with?("requested") ? "requested" : "succeeded")),
       before_data: AuditSanitizer.call(before_data),
       after_data: AuditSanitizer.call(after_data),
-      metadata: AuditSanitizer.call(metadata),
+      metadata: AuditSanitizer.call(AuditDisplayContext.call(action: action, record: auditable, event: event).merge(metadata)),
       request_id: AuditSanitizer.call(request&.request_id || AuditContext.request_id),
       ip_address: request&.remote_ip || AuditContext.ip_address,
       occurred_at: Time.current

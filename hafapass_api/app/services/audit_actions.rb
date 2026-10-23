@@ -5,6 +5,7 @@
 # an action prefix or from a caller's permissions.
 class AuditActions
   AREAS = %w[organization team verification events tickets promotions attendees door scanning orders refunds disputes payouts payout_settings tax fees exports messaging marketing_partners privacy platform].freeze
+  DISPLAY_FIELDS = %w[event_title subject_label team_member_label team_role ticket_type_label order_reference].freeze
   AUDIENCES = %w[org_owner org_manager org_finance admin_only].freeze
 
   class << self
@@ -74,10 +75,18 @@ class AuditActions
       fields = audiences == ["admin_only"] ? { before_data: [], after_data: [], metadata: [] } :
         { before_data: snapshots, after_data: snapshots, metadata: metadata }
       actions.each do |action, template|
+        # Display context is captured once by AuditLogger; projection still
+        # allows only the context appropriate to this action's audience.
+        display_fields = audiences == ["admin_only"] ? [] : ["event_title"]
+        display_fields += %w[subject_label] if %w[ticket_type pricing_tier promo_code catalog_item campaign].include?(action.split(".").first)
+        display_fields += %w[ticket_type_label quantity] if action.start_with?("guest_list.")
+        display_fields += %w[team_member_label team_role] if area == "team"
+        display_fields += %w[order_reference amount_cents currency] if %w[refunds disputes payouts orders door].include?(area)
+        fields_for_action = fields.merge(metadata: audiences == ["admin_only"] ? [] : (fields[:metadata] + display_fields).uniq)
         raise ArgumentError, "Duplicate audit action: #{action}" if registry.key?(action)
 
         registry[action] = deep_freeze({ area: area, audience: audiences.dup, tenant: tenant,
-          event_required: event_required, organization_fields: fields, template: template })
+          event_required: event_required, organization_fields: fields_for_action, template: template })
       end
     end
   end
