@@ -87,7 +87,7 @@ describe('event overview', () => {
       '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
     })
     await user.click(await screen.findByRole('button', { name: 'Get a new preview link' }))
-    expect(screen.getAllByText(/Anyone using the old link will lose access/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Anyone using the old link will lose access.')).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Get new link' }))
     expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/37/rotate_preview_link', {}, expect.anything())

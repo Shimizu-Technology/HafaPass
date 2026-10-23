@@ -275,7 +275,7 @@ function EventOverviewSession({ id, identity }) {
               <button type="button" onClick={() => setConfirmNewPreview(true)} className="btn-secondary min-h-11 text-sm">Get a new preview link</button></>}
             {has('scan') && <Link to={`/dashboard/scanner?event=${event.id}`} className="btn-secondary inline-flex min-h-11 text-sm">Scan tickets</Link>}
           </div>
-          {previewUrl && !publiclyVisible && <p className="mt-2 text-sm text-neutral-700">Anyone using the old link will lose access if you get a new one.</p>}
+          {previewUrl && !publiclyVisible && <p className="mt-2 text-sm text-neutral-700">Anyone using the old link will lose access.</p>}
           {!publiclyVisible && !previewUrl && <p className="mt-2 text-sm text-neutral-700">This event has no public link right now.</p>}
           {confirmNewPreview && <div role="group" aria-label="Confirm new preview link" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>Anyone using the old link will lose access. Get a new preview link?</p><div className="mt-2 flex gap-2"><button type="button" className="btn-secondary min-h-11" onClick={() => { setConfirmNewPreview(false); setPreviewError('') }}>Cancel</button><button type="button" className="btn-primary min-h-11" onClick={async () => { if (await rotatePreview()) setConfirmNewPreview(false) }}>Get new link</button></div>{previewError && <p role="alert" className="mt-2 text-red-800">{previewError}</p>}</div>}
           <p className={copyState === 'failed' ? 'mt-3 text-sm text-neutral-700' : 'sr-only'} aria-live="polite">
