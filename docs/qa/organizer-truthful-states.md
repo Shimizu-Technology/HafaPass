@@ -47,3 +47,25 @@ Local gate:
 All requested items 1–16 were confirmed and addressed. Existing accurate suspension copy was retained. The matching false suspension/verification/W-9 claims in `AdminOrganizationPage` were corrected as part of items 1, 2 and 4. No edits to `config/policies.yml`, buyer flows, boot/loading behavior or the general time-zone sweep.
 
 Resource cleanup and PR review status are recorded in the final handoff.
+
+## Independent review fixes — 2026-10-23
+
+Refreshed the existing brief against `dd1d55ba`, `PayoutReconciler`, `Payout#disbursement_cents`, the admin payout serializer, and the saved box-office operation state. Merged `origin/main` (`6c1c5b2b`, including PR #147) with merge commit `b40ed7d8`; no conflicts. This follow-up changes frontend behavior and tests only. The policy register remains unchanged.
+
+Acceptance: free-only organizers see tax/payout instructions explicitly conditional on selling paid tickets; a zero-disbursement check payout requests withholding evidence without claiming a check exists; unresolved saved sales never suggest collecting cash. Existing check/bank evidence and saved-operation recovery must remain intact. Agent-executed affected-flow QA, using Clerk's test account and owned synthetic fixtures on API 3053 / Vite 5223.
+
+| Case | Actions and expected result | 375px | 1280px |
+| --- | --- | --- | --- |
+| R1 conditional organizer setup | Open the checklist for the free-event organizer without finance approval; inspect conditional instruction and follow its Settings link | Passed | Passed |
+| R2 withholding-only payout | Open outcome dialog for $42 gross, $10.08 withholding plus $31.92 prior shortfall, $0 disbursement; inspect evidence labels and no-check explanation | Passed | Passed |
+| R3 saved sale while cards disabled | Interrupt a free cash-sale request through browser network abort; inspect recovery, reload, and confirm saved operation persists, Cash stays disabled, and “Use cash” stays absent | Passed | Passed |
+
+R2 also completed through the mobile UI: entered a withholding ledger reference, reason and `0.00`, recorded the outcome, then reloaded. Rails independently confirmed payout #1 is `paid`, disbursement is zero, the reference is `withholding_only_1`, and reconciliation audit evidence contains `actual_check_amount_cents: 0`. No check, bank/provider transfer or email transport was invoked. R3's aborted request never reached the API; no sale was saved to the database. The saved recovery state was verified through the actual interface, not inserted into browser storage.
+
+Screenshots: `/tmp/hafapass-org-truth-fix/screens/{checklist,withholding,box-office-pending}-{375,1280}.png`. No horizontal page overflow observed. This is resized desktop Chrome, not physical-phone acceptance. T3 preview snapshots timed out twice; the fallback used the repository's agent-browser workflow with an isolated session and installed Chrome. Authentication and fixtures were limited to the test account and dedicated `hafapass_org_truth_fix` database.
+
+Regression coverage adds five cases: conditional setup; withholding-only submission with and without a tax snapshot, including positive-amount rejection; saved cash and card operations surviving reload without cash instructions. The zero-net form keeps the required special reference fixed, uses withholding confirmation/evidence labels, and requires a zero actual amount. Missing-W-9 payouts already covered by withholding follow PayoutReconciler's existing evidence rules. Ordinary check and transfer tests continue to pass.
+
+Final local gate: RSpec 2,416 examples; Vitest 1,751 tests in 163 files; Playwright 91 tests; RuboCop 895 files; Brakeman zero warnings; Bundler Audit zero vulnerabilities; ESLint; production build; npm production audit; release-freeze and hygiene checks. Impeccable advisory returned `[]`. An inherited `BUNDLE_PATH=.cache/bundle` initially prevented backend commands from loading dependencies; unsetting that override used the installed gem set and all backend checks passed. Vitest prints existing jsdom network-error diagnostics while all suites pass.
+
+The held-PR handoff records the final head, CI/review snapshot, and exact cleanup. The original 16-item QA above remains historical evidence; this follow-up accepted the three review fixes against the integrated tree.

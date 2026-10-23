@@ -364,7 +364,7 @@ function BoxOfficePageSession({ id, identity }) {
               </button>
             </div>
             {(!capabilities.door_card || !cardAccount?.payment_ready) && (
-              <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually." : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
+              <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Card payments at the door aren't available on HåfaPass yet.${pendingSale ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
             )}
           </div>
 

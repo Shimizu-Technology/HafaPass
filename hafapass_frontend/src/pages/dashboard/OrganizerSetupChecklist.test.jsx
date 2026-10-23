@@ -26,6 +26,13 @@ describe('OrganizerSetupChecklist', () => {
     expect(within(steps[3]).getByRole('link', { name: 'Choose check or bank transfer' })).toHaveAttribute('href', '/dashboard/settings')
   })
 
+  it('makes tax and payout setup conditional on selling paid tickets', () => {
+    show()
+    const payoutStep = screen.getAllByRole('listitem')[3]
+    expect(payoutStep).toHaveTextContent('Free events can skip this.')
+    expect(payoutStep).toHaveTextContent('Only needed for paid tickets: complete Tax information and How you get paid in Settings, then wait for finance approval.')
+  })
+
   it('accepts the agreement in the shared agreement dialog, never window.confirm', async () => {
     const confirm = vi.spyOn(window, 'confirm')
     const { onAcceptPolicy } = show()
