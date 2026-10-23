@@ -26,7 +26,7 @@ const navGroups = [
   { label: 'Platform', items: [
     { to: '/admin/settings', label: 'Settings', icon: Settings },
     { to: '/admin/privacy', label: 'Privacy requests', icon: LockKeyhole },
-    { to: '/admin/provider-readiness', label: 'Provider readiness', icon: ShieldCheck },
+    { to: '/admin/provider-readiness', label: 'Integrations & policies', icon: ShieldCheck },
     { to: '/admin/audit-log', label: 'Audit log', icon: ScrollText },
     { to: '/support', label: 'Support', icon: LifeBuoy },
   ] },

@@ -2,7 +2,7 @@
 // a draft across signed-in accounts or selected organizations.
 export const emptyEventForm = {
   title: '', short_description: '', description: '', category: 'other',
-  age_restriction: 'all_ages', venue_name: '', venue_address: '', venue_city: 'Guam',
+  age_restriction: 'all_ages', venue_name: '', venue_address: '', venue_city: '',
   starts_at: '', ends_at: '', doors_open_at: '', max_capacity: '', cover_image_url: '',
 }
 export const newEventDraftKey = identity => `hafapass:new-event:v1:${JSON.stringify([identity.authContext?.userId || identity.owner, identity.organizationId])}`

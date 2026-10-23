@@ -38,7 +38,7 @@ describe('SEO', () => {
       expect(node.alternateName).toEqual(['HafaPass', 'Hafa Pass'])
     }
     expect(indexHtml).toContain('<meta property="og:site_name" content="HåfaPass" />')
-    expect(indexHtml).toMatch(/<meta name="description" content="HåfaPass \(HafaPass\)/)
+    expect(indexHtml).toContain('<meta name="description" content="Discover events on Guam, buy tickets, and check in with your phone."')
   })
 
   it('uses the HåfaPass name in default titles and the site name', async () => {
@@ -50,7 +50,7 @@ describe('SEO', () => {
 
     await waitFor(() => expect(document.title).toBe('Events | HåfaPass'))
     expect(document.head.querySelector('meta[property="og:site_name"]')).toHaveAttribute('content', 'HåfaPass')
-    expect(document.head.querySelector('meta[name="description"]').getAttribute('content')).toContain('(HafaPass)')
+    expect(document.head.querySelector('meta[name="description"]').getAttribute('content')).toBe('Discover events on Guam, buy tickets, and check in with your phone.')
   })
 
   it('keeps private preview pages out of social cards and indexes', async () => {

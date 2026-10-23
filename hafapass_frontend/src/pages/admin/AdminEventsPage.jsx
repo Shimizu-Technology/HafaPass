@@ -28,12 +28,12 @@ function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCan
   const panelId = `release-gates-${event.id}`
   return (
     <div className="min-w-40">
-      <button type="button" aria-expanded={open} aria-controls={panelId} aria-label={`Release gates for ${event.title}`} onClick={onToggle}
+      <button type="button" aria-expanded={open} aria-controls={panelId} aria-label={`Launch reviews for ${event.title}`} onClick={onToggle}
         className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 transition-[background-color,transform] duration-150 ease-out hover:bg-neutral-100 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
-        Release gates
+        Launch reviews
         <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div id={panelId} role="group" aria-label={`Release gate actions for ${event.title}`} className="mt-2 flex flex-col items-start gap-1 border-l-2 border-neutral-200 pl-3">
+      {open && <div id={panelId} role="group" aria-label={`Launch review actions for ${event.title}`} className="mt-2 flex flex-col items-start gap-1 border-l-2 border-neutral-200 pl-3">
         <PilotReadinessReviewDialog event={event} onComplete={onComplete} />
         <PilotValidationReviewDialog event={event} onComplete={onComplete} />
         <EventDayRehearsalReviewDialog event={event} onComplete={onComplete} />
@@ -193,7 +193,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                   <th className="hidden px-3 py-3 font-medium xl:table-cell">Category</th>
                   <th className="px-3 py-3 font-medium text-right">Sold</th>
                   <th className="hidden px-3 py-3 font-medium text-right md:table-cell">Revenue</th>
-                  <th className="px-3 py-3 font-medium">Release gates</th>
+                  <th className="px-3 py-3 font-medium">Launch reviews</th>
                   <th className="px-3 py-3 font-medium text-center"><span aria-hidden="true">★</span><span className="sr-only">Featured</span></th>
                 </tr>
               </thead>

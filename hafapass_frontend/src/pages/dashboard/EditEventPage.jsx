@@ -35,7 +35,7 @@ const eventForm = e => ({
   age_restriction: e.age_restriction || 'all_ages',
   venue_name: e.venue_name || '',
   venue_address: e.venue_address || '',
-  venue_city: e.venue_city || 'Guam',
+  venue_city: e.venue_city || '',
   starts_at: toEventLocalInput(e.starts_at, e.timezone),
   ends_at: toEventLocalInput(e.ends_at, e.timezone),
   doors_open_at: toEventLocalInput(e.doors_open_at, e.timezone),
@@ -116,7 +116,7 @@ function EditEventSession({ id, identity }) {
     age_restriction: 'all_ages',
     venue_name: '',
     venue_address: '',
-    venue_city: 'Guam',
+    venue_city: '',
     starts_at: '',
     ends_at: '',
     doors_open_at: '',
@@ -300,7 +300,7 @@ function EditEventSession({ id, identity }) {
         age_restriction: form.age_restriction,
         venue_name: form.venue_name.trim(),
         venue_address: form.venue_address.trim() || null,
-        venue_city: form.venue_city.trim() || 'Guam',
+        venue_city: form.venue_city.trim(),
         timezone: event?.timezone || 'Pacific/Guam',
         ...scheduleChanges,
         max_capacity: form.max_capacity ? Number(form.max_capacity) : null,
@@ -694,8 +694,8 @@ function EditEventSession({ id, identity }) {
               <input id="venue_address" type="text" value={form.venue_address} onChange={(e) => updateField('venue_address', e.target.value)} className="input" placeholder="123 Pale San Vitores Rd, Tumon" disabled={submitting} />
             </div>
             <div>
-              <label htmlFor="venue_city" className="block text-sm font-medium text-neutral-700 mb-1">City</label>
-              <input id="venue_city" type="text" value={form.venue_city} onChange={(e) => updateField('venue_city', e.target.value)} className="input" placeholder="Guam" disabled={submitting} />
+              <label htmlFor="venue_city" className="block text-sm font-medium text-neutral-700 mb-1">Village or city</label>
+              <input id="venue_city" type="text" value={form.venue_city} onChange={(e) => updateField('venue_city', e.target.value)} className="input" placeholder="Tamuning" disabled={submitting} />
             </div>
           </div>
         </section>

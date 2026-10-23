@@ -1,3 +1,4 @@
+import { formatPlatformDateTime } from '../../utils/eventTime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, CircleAlert, Clock3, Loader2, ShieldCheck } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -143,13 +144,13 @@ function CapabilityCard({ item, refresh, identity }) {
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, {}, config))}>Approve exact snapshot</button>
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/approve`, {}, config))}>Approve submitted evidence</button>
             <button type="button" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50" disabled={busy || !reason.trim()} onClick={() => run(config => apiClient.post(`/admin/platform_capability_reviews/${pending.id}/reject`, { reason }, config))}>Reject</button>
           </div>
         </div>
       ) : approval?.active ? (
         <div className="mt-5 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-          <div className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-950">Current approval</p><p className="text-sm text-emerald-900">Evidence {approval.evidence_reference}; expires {new Date(approval.expires_at).toLocaleString()}.</p></div></div>
+          <div className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-950">Current approval</p><p className="text-sm text-emerald-900">Evidence {approval.evidence_reference}; expires {formatPlatformDateTime(approval.expires_at)}.</p></div></div>
           <label className="block text-sm font-medium text-emerald-950">Revocation reason
             <input className="input mt-1" value={reason} onChange={event => setReason(event.target.value)} />
           </label>
@@ -162,8 +163,9 @@ function CapabilityCard({ item, refresh, identity }) {
             <label className="text-sm font-medium text-neutral-800">Evidence reference
               <input className="input mt-1" required value={form.evidence_reference} onChange={event => setForm({ ...form, evidence_reference: event.target.value })} placeholder="Controlled record ID or URL" />
             </label>
-            <label className="text-sm font-medium text-neutral-800">SHA-256 evidence digest
-              <input className="input mt-1 font-mono text-xs" required pattern="[0-9a-f]{64}" value={form.evidence_digest} onChange={event => setForm({ ...form, evidence_digest: event.target.value.trim().toLowerCase() })} />
+            <label className="text-sm font-medium text-neutral-800">Evidence file checksum (SHA-256)
+              <input className="input mt-1 font-mono text-xs" aria-label="Evidence file checksum (SHA-256)" aria-describedby={`checksum-help-${item.capability}`} required pattern="[0-9a-f]{64}" value={form.evidence_digest} onChange={event => setForm({ ...form, evidence_digest: event.target.value.trim().toLowerCase() })} />
+              <span id={`checksum-help-${item.capability}`} className="mt-1 block text-xs font-normal">Paste the 64-character SHA-256 checksum of the evidence file.</span>
             </label>
             <label className="text-sm font-medium text-neutral-800">Effective at
               <input className="input mt-1" type="datetime-local" required value={form.effective_at} onChange={event => setForm({ ...form, effective_at: event.target.value })} />
@@ -172,7 +174,7 @@ function CapabilityCard({ item, refresh, identity }) {
               <input className="input mt-1" type="datetime-local" required value={form.expires_at} onChange={event => setForm({ ...form, expires_at: event.target.value })} />
             </label>
           </div>
-          <fieldset><legend className="text-sm font-semibold text-neutral-900">Required evidence controls</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{item.required_controls.map(control => <label key={control} className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700"><input className="mt-0.5" type="checkbox" checked={form.controls[control] || false} onChange={event => setForm({ ...form, controls: { ...form.controls, [control]: event.target.checked } })} />{controlLabel(control)}</label>)}</div></fieldset>
+          <fieldset><legend className="text-sm font-semibold text-neutral-900">Required checks</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{item.required_controls.map(control => <label key={control} className="flex items-start gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-700"><input className="mt-0.5" type="checkbox" checked={form.controls[control] || false} onChange={event => setForm({ ...form, controls: { ...form.controls, [control]: event.target.checked } })} />{controlLabel(control)}</label>)}</div></fieldset>
           <button className="btn-primary inline-flex items-center gap-2" disabled={busy || !item.configured || !allControlsChecked}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}Submit evidence (can’t be edited later)</button>
         </form>
       )}

@@ -1,3 +1,4 @@
+import { formatPlatformDateTime } from '../../utils/eventTime'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -289,7 +290,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
   return (
     <AdminLayout>
       <p className="mb-6 max-w-3xl text-sm text-content-muted">Platform-wide details shown to buyers and organizers. Scheduled fee changes apply only to orders placed on or after their effective date.</p>
-      {saved.pending_fee_change && <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">A fee change is scheduled for {new Date(saved.pending_fee_change.effective_at).toLocaleString()}. Current fees remain in effect until then.</p>}
+      {saved.pending_fee_change && <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">A fee change is scheduled for {formatPlatformDateTime(saved.pending_fee_change.effective_at)}. Current fees remain in effect until then.</p>}
       {saved.blocked_fee_change && <p role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Scheduled fee activation was blocked: {saved.blocked_fee_change.activation_error}. Review the policy text and schedule a corrected change.</p>}
       <FormErrorSummary errors={summaryErrors} title="Check these settings" />
       {errors.form && <p role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{errors.form}</p>}
@@ -398,7 +399,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
       {confirming && <Dialog labelledBy={confirmTitle} busy={saving} onClose={() => setConfirming(null)} className="max-w-lg">
         <h2 id={confirmTitle} className="text-lg font-semibold text-neutral-900">Schedule fee term changes?</h2>
         <p className="mt-2 text-sm text-neutral-700">The new terms apply to orders placed on or after the effective date. Existing orders keep their recorded terms. The change and organizer acknowledgments are audited.</p>
-        {saved.policy_register_approved === false && <p role="alert" className="mt-2 text-sm text-red-800">Approve the current policy register in <Link to="/admin/provider-readiness" className="font-semibold underline">provider readiness</Link> before scheduling a fee change.</p>}
+        {saved.policy_register_approved === false && <p role="alert" className="mt-2 text-sm text-red-800">Approve the current production policies in <Link to="/admin/provider-readiness" className="font-semibold underline">Integrations &amp; policies</Link> before scheduling a fee change.</p>}
         <p className="mt-2 font-semibold text-neutral-900">{feePreview?.affected_organizer_count ?? '—'} organizations affected · {feePreview?.owner_email_count ?? '—'} owners will be emailed.</p>
         {feePreview?.unreachable_organizations?.length > 0 && <div role="alert" className="mt-2 text-sm text-red-800"><p>{feePreview.unreachable_organizations.length} affected {feePreview.unreachable_organizations.length === 1 ? 'organization has' : 'organizations have'} no reachable owner:</p><ul className="mt-1 list-disc pl-5">{feePreview.unreachable_organizations.map(organization => <li key={organization.id}>{organization.name}</li>)}</ul></div>}
         <label className="mt-4 block text-sm font-medium text-neutral-900">Effective date and time

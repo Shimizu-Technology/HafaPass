@@ -83,14 +83,14 @@ for (const entry of cases) describe(`${entry.route} scoped administrator reads`,
 
 describe('provider readiness captured mutations', () => {
   const entry = cases[0]
-  const clickApprove = async () => fireEvent.click(await screen.findByRole('button', { name: 'Approve exact snapshot' }))
+  const clickApprove = async () => fireEvent.click(await screen.findByRole('button', { name: 'Approve submitted evidence' }))
   it.each([401, 403])('purges evidence and actions on current decision authority denial %s', async status => {
     apiClient.defaults.adapter = vi.fn(config => config.method === 'get' ? Promise.resolve(response(config, entry.body('Private evidence')))
       : rejectResponse(config, status, status === 403 ? 'Admin access required' : 'Unauthorized'))
     mount(entry); await clickApprove()
     await screen.findByRole('button', { name: 'Retry administrator access' })
     expect(screen.queryByText(/Admin #7 submitted evidence/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Approve exact snapshot' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve submitted evidence' })).not.toBeInTheDocument()
   })
   it.each([403, 503])('preserves a decision reason and retry control on business/network rejection %s', async status => {
     apiClient.defaults.adapter = vi.fn(config => config.method === 'get' ? Promise.resolve(response(config, entry.body('Private evidence')))
@@ -114,7 +114,7 @@ describe('provider readiness captured mutations', () => {
     await act(async () => outcome === 'success' ? old.resolve(response(mutationConfig, {}))
       : old.reject(new AxiosError('Denied', undefined, mutationConfig, null, { status: 403, data: { error: 'Admin access required' } })))
     expect(apiClient.defaults.adapter).toHaveBeenCalledTimes(before)
-    expect(screen.getByRole('button', { name: 'Approve exact snapshot' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Approve submitted evidence' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Retry administrator access' })).not.toBeInTheDocument()
   })
   it.each(['submit', 'revoke'])('pins the %s capability operation and its original payload to the current actor', async operation => {
@@ -124,7 +124,7 @@ describe('provider readiness captured mutations', () => {
     mount(entry); await screen.findByText('Email delivery')
     if (operation === 'submit') {
       fireEvent.change(screen.getByLabelText('Evidence reference'), { target: { value: 'restricted/test-evidence' } })
-      fireEvent.change(screen.getByLabelText('SHA-256 evidence digest'), { target: { value: 'a'.repeat(64) } })
+      fireEvent.change(screen.getByLabelText('Evidence file checksum (SHA-256)'), { target: { value: 'a'.repeat(64) } })
       fireEvent.click(screen.getByRole('checkbox'))
       fireEvent.click(screen.getByRole('button', { name: 'Submit evidence (can’t be edited later)' }))
     } else {

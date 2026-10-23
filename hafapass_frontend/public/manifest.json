@@ -1,7 +1,7 @@
 {
-  "name": "HåfaPass",
+  "name": "HåfaPass — Events and Tickets on Guam",
   "short_name": "HåfaPass",
-  "description": "Discover and purchase tickets for events across Guam",
+  "description": "Discover events on Guam, buy tickets, and check in with your phone.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0e7c7b",
@@ -22,6 +22,9 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["entertainment", "events"],
+  "categories": [
+    "entertainment",
+    "events"
+  ],
   "lang": "en-US"
 }

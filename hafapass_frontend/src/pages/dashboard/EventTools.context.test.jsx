@@ -60,6 +60,21 @@ it('leaves fee policy to the event edit page so it is not duplicated in sales to
   expect(screen.queryByTestId('fee-terms-note')).not.toBeInTheDocument()
 })
 
+it('renders mapped and unknown actions in the active seating audit trail', async () => {
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/seating') ? Promise.resolve({ data: {
+    assigned_seating: true, sections: [], audit_events: [
+      { id: 1, action: 'partially_refunded', occurred_at: '2026-10-21T09:00:00Z' },
+      { id: 2, action: 'accessible_seats_released', occurred_at: '2026-10-21T10:00:00Z' },
+    ],
+  } }) : getDefault(path, config))
+  mount(tools[2])
+  const audit = (await screen.findByRole('heading', { name: 'Audit trail' })).closest('section')
+  expect(within(audit).getByText('Partially refunded')).toBeVisible()
+  expect(within(audit).getByText('Accessible seats released')).toBeVisible()
+  expect(within(audit).getAllByRole('listitem')).toHaveLength(2)
+  expect(within(audit).queryByText(/partially_refunded|accessible_seats_released/)).not.toBeInTheDocument()
+})
+
 describe.each(tools)('$name organizer tool ownership and recovery', tool => {
   it.each(['success', 'error'])('discards an old event load %s after opening another event', async outcome => {
     const old = deferred()

@@ -88,8 +88,8 @@ Files, all in `hafapass_frontend/`:
 
 - `src/locales/en.json` — the English source. Developers edit only this file.
 - `src/locales/en.metadata.json` — optional per-key context for translators
-  (for example, that the service fee is not a tax and that “event” never means
-  a sports competition). Add context for anything ambiguous.
+  (for example, that the service fee is not a tax and that “event” includes
+  sports alongside concerts, festivals, classes and community events). Add context for anything ambiguous.
 - `src/locales/{ko,ja,zh-Hant,zh,tl}.json` — generated. Do not hand-edit except
   for corrections; the next CLI run uploads local edits and keeps them.
 - `gt.config.json` — locales, the `tl` → `fil` mapping, and the files to

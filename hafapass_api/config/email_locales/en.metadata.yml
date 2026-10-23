@@ -4,7 +4,7 @@ emails:
     context: HåfaPass is the product name and Shimizu Technology the company name; keep both as written.
   formats:
     event_datetime:
-      context: Date and time pattern for an event. Reorder the placeholders for the target language; keep every %{placeholder}.
+      context: Date and time pattern for an event. The zone placeholder names the venue time zone (Guam time for Pacific/Guam). Reorder the placeholders for the target language; keep every %{placeholder}.
     month_names:
       context: Full month names, January to December, in order.
     am:

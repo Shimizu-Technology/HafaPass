@@ -1,3 +1,4 @@
+import { adminLabel as readableLabel } from '../admin/adminLabels'
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -45,7 +46,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'payout', title: 'How you get paid', done: profile.payout_ready,
-      status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : payoutMethod} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
+      status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : readableLabel(payoutMethod)} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
       next: !profile.payout_ready ? 'Only needed for paid tickets: complete Tax information and How you get paid in Settings, then wait for finance approval.' : null,
       action: !profile.payout_ready && <Link to="/dashboard/settings" className="btn-secondary !px-4 !py-2 text-sm">{payoutMethod ? 'View payout details' : 'Choose check or bank transfer'}</Link>,
     },

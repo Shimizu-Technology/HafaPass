@@ -10,7 +10,7 @@ class PromoCode < ApplicationRecord
   validates :code, presence: true
   validates :code, uniqueness: { scope: :event_id, case_sensitive: false }
   validates :discount_type, inclusion: { in: DISCOUNT_TYPES }
-  validates :discount_value, presence: true, numericality: { greater_than: 0 }
+  validates :discount_value, presence: true, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }
   validates :discount_value, numericality: { less_than_or_equal_to: 100 }, if: :percentage?
   validate :chronological_redemption_window
 

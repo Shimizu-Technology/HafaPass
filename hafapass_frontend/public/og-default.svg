@@ -30,12 +30,12 @@
   
   <!-- Title -->
   <text x="100" y="330" font-family="'Space Grotesk', 'SF Pro Display', system-ui, sans-serif" font-size="72" font-weight="700" fill="white">
-    <tspan>Hafa</tspan><tspan fill="#0d9488">Pass</tspan>
+    <tspan>Håfa</tspan><tspan fill="#0d9488">Pass</tspan>
   </text>
   
   <!-- Subtitle -->
   <text x="100" y="400" font-family="'Plus Jakarta Sans', 'SF Pro Text', system-ui, sans-serif" font-size="32" font-weight="400" fill="#94a3b8">
-    Your Pass to Every Event on Guam
+    Events and Tickets on Guam
   </text>
   
   <!-- Bottom tagline -->

@@ -25,7 +25,7 @@ it('keeps event identity and organization while moving between actual guest-list
   expect(await screen.findByText('Synthetic event organizer')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Guest list' })).toHaveAttribute('aria-current', 'page')
   await userEvent.click(screen.getByRole('link', { name: 'Promo codes' }))
-  await screen.findByRole('heading', { name: 'Promo Codes', level: 2 })
+  await screen.findByRole('heading', { name: 'Promo codes', level: 2 })
   await screen.findByRole('heading', { name: 'Synthetic Guam reception', level: 1 })
   expect(screen.getByText('Synthetic event organizer')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Promo codes' })).toHaveAttribute('aria-current', 'page')

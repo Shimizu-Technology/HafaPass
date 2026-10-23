@@ -38,7 +38,7 @@ test('admin sees fail-closed provider state and submits a complete policy eviden
   const policy = page.getByRole('region', { name: 'Production policy register' })
   await expect(policy.getByText('Off until approved')).toBeVisible()
   await policy.getByLabel('Evidence reference').fill('controlled/legal/policy-register-17')
-  await policy.getByLabel('SHA-256 evidence digest').fill('a'.repeat(64))
+  await policy.getByLabel('Evidence file checksum (SHA-256)').fill('a'.repeat(64))
   for (const checkbox of await policy.getByRole('checkbox').all()) await checkbox.check()
   const submissionResponse = page.waitForResponse(response =>
     response.url().includes('/api/v1/admin/platform_capabilities/policy_register/reviews') &&

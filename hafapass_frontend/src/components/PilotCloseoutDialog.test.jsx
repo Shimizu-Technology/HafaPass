@@ -50,7 +50,7 @@ describe('PilotCloseoutDialog', () => {
     apiClient.get.mockResolvedValue({ data: { event, pilot_closeout: { eligible: false, approved: false } } })
     render(<PilotCloseoutDialog event={event} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate J closeout' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare pilot closeout' }))
 
     expect(await screen.findByText(/Complete and reconcile a real Gate I run/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Sign and submit/ })).not.toBeInTheDocument()
@@ -63,7 +63,7 @@ describe('PilotCloseoutDialog', () => {
     apiClient.post.mockResolvedValue({ data: { id: 91, decision: 'submission' } })
     render(<PilotCloseoutDialog event={{ ...event, pilot_closeout: { eligible: true } }} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate J closeout' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare pilot closeout' }))
     await screen.findByText('System-calculated closeout')
     fireEvent.change(screen.getByLabelText('Bundle reference'), { target: { value: 'restricted-closeout/gate-j' } })
     fireEvent.change(screen.getByLabelText('Bundle SHA-256'), { target: { value: 'a'.repeat(64) } })

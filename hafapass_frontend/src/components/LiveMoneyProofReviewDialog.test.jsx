@@ -16,7 +16,7 @@ describe('LiveMoneyProofReviewDialog', () => {
       authorization: null, live_money_proof: { approved: false } } })
     render(<LiveMoneyProofReviewDialog event={{ ...event, live_money_proof_candidate: false }} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate H live-money proof' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare live-payment validation' }))
 
     expect(await screen.findByText(/Normal events cannot be used to bypass Gate H/)).toBeInTheDocument()
   })
@@ -29,7 +29,7 @@ describe('LiveMoneyProofReviewDialog', () => {
     apiClient.post.mockResolvedValue({ data: { ...details.authorization, approved_at: new Date().toISOString() } })
     render(<LiveMoneyProofReviewDialog event={event} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate H live-money proof' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare live-payment validation' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve one-time proof' }))
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/live_money_proof_authorizations/71/approve',
@@ -43,7 +43,7 @@ describe('LiveMoneyProofReviewDialog', () => {
       expires_at: new Date(Date.now() + 3600000).toISOString() }, live_money_proof: { approved: false } } })
     render(<LiveMoneyProofReviewDialog event={event} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare Gate H live-money proof' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare live-payment validation' }))
 
     const link = await screen.findByRole('link', { name: 'Open private proof checkout' })
     expect(link).toHaveAttribute('href', '/events/live-proof?live_money_proof=true')
