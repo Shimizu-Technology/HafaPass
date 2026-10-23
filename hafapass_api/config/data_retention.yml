@@ -332,7 +332,8 @@
         "sales_suspension_reason",
         "short_description",
         "venue_address",
-        "venue_name"
+        "venue_name",
+        "organizer_sales_suspension_reason"
       ]
     },
     "fee_change_notices": {
@@ -567,6 +568,15 @@
         "trigger": "expired_at",
         "action": "delete"
       }
+    },
+    "organization_invitation_dispatches": {
+      "category": "logs/audit",
+      "period": "90_days",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "recipient"
+      ]
     },
     "organization_memberships": {
       "category": "organizer PII",
@@ -1382,7 +1392,10 @@
       "started_at": "system",
       "status": "system",
       "subject": "pii",
-      "updated_at": "system"
+      "updated_at": "system",
+      "scheduled_by_user_id": "system",
+      "sent_by_user_id": "system",
+      "last_error": "non-personal"
     },
     "connected_accounts": {
       "id": "system",
@@ -1657,7 +1670,9 @@
       "translation_status": "system",
       "translation_requested_at": "system",
       "localized_content_sources": "pii",
-      "page_customization": "pii"
+      "page_customization": "pii",
+      "organizer_sales_suspended_at": "system",
+      "organizer_sales_suspension_reason": "pii"
     },
     "fee_change_notices": {
       "id": "system",
@@ -2064,6 +2079,13 @@
       "locale": "non-personal",
       "marketing_opt_in": "pii",
       "retention_anonymized_at": "non-personal"
+    },
+    "organization_invitation_dispatches": {
+      "id": "system",
+      "organization_id": "system",
+      "actor_user_id": "system",
+      "recipient": "pii",
+      "created_at": "system"
     },
     "organization_memberships": {
       "id": "system",

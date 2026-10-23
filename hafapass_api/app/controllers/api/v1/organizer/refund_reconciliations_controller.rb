@@ -19,6 +19,10 @@ class Api::V1::Organizer::RefundReconciliationsController < Api::V1::Organizer::
     authorize_organization!(:view_finance)
   end
 
+  def reconciliation_organization
+    current_organization
+  end
+
   def filters
     params.permit(:status, :age_days, :event_id, :page, :per_page).to_h.symbolize_keys
   end

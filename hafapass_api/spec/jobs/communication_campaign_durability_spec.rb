@@ -17,6 +17,7 @@ RSpec.describe "Campaign durable enqueue boundary", :non_transactional do
     create(:ticket, order: order, event: event, ticket_type: type)
     campaign = create(:communication_campaign, event: event)
     sender = create(:user)
+    create(:organization_membership, organization: event.organization, user: sender, role: :marketer)
     adapter = ActiveJob::Base.queue_adapter
 
     CommunicationCampaigns::Sender.call(campaign, actor: sender)

@@ -45,7 +45,7 @@ describe('SettingsPage', () => {
     show()
     await screen.findByText('Island Events')
     expect(screen.getByText('Payout setup incomplete')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Finance.*Sales reports, refunds and payouts\./ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Finance.*Sales reports, refunds and payouts, including buyer contact details/ })).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Teammate email'), { target: { value: 'finance@example.com' } })
     await userEvent.click(screen.getByRole('radio', { name: /Finance/ }))

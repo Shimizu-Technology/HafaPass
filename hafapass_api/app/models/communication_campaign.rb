@@ -5,6 +5,8 @@ class CommunicationCampaign < ApplicationRecord
 
   belongs_to :event
   belongs_to :created_by_user, class_name: "User"
+  belongs_to :scheduled_by_user, class_name: "User", optional: true
+  belongs_to :sent_by_user, class_name: "User", optional: true
   has_many :message_deliveries, dependent: :restrict_with_error
 
   enum :status, { draft: 0, scheduled: 1, sending: 2, sent: 3, cancelled: 4, failed: 5 }
@@ -20,6 +22,22 @@ class CommunicationCampaign < ApplicationRecord
 
   def segment_type
     segment["type"].to_s
+  end
+
+  AUTHORIZATION_ERROR = "Needs attention: the person who scheduled or sent this campaign no longer has permission to send messages. Ask an authorized team member to review and reschedule it."
+  DELIVERY_AUTHORIZATION_ERROR = "Campaign sender no longer has permission to send messages"
+
+  def sender_authorized?(sender = sent_by_user)
+    sender && OrganizationAuthorization.allowed?(user: sender, organization: event.organization,
+      permission: :manage_marketing, event: event)
+  end
+
+  def fail_authorization!
+    return if failed? && last_error == AUTHORIZATION_ERROR
+
+    update!(status: :failed, last_error: AUTHORIZATION_ERROR, sent_at: nil)
+    AuditLogger.record!(action: "campaign.reauthorization_failed", auditable: self, event: event,
+      outcome: "failed", metadata: { failure_code: "sender_permission_revoked" })
   end
 
   private
@@ -50,6 +68,9 @@ class CommunicationCampaign < ApplicationRecord
     end
     audit_campaign(action, changes.transform_values(&:first), changes.transform_values(&:last),
       content_changed: content_changed)
+    if saved_change_to_status? && status_before_last_save == "failed" && (draft? || scheduled?)
+      audit_campaign("campaign.recovered", { status: "failed" }, { status: status })
+    end
   end
 
   def audit_campaign(action, before, after, content_changed: false)

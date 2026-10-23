@@ -258,4 +258,31 @@ RSpec.describe Admissions::Reconciler do
     end.to raise_error(described_class::SyncError, /valid kind/)
     expect(event.admission_actions).to be_empty
   end
+  it "rechecks Undo authority after waiting even when scan authority remains" do
+    admitted = described_class.call(device: device, actor: actor,
+      actions: [scan_input(sequence: 1, uuid: "before-demotion")]).first.action
+    actor_membership = organization.organization_memberships.find_by!(user: actor)
+    create(:event_staff_assignment, event: event, user: actor, role: :scanner)
+    # The original manage_attendees check passes. The order lock is the
+    # deterministic interleaving point where effective privilege changes.
+    allow_any_instance_of(Order).to receive(:lock!).and_wrap_original do |original, *args|
+      actor_membership.update!(role: :scanner)
+      original.call(*args)
+    end
+    input = { action_uuid: "after-demotion", kind: "reverse", source: "online", sequence: 2,
+      manifest_version: manifest.version, occurred_at: Time.current.iso8601(6), reverses_action_uuid: admitted.action_uuid }
+    result = described_class.call(device: device, actor: actor, actions: [input]).first.action
+    expect(result).to have_attributes(result: "rejected", reason_code: "reversal_not_authorized")
+    expect(ticket.reload).to be_checked_in
+  end
+
+  it "rejects offline scans immediately on reconnect after membership revocation" do
+    input = scan_input(sequence: 1, uuid: "offline-before-revocation")
+    organization.organization_memberships.find_by!(user: actor).update!(status: :revoked)
+    expect do
+      described_class.call(device: device, actor: actor, actions: [input])
+    end.to raise_error(described_class::SyncError, /no longer active/)
+    expect(ticket.reload).to be_issued
+    expect(AdmissionAction.where(action_uuid: input[:action_uuid])).not_to exist
+  end
 end

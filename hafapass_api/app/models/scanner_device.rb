@@ -32,6 +32,11 @@ class ScannerDevice < ApplicationRecord
       AuditLogger.record!(action: "scanner_device.renamed", auditable: self, event: event,
         before_data: { name: name_before_last_save }, after_data: { name: name })
     end
+    if saved_change_to_authorization_expires_at?
+      AuditLogger.record!(action: "scanner_device.lease_updated", auditable: self, event: event,
+        before_data: { lease_expires_at: authorization_expires_at_before_last_save },
+        after_data: { lease_expires_at: authorization_expires_at })
+    end
     if saved_change_to_manifest_downloaded_at?
       AuditLogger.record!(action: "scanner_device.manifest_downloaded", auditable: self, event: event,
         after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at })

@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe OrganizationTeam do
   include ActiveJob::TestHelper
+  include ActiveSupport::Testing::TimeHelpers
 
   let(:owner) { create(:user, :organizer, email: "owner@example.com") }
   let(:profile) { create(:organizer_profile, user: owner) }
@@ -39,6 +40,7 @@ RSpec.describe OrganizationTeam do
       role: "finance", actor: owner)
     stale = MessageDelivery.find_by!(organization_membership: membership)
 
+    travel 61.seconds
     second_token = described_class.resend!(membership: membership, actor: owner)
 
     expect(second_token).not_to eq(first_token)
@@ -76,6 +78,31 @@ RSpec.describe OrganizationTeam do
     expect(assignment.reload).to be_status_revoked
   end
 
+  it "rolls back membership and assignment revocation if its audit cannot be saved" do
+    membership = create(:organization_membership, organization: organization, role: :scanner)
+    event = create(:event, organizer_profile: profile)
+    assignment = create(:event_staff_assignment, organization: organization, event: event, user: membership.user)
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "organization.membership_revoked"))
+      .and_raise(AuditLogger::WriteError)
+
+    expect { described_class.revoke!(membership: membership, actor: owner) }.to raise_error(AuditLogger::WriteError)
+    expect(membership.reload).to be_status_active
+    expect(assignment.reload).to be_status_active
+    expect(AuditLog.where(auditable: assignment, action: "event_staff.revoked")).not_to exist
+  end
+
+  it "rolls back the invitation and quota dispatch if its audit cannot be saved" do
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "organization.invitation_created"))
+      .and_raise(AuditLogger::WriteError)
+    expect do
+      described_class.invite!(organization: organization, email: "atomic@example.com", role: "scanner", actor: owner)
+    end.to raise_error(AuditLogger::WriteError)
+    expect(organization.organization_memberships.where(invited_email: "atomic@example.com")).not_to exist
+    expect(OrganizationInvitationDispatch.where(organization: organization)).not_to exist
+  end
+
   describe ".transfer_ownership!" do
     let(:manager) { create(:user, email: "manager@example.com") }
     let!(:manager_membership) { create(:organization_membership, organization: organization, user: manager, role: :manager) }
@@ -101,5 +128,19 @@ RSpec.describe OrganizationTeam do
         described_class.transfer_ownership!(organization: organization, to_membership: manager_membership, actor: manager)
       end.to raise_error(described_class::TeamError, /Only the owner/)
     end
+  end
+
+  it "preserves event staff invite and resend access for event managers" do
+    manager = create(:user)
+    create(:organization_membership, organization: organization, user: manager, role: :scanner)
+    event = create(:event, organizer_profile: profile)
+    create(:event_staff_assignment, organization: organization, event: event, user: manager, role: :manager)
+    membership, = described_class.invite!(organization: organization, email: "door@example.com", role: :scanner,
+      actor: manager, event_assignment: { event: event, role: :scanner })
+    travel 61.seconds
+    expect { described_class.resend!(membership: membership, actor: manager, event: event) }.not_to raise_error
+    travel 61.seconds
+    expect { described_class.resend!(membership: membership, actor: manager) }
+      .to raise_error(described_class::TeamError, /permission/)
   end
 end

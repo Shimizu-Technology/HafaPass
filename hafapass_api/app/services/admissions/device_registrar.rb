@@ -4,7 +4,7 @@ module Admissions
   class DeviceRegistrar
     class RegistrationError < StandardError; end
 
-    MAX_AUTHORIZATION = 72.hours
+    MAX_AUTHORIZATION = 24.hours
     EVENT_GRACE = 12.hours
 
     def self.call(**)
@@ -30,37 +30,45 @@ module Admissions
       raise RegistrationError, "Scanner authorization has expired" unless expires_at > Time.current
 
       device = nil
-      ScannerDevice.transaction do
-        event.lock!
-        device = event.scanner_devices.lock.find_or_initialize_by(identifier: identifier)
-        if device.persisted? && device.user_id != user.id
-          raise RegistrationError, "This browser identifier is already registered to another staff member"
+      AuditContext.set(actor: user) do
+        ScannerDevice.transaction do
+          event.lock!
+          unless OrganizationAuthorization.allowed?(user: user, organization: event.organization, permission: :scan, event: event)
+            raise RegistrationError, "You are not assigned to scan this event"
+          end
+          expires_at = authorization_expiration
+          raise RegistrationError, "Scanner authorization has expired" unless expires_at > Time.current
+
+          device = event.scanner_devices.lock.find_or_initialize_by(identifier: identifier)
+          if device.persisted? && device.user_id != user.id
+            raise RegistrationError, "This browser identifier is already registered to another staff member"
+          end
+          if device.persisted? && (device.status_revoked? || device.revoked_at.present?)
+            raise RegistrationError, "This scanner device was revoked; ask the event manager for access"
+          end
+          device.assign_attributes(
+            organization: event.organization,
+            user: user,
+            name: name,
+            status: :active,
+            authorization_expires_at: expires_at,
+            revoked_at: nil,
+            last_seen_at: Time.current
+          )
+          device.save!
+          AuditLogger.record!(
+            action: "scanner_device.authorized",
+            auditable: device,
+            actor: user,
+            organization: event.organization,
+            after_data: {
+              event_id: event.id,
+              name: device.name,
+              authorization_expires_at: device.authorization_expires_at
+            },
+            request: request
+          )
         end
-        if device.persisted? && (device.status_revoked? || device.revoked_at.present?)
-          raise RegistrationError, "This scanner device was revoked; ask the event manager for access"
-        end
-        device.assign_attributes(
-          organization: event.organization,
-          user: user,
-          name: name,
-          status: :active,
-          authorization_expires_at: expires_at,
-          revoked_at: nil,
-          last_seen_at: Time.current
-        )
-        device.save!
-        AuditLogger.record!(
-          action: "scanner_device.authorized",
-          auditable: device,
-          actor: user,
-          organization: event.organization,
-          after_data: {
-            event_id: event.id,
-            name: device.name,
-            authorization_expires_at: device.authorization_expires_at
-          },
-          request: request
-        )
       end
       device
     rescue ActiveRecord::RecordInvalid => e
@@ -75,6 +83,8 @@ module Admissions
       now = Time.current
       event_limit = (event.ends_at || event.starts_at || now) + EVENT_GRACE
       hard_limit = [event_limit, now + MAX_AUTHORIZATION].min
+      return hard_limit if user.admin?
+
       membership = event.organization.organization_memberships.effective(now).find_by(user: user)
       return now unless membership
 

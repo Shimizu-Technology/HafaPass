@@ -92,8 +92,10 @@ RSpec.describe "Team invitations never take over existing members", type: :reque
     owner_membership.update!(role: :owner)
     post "/api/v1/organizer/memberships", params: { email: "boss@example.com", role: "scanner" }, headers: headers_for(owner)
     expect(response).to have_http_status(:unprocessable_entity)
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/memberships/#{invite.id}/resend", headers: headers_for(owner)
     expect(response).to have_http_status(:unprocessable_entity)
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/admin/organizations/#{organization.id}/memberships/#{invite.id}/resend", headers: auth_headers(admin)
     expect(response.parsed_body["error"]).to include("already has an owner")
     expect(invite.reload).to be_owner
@@ -103,11 +105,13 @@ RSpec.describe "Team invitations never take over existing members", type: :reque
     admin = create(:user, :admin)
     owner_membership.update!(role: :manager)
     base = "/api/v1/admin/organizations/#{organization.id}/memberships"
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post base, params: { email: "boss@example.com", role: "owner" }, headers: auth_headers(admin)
     first = response.parsed_body["id"]
     delete "#{base}/#{first}", headers: auth_headers(admin)
     expect(response).to have_http_status(:no_content)
 
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post base, params: { email: "boss@example.com", role: "owner" }, headers: auth_headers(admin)
     expect(response).to have_http_status(:created)
     expect(response.parsed_body["id"]).not_to eq(first)
@@ -132,8 +136,10 @@ RSpec.describe "Team invitations never take over existing members", type: :reque
       invited_email: "money@example.com", status: :invited, accepted_at: nil, invitation_expires_at: 3.days.from_now,
       pending_event_assignments: [{ "event_id" => event.id, "role" => "box_office" }])
 
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/events/#{event.id}/staff_invitations/#{finance_invite.id}/resend", headers: headers_for(manager)
     expect(response).to have_http_status(:forbidden)
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/events/#{event.id}/staff_invitations/#{finance_invite.id}/resend", headers: headers_for(owner)
     expect(response).to have_http_status(:ok)
   end

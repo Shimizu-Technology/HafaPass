@@ -13,6 +13,10 @@ class Api::V1::Admin::RefundReconciliationsController < Api::V1::Admin::BaseCont
 
   private
 
+  def reconciliation_organization
+    nil
+  end
+
   def filters
     params.permit(:status, :age_days, :event_id, :page, :per_page).to_h.symbolize_keys
   end

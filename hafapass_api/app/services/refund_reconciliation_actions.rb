@@ -11,9 +11,15 @@ class RefundReconciliationActions
     new(**options).call
   end
 
-  def initialize(type:, id:, action:, actor:, params: {}, request: nil, system: false, stripe_call_budget: nil)
+  def initialize(type:, id:, action:, actor:, params: {}, request: nil, system: false, stripe_call_budget: nil, organization: nil)
     @type = type.to_s
-    @record = TYPES.fetch(@type) { raise ActionError, "Refund item not found" }.find(id)
+    scope = TYPES.fetch(@type) { raise ActionError, "Refund item not found" }.all
+    if organization
+      scope = scope.joins(order: :event).where(events: { organization_id: organization.id })
+    elsif !system && !actor&.admin?
+      raise Forbidden, "Choose an organization to manage refunds"
+    end
+    @record = scope.find(id)
     @action = action.to_s
     @actor = actor
     @params = params.to_h.stringify_keys

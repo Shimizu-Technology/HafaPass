@@ -66,6 +66,66 @@ Forward migration `20261024110000` drops the actor-user nullifying FK and create
 
 Regression coverage exercises hard user deletion, draft event destruction, organization model/SQL restriction, the complete outgoing/incoming audit FK inventory, privacy/retention, synthetic purge with an audit-failure marker, partial enqueue/retry and false enqueue returns, paid-order fulfillment after a real failing audit SQL statement, dual audit/fallback failure, sanitized monitoring, and fail-closed admin/team changes.
 
+## Integration with team permissions PR 152
+
+Integration baseline: audit head `872e88eb` and main `473e3ccb` (2026-10-24
+Guam). This is a merge of main into the audit branch; PR 153 remains held.
+The product context above and `docs/qa/team-permission-fixes.md` define the
+affected organizer, team, marketing and scanner journeys. No policy changes
+are part of this integration.
+
+- Team mutations retain PR 152's organization row lock, membership reload,
+  owner checks and authority recheck after lock waits. Invitation, resend,
+  revocation and role-change audits now execute inside that same transaction;
+  quota dispatch accounting rolls back with rejected invitation audits.
+- Campaign preparation chooses the sender after acquiring the organization
+  and campaign locks, then reauthorizes that sender. A failed permission check
+  commits a visible attention reason and `campaign.reauthorization_failed`.
+  Scheduling jobs retain PR 152's timestamp guard and execution reauthorization.
+- Preparation commits a recipient outbox in `sending`, then enqueues the
+  dispatcher after all enclosing transactions commit. Dispatch reauthorizes
+  before child enqueueing, outside the enqueue loop's transaction boundary.
+  Only accepted enqueueing of every child permits `sent`, `sent_at` and the
+  `campaign.send_completed` audit. This means queued, not provider-delivered.
+- Dispatcher/child enqueue rejection records `campaign.send_failed`, a safe
+  attention reason and no completion. Bounded automatic retries reuse the
+  outbox. An authorization failure requires explicit authorized review;
+  automatic dispatch retries do not revive it even if access is restored.
+  Authorized send-now or rescheduling records recovery and retains the same
+  delivery IDs and idempotency keys. Previously sent/terminal messages stay
+  terminal; authorization-cancelled messages can be queued by the new sender.
+  Frozen payloads and provider uncertainty remain intact. Once queueing has
+  started, content/audience edits require a new campaign; scheduling edits and
+  retry remain available. Before queueing starts, failed campaigns retain PR
+  152's editable draft/reschedule flow.
+- Provider dispatch retains the organization lock across its bounded provider
+  call, serializing revocation. A permission refusal cancels the delivery,
+  preserves any unknown prior provider result and marks/audits the campaign's
+  authorization failure. Already accepted external sends cannot be undone.
+- Organizer seating suspension uses its separate organizer columns and
+  `seating.organizer_sales_suspended` / `seating.organizer_sales_resumed`.
+  Mutation, detailed seat ledger and central audit commit together. Resuming
+  organizer sales leaves platform suspension effective. Scanner lease updates
+  record old/new expiration and retain PR 152's bounded authorization rules.
+- Routine invitation quota rejection is not added to central history: it
+  changes no invitation or dispatch record. Existing quota enforcement and
+  rejection messages remain; accepted invite/resend actions are audited.
+- Both migration sets run from the common-base schema. The generated schema
+  contains the invitation dispatch table, campaign authority and organizer
+  pause columns, audit indexes/failure markers, append-only function/trigger,
+  and the immutable historical-ID FK policy.
+
+Agent-executed acceptance uses isolated synthetic Postgres fixtures and the
+repository's mocked-auth Chromium suite. Required backend cases are team
+lock-wait races and audit rollback; campaign enqueue rejection, revocation,
+recovery and outbox reuse; separate organizer/platform seating controls;
+scanner lease changes; registry completeness; and trigger/schema protection.
+Required browser cases are the complete CI Playwright suite, including team
+invitation/review recovery and existing audit views. Provider sends are
+simulated. Live Clerk, physical/mobile installed-app behavior and deployment
+remain outside this integration's acceptance scope. Final results follow
+when the gate finishes; earlier verification below describes earlier commits.
+
 ## Review-fix verification
 
 Checked 2026-10-24 Guam against implementation `1d0c4f55f0f7bc7c0781525eab2c7443a0bf6023`. The following documentation commit changes no application or test code. Agent execution used isolated fixtures in `hafapass_audit_review_test`, Ruby 3.3.4, local Postgres 17, Node 22.22.3 and Chromium. CI uses Postgres 16. `origin/main` was already an ancestor; no merge or rebase was needed. Policies are unchanged.

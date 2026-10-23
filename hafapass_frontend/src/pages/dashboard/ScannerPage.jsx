@@ -1,3 +1,4 @@
+import { OFFLINE_SCANNER_ACCESS_NOTE } from '../../utils/roles'
 import useOperationalListing from '../../hooks/useOperationalListing'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
@@ -1348,6 +1349,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7">
         <div className="flex items-start gap-3"><Smartphone aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-brand-800" /><div className="min-w-0 break-words">
           <h2 className="font-semibold text-neutral-950">{device?.name || 'Device not ready'}</h2>
+          <p className="mt-2 text-sm text-neutral-700">{OFFLINE_SCANNER_ACCESS_NOTE} Offline access lasts at most 24 hours and ends sooner when the event or your access ends.</p>
           <p className="mt-1 text-sm text-neutral-700">{selectedEvent?.title}</p>
           {!ready && pendingCount > 0 && <p className="mt-3 text-sm text-amber-950">Saved scans are retained. Reconnect with the original staff account to confirm them before resetting this device. Ask a manager if authorization cannot be restored.</p>}
           {!ready && recoveryDevice && pendingCount > 0 && <button disabled={!online || syncing || setupBusy} onClick={() => syncQueue({ selectedDevice: recoveryDevice })} className="btn-secondary mt-3 text-sm">Sync saved scans</button>}

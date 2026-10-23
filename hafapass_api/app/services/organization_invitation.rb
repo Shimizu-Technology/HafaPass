@@ -39,7 +39,8 @@ class OrganizationInvitation
       version = (payload["version"] || payload[:version]).to_i
       raise InvitationError, "Invitation is invalid or expired" unless membership
 
-      membership.with_lock do
+      membership.organization.with_lock do
+        membership.lock!
         unless membership.status_invited? && membership.invitation_version == version && membership.invitation_open?
           raise InvitationError, "Invitation is invalid or expired"
         end

@@ -28,8 +28,11 @@ module Seating
         configuration_id: configuration.id,
         renderer: configuration.venue_layout.renderer,
         provider_chart_key: configuration.venue_layout.provider_chart_key,
-        suspended: configuration.event.sales_suspended_at.present?,
-        suspension_reason: configuration.event.sales_suspension_reason,
+        suspended: configuration.event.sales_suspended? || configuration.event.policy_hold?,
+        organizer_suspended: configuration.event.organizer_sales_suspended_at.present?,
+        platform_suspended: configuration.event.sales_suspended_at.present? || configuration.event.policy_hold?,
+        suspension_reason: configuration.event.sales_suspended_at.present? ?
+          configuration.event.sales_suspension_reason : configuration.event.organizer_sales_suspension_reason,
         hold_duration_seconds: HoldAllocator::HOLD_DURATION.to_i,
         sections: grouped_sections(event_seats)
       }

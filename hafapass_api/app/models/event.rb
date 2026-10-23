@@ -155,7 +155,7 @@ class Event < ApplicationRecord
       .with_public_organizer
       .where(policy_hold_at: nil)
       .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
-      .where(sales_suspended_at: nil)
+      .where(sales_suspended_at: nil, organizer_sales_suspended_at: nil)
       .joins(:ticket_types)
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
@@ -226,7 +226,7 @@ class Event < ApplicationRecord
   # admin action; suspending verification pauses all of the organizer's sales).
   # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
-    published? && sales_suspended_at.nil? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
+    published? && !sales_suspended? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
       (ends_at || starts_at) > at && organizer_sales_verified?
   end
 
@@ -290,7 +290,7 @@ class Event < ApplicationRecord
       return :organizer_not_verified
     end
     return :event_paused if policy_hold?
-    return :sales_paused if sales_suspended_at.present?
+    return :sales_paused if sales_suspended?
     return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
 
     context ||= self.class.sales_context
@@ -325,13 +325,18 @@ class Event < ApplicationRecord
     { on_sale: reason.nil?, reason: reason&.to_s, message: sales_status_message(reason) }
   end
 
-  # Gate I pauses are placed by HåfaPass; seating pauses by the organizer.
+  def sales_suspended?
+    sales_suspended_at.present? || organizer_sales_suspended_at.present?
+  end
+
+  # The existing fields are reserved for platform restrictions. Keep ambiguous
+  # legacy pauses in place until an administrator reviews and lifts them.
   def sales_status_message(reason)
     return "On sale." unless reason
     return SALES_STATUS_MESSAGES.fetch(reason) unless reason == :sales_paused
 
-    text = sales_suspension_reason.to_s
-    by_hafapass = text.start_with?(GATE_I_SUSPENSION_PREFIX)
+    text = (sales_suspended_at.present? ? sales_suspension_reason : organizer_sales_suspension_reason).to_s
+    by_hafapass = sales_suspended_at.present?
     detail = text.delete_prefix(GATE_I_SUSPENSION_PREFIX).strip.presence
     [by_hafapass ? "Sales paused by HåfaPass" : "Sales paused", detail].compact.join(": ") + "."
   end

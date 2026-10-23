@@ -400,4 +400,15 @@ describe('ticket transfer setting', () => {
     expect(apiClient.put.mock.calls[0][1]).toMatchObject({ transfers_enabled: true })
     expect(screen.getByLabelText('Allow ticket transfers')).toBeChecked()
   })
+  it('hides clone and recurrence for event-only managers while preserving event edits', async () => {
+    launch.value = { recurring_events: true }
+    apiClient.get.mockResolvedValue({ data: { ...event, can_create_events: false, recurrence_rule: 'weekly' } })
+    mount()
+    await screen.findByLabelText(/Event Title/)
+    expect(screen.queryByRole('button', { name: 'Clone' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Recurrence Pattern')).not.toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled()
+    launch.value = {}
+  })
+
 })

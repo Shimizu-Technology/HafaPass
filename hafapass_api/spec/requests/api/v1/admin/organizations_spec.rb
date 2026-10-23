@@ -73,6 +73,8 @@ RSpec.describe "Admin organizations and team management", type: :request do
 
     patch "#{base}/#{invite_id}", params: { role: "marketer" }, headers: auth_headers(admin)
     expect(response.parsed_body).to include("role" => "marketer")
+    membership = OrganizationMembership.find(invite_id)
+    OrganizationInvitationDispatch.where(organization: membership.organization).update_all(created_at: 2.minutes.ago)
     post "#{base}/#{invite_id}/resend", headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
     delete "#{base}/#{invite_id}", headers: auth_headers(admin)

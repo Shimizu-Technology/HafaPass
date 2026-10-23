@@ -37,4 +37,49 @@ RSpec.describe CommunicationCampaigns::Sender do
     expect { described_class.call(campaign) }.not_to change(MessageDelivery, :count)
     expect(campaign.reload).to be_sending
   end
+
+  it "reauthorizes scheduled campaigns at execution and leaves a visible attention reason" do
+    event = create(:event, :published)
+    scheduler = create(:user)
+    membership = create(:organization_membership, organization: event.organization, user: scheduler, role: :marketer)
+    campaign = create(:communication_campaign, event: event, scheduled_by_user: scheduler,
+      scheduled_at: 1.minute.ago, status: :scheduled)
+    membership.update!(expires_at: 1.second.ago)
+    expect { CommunicationCampaignJob.perform_now(campaign.id) }.not_to change(MessageDelivery, :count)
+    expect(campaign.reload).to be_failed
+    expect(campaign.last_error).to include("Needs attention", "no longer has permission")
+    expect(campaign.sent_by_user).to be_nil
+  end
+
+  it "attributes send-now deliveries to the sender rather than the campaign author" do
+    event = create(:event, :published)
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    sender = create(:user)
+    create(:organization_membership, organization: event.organization, user: sender, role: :manager)
+    type = create(:ticket_type, event: event)
+    order = create(:order, event: event, buyer_email: "opted-in@example.com", marketing_opt_in: true)
+    create(:ticket, order: order, event: event, ticket_type: type)
+    campaign = create(:communication_campaign, event: event)
+    described_class.call(campaign, actor: sender)
+    expect(campaign.reload.sent_by_user).to eq(sender)
+    expect(campaign.message_deliveries.first.requested_by).to eq(sender)
+  end
+  it "recovers the same outbox under a newly authorized sender without replaying completed deliveries" do
+    campaign = create(:communication_campaign, status: :failed, started_at: 1.hour.ago,
+      last_error: CommunicationCampaign::AUTHORIZATION_ERROR)
+    campaign.event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    former = create(:user)
+    blocked = create(:message_delivery, communication_campaign: campaign, event: campaign.event,
+      requested_by: former, status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR)
+    sent = create(:message_delivery, communication_campaign: campaign, event: campaign.event,
+      requested_by: former, status: :sent, provider_id: "provider-already-sent")
+    sender = campaign.event.organizer_profile.user
+    expect { described_class.call(campaign, actor: sender) }.not_to change(MessageDelivery, :count)
+    expect(campaign.reload).to have_attributes(status: "sending", sent_by_user_id: sender.id, last_error: nil)
+    expect(blocked.reload).to have_attributes(status: "queued", requested_by_id: sender.id, last_error: nil)
+    expect(sent.reload).to have_attributes(status: "sent", provider_id: "provider-already-sent", requested_by_id: former.id)
+    expect(AuditLog.where(auditable: campaign, action: "campaign.recovered", actor_user: sender)).to exist
+  end
 end

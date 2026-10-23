@@ -207,6 +207,8 @@ module Api
         end
 
         def clone
+          return unless authorize_organization!(:manage_events)
+
           return render_policy_hold_refusal("copied") if @event.policy_hold?
 
           cloned = clone_event(@event, title: "#{@event.title} (Copy)", starts_at: nil, ends_at: nil, doors_open_at: nil)
@@ -218,6 +220,8 @@ module Api
         end
 
         def generate_recurrences
+          return unless authorize_organization!(:manage_events)
+
           return render_policy_hold_refusal("repeated") if @event.policy_hold?
 
           unless @event.recurrence_rule.present?
@@ -603,6 +607,8 @@ module Api
             max_capacity: event.max_capacity,
             is_featured: event.is_featured,
             published_at: event.published_at,
+            can_create_events: OrganizationAuthorization.allowed?(user: current_user,
+              organization: current_organization, permission: :manage_events),
             recurrence_rule: event.recurrence_rule,
             recurrence_parent_id: event.recurrence_parent_id,
             recurrence_end_date: event.recurrence_end_date,

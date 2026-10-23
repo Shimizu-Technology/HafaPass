@@ -140,6 +140,13 @@ class AuditActions
         "event.page_customized" => "Updated the event page design."
       }
 
+    define registry, area: "events", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[organizer_sales_suspended_at], metadata: %w[], actions: {
+        "seating.organizer_sales_suspended" => "Paused assigned-seat sales for the organizer.",
+        "seating.organizer_sales_resumed" => "Resumed assigned-seat sales for the organizer."
+      }
+
     define registry, area: "events", audience: %w[admin_only],
       tenant: true, event_required: true,
       snapshots: %w[], metadata: %w[], actions: {
@@ -522,12 +529,15 @@ class AuditActions
         "campaign.scheduled" => "Scheduled a campaign.",
         "campaign.send_requested" => "Requested a campaign send.",
         "campaign.send_completed" => "Queued a campaign for delivery.",
+        "campaign.reauthorization_failed" => "Blocked a campaign because the sender lost permission.",
+        "campaign.recovered" => "Retried a campaign after authorized review.",
         "campaign.send_failed" => "Failed to queue a campaign for delivery."
       }
 
     define registry, area: "scanning", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[status], metadata: %w[event_id manifest_version entry_count], actions: {
+      snapshots: %w[status lease_expires_at], metadata: %w[event_id manifest_version entry_count], actions: {
+        "scanner_device.lease_updated" => "Updated an event scanner authorization lease.",
         "scanner_device.renamed" => "Renamed an event scanner device.",
         "scanner_device.manifest_downloaded" => "Downloaded an event scanner manifest."
       }

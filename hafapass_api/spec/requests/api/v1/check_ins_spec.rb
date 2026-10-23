@@ -7,6 +7,20 @@ RSpec.describe "Api::V1::CheckIns", type: :request do
   let(:order) { create(:order, event: event) }
   let(:headers) { auth_headers(organizer_profile.user) }
 
+  it "rechecks scan access after waiting for the order lock" do
+    staff = create(:user)
+    membership = create(:organization_membership, organization: event.organization, user: staff, role: :manager)
+    ticket = create(:ticket, order: order, ticket_type: ticket_type, event: event)
+    allow_any_instance_of(Order).to receive(:with_lock).and_wrap_original do |original, *args, &block|
+      membership.update!(expires_at: 1.second.ago)
+      original.call(*args, &block)
+    end
+    post "/api/v1/check_in/#{ticket.scan_credential}", headers: auth_headers(staff)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("no longer active")
+    expect(ticket.reload).to be_issued
+  end
+
   describe "POST /api/v1/check_in/:credential" do
     context "with a valid issued ticket" do
       let(:ticket) { create(:ticket, order: order, ticket_type: ticket_type, event: event) }

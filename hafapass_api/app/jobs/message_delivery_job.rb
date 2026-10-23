@@ -183,7 +183,10 @@ class MessageDeliveryJob < ApplicationJob
 
     # Lease, payload and unknown marker are durable before any network activity.
     # This works with transaction-pooled PostgreSQL, without session affinity.
-    response = Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
+    response = dispatch_with_campaign_authorization(delivery, previously_unknown) do
+      Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
+    end
+    return if response == :authorization_cancelled
     simulated = response.is_a?(Hash) && (response[:simulated] || response["simulated"])
     id = response[:id] || response["id"] if response.respond_to?(:[])
     if delivery.provider == "resend" && (simulated || !id.is_a?(String) || id.blank?)
@@ -222,6 +225,34 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   private
+
+  # The durable lease is committed before this bounded provider call. Team
+  # revocation takes the same organization lock, so it cannot complete between
+  # this permission check and provider dispatch. Other email templates retain
+  # their existing delivery/consent behavior.
+  def dispatch_with_campaign_authorization(delivery, previously_unknown)
+    return yield unless delivery.template == "communication_campaign"
+
+    organization = delivery.event&.organization
+    dispatch = lambda do
+      delivery.reload
+      sender = delivery.requested_by
+      if organization && sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
+          permission: :manage_marketing, event: delivery.event)
+        yield
+      else
+        delivery.with_lock do
+          delivery.update!(status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR,
+            provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
+        end
+        delivery.communication_campaign&.with_lock do
+          delivery.communication_campaign.fail_authorization!
+        end
+        :authorization_cancelled
+      end
+    end
+    organization ? organization.with_lock(&dispatch) : dispatch.call
+  end
 
   def with_delivery_lock(delivery, &block)
     WaitlistLocks.for_delivery(delivery, &block)

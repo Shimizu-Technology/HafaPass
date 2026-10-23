@@ -1,6 +1,6 @@
 # Audit action registry
 
-Verified against base commit `b4679ad0` and the integrated audit foundation in
+Verified against base commit `b4679ad0`, refreshed for main `473e3ccb` and the integrated audit foundation in
 `codex/hafapass-audit-integrity`. HafaPass serves event organizers and door
 staff, with ticket sales, admission, refunds and settlement workflows. This
 registry defines which parts of its private audit history each organization role
@@ -132,6 +132,8 @@ keys remain defined so old records can still be interpreted.
 | `box_office.cash_sale_created` | yes | door | O/M/F | yes | yes | `order_id`, `amount_cents`, `currency`, `ticket_count` | `source_event_id`, `event_state_change_id`, `ticket_count` | Recorded a box office cash sale. |
 | `campaign.created` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Created a campaign. |
 | `campaign.deleted` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Deleted a campaign. |
+| `campaign.reauthorization_failed` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Blocked a campaign because the sender lost permission. |
+| `campaign.recovered` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Retried a campaign after authorized review. |
 | `campaign.scheduled` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Scheduled a campaign. |
 | `campaign.send_completed` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Queued a campaign for delivery. |
 | `campaign.send_failed` | yes | messaging | O/M | yes | yes | `status`, `scheduled_at` | `campaign_id`, `recipient_count` | Failed to queue a campaign for delivery. |
@@ -234,8 +236,8 @@ keys remain defined so old records can still be interpreted.
 | `order.fulfillment_resent` | yes | messaging | O/M | yes | yes | — | `message_delivery_id` | Resent ticket fulfillment. |
 | `order.partially_refunded` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency` | Partially refunded an order. |
 | `order.refunded` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency` | Refunded an order. |
-| `organization.created` | yes | organization | O | yes | no | `name`, `business_name`, `business_description` | — | Created the organization. |
 | `organization.created_by_admin` | yes | organization | O | yes | no | `name`, `business_name`, `business_description` | — | Created the organization on behalf of its owner. |
+| `organization.created` | yes | organization | O | yes | no | `name`, `business_name`, `business_description` | — | Created the organization. |
 | `organization.fee_terms_activated` | yes | fees | O/F | yes | no | `service_fee_percent`, `service_fee_flat_cents` | — | Activated fee terms for the organization. |
 | `organization.invitation_accepted` | yes | team | O | yes | no | `role`, `status`, `accepted_at`, `revoked_at`, `expires_at`, `target_user_id`, `target_name` | `membership_id` | Accepted a team invitation. |
 | `organization.invitation_created` | yes | team | O | yes | no | `role`, `status`, `accepted_at`, `revoked_at`, `expires_at`, `target_user_id`, `target_name` | `membership_id` | Invited a team member. |
@@ -259,8 +261,8 @@ keys remain defined so old records can still be interpreted.
 | `payout.check_amount_adjusted` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Adjusted a payout check amount. |
 | `payout.created` | yes | payouts | O/F | yes | yes | `status`, `amount_cents`, `currency` | `amount_cents`, `currency`, `settlement_id` | Reserved a payout. |
 | `payout.failed` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Marked a payout failed. |
-| `payout.held` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Marked a payout held. |
 | `payout.held_for_cancellation` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Held a payout for event cancellation. |
+| `payout.held` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Marked a payout held. |
 | `payout.late_result_held` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Kept a late payout result on hold. |
 | `payout.late_result_ignored` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Ignored a late payout result. |
 | `payout.paid` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents` | Marked a payout paid. |
@@ -337,6 +339,7 @@ keys remain defined so old records can still be interpreted.
 | `sales.export_requested` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view` | Requested an event sales export. |
 | `sales.exported` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view` | Exported an event sales summary. |
 | `scanner_device.authorized` | yes | scanning | O/M | yes | yes | `status` | `event_id` | Authorized an event scanner device. |
+| `scanner_device.lease_updated` | yes | scanning | O/M | yes | yes | `status`, `lease_expires_at` | `event_id`, `manifest_version`, `entry_count` | Updated an event scanner authorization lease. |
 | `scanner_device.manifest_downloaded` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count` | Downloaded an event scanner manifest. |
 | `scanner_device.renamed` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count` | Renamed an event scanner device. |
 | `scanner_device.revoked` | yes | scanning | O/M | yes | yes | `status` | `event_id` | Revoked an event scanner device. |
@@ -344,6 +347,8 @@ keys remain defined so old records can still be interpreted.
 | `seat.released_from_ticket` | yes | events | O/M | yes | yes | `operational_status` | `event_seat_id`, `ticket_id`, `venue_layout_id`, `event_seat_count`, `previous_event_seat_id`, `target_event_seat_id` | Released a cancelled ticket's seat. |
 | `seat.status_changed` | yes | events | O/M | yes | yes | `operational_status` | `event_seat_id`, `ticket_id`, `venue_layout_id`, `event_seat_count`, `previous_event_seat_id`, `target_event_seat_id` | Changed a seat's availability. |
 | `seating.configuration_activated` | yes | events | O/M | yes | yes | `operational_status` | `event_seat_id`, `ticket_id`, `venue_layout_id`, `event_seat_count`, `previous_event_seat_id`, `target_event_seat_id` | Activated event seating. |
+| `seating.organizer_sales_resumed` | yes | events | O/M | yes | yes | `organizer_sales_suspended_at` | — | Resumed assigned-seat sales for the organizer. |
+| `seating.organizer_sales_suspended` | yes | events | O/M | yes | yes | `organizer_sales_suspended_at` | — | Paused assigned-seat sales for the organizer. |
 | `settlement.finalized` | yes | payouts | O/F | yes | yes | `gross_cents`, `discount_cents`, `refund_cents`, `net_cents`, `platform_fee_cents`, `processing_fee_cents`, `platform_processing_fee_cents`, `organizer_proceeds_cents`, `reserve_cents`, `adjustment_cents`, `payable_cents`, `paid_cents`, `negative_balance_cents`, `version` | `settlement_id` | Finalized an event settlement. |
 | `site_settings.fee_change_acknowledged` | yes | fees | O/F | yes | no | — | `fee_change_id` | Acknowledged an upcoming fee change. |
 | `site_settings.fee_change_notice_skipped` | yes | fees | A | yes | no | — | — | Skipped a fee change notice delivery. |
@@ -408,7 +413,7 @@ keys remain defined so old records can still be interpreted.
 
 ## Verification
 
-This table is generated from the 283 registered definitions. The
+This table is generated from the 288 registered definitions. The
 completeness spec requires a row for each definition. See
 [AUDIT_INTEGRITY.md](AUDIT_INTEGRITY.md) for combined test results, deployment and
 privacy/retention behavior. Organization Activity endpoints and UI are a later PR.

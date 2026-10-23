@@ -139,4 +139,55 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(item.catalog_fulfillment.reload).to be_fulfilled
     expect(item.reload.organizer_proceeds_cents).to eq(catalog.price_cents)
   end
+
+  it "lets an authorized member review a failed campaign, save a draft, then reschedule it as themselves" do
+    former = create(:user)
+    campaign = create(:communication_campaign, event: event, status: :failed,
+      scheduled_by_user: former, scheduled_at: 1.minute.ago, last_error: "Sender lost permission")
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Reviewed message", scheduled_at: nil },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "draft", subject: "Reviewed message", last_error: nil)
+    expect(campaign.message_deliveries).to be_empty
+
+    expect do
+      patch "#{base}/communication_campaigns/#{campaign.id}", params: { scheduled_at: 2.days.from_now.iso8601 }, headers: headers
+    end.to have_enqueued_job(CommunicationCampaignJob).once
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id)
+  end
+
+  it "recovers a failed future campaign even when the reviewed schedule is unchanged" do
+    former = create(:user)
+    campaign = create(:communication_campaign, event: event, status: :failed,
+      scheduled_by_user: former, scheduled_at: 2.days.from_now, last_error: "Sender lost permission")
+    expect do
+      patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Reviewed", scheduled_at: campaign.scheduled_at.iso8601(6) }, headers: headers
+    end.to have_enqueued_job(CommunicationCampaignJob).once
+    expect(response).to have_http_status(:ok)
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
+  end
+  it "preserves a failed campaign's durable payload while allowing an authorized scheduling recovery" do
+    campaign = create(:communication_campaign, event: event, status: :failed, started_at: 1.hour.ago,
+      last_error: CommunicationCampaign::AUTHORIZATION_ERROR)
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Different message" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("Create a new campaign")
+    expect(campaign.reload.subject).not_to eq("Different message")
+
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { scheduled_at: 2.days.from_now.iso8601 }, headers: headers
+    expect(response).to have_http_status(:ok), response.body
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
+    expect(AuditLog.where(auditable: campaign, action: "campaign.recovered", actor_user: user)).to exist
+  end
+  it "rechecks editability after waiting for outbox preparation" do
+    campaign = create(:communication_campaign, event: event, status: :failed)
+    allow_any_instance_of(Organization).to receive(:lock!).and_wrap_original do |method, *args|
+      campaign.update!(status: :sending, started_at: Time.current)
+      method.call(*args)
+    end
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Stale editor content" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(campaign.reload.subject).not_to eq("Stale editor content")
+  end
 end
