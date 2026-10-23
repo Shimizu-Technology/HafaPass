@@ -241,7 +241,7 @@ RSpec.describe AuditActions do
       expect(described_class.visible_to?(key, :org_manager)).to be(true)
       expect(described_class.visible_to?(key, :org_owner)).to be(true)
     end
-    %w[payout.paid refund.created organizer_tax_information.updated balance_adjustment.posted finance.exported].each do |key|
+    %w[payout.paid refund.created balance_adjustment.posted finance.exported].each do |key|
       expect(described_class.visible_to?(key, :org_finance)).to be(true)
       expect(described_class.visible_to?(key, :org_manager)).to be(false)
     end
@@ -279,6 +279,15 @@ RSpec.describe AuditActions do
       expect(fields.grep(prohibited)).to be_empty, "Unsafe organization fields for #{key}: #{fields.grep(prohibited)}"
     end
     expect(described_class.organization_payload("support.note_created", after_data: { body: "private" })[:after_data]).to eq({})
+  end
+
+  it "never projects transaction money or identifiers to Managers, while retaining configuration prices" do
+    prohibited = /amount|refund|revenue|payout|payment|order_reference|\Aorder_(?:id|item_id)\z|currency|lifecycle_result/
+    described_class.keys.select { |key| described_class.visible_to?(key, :org_manager) }.each do |key|
+      fields = described_class.organization_definition(key, audience: :org_manager)[:organization_fields].values.flatten
+      expect(fields.grep(prohibited)).to be_empty, "Manager transaction fields for #{key}: #{fields.grep(prohibited)}"
+    end
+    expect(described_class.organization_definition("ticket_type.updated", audience: :org_manager)[:organization_fields][:after_data]).to include("price_cents")
   end
 
   it "documents every registered key in the coverage table" do

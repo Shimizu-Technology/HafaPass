@@ -200,6 +200,18 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(organizationCalls()[0][0].headers.get('Authorization')).toBe('Bearer token-a')
   })
 
+  it.each([
+    { id: 7, role: 'manager', permissions: { view_activity_events: true } },
+    { id: 7, role: 'finance', permissions: { view_activity_finance: true } },
+    { id: 7, role: 'marketer', activity_access: true, permissions: { manage_marketing: true } },
+  ])('opens Settings directly on Activity for an activity-only teammate (%j)', async organization => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([organization], 'attendee')
+    render(view(true, '/dashboard/settings/activity'))
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings/activity')
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('hides Settings for a scanner and updates when the selected organization changes', async () => {
     window.localStorage.setItem('hafapass_organization_id', '8')
     serve([owner, scanner], 'attendee')

@@ -3,6 +3,13 @@
 require "rails_helper"
 
 RSpec.describe AuditSanitizer do
+  it "preserves generated export UUIDs even when they contain long numeric runs" do
+    uuid = "12345678-1234-4123-8123-123456789012"
+    expect(described_class.call({ export_request_id: uuid })).to eq("export_request_id" => uuid)
+    expect(described_class.call({ secret: uuid })).to eq("secret" => "[redacted]")
+    expect(described_class.call({ export_request_id: "123456789" })).to eq("export_request_id" => "[redacted]")
+  end
+
   it "scrubs TINs, card numbers, bearer credentials and secrets recursively" do
     clean = described_class.call({ note: "TIN 123-45-6789", reason: "account 123456789",
       card_number: "4111 1111 1111 1111", innocent: "card 4242-4242-4242-4242",

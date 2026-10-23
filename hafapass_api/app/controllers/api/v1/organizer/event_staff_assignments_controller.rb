@@ -79,7 +79,9 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
   # for event work (box office or scanner with no other events) is revoked.
   def revoke_invitation
     membership = @staff_invitation
+    invited_role = nil
     membership.with_lock do
+      invited_role = Array(membership.pending_event_assignments).find { |entry| entry["event_id"].to_i == @event.id }&.fetch("role", nil)
       remaining = Array(membership.pending_event_assignments).reject { |entry| entry["event_id"].to_i == @event.id }
       if remaining.empty? && OrganizationRoles::EVENT_STAFF_INVITE_ROLES.include?(membership.role)
         OrganizationInvitation.revoke!(membership)
@@ -89,7 +91,8 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
     end
     AuditLogger.record!(action: "event_staff.invitation_revoked", auditable: membership, actor: current_user,
       organization: current_organization, event: @event,
-      after_data: { event_id: @event.id, status: membership.status }, request: request)
+      after_data: { event_id: @event.id, status: membership.status },
+      metadata: { team_role: invited_role || membership.role }, request: request)
     head :no_content
   end
 

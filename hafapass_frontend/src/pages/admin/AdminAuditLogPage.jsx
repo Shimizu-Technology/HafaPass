@@ -3,12 +3,16 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import AdminLayout from './AdminLayout'
 import AdminSessionGate from './AdminSessionGate'
-import OperationalSearch from '../../components/OperationalSearch'
+import ActivityFilters from '../../components/activity/ActivityFilters'
+import ActivityExportButton from '../../components/activity/ActivityExportButton'
+import { ActivityOutcome } from '../../components/activity/ActivityTimeline'
+import { activityPath } from '../../utils/activity'
+import { adminActivityApi } from '../../api/activity'
 import OperationalPagination from '../../components/OperationalPagination'
 import { adminLabel } from './adminLabels'
 import { auditChanges, compactParams, formatDateTime, readFilters, useAdminList } from './adminOperations'
 
-const FILTERS = ['q', 'area', 'from', 'to', 'target_type', 'target_id', 'organization_id', 'page']
+const FILTERS = ['q', 'area', 'from', 'to', 'target_type', 'target_id', 'organization_id', 'actor_user_id', 'action', 'event_id', 'outcome', 'source', 'page']
 const MAX_VALUE_LENGTH = 160
 
 const display = value => {
@@ -26,21 +30,26 @@ const actionLabel = action => {
 function Entry({ entry }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
-  const changes = auditChanges(entry.before_data, entry.after_data)
+  const changes = entry.changes?.length
+    ? entry.changes.map(change => ({ ...change, key: change.field }))
+    : auditChanges(entry.before_data, entry.after_data)
   const metadata = entry.metadata && Object.keys(entry.metadata).length ? entry.metadata : null
   return (
     <li className="border-b border-neutral-100 last:border-b-0">
       <div className="grid gap-2 px-4 py-3 md:grid-cols-[11rem_minmax(0,1fr)_minmax(0,14rem)_auto] md:items-start md:gap-4">
         <p className="text-xs text-content-muted md:pt-0.5 md:text-sm"><time dateTime={entry.occurred_at}>{formatDateTime(entry.occurred_at)}</time></p>
         <div className="min-w-0">
-          <p className="font-medium text-neutral-900">{actionLabel(entry.action)}</p>
+          <p className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{entry.sentence || actionLabel(entry.action)}</p>
           <p className="font-mono text-xs text-content-muted [overflow-wrap:anywhere]">{entry.action}</p>
-          <p className="mt-1 text-sm text-neutral-700">
-            {entry.target.type} #{entry.target.id}{entry.organization ? ` · ${entry.organization.name}` : ''}
+          <p className="mt-1 text-sm text-neutral-700 [overflow-wrap:anywhere]">
+            {entry.target?.type}{entry.target?.id != null && ` #${entry.target.id}`}
+            {entry.organization && <> · {activityPath(entry.organization.url) ? <Link to={entry.organization.url} className="inline-flex min-h-11 items-center font-medium text-brand-700 underline">{entry.organization.name}</Link> : entry.organization.name}</>}
             {changes.length > 0 && <span className="text-content-muted"> · {changes.length} {changes.length === 1 ? 'field' : 'fields'} changed</span>}
           </p>
+          {entry.event && <p className="text-sm [overflow-wrap:anywhere]">{activityPath(entry.event.url) ? <Link to={entry.event.url} className="inline-flex min-h-11 items-center font-medium text-brand-700 underline">{entry.event.title}</Link> : entry.event.title}</p>}
+          <ActivityOutcome outcome={entry.outcome} />
         </div>
-        <p className="min-w-0 text-sm text-neutral-700 [overflow-wrap:anywhere]">{entry.actor ? (entry.actor.name ? `${entry.actor.name} (${entry.actor.email})` : entry.actor.email) : (entry.actor_user_id ? `Deleted user #${entry.actor_user_id}` : 'System')}</p>
+        <p className="min-w-0 text-sm text-neutral-700 [overflow-wrap:anywhere]">{entry.actor ? (entry.actor.name ? `${entry.actor.name}${entry.actor.email ? ` (${entry.actor.email})` : ''}` : entry.actor.email || 'Unnamed person') : (entry.actor_user_id ? `Deleted user #${entry.actor_user_id}` : 'System')}</p>
         <button type="button" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}
           className="inline-flex min-h-11 items-center gap-1 justify-self-start rounded-lg px-2 text-sm font-semibold text-brand-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
           Details<span className="sr-only"> for entry {entry.id}</span>
@@ -48,6 +57,7 @@ function Entry({ entry }) {
         </button>
       </div>
       {open && <div id={panelId} className="space-y-3 bg-neutral-50 px-4 py-3 text-sm">
+        <h2 className="font-semibold text-neutral-900">What changed</h2>
         {changes.length > 0 ? (
           <dl className="space-y-1.5">
             {changes.map(change => (
@@ -58,11 +68,15 @@ function Entry({ entry }) {
             ))}
           </dl>
         ) : <p className="text-content-muted">No before/after values recorded.</p>}
-        {metadata && <details>
-          <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-neutral-800">Recorded context</summary>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-xs text-neutral-800 ring-1 ring-neutral-200">{JSON.stringify(metadata, null, 2)}</pre>
-        </details>}
-        <p className="text-xs text-content-muted">Entry #{entry.id}{entry.request_id ? ` · request ${entry.request_id}` : ''}</p>
+        <details>
+          <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-neutral-800">Technical details</summary>
+          <dl className="mb-3 grid min-w-0 gap-1 text-xs text-neutral-700 [overflow-wrap:anywhere]">
+            <div><dt className="inline font-semibold">Source: </dt><dd className="inline">{entry.source || 'Not recorded'}</dd></div>
+            <div><dt className="inline font-semibold">Outcome: </dt><dd className="inline">{entry.outcome || 'Not recorded'}</dd></div>
+          </dl>
+          {(metadata || Object.keys(entry.before_data || {}).length > 0 || Object.keys(entry.after_data || {}).length > 0) && <pre className="max-h-64 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-white p-3 text-xs text-neutral-800 ring-1 ring-neutral-200">{JSON.stringify({ before: entry.before_data, after: entry.after_data, metadata }, null, 2)}</pre>}
+        </details>
+        <p className="text-xs text-content-muted [overflow-wrap:anywhere]">Entry #{entry.id}{entry.request_id ? ` · request ${entry.request_id}` : ''}</p>
       </div>}
     </li>
   )
@@ -72,7 +86,7 @@ function AdminAuditLogSession({ identity, resourcePath }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = readFilters(searchParams, FILTERS)
   const setFilter = changes => setSearchParams(compactParams({ ...filters, ...changes }), { replace: true })
-  const list = useAdminList(identity, resourcePath, '/admin/audit_logs', compactParams({ ...filters, page: filters.page || 1 }))
+  const list = useAdminList(identity, resourcePath, '/admin/audit_logs', compactParams({ ...filters, page: filters.page || 1 }), { preserveFilters: true })
   const entries = list.data?.audit_logs || []
   const filtered = FILTERS.some(name => name !== 'page' && filters[name])
   const scopeQuery = new URLSearchParams(compactParams({ ...filters, target_type: '', target_id: '', organization_id: '', page: '' }))
@@ -84,25 +98,11 @@ function AdminAuditLogSession({ identity, resourcePath }) {
         <p>Showing entries for {filters.target_type ? `${filters.target_type}${filters.target_id ? ` #${filters.target_id}` : ''}` : `organization #${filters.organization_id}`}</p>
         <Link to={`?${scopeQuery}`} className="min-h-11 content-center font-semibold underline underline-offset-2">Show all entries</Link>
       </div>}
-      <OperationalSearch label="Search the audit log" hint="Search by action, administrator email, record type or request ID." query={filters.q} onSearch={q => setFilter({ q, page: '' })} busy={list.loading} />
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm font-medium text-neutral-900">
-          Area
-          <select value={filters.area} onChange={event => setFilter({ area: event.target.value, page: '' })} className="input mt-1 !w-auto !py-2">
-            <option value="">All areas</option>
-            {(list.data?.areas || (filters.area ? [filters.area] : [])).map(area => <option key={area} value={area}>{adminLabel(area)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-medium text-neutral-900">
-          From
-          <input type="date" value={filters.from} max={filters.to || undefined} onChange={event => setFilter({ from: event.target.value, page: '' })} className="input mt-1 !w-auto !py-2" />
-        </label>
-        <label className="text-sm font-medium text-neutral-900">
-          To
-          <input type="date" value={filters.to} min={filters.from || undefined} onChange={event => setFilter({ to: event.target.value, page: '' })} className="input mt-1 !w-auto !py-2" />
-        </label>
-        {filtered && <button type="button" onClick={() => setSearchParams({}, { replace: true })} className="btn-ghost !px-3">Clear all filters</button>}
+      <div className="mb-5">
+        <ActivityExportButton key={JSON.stringify(filters)} api={adminActivityApi} params={compactParams({ ...filters, page: '' })} beginRequest={list.beginRequest} disabled={list.loading || !list.data} />
       </div>
+      <ActivityFilters admin filters={Object.fromEntries(Object.entries(filters).filter(([name]) => name !== 'page'))} options={list.data?.filters} areas={list.data?.areas || (filters.area ? [filters.area] : [])}
+        onChange={changes => setFilter({ ...changes, page: '' })} onClear={() => setSearchParams({}, { replace: true })} busy={list.loading} />
       <div className="card overflow-hidden" aria-busy={list.loading}>
         {list.loading && !list.data ? <div className="flex justify-center py-12"><Loader2 aria-label="Loading audit log" className="h-6 w-6 animate-spin text-brand-500" /></div>
           : list.error && !list.data ? <div role="alert" className="p-5 text-sm text-red-700">{list.error} <button type="button" onClick={list.reload} className="min-h-11 rounded px-2 font-semibold underline">Try again</button></div>

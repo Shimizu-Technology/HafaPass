@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ const entry = {
   id: 31, action: 'site_settings.fee_terms_updated', occurred_at: '2026-10-20T01:00:00Z',
   actor: { id: 1, email: 'leon@example.com', name: 'Leon Shimizu' }, target: { type: 'SiteSetting', id: 1 }, organization: null,
   before_data: { service_fee_percent: '3.0', service_fee_flat_cents: '50' }, after_data: { service_fee_percent: '5.0', service_fee_flat_cents: '50' },
-  metadata: { source: 'admin' }, request_id: 'req-1',
+  metadata: { source: 'admin' }, request_id: 'req-1', changes: [],
 }
 
 describe('AdminAuditLogPage', () => {
@@ -38,7 +38,7 @@ describe('AdminAuditLogPage', () => {
     apiClient.get.mockResolvedValue({ data: { audit_logs: [{ ...entry, actor: null, actor_user_id: 42 }], meta: { page: 1, total_pages: 1, total_count: 1 }, areas: [] } })
     render(<MemoryRouter initialEntries={['/admin/audit-log']}><AdminAuditLogPage /></MemoryRouter>)
     expect(await screen.findByText('Deleted user #42')).toBeInTheDocument()
-    expect(screen.queryByText('System')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'Audit entries' })).queryByText('System')).not.toBeInTheDocument()
   })
 
   it('searches, filters by area and paginates through the URL-backed filters', async () => {
@@ -47,7 +47,7 @@ describe('AdminAuditLogPage', () => {
     expect(await screen.findByText('Showing entries for Event #4')).toBeInTheDocument()
     await user.type(screen.getByRole('searchbox', { name: 'Search the audit log' }), 'payout')
     await user.click(screen.getByRole('button', { name: 'Search' }))
-    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: { q: 'payout', target_type: 'Event', target_id: '4', page: 1 } })))
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: expect.objectContaining({ q: 'payout', target_type: 'Event', target_id: '4', page: 1 }) })))
     await user.selectOptions(screen.getByLabelText('Area'), 'payout')
     await user.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: expect.objectContaining({ area: 'payout', page: '2' }) })))
@@ -57,5 +57,37 @@ describe('AdminAuditLogPage', () => {
     expect(auditChanges({}, { kind: 'manual_credit', amount_cents: 500 })).toEqual([
       { key: 'kind', before: undefined, after: 'manual_credit' }, { key: 'amount_cents', before: undefined, after: 500 },
     ])
+  })
+
+  it('uses readable sentences and safe organization/event links while retaining raw action details', async () => {
+    apiClient.get.mockResolvedValue({ data: { audit_logs: [{ ...entry, sentence: 'Changed the service fee.', outcome: 'failed',
+      organization: { id: 7, name: 'Island Events', url: '/admin/organizations/7' }, event: { id: 4, title: 'Reef Night', url: '/admin/events/4' } }], meta: {}, areas: [] } })
+    render(<MemoryRouter initialEntries={['/admin/audit-log']}><AdminAuditLogPage /></MemoryRouter>)
+    expect(await screen.findByText('Changed the service fee.')).toBeInTheDocument()
+    expect(screen.getByText(entry.action)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Island Events' })).toHaveAttribute('href', '/admin/organizations/7')
+    expect(screen.getByRole('link', { name: 'Reef Night' })).toHaveAttribute('href', '/admin/events/4')
+    expect(screen.getByText('Failed', { selector: 'span' })).toBeInTheDocument()
+  })
+
+  it('locally searches organization choices and submits exact structured filters', async () => {
+    const user = userEvent.setup()
+    apiClient.get.mockResolvedValue({ data: { audit_logs: [entry], meta: { page: 1, total_pages: 3 }, areas: [], filters: {
+      organizations: [{ id: 7, name: 'Island Events' }, { id: 8, name: 'Other organization' }], actors: [{ id: 1, name: 'Leon Shimizu' }],
+      actions: ['site_settings.fee_terms_updated'], events: [{ id: 4, title: 'Reef Night' }],
+    } } })
+    render(<MemoryRouter initialEntries={['/admin/audit-log?page=2']}><AdminAuditLogPage /></MemoryRouter>)
+    await screen.findByText('Site settings: Fee terms updated')
+    await user.type(screen.getByRole('searchbox', { name: 'Find organization' }), 'Island')
+    expect(screen.queryByRole('option', { name: 'Other organization' })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Organization', { exact: true }), '7')
+    await user.selectOptions(screen.getByLabelText('By'), '1')
+    await user.selectOptions(screen.getByLabelText('Action'), entry.action)
+    await user.selectOptions(screen.getByLabelText('Event'), '4')
+    await user.selectOptions(screen.getByLabelText('Outcome'), 'failed')
+    await user.selectOptions(screen.getByLabelText('Source'), 'user')
+    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/admin/audit_logs', expect.objectContaining({ params: {
+      organization_id: '7', actor_user_id: '1', action: entry.action, event_id: '4', outcome: 'failed', source: 'user', page: 1,
+    } })))
   })
 })

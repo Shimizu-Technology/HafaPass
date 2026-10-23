@@ -69,9 +69,12 @@ for (const width of [375, 1280]) {
     })
     await page.goto('/discover')
     await expect(page.locator('main .animate-spin')).toBeVisible()
-    await page.evaluate(() => document.fonts.ready)
-    const footerTop = await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)
+    // The route fallback also has a spinner. Measure only once Collections
+    // itself has mounted and issued its held request, then settle its layout.
     await expect.poll(() => Boolean(finishCollections)).toBe(true)
+    await page.evaluate(() => document.fonts.ready)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const footerTop = await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)
     finishCollections()
     await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
     // Read the settled layout after React commits the new utility classes.
@@ -82,7 +85,7 @@ for (const width of [375, 1280]) {
 
 for (const [path, color] of [['/', '#020617'], ['/events', '#ffffff'], ['/discover', '#ffffff'], ['/dashboard', '#ffffff']]) {
   test(`cold-load theme color matches ${path} before the app mounts`, async ({ page }) => {
-    await page.route('**/src/main.jsx', route => route.abort())
+    await page.route('**/src/main.jsx*', route => route.abort())
     await page.goto(path)
     await expect(page.locator('.boot-splash')).toBeVisible()
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', color)

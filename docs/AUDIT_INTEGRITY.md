@@ -6,7 +6,7 @@ Baseline: `main` at `b4679ad0`, checked 2026-10-23 (Guam). HåfaPass sells event
 
 Sources: `docs/ROLES_AND_ROADMAP.md`, `docs/COMMERCE_LEDGER_OPERATIONS.md`, application models/controllers/services, `.github/workflows/ci.yml`. The Brain Dump's `work/shimizu-tech/company-positioning-and-project-review-2026-10-04.md` describes paid launch and pilot closeout as gated. No production or real-money verification is part of this change.
 
-This PR supplies backend activity records and safe visibility definitions. It does not add an organization Activity endpoint or page. Owner can see all organization-visible actions; Manager and Finance receive only their registered operational or financial summaries. Unknown actions remain administrator-only.
+The earlier audit-integrity PR supplied backend activity records and safe visibility definitions. The organization Activity endpoint and page are described in [Organization activity projection](#organization-activity-projection) below. Owner can see all organization-visible actions; Manager and Finance receive only their registered operational or financial summaries. Unknown actions remain administrator-only.
 
 Required acceptance:
 
@@ -249,3 +249,61 @@ Final local verification on the corrected working tree (based on `6b11537b`, 202
 | Release/freeze, hygiene, whitespace and protected file | Passed; freeze inactive; `config/policies.yml` unchanged from baseline and main |
 
 Evidence logs: `/tmp/hafapass-audit-round3/` (`focused.log`, `rspec-full.log`, `rubocop.log`, `brakeman.log`, `bundler-audit.log`, `lint.log`, `vitest.log`, `build.log`, `npm-audit.log`, `playwright.log`, `freeze.log`, `hygiene.log`). Runtime: Ruby 3.3.4, Postgres 16.11, Node 22.22.3, Chromium. Request/service fixtures run against an isolated database; browser scenarios use repository mock authentication/API fixtures. Live Clerk, physical devices, installed PWA, real providers and production deployment were not run. The parent separately established the scanner case as pre-existing with 18/18 no-retry passes on both main and this branch; this correction does not investigate scanner behavior. GitHub Actions and final independent review remain remote gates for the parent; PR #153 must remain open and unmerged.
+
+## Organization activity projection
+
+`GET /api/v1/organizer/activity_logs` first resolves the selected organization
+through effective membership (the existing organization context), then applies
+registry audiences and event-manager assignments. A query-string organization
+cannot override the selected organization header. Explicit permissions are
+`view_activity_all` (owner), `view_activity_events` (manager), and
+`view_activity_finance` (finance); owner has all three. An active manager event
+assignment adds operations history for that event only. Marketer, box office,
+and scanner memberships alone grant no history access. `activity_access` in the
+organization summary signals that at least one audience/event grant is available;
+it does not turn an event assignment into organization-wide permissions.
+Its opaque `activity_scope` fingerprint binds loaded history to current audience
+and assignment grants; a scope change clears prior rows and pending exports
+before pagination restarts.
+
+Rows return only identity/time, registry sentence, area, outcome, safe actor
+display, event/target links and allowlisted before/after changes. Buyer actors
+appear as “Buyer”; platform staff as “HåfaPass administrator”; provider/system
+activity as “Stripe”/“HåfaPass”. Only effective, active organization members can show name/email; invited,
+revoked and expired memberships keep the “Buyer” label.
+No raw action, metadata, request/IP identifier, buyer contact, export search text,
+internal note, or review evidence enters the organizer representation. Unknown
+and admin-only actions are excluded. Organizer search uses action descriptions, areas, event titles, safe actor labels
+and allowlisted display context (ticket/campaign names, team invitees and order
+references), never private payloads or action keys. Sentences use that same
+allowlist to identify who changed which record, including prices, inventory and
+financial amounts when captured. Historical rows fall back to record IDs. Staff
+IDs are omitted from options and cannot be selected through exact actor filters.
+
+Date filters are Pacific/Guam calendar days with an exclusive next-day upper
+bound. Exact actor, area, event and outcome filters run after authorization.
+Signed cursors bind filters/requester/organization, seek by `(occurred_at, id)`
+and fix an ID ceiling, so later inserts do not shift subsequent pages. Default
+50 rows, maximum 100. The persisted `platform.activity_logging_started` marker
+is returned as `meta.activity_logging_started_at`; earlier rows are excluded.
+If no marker exists (for example in a schema-only fixture), no date is invented.
+
+`POST /api/v1/{organizer|admin}/activity_log_exports` returns an opaque encrypted
+24-hour query ticket, a ready status and authenticated download URL. The status
+route is `GET .../activity_log_exports/:id`; `GET .../:id/download` streams CSV
+in 500-row keyset batches. Ready means the query is ready for download; CSV is
+generated during download. Tickets are bound to requester, selected tenant,
+audiences and effective manager assignments. Each status/download rechecks
+membership and grants; an access change requires a new ticket. Current records
+are reprojected so privacy/retention redaction applies immediately. CSV uses the
+same filters, snapshot ceiling and projection, with formula escaping, no-store
+headers and an explicit incomplete-file marker on generation failure. Requests
+are limited to ten per person per hour. Requested/generated/downloaded/failed
+stages are themselves audited with opaque request IDs and counts only. No CSV
+copy or plaintext filter record is retained. No schema migration is needed.
+
+Admins retain sanitized technical detail and exact organization/actor/action/
+event/outcome/source filters. Areas come from the registry instead of guessing
+from action prefixes. Admin CSV uses the same filters and audited lifecycle;
+admin authorization is rechecked at download. Entries remain append-only except
+for the documented privacy/retention redaction path.

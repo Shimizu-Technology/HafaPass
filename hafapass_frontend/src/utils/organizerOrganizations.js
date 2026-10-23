@@ -53,6 +53,9 @@ function subscribeStoredOrganization(listener) {
 
 export const canViewOrganizationFinances = organization => organization?.permissions?.view_finance === true
 
+export const canViewOrganizationActivity = organization => organization?.activity_access === true
+  || ['view_activity_all', 'view_activity_events', 'view_activity_finance'].some(permission => organization?.permissions?.[permission] === true)
+
 // Whether the current account passes `predicate` for the selected
 // organization. Uses the cached lookup, loading it once when it is missing.
 function useSelectedOrganizationPermission(authContext, enabled, predicate) {
@@ -73,3 +76,6 @@ export const useCanManageOrganizationSettings = (authContext, enabled) =>
 // Whether the current account may open organization-wide Finances.
 export const useCanViewOrganizationFinances = (authContext, enabled) =>
   useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationFinances)
+
+export const useCanViewOrganizationActivity = (authContext, enabled) =>
+  useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationActivity)

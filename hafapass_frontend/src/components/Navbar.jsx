@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
 import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
-import { useCanManageOrganizationSettings, useCanViewOrganizationFinances } from '../utils/organizerOrganizations'
+import { useCanManageOrganizationSettings, useCanViewOrganizationFinances, useCanViewOrganizationActivity } from '../utils/organizerOrganizations'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -314,13 +314,15 @@ function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, 
   const { pathname } = location
   const canManageSettings = useCanManageOrganizationSettings(authContext, Boolean(authContext))
   const canViewFinances = useCanViewOrganizationFinances(authContext, Boolean(authContext))
+  const canViewActivity = useCanViewOrganizationActivity(authContext, Boolean(authContext))
   const showDashboard = !workspace || workspace.organizer === true || role === 'admin'
   const links = [
     ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') }] : []),
     ...(!workspace || workspace.scanner === true ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
     ...(canViewFinances ? [{ to: '/dashboard/finances', label: t('nav.finances'), icon: WalletCards }] : []),
-    ...(canManageSettings ? [{ to: '/dashboard/settings', label: t('nav.settings'), icon: Settings }] : []),
+    ...(canManageSettings || canViewActivity ? [{ to: canManageSettings ? '/dashboard/settings' : '/dashboard/settings/activity', label: t('nav.settings'), icon: Settings,
+      active: pathname === '/dashboard/settings' || pathname.startsWith('/dashboard/settings/') }] : []),
     ...(['support', 'admin'].includes(role) ? [{ to: '/support', label: t('nav.support'), icon: LifeBuoy }] : []),
     ...(role === 'admin' ? [{ to: '/admin', label: t('nav.admin'), icon: Shield }] : []),
   ].map(link => ({ ...link, active: link.active ?? (pathname === link.to || pathname.startsWith(link.to + '/')) }))

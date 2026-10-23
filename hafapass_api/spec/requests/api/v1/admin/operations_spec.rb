@@ -338,9 +338,9 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(record["actor"]).to include("email" => admin.email)
       expect(record["target"]).to eq("type" => "SiteSetting", "id" => settings.id)
       expect(record).not_to have_key("ip_address")
-      expect(response.parsed_body["areas"]).to eq(%w[balance_adjustment event payout site_settings])
+      expect(response.parsed_body["areas"]).to eq(AuditActions::AREAS.sort)
 
-      get "/api/v1/admin/audit_logs", params: { area: "payout" }, headers: headers
+      get "/api/v1/admin/audit_logs", params: { area: "payouts" }, headers: headers
       expect(response.parsed_body["audit_logs"].pluck("action")).to eq(["payout.reconciled"])
 
       get "/api/v1/admin/audit_logs", params: { organization_id: organization.id }, headers: headers

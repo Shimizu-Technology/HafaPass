@@ -68,6 +68,30 @@ describe('SettingsPage', () => {
     await screen.findByText(/Earlier links no longer work/)
   })
 
+  it('compares roles beside either picker without submitting or losing the invitation draft', async () => {
+    const user = userEvent.setup()
+    show()
+    await screen.findByText('Island Events')
+    await user.type(screen.getByLabelText('Teammate email'), 'new@example.com')
+    await user.click(screen.getByRole('radio', { name: /Finance/ }))
+    const inviteTrigger = screen.getAllByRole('button', { name: 'Compare roles' })[0]
+    await user.click(inviteTrigger)
+    let comparison = within(screen.getByRole('dialog', { name: 'Compare roles' }))
+    expect(comparison.getByRole('table', { name: 'Organization role permissions' })).toBeInTheDocument()
+    await user.click(comparison.getByRole('button', { name: 'Close' }))
+    expect(inviteTrigger).toHaveFocus()
+    expect(screen.getByLabelText('Teammate email')).toHaveValue('new@example.com')
+    expect(screen.getByRole('radio', { name: /Finance/ })).toBeChecked()
+
+    const member = within(screen.getByText('Mia Manager').closest('li'))
+    await user.click(member.getByRole('button', { name: 'Compare roles' }))
+    comparison = within(screen.getByRole('dialog', { name: 'Compare roles' }))
+    await user.click(comparison.getByRole('button', { name: 'Close' }))
+    expect(member.getByRole('combobox')).toHaveValue('manager')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(apiClient.patch).not.toHaveBeenCalled()
+  })
+
   it('transfers ownership only after confirming in a dialog', async () => {
     apiClient.post.mockResolvedValue({ data: [
       { ...memberships[0], role: 'manager' }, { ...memberships[1], role: 'owner' },

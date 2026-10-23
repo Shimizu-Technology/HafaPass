@@ -205,6 +205,7 @@ class OrganizationTeam
         AuditLogger.record!(action: "organization.ownership_transferred", auditable: organization, actor: actor,
           organization: organization, before_data: before_data,
           after_data: { owner: owner_snapshot(to_membership), previous_owners_now: "manager" },
+          metadata: { team_member_label: [to_membership.user.first_name, to_membership.user.last_name].compact_blank.join(" ").presence || "team member ##{to_membership.user_id}" },
           request: request)
       end
       to_membership

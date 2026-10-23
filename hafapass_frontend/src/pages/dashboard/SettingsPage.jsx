@@ -5,6 +5,7 @@ import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspaceP
 import apiClient from '../../api/client'
 import NoAccessNotice from '../../components/NoAccessNotice'
 import TeamManager from '../../components/team/TeamManager'
+import SettingsNavigation from '../../components/activity/SettingsNavigation'
 import PayoutMethodSection from './PayoutMethodSection'
 import TaxInformationSection from './TaxInformationSection'
 import { roleDescription, roleLabel } from '../../utils/roles'
@@ -185,6 +186,7 @@ function SettingsPageSession({ identity }) {
         actions={<StatusPill ready={organization?.payout_ready}>{organization?.payout_ready ? 'Paid events ready' : 'Payout setup incomplete'}</StatusPill>}
         className="!mb-0"
       />
+      <SettingsNavigation organization={organization} />
 
       {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button type="button" onClick={load} className="min-h-11 font-semibold underline">Retry organization settings</button></div>}
 
@@ -217,7 +219,7 @@ function SettingsPageSession({ identity }) {
               <button type="submit" className="btn-primary" disabled={busy}>Save marketing address</button>
             </form>
           </section>}
-          {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team"
+          {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team" compareRoles
             memberships={memberships} onMembershipsChange={setMemberships} />}
           {canManagePayouts && <TaxInformationSection request={teamRequest}
             mailingAddress={accounts.find(account => account.provider === 'check')?.payout_details?.mailing_address || ''}

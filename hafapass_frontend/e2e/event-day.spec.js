@@ -75,6 +75,9 @@ for (const fragment of ['', '#manual-ticket-entry']) {
     await page.goto(`/dashboard/scanner?event=42${fragment}`)
     await expectManifest(page, 'Saved ticket list · version 1 · 2 tickets')
     await context.setOffline(true)
+    // Wait for the UI's offline transition before typing/clicking: changing
+    // network state can move the manual-entry controls on a wide layout.
+    await expect(page.getByText('Offline mode', { exact: true })).toBeVisible()
     await page.getByLabel('Ticket QR code').fill(credentials[1])
     await page.getByRole('button', { name: 'Check in ticket' }).click()
     await expect(page.getByText('Admitted offline')).toBeVisible()

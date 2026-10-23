@@ -42,6 +42,22 @@ beforeEach(() => {
 })
 
 describe('event overview', () => {
+  it('links to activity with the event filter for an authorized organization teammate', async () => {
+    mount(base, { '/organizer/events/37/stats': {} }, { id: 1, name: 'Island events', role: 'manager', permissions: { view_activity_events: true } })
+    expect(await screen.findByRole('link', { name: 'View activity' })).toHaveAttribute('href', '/dashboard/settings/activity?event_id=37')
+  })
+
+  it('does not offer activity to event staff without organization activity access', async () => {
+    mount(base, { '/organizer/events/37/stats': {} }, { id: 1, name: 'Island events', role: 'scanner', permissions: { scan: true } })
+    await screen.findByRole('heading', { name: base.title })
+    expect(screen.queryByRole('link', { name: 'View activity' })).not.toBeInTheDocument()
+  })
+
+  it('offers activity to an assigned manager through the event permission', async () => {
+    mount({ ...base, permissions: { ...base.permissions, view_activity_events: true } }, { '/organizer/events/37/stats': {} },
+      { id: 1, name: 'Island events', role: 'marketer', permissions: { manage_marketing: true } })
+    expect(await screen.findByRole('link', { name: 'View activity' })).toHaveAttribute('href', '/dashboard/settings/activity?event_id=37')
+  })
   it('does not request a preview link for a suspended organizer', async () => {
     mount({ ...base, publicly_visible: false, sales_status: { reason: 'organizer_paused' } }, {
       '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },

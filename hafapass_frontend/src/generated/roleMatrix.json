@@ -1,0 +1,415 @@
+{
+  "roles": [
+    {
+      "key": "owner",
+      "label": "Owner"
+    },
+    {
+      "key": "manager",
+      "label": "Manager"
+    },
+    {
+      "key": "finance",
+      "label": "Finance"
+    },
+    {
+      "key": "marketer",
+      "label": "Marketer"
+    },
+    {
+      "key": "box_office",
+      "label": "Box office"
+    },
+    {
+      "key": "scanner",
+      "label": "Door scanner"
+    }
+  ],
+  "permissions": {
+    "owner": [
+      "manage_organization",
+      "manage_members",
+      "manage_payout_settings",
+      "view_events",
+      "manage_events",
+      "edit_event_content",
+      "manage_inventory",
+      "manage_staff",
+      "view_attendees",
+      "manage_attendees",
+      "manage_marketing",
+      "box_office",
+      "scan",
+      "view_finance",
+      "manage_finance",
+      "refund",
+      "payout",
+      "view_activity_all",
+      "view_activity_events",
+      "view_activity_finance"
+    ],
+    "manager": [
+      "view_events",
+      "manage_events",
+      "edit_event_content",
+      "manage_inventory",
+      "manage_staff",
+      "view_attendees",
+      "view_finance",
+      "manage_attendees",
+      "manage_marketing",
+      "box_office",
+      "scan",
+      "view_activity_events"
+    ],
+    "finance": [
+      "view_events",
+      "view_finance",
+      "manage_finance",
+      "refund",
+      "payout",
+      "view_activity_finance"
+    ],
+    "marketer": [
+      "view_events",
+      "edit_event_content",
+      "manage_marketing"
+    ],
+    "box_office": [
+      "view_events",
+      "view_attendees",
+      "manage_attendees",
+      "box_office",
+      "scan"
+    ],
+    "scanner": [
+      "view_events",
+      "scan"
+    ]
+  },
+  "event_assignment_permissions": {
+    "manager": [
+      "view_events",
+      "manage_events",
+      "edit_event_content",
+      "manage_inventory",
+      "manage_staff",
+      "view_attendees",
+      "view_finance",
+      "manage_attendees",
+      "manage_marketing",
+      "box_office",
+      "scan",
+      "view_activity_events"
+    ],
+    "box_office": [
+      "view_events",
+      "view_attendees",
+      "manage_attendees",
+      "box_office",
+      "scan"
+    ],
+    "scanner": [
+      "view_events",
+      "scan"
+    ]
+  },
+  "assignment_required_roles": [
+    "box_office",
+    "scanner"
+  ],
+  "notes": {
+    "scope": "Organization roles apply across the organization, except Box office and Door scanner, which require assigned events. Event managers have access to their assigned events only; creating, copying and repeating events requires an organization Manager or Owner role.",
+    "manager": "Managers can't cancel events or move money.",
+    "finance": "Finance sees buyer contact details in refunds and finance exports, but does not get the attendee contact list.",
+    "assignments": "Event assignments add access for this event only.",
+    "offline": "Scanner phones that are offline keep working until they reconnect or for up to 24 hours. Removing access stops them as soon as they reconnect."
+  },
+  "rows": [
+    {
+      "key": "events",
+      "label": "See events",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "Yes",
+        "marketer": "Yes",
+        "box_office": "Assigned events",
+        "scanner": "Assigned events"
+      }
+    },
+    {
+      "key": "manage_events",
+      "label": "Create, edit & publish events",
+      "note": "Event managers can edit and publish assigned events; creating events requires an organization Manager or Owner role.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "content",
+      "label": "Edit event page content only",
+      "note": "Marketers can change page content, but cannot publish events or change their schedule.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "Yes",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "cancel",
+      "label": "Cancel an event (with refunds)",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "copy",
+      "label": "Copy/repeat events",
+      "note": "Event assignments do not allow creating, copying or repeating events.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "inventory",
+      "label": "Ticket types & prices",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "seating",
+      "label": "Seating",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "contacts",
+      "label": "See attendee names & emails",
+      "note": "Finance sees buyer contact in refunds and finance exports. Scanners see admission names, not email addresses.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "Refunds & finance exports",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "Names only · assigned events"
+      }
+    },
+    {
+      "key": "attendees",
+      "label": "Guest list, waitlist & resend tickets",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "door_sales",
+      "label": "Door sales",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "scan",
+      "label": "Scan tickets",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "Assigned events"
+      }
+    },
+    {
+      "key": "reverse",
+      "label": "Undo a check-in",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "refunds",
+      "label": "Issue refunds",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "Yes",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "reports",
+      "label": "Finance reports & sales exports",
+      "note": "Box office can export attendee sales data for assigned events, without financial amounts.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "Yes",
+        "marketer": "No",
+        "box_office": "Attendee exports only · assigned events",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "settlements",
+      "label": "Finalize settlements",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "Yes",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "payouts",
+      "label": "Request payouts",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "Yes",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "payout_details",
+      "label": "Payout & W-9 details",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "marketing",
+      "label": "Promo codes, promoters & buyer emails",
+      "note": "Buyer emails means sending campaigns; it does not grant the attendee contact list.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "Yes",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "team",
+      "label": "Invite/remove team members & change roles",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "staff",
+      "label": "Assign staff to events",
+      "note": "Event managers can assign door staff on their events. Organization-wide invitations and role changes require the Owner.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "organization",
+      "label": "Organization profile & verification",
+      "note": "Owners manage the profile and submit verification; HåfaPass controls verification approval.",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "ownership",
+      "label": "Transfer ownership",
+      "values": {
+        "owner": "Yes",
+        "manager": "No",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    },
+    {
+      "key": "activity",
+      "label": "View activity log (all / events / money)",
+      "note": "Managers see event operations and event staff history, without payment amounts, order references or payment details. Event managers are limited to assigned events; organization team and security history is Owner-only.",
+      "values": {
+        "owner": "All activity",
+        "manager": "Event activity, without payment amounts",
+        "finance": "Money",
+        "marketer": "No",
+        "box_office": "No",
+        "scanner": "No"
+      }
+    }
+  ]
+}
