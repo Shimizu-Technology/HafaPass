@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -53,17 +54,27 @@ export default function Footer() {
             </ul>
           </div>
 
-          <details className="col-span-2 border-t border-white/10 pt-2 lg:col-span-4">
-            <summary className="min-h-11 cursor-pointer rounded py-3 text-sm font-semibold text-neutral-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyerDiscovery.policy.otherPolicies')}</summary>
-            <ul className="grid grid-cols-2 gap-x-4 lg:flex lg:flex-wrap lg:gap-x-6">
+          <div className="col-span-2 border-t border-white/10 pt-2 lg:col-span-4">
+            <ul className="flex flex-wrap gap-x-6">
               <li><Link to="/policies/privacy" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.privacy')}</Link></li>
               <li><Link to="/policies/buyer-terms" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.buyerTerms')}</Link></li>
               <li><Link to="/policies/refunds" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.refunds')}</Link></li>
+              <li className="hidden md:list-item"><Link to="/policies/organizer-agreement" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.organizerAgreement')}</Link></li>
+              <li className="hidden md:list-item"><Link to="/policies/accessibility" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.accessibility')}</Link></li>
+              <li className="hidden md:list-item"><Link to="/policies/cookies" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.cookies')}</Link></li>
+            </ul>
+            <details className="group md:hidden">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 rounded text-sm font-semibold text-neutral-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden">
+                {t('buyerDiscovery.policy.otherPolicies')}
+                <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 group-open:rotate-180" />
+              </summary>
+              <ul className="grid grid-cols-2 gap-x-4 pb-2">
               <li><Link to="/policies/organizer-agreement" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.organizerAgreement')}</Link></li>
               <li><Link to="/policies/accessibility" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.accessibility')}</Link></li>
               <li><Link to="/policies/cookies" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('buyer.Footer.cookies')}</Link></li>
-            </ul>
-          </details>
+              </ul>
+            </details>
+          </div>
         </div>
 
         {/* Divider + Copyright */}

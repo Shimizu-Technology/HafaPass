@@ -21,23 +21,37 @@ for (const width of [375, 1280]) {
     for (const path of ['/', '/events', '/events?search=music', '/discover']) {
       await page.goto(path)
       await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
-      await expect(page.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
+      const main = page.getByRole('main')
+      await expect(main.getByText('No events are listed yet. Check back soon.')).toBeVisible()
+      if (path === '/') {
+        await expect(main.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeVisible()
+        await expect(main.getByText('Your event guide on Guam')).toBeVisible()
+        await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
+        await expect(main.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
+        await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
+        await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(0)
+        await expect(main.getByRole('heading', { name: 'Next Up on Guam' })).toHaveCount(0)
+      } else {
+        await expect(main.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
+        await main.getByRole('link', { name: 'Back to event guide' }).click()
+        await expect(main.getByRole('heading', { name: 'Find your next event on Guam' })).toBeVisible()
+        await page.goto(path)
+        await expect(main.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+      }
       await expect(page.getByRole('main').getByRole('searchbox')).toHaveCount(0)
       await expect(page.getByRole('main').getByRole('combobox')).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([])
     }
-    const policies = page.locator('footer details')
-    await policies.locator('summary').focus()
-    await page.keyboard.press('Enter')
-    await expect(policies.getByRole('link')).toHaveCount(6)
-    for (const link of await policies.getByRole('link').all()) await expect(link).toBeVisible()
-
     hasEvents = true
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Find your next event on Guam' })).toBeVisible()
     await expect(page.getByRole('searchbox', { name: 'Event or venue' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Next Up on Guam' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toHaveCount(0)
     await page.goto('/events?search=nothing')
     await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()
     await page.getByRole('button', { name: 'Clear filters' }).click()
@@ -45,5 +59,40 @@ for (const width of [375, 1280]) {
     await page.goto('/discover')
     await expect(page.getByRole('link', { name: 'Browse events', exact: true })).toBeVisible()
     await expect(page.getByText('Events are coming soon')).toHaveCount(0)
+  })
+}
+
+for (const width of [375, 768, 1280]) {
+  test(`footer keeps buyer policies visible and all policies reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 812 })
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, {}))
+    await page.route('**/api/v1/events*', route => json(route, { events: [] }))
+    await page.goto('/')
+    const footer = page.locator('footer')
+    const disclosure = footer.locator('summary')
+    for (const slug of ['privacy', 'buyer-terms', 'refunds']) {
+      await expect(footer.locator(`a[href="/policies/${slug}"]:visible`)).toBeVisible()
+    }
+    if (width < 768) {
+      await expect(disclosure).toBeVisible()
+      expect((await disclosure.boundingBox()).height).toBeGreaterThanOrEqual(44)
+      await expect(footer.locator('details')).not.toHaveAttribute('open')
+      await expect(footer.locator('a[href="/policies/organizer-agreement"]:visible')).toHaveCount(0)
+      await disclosure.focus()
+      await page.keyboard.press('Enter')
+      await expect(footer.locator('details')).toHaveAttribute('open', '')
+    } else {
+      await expect(disclosure).toBeHidden()
+    }
+    for (const slug of ['privacy', 'buyer-terms', 'refunds', 'organizer-agreement', 'accessibility', 'cookies']) {
+      const link = footer.locator(`a[href="/policies/${slug}"]:visible`)
+      await expect(link).toHaveCount(1)
+      await expect(link).toBeVisible()
+      await link.focus()
+      await expect(link).toBeFocused()
+      expect((await link.boundingBox()).height).toBeGreaterThanOrEqual(44)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
   })
 }

@@ -1,5 +1,7 @@
 # Visual polish acceptance — 2026-10-23
 
+> The round-two record below supersedes the original zero-event and footer design acceptance. Earlier captures and results remain as history.
+
 Base: `1548e8f3` (PRs #147–149 included). Branch: `codex/hafapass-visual-polish`. Hold; do not merge.
 
 HåfaPass serves Guam event buyers, organizers running sales/admission, and platform administrators. Public inventory is eligibility-controlled; an empty search or failed API call must never claim the whole marketplace is empty. Clerk owns authentication, Rails owns roles/inventory, and existing commerce/verification restrictions remain authoritative. Sources: README, CLAUDE.md, Home/Events/Collections pages, Rails event/collection scopes, recent Git history; Brain Dump `work/shimizu-tech/company-positioning-and-project-review-2026-10-04.md` identifies paid launch/pilot closeout as gated. This change makes no launch or availability promise.
@@ -63,3 +65,29 @@ The full local matrix is `/tmp/hafapass-visual-polish/{before,after}`. For each 
 - `git ls-remote origin refs/heads/main`: `1548e8f31f6dd5bae11f4f7330f8d2c77d9cc898`, matching the requested base.
 
 The API on 3055 was stopped, Playwright closed its Vite server on 5225 and browser workers, the T3 preview tab was closed/released, and `hafapass_visual` was dropped. The lifecycle check reports no active owned resources. Shared Docker services, port 3011, and protected local services were left alone. The held branch/worktree remain for review; no deployment or merge was performed.
+
+## Design review revision — round two, 2026-10-23
+
+Starting head: `9bbe1452`. `origin/main` was verified at `1548e8f3`; the branch already contained it, so no merge was needed. The lead requested that Home retain the product explanation and hosting section, that standalone empty listings offer recovery, and that desktop policies remain visible. This revision keeps the original fonts, colors, hero copy, event eligibility, normal populated layout, and all wording owned by PR #150. Only the new `preInventory.description` changes to the buyer message explicitly requested by the lead. `hafapass_api/config/policies.yml` remains untouched.
+
+Agent-executed affected-flow acceptance used Node 22.22.3, Ruby 3.3.4, Rails on 3055, Vite on 5225, and the newly created/seeded `hafapass_visual_r2` database. The existing Clerk development test account was mapped into the isolated fixture through the repo environment values. A short-lived sign-in ticket authenticated that existing account; no new Clerk user was created. No credentials were printed or committed. Synthetic event statuses were saved, temporarily changed to draft, and restored after each capture.
+
+| Case | Starting condition and steps | Observable outcome | Result |
+| --- | --- | --- | --- |
+| R01 | Confirm zero public events; open Home at 375×812 and 1280×800 | Hero eyebrow, headline and subcopy remain; buyer empty panel replaces Next Up; search, hero Browse Events and category grid are absent; Planning an event and its Start Hosting action remain | Passed |
+| R02 | Restore nine published local events; open Home at both widths | Normal featured/listing/search/category/hosting layout returns. Before/after screenshots above the footer have zero differing pixels at both widths | Passed |
+| R03 | Confirm zero inventory; open Events, a filtered Events URL, and Discover; activate Back to event guide | Honest buyer message, Home recovery and secondary List your event link; no empty filters/categories; recovery displays the Home hero | Passed (real API captures plus browser interaction fixtures) |
+| R04 | Open footer at 375, 768 and 1280; keyboard-open mobile disclosure and focus every policy link | Privacy Policy, Buyer Terms and Refunds are immediately visible; other policies are keyboard reachable on mobile; all six are visible without disclosure at ≥768; controls are ≥44px and page does not overflow | Passed |
+| R05 | Review the earlier auth, organizer and admin screenshot matrix against its before set and inspect the original diff | Control size/contrast changes retain content and actions. Replaced the earlier desktop finances skeleton capture with settled signed-in finances at both widths; no page overflow | Passed for the visual scope; original operational limitations still apply |
+
+Evidence is `docs/qa/visual-polish/r2/{before,after}` and `/tmp/hafapass-visual-r2/{before,after}`. Each set includes `{375,1280}-{home-empty,home-events,events-empty,discover-empty,footer}.png` and `375-footer-expanded.png`. The before set is the original PR head on the same local seeded stack. Signed-in finances captures stay local. The footer's old tagline and aloha text are expected; PR #150 owns those strings.
+
+The round-two mobile footer is 619.5px collapsed / 715.5px expanded, versus 575.5px / 707.5px at the original PR head. The added 44px collapsed row keeps all three buyer policies immediately visible. Desktop remains 414px and now exposes all policies. The populated Home content above it is pixel-identical at both widths (ImageMagick AE=0; compared the first 4414px at 375 and 3274px at 1280).
+
+The T3 preview opened but snapshot failed twice with `Preview automation snapshot timed out after 15000ms.` Browser verification therefore used repository Playwright with the real stack for public captures and settled Clerk finances, and routed fixtures for the repeatable automated journeys. Chromium widths do not establish physical-phone keyboard, gestures, safe-area or installed-PWA behavior.
+
+Validation: ESLint, 164 Vitest files / 1,784 tests, production build, production dependency audit (0 vulnerabilities), release-freeze contract (inactive), and secret/debug hygiene passed. Impeccable 4.6.0 returned `[]`; the cached pinned CLI was used after npm's package lookup stalled. The first full browser run passed 99 and failed 3 stale expectations for the intentionally retained Home/footer; those assertions were corrected and the final full run passed all 102 tests in 48.4s, including axe and the new empty-state/footer cases. Initial failed logs are retained locally.
+
+Do not merge. CodeRabbit is a required repository check; a rate-limited success-labelled result is not completed review. Final CI/review status and resource cleanup are recorded in the round-two handoff.
+
+Round-two cleanup: the owned Rails API and all owned Vite/Playwright/browser processes were stopped or confirmed exited, the T3 tab was closed and released, `hafapass_visual_r2` was dropped, and copied env/auth files were removed. No runtime handoff; shared/protected services and the requested ports 3000/3088/3011 were left unchanged.

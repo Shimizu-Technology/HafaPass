@@ -47,5 +47,5 @@ it('sends people to in-app ticket help instead of a broken mailto when no contac
 it('points organizers to the host landing page with pricing', () => {
   render(<MemoryRouter><Footer /></MemoryRouter>)
   expect(screen.getByRole('link', { name: "For Organizers" })).toHaveAttribute('href', '/host')
-  expect(screen.getByRole('link', { name: 'Organizer Agreement' })).toHaveAttribute('href', '/policies/organizer-agreement')
+  screen.getAllByRole('link', { name: 'Organizer Agreement' }).forEach(link => expect(link).toHaveAttribute('href', '/policies/organizer-agreement'))
 })
