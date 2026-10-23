@@ -1,6 +1,6 @@
 # Waitlist, inventory, and email delivery invariants
 
-This is the lock contract for code that changes a waitlist entry, reserves or releases inventory, or processes a waitlist delivery. The organization lock is taken first when needed. Paths that do not need it start at the event. A path may skip ranks, but never go back up a rank. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions.
+This is the lock contract for code that changes a waitlist entry, reserves or releases inventory, or processes a waitlist delivery. The organization lock is taken first when needed. Paths that do not need it start at the event. A path may skip ranks, but never go back up a rank. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions except the bounded campaign dispatch authorization boundary described below.
 
 | Rank | Locks, in order within the rank |
 | --- | --- |
@@ -48,3 +48,20 @@ Nonterminal receipts older than `last_event_at` are audit evidence only. Definit
 `MessageAddressFailure` classifies both synchronous Resend rejection errors and webhook `email.failed`/`email.bounced` payloads. It reads the documented webhook `failed.reason`, bounce subtype, and SMTP `diagnosticCode` values. It recognizes recipient/mailbox-not-found language, invalid-recipient reason codes, and address-specific SMTP 5.1.x codes, but excludes a `Transient` bounce. It does not treat quota or API-key failures as bad addresses. Both paths write `metadata.provider_address_invalid = true`; a webhook invalid-address `email.failed` becomes `suppressed`, matching a synchronous rejection. The metadata is durable evidence for suppression of a later refund notification even when the original delivery status is a bounce. Safe webhook payload storage retains only the bounce, failure reason, and error fields needed for classification and audit.
 
 Resend documents [permanent and transient bounce types](https://resend.com/changelog/email-bounce-details), [the bounce payload shape](https://www.resend.com/changelog/webhook-event-visibility), and [`failed.reason` and `diagnosticCode` in its OpenAPI schema](https://github.com/resend/resend-openapi/blob/main/resend.yaml). Keep the classifier's code list aligned with provider evidence as new codes are observed; do not infer permanence from every `email.failed` event.
+
+
+## Campaign authorization
+
+Campaign queueing takes organization → campaign, rechecks the sender, and commits
+all deliveries before enqueueing jobs. Team mutations use actor (`FOR NO KEY
+UPDATE`, for invitation quotas) → organization → membership/assignment. Ownership
+transfers and permission revocations share the organization lock. Event-staff
+mutations use this same order and recheck `manage_staff` after waiting.
+
+A campaign delivery commits its existing durable payload and lease before network
+activity, then takes the organization lock and rechecks `requested_by` immediately
+before provider dispatch. This one provider call holds the organization lock,
+with the existing 30-second timeout, so revocation cannot complete between the
+check and dispatch. It does not hold the delivery row during the network call.
+Unauthorized deliveries are cancelled and any prior unknown-provider outcome is
+preserved for reconciliation. Other templates keep their existing delivery rules.

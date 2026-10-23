@@ -70,7 +70,9 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
 
     # Content-only edits retain the existing scheduled job. Enqueuing on every
     # save would leave an unbounded number of no-op jobs in the scheduled set.
-    return unless campaign.saved_change_to_scheduled_at?
+    # Failed campaigns need a new authorized scheduler and job even if that
+    # person keeps the same future send time during review.
+    return unless campaign.saved_change_to_scheduled_at? || campaign.failed?
 
     campaign.update!(status: :scheduled, scheduled_by_user: current_user, last_error: nil)
     CommunicationCampaignJob.set(wait_until: campaign.scheduled_at).perform_later(campaign.id, campaign.scheduled_at.utc.iso8601)

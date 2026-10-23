@@ -24,6 +24,7 @@ function EventStaffSession({ id, identity }) {
   const [refreshing, setRefreshing] = useState(false)
   const [event, setEvent] = useState(null)
   const [assignments, setAssignments] = useState([])
+  const [accessTime, setAccessTime] = useState(Date.now)
   const [candidates, setCandidates] = useState([])
   const [invitations, setInvitations] = useState([])
   const [inviteEmail, setInviteEmail] = useState('')
@@ -35,6 +36,15 @@ function EventStaffSession({ id, identity }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const now = Date.now()
+    const nextExpiry = Math.min(...assignments.map(item => Date.parse(item.expires_at)).filter(time => time > now))
+    if (!Number.isFinite(nextExpiry)) return
+    // Long-lived assignments must not overflow the browser's timer limit.
+    const timer = setTimeout(() => setAccessTime(Date.now()), Math.min(nextExpiry - now, 2_147_483_647))
+    return () => clearTimeout(timer)
+  }, [assignments, accessTime])
 
   const clearPending = () => {
     try { window.sessionStorage.removeItem(storageKey); pendingRef.current = null; setPending(null); return true }

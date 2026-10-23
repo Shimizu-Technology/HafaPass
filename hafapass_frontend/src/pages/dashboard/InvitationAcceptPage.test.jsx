@@ -59,6 +59,20 @@ describe('invitation acceptance', () => {
     await act(async () => finish({ data: { organization_id: 4, organization_name: 'Stale team' } }))
     expect(window.localStorage.getItem('hafapass_organization_id')).toBe('9')
     expect(screen.queryByText('You joined Stale team')).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('You switched organizations')
+    expect(screen.queryByText('Accepting invitation…')).not.toBeInTheDocument()
+  })
+
+  it('ends loading after a failed request when organization selection changed', async () => {
+    let reject
+    apiClient.post.mockReturnValue(new Promise((resolve, no) => { reject = no }))
+    render(<MemoryRouter initialEntries={['/organization-invitations/accept?token=slow-failure']}><InvitationAcceptPage /></MemoryRouter>)
+    await waitFor(() => expect(reject).toBeTypeOf('function'))
+    window.localStorage.setItem('hafapass_organization_id', '12')
+    await act(async () => reject({ response: { data: { error: 'Expired invitation' } } }))
+    expect(screen.getByRole('alert')).toHaveTextContent('You switched organizations')
+    expect(screen.queryByText('Accepting invitation…')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('hafapass_organization_id')).toBe('12')
   })
 
   it('discards an old token response after navigation to another invitation', async () => {

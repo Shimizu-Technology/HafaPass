@@ -18,14 +18,14 @@ module CommunicationCampaigns
     def call
       deliveries = []
       authorization_error = nil
-      CommunicationCampaign.transaction do
+      organization = campaign.event.organization
+      organization.with_lock do
         campaign.lock!
         unless campaign.draft? || campaign.scheduled?
           raise CampaignError, "Only draft or scheduled campaigns can be sent"
         end
-        organization = campaign.event.organization
         sender = @actor || campaign.scheduled_by_user || campaign.created_by_user
-        unless OrganizationAuthorization.allowed?(user: sender, organization: organization,
+        unless sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
             permission: :manage_marketing, event: campaign.event)
           authorization_error = "Needs attention: the person who scheduled or sent this campaign no longer has permission to send messages. Ask an authorized team member to review and reschedule it."
           campaign.update!(status: :failed, last_error: authorization_error)

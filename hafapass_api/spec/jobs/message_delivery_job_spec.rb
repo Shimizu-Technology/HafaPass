@@ -119,4 +119,37 @@ RSpec.describe MessageDeliveryJob do
     expect(delivery.reload).to have_attributes(status: "cancelled", attempts: 0)
     expect(EmailService).not_to have_received(:send_delivery_payload)
   end
+
+  it "reauthorizes campaign deliveries after committing their send lease" do
+    event = create(:event, :published)
+    organization = event.organization
+    organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910", marketing_address_certified_at: Time.current)
+    order = create(:order, event: event, marketing_opt_in: true)
+    campaign = create(:communication_campaign, event: event)
+    sender = create(:user)
+    membership = create(:organization_membership, organization: organization, user: sender, role: :marketer)
+    message = create(:message_delivery, event: event, order: order, communication_campaign: campaign,
+      requested_by: sender, template: "communication_campaign", recipient: order.buyer_email,
+      metadata: { subject: campaign.subject, body: campaign.body, mailing_address: organization.marketing_mailing_address, organizer_name: organization.name })
+    job = described_class.new
+    allow(EmailService).to receive(:send_delivery_payload)
+    allow(job).to receive(:dispatch_with_campaign_authorization).and_wrap_original do |method, *args, &block|
+      expect(message.reload.send_lease_token).to be_present
+      OrganizationTeam.revoke!(membership: membership, actor: event.organizer_profile.user)
+      method.call(*args, &block)
+    end
+    job.perform(message.id)
+    expect(message.reload).to have_attributes(status: "cancelled", send_lease_token: nil, provider_outcome_unknown: false)
+    expect(message.last_error).to include("no longer has permission")
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "preserves uncertain acceptance when cancelling a revoked campaign sender" do
+    event = create(:event)
+    message = create(:message_delivery, event: event, template: "communication_campaign", requested_by: nil,
+      provider_outcome_unknown: true)
+    result = described_class.new.send(:dispatch_with_campaign_authorization, message, true) { raise "Must not send" }
+    expect(result).to eq(:authorization_cancelled)
+    expect(message.reload).to have_attributes(status: "cancelled", provider_outcome_unknown: true)
+  end
 end

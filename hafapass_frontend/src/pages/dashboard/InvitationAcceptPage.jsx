@@ -12,8 +12,6 @@ export default function InvitationAcceptPage() {
   const identity = useOrganizerIdentity()
   const token = searchParams.get('token')
   const visitKey = `${location.key}:${location.pathname}:${token}:${identity.accountKey}`
-  const latestVisit = useRef(visitKey)
-  latestVisit.current = visitKey
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   // A token is single use: StrictMode replays effects, so submit it once.
@@ -35,8 +33,14 @@ export default function InvitationAcceptPage() {
         promise: apiClient.post('/organization_invitations/accept', { token }, { authContext, organizationId }) }
     }
     const submission = submitted.current
-    const current = () => active && latestVisit.current === visitKey && getApiAuthContext() === authContext
-      && window.localStorage.getItem('hafapass_organization_id') === submission.organizationId
+    const current = () => {
+      if (!active || getApiAuthContext() !== authContext) return false
+      if (window.localStorage.getItem('hafapass_organization_id') !== submission.organizationId) {
+        setError('You switched organizations while this invitation was being accepted. Open the invitation link again if you still need to join.')
+        return false
+      }
+      return true
+    }
     submission.promise.then(response => {
       if (!current()) return
       window.localStorage.setItem('hafapass_organization_id', response.data.organization_id.toString())

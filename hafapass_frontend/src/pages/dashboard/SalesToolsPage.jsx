@@ -12,7 +12,7 @@ const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
 const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '' }
 const emptyWaiver = { title: '', version: '1.0', body: '', required: true }
 const emptyPromoter = { name: '', email: '', code: '', commission: '10' }
-const emptyCampaign = { name: '', subject: '', body: '', segment: 'all_attendees', scheduled_at: '' }
+const emptyCampaign = { name: '', subject: '', body: '', segment: 'all_attendees', ticket_type_id: '', scheduled_at: '' }
 
 function Section({ title, description, children }) {
   return <section className="card p-5 sm:p-6"><h2 className="text-lg font-bold text-neutral-900">{title}</h2><p className="mb-5 mt-1 text-sm text-neutral-500">{description}</p>{children}</section>
@@ -67,6 +67,8 @@ function SalesToolsSession({ eventId, identity }) {
   const [waiverForm, setWaiverForm] = useState(emptyWaiver)
   const [promoterForm, setPromoterForm] = useState(emptyPromoter)
   const [campaignForm, setCampaignForm] = useState(emptyCampaign)
+  const [editingCampaignId, setEditingCampaignId] = useState(null)
+  const campaignNameInput = useRef(null)
 
   const permission = key => event?.permissions?.[key] === true
   const resourcePermissions = { catalog_items: 'manage_inventory', registration_questions: 'manage_events', event_waivers: 'manage_events', promoters: 'manage_marketing', communication_campaigns: 'manage_marketing' }
@@ -156,6 +158,26 @@ function SalesToolsSession({ eventId, identity }) {
   }
   const retranslate = () => mutate('Translation request', permission('edit_event_content'), config => apiClient.post(`/organizer/events/${eventId}/retranslate`, undefined, config))
   const sendCampaign = item => mutate('Campaign submission', permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status), config => apiClient.post(`/organizer/events/${eventId}/communication_campaigns/${item.id}/send_now`, undefined, config))
+  const reviewCampaign = item => {
+    if (!current() || busyRef.current || pendingRef.current || !permission('manage_marketing')) return
+    if (Object.keys(emptyCampaign).some(key => campaignForm[key] !== emptyCampaign[key]) &&
+      !window.confirm('Replace the campaign form with this saved campaign? Unsaved campaign changes will be lost.')) return
+    setEditingCampaignId(item.id)
+    setCampaignForm({ name: item.name || '', subject: item.subject || '', body: item.body || '',
+      segment: item.segment?.type || 'all_attendees', ticket_type_id: item.segment?.ticket_type_id || '', scheduled_at: '' })
+    setNotice('Review the saved message and recipients below. Choose a new send time, or leave it blank to save a draft. Saving does not send email.')
+    campaignNameInput.current?.focus()
+    campaignNameInput.current?.scrollIntoView?.({ block: 'center', behavior: 'instant' })
+  }
+  const saveCampaign = () => {
+    const payload = { name: campaignForm.name, subject: campaignForm.subject, body: campaignForm.body,
+      segment: { type: campaignForm.segment, ...(campaignForm.segment === 'ticket_type' ? { ticket_type_id: campaignForm.ticket_type_id } : {}) },
+      scheduled_at: campaignForm.scheduled_at || null }
+    const reset = () => { setCampaignForm(emptyCampaign); setEditingCampaignId(null) }
+    return editingCampaignId
+      ? mutate('Campaign changes', permission('manage_marketing'), config => apiClient.put(`/organizer/events/${eventId}/communication_campaigns/${editingCampaignId}`, payload, config), reset)
+      : create('communication_campaigns', payload, reset)
+  }
   const downloadExport = async () => {
     if (!permission('view_attendees') || busyRef.current || !current()) return
     const request = beginRequest()
@@ -202,7 +224,7 @@ function SalesToolsSession({ eventId, identity }) {
   if (!['edit_event_content', 'manage_events', 'manage_inventory', 'manage_marketing', 'view_attendees'].some(permission)) return <EventAccessNotice event={event} message="Your event access does not include sales tools or attendee communication." />
   const locked = busy || Boolean(pending)
   const contentLanguages = [...CONTENT_LANGUAGES, ...LEGACY_CONTENT_LANGUAGES.filter(({ code }) => savedSettings?.supported_locales?.includes(code))]
-  const hasDraft = JSON.stringify(settings) !== JSON.stringify(savedSettings) || [catalogForm.name, questionForm.prompt, waiverForm.title, waiverForm.body, promoterForm.name, campaignForm.name, campaignForm.subject, campaignForm.body].some(Boolean)
+  const hasDraft = Boolean(editingCampaignId) || JSON.stringify(settings) !== JSON.stringify(savedSettings) || [catalogForm.name, questionForm.prompt, waiverForm.title, waiverForm.body, promoterForm.name, campaignForm.name, campaignForm.subject, campaignForm.body].some(Boolean)
 
   return <EventWorkspace eventId={eventId} event={event} hasUnsavedChanges={hasDraft || Boolean(pending)}><div className="mx-auto max-w-5xl space-y-6">
     <div><h2 className="text-2xl font-bold text-neutral-900">Sales, registration and audience</h2><p className="mt-1 text-sm text-neutral-500">Configure revenue extras, policies, referrals and attendee communication for {event.title}.</p></div>
@@ -242,8 +264,8 @@ function SalesToolsSession({ eventId, identity }) {
 
     {(permission('manage_marketing') || permission('view_attendees')) && (<Section title="CRM and attendee communication" description="Export current attendee data and send a durable, suppression-aware event message to a defined segment.">
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">{segments ? <><span>{segments.all_attendees || 0} active recipients</span><span>{segments.checked_in || 0} checked in</span><span>{segments.not_checked_in || 0} not checked in</span></> : <span>{permission('view_attendees') ? 'Recipient counts unavailable.' : 'Recipient counts require attendee access.'}</span>}<button disabled={!permission('view_attendees')} className="btn-secondary ml-auto inline-flex" onClick={downloadExport}><Download className="h-4 w-4" /> Export CSV</button></div>
-      {permission('manage_marketing') && <><p className="mb-3 text-sm text-neutral-700">Campaigns are promotional emails. Only buyers who opted in can receive them. Use an honest subject that describes the message. The sender is your organization via HåfaPass; the owner must certify its public postal address in Organization settings before sending.</p><div className="grid gap-3 sm:grid-cols-2"><Field label="Internal campaign name"><input className="input font-normal" placeholder="e.g. Week-before reminder" value={campaignForm.name} onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })} /></Field><Field label="Email subject"><input className="input font-normal" placeholder="e.g. See you at the beach on Saturday" value={campaignForm.subject} onChange={e => setCampaignForm({ ...campaignForm, subject: e.target.value })} /></Field><Field label="Recipients"><select className="input font-normal" value={campaignForm.segment} onChange={e => setCampaignForm({ ...campaignForm, segment: e.target.value })}><option value="all_attendees">All attendees</option><option value="checked_in">Checked in</option><option value="not_checked_in">Not checked in</option></select></Field><Field label="Send at (optional)"><input className="input font-normal" type="datetime-local" value={campaignForm.scheduled_at} onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })} /></Field><Field label="Message" className="sm:col-span-2"><textarea className="input font-normal" rows="4" placeholder="Write the email attendees will receive" value={campaignForm.body} onChange={e => setCampaignForm({ ...campaignForm, body: e.target.value })} /></Field><button className="btn-primary sm:col-span-2 sm:justify-self-start" onClick={() => create('communication_campaigns', { name: campaignForm.name, subject: campaignForm.subject, body: campaignForm.body, segment: { type: campaignForm.segment }, scheduled_at: campaignForm.scheduled_at || null }, () => setCampaignForm(emptyCampaign))}>Save campaign</button></div></>}
-      <div className="mt-4 divide-y divide-neutral-100">{campaigns.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"><span><strong>{item.name}</strong> · {item.status} · {item.recipient_count} sent<br />{item.last_error && <span role="status" className="my-2 block max-w-xl text-amber-900">{item.last_error}</span>}{item.audience && <small>{item.audience.opted_in} of {item.audience.attendees} attendees opted in · {item.audience.excluded} excluded by consent, unsubscribe or suppression · {item.audience.eligible} eligible</small>}</span>{['draft', 'scheduled'].includes(item.status) && <button className="inline-flex items-center gap-1 font-semibold text-brand-600" onClick={() => sendCampaign(item)}><Send className="h-4 w-4" /> Send now</button>}</div>)}</div>
+      {permission('manage_marketing') && <><p className="mb-3 text-sm text-neutral-700">Campaigns are promotional emails. Only buyers who opted in can receive them. Use an honest subject that describes the message. The sender is your organization via HåfaPass; the owner must certify its public postal address in Organization settings before sending.</p><div className="grid gap-3 sm:grid-cols-2">{editingCampaignId && <p className="font-semibold sm:col-span-2">Review saved campaign</p>}<Field label="Internal campaign name"><input ref={campaignNameInput} className="input font-normal" placeholder="e.g. Week-before reminder" value={campaignForm.name} onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })} /></Field><Field label="Email subject"><input className="input font-normal" placeholder="e.g. See you at the beach on Saturday" value={campaignForm.subject} onChange={e => setCampaignForm({ ...campaignForm, subject: e.target.value })} /></Field><Field label="Recipients"><select className="input font-normal" value={campaignForm.segment} onChange={e => setCampaignForm({ ...campaignForm, segment: e.target.value })}><option value="all_attendees">All attendees</option><option value="checked_in">Checked in</option><option value="not_checked_in">Not checked in</option><option value="ticket_type">Ticket type</option></select></Field>{campaignForm.segment === 'ticket_type' && <Field label="Ticket type"><select className="input font-normal" value={campaignForm.ticket_type_id} onChange={e => setCampaignForm({ ...campaignForm, ticket_type_id: e.target.value })}><option value="">Choose a ticket type</option>{(event.ticket_types || []).map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></Field>}<Field label="Send at (optional)"><input className="input font-normal" type="datetime-local" value={campaignForm.scheduled_at} onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })} /></Field><Field label="Message" className="sm:col-span-2"><textarea className="input font-normal" rows="4" placeholder="Write the email attendees will receive" value={campaignForm.body} onChange={e => setCampaignForm({ ...campaignForm, body: e.target.value })} /></Field><button className="btn-primary sm:col-span-2 sm:justify-self-start" onClick={saveCampaign}>{editingCampaignId ? 'Save campaign changes' : 'Save campaign'}</button>{editingCampaignId && <button className="btn-secondary sm:justify-self-start" onClick={() => { setEditingCampaignId(null); setCampaignForm(emptyCampaign) }}>Cancel editing</button>}</div></>}
+      <div className="mt-4 divide-y divide-neutral-100">{campaigns.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><strong>{item.name}</strong> · {item.status} · {item.recipient_count} sent<br />{item.last_error && <span role="status" className="my-2 block max-w-xl text-amber-900">{item.last_error}</span>}{item.audience && <small>{item.audience.opted_in} of {item.audience.attendees} attendees opted in · {item.audience.excluded} excluded by consent, unsubscribe or suppression · {item.audience.eligible} eligible</small>}</span>{permission('manage_marketing') && item.status === 'failed' && <button className="btn-secondary min-h-11 shrink-0" onClick={() => reviewCampaign(item)}>Review and reschedule</button>}{permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status) && <button className="inline-flex items-center gap-1 font-semibold text-brand-600" onClick={() => sendCampaign(item)}><Send className="h-4 w-4" /> Send now</button>}</div>)}</div>
     </Section>)}
     </fieldset>
   </div></EventWorkspace>

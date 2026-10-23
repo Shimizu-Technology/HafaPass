@@ -1,7 +1,7 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import EventStaffPage from './EventStaffPage'
 
@@ -21,6 +21,8 @@ describe('EventStaffPage one-step invitations', () => {
     staff = { assignments: [], candidates: [], pending_invitations: [] }
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/staff_assignments') ? staff : event }))
   })
+
+  afterEach(() => vi.useRealTimers())
 
   it('invites door staff by email with a described role and shows them as waiting', async () => {
     apiClient.post.mockResolvedValue({ data: { invitation: {
@@ -70,6 +72,24 @@ describe('EventStaffPage one-step invitations', () => {
     expect(await screen.findByText(/Ask your organization owner if you need it/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Send invitation' })).not.toBeInTheDocument()
   })
+  it('updates access as each expiry passes without reloading the staff list', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const now = Date.now()
+    staff.assignments = [1, 2].map(id => ({ id, email: `staff${id}@example.com`, role: 'scanner', status: 'active', expires_at: new Date(now + id * 60_000).toISOString() }))
+    const view = show()
+    await screen.findByText('staff1@example.com')
+    expect(screen.getAllByText('Door scanner · Active')).toHaveLength(2)
+    const requests = apiClient.get.mock.calls.length
+    await act(async () => vi.advanceTimersByTime(60_001))
+    expect(screen.getAllByText('Door scanner · Access ended')).toHaveLength(1)
+    await act(async () => vi.advanceTimersByTime(60_000))
+    expect(screen.getAllByText('Door scanner · Access ended')).toHaveLength(2)
+    expect(screen.queryByText(/^Access until/)).not.toBeInTheDocument()
+    expect(apiClient.get).toHaveBeenCalledTimes(requests)
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('shows ended assignment access and the offline revocation window', async () => {
     staff.assignments = [{ id: 1, email: 'expired@example.com', role: 'scanner', status: 'active', expires_at: '2025-01-01T00:00:00Z' }]
     show()

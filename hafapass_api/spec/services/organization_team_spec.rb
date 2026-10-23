@@ -104,4 +104,18 @@ RSpec.describe OrganizationTeam do
       end.to raise_error(described_class::TeamError, /Only the owner/)
     end
   end
+
+  it "preserves event staff invite and resend access for event managers" do
+    manager = create(:user)
+    create(:organization_membership, organization: organization, user: manager, role: :scanner)
+    event = create(:event, organizer_profile: profile)
+    create(:event_staff_assignment, organization: organization, event: event, user: manager, role: :manager)
+    membership, = described_class.invite!(organization: organization, email: "door@example.com", role: :scanner,
+      actor: manager, event_assignment: { event: event, role: :scanner })
+    travel 61.seconds
+    expect { described_class.resend!(membership: membership, actor: manager, event: event) }.not_to raise_error
+    travel 61.seconds
+    expect { described_class.resend!(membership: membership, actor: manager) }
+      .to raise_error(described_class::TeamError, /permission/)
+  end
 end
