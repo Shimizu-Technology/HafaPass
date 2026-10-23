@@ -106,7 +106,7 @@ function AdminOrganizationSession({ id, identity }) {
                 ['Certified by', organization.tax_information.signer_name],
                 ['Tax mailing address', organization.tax_information.mailing_address],
               ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="whitespace-pre-line font-medium">{value}</dd></div>)}
-            </dl> : <p className="mt-2 text-sm text-neutral-700">No W-9 on file. Required before paid payouts.</p>}
+            </dl> : <p className="mt-2 text-sm text-neutral-700">No W-9 on file. A certified W-9 and approved payout method are required before publishing paid events or selling paid tickets online.</p>}
           </section>
           <TeamManager key={organization.id} basePath={`/admin/organizations/${id}/memberships`} request={teamRequest} canTransfer
             heading="Team" inviteRoles={hasOwner ? TEAM_ROLES : ['owner', ...TEAM_ROLES]}
@@ -118,8 +118,8 @@ function AdminOrganizationSession({ id, identity }) {
         <Dialog labelledBy="verify-title" onClose={() => setVerifying(null)} busy={Boolean(verifying.busy)} className="max-w-md">
           <h2 id="verify-title" className="text-lg font-semibold text-neutral-900">{verifying.to === 'verified' ? `Verify ${organization.name}?` : `Pause all sales for ${organization.name}?`}</h2>
           <p className="mt-2 text-sm text-neutral-700">{verifying.to === 'verified'
-            ? 'Their published events can sell tickets right away. This is recorded in the audit log.'
-            : 'Their events stay visible but stop selling until you verify them again. This is recorded in the audit log.'}</p>
+            ? 'Eligible published events can become public. Ticket sales still depend on event setup, sales dates, availability and any holds. This is recorded in the audit log.'
+            : 'Their events are hidden from public pages and new ticket sales stop. Existing tickets remain valid until you restore the organizer. This is recorded in the audit log.'}</p>
           {verifying.error && <p role="alert" className="mt-3 text-sm text-red-800">{verifying.error}</p>}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setVerifying(null)} disabled={verifying.busy} className="btn-secondary">Cancel</button>

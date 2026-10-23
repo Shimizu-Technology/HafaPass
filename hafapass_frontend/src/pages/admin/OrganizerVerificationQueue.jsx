@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import apiClient from '../../api/client'
 import Dialog from '../../components/Dialog'
-import { errorMessage } from './adminOperations'
+import { mutationErrorMessage } from './adminOperations'
 import { formatEventDate } from '../../utils/eventTime'
 
 const STATUS_COPY = { pending: 'Requested', unverified: 'Not requested yet', rejected: 'Not verified last time' }
@@ -36,7 +36,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
       if (request.current()) onSaved(rejecting ? t('adminVerification.rejectedSaved', { name }) : pausing ? t('adminVerification.suspendedSaved', { name }) : resuming ? t('adminVerification.restoredSaved', { name }) : t('adminVerification.verifiedSaved', { name }))
     } catch (failure) {
       if (request.handleError(failure) || !request.current()) return
-      setError(errorMessage(failure, 'Nothing changed. Check your connection and try again.'))
+      setError(mutationErrorMessage(failure))
     } finally { request.release(); setBusy(false) }
   }
 

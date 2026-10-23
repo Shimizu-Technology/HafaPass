@@ -63,7 +63,7 @@ test('finance dashboard separates ticket economics and immutable payout state', 
 
   await expect(page.getByRole('heading', { name: 'Settlement and payout' })).toBeVisible()
   await expect(page.getByText('$48.17').first()).toBeVisible()
-  await expect(page.getByText('paypal ready')).toBeVisible()
+  await expect(page.getByText('PayPal · Approved')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Request payout $48.17' })).toBeEnabled()
   await page.setViewportSize({ width: 390, height: 844 })
   page.once('dialog', async dialog => {
@@ -72,9 +72,9 @@ test('finance dashboard separates ticket economics and immutable payout state', 
   })
   await page.getByRole('button', { name: 'Request payout $48.17' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Payout requested.' })).toContainText('Processing does not confirm that money has been sent.')
-  await expect(page.getByText('manual · processing')).toBeVisible()
+  await expect(page.getByText('Bank transfer · processing')).toBeVisible()
   await page.reload()
-  await expect(page.getByText('manual · processing')).toBeVisible()
+  await expect(page.getByText('Bank transfer · processing')).toBeVisible()
   await expect(page.getByRole('button', { name: /^Request payout/ })).toHaveCount(0)
   expect(requests).toBe(1)
 

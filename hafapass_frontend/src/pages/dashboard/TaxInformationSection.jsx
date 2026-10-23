@@ -25,7 +25,7 @@ export default function TaxInformationSection({ request, mailingAddress = '', on
   }
   const save = async event => {
     event.preventDefault()
-    if (!/^[0-9]{9}$/.test(form.tin)) { setError('Enter exactly 9 digits for the TIN.'); return }
+    if (!/^[0-9]{9}$/.test(form.tin)) { setError('Enter a 9-digit taxpayer identification number.'); return }
     setBusy(true); setError(null)
     try {
       const payload = Object.fromEntries(Object.keys(empty).map(key => [key, form[key]]))
@@ -39,13 +39,13 @@ export default function TaxInformationSection({ request, mailingAddress = '', on
   const field = (name, label, options = {}) => <label className="block text-sm font-medium text-neutral-900">{label}<input className="input mt-1" value={form[name]} onChange={set(name)} maxLength={200} {...options} /></label>
   return <section aria-labelledby="tax-heading" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
     <h2 id="tax-heading" className="text-lg font-semibold text-neutral-900">Tax information (W-9)</h2>
-    <p className="mt-2 text-sm text-neutral-700">We need your tax information before paid payouts, for required tax reporting. Your TIN is encrypted and shown only by its last four digits. Never send it by email.</p>
+    <p className="mt-2 text-sm text-neutral-700">Before publishing a paid event or selling paid tickets online, complete and certify your W-9 and get your payout method approved. Free events do not need a W-9. Your taxpayer identification number is encrypted and shown only by its last four digits. Never send it by email.</p>
     {error && <p role="alert" className="mt-4 text-sm text-red-800">{error}</p>}
     {notice && <p role="status" className="mt-4 text-sm text-emerald-800">{notice}</p>}
     {!data && !error && <p role="status" className="mt-4">Loading tax information…</p>}
-    {data?.edit_locked && <p role="status" className="mt-4 text-sm text-amber-900">A check payout is in progress. Tax information can be changed after HåfaPass records it.</p>}
+    {data?.edit_locked && <p role="status" className="mt-4 text-sm text-amber-900">A payout is pending, in progress or on hold. You can change tax information after HåfaPass resolves it.</p>}
     {data && !editing && <div className="mt-4 space-y-3 text-sm">
-      {data.tax_information ? <><p className="[overflow-wrap:anywhere]">{data.tax_information.legal_name} · {data.tax_information.masked_tin}</p><p>Certified by {data.tax_information.signer_name} on {new Date(data.tax_information.certified_at).toLocaleDateString()}</p></> : <p>Required before paid payouts. Free events do not need a W-9.</p>}
+      {data.tax_information ? <><p className="[overflow-wrap:anywhere]">{data.tax_information.legal_name} · {data.tax_information.masked_tin}</p><p>Certified by {data.tax_information.signer_name} on {new Date(data.tax_information.certified_at).toLocaleDateString()}</p></> : <p>No certified W-9 on file yet.</p>}
       <button type="button" className="btn-secondary" onClick={start} disabled={data.edit_locked}>{data.tax_information ? 'Change tax information' : 'Add tax information'}</button>
     </div>}
     {editing && <form onSubmit={save} className="mt-5 space-y-4">
@@ -55,7 +55,7 @@ export default function TaxInformationSection({ request, mailingAddress = '', on
         <p className="text-sm text-neutral-700">For a disregarded single-member LLC, use the owner’s legal name and tax classification; enter the LLC name as the business name.</p>
         {field('business_name', 'Business name if different (optional)')}
         <label className="block text-sm font-medium">Federal tax classification<select required className="input mt-1" value={form.tax_classification} onChange={set('tax_classification')}><option value="">Choose classification</option>{TAX_CLASSIFICATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="block text-sm font-medium">TIN type<select className="input mt-1" value={form.tin_type} onChange={set('tin_type')}><option value="ein">EIN</option><option value="ssn">SSN</option></select></label>
+        <label className="block text-sm font-medium">Taxpayer ID type<select className="input mt-1" value={form.tin_type} onChange={set('tin_type')}><option value="ein">Employer identification number (EIN)</option><option value="ssn">Social Security number (SSN)</option></select></label>
         {field('tin', 'Taxpayer identification number (9 digits)', { type: 'password', inputMode: 'numeric', autoComplete: 'off', required: true, maxLength: 9, pattern: '[0-9]{9}', 'aria-describedby': 'tin-help' })}
         <p id="tin-help" className="text-sm text-neutral-700">Enter the full number again when changing this form. It will not be returned to this screen.</p>
         <label className="block text-sm font-medium">Tax mailing address<textarea required rows={3} maxLength={1000} className="input mt-1" value={form.mailing_address} onChange={set('mailing_address')} /></label>

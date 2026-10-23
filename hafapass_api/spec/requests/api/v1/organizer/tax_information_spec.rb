@@ -47,16 +47,16 @@ RSpec.describe "Organizer tax information", type: :request do
     expect(AuditLog.all.map { |audit| [audit.before_data, audit.after_data, audit.metadata] }.to_json).not_to include(values[:tin])
   end
 
-  it "blocks edits while check payouts are pending or processing and unlocks after completion" do
+  it "blocks edits while payouts are pending, processing or held and unlocks after completion" do
     account = create(:connected_account, organization: organization, provider: "check", payout_details: { payee_name: "Island", delivery_method: "pickup" })
     event = create(:event, organization: organization, organizer_profile: profile)
     payout = create(:payout, organization: organization, event: event, connected_account: account,
       settlement: create(:settlement, organization: organization, event: event))
-    %w[pending processing].each do |status|
+    %w[pending processing held].each do |status|
       payout.update!(status: status)
       patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to include("A payout is in progress")
+      expect(response.parsed_body["error"]).to include("A payout is pending, in progress or on hold")
       get "/api/v1/organizer/tax_information", headers: headers
       expect(response.parsed_body["edit_locked"]).to be(true)
     end
@@ -72,7 +72,7 @@ RSpec.describe "Organizer tax information", type: :request do
       settlement: create(:settlement, organization: organization, event: event), status: :processing)
     patch "/api/v1/organizer/tax_information", params: { tax_information: values }, headers: headers
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to eq("A payout is in progress. You can change tax information after HåfaPass records it.")
+    expect(response.parsed_body["error"]).to eq("A payout is pending, in progress or on hold. You can change tax information after HåfaPass resolves it.")
     expect(payout.reload).to be_status_processing
   end
 

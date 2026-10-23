@@ -256,7 +256,7 @@ function BoxOfficePageSession({ id, identity }) {
           {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><SupportLink subject="Recover an unreadable box office sale" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
           {pendingSale && !pendingSale.recoveryRequired && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
             <p className="font-semibold">A saved sale needs confirmation</p>
-            <p className="mt-1">Retry uses the original sale and payment identity. Do not create another sale or collect another payment until its outcome is confirmed.</p>
+            <p className="mt-1">Retry checks the original saved sale. Don't collect another payment until its result is confirmed.</p>
             <p className="mt-2 break-all font-mono text-xs">Reference: {pendingSale.key}</p>
           </div>}
           <h2 className="text-lg font-semibold text-neutral-900">Select Tickets</h2>
@@ -364,7 +364,7 @@ function BoxOfficePageSession({ id, identity }) {
               </button>
             </div>
             {(!capabilities.door_card || !cardAccount?.payment_ready) && (
-              <p className="mt-2 text-xs text-amber-700">Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.</p>
+              <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Card payments at the door aren't available on HåfaPass yet.${pendingSale ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
             )}
           </div>
 

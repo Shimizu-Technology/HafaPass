@@ -113,13 +113,13 @@ describe('SettingsPage', () => {
       provider: 'check', payout_details: expect.objectContaining({ payee_name: 'Island Events LLC', delivery_method: 'mail', mailing_address: 'PO Box 1, Hagåtña' }),
     }, expect.anything())
     await screen.findByText('Saved — waiting for HåfaPass review')
-    expect(screen.getByText('HåfaPass finance checks who the check is made out to')).toBeInTheDocument()
+    expect(screen.getByText('payee details review')).toBeInTheDocument()
   })
 
   it('keeps an assisted bank transfer status after reload', async () => {
     accounts = [{ id: 4, provider: 'manual', status: 'onboarding', payout_ready: false, requirements_due: ['bank_account_review'] }]
     show()
-    await screen.findByText('HåfaPass finance reviews your bank details')
+    await screen.findByText('bank details review')
     expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
     expect(screen.getByRole('link', { name: 'Contact HåfaPass team' })).toHaveAttribute('href', expect.stringContaining('mailto:'))
     expect(screen.queryByRole('button', { name: 'Choose bank transfer' })).not.toBeInTheDocument()

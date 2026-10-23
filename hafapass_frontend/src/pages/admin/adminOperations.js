@@ -25,6 +25,13 @@ export function errorMessage(failure, fallback) {
   return data?.error || fallback
 }
 
+export function mutationErrorMessage(failure) {
+  const status = failure?.response?.status
+  return status >= 400 && status < 500
+    ? errorMessage(failure, 'The change was rejected. Review the details and try again.')
+    : "We couldn't confirm the result. Refresh to check before trying again."
+}
+
 // Shared read for the admin list screens. Each read is fenced to the current
 // account and visit; a stale response never replaces newer rows.
 export function useAdminList(identity, resourcePath, endpoint, params, { enabled = true } = {}) {

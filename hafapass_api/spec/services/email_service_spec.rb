@@ -267,3 +267,43 @@ RSpec.describe EmailService do
     expect(html).not_to include("Transferee Guest", moved.display_credential)
   end
 end
+
+RSpec.describe EmailService, "organizer state copy" do
+  before { allow(described_class).to receive(:deliver) }
+
+  it "identifies the verification request note as coming from the organizer" do
+    profile = create(:organizer_profile, verification_request_note: "Call after lunch <please>")
+    described_class.send_verification_request(profile, "admin@example.test")
+    expect(described_class).to have_received(:deliver).with(hash_including(
+      html: include("Note from the organizer: Call after lunch &lt;please&gt;", "eligible published events", "any holds")))
+    expect(described_class).not_to have_received(:deliver).with(hash_including(html: include("Reviewer note:")))
+  end
+
+  it "qualifies verification without promising immediate sales" do
+    profile = create(:organizer_profile, verification_status: :verified)
+    delivery = OpenStruct.new(metadata: { "status" => "verified" }, recipient: "owner@example.test")
+    described_class.send_verification_decision(profile, delivery: delivery)
+    expect(described_class).to have_received(:deliver).with(hash_including(
+      html: include("Eligible published events", "event setup, sales dates, availability and any holds")))
+  end
+
+  %w[platform organizer].each do |bearer|
+    %w[buyer_pays organizer_absorbs split_fees].each do |policy|
+      it "renders readable #{bearer} processing and #{policy} fee examples" do
+        profile = create(:organizer_profile)
+        event = create(:event, organizer_profile: profile)
+        terms = FeeChange.terms_for(SiteSetting.instance).merge("processing_fee_bearer" => bearer)
+        change = FeeChange.new(old_terms: terms, new_terms: terms, effective_at: 35.days.from_now)
+        notice = FeeChangeNotice.new(fee_change: change, organization: profile.organization,
+          event: event, owner: profile.user, recipient_email: profile.user.email,
+          fee_policy: policy, buyer_fee_percent: { "buyer_pays" => 100, "organizer_absorbs" => 0, "split_fees" => 50 }.fetch(policy))
+        described_class.send_fee_change_notice(notice)
+        processing = bearer == "platform" ? "Card processing paid by HåfaPass" : "Card processing deducted from your proceeds"
+        expect(described_class).to have_received(:deliver).with(hash_including(html: include(
+          processing, "For a $25.00 ticket with your current fee choice", "Guam time")))
+        expect(described_class).not_to have_received(:deliver).with(hash_including(html: include(
+          policy.tr("_", " "))))
+      end
+    end
+  end
+end

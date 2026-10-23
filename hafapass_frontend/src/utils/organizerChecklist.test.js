@@ -18,8 +18,8 @@ describe('organizer launch checklist', () => {
   })
 
   it('uses plain payout copy', () => {
-    expect(organizerChecklist([{ code: 'payout', complete: false }])[0]).toMatchObject({ label: 'Add your payout details in Settings → Payouts', href: '/dashboard/settings' })
-    expect(organizerChecklist([{ code: 'payout', complete: true }])[0].label).toBe('Payout details on file, or not needed for free tickets')
+    expect(organizerChecklist([{ code: 'payout', complete: false }])[0]).toMatchObject({ label: 'Complete Tax information and How you get paid in Settings, then wait for finance approval.', href: '/dashboard/settings' })
+    expect(organizerChecklist([{ code: 'payout', complete: true }])[0].label).toBe('Paid-ticket setup approved, or not needed for free tickets')
   })
 
   it('only lets items marked not required to publish through', () => {

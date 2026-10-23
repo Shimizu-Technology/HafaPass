@@ -123,3 +123,34 @@ describe('uncertain box office sale', () => {
     expect(screen.queryByText('Sale Complete!')).not.toBeInTheDocument()
   })
 })
+
+it.each([
+  [false, true, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
+  [false, false, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
+  [true, false, 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'],
+])('explains disabled card sales for capability %s and merchant %s', async (enabled, ready, message) => {
+  window.sessionStorage.clear()
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: enabled } } : url === '/organizer/card_present_account' ? { payment_ready: ready } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [] } }))
+  mountBoxOffice()
+  expect(await screen.findByText(message)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Card at Door' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Cash' })).toBeEnabled()
+})
+
+it.each(['door_cash', 'door_card'])('does not suggest cash while a saved %s sale is unresolved, including after reload', async paymentMethod => {
+  window.sessionStorage.clear()
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: false } } : url === '/organizer/card_present_account' ? { payment_ready: false } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [] } }))
+  window.sessionStorage.setItem('hafapass:pending-box-office:v2:local-preview:default:37', JSON.stringify({
+    key: 'saved-operation', total_cents: 500,
+    payload: { payment_method: paymentMethod, line_items: [{ ticket_type_id: 7, quantity: 1 }] },
+  }))
+  const first = mountBoxOffice()
+  const unavailable = await screen.findByText(/Card payments at the door aren't available/)
+  expect(unavailable).not.toHaveTextContent('Use cash')
+  expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: /Retry saved sale/ })).toBeInTheDocument()
+  first.unmount()
+  mountBoxOffice()
+  expect(await screen.findByText(/Card payments at the door aren't available/)).not.toHaveTextContent('Use cash')
+  expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
+})

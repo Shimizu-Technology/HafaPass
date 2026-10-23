@@ -9,7 +9,7 @@ import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
 import { adminLabel } from './adminLabels'
 import Dialog from '../../components/Dialog'
 import OrganizerVerificationQueue from './OrganizerVerificationQueue'
-import { errorMessage } from './adminOperations'
+import { mutationErrorMessage } from './adminOperations'
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
@@ -47,7 +47,7 @@ function SetupRequired({ items, beginRequest, onApproved }) {
       onApproved()
     } catch (failure) {
       if (request.handleError(failure) || !request.current()) return
-      setError(errorMessage(failure, 'Nothing was approved. Check your connection and try again.'))
+      setError(mutationErrorMessage(failure))
     } finally { request.release(); setBusy(false) }
   }
 
@@ -137,7 +137,7 @@ function AdminDashboardSession({ identity }) {
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
         <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
-        <StaggerItem><StatCard label="Revenue" value={grossRevenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Buyer payments (less refunds)" value={grossRevenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
         <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-accent-500" /></StaggerItem>
       </StaggerContainer>
 
@@ -146,11 +146,12 @@ function AdminDashboardSession({ identity }) {
           ['Gross sales', financials.gross_cents],
           ['Discounts', financials.discount_cents],
           ['Refunds', financials.refund_cents],
-          ['Payout ready', financials.payout_ready_cents],
-        ].map(([label, value]) => (
+          ['Organizer proceeds (excluding cash)', financials.payout_ready_cents, 'Before processing costs, holds and payouts already made.'],
+        ].map(([label, value, hint]) => (
           <div key={label} className="rounded-xl border border-neutral-200/60 bg-white/70 p-4">
             <p className="text-xs font-medium text-neutral-500">{label}</p>
             <p className="mt-1 text-lg font-bold text-neutral-900">{formatMoney(value)}</p>
+            {hint && <p className="mt-1 text-xs text-neutral-600">{hint}</p>}
           </div>
         ))}
       </div>
