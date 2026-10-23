@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class WaitlistOffer < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :waitlist_offer,
+    fields: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at order_id]
+
   belongs_to :waitlist_entry
   belongs_to :event
   belongs_to :ticket_type
@@ -32,6 +37,12 @@ class WaitlistOffer < ApplicationRecord
   end
 
   private
+
+  def operational_audit_action(operation)
+    return "waitlist_offer.#{status}" if operation == :update && saved_change_to_status?
+
+    super
+  end
 
   def consistent_subjects
     return if waitlist_entry.blank? || event.blank? || ticket_type.blank?

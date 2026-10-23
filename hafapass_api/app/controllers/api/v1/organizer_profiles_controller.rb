@@ -31,6 +31,7 @@ module Api
             )
           else
             profile.lock!
+            before_profile = profile.attributes.slice(*profile_params.keys)
             before_details = profile.verification_details
             profile.assign_attributes(profile_params)
             if profile.verification_status_pending?
@@ -45,6 +46,7 @@ module Api
             action: created ? "organization.created" : "organization.updated",
             auditable: profile.organization,
             actor: current_user,
+            before_data: before_profile || {},
             after_data: profile_params.to_h,
             request: request
           )
@@ -70,8 +72,12 @@ module Api
         return render json: { error: "Owner permission required" }, status: :forbidden unless owner?(profile)
 
         policy = PolicyRegistry.organizer_agreement
-        profile.update!(policy_accepted_at: Time.current, policy_version: policy[:version], policy_digest: policy[:digest])
-        AuditLogger.record!(action: "organizer.policy_accepted", auditable: profile, actor: current_user, request: request)
+        profile.transaction do
+          profile.update!(policy_accepted_at: Time.current, policy_version: policy[:version], policy_digest: policy[:digest])
+          AuditLogger.record!(action: "organizer.policy_accepted", auditable: profile, actor: current_user,
+            after_data: { policy_version: policy[:version], policy_digest: policy[:digest], accepted_at: profile.policy_accepted_at },
+            request: request)
+        end
         render json: profile_json(profile)
       end
 

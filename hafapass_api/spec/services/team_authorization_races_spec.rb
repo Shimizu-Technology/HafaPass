@@ -20,7 +20,12 @@ RSpec.describe "Team authorization lock boundaries" do
   after do
     MessageDelivery.where(event_id: @event.id).delete_all
     CommunicationCampaign.where(event_id: @event.id).delete_all
-    AuditLog.where(organization_id: @organization.id).delete_all
+    # These committed, concurrent fixtures cannot use transaction rollback.
+    # Reset the disposable test audit store without bypassing its DELETE guard.
+    raise "Isolated test database required" unless Rails.env.test? &&
+      ActiveRecord::Base.connection_db_config.database.end_with?("_test")
+
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs, audit_write_failures")
     OrganizationInvitationDispatch.where(organization_id: @organization.id).delete_all
     EventStaffAssignment.where(organization_id: @organization.id).delete_all
     Event.where(id: @event.id).delete_all

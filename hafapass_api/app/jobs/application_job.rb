@@ -12,6 +12,19 @@ class ApplicationJob < ActiveJob::Base
   # Default queue
   queue_as :default
 
+  attr_accessor :audit_context
+
+  def serialize
+    super.merge("audit_context" => audit_context || AuditContext.snapshot)
+  end
+
+  def deserialize(job_data)
+    super
+    self.audit_context = job_data["audit_context"]
+  end
+
+  before_enqueue { |job| job.audit_context ||= AuditContext.snapshot }
+
   around_perform do |job, block|
     Sentry.with_scope do |scope|
       scope.set_tags(
@@ -19,7 +32,7 @@ class ApplicationJob < ActiveJob::Base
         job_id: job.job_id,
         queue: job.queue_name
       )
-      block.call
+      AuditContext.restore(job.audit_context, job_id: job.job_id) { block.call }
       RuntimeExecution.record!(job)
     end
   end

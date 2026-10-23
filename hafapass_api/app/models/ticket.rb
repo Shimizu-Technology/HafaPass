@@ -1,4 +1,10 @@
 class Ticket < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :ticket,
+    fields: %w[status cancelled_at scan_credential_version display_credential_version],
+    observe: %w[cancellation_reason]
+
   class AdmissionError < RuntimeError; end
   belongs_to :order
   belongs_to :ticket_type
@@ -51,12 +57,21 @@ class Ticket < ApplicationRecord
   end
 
   def rotate_scan_credential!
-    increment!(:scan_credential_version)
+    self.class.transaction do
+      increment!(:scan_credential_version)
+      # increment! uses an atomic counter update and bypasses model callbacks.
+      record_operational_audit!(action: "ticket.scan_credential_rotated",
+        metadata: { changed_fields: ["scan_credential_version"] })
+    end
     refresh_wallet_passes
   end
 
   def revoke_display_credential!
-    increment!(:display_credential_version)
+    self.class.transaction do
+      increment!(:display_credential_version)
+      record_operational_audit!(action: "ticket.display_credential_revoked",
+        metadata: { changed_fields: ["display_credential_version"] })
+    end
   end
 
   def admission_allowed?
@@ -158,6 +173,13 @@ class Ticket < ApplicationRecord
   end
 
   private
+
+  def operational_audit_action(operation)
+    return unless operation == :update
+    return "ticket.cancelled" if saved_change_to_status? && cancelled?
+    return "ticket.scan_credential_rotated" if saved_change_to_scan_credential_version?
+    "ticket.display_credential_revoked" if saved_change_to_display_credential_version?
+  end
 
   def preserve_retained_inventory
     return unless persisted? && inventory_retained?

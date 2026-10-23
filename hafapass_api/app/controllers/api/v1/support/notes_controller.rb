@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Support::NotesController < Api::V1::Support::BaseController
+  around_action :with_audit_transaction, only: :create
   def index
     notes = SupportNote.includes(:author_user).order(created_at: :desc)
     notes = notes.where(order_id: params[:order_id]) if params[:order_id].present?

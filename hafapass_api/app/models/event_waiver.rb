@@ -3,6 +3,12 @@
 require "digest"
 
 class EventWaiver < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :event_waiver,
+    fields: %w[event_id active required content_digest],
+    observe: %w[title body version]
+
   belongs_to :event
   has_many :waiver_acceptances, dependent: :restrict_with_error
 

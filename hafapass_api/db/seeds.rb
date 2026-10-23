@@ -6,6 +6,17 @@
 
 puts "Seeding HafaPass with real Guam event data..."
 
+# An audited fixture set is kept intact on re-run. Replacing it is an explicit
+# db:reset operation; seeds must not silently remove organization history.
+if AuditLog.exists?(action: "platform.demo_seed_completed", deduplication_key: "guam-demo-v1")
+  puts "Seeding complete! Existing demo fixtures retained. Use db:reset to replace them."
+  return
+end
+
+if AuditLog.where.not(action: "platform.activity_logging_started").exists?
+  raise "Demo seeds require an empty database; existing audit history must be preserved. Use an explicit db:reset for disposable data."
+end
+
 # Clear existing data in correct order (respecting foreign keys)
 Ticket.destroy_all
 Order.destroy_all
@@ -554,4 +565,6 @@ puts "  Tickets:            #{Ticket.count} (#{Ticket.where(status: :issued).cou
 puts ""
 puts "Featured events: #{Event.featured.count}"
 puts "Published events available at: GET /api/v1/events"
+AuditLogger.record!(action: "platform.demo_seed_completed", auditable: SiteSetting.instance,
+  source: "system", deduplication_key: "guam-demo-v1", metadata: { fixture_set: "guam-demo-v1" })
 puts "Seeding complete! 🎫"

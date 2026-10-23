@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer::EventResourcesController
+  around_action :serialize_campaign_mutation, only: [:create, :update, :destroy]
+
   def index
     campaigns = event.communication_campaigns.order(created_at: :desc)
     render json: { communication_campaigns: campaigns.map { |item| serialize(item) } }
@@ -19,6 +21,13 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
   def update
     campaign = editable_campaign
     return unless campaign
+
+    # Once a durable outbox exists, retries preserve its frozen message and
+    # idempotency keys. Content/audience changes require a new campaign.
+    if campaign.started_at? && record_params.slice(:subject, :body, :segment).to_h.any? { |key, value| campaign.public_send(key) != value }
+      render json: { error: "This campaign already has queued messages. Create a new campaign to change its content or audience." }, status: :unprocessable_entity
+      return
+    end
 
     campaign.assign_attributes(record_params)
     if campaign.save
@@ -45,6 +54,13 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
   end
 
   private
+
+  # Recovery edits cannot race outbox preparation or a team revocation.
+  def serialize_campaign_mutation
+    current_organization.with_lock do
+      yield if authorize_organization!(:manage_marketing, event: event)
+    end
+  end
 
   def resource_permission
     :manage_marketing

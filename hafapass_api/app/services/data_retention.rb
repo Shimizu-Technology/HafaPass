@@ -250,14 +250,19 @@ class DataRetention
 
   def self.update_unheld(scope, **attributes)
     ensure_destructive_enabled!
-    scope.find_each do |record|
+    scope.find_each(batch_size: BATCH_SIZE) do |record|
       record.with_lock do
         ensure_destructive_enabled!
         if RetentionGuard.protected?(record)
           Rails.logger.info("[DataRetention] skipped protected #{record.class.table_name} record")
           next
         end
-        record.class.where(id: record.id).update_all(attributes)
+        row = record.class.where(id: record.id)
+        if record.is_a?(AuditLog)
+          AuditLog.redact!(row, attributes)
+        else
+          row.update_all(attributes)
+        end
       end
     end
   end
@@ -353,8 +358,8 @@ class DataRetention
         b_notice_identity_digest: nil,
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when AuditLog
-      AuditLog.where(id: record.id).update_all(ip_address: nil, before_data: {}, after_data: {}, metadata: {},
-        retention_anonymized_at: Time.current, updated_at: Time.current)
+      AuditLog.redact!(AuditLog.where(id: record.id), { ip_address: nil, before_data: {}, after_data: {}, metadata: {},
+        retention_anonymized_at: Time.current, updated_at: Time.current })
     when MessageDelivery
       record.update_columns(recipient: "deleted@privacy.invalid", outbound_payload: {}, outbound_wire_body: nil,
         wire_body_digest: nil, payload_digest: nil, send_lease_token: nil, transport_context_digest: nil,

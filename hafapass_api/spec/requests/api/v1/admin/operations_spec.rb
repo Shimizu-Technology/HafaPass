@@ -50,7 +50,7 @@ RSpec.describe "Admin operations screens", type: :request do
       place(scope: "delete", reason: "Policy")
       expect(response).to have_http_status(:unprocessable_content)
       expect(event.reload.policy_hold?).to be(false)
-      expect(AuditLog.where(auditable: event)).not_to exist
+      expect(AuditLog.where(auditable: event, action: "event.policy_hold_placed")).not_to exist
     end
 
     it "stops sales without changing status, deleting data or refunding, and audits the hold" do
@@ -311,6 +311,17 @@ RSpec.describe "Admin operations screens", type: :request do
   end
 
   describe "audit logs" do
+    it "returns a deleted actor's immutable identity without labeling it as system" do
+      actor = create(:user)
+      entry = AuditLogger.record!(action: "user.role_changed", auditable: actor, actor: actor)
+      actor_id = actor.id
+      actor.destroy!
+      get "/api/v1/admin/audit_logs", params: { target_type: "User", target_id: actor_id }, headers: headers
+      expect(response).to have_http_status(:ok)
+      record = response.parsed_body["audit_logs"].find { |item| item["id"] == entry.id }
+      expect(record).to include("actor_user_id" => actor_id, "actor" => nil)
+    end
+
     it "searches and filters the append-only trail with pagination" do
       settings = SiteSetting.instance
       first = AuditLogger.record!(action: "site_settings.fee_terms_updated", auditable: settings, actor: admin,
@@ -327,7 +338,7 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(record["actor"]).to include("email" => admin.email)
       expect(record["target"]).to eq("type" => "SiteSetting", "id" => settings.id)
       expect(record).not_to have_key("ip_address")
-      expect(response.parsed_body["areas"]).to eq(%w[balance_adjustment payout site_settings])
+      expect(response.parsed_body["areas"]).to eq(%w[balance_adjustment event payout site_settings])
 
       get "/api/v1/admin/audit_logs", params: { area: "payout" }, headers: headers
       expect(response.parsed_body["audit_logs"].pluck("action")).to eq(["payout.reconciled"])
@@ -339,8 +350,9 @@ RSpec.describe "Admin operations screens", type: :request do
       expect(response.parsed_body["audit_logs"]).to eq([])
 
       get "/api/v1/admin/audit_logs", params: { per_page: 2, page: 2 }, headers: headers
-      expect(response.parsed_body["audit_logs"].pluck("id")).to eq([first.id])
-      expect(response.parsed_body["meta"]).to include("page" => 2, "total_count" => 3, "total_pages" => 2)
+      expect(response.parsed_body["audit_logs"].pluck("id")).to eq(AuditLog.order(id: :desc).offset(2).limit(2).pluck(:id))
+      expect(response.parsed_body["audit_logs"].pluck("id")).to include(first.id)
+      expect(response.parsed_body["meta"]).to include("page" => 2, "total_count" => 4, "total_pages" => 2)
     end
   end
 

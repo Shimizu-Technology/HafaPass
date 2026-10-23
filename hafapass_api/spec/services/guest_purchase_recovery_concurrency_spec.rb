@@ -64,6 +64,6 @@ RSpec.describe GuestPurchaseRecovery, :non_transactional do
   end
 
   def clean_test_data
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events RESTART IDENTITY CASCADE")
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings, webhook_events RESTART IDENTITY CASCADE")
   end
 end

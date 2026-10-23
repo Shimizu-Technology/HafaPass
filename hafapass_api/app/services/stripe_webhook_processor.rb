@@ -19,7 +19,7 @@ class StripeWebhookProcessor
     return receipt if receipt.processed? || receipt.ignored?
 
     receipt.update!(status: :processing, attempts: receipt.attempts + 1, last_error: nil)
-    process!(receipt)
+    AuditContext.set(source: "provider", fail_open: true) { process!(receipt) }
     receipt
   rescue StandardError => e
     receipt&.update!(status: :failed, last_error: "#{e.class}: #{e.message}")
@@ -208,8 +208,7 @@ class StripeWebhookProcessor
     end
     unless payment == refund.payment && value(object, :amount).to_i == refund.amount_cents &&
         value(object, :currency).to_s.downcase == refund.currency
-      ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt,
-        code: "refund_operation_mismatch")
+      record_refund_provider_issue!(receipt, refund, code: "refund_operation_mismatch", action: "unknown")
       return
     end
     if refund.succeeded? || refund.failed? || refund.cancelled?
@@ -217,13 +216,24 @@ class StripeWebhookProcessor
       contradictory = (refund.succeeded? && %w[failed canceled cancelled].include?(incoming)) ||
         (!refund.succeeded? && incoming == "succeeded")
       if contradictory
-        ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt,
-          code: "refund_terminal_status_conflict")
+        record_refund_provider_issue!(receipt, refund, code: "refund_terminal_status_conflict", action: "provider_result_conflict")
       end
       return
     end
 
     Commerce::RefundCreator.reconcile_refund!(refund: refund, provider_refund: object)
+  end
+
+  def record_refund_provider_issue!(receipt, refund, code:, action:)
+    ReconciliationException.transaction do
+      ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt, code: code)
+      AuditLogger.record!(action: "refund.#{action}", auditable: refund,
+        organization: refund.order.event.organization, event: refund.order.event,
+        source: "provider", outcome: "unknown",
+        deduplication_key: "stripe:webhook:#{receipt.provider_event_id}:refund:#{refund.id}:#{action}:#{code}",
+        metadata: { order_id: refund.order_id, payment_id: refund.payment_id,
+          amount_cents: refund.amount_cents, code: code })
+    end
   end
 
   def process_refund!(receipt, payment, object)
@@ -330,6 +340,8 @@ class StripeWebhookProcessor
       payment.order.lock!
       provider_id = value(object, :id)
       dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
+      new_dispute = dispute.new_record?
+      before_data = dispute.attributes.slice("status", "reason", "closed_at") unless new_dispute
       if dispute.persisted? && (dispute.won? || dispute.lost?)
         cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
         next
@@ -363,6 +375,19 @@ class StripeWebhookProcessor
       dispute.save!
       StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{provider_id}:#{provider_status}") if status != :open
       cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
+      action = if status == :open
+        event.type == "charge.dispute.created" ? "dispute.opened" : "dispute.updated"
+      else
+        "dispute.#{status}"
+      end
+      AuditLogger.record!(action: action, auditable: dispute,
+        organization: payment.order.event.organization, event: payment.order.event,
+        source: "provider", outcome: "succeeded",
+        deduplication_key: "stripe:webhook:#{receipt.provider_event_id}:#{action}",
+        before_data: before_data || {}, after_data: dispute.attributes.slice("status", "reason", "closed_at"),
+        metadata: { order_id: payment.order_id, payment_id: payment.id,
+          amount_cents: dispute.amount_cents, currency: dispute.currency,
+          provider_status: provider_status })
     end
   end
 

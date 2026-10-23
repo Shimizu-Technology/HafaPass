@@ -14,7 +14,7 @@ module CardPresentPayments
     UNKNOWN_RESULT_HOLD = 24.hours
 
     def self.call(**)
-      new(**).call
+      AuditContext.set(fail_open: true) { new(**).call }
     end
 
     def initialize(order:, payment:, account:, user:, idempotency_key:, gateway: CardPresentGateway.new, request: nil)

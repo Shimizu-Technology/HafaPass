@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
+  around_action :with_audit_transaction, only: :update
   # GET /api/v1/admin/users
   def index
     users = User.includes(:organizer_profile, :orders, organization_memberships: :organization)
@@ -26,6 +27,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   # PATCH /api/v1/admin/users/:id
   def update
     user = User.find(params[:id])
+    user.lock!
     requested_role = params[:role].to_s
 
     unless User.roles.key?(requested_role)

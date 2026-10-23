@@ -125,8 +125,8 @@ RSpec.describe MessageDeliveryJob do
     organization = event.organization
     organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910", marketing_address_certified_at: Time.current)
     order = create(:order, event: event, marketing_opt_in: true)
-    campaign = create(:communication_campaign, event: event)
     sender = create(:user)
+    campaign = create(:communication_campaign, event: event, status: :sending, sent_by_user: sender)
     membership = create(:organization_membership, organization: organization, user: sender, role: :marketer)
     message = create(:message_delivery, event: event, order: order, communication_campaign: campaign,
       requested_by: sender, template: "communication_campaign", recipient: order.buyer_email,
@@ -142,6 +142,9 @@ RSpec.describe MessageDeliveryJob do
     expect(message.reload).to have_attributes(status: "cancelled", send_lease_token: nil, provider_outcome_unknown: false)
     expect(message.last_error).to include("no longer has permission")
     expect(EmailService).not_to have_received(:send_delivery_payload)
+    expect(campaign.reload).to have_attributes(status: "failed", sent_at: nil,
+      last_error: CommunicationCampaign::AUTHORIZATION_ERROR)
+    expect(AuditLog.where(auditable: campaign, action: "campaign.reauthorization_failed", outcome: "failed")).to exist
   end
 
   it "preserves uncertain acceptance when cancelling a revoked campaign sender" do
@@ -151,5 +154,17 @@ RSpec.describe MessageDeliveryJob do
     result = described_class.new.send(:dispatch_with_campaign_authorization, message, true) { raise "Must not send" }
     expect(result).to eq(:authorization_cancelled)
     expect(message.reload).to have_attributes(status: "cancelled", provider_outcome_unknown: true)
+  end
+  it "does not let an obsolete delivery cancel a reviewed future campaign schedule" do
+    event = create(:event)
+    campaign = create(:communication_campaign, event: event, status: :scheduled,
+      scheduled_at: 1.day.from_now, scheduled_by_user: event.organizer_profile.user)
+    message = create(:message_delivery, event: event, communication_campaign: campaign,
+      template: "communication_campaign", requested_by: nil)
+    result = described_class.new.send(:dispatch_with_campaign_authorization, message, false) { raise "Must not send" }
+    expect(result).to eq(:authorization_cancelled)
+    expect(message.reload).to be_cancelled
+    expect(campaign.reload).to be_scheduled
+    expect(AuditLog.where(auditable: campaign, action: "campaign.reauthorization_failed", outcome: "failed")).to exist
   end
 end

@@ -167,4 +167,28 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(response).to have_http_status(:ok)
     expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
   end
+  it "preserves a failed campaign's durable payload while allowing an authorized scheduling recovery" do
+    campaign = create(:communication_campaign, event: event, status: :failed, started_at: 1.hour.ago,
+      last_error: CommunicationCampaign::AUTHORIZATION_ERROR)
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Different message" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to include("Create a new campaign")
+    expect(campaign.reload.subject).not_to eq("Different message")
+
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { scheduled_at: 2.days.from_now.iso8601 }, headers: headers
+    expect(response).to have_http_status(:ok), response.body
+    expect(campaign.reload).to have_attributes(status: "scheduled", scheduled_by_user_id: user.id, last_error: nil)
+    expect(AuditLog.where(auditable: campaign, action: "campaign.recovered", actor_user: user)).to exist
+  end
+
+  it "rechecks editability after waiting for outbox preparation" do
+    campaign = create(:communication_campaign, event: event, status: :failed)
+    allow_any_instance_of(Organization).to receive(:lock!).and_wrap_original do |method, *args|
+      campaign.update!(status: :sending, started_at: Time.current)
+      method.call(*args)
+    end
+    patch "#{base}/communication_campaigns/#{campaign.id}", params: { subject: "Stale editor content" }, headers: headers
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(campaign.reload.subject).not_to eq("Stale editor content")
+  end
 end

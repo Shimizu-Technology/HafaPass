@@ -80,7 +80,7 @@ RSpec.describe MessageDeliveryJob, :non_transactional do
 
   def clean_test_data
     ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events
+      TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings, webhook_events
       RESTART IDENTITY CASCADE
     SQL
   end

@@ -37,6 +37,54 @@ RSpec.describe "Stripe webhooks", type: :request do
     )
   end
 
+  it "records scoped dispute opened, updated and won outcomes once per provider event" do
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_audit_dispute")
+    object = { id: "dp_audited", payment_intent: payment.provider_payment_id,
+      amount: payment.amount_cents, currency: "usd", status: "needs_response", reason: "fraudulent" }
+    [["created", "needs_response", "opened"], ["updated", "under_review", "updated"],
+      ["closed", "won", "won"]].each do |kind, status, action|
+      2.times { post_stripe_event("charge.dispute.#{kind}", object.merge(status: status), event_id: "evt_audited_#{kind}") }
+      expect(response).to have_http_status(:ok)
+      audit = AuditLog.where(action: "dispute.#{action}", auditable: Dispute.find_by!(provider_dispute_id: "dp_audited")).sole
+      expect(audit).to have_attributes(source: "provider", outcome: "succeeded",
+        organization_id: event.organization_id, event_id: event.id)
+    end
+    expect(Dispute.find_by!(provider_dispute_id: "dp_audited")).to be_won
+  end
+
+  it "rolls back a dispute when its audit fails and retries the receipt safely" do
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_audit_dispute_rollback")
+    object = { id: "dp_audit_rollback", payment_intent: payment.provider_payment_id,
+      amount: payment.amount_cents, currency: "usd", status: "needs_response", reason: "fraudulent" }
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "dispute.opened"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    post_stripe_event("charge.dispute.created", object, event_id: "evt_dispute_audit_rollback")
+    expect(Dispute.find_by(provider_dispute_id: object[:id])).to be_nil
+    expect(WebhookEvent.find_by!(provider_event_id: "evt_dispute_audit_rollback")).to be_failed
+    allow(AuditLogger).to receive(:record!).and_call_original
+    post_stripe_event("charge.dispute.created", object, event_id: "evt_dispute_audit_rollback")
+    expect(response).to have_http_status(:ok)
+    expect(AuditLog.where(action: "dispute.opened", auditable: Dispute.find_by!(provider_dispute_id: object[:id])).count).to eq(1)
+  end
+
+  it "deduplicates a dispute mutation when a receipt retries after the mutation committed" do
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_dispute_receipt_retry")
+    object = { id: "dp_receipt_retry", payment_intent: payment.provider_payment_id,
+      amount: payment.amount_cents, currency: "usd", status: "under_review", reason: "fraudulent" }
+    post_stripe_event("charge.dispute.updated", object, event_id: "evt_dispute_receipt_retry")
+    expect(response).to have_http_status(:ok)
+    # The mutation can commit before the receipt's final status is persisted.
+    WebhookEvent.find_by!(provider_event_id: "evt_dispute_receipt_retry").update!(status: :failed)
+    post_stripe_event("charge.dispute.updated", object, event_id: "evt_dispute_receipt_retry")
+    expect(response).to have_http_status(:ok)
+    dispute = Dispute.find_by!(provider_dispute_id: object[:id])
+    expect(AuditLog.where(auditable: dispute).pluck(:action)).to eq(["dispute.updated"])
+  end
+
   it "rejects unsigned webhooks outside development and test" do
     allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
 
@@ -295,10 +343,14 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(ticket.reload).to be_cancelled
     expect(ticket_type.reload.quantity_sold).to eq(sold_before - 1)
     expect(TicketCredential.find_scan(old_scan)).to be_nil
+    audit = AuditLog.find_by!(action: "dispute.lost", auditable: Dispute.find_by!(provider_dispute_id: "dp_lost"))
+    expect(audit).to have_attributes(source: "provider", outcome: "succeeded",
+      organization_id: event.organization_id, event_id: event.id)
 
     expect do
       post_stripe_event("charge.dispute.closed", dispute, event_id: "evt_dispute_lost")
     end.not_to change { ticket_type.reload.quantity_sold }
+    expect(AuditLog.where(action: "dispute.lost", auditable: audit.auditable).count).to eq(1)
   end
 
   it "recognizes a signed lost dispute without releasing previously admitted capacity after Undo" do
@@ -508,6 +560,8 @@ RSpec.describe "Stripe webhooks", type: :request do
     post_stripe_event("refund.updated", payload.merge(status: "succeeded"))
     expect(refund.reload).to be_failed
     expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_terminal_status_conflict")
+    expect(AuditLog.find_by!(auditable: refund, action: "refund.provider_result_conflict")).to have_attributes(
+      source: "provider", outcome: "unknown", organization_id: event.organization_id, event_id: event.id)
   end
 
   [true, false].each do |includes_operation_amount|
@@ -616,6 +670,8 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(checkout.order.reload.refunded_cents).to eq(1000)
     expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_operation_mismatch")
     expect(checkout.order.reconciliation_exceptions).to exist(code: "provider_refund_total_decreased")
+    expect(AuditLog.find_by!(auditable: checkout.order.refunds.sole, action: "refund.unknown")).to have_attributes(
+      source: "provider", outcome: "unknown", organization_id: event.organization_id, event_id: event.id)
   end
   it "keeps a declined intent and its holds retryable and fulfills its later success exactly once" do
     checkout = create_pending_checkout(intent_id: "pi_retry_decline")

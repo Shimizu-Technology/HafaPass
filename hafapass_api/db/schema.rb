@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_000300) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -161,11 +161,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_000300) do
     t.string "request_id"
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.bigint "event_id"
+    t.string "source"
+    t.string "outcome"
+    t.string "deduplication_key"
+    t.index ["action", "deduplication_key"], name: "idx_audit_logs_retry_key", unique: true, where: "(deduplication_key IS NOT NULL)"
     t.index ["actor_user_id"], name: "index_audit_logs_on_actor_user_id"
     t.index ["auditable_type", "auditable_id", "occurred_at"], name: "idx_audit_logs_auditable_time"
+    t.index ["event_id", "occurred_at"], name: "index_audit_logs_on_event_id_and_occurred_at"
     t.index ["organization_id", "occurred_at"], name: "index_audit_logs_on_organization_id_and_occurred_at"
     t.index ["organization_id"], name: "index_audit_logs_on_organization_id"
     t.index ["retention_anonymized_at"], name: "index_audit_logs_on_retention_anonymized_at"
+    t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'unknown'::character varying]::text[]))", name: "audit_logs_outcome"
+    t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying, 'system'::character varying, 'provider'::character varying, 'admin'::character varying]::text[]))", name: "audit_logs_source"
+  end
+
+  create_table "audit_write_failures", force: :cascade do |t|
+    t.string "action", null: false
+    t.string "auditable_type", null: false
+    t.bigint "auditable_id", null: false
+    t.bigint "organization_id"
+    t.bigint "event_id"
+    t.bigint "actor_user_id"
+    t.string "source", null: false
+    t.string "failure_class", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "balance_adjustments", force: :cascade do |t|
@@ -2772,7 +2793,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_000300) do
   add_foreign_key "annual_tax_report_settings", "organizations"
   add_foreign_key "apple_wallet_registrations", "wallet_passes"
   add_foreign_key "audit_logs", "organizations", on_delete: :restrict
-  add_foreign_key "audit_logs", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "balance_adjustments", "balance_adjustments", column: "reversal_of_id", on_delete: :restrict
   add_foreign_key "balance_adjustments", "disputes", on_delete: :restrict
   add_foreign_key "balance_adjustments", "events", on_delete: :restrict
@@ -3064,4 +3084,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_000300) do
   add_foreign_key "waiver_acceptances", "event_waivers", on_delete: :restrict
   add_foreign_key "waiver_acceptances", "orders", on_delete: :restrict
   add_foreign_key "wallet_passes", "tickets"
+  execute <<~SQL
+    CREATE OR REPLACE FUNCTION hafapass_protect_audit_log() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Audit logs cannot be deleted' USING ERRCODE = '23514';
+      END IF;
+      IF current_setting('hafapass.audit_redaction', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Audit logs are append-only' USING ERRCODE = '23514';
+      END IF;
+      IF (to_jsonb(NEW) - ARRAY['before_data','after_data','metadata','ip_address','retention_anonymized_at','updated_at'])
+          IS DISTINCT FROM
+         (to_jsonb(OLD) - ARRAY['before_data','after_data','metadata','ip_address','retention_anonymized_at','updated_at']) THEN
+        RAISE EXCEPTION 'Audit identity cannot be redacted' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS audit_logs_append_only ON audit_logs;
+    CREATE TRIGGER audit_logs_append_only BEFORE UPDATE OR DELETE ON audit_logs
+      FOR EACH ROW EXECUTE FUNCTION hafapass_protect_audit_log();
+  SQL
+
 end

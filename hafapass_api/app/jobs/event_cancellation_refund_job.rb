@@ -35,7 +35,7 @@ class EventCancellationRefundJob < ApplicationJob
     run.items.needs_manual.find_each do |item|
       run.event.organization.with_lock do
         item.order.with_lock do
-          item.with_lock { EventCancellationRefunds.refresh_cash_item!(item, actor: run.started_by) }
+          item.with_lock { EventCancellationRefunds.refresh_cash_item!(item, actor: AuditContext.actor || run.started_by) }
         end
       end
     rescue StandardError => e
@@ -87,7 +87,7 @@ class EventCancellationRefundJob < ApplicationJob
       previous_amount = item.amount_cents
       item.update!(amount_cents: amount)
       AuditLogger.record!(action: "event.cancellation_refund_amount_changed", auditable: run.event,
-        actor: run.started_by, organization: run.event.organization,
+        actor: AuditContext.actor || run.started_by, organization: run.event.organization,
         metadata: { order_id: order.id, previous_amount_cents: previous_amount, amount_cents: amount })
     end
     if amount.zero?
@@ -123,7 +123,7 @@ class EventCancellationRefundJob < ApplicationJob
       payment = item.order.payments.where(status: [:succeeded, :partially_refunded])
       payment = payment.merge(Payment.live_or_legacy_capture) if Rails.env.production?
       Commerce::RefundCreator.call(order: item.order, payment: payment.order(:id).first, amount_cents: amount,
-        reason: "event_cancelled", requested_by: run.started_by, idempotency_key: item.refund_key)
+        reason: "event_cancelled", requested_by: AuditContext.actor || run.started_by, idempotency_key: item.refund_key)
     rescue Commerce::RefundCreator::RefundError => e
       # A timeout remains reserved; retry_cancellation_refunds keeps its key.
       error = e.message

@@ -139,7 +139,7 @@ RSpec.describe "Payout reconciliation concurrency", :non_transactional do
     end
 
     ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE organizations, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
+      TRUNCATE TABLE audit_logs, audit_write_failures, organizations, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE
     SQL
   end

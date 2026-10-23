@@ -235,14 +235,19 @@ class MessageDeliveryJob < ApplicationJob
 
     organization = delivery.event&.organization
     dispatch = lambda do
+      delivery.reload
       sender = delivery.requested_by
       if organization && sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
           permission: :manage_marketing, event: delivery.event)
         yield
       else
         delivery.with_lock do
-          delivery.update!(status: :cancelled, last_error: "Campaign sender no longer has permission to send messages",
+          delivery.update!(status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR,
             provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
+        end
+        delivery.communication_campaign&.with_lock do
+          campaign = delivery.communication_campaign
+          campaign.fail_authorization!(preserve_state: campaign.draft? || campaign.scheduled? || campaign.cancelled?)
         end
         :authorization_cancelled
       end

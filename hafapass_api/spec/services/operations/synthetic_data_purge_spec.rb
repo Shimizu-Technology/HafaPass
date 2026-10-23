@@ -33,6 +33,9 @@ RSpec.describe Operations::SyntheticDataPurge do
     WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_test_1", event_type: "payment_intent.succeeded",
       payload: { "livemode" => false })
     AuditLogger.record!(action: "events.published", auditable: event, actor: organizer)
+    AuditWriteFailure.create!(action: "order.completed", auditable_type: "Order", auditable_id: order.id,
+      actor_user_id: organizer.id, event_id: event.id, organization_id: event.organization_id,
+      source: "provider", failure_class: "ActiveRecord::StatementInvalid")
   end
 
   def all_counts
@@ -150,6 +153,7 @@ RSpec.describe Operations::SyntheticDataPurge do
       migrations_before = connection.select_value("SELECT COUNT(*) FROM schema_migrations").to_i
       expect(Order.count).to be_positive
       users_before = User.count
+      audits_before = AuditLog.count
 
       result = purge
 
@@ -180,7 +184,7 @@ RSpec.describe Operations::SyntheticDataPurge do
         "kept_user_emails" => ["Ops@HafaPass.example", "owner@hafapass.example"],
         "deleted_user_count" => users_before - 2
       )
-      expect(audit.metadata["row_counts_before"]).to include("orders" => 3, "users" => users_before, "audit_logs" => 1)
+      expect(audit.metadata["row_counts_before"]).to include("orders" => 3, "users" => users_before, "audit_logs" => audits_before)
       expect(audit.metadata["row_counts_after"]).to include("orders" => 0, "users" => 2, "audit_logs" => 0)
       expect(audit.metadata["purged_at"]).to be_present
     end

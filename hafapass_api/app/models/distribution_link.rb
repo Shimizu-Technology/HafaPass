@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class DistributionLink < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :distribution_link,
+    fields: %w[event_id distribution_partner_id active expires_at],
+    observe: %w[campaign]
+
   belongs_to :distribution_partner
   belongs_to :event
   belongs_to :created_by_user, class_name: "User"
@@ -18,6 +24,12 @@ class DistributionLink < ApplicationRecord
   }
 
   private
+
+  def operational_audit_actor(operation)
+    return super || created_by_user if operation == :create
+
+    super
+  end
 
   def assign_code
     self.code ||= loop do

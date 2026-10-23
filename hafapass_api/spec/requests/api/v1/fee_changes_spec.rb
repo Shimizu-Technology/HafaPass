@@ -26,6 +26,37 @@ RSpec.describe "Scheduled fee changes", type: :request do
       headers: auth_headers(admin)
   end
 
+  it "records activation impact once for each affected organization, including owners without notices" do
+    second = create(:event, :published, starts_at: 60.days.from_now)
+    second.organization.organization_memberships.update_all(status: OrganizationMembership.statuses.fetch("revoked"))
+    schedule
+    change = FeeChange.sole
+    expect(change.notices.where(organization_id: second.organization_id)).not_to exist
+    travel_to(Time.iso8601(effective_at)) do
+      2.times { FeeChange.activate_due!(SiteSetting.instance) }
+      audits = AuditLog.where(action: "organization.fee_terms_activated", auditable: change)
+      expect(audits.pluck(:organization_id)).to contain_exactly(event.organization_id, second.organization_id)
+      expect(audits).to all(have_attributes(source: "system", outcome: "succeeded",
+        before_data: change.old_terms, after_data: change.new_terms))
+      expect(AuditLog.where(action: "site_settings.fee_terms_activated").count).to eq(1)
+    end
+  end
+
+  it "keeps fees and activation pending when an organization impact audit cannot persist" do
+    schedule
+    change = FeeChange.sole
+    settings = SiteSetting.instance
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "organization.fee_terms_activated"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    travel_to(Time.iso8601(effective_at)) do
+      expect { FeeChange.activate_due!(settings) }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(change.reload.activated_at).to be_nil
+      expect(settings.reload.service_fee_percent).to eq(5)
+      expect(AuditLog.where(action: "site_settings.fee_terms_activated")).not_to exist
+    end
+  end
+
   it "previews affected organizations and enforces the configurable notice period" do
     create(:event, starts_at: 60.days.from_now) # a future draft is affected
     old = create(:event, :completed)

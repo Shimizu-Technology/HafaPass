@@ -79,6 +79,12 @@ class OrganizerSalesExportJob < ApplicationJob
     OrganizerSalesExportRequest.where(id: export_id, status: %w[processing ready], claimed_at: claimed_at)
       .update_all(status: "failed", storage_key: held_upload ? key : nil, expires_at: nil,
         failure_reason: "Export generation failed. Run it again.", updated_at: Time.current) if claimed_at
+    if export_request
+      AuditLogger.record!(action: "sales.export_failed", auditable: export_request.event,
+        actor: export_request.actor_user, organization: org, outcome: "failed",
+        metadata: { export_request_id: export_id, search_used: export_request.filters["search"].present? },
+        deduplication_key: "sales-export/#{export_id}/failed/#{claimed_at&.utc&.iso8601(6)}")
+    end
     raise
   end
 end

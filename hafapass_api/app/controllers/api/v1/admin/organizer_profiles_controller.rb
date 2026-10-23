@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseController
+  around_action :with_audit_transaction, only: :update
   class StaleVerificationRequest < StandardError; end
 
   def update
     profile = OrganizerProfile.find(params[:id])
+    profile.lock!
     before_data = profile_json(profile)
     previous_status = profile.verification_status
     profile.with_lock do

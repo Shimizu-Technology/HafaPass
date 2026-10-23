@@ -1,4 +1,9 @@
 class WaitlistEntry < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :waitlist,
+    fields: %w[event_id ticket_type_id quantity position status notified_at expires_at]
+
   belongs_to :event
   belongs_to :ticket_type, optional: true
   belongs_to :user, optional: true
@@ -84,6 +89,26 @@ class WaitlistEntry < ApplicationRecord
   end
 
   private
+
+  def operational_audit_action(operation)
+    return "waitlist.joined" if operation == :create
+    if operation == :update
+      if saved_change_to_status?
+        return "waitlist.rejoined" if waiting? && status_before_last_save == "cancelled"
+        return "waitlist.requeued" if waiting?
+        return "waitlist.notification_requested" if notified?
+
+        return "waitlist.#{status}"
+      end
+      return "waitlist.notification_requested" if notified? && saved_change_to_notified_at?
+    end
+
+    super
+  end
+
+  def operational_audit_outcome(action)
+    action == "waitlist.notification_requested" ? "requested" : super
+  end
 
   def record_request_time
     self.requested_at ||= Time.current

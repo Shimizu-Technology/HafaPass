@@ -8,6 +8,13 @@ module Commerce
 
     class << self
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
+        AuditContext.set(fail_open: true) do
+          complete_with_audit!(order, payment: payment, webhook_event: webhook_event,
+            provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type)
+        end
+      end
+
+      def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
         completed_now = false
 
         Order.transaction do
@@ -82,6 +89,11 @@ module Commerce
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
+          AuditLogger.record!(action: "order.completed", auditable: order,
+            organization: order.event.organization, event: order.event, outcome: "succeeded",
+            deduplication_key: "order:#{order.id}:completed",
+            after_data: { status: order.status }, metadata: { payment_id: payment&.id },
+            **(webhook_event ? { source: "provider" } : {}))
           record_marketplace_purchase!(order)
           EmailService.send_order_confirmation_async(order)
           completed_now = true
@@ -89,6 +101,8 @@ module Commerce
 
         completed_now ? :completed : :unchanged
       end
+
+      private :complete_with_audit!
 
       def fail!(order, payment: nil, failure_code: nil, failure_message: nil, reason: "payment_failed")
         Order.transaction do
@@ -217,6 +231,11 @@ module Commerce
           expired_at: expired ? at : nil,
           expires_at: nil
         )
+        AuditLogger.record!(action: "order.#{expired ? 'expired' : 'cancelled'}", auditable: order,
+          organization: order.event.organization, event: order.event, outcome: "succeeded",
+          deduplication_key: "order:#{order.id}:#{order.status}",
+          before_data: { status: "pending" }, after_data: { status: order.status },
+          metadata: { reason: reason })
       end
 
       def issue_tickets!(order)

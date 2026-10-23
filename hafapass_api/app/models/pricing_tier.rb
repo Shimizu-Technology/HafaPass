@@ -1,4 +1,10 @@
 class PricingTier < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :pricing_tier,
+    fields: %w[ticket_type_id price_cents tier_type quantity_limit starts_at ends_at position],
+    observe: %w[name]
+
   belongs_to :ticket_type
   has_many :tickets, dependent: :restrict_with_error
   has_many :order_items, dependent: :restrict_with_error
@@ -61,6 +67,10 @@ class PricingTier < ApplicationRecord
   end
 
   private
+
+  def operational_audit_event
+    ticket_type.event
+  end
 
   def active_holds_quantity(at)
     return inventory_holds.sum { |hold| hold.active? && hold.expires_at > at ? hold.quantity : 0 } if inventory_holds.loaded?

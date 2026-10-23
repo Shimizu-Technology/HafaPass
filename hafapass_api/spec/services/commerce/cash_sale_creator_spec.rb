@@ -51,4 +51,34 @@ RSpec.describe Commerce::CashSaleCreator do
     expect(Order.count).to eq(1)
     expect(ticket_type.reload.quantity_sold).to eq(1)
   end
+
+  it "audits a completed cash sale once across receipt retries, identifying the actual cashier" do
+    allow(AuditLogger).to receive(:record!).and_call_original
+    result = sell
+    expect(sell.order.id).to eq(result.order.id)
+    entries = AuditLog.where(action: "box_office.cash_sale_created", auditable: result.order)
+    expect(entries.count).to eq(1)
+    expect(entries.sole.actor_user).to eq(user)
+    expect(entries.sole.after_data).to include("status" => "completed", "total_cents" => 500,
+      "payment_method" => "door_cash")
+    expect(entries.sole.attributes.to_json).not_to include(result.order.buyer_email, result.order.buyer_name)
+    expect(AuditLogger).to have_received(:record!).with(hash_including(action: "box_office.cash_sale_created",
+      actor: user, event: event, source: "user", deduplication_key: "cash_sale/#{result.order.id}")).once
+  end
+
+  it "completes cash, inventory, tickets and receipt when audit storage fails" do
+    ticket_type
+    allow(Sentry).to receive(:capture_exception)
+    allow(AuditLog).to receive(:create_or_find_by!).and_call_original
+    allow(AuditLog).to receive(:create_or_find_by!).with(hash_including(action: "box_office.cash_sale_created"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    result = sell
+    expect(result.order).to be_completed
+    expect(Payment.count).to eq(1)
+    expect(Ticket.count).to eq(1)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(AuditWriteFailure.where(action: "box_office.cash_sale_created", auditable_id: result.order.id)).to exist
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "box_office.cash_sale_created"))
+  end
 end

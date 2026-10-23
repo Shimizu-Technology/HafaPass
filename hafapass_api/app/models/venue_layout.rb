@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class VenueLayout < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :venue_layout,
+    fields: %w[organization_id venue_id version status renderer],
+    observe: %w[name provider_chart_key]
+
   belongs_to :venue
   belongs_to :organization
   has_many :seating_sections, -> { order(:position, :id) }, dependent: :destroy

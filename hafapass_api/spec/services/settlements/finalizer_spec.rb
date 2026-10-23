@@ -21,6 +21,104 @@ RSpec.describe Settlements::Finalizer do
     [order, item]
   end
 
+  def auditable_payout_settlement
+    create(:connected_account, organization: organization)
+    create(:balance_adjustment, organization: organization, event: event, amount_cents: 1000)
+    described_class.call(event: event, actor: actor)
+  end
+
+  it "commits payout reservation and intent audits before the provider and deduplicates retries" do
+    settlement = auditable_payout_settlement
+    baseline_transactions = Payout.connection.open_transactions
+    allow(PayoutGateway).to receive(:submit) do |payout|
+      expect(Payout.connection.open_transactions).to eq(baseline_transactions)
+      expect(AuditLog.where(auditable: payout).pluck(:action)).to include(
+        "payout.created", "payout.submission_requested")
+      expect(AuditLog.where(auditable: payout, action: %w[payout.created payout.submission_requested]))
+        .to all(have_attributes(actor_user_id: actor.id, organization_id: organization.id,
+          event_id: event.id, outcome: "requested"))
+      PayoutGateway::Result.new(provider_payout_id: "bank_audited_payout", status: :paid)
+    end
+
+    payout = PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "audited-payout")
+    expect(PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "audited-payout")).to eq(payout)
+    expect(AuditLog.where(auditable: payout, action: "payout.created").count).to eq(1)
+    expect(AuditLog.find_by!(auditable: payout, action: "payout.paid")).to have_attributes(
+      source: "provider", outcome: "succeeded", organization_id: organization.id, event_id: event.id)
+    expect(PayoutGateway).to have_received(:submit).once
+  end
+
+  it "reserves an ambiguous payout without a success row or a second submission" do
+    settlement = auditable_payout_settlement
+    allow(PayoutGateway).to receive(:submit).and_raise(Timeout::Error, "private-provider-timeout")
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "audited-unknown-payout")
+    end.to raise_error(PayoutCreator::PayoutError, /unknown/)
+    payout = settlement.payouts.sole
+    audit = AuditLog.find_by!(auditable: payout, action: "payout.processing")
+    expect(audit).to have_attributes(source: "provider", outcome: "unknown")
+    expect(audit.attributes.to_json).not_to include("private-provider-timeout")
+    expect(AuditLog.where(auditable: payout, action: "payout.paid")).not_to exist
+    expect(PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "audited-unknown-payout")).to eq(payout)
+    expect(PayoutGateway).to have_received(:submit).once
+    expect(AuditLog.where(auditable: payout, action: "payout.processing").count).to eq(1)
+  end
+
+  it "rolls back a payout reservation when its creation audit fails" do
+    settlement = auditable_payout_settlement
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "payout.created"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    allow(PayoutGateway).to receive(:submit)
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "payout-reservation-rollback")
+    end.to raise_error(PayoutCreator::PayoutError)
+    expect(settlement.payouts.reload).to be_empty
+    expect(PayoutGateway).not_to have_received(:submit)
+  end
+
+  it "deduplicates repeated pending provider outcomes without claiming a paid transfer" do
+    settlement = auditable_payout_settlement
+    allow(PayoutGateway).to receive(:submit).and_return(
+      PayoutGateway::Result.new(provider_payout_id: "bank_processing_audit", status: :processing))
+    payout = PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "processing-payout-audit")
+    creator = PayoutCreator.new(settlement: settlement, actor: actor, idempotency_key: payout.idempotency_key)
+    creator.send(:record_submission_outcome!, payout, status: :processing,
+      provider_payout_id: "bank_processing_audit", initiated_at: Time.current)
+    audit = AuditLog.where(auditable: payout, action: "payout.processing").sole
+    expect(audit).to have_attributes(outcome: "requested", source: "provider")
+    expect(AuditLog.where(auditable: payout, action: "payout.paid")).not_to exist
+    expect(payout.reload).to be_status_processing
+  end
+
+  it "records definitive payout rejection as failure and retains the reservation intent" do
+    settlement = auditable_payout_settlement
+    allow(PayoutGateway).to receive(:submit).and_raise(PayoutGateway::PayoutError, "private-provider-rejection")
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "rejected-payout-audit")
+    end.to raise_error(PayoutCreator::PayoutError)
+    payout = settlement.payouts.sole
+    expect(payout).to be_status_failed
+    audit = AuditLog.find_by!(auditable: payout, action: "payout.failed")
+    expect(audit).to have_attributes(outcome: "failed", source: "provider")
+    expect(audit.attributes.to_json).not_to include("private-provider-rejection")
+    expect(AuditLog.where(auditable: payout, action: "payout.submission_requested").count).to eq(1)
+  end
+
+  it "does not call the provider or classify an audit failure as provider uncertainty" do
+    settlement = auditable_payout_settlement
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "payout.submission_requested"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    allow(PayoutGateway).to receive(:submit)
+    expect do
+      PayoutCreator.call(settlement: settlement, actor: actor, idempotency_key: "payout-intent-rollback")
+    end.to raise_error(PayoutCreator::PayoutError)
+    expect(settlement.payouts.sole).to have_attributes(status: "pending", failure_code: nil)
+    expect(PayoutGateway).not_to have_received(:submit)
+    expect(AuditLog.where(auditable: settlement.payouts.sole).pluck(:action)).to eq(["payout.created"])
+  end
+
   it "creates an immutable, deterministic, cent-exact settlement without overwriting prior versions" do
     record_sale!(event)
 

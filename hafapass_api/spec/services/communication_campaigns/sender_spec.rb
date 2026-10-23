@@ -13,10 +13,31 @@ RSpec.describe CommunicationCampaigns::Sender do
     campaign = create(:communication_campaign, event: event)
 
     expect { described_class.call(campaign) }.to change(MessageDelivery, :count).by(1)
-    expect(campaign.reload).to be_sent
+    expect(campaign.reload).to be_sending
     expect(campaign.recipient_count).to eq(1)
     expect(campaign.message_deliveries.first.metadata).to include("subject" => campaign.subject, "body" => campaign.body)
   end
+
+  it "keeps a dispatcher enqueue failure recoverable without creating more recipients" do
+    campaign = create(:communication_campaign)
+    campaign.event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    # Execute the post-commit boundary explicitly under the test fixture's
+    # enclosing transaction; production registers it after all real commits.
+    callbacks = []
+    allow(ActiveRecord).to receive(:after_all_transactions_commit) { |&block| callbacks << block }
+    allow(CommunicationCampaignDispatchJob).to receive(:perform_later).and_return(false)
+    described_class.call(campaign)
+    expect(campaign.reload).to be_sending
+    expect { callbacks.shift.call }.to raise_error(ActiveJob::EnqueueError)
+    expect(campaign.reload).to be_failed
+    expect(AuditLog.where(auditable: campaign, action: "campaign.send_completed")).not_to exist
+    expect(AuditLog.find_by!(auditable: campaign, action: "campaign.send_failed").metadata)
+      .to include("failure_code" => "dispatcher_enqueue_failed")
+    expect { described_class.call(campaign) }.not_to change(MessageDelivery, :count)
+    expect(campaign.reload).to be_sending
+  end
+
   it "reauthorizes scheduled campaigns at execution and leaves a visible attention reason" do
     event = create(:event, :published)
     scheduler = create(:user)
@@ -43,5 +64,22 @@ RSpec.describe CommunicationCampaigns::Sender do
     described_class.call(campaign, actor: sender)
     expect(campaign.reload.sent_by_user).to eq(sender)
     expect(campaign.message_deliveries.first.requested_by).to eq(sender)
+  end
+  it "recovers the same outbox under a newly authorized sender without replaying completed deliveries" do
+    campaign = create(:communication_campaign, status: :failed, started_at: 1.hour.ago,
+      last_error: CommunicationCampaign::AUTHORIZATION_ERROR)
+    campaign.event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    former = create(:user)
+    blocked = create(:message_delivery, communication_campaign: campaign, event: campaign.event,
+      requested_by: former, status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR)
+    sent = create(:message_delivery, communication_campaign: campaign, event: campaign.event,
+      requested_by: former, status: :sent, provider_id: "provider-already-sent")
+    sender = campaign.event.organizer_profile.user
+    expect { described_class.call(campaign, actor: sender) }.not_to change(MessageDelivery, :count)
+    expect(campaign.reload).to have_attributes(status: "sending", sent_by_user_id: sender.id, last_error: nil)
+    expect(blocked.reload).to have_attributes(status: "queued", requested_by_id: sender.id, last_error: nil)
+    expect(sent.reload).to have_attributes(status: "sent", provider_id: "provider-already-sent", requested_by_id: former.id)
+    expect(AuditLog.where(auditable: campaign, action: "campaign.recovered", actor_user: sender)).to exist
   end
 end

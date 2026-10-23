@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class Promoter < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :promoter,
+    fields: %w[event_id commission_bps active],
+    observe: %w[name code email]
+
   belongs_to :event
   has_many :referral_attributions, dependent: :restrict_with_error
   has_many :promoter_commission_entries, dependent: :restrict_with_error

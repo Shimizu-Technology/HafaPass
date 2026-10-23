@@ -54,6 +54,39 @@ RSpec.describe "Commerce order lifecycle" do
     )
   end
 
+  it "completes a paid order and reports a minimal gap when audit SQL fails" do
+    result = create_pending_order(quantity: 2)
+    allow(Sentry).to receive(:capture_exception)
+    # A real failing SQL statement aborts its transaction on PostgreSQL. The
+    # audit savepoint must recover before ticket/order writes can continue.
+    allow(AuditLog).to receive(:create_or_find_by!) do
+      AuditLog.connection.execute("SELECT * FROM missing_audit_storage")
+    end
+
+    expect(Commerce::OrderLifecycle.complete!(result.order, payment: result.payment)).to eq(:completed)
+    expect(result.order.reload).to be_completed
+    expect(result.payment.reload).to be_succeeded
+    expect(result.order.tickets.count).to eq(2)
+    expect(result.order.tickets.pluck(:qr_code)).to all(be_present)
+    marker = AuditWriteFailure.find_by!(action: "order.completed", auditable_id: result.order.id)
+    expect(marker).to have_attributes(event_id: event.id, organization_id: event.organization_id)
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "order.completed", auditable_id: result.order.id))
+    expect(AuditContext.fail_open).to be_nil
+  end
+
+  it "still issues tickets if both audit and fallback storage are unavailable" do
+    result = create_pending_order
+    allow(Sentry).to receive(:capture_exception)
+    allow(AuditLog).to receive(:create_or_find_by!).and_raise(ActiveRecord::ConnectionNotEstablished)
+    allow(AuditWriteFailure).to receive(:create!).and_raise(ActiveRecord::ConnectionNotEstablished)
+    expect(Commerce::OrderLifecycle.complete!(result.order, payment: result.payment)).to eq(:completed)
+    expect(result.order.reload).to be_completed
+    expect(result.order.tickets.count).to eq(1)
+    expect(Sentry).to have_received(:capture_exception).with(an_instance_of(AuditLogger::WriteError),
+      extra: hash_including(action: "order.completed", fallback_failed: true))
+  end
+
   it "finalizes inventory and issues each entitlement exactly once" do
     result = create_pending_order(quantity: 2)
 
@@ -71,6 +104,8 @@ RSpec.describe "Commerce order lifecycle" do
     expect(result.order.inventory_holds).to all(be_consumed)
     expect(ticket_type.reload.quantity_sold).to eq(2)
     expect(result.order.tickets.pluck(:qr_code)).to all(be_present)
+    expect(AuditLog.find_by!(auditable: result.order, action: "order.completed")).to have_attributes(
+      organization_id: event.organization_id, event_id: event.id, outcome: "succeeded")
     expect(EmailService).to have_received(:send_order_confirmation_async).with(result.order).once
     expect(EmailService).not_to have_received(:send_ticket_email_async)
 
@@ -82,6 +117,7 @@ RSpec.describe "Commerce order lifecycle" do
         provider_currency: "usd"
       )
     end.not_to change(Ticket, :count)
+    expect(AuditLog.where(auditable: result.order, action: "order.completed").count).to eq(1)
   end
 
   it "quarantines provider amount and currency mismatches without issuing inventory" do
@@ -139,6 +175,8 @@ RSpec.describe "Commerce order lifecycle" do
 
     ExpireInventoryHoldsJob.perform_now(Time.current)
     expect(result.order.reload).to be_expired
+    expect(AuditLog.find_by!(auditable: result.order, action: "order.expired")).to have_attributes(
+      organization_id: event.organization_id, event_id: event.id, outcome: "succeeded")
     expect(StripeService).to have_received(:cancel_payment_intent).with(
       result.payment.provider_payment_id,
       idempotency_key: "cancel:payment:#{result.payment.id}", payment: result.payment
@@ -184,6 +222,8 @@ RSpec.describe "Commerce order lifecycle" do
 
     Commerce::OrderLifecycle.cancel!(first.order)
     expect(first.order.promo_redemption.reload).to be_released
+    expect(AuditLog.find_by!(auditable: first.order, action: "order.cancelled")).to have_attributes(
+      organization_id: event.organization_id, event_id: event.id, outcome: "succeeded")
 
     third = create_pending_order(promo_code_id: limited.id)
     Commerce::OrderLifecycle.complete!(

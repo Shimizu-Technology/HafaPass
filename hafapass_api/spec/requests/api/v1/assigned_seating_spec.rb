@@ -179,6 +179,20 @@ RSpec.describe "Assigned seating APIs", type: :request do
     post "/api/v1/organizer/events/#{event.id}/seating/resume", headers: headers
     expect(response).to have_http_status(:ok)
     expect(event.reload.organizer_sales_suspended_at).to be_nil
-    expect(event.seat_audit_events.pluck(:action)).to eq(["seating.sales_suspended", "seating.sales_resumed"])
+    expect(event.seat_audit_events.pluck(:action)).to eq(["seating.organizer_sales_suspended", "seating.organizer_sales_resumed"])
+    rows = AuditLog.where(event: event, action: %w[seating.organizer_sales_suspended seating.organizer_sales_resumed]).order(:id)
+    expect(rows.pluck(:action)).to eq(%w[seating.organizer_sales_suspended seating.organizer_sales_resumed])
+    expect(rows.pluck(:organization_id).uniq).to eq([organization.id])
+    expect(rows.pluck(:actor_user_id).uniq).to eq([user.id])
+  end
+  it "rolls back the organizer pause and seat ledger when central auditing fails" do
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "seating.organizer_sales_suspended"))
+      .and_raise(AuditLogger::WriteError)
+    expect do
+      post "/api/v1/organizer/events/#{event.id}/seating/suspend", headers: headers, params: { reason: "Fixture pause" }
+    end.to raise_error(AuditLogger::WriteError)
+    expect(event.reload.organizer_sales_suspended_at).to be_nil
+    expect(event.seat_audit_events).to be_empty
   end
 end

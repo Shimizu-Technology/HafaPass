@@ -74,7 +74,7 @@ RSpec.describe "Link name claims under concurrency", :non_transactional do
     end
 
     ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizations, organizer_profiles, events, event_slug_redirects, venues, site_settings
+      TRUNCATE TABLE audit_logs, audit_write_failures, users, organizations, organizer_profiles, events, event_slug_redirects, venues, site_settings
       RESTART IDENTITY CASCADE
     SQL
   end

@@ -78,6 +78,31 @@ RSpec.describe OrganizationTeam do
     expect(assignment.reload).to be_status_revoked
   end
 
+  it "rolls back membership and assignment revocation if its audit cannot be saved" do
+    membership = create(:organization_membership, organization: organization, role: :scanner)
+    event = create(:event, organizer_profile: profile)
+    assignment = create(:event_staff_assignment, organization: organization, event: event, user: membership.user)
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "organization.membership_revoked"))
+      .and_raise(AuditLogger::WriteError)
+
+    expect { described_class.revoke!(membership: membership, actor: owner) }.to raise_error(AuditLogger::WriteError)
+    expect(membership.reload).to be_status_active
+    expect(assignment.reload).to be_status_active
+    expect(AuditLog.where(auditable: assignment, action: "event_staff.revoked")).not_to exist
+  end
+
+  it "rolls back the invitation and quota dispatch if its audit cannot be saved" do
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "organization.invitation_created"))
+      .and_raise(AuditLogger::WriteError)
+    expect do
+      described_class.invite!(organization: organization, email: "atomic@example.com", role: "scanner", actor: owner)
+    end.to raise_error(AuditLogger::WriteError)
+    expect(organization.organization_memberships.where(invited_email: "atomic@example.com")).not_to exist
+    expect(OrganizationInvitationDispatch.where(organization: organization)).not_to exist
+  end
+
   describe ".transfer_ownership!" do
     let(:manager) { create(:user, email: "manager@example.com") }
     let!(:manager_membership) { create(:organization_membership, organization: organization, user: manager, role: :manager) }

@@ -42,14 +42,6 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
     return unless authorize_organization!(:manage_staff, event: @event)
 
     @device.revoke!
-    AuditLogger.record!(
-      action: "scanner_device.revoked",
-      auditable: @device,
-      actor: current_user,
-      organization: current_organization,
-      metadata: { event_id: @event.id },
-      request: request
-    )
     head :no_content
   end
 

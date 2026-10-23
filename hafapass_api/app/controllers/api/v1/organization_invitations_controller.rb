@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
 class Api::V1::OrganizationInvitationsController < ApplicationController
+  around_action :with_audit_transaction, only: :accept
   def accept
     membership = OrganizationInvitation.accept!(token: params[:token], user: current_user)
-    AuditLogger.record!(
-      action: "organization.invitation_accepted",
-      auditable: membership,
-      actor: current_user,
-      organization: membership.organization,
-      request: request
-    )
     render json: {
       organization_id: membership.organization_id,
       organization_name: membership.organization.name,

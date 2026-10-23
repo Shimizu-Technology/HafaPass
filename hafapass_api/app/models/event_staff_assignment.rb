@@ -11,6 +11,8 @@ class EventStaffAssignment < ApplicationRecord
 
   validates :role, uniqueness: { scope: [:event_id, :user_id] }
   validate :event_matches_organization
+  after_create :audit_creation
+  after_update :audit_changes
 
   scope :effective, ->(at = Time.current) { status_active.where("expires_at IS NULL OR expires_at > ?", at) }
 
@@ -19,6 +21,25 @@ class EventStaffAssignment < ApplicationRecord
   end
 
   private
+
+  def audit_creation
+    audit_assignment("event_staff.assigned", {})
+  end
+
+  def audit_changes
+    changes = saved_changes.slice("role", "status", "expires_at")
+    return if changes.empty?
+
+    audit_assignment(status_revoked? ? "event_staff.revoked" : "event_staff.updated",
+      changes.transform_values(&:first))
+  end
+
+  def audit_assignment(action, before)
+    AuditLogger.record!(action: action, auditable: self, organization: organization, event: event,
+      before_data: before.merge(target_user_id: user_id),
+      after_data: { role: role, status: status, expires_at: expires_at, target_user_id: user_id,
+        target_name: [user.first_name, user.last_name].compact.join(" ") })
+  end
 
   def event_matches_organization
     return if event.nil? || organization.nil? || event.organization_id == organization_id

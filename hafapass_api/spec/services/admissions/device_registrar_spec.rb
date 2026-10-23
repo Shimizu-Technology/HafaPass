@@ -45,5 +45,8 @@ RSpec.describe Admissions::DeviceRegistrar do
     assignment.update!(expires_at: nil)
     renewed = described_class.call(event: event, user: staff, identifier: "leased", name: "Gate phone")
     expect(renewed.authorization_expires_at).to be_within(1.second).of(membership.expires_at)
+    audit = AuditLog.where(auditable: renewed, action: "scanner_device.lease_updated").order(:id).last!
+    expect(audit).to have_attributes(organization_id: event.organization_id, event_id: event.id, actor_user_id: staff.id)
+    expect(Time.zone.parse(audit.after_data.fetch("lease_expires_at"))).to be_within(1.second).of(membership.expires_at)
   end
 end

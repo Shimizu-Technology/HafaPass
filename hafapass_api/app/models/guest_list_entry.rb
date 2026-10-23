@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class GuestListEntry < ApplicationRecord
+  include OperationalAuditable
+
+  audits_operations :guest_list,
+    fields: %w[event_id ticket_type_id quantity redeemed order_id],
+    observe: %w[guest_name guest_email guest_phone notes]
+
   # Orders need a buyer email; a guest without one gets a reserved, never-routable
   # address (RFC 2606 ".invalid") so no ticket email leaves HåfaPass for them.
   PLACEHOLDER_EMAIL = "guest-list@hafapass.invalid"
@@ -28,5 +34,13 @@ class GuestListEntry < ApplicationRecord
       redeemed: true,
       order: order
     )
+  end
+
+  private
+
+  def operational_audit_action(operation)
+    return "guest_list.redeemed" if operation == :update && saved_change_to_redeemed? && redeemed?
+
+    super
   end
 end

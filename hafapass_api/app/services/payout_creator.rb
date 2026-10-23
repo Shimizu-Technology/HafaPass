@@ -45,11 +45,20 @@ class PayoutCreator
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
 
         PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
+        AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: actor,
+          organization: payout.organization, event: payout.event, outcome: "requested",
+          deduplication_key: "payout:#{payout.id}:submission_requested",
+          metadata: { amount_cents: payout.amount_cents, currency: payout.currency,
+            settlement_id: settlement.id }, request: request)
       end
     end
-    PayoutGateway.submit(payout)
+    perform_provider_submission!(payout)
   rescue PayoutWithholdingGuard::WithholdingError => e
     raise PayoutError, e.message
+  end
+
+  def perform_provider_submission!(payout)
+    PayoutGateway.submit(payout)
   rescue PayoutGateway::PayoutError => e
     record_submission_error!(
       payout,
@@ -80,6 +89,10 @@ class PayoutCreator
   end
 
   def record_submission_outcome!(payout, **attributes)
+    AuditContext.set(fail_open: true) { record_observed_submission!(payout, **attributes) }
+  end
+
+  def record_observed_submission!(payout, **attributes)
     Payout.transaction do
       payout.organization.lock!
       payout.lock!
@@ -141,10 +154,14 @@ class PayoutCreator
         end
       end
       AuditLogger.record!(action: action, auditable: payout, actor: actor,
-        organization: payout.organization, before_data: before_data,
+        organization: payout.organization, event: payout.event, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: settlement.id,
-          failure_code: attributes[:failure_code], provider_result: provider_result }, request: request)
+          failure_code: attributes[:failure_code],
+          provider_result: provider_result.slice(:status, :provider_payout_id, :failure_code) },
+        source: "provider", outcome: submission_audit_outcome(action, attributes),
+        deduplication_key: "payout:#{payout.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(provider_result.slice(:status, :provider_payout_id, :failure_code).stringify_keys.sort.to_h))}",
+        request: request)
     end
   end
 
@@ -205,6 +222,11 @@ class PayoutCreator
         **withholding
       )
       PayoutLineAllocator.record!(payout)
+      AuditLogger.record!(action: "payout.created", auditable: payout, actor: actor,
+        organization: payout.organization, event: payout.event, outcome: "requested",
+        deduplication_key: "payout:#{payout.id}:created",
+        after_data: { status: payout.status, amount_cents: payout.amount_cents, currency: payout.currency },
+        metadata: { settlement_id: settlement.id }, request: request)
       if withholding[:withholding_override_reason].present?
         AuditLogger.record!(action: "payout.backup_withholding_overridden", auditable: payout, actor: actor,
           organization: payout.organization, metadata: { reason: withholding[:withholding_override_reason] }, request: request)
@@ -224,5 +246,14 @@ class PayoutCreator
     end
 
     payout
+  end
+
+  def submission_audit_outcome(action, attributes)
+    return "unknown" if %w[payout.provider_result_conflict payout.withholding_review_required].include?(action) ||
+      attributes[:failure_code] == "provider_result_unknown"
+    return "failed" if attributes[:status].to_s == "failed"
+    return "succeeded" if attributes[:status].to_s == "paid"
+
+    "requested"
   end
 end

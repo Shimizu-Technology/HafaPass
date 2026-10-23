@@ -1043,7 +1043,7 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     connection = ActiveRecord::Base.connection
     connection.execute("SET lock_timeout = '5s'")
     connection.execute(<<~SQL)
-      TRUNCATE TABLE users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
+      TRUNCATE TABLE audit_logs, audit_write_failures, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
       RESTART IDENTITY CASCADE
     SQL
   ensure

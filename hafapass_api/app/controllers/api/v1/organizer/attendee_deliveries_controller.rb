@@ -4,6 +4,7 @@
 # FulfillmentResender so the same cooldown, unconfirmed-delivery guard and
 # durable MessageDelivery apply; the email goes to the order's buyer address.
 class Api::V1::Organizer::AttendeeDeliveriesController < Api::V1::Organizer::BaseController
+  around_action :with_audit_transaction, only: :create
   def create
     event = find_organization_event(params[:event_id])
     return unless event && authorize_organization!(:manage_attendees, event: event)

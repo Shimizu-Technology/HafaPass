@@ -66,16 +66,16 @@ class OrganizationTeam
         )
         membership.save!
         token = OrganizationInvitation.issue!(membership)
+        AuditLogger.record!(
+          action: "organization.invitation_created",
+          auditable: membership,
+          actor: actor,
+          organization: organization,
+          after_data: { invited_email: email, role: membership.role, invitation_expires_at: membership.invitation_expires_at,
+                        event_ids: membership.pending_event_ids },
+          request: request
+        )
       end
-      AuditLogger.record!(
-        action: "organization.invitation_created",
-        auditable: membership,
-        actor: actor,
-        organization: organization,
-        after_data: { invited_email: email, role: membership.role, invitation_expires_at: membership.invitation_expires_at,
-                      event_ids: membership.pending_event_ids },
-        request: request
-      )
       EmailService.send_organization_invitation_async(membership, requested_by: actor) if deliver
       [membership, token]
     rescue ActiveRecord::RecordNotUnique
@@ -99,11 +99,11 @@ class OrganizationTeam
 
         membership.update!(invitation_version: membership.invitation_version + 1, invited_by_user: actor)
         token = OrganizationInvitation.issue!(membership)
+        AuditLogger.record!(action: "organization.invitation_resent", auditable: membership, actor: actor,
+          organization: membership.organization,
+          after_data: { invited_email: membership.invited_email, invitation_expires_at: membership.invitation_expires_at },
+          request: request)
       end
-      AuditLogger.record!(action: "organization.invitation_resent", auditable: membership, actor: actor,
-        organization: membership.organization,
-        after_data: { invited_email: membership.invited_email, invitation_expires_at: membership.invitation_expires_at },
-        request: request)
       EmailService.send_organization_invitation_async(membership, requested_by: actor)
       token
     end
@@ -132,12 +132,23 @@ class OrganizationTeam
 
         OrganizationInvitation.revoke!(membership)
         if membership.user_id
+          membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id).find_each do |assignment|
+            AuditLogger.record!(action: "event_staff.revoked", auditable: assignment, actor: actor,
+              organization: membership.organization, event: assignment.event,
+              before_data: { status: assignment.status, role: assignment.role, target_user_id: assignment.user_id },
+              after_data: { status: "revoked", role: assignment.role, target_user_id: assignment.user_id },
+              metadata: { cause: "organization_membership_revoked" }, request: request)
+          end
           membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id)
             .update_all(status: EventStaffAssignment.statuses[:revoked], updated_at: Time.current)
         end
+        AuditLogger.record!(action: "organization.membership_revoked", auditable: membership, actor: actor,
+          organization: membership.organization,
+          before_data: { role: membership.role, status: membership.status_before_last_save,
+            target_user_id: membership.user_id, invited_email: membership.invited_email,
+            target_name: [membership.user&.first_name, membership.user&.last_name].compact.join(" ") },
+          after_data: { role: membership.role, status: membership.status, target_user_id: membership.user_id }, request: request)
       end
-      AuditLogger.record!(action: "organization.membership_revoked", auditable: membership, actor: actor,
-        organization: membership.organization, request: request)
       membership
     end
 
@@ -157,10 +168,12 @@ class OrganizationTeam
         attributes = { role: role }
         attributes[:expires_at] = expires_at unless expires_at == :unchanged
         membership.update!(attributes)
+        AuditLogger.record!(action: "organization.membership_updated", auditable: membership, actor: actor,
+          organization: membership.organization,
+          before_data: before_data.merge(target_user_id: membership.user_id, invited_email: membership.invited_email),
+          after_data: snapshot(membership).merge(target_user_id: membership.user_id),
+          request: request)
       end
-      AuditLogger.record!(action: "organization.membership_updated", auditable: membership, actor: actor,
-        organization: membership.organization, before_data: before_data, after_data: snapshot(membership),
-        request: request)
       membership
     rescue ActiveRecord::RecordInvalid => e
       raise TeamError, e.record.errors.full_messages.to_sentence

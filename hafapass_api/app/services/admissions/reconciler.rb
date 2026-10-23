@@ -13,7 +13,7 @@ module Admissions
     CLIENT_SOURCES = %w[online offline].freeze
 
     def self.call(**)
-      new(**).call
+      AuditContext.set(fail_open: true) { new(**).call }
     end
 
     def initialize(device:, actor:, actions:, request: nil)

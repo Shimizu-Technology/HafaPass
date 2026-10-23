@@ -32,6 +32,20 @@ RSpec.describe "Refund reconciliation", type: :request do
     run.items.create!(order: order, status: :needs_manual, amount_cents: 5250)
   end
 
+  it "keeps separate administrators' pending resync observations" do
+    refund = pending_refund
+    other_admin = create(:user, :admin)
+    allow(StripeService).to receive(:retrieve_refund).and_return(OpenStruct.new(
+      id: refund.provider_refund_id, status: "pending", amount: refund.amount_cents, currency: "usd"))
+    [admin, other_admin].each do |operator|
+      post "/api/v1/admin/refund_reconciliation/refund/#{refund.id}/resync", headers: auth_headers(operator)
+      expect(response).to have_http_status(:ok), response.body
+    end
+    rows = AuditLog.where(action: "refund_reconciliation.resynced", auditable: refund).order(:id)
+    expect(rows.map(&:actor_user_id)).to eq([admin.id, other_admin.id])
+    expect(rows.map(&:request_id).uniq.length).to eq(2)
+  end
+
   it "cannot mutate another organization's cancellation item from the selected organization" do
     item = cash_item
     other = create(:organization)
@@ -156,7 +170,9 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(refund.reload).to be_pending
     expect(RefundReconciliationQueue.call.fetch(:items)).to include(include(
-      id: refund.id, unable_reason: "Multiple matches; manual review"))
+      id: refund.id, unable_reason: "Provider refund lookup is ambiguous; manual finance review is required"))
+    expect(AuditLog.where(action: "refund_reconciliation.unable", auditable: refund).sole.metadata)
+      .not_to have_value("Multiple matches; manual review")
   end
 
   it "does not retry a failed refund when Stripe says the earlier transfer succeeded" do
