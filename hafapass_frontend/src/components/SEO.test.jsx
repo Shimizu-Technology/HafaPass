@@ -61,4 +61,22 @@ describe('SEO', () => {
     expect(document.head.querySelector('meta[name^="twitter:"]')).not.toBeInTheDocument()
     expect(document.head.querySelector('link[rel="canonical"]')).not.toBeInTheDocument()
   })
+
+  it('adopts the static social images instead of adding duplicate tags', async () => {
+    for (const markup of indexHtml.matchAll(/<meta (?:property="og:image(?:[^"]*)?"|name="twitter:image")[^>]+>/g)) {
+      const template = document.createElement('template')
+      template.innerHTML = markup[0]
+      document.head.append(template.content.firstChild)
+    }
+    const { rerender } = render(<HelmetProvider><SEO /></HelmetProvider>)
+    await waitFor(() => {
+      expect(document.head.querySelectorAll('meta[property="og:image"]')).toHaveLength(1)
+      expect(document.head.querySelectorAll('meta[name="twitter:image"]')).toHaveLength(1)
+      expect(document.head.querySelector('meta[property="og:image"]').content).toMatch(/\/og-default\.jpg$/)
+    })
+    expect(document.head.querySelector('meta[property="og:image:width"]').content).toBe('1200')
+    expect(document.head.querySelector('meta[property="og:image:height"]').content).toBe('630')
+    rerender(<HelmetProvider><SEO noSocial /></HelmetProvider>)
+    await waitFor(() => expect(document.head.querySelectorAll('meta[property^="og:image"],meta[name="twitter:image"]')).toHaveLength(0))
+  })
 })

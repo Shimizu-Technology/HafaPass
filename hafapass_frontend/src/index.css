@@ -137,6 +137,9 @@
   padding-right: env(safe-area-inset-right, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* The route chunk, detail request and missing-event screen share a reserved
+   area so the footer stays put through a cold 404 transition. */
+.route-loading { min-height: max(42rem, calc(100dvh - 5rem)); }
 .app-nav { padding-top: env(safe-area-inset-top, 0px); }
 .mobile-nav {
   max-height: calc(100dvh - 4rem - env(safe-area-inset-top, 0px));

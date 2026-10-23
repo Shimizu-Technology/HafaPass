@@ -6,7 +6,7 @@ const auth = vi.hoisted(() => ({ isLoaded: false, isSignedIn: false, user: null,
 const clear = vi.hoisted(() => vi.fn())
 vi.mock('@clerk/clerk-react', () => ({
   ClerkProvider: ({ children }) => children,
-  useAuth: () => ({ getToken: auth.getToken }),
+  useAuth: () => ({ getToken: auth.getToken, isLoaded: auth.authLoaded, userId: auth.user?.id ?? null }),
   useUser: () => auth,
 }))
 vi.mock('../utils/admissionStore', () => ({ clearAllAdmissionData: clear }))
@@ -20,11 +20,31 @@ describe('account-bound scanner authentication bootstrap', () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'test-configured-key')
     window.localStorage.clear()
     window.sessionStorage.clear()
-    Object.assign(auth, { isLoaded: false, isSignedIn: false, user: null })
+    Object.assign(auth, { isLoaded: false, isSignedIn: false, user: null, authLoaded: undefined })
     clear.mockReset().mockResolvedValue(undefined)
     Wrapper = (await import('./ClerkProviderWrapper')).default
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
+
+  it.each([null, 'owner-a'])('preserves the mounted application when Clerk resolves for unchanged owner %s', async owner => {
+    auth.authLoaded = false
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    const application = <Wrapper><main data-testid="application"><input aria-label="Draft" defaultValue="Keep this draft" /></main></Wrapper>
+    const { rerender, container } = render(application)
+    const node = screen.getByTestId('application')
+    const inserted = []
+    const observer = new MutationObserver(records => records.forEach(record => inserted.push(...record.addedNodes)))
+    observer.observe(container, { childList: true, subtree: true })
+    Object.assign(auth, { isLoaded: true, authLoaded: true, isSignedIn: Boolean(owner), user: owner ? { id: owner } : null })
+    rerender(<Wrapper><main data-testid="application"><input aria-label="Draft" defaultValue="Keep this draft" /></main></Wrapper>)
+    await act(async () => {})
+    observer.disconnect()
+    expect(screen.getByTestId('application')).toBe(node)
+    expect(screen.getByLabelText('Draft')).toHaveValue('Keep this draft')
+    expect(screen.queryByText('Preparing your account…')).not.toBeInTheDocument()
+    expect(inserted.some(item => item.textContent.includes('Preparing your account'))).toBe(false)
+    expect(clear).not.toHaveBeenCalled()
+  })
 
   it('opens only the supplied verified scanner fallback while Clerk cannot load, then mounts normal routes for its owner', async () => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
@@ -46,6 +66,7 @@ describe('account-bound scanner authentication bootstrap', () => {
     rerender(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
     expect(screen.queryByText('Verified saved scanner')).not.toBeInTheDocument()
     expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Preparing your account')
     expect(clear).toHaveBeenCalledOnce()
     await act(async () => finishClear())
     expect(screen.getByText('Normal routes')).toBeInTheDocument()

@@ -12,7 +12,7 @@ describe('build-time public site URLs', () => {
 
     // Per-page canonical/og:url come from the SEO component; a static copy would conflict.
     expect(html).not.toMatch(/<link rel="canonical"|property="og:url"/)
-    expect(html).toContain('<meta property="og:image" content="https://tickets.example.test/icons/icon-512.png" />')
+    expect(html).toContain('<meta property="og:image" content="https://tickets.example.test/og-default.jpg" data-rh="true" />')
     const jsonLd = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])
     expect(jsonLd['@graph'][0]).toEqual(expect.objectContaining({ url: 'https://tickets.example.test', logo: 'https://tickets.example.test/icons/icon-512.png' }))
     expect(html).not.toMatch(/%PUBLIC_WEB_URL%|public-site-url|hafapass\.com/)
@@ -22,7 +22,7 @@ describe('build-time public site URLs', () => {
     const html = renderPublicSiteHtml(indexHtml, '')
     expect(html).not.toMatch(/%PUBLIC_WEB_URL%|property="og:image"|ld\+json|hafapass\.com/)
     expect(html).toContain('og:title')
-    expect(html).toContain('<div id="root"></div>')
+    expect(html).toContain('<div id="root"><div class="boot-splash"')
   })
 
   it('points robots.txt at the configured sitemap only', () => {

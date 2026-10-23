@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import HomePage from './pages/HomePage'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
@@ -8,7 +8,6 @@ import SupportRoute from './components/SupportRoute'
 import { useAuthReturnIntentCleanup } from './hooks/useAuthReturnPath'
 
 // Lazy-loaded — heavier pages loaded on demand
-const HomePage = lazy(() => import('./pages/HomePage'))
 const EventsPage = lazy(() => import('./pages/EventsPage'))
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'))
 const SignInPage = lazy(() => import('./pages/SignInPage'))
@@ -70,18 +69,9 @@ const AdminTaxControlsPage = lazy(() => import('./pages/admin/AdminTaxControlsPa
 const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage'))
 const AdminOrganizationPage = lazy(() => import('./pages/admin/AdminOrganizationPage'))
 
-function PageLoader() {
-  return (
-    <div className="flex justify-center items-center py-20">
-      <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-    </div>
-  )
-}
-
 function App() {
   useAuthReturnIntentCleanup()
   return (
-    <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
@@ -150,7 +140,6 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-    </Suspense>
   )
 }
 
