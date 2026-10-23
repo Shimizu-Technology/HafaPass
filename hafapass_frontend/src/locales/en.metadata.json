@@ -799,14 +799,14 @@
         "context": "Buyer-facing WaitlistForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
       "noWaitlistEntriesFoundForThisEmail": {
-        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No waitlist entries are saved in this browser for this email. Check your waitlist email for a management link."
+        "context": "This only checks signed waitlist credentials saved in this browser, not all entries for an email. No email management-link recovery exists. No waitlist entries are saved in this browser for this email. Try the browser you used to join."
       },
       "status": {
         "waiting": {
           "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
         },
         "notified": {
-          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Availability email sent"
+          "context": "Only shown when the API confirms provider acceptance for this notification round. Availability email sent."
         },
         "offered": {
           "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ticket offer available"
@@ -823,6 +823,9 @@
       },
       "checkFailed": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't check your saved waitlist entries. Try again."
+      },
+      "notificationRequested": {
+        "context": "A waitlist availability alert was requested but provider acceptance has not been confirmed. Do not imply an email was sent."
       }
     },
     "WhosGoing": {

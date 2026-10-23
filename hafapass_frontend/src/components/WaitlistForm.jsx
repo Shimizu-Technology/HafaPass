@@ -183,7 +183,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
                     <span className="text-neutral-700">
                       {t('waitlist.position')} <span className="font-bold text-brand-600">#{entry.position}</span>
                       {entry.status !== 'waiting' && (
-                        <span className="ml-2 text-xs font-medium text-neutral-500 uppercase">{t(`buyer.WaitlistForm.status.${entry.status}`, { defaultValue: entry.status })}</span>
+                        <span className="ml-2 text-xs font-medium text-neutral-500 uppercase">{t(entry.status === 'notified' && entry.availability_email_sent !== true ? 'buyer.WaitlistForm.notificationRequested' : `buyer.WaitlistForm.status.${entry.status}`, { defaultValue: entry.status })}</span>
                       )}
                     </span>
                     {(entry.status === 'waiting' || entry.status === 'notified') && (

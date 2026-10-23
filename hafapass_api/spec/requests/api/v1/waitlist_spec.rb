@@ -75,6 +75,28 @@ RSpec.describe "Api::V1::Waitlist", type: :request do
       expect(json["entries"][0]["position"]).to eq(entry.position)
     end
 
+    %w[queued sent delivered delayed failed].each do |delivery_status|
+      it "reports whether the current availability email was accepted (#{delivery_status})" do
+        entry = create(:waitlist_entry, event: event, status: :notified, notified_at: Time.current)
+        create(:message_delivery, event: event, template: "waitlist_notification", recipient: entry.email,
+          status: delivery_status, idempotency_key: "waitlist-notification/#{entry.id}/#{entry.notified_at.iso8601(6)}")
+
+        get "/api/v1/events/#{event.slug}/waitlist/status", params: { management_token: entry.management_credential }
+        expect(response).to have_http_status(:ok)
+        expect(JSON.parse(response.body).fetch("entries").first.fetch("availability_email_sent"))
+          .to eq(%w[sent delivered delayed].include?(delivery_status))
+      end
+    end
+
+    it "does not use an older notification round to imply the current email was sent" do
+      entry = create(:waitlist_entry, event: event, status: :notified, notified_at: Time.current)
+      create(:message_delivery, event: event, template: "waitlist_notification", recipient: entry.email,
+        status: :sent, idempotency_key: "waitlist-notification/#{entry.id}/#{1.hour.ago.iso8601(6)}")
+
+      get "/api/v1/events/#{event.slug}/waitlist/status", params: { management_token: entry.management_credential }
+      expect(JSON.parse(response.body).fetch("entries").first.fetch("availability_email_sent")).to be(false)
+    end
+
     it "does not allow email-only enumeration" do
       get "/api/v1/events/#{event.slug}/waitlist/status", params: { email: "fan@example.com" }
       expect(response).to have_http_status(:not_found)

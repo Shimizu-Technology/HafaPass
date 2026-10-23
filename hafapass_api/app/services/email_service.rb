@@ -866,10 +866,9 @@ class EmailService
       ticket_rows = tickets.map do |ticket|
         <<~HTML
           <tr>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h([ticket_type_name(ticket.ticket_type), ticket.seat_label].compact.join(" — "))}</td>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{h(ticket.attendee_name)}</td>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">#{ht("ticket_status.#{ticket.status}")}</td>
-            <td style="padding: 10px 14px; border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">#{h([ticket_type_name(ticket.ticket_type), ticket.seat_label].compact.join(" — "))}<br><span style="color: #6b7280; font-size: 12px;">#{h(ticket.attendee_name)}</span></td>
+            <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">#{ht("ticket_status.#{ticket.status}")}</td>
+            <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">
               <a href="#{guest_order_url || ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_ticket')}</a>
             </td>
           </tr>
@@ -882,7 +881,7 @@ class EmailService
         ""
       end
       tickets_link = guest_order_url ? %(<a href="#{guest_order_url}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_order')}</a>) : default_tickets_link
-      header_style = "padding: 10px 14px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;"
+      header_style = "padding: 10px 4px; text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase;"
 
       # A buyer who transferred every ticket gets no empty table or entry instructions.
       tickets_section = if tickets.empty?
@@ -894,11 +893,10 @@ class EmailService
       else
         <<~HTML
           <h3 style="color: #1f2937; margin: 0 0 12px;">#{ht('order_confirmation.tickets_heading')}</h3>
-          <table style="width: 100%; border-collapse: collapse;">
+          <table style="width: 100%; table-layout: fixed; font-size: 14px; overflow-wrap: anywhere; border-collapse: collapse;">
             <thead>
               <tr style="background: #f9fafb;">
-                <th style="#{header_style}">#{ht('order_confirmation.type_column')}</th>
-                <th style="#{header_style}">#{ht('order_confirmation.attendee_column')}</th>
+                <th style="#{header_style} width: 40%;">#{ht('order_confirmation.type_column')}</th>
                 <th style="#{header_style}">#{ht('order_confirmation.status_column')}</th>
                 <th style="#{header_style}">#{ht('order_confirmation.ticket_column')}</th>
               </tr>
