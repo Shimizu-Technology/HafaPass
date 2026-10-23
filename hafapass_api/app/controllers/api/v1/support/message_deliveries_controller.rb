@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Support::MessageDeliveriesController < Api::V1::Support::BaseController
+  around_action :with_audit_transaction, only: [:resend, :fulfill]
   def index
     deliveries = MessageDelivery.includes(:order, :ticket, :event, :requested_by)
     deliveries = deliveries.where(status: params[:status]) if params[:status].present?

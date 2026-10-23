@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseController
+  around_action :with_audit_transaction, only: :update
   class StaleVerificationRequest < StandardError; end
 
   def update

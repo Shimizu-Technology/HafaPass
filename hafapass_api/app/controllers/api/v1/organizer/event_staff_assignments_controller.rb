@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::BaseController
+  around_action :with_audit_transaction, only: [:create, :update, :destroy, :revoke_invitation]
   before_action :set_event
   before_action :require_staff_management
   before_action :set_assignment, only: [:update, :destroy]
@@ -38,7 +39,6 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
       expires_at: params[:expires_at]
     )
     assignment.save!
-    audit_assignment!("event_staff.assigned", assignment)
     render json: assignment_json(assignment), status: :created
   rescue ActiveRecord::RecordNotFound
     render json: { error: "An active organization member is required" }, status: :unprocessable_entity
@@ -51,7 +51,6 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
     return unless role
 
     @assignment.update!(role: role, expires_at: params[:expires_at], status: :active)
-    audit_assignment!("event_staff.updated", @assignment)
     render json: assignment_json(@assignment)
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
@@ -59,7 +58,6 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
 
   def destroy
     @assignment.update!(status: :revoked)
-    audit_assignment!("event_staff.revoked", @assignment)
     head :no_content
   end
 
@@ -88,7 +86,8 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
       end
     end
     AuditLogger.record!(action: "event_staff.invitation_revoked", auditable: membership, actor: current_user,
-      organization: current_organization, after_data: { event_id: @event.id, status: membership.status }, request: request)
+      organization: current_organization, event: @event,
+      after_data: { event_id: @event.id, status: membership.status }, request: request)
     head :no_content
   end
 
@@ -110,7 +109,6 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
       assignment.assign_attributes(organization: current_organization, assigned_by_user: current_user, status: :active,
         expires_at: nil)
       assignment.save!
-      audit_assignment!("event_staff.assigned", assignment)
       return render json: { assignment: assignment_json(assignment) }, status: :created
     end
 
@@ -162,17 +160,6 @@ class Api::V1::Organizer::EventStaffAssignmentsController < Api::V1::Organizer::
     render json: { error: "role must be one of: #{EventStaffAssignment.roles.keys.join(", ")}" },
       status: :unprocessable_entity
     nil
-  end
-
-  def audit_assignment!(action, assignment)
-    AuditLogger.record!(
-      action: action,
-      auditable: assignment,
-      actor: current_user,
-      organization: current_organization,
-      after_data: assignment_json(assignment),
-      request: request
-    )
   end
 
   def assignment_json(assignment)

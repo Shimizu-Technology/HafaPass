@@ -451,7 +451,7 @@ class PrivacyRequestProcessor
         attrs[:ip_address] = nil if audit.actor_user_id == @request.user_id ||
           (audit.actor_user_id.nil? && own_request)
         attrs[:updated_at] = Time.current
-        AuditLog.where(id: audit.id).update_all(attrs)
+        AuditLog.redact!(AuditLog.where(id: audit.id), attrs)
       end
     end
     MessageDelivery.where(id: current_plan.metadata_delivery_ids).find_each do |delivery|

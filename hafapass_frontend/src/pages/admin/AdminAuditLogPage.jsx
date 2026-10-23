@@ -79,7 +79,7 @@ function AdminAuditLogSession({ identity, resourcePath }) {
 
   return (
     <AdminLayout>
-      <p className="mb-5 max-w-3xl text-sm text-content-muted">Every recorded administrative and money action, newest first. Entries cannot be edited or deleted.</p>
+      <p className="mb-5 max-w-3xl text-sm text-content-muted">Recorded activity, newest first. Entry identities cannot be changed or deleted. Personal details may be redacted for privacy or retention.</p>
       {(filters.target_type || filters.organization_id) && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
         <p>Showing entries for {filters.target_type ? `${filters.target_type}${filters.target_id ? ` #${filters.target_id}` : ''}` : `organization #${filters.organization_id}`}</p>
         <Link to={`?${scopeQuery}`} className="min-h-11 content-center font-semibold underline underline-offset-2">Show all entries</Link>

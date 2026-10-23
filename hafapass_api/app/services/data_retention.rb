@@ -353,8 +353,8 @@ class DataRetention
         b_notice_identity_digest: nil,
         retention_anonymized_at: Time.current, updated_at: Time.current)
     when AuditLog
-      AuditLog.where(id: record.id).update_all(ip_address: nil, before_data: {}, after_data: {}, metadata: {},
-        retention_anonymized_at: Time.current, updated_at: Time.current)
+      AuditLog.redact!(AuditLog.where(id: record.id), { ip_address: nil, before_data: {}, after_data: {}, metadata: {},
+        retention_anonymized_at: Time.current, updated_at: Time.current })
     when MessageDelivery
       record.update_columns(recipient: "deleted@privacy.invalid", outbound_payload: {}, outbound_wire_body: nil,
         wire_body_digest: nil, payload_digest: nil, send_lease_token: nil, transport_context_digest: nil,

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
+  around_action :with_audit_transaction, only: :update
   # GET /api/v1/admin/users
   def index
     users = User.includes(:organizer_profile, :orders, organization_memberships: :organization)

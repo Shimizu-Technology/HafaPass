@@ -15,6 +15,7 @@ class ScannerDevice < ApplicationRecord
   validates :last_manifest_version, :last_sequence,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :relationships_share_organization
+  after_update :audit_operational_changes
 
   def effective?(at: Time.current)
     status_active? && authorization_expires_at > at && (revoked_at.nil? || revoked_at > at)
@@ -25,6 +26,21 @@ class ScannerDevice < ApplicationRecord
   end
 
   private
+
+  def audit_operational_changes
+    if saved_change_to_name?
+      AuditLogger.record!(action: "scanner_device.renamed", auditable: self, event: event,
+        before_data: { name: name_before_last_save }, after_data: { name: name })
+    end
+    if saved_change_to_manifest_downloaded_at?
+      AuditLogger.record!(action: "scanner_device.manifest_downloaded", auditable: self, event: event,
+        after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at })
+    end
+    if saved_change_to_status? && status_revoked?
+      AuditLogger.record!(action: "scanner_device.revoked", auditable: self, event: event,
+        before_data: { status: status_before_last_save }, after_data: { status: status })
+    end
+  end
 
   def relationships_share_organization
     return if event.nil? || event.organization_id == organization_id

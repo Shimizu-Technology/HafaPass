@@ -57,13 +57,16 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
     {
       id: entry.id,
       action: entry.action,
+      source: entry.source,
+      outcome: entry.outcome,
+      event_id: entry.event_id,
       occurred_at: entry.occurred_at,
       actor: user_summary(entry.actor_user),
       target: { type: entry.auditable_type, id: entry.auditable_id },
       organization: entry.organization && { id: entry.organization_id, name: entry.organization.name },
-      before_data: entry.before_data,
-      after_data: entry.after_data,
-      metadata: entry.metadata,
+      before_data: AuditSanitizer.call(entry.before_data),
+      after_data: AuditSanitizer.call(entry.after_data),
+      metadata: AuditSanitizer.call(entry.metadata),
       request_id: entry.request_id
     }
   end

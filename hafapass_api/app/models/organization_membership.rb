@@ -14,6 +14,7 @@ class OrganizationMembership < ApplicationRecord
   validate :active_membership_has_acceptance
   validate :user_or_invited_email_present
   validate :pending_event_assignments_shape
+  after_update :audit_acceptance
 
   scope :effective, ->(at = Time.current) { status_active.where("expires_at IS NULL OR expires_at > ?", at) }
 
@@ -41,6 +42,16 @@ class OrganizationMembership < ApplicationRecord
   end
 
   private
+
+  def audit_acceptance
+    return unless saved_change_to_status? && status_active? && accepted_at
+
+    AuditLogger.record!(action: "organization.invitation_accepted", auditable: self,
+      actor: AuditContext.actor || user, organization: organization,
+      before_data: saved_changes.slice("role", "status", "user_id", "accepted_at").transform_values(&:first),
+      after_data: { target_user_id: user_id, target_name: [user&.first_name, user&.last_name].compact.join(" "),
+        role: role, status: status, accepted_at: accepted_at })
+  end
 
   def active_membership_has_acceptance
     if status_active? && (accepted_at.blank? || user_id.blank?)

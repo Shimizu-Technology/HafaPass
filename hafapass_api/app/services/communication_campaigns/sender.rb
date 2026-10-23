@@ -17,7 +17,8 @@ module CommunicationCampaigns
 
     def call
       deliveries = []
-      CommunicationCampaign.transaction do
+      AuditContext.set(actor: @actor || AuditContext.actor) do
+        CommunicationCampaign.transaction do
         campaign.lock!
         unless campaign.draft? || campaign.scheduled?
           raise CampaignError, "Only draft or scheduled campaigns can be sent"
@@ -36,7 +37,7 @@ module CommunicationCampaigns
           deliveries << campaign.message_deliveries.create!(
             event: campaign.event,
             order: recipient[:order],
-            requested_by: campaign.created_by_user,
+            requested_by: @actor || AuditContext.actor,
             channel: "email",
             template: "communication_campaign",
             recipient: normalized,
@@ -50,11 +51,16 @@ module CommunicationCampaigns
           )
         end
         campaign.update!(status: :sent, sent_at: Time.current, recipient_count: deliveries.length)
+        end
       end
       deliveries.each { |delivery| MessageDeliveryJob.perform_later(delivery.id) }
       campaign
     rescue ActiveRecord::RecordNotUnique
       raise CampaignError, "This campaign has already been queued"
+    rescue StandardError => error
+      AuditLogger.record!(action: "campaign.send_failed", auditable: campaign, actor: @actor,
+        event: campaign.event, outcome: "failed", metadata: { error_class: error.class.name })
+      raise
     end
 
     def audience_counts

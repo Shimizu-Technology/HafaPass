@@ -13,6 +13,7 @@ class ApplicationController < ActionController::API
   before_action :authenticate_user!
   before_action :set_observability_context
   before_action :enforce_launch_capability
+  around_action :with_audit_context
 
   def append_info_to_payload(payload)
     super
@@ -21,6 +22,22 @@ class ApplicationController < ActionController::API
   end
 
   private
+
+  def with_audit_context(&block)
+    source = if controller_path.include?("webhook")
+      "provider"
+    elsif controller_path.start_with?("api/v1/admin/", "api/v1/support/")
+      "admin"
+    else
+      "user"
+    end
+    AuditContext.set(actor: @current_user, request_id: request.request_id,
+      ip_address: request.remote_ip, source: source, &block)
+  end
+
+  def with_audit_transaction(&block)
+    ActiveRecord::Base.transaction(&block)
+  end
 
   # The visitor's language (see AppLocale): ?locale= first, then Accept-Language.
   def request_locale
@@ -86,6 +103,7 @@ class ApplicationController < ActionController::API
 
     @clerk_payload = payload
     @current_user = current_user
+    AuditContext.actor = @current_user
   end
 
   def current_user

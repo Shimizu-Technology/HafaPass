@@ -99,13 +99,13 @@ class AuditActions
 
     define registry, area: "organization", audience: %w[org_owner],
       tenant: true, event_required: false,
-      snapshots: %w[policy_version policy_accepted_at], metadata: %w[], actions: {
+      snapshots: %w[policy_version policy_accepted_at accepted_at], metadata: %w[], actions: {
         "organizer.policy_accepted" => "Accepted the organizer agreement."
       }
 
     define registry, area: "team", audience: %w[org_owner],
       tenant: true, event_required: false,
-      snapshots: %w[role status accepted_at revoked_at expires_at], metadata: %w[membership_id], actions: {
+      snapshots: %w[role status accepted_at revoked_at expires_at target_user_id target_name], metadata: %w[membership_id], actions: {
         "organization.invitation_created" => "Invited a team member.",
         "organization.invitation_resent" => "Resent a team invitation.",
         "organization.invitation_accepted" => "Accepted a team invitation.",
@@ -116,7 +116,7 @@ class AuditActions
 
     define registry, area: "team", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[event_id role status expires_at], metadata: %w[], actions: {
+      snapshots: %w[event_id role status expires_at target_user_id target_name], metadata: %w[], actions: {
         "event_staff.assigned" => "Assigned event staff.",
         "event_staff.updated" => "Updated an event staff assignment.",
         "event_staff.revoked" => "Revoked an event staff assignment.",

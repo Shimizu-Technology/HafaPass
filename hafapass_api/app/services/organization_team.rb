@@ -124,12 +124,23 @@ class OrganizationTeam
       membership.with_lock do
         OrganizationInvitation.revoke!(membership)
         if membership.user_id
+          membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id).find_each do |assignment|
+            AuditLogger.record!(action: "event_staff.revoked", auditable: assignment, actor: actor,
+              organization: membership.organization, event: assignment.event,
+              before_data: { status: assignment.status, role: assignment.role, target_user_id: assignment.user_id },
+              after_data: { status: "revoked", role: assignment.role, target_user_id: assignment.user_id },
+              metadata: { cause: "organization_membership_revoked" }, request: request)
+          end
           membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id)
             .update_all(status: EventStaffAssignment.statuses[:revoked], updated_at: Time.current)
         end
       end
       AuditLogger.record!(action: "organization.membership_revoked", auditable: membership, actor: actor,
-        organization: membership.organization, request: request)
+        organization: membership.organization,
+        before_data: { role: membership.role, status: membership.status_before_last_save,
+          target_user_id: membership.user_id, invited_email: membership.invited_email,
+          target_name: [membership.user&.first_name, membership.user&.last_name].compact.join(" ") },
+        after_data: { role: membership.role, status: membership.status, target_user_id: membership.user_id }, request: request)
       membership
     end
 
@@ -146,7 +157,9 @@ class OrganizationTeam
       attributes[:expires_at] = expires_at unless expires_at == :unchanged
       membership.update!(attributes)
       AuditLogger.record!(action: "organization.membership_updated", auditable: membership, actor: actor,
-        organization: membership.organization, before_data: before_data, after_data: snapshot(membership),
+        organization: membership.organization,
+        before_data: before_data.merge(target_user_id: membership.user_id, invited_email: membership.invited_email),
+        after_data: snapshot(membership).merge(target_user_id: membership.user_id),
         request: request)
       membership
     rescue ActiveRecord::RecordInvalid => e
