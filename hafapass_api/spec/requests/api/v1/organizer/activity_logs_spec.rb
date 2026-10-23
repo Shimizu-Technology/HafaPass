@@ -202,3 +202,18 @@ RSpec.describe "Activity former-member privacy", type: :request do
     people.each { |person| expect(response.body).not_to include(person.email) }
   end
 end
+
+RSpec.describe "Activity unavailable human actors", type: :request do
+  it "does not label guest or deleted user actions as system operations" do
+    profile = create(:organizer_profile)
+    event = create(:event, organizer_profile: profile)
+    guest = AuditLogger.record!(action: "event.updated", auditable: event, source: "user")
+    person = create(:user)
+    removed = AuditLogger.record!(action: "event.updated", auditable: event, actor: person, source: "user")
+    person.destroy!
+    get "/api/v1/organizer/activity_logs", headers: auth_headers(profile.user).merge("X-Organization-Id" => event.organization_id.to_s)
+    rows = response.parsed_body.fetch("activity_logs").index_by { |row| row["id"] }
+    expect(rows.fetch(guest.id).fetch("actor")).to eq("name" => "Buyer")
+    expect(rows.fetch(removed.id).fetch("actor")).to eq("name" => "Former user")
+  end
+end

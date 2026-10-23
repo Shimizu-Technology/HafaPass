@@ -36,6 +36,9 @@ class ActivityLogPresenter
     return { name: "Stripe" } if entry.source == "provider"
     return { name: "HåfaPass" } if entry.source == "system"
     return { name: "HåfaPass administrator" } if entry.source == "admin" || entry.actor_user&.staff?
+    if entry.source == "user" && !entry.actor_user
+      return { name: entry.actor_user_id ? "Former user" : "Buyer" }
+    end
     return { name: "System" } unless entry.actor_user
 
     member = @member_ids ? @member_ids.include?(entry.actor_user_id) :
