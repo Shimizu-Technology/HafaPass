@@ -23,7 +23,6 @@
     "backToEvent": "返回活動頁面",
     "continueToPayment": "前往付款",
     "discount": "折扣",
-    "editInfo": "編輯資料",
     "emailAddress": "電子郵件地址",
     "enterCode": "輸入優惠碼",
     "feesUnavailable": "無法載入目前的服務費，因此暫時無法顯示總金額。",
@@ -162,10 +161,8 @@
   "pricing": {
     "currentPrice": "{{name}} — {{price}}",
     "earlyBird": "早鳥優惠",
-    "endsIn": "{{days}} 天後截止",
     "onlyLeft": "此優惠價僅剩 {{count}} 張！",
-    "priceGoesUp": "{{date}} 之後票價將調漲至 {{price}}",
-    "regularPrice": "原價：{{price}}"
+    "priceGoesUp": "{{date}} 之後票價將調漲至 {{price}}"
   },
   "tickets": {
     "addToHomeScreen": "加入主畫面",

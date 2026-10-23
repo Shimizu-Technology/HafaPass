@@ -26,8 +26,8 @@
     "send": "Send request",
     "sending": "Sending…",
     "sendError": "We couldn't confirm the result. Refresh to check before trying again.",
-    "previewBanner": "Preview — this event isn't public yet. Tickets go on sale once HåfaPass verifies the organizer.",
-    "previewTicketsDisabled": "Tickets aren't available in this private preview. Sales begin after HåfaPass verifies the organizer.",
+    "previewBanner": "Private preview — this event isn't public, and tickets aren't available here.",
+    "previewTicketsDisabled": "Tickets aren't available in this private preview.",
     "waitingChip": "Waiting for verification",
     "privatePreviewChip": "Private preview",
     "suspendedChip": "Hidden while suspended",
@@ -163,15 +163,16 @@
   "pricing": {
     "earlyBird": "Early Bird",
     "currentPrice": "{{name}} — {{price}}",
-    "regularPrice": "Regular price: {{price}}",
+    "regularPrice": "Next price: {{price}}",
     "priceGoesUp": "Price goes up to {{price}} after {{date}}",
     "onlyLeft": "Only {{count}} left at this price!",
-    "endsIn": "Ends in {{days}} days",
     "ticketPlusFee": "{{price}} ticket + {{fee}} service fee",
     "allInNote": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing and card processing.",
     "allInNoteNoProcessing": "Prices include all mandatory fees. The service fee pays for {{platform}} ticketing.",
     "noAddedFees": "No added fees. The price shown is the price you pay.",
-    "sellerLine": "Sold by {{seller}} · Tickets by {{platform}}"
+    "sellerLine": "Sold by {{seller}} · Tickets by {{platform}}",
+    "endsIn_one": "Ends in {{count}} day",
+    "endsIn_other": "Ends in {{count}} days"
   },
   "checkout": {
     "title": "Checkout",
@@ -200,8 +201,10 @@
     "havePromoCode": "Have a promo code?",
     "enterCode": "Enter code",
     "apply": "Apply",
-    "editInfo": "Edit info",
-    "termsNotice": "By completing this purchase you agree to the HåfaPass terms of service."
+    "editInfo": "Cancel checkout and edit details",
+    "termsNotice": "By completing this purchase you agree to the HåfaPass terms of service.",
+    "getFreeTickets": "Get free tickets",
+    "cancelAndEditExplanation": "This cancels your current order and releases your ticket hold. Availability and prices may change when you start again."
   },
   "tickets": {
     "myTickets": "My Tickets",
@@ -299,7 +302,15 @@
   },
   "buyer": {
     "EventDetail": {
-      "design": { "lineup": "Lineup", "schedule": "Schedule", "faq": "FAQ", "sponsors": "Sponsors & partners", "video": "Video", "links": "Links", "gallery": "Photos" },
+      "design": {
+        "lineup": "Lineup",
+        "schedule": "Schedule",
+        "faq": "FAQ",
+        "sponsors": "Sponsors & partners",
+        "video": "Video",
+        "links": "Links",
+        "gallery": "Photos"
+      },
       "openPhoto": "Open photo {{number}}",
       "photoGallery": "Photo gallery",
       "closePhoto": "Close photo",
@@ -490,15 +501,18 @@
       "failedToJoinWaitlist": "Failed to join waitlist",
       "removeYourselfFromTheWaitlist": "Remove yourself from the waitlist?",
       "failedToLeaveWaitlist": "Failed to leave waitlist",
-      "noWaitlistEntriesFoundForThisEmail": "No waitlist entries found for this email.",
+      "noWaitlistEntriesFoundForThisEmail": "No waitlist entries are saved in this browser for this email. Try the browser you used to join.",
       "status": {
         "waiting": "waiting",
-        "notified": "notified",
-        "offered": "offered",
-        "converted": "converted",
-        "expired": "expired",
+        "notified": "Availability email sent",
+        "offered": "Ticket offer available",
+        "converted": "Tickets claimed",
+        "expired": "Offer expired",
         "cancelled": "cancelled"
-      }
+      },
+      "checkFailed": "We couldn't check some saved waitlist entries. Try again.",
+      "savedEntriesUnavailable": "Some saved waitlist entries are no longer available. Their access links may have expired or been removed.",
+      "notificationRequested": "Availability notification requested"
     },
     "WhosGoing": {
       "whosGoing": "Who's Going",
@@ -507,11 +521,12 @@
       "countGoing": "{{count}} going"
     },
     "PaymentForm": {
-      "anUnexpectedErrorOccurredPleaseTryAgain": "An unexpected error occurred. Please try again.",
-      "weCouldNotConfirmThePaymentStatusPlease": "We could not confirm the payment status. Please refresh before trying again.",
+      "anUnexpectedErrorOccurredPleaseTryAgain": "We couldn't confirm your payment status. Check your order before trying again.",
+      "weCouldNotConfirmThePaymentStatusPlease": "We couldn't confirm your payment status. Check your order before trying again.",
       "processingPayment": "Processing Payment...",
       "pay": "Pay {{value1}}",
-      "securedByStripeYourPaymentInfoNeverTouches": "Secured by Stripe. Your payment info never touches our servers."
+      "securedByStripeYourPaymentInfoNeverTouches": "Card details are handled by Stripe.",
+      "checkOrderStatus": "Check order status"
     },
     "PaymentModeBanner": {
       "simulateMode": "Simulate Mode",
@@ -530,7 +545,7 @@
       "pageTitle": "We couldn’t find that page",
       "pageMessage": "The link may be mistyped, or the page may have moved.",
       "eventTitle": "We couldn’t find that event",
-      "eventMessage": "The link may be mistyped, or the organizer may have taken the event down. Other events on Guam are a search away.",
+      "eventMessage": "The link may be incorrect, or this event may no longer be listed. Browse events to check current listings.",
       "organizerTitle": "We couldn’t find that organizer",
       "organizerMessage": "The link may be mistyped, or this organizer isn’t listing events on HåfaPass right now.",
       "venueTitle": "We couldn’t find that venue",
@@ -604,7 +619,7 @@
     "ErrorFallback": {
       "hafapassRecovery": "HåfaPass recovery",
       "somethingInterruptedThisPage": "Something interrupted this page.",
-      "theIssueHasBeenRecordedWhenMonitoringIs": "The issue has been recorded when monitoring is configured. Try the page again, or reload HåfaPass to start fresh.",
+      "theIssueHasBeenRecordedWhenMonitoringIs": "We couldn't display this page. Try again, or reload HåfaPass.",
       "tryAgain": "Try again",
       "reloadHafaPass": "Reload HåfaPass",
       "developmentDetails": "Development details"
@@ -660,7 +675,7 @@
       "addCompsPerformersAndVIPsSoThey": "Add comps, performers and VIPs so they’re checked in like everyone else.",
       "runTheDoor": "Run the door",
       "doorScannerOnAnyPhone": "Door scanner on any phone",
-      "scanTicketsInThePhoneSBrowser": "Scan tickets in the phone’s browser, with no app to install. Keeps scanning if the Wi‑Fi drops and syncs when it’s back.",
+      "scanTicketsInThePhoneSBrowser": "Scan tickets in the phone’s browser, with no app to install. Keeps scanning if the Wi‑Fi drops and syncs when it’s back. Each device must be prepared online before the event.",
       "cashBoxOffice": "Cash box office",
       "sellTicketsAtTheDoorForCash": "Sell tickets at the door for cash and keep them in the same count as online sales.",
       "teamRoles": "Team roles",
@@ -731,7 +746,7 @@
       "youSetTheRefundRulesForYour": "You set the refund rules for your event and handle refund requests from your dashboard. Refunds go back to the buyer’s original payment method and come out of your event’s sales. See the ",
       "refundCancellationPolicy": "Refund & Cancellation Policy",
       "doesMyDoorStaffNeedAnApp": "Does my door staff need an app?",
-      "noStaffOpenTheScannerInTheir": "No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back.",
+      "noStaffOpenTheScannerInTheir": "No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back. Each device must be prepared online before the event.",
       "howDoIGetHelp": "How do I get help?",
       "emailTheHåfaPassTeamAtAnyPoint": "Email the HåfaPass team at any point, from setting up your first event to closing out after it. ",
       "hostingOnHåfaPass": "Hosting on HåfaPass",
@@ -771,7 +786,8 @@
       "ticketsIssued_one": "{{count}} tickets issued",
       "ticketsIssued_other": "{{count}} tickets issued",
       "followers_one": "{{count}} followers",
-      "followers_other": "{{count}} followers"
+      "followers_other": "{{count}} followers",
+      "empty": "This organizer has no upcoming events listed."
     },
     "venue": {
       "thisVenueCouldnTLoadPleaseTry": "This venue couldn’t load. Please try again.",
@@ -780,19 +796,22 @@
       "verifiedVenue": "Verified venue",
       "accessibility": "Accessibility:",
       "upcomingEvents": "Upcoming events",
-      "eventTitle": "{{name}} Events"
+      "eventTitle": "{{name}} Events",
+      "empty": "No upcoming events are listed for this venue."
     },
     "saved": {
       "savedEvents": "Saved events",
       "yourHåfaPassFavoritesFollowedOrganizersAndEvent": "Your HåfaPass favorites, followed organizers, and event reminders.",
       "saved": "Saved",
       "favoriteEvents": "Favorite events",
-      "favoriteAnEventToKeepItHere": "Favorite an event to keep it here.",
+      "favoriteAnEventToKeepItHere": "Save an event to find it here.",
       "followedOrganizers": "Followed organizers",
       "noFollowedOrganizersYet": "No followed organizers yet.",
       "reminders": "Reminders",
       "reminder": "Reminder {{date}}",
-      "noActiveReminders": "No active reminders."
+      "noActiveReminders": "No active reminders.",
+      "loadError": "We couldn't load your saved items.",
+      "tryAgain": "Try again"
     },
     "collections": {
       "discoverGuam": "Discover Guam",
@@ -801,16 +820,22 @@
       "freshEventsAreOnTheWay": "Fresh events are on the way",
       "browseAllCurrentInventoryOrPublishThe": "Browse all current inventory or publish the island’s next event.",
       "browseEvents": "Browse events",
-      "viewAll": "View all "
+      "viewAll": "View all ",
+      "empty": "No featured collections yet. Browse events to see current listings.",
+      "loadError": "We couldn't load featured collections.",
+      "tryAgain": "Try again",
+      "emptyPage": "No events on this page.",
+      "firstPage": "Back to first page"
     },
     "collection": {
       "thisCollectionCouldnTLoadPleaseTry": "This collection couldn’t load. Please try again.",
-      "retry": "Retry"
+      "retry": "Retry",
+      "empty": "This collection has no events listed right now."
     },
     "privatePreview": {
-      "håfapassConnectionUnavailable": "HåfaPass | Connection unavailable",
+      "håfapassConnectionUnavailable": "Connection unavailable",
       "håfapassServicesAreTemporarilyUnavailableRetryYour": "HåfaPass services are temporarily unavailable. Retry your connection or contact support.",
-      "privatePreview": "Private preview",
+      "privatePreview": "Service unavailable",
       "connectionToHåfaPassIsUnavailable": " Connection to HåfaPass is unavailable",
       "pleaseTryConnectingAgain": "Please try connecting again.",
       "weCannotLoadEventListingsOrCheckout": "We cannot load event listings or checkout right now. Please retry shortly. If you already have a ticket or need help with an event, contact our team.",
@@ -1012,11 +1037,11 @@
       "opening": "Opening…",
       "preparingYourAccount": "Preparing your account…",
       "ticketNotFound": "Ticket not found.",
-      "failedToLoadTicketPleaseTryAgain": "Failed to load ticket. Please try again.",
+      "failedToLoadTicketPleaseTryAgain": "We couldn't load this ticket.",
       "thePDFCannotDisplaySomeTextOnThis": "The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.",
       "weCouldnTDownloadThePDFYourTicket": "We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.",
       "myTicket": "My Ticket",
-      "checkOutMyTicketFor": "Check out my ticket for {{event}}",
+      "checkOutMyTicketFor": "Ticket link for {{event}}. Sharing this link does not transfer the ticket.",
       "walletIsUnavailable": "{{wallet}} Wallet is unavailable.",
       "apple": "Apple",
       "google": "Google",
@@ -1039,7 +1064,7 @@
       "doorsOpenAt": "Doors open at {{time}}",
       "generating": "Generating...",
       "downloadPDF": "Download PDF",
-      "shareTicket": "Share Ticket",
+      "shareTicket": "Share ticket link",
       "appleWallet": "Apple Wallet",
       "googleWallet": "Google Wallet",
       "presentThisQRCodeAtTheDoor": "Present this QR code at the door",
@@ -1047,7 +1072,15 @@
       "eventStatus": {
         "cancelled": "cancelled",
         "postponed": "postponed"
-      }
+      },
+      "tryAgain": "Try again",
+      "findMyOrder": "Find my order",
+      "entryState": {
+        "checked_in": "This ticket has already been used.",
+        "cancelled": "This ticket is cancelled and cannot be used for entry.",
+        "transferred": "This ticket has been transferred and cannot be used by the previous holder."
+      },
+      "sharingDoesNotTransfer": "Sharing this link does not transfer the ticket."
     },
     "myTicketsPage": {
       "testOrderNoRealCharge": "Test order — no real charge",
@@ -1111,7 +1144,8 @@
       "past": "Past",
       "transfer": "Transfer",
       "openTicketToDownload": "Open ticket to download",
-      "yourTicketFor": "your {{name}} ticket for {{title}}"
+      "yourTicketFor": "your {{name}} ticket for {{title}}",
+      "entryPaused": "Entry paused"
     },
     "orderRecoveryPage": {
       "pleaseWaitBeforeRequestingAnotherAccessLink": "Please wait before requesting another access link.",
@@ -1153,7 +1187,7 @@
       "cancel": "Cancel",
       "sending": "Sending…",
       "sendTransfer": "Send transfer",
-      "sentMessage": "We emailed <recipient>{{email}}</recipient> a link to accept {{ticket}}. Your ticket keeps working until they accept. After that, your QR code stops working and theirs is the one to scan.",
+      "sentMessage": "The invitation email to <recipient>{{email}}</recipient> to accept {{ticket}} is on its way. The ticket stays with you until they accept.",
       "recipientNameLabel": "Recipient name <optional>(optional)</optional>"
     },
     "pendingTransfer": {
@@ -1166,9 +1200,15 @@
       "cancelThisTransfer": "Cancel this transfer?",
       "keepTransfer": "Keep transfer",
       "cancelling": "Cancelling…",
-      "expires": "expires {{date}}",
+      "expires": "Expires {{date}} Guam time",
       "cancelMessage": "The link sent to <recipient>{{email}}</recipient> stops working and the ticket stays with you. You can send a new transfer afterward.",
       "sentToRecipient": "sent to <recipient>{{email}}</recipient>"
+    },
+    "privacyRequests": {
+      "loading": "Loading your requests…",
+      "loadError": "We couldn't load your requests.",
+      "tryAgain": "Try again",
+      "empty": "No requests yet."
     }
   }
 }

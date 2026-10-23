@@ -7,12 +7,18 @@ RSpec.describe "Legacy email job recovery" do
     allow(Resend::Emails).to receive(:send).and_return({ id: "synthetic-provider-id" })
   end
 
-  [SendTicketEmailJob, SendOrderConfirmationJob].each do |job_class|
+  [SendTicketEmailJob, SendOrderConfirmationJob, SendRefundNotificationJob].each do |job_class|
     context job_class.name do
       let(:subject) { job_class == SendTicketEmailJob ? create(:ticket) : create(:order) }
       let(:attributes) do
-        job_class == SendTicketEmailJob ? { ticket: subject, order: subject.order, template: "ticket_delivery" } :
+        case job_class.name
+        when "SendTicketEmailJob"
+          { ticket: subject, order: subject.order, template: "ticket_delivery" }
+        when "SendRefundNotificationJob"
+          { order: subject, template: "refund_notification", metadata: { refund_id: create(:refund, order: subject).id } }
+        else
           { order: subject, template: "order_confirmation" }
+        end
       end
 
       it "fails closed when an old queued job has no durable delivery" do

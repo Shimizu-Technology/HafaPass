@@ -133,6 +133,7 @@ function TicketContent({ authContext }) {
   const eventContent = useTranslatedContent(ticket?.event)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
@@ -181,7 +182,7 @@ function TicketContent({ authContext }) {
     }
     fetchTicket()
     return () => { active = false }
-  }, [credential, orderId, authContext, t])
+  }, [credential, orderId, authContext, t, loadAttempt])
 
   async function handleDownload() {
     const current = currentOperation()
@@ -282,7 +283,7 @@ function TicketContent({ authContext }) {
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-neutral-950 mb-3">{t('buyerAccount.ticketPage.ticketUnavailable')}</h1>
           <p role="alert" className="text-red-700 font-medium mb-4">{error}</p>
-          <Link to="/events" className="btn-primary text-sm">{t('buyerAccount.ticketPage.browseEvents')}</Link>
+          <div className="flex flex-wrap justify-center gap-3"><button type="button" className="btn-primary text-sm" onClick={() => setLoadAttempt(value => value + 1)}>{t('buyerAccount.ticketPage.tryAgain')}</button><Link to="/orders/recover" className="btn-secondary text-sm">{t('buyerAccount.ticketPage.findMyOrder')}</Link></div>
         </div>
       </div>
     )
@@ -301,8 +302,8 @@ function TicketContent({ authContext }) {
     transferred: { label: t('buyerAccount.ticketPage.transferred'), bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
   }
 
-  const accessPaused = ticket.status === 'issued' && (ticket.admission_allowed === false || Boolean(ticket.admission_block_reason))
-  const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.issued
+  const accessPaused = ticket.status === 'issued' && ticket.admission_allowed !== true
+  const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.access_paused
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
@@ -363,7 +364,9 @@ function TicketContent({ authContext }) {
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-700">{t('buyerAccount.ticketPage.entryCodeUnavailable')}</p>
-              <p className="mt-1 text-xs text-neutral-500">{t('buyerAccount.ticketPage.openThisTicketFromYourSecureOrderConfirmation')}</p>
+              <p className="mt-1 text-xs text-neutral-500">{ticket.admission_allowed === true
+                ? t('buyerAccount.ticketPage.openThisTicketFromYourSecureOrderConfirmation')
+                : ticket.admission_block_reason || t(`buyerAccount.ticketPage.entryState.${ticket.status}`, { defaultValue: t('buyerAccount.ticketPage.thisTicketIsNotCurrentlyValidForEntry') })}</p>
             </div>
           )}
 
@@ -443,6 +446,9 @@ function TicketContent({ authContext }) {
                 <Share2 className="w-4 h-4" />
                 <span>{t('buyerAccount.ticketPage.shareTicket')}</span>
               </button>
+            )}
+            {typeof navigator !== 'undefined' && navigator.share && (
+              <p className="text-center text-xs text-neutral-500">{t('buyerAccount.ticketPage.sharingDoesNotTransfer')}</p>
             )}
 
             {walletError && <p className="text-center text-xs text-red-600">{walletError}</p>}

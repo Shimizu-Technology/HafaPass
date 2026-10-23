@@ -351,7 +351,7 @@ describe('MyTicketsPage transfers', () => {
     apiClient.post.mockResolvedValue({ data: {} })
     apiClient.delete.mockImplementation(() => { tickets = [transferable]; return Promise.resolve({ data: { status: 'cancelled' } }) })
     renderPage()
-    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · expires Dec 27')
+    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · Expires Dec 27, 2029, 6:00 PM Guam time')
     expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel transfer' }))
     await userEvent.click(within(screen.getByRole('dialog', { name: 'Cancel this transfer?' })).getByRole('button', { name: 'Cancel transfer' }))
@@ -398,5 +398,21 @@ describe('MyTicketsPage transfers', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send transfer' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Done' }))
     expect(await screen.findByText(/Transfer pending/)).toBeInTheDocument()
+  })
+})
+
+describe('truthful admission badges', () => {
+  beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset().mockResolvedValue({ data: {} }) })
+  it('shows valid only for admission-allowed tickets and explains issued-but-paused tickets', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [
+      { ...ticket, id: 1, admission_allowed: true },
+      { ...ticket, id: 2, admission_allowed: false, admission_block_reason: 'Payment dispute under review' },
+      { ...ticket, id: 3, admission_allowed: false, admission_block_reason: 'Event is postponed' },
+      { ...ticket, id: 4, admission_allowed: false, admission_block_reason: 'Refund pending' },
+    ] } })
+    renderPage()
+    expect(await screen.findAllByText('Valid', { exact: true })).toHaveLength(1)
+    expect(screen.getAllByText('Entry paused')).toHaveLength(3)
+    for (const reason of ['Payment dispute under review', 'Event is postponed', 'Refund pending']) expect(screen.getByText(reason)).toBeInTheDocument()
   })
 })

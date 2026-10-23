@@ -260,7 +260,7 @@ describe('checkout navigation', () => {
     </Routes></MemoryRouter>)
     await screen.findByText('Payment form')
     const user = userEvent.setup()
-    const edit = screen.getByRole('button', { name: "Edit info" })
+    const edit = screen.getByRole('button', { name: "Cancel checkout and edit details" })
     await user.click(edit)
     expect(edit).toBeDisabled()
     await user.click(edit)
@@ -309,7 +309,7 @@ describe('checkout navigation', () => {
       if (outcome === 'false') clear.mockReturnValueOnce(false)
       else clear.mockImplementationOnce(() => { throw new Error('Synthetic storage failure') })
     }
-    await userEvent.setup().click(screen.getByRole('button', { name: "Edit info" }))
+    await userEvent.setup().click(screen.getByRole('button', { name: "Cancel checkout and edit details" }))
     expect(await screen.findByText(/Your order was cancelled, but this page could not reset/)).toBeInTheDocument()
     expect(screen.queryByText('Payment form')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeInTheDocument()
@@ -335,7 +335,7 @@ describe('checkout navigation', () => {
     </Routes></MemoryRouter>
     const view = render(tree)
     await screen.findByText('Payment form')
-    await userEvent.setup().click(screen.getByRole('button', { name: "Edit info" }))
+    await userEvent.setup().click(screen.getByRole('button', { name: "Cancel checkout and edit details" }))
     expect(await screen.findByRole('alert')).toHaveTextContent(outcome === 'rejected'
       ? 'Payment is processing; cancellation unavailable' : 'We could not confirm cancellation')
     expect(screen.getByText('Payment form')).toBeInTheDocument()
@@ -370,7 +370,7 @@ describe('checkout navigation', () => {
     await user.click(screen.getByRole('button', { name: /Continue to Payment/ }))
     expect(apiClient.post.mock.calls[0][1].marketing_opt_in).toBe(true)
     await screen.findByText('Payment form')
-    await user.click(screen.getByRole('button', { name: "Edit info" }))
+    await user.click(screen.getByRole('button', { name: "Cancel checkout and edit details" }))
     expect(await screen.findByLabelText("Full Name")).toHaveValue('Guest Buyer')
     expect(screen.getByLabelText("Email Address")).toHaveValue('guest@example.invalid')
     expect(screen.getByText('Admission')).toBeInTheDocument()
@@ -667,4 +667,21 @@ describe('registration error recovery', () => {
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ registration_answers: { 17: 'Vegetarian', 18: false }, waiver_acceptances: [{ event_waiver_id: 19, version: 'qa-v1' }] })))
   })
+})
+
+it('offers free tickets in live mode and creates the free order without a payment step', async () => {
+  vi.clearAllMocks(); window.sessionStorage.clear(); window.localStorage.clear()
+  const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
+  apiClient.get.mockResolvedValue({ data: { payment_mode: 'live', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
+  apiClient.post.mockResolvedValue({ data: { id: 922, status: 'completed', guest_access_token: 'guest-token' } })
+  render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
+    <Route path="/checkout/:slug" element={<CheckoutPage />} /><Route path="/orders/:id/confirmation" element={<h1>Free order confirmed</h1>} />
+  </Routes></MemoryRouter>)
+  await userEvent.type(await screen.findByLabelText('Full Name'), 'Free Buyer')
+  await userEvent.type(screen.getByLabelText('Email Address'), 'free@example.invalid')
+  await userEvent.click(screen.getByRole('checkbox', { name: /I agree to/ }))
+  expect(screen.queryByText('By completing this purchase you agree to the HåfaPass terms of service.')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: /Get free tickets/ }))
+  expect(await screen.findByRole('heading', { name: 'Free order confirmed' })).toBeInTheDocument()
+  expect(apiClient.post.mock.calls[0][1]).toMatchObject({ expected_total_cents: 0 })
 })

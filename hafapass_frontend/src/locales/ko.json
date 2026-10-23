@@ -23,7 +23,6 @@
     "backToEvent": "이벤트로 돌아가기",
     "continueToPayment": "결제 단계로 이동",
     "discount": "할인",
-    "editInfo": "정보 수정",
     "emailAddress": "이메일 주소",
     "enterCode": "코드 입력",
     "feesUnavailable": "현재 서비스 수수료를 불러올 수 없어 총액을 표시할 수 없습니다.",
@@ -162,10 +161,8 @@
   "pricing": {
     "currentPrice": "{{name}} — {{price}}",
     "earlyBird": "조기 예매 할인",
-    "endsIn": "{{days}}일 후 종료",
     "onlyLeft": "이 가격에 구매할 수 있는 티켓이 단 {{count}}장 남았습니다!",
-    "priceGoesUp": "{{date}} 이후 가격이 {{price}}로 인상됩니다",
-    "regularPrice": "정상가: {{price}}"
+    "priceGoesUp": "{{date}} 이후 가격이 {{price}}로 인상됩니다"
   },
   "tickets": {
     "addToHomeScreen": "홈 화면에 추가",

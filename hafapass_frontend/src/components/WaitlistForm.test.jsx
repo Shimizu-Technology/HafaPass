@@ -8,3 +8,56 @@ it('states the event-specific email request and exit clearly at join', () => {
   render(<WaitlistForm event={{ slug: 'friday-show' }} />)
   expect(screen.getByText("We'll email you if tickets become available for this event. You can stop these alerts anytime.")).toBeInTheDocument()
 })
+
+import { beforeEach } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import api from '../api/client'
+beforeEach(() => { window.localStorage.clear(); api.get.mockReset() })
+it('describes browser-saved credentials, not an email-wide search', async () => {
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByText(/No waitlist entries are saved in this browser for this email/)).toBeInTheDocument()
+  expect(api.get).not.toHaveBeenCalled()
+})
+it('reports failed checks separately and retries saved credentials with readable statuses', async () => {
+  window.localStorage.setItem('hafapass:waitlist:friday-show:buyer@example.test', JSON.stringify([{ id: 1, token: 'saved-token' }]))
+  api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: { entries: ['notified', 'offered', 'converted', 'expired'].map((status, id) => ({ id, position: id + 1, status, availability_email_sent: true })).concat([{ id: 5, position: 6, status: 'notified', availability_email_sent: false }]) } })
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't check some saved waitlist entries.")
+  expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  for (const label of ['Availability email sent', 'Ticket offer available', 'Tickets claimed', 'Offer expired', 'Availability notification requested']) expect(await screen.findByText(label)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it.each([
+  [{ response: { status: 404 } }, 'Some saved waitlist entries are no longer available.'],
+  [new Error('offline'), "We couldn't check some saved waitlist entries."],
+])('keeps valid entries visible when another saved token fails (%j)', async (failure, warning) => {
+  window.localStorage.setItem('hafapass:waitlist:friday-show:buyer@example.test', JSON.stringify([
+    { id: 1, token: 'stale-token' }, { id: 2, token: 'valid-token' },
+  ]))
+  api.get.mockImplementation((_url, { params }) => params.management_token === 'stale-token'
+    ? Promise.reject(failure)
+    : Promise.resolve({ data: { entries: [{ id: 2, position: 7, status: 'offered' }] } }))
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByText('Ticket offer available')).toBeInTheDocument()
+  expect(screen.getByText('#7')).toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent(warning)
+  expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
+})
+
+it('does not claim no saved entries when every saved token is unavailable', async () => {
+  window.localStorage.setItem('hafapass:waitlist:friday-show:buyer@example.test', JSON.stringify([{ id: 1, token: 'stale-token' }]))
+  api.get.mockRejectedValue({ response: { status: 404 } })
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Their access links may have expired or been removed.')
+  expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
+})

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { isTicketPurchasable, ticketPriceCents, ticketServiceFeeCents } from '../utils/ticketPricing'
+import { allInPriceNoteKey } from '../utils/priceDisclosure'
 
 const DEFAULT_PLATFORM = 'HåfaPass'
 
@@ -19,10 +19,8 @@ export function SellerLine({ seller, className = '' }) {
 // service fee pays for. Nothing renders for free-only events.
 export function AllInPriceNote({ ticketTypes = [], includesProcessing = false, platform = DEFAULT_PLATFORM, className = '' }) {
   const { t } = useTranslation()
-  const paid = ticketTypes.filter(ticket => isTicketPurchasable(ticket) && ticketPriceCents(ticket) > 0)
-  if (!paid.length) return null
-  const charged = paid.some(ticket => ticketServiceFeeCents(ticket) > 0)
-  const text = !charged ? t('pricing.noAddedFees')
-    : includesProcessing ? t('pricing.allInNote', { platform }) : t('pricing.allInNoteNoProcessing', { platform })
+  const key = allInPriceNoteKey(ticketTypes, includesProcessing)
+  if (!key) return null
+  const text = t(key, { platform })
   return <p className={`text-xs leading-5 text-neutral-500 ${className}`} data-testid="all-in-note">{text}</p>
 }

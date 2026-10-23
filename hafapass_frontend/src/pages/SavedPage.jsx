@@ -12,11 +12,18 @@ import SEO from '../components/SEO'
 export default function SavedPage() {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
+    let active = true
+    setError(false)
+    setData(null)
     Promise.all([apiClient.get('/me/event_favorites'), apiClient.get('/me/organizer_follows'), apiClient.get('/me/event_reminders')])
-      .then(([favorites, follows, reminders]) => setData({ events: favorites.data.events, organizers: follows.data.organizers, reminders: reminders.data.reminders }))
-      .catch(() => setData({ events: [], organizers: [], reminders: [] }))
-  }, [])
+      .then(([favorites, follows, reminders]) => { if (active) setData({ events: favorites.data.events, organizers: follows.data.organizers, reminders: reminders.data.reminders }) })
+      .catch(() => { if (active) setError(true) })
+    return () => { active = false }
+  }, [attempt])
+  if (error) return <div className="px-4 py-24 text-center"><p role="alert">{t('buyerDiscovery.saved.loadError')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.saved.tryAgain')}</button></div>
   if (!data) return <Loader2 className="mx-auto mt-24 h-8 w-8 animate-spin text-brand-500" />
   return <div className="mx-auto max-w-6xl px-4 py-10"><SEO title={t('buyerDiscovery.saved.savedEvents')} description={t('buyerDiscovery.saved.yourHåfaPassFavoritesFollowedOrganizersAndEvent')} /><h1 className="font-display text-4xl font-bold">{t('buyerDiscovery.saved.saved')}</h1>
     <section className="mt-9"><h2 className="text-2xl font-bold">{t('buyerDiscovery.saved.favoriteEvents')}</h2>{data.events.length ? <div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{data.events.map(event => <EventCard key={event.id} event={event} />)}</div> : <p className="mt-3 text-neutral-500">{t('buyerDiscovery.saved.favoriteAnEventToKeepItHere')}</p>}</section>

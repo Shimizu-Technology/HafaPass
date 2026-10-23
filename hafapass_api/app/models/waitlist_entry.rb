@@ -65,6 +65,16 @@ class WaitlistEntry < ApplicationRecord
     end
   end
 
+  # "notified" starts before queueing. Only this notification round's
+  # provider-accepted delivery establishes that an availability email was sent.
+  def availability_email_sent?
+    return false unless notified? && notified_at.present?
+
+    MessageDelivery.where(template: "waitlist_notification",
+      idempotency_key: "waitlist-notification/#{id}/#{notified_at.iso8601(6)}",
+      status: [:sent, :delivered, :delayed]).exists?
+  end
+
   def offer_expired?
     expires_at.present? && expires_at < Time.current && !converted?
   end

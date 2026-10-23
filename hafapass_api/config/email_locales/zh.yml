@@ -37,14 +37,9 @@ emails:
     attendee_column: "入场人"
     ticket_column: "门票"
     view_ticket: "查看门票"
-    all_transferred: "此订单中的所有门票均已转让。新持票人可通过“%{my_tickets_link}”查看门票。"
-    entry_instructions: "入场时请出示您的 QR Code。您可随时通过“%{my_tickets_link}”查看门票。"
   pdf_note:
     single: "您的门票也已随附 PDF 版本，入场时即使没有信号也能打开。"
     all: "全部 %{count} 张门票也已随附 PDF 版本，入场时即使没有信号也能打开。"
-    capped: "前 %{count} 张门票已随附 PDF 版本，入场时即使没有信号也能打开。其余门票请前往“我的门票”查看。"
-    partial: "您的 %{total} 张门票中，有 %{count} 张已随附 PDF
-      版本，入场时即使没有信号也能打开。其余门票目前无法用于入场，请前往“我的门票”查看状态。"
   ticket:
     subject: "您的门票 - %{event}"
     heading: "您的门票"
@@ -64,7 +59,6 @@ emails:
     body: "您购买 %{event} 门票的退款已处理。"
     full: "全额退款"
     partial: "部分退款（%{amount}）"
-    returned: "%{amount} 将在 5-10 个工作日内按原支付方式退回。"
     reason: "原因："
     questions: "如有任何疑问，请联系活动主办方。"
   transfer:

@@ -555,7 +555,7 @@ describe('pending ticket transfer on the order page', () => {
       <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
     </Routes></MemoryRouter>)
 
-    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · expires Oct 27')
+    expect((await screen.findByText(/Transfer pending/)).closest('p')).toHaveTextContent('sent to friend@example.com · Expires Oct 27, 2030, 6:00 PM Guam time')
     expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Cancel transfer' }))
     await userEvent.click(screen.getByRole('button', { name: 'Keep transfer' }))

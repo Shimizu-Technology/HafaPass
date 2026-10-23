@@ -122,6 +122,15 @@
   "pricing": {
     "earlyBird": {
       "context": "A discounted ticket price for buying early."
+    },
+    "endsIn_one": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ends in {{count}} day"
+    },
+    "regularPrice": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Next price: {{price}}"
+    },
+    "endsIn_other": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ends in {{count}} days"
     }
   },
   "checkout": {
@@ -136,6 +145,15 @@
     },
     "backToEvent": {
       "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a public event or happening, never a sports tournament, match or competition."
+    },
+    "cancelAndEditExplanation": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This cancels your current order and releases your ticket hold. Availability and prices may change when you start again."
+    },
+    "getFreeTickets": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Get free tickets"
+    },
+    "editInfo": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Cancel checkout and edit details"
     }
   },
   "tickets": {
@@ -781,27 +799,36 @@
         "context": "Buyer-facing WaitlistForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
       "noWaitlistEntriesFoundForThisEmail": {
-        "context": "Buyer-facing WaitlistForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "This only checks signed waitlist credentials saved in this browser, not all entries for an email. No email management-link recovery exists. No waitlist entries are saved in this browser for this email. Try the browser you used to join."
       },
       "status": {
         "waiting": {
           "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
         },
         "notified": {
-          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+          "context": "Only shown when the API confirms provider acceptance for this notification round. Availability email sent."
         },
         "offered": {
-          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ticket offer available"
         },
         "converted": {
-          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Tickets claimed"
         },
         "expired": {
-          "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Offer expired"
         },
         "cancelled": {
           "context": "Buyer-facing buyer.WaitlistForm.status copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
         }
+      },
+      "checkFailed": {
+        "context": "Some browser-saved waitlist lookups failed temporarily. Successful entries remain visible; retry checks every saved entry again."
+      },
+      "notificationRequested": {
+        "context": "A waitlist availability alert was requested but provider acceptance has not been confirmed. Do not imply an email was sent."
+      },
+      "savedEntriesUnavailable": {
+        "context": "Saved waitlist access tokens returned HTTP 404. Links may be expired or revoked; other successful entries remain visible. Do not imply no entries exist for the email."
       }
     },
     "WhosGoing": {
@@ -820,10 +847,10 @@
     },
     "PaymentForm": {
       "anUnexpectedErrorOccurredPleaseTryAgain": {
-        "context": "Buyer-facing PaymentForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't confirm your payment status. Check your order before trying again."
       },
       "weCouldNotConfirmThePaymentStatusPlease": {
-        "context": "Buyer-facing PaymentForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't confirm your payment status. Check your order before trying again."
       },
       "processingPayment": {
         "context": "Buyer-facing PaymentForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
@@ -832,7 +859,10 @@
         "context": "Buyer-facing PaymentForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
       "securedByStripeYourPaymentInfoNeverTouches": {
-        "context": "Buyer-facing PaymentForm interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Card details are handled by Stripe."
+      },
+      "checkOrderStatus": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Check order status"
       }
     },
     "PaymentModeBanner": {
@@ -881,7 +911,7 @@
         "context": "Buyer-facing NotFound interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
       "eventMessage": {
-        "context": "Buyer-facing NotFound interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. The link may be incorrect, or this event may no longer be listed. Browse events to check current listings."
       },
       "organizerTitle": {
         "context": "Buyer-facing NotFound interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
@@ -1072,7 +1102,7 @@
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
       "theIssueHasBeenRecordedWhenMonitoringIs": {
-        "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't display this page. Try again, or reload HåfaPass."
       },
       "tryAgain": {
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
@@ -1204,6 +1234,12 @@
       },
       "payouts": {
         "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
+      },
+      "scanTicketsInThePhoneSBrowser": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Scan tickets in the phone’s browser, with no app to install. Keeps scanning if the Wi‑Fi drops and syncs when it’s back. Each device must be prepared online before the event."
+      },
+      "noStaffOpenTheScannerInTheir": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back. Each device must be prepared online before the event."
       }
     },
     "organizer": {
@@ -1227,6 +1263,9 @@
       },
       "ambrosPartner": {
         "context": "Public HåfaPass organizer page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "empty": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This organizer has no upcoming events listed."
       }
     },
     "saved": {
@@ -1235,11 +1274,35 @@
       },
       "reminder": {
         "context": "Public HåfaPass saved page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "loadError": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load your saved items."
+      },
+      "tryAgain": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Try again"
+      },
+      "favoriteAnEventToKeepItHere": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Save an event to find it here."
       }
     },
     "collections": {
       "usefulLocalPicksCuratedByPeopleNot": {
         "context": "Public HåfaPass collections page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. "
+      },
+      "tryAgain": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Try again"
+      },
+      "loadError": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load featured collections."
+      },
+      "empty": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No featured collections yet. Browse events to see current listings."
+      },
+      "emptyPage": {
+        "context": "An out-of-range paginated event listing has no rows on this page, but other pages contain events. No events on this page."
+      },
+      "firstPage": {
+        "context": "An out-of-range paginated event listing has no rows on this page, but other pages contain events. Back to first page"
       }
     },
     "policy": {
@@ -1248,6 +1311,24 @@
       },
       "versionLabel": {
         "context": "Label before a public HåfaPass policy version; preserve the version interpolation variable."
+      }
+    },
+    "collection": {
+      "empty": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This collection has no events listed right now."
+      }
+    },
+    "venue": {
+      "empty": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No upcoming events are listed for this venue."
+      }
+    },
+    "privatePreview": {
+      "håfapassConnectionUnavailable": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Connection unavailable"
+      },
+      "privatePreview": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Service unavailable"
       }
     }
   },
@@ -1274,7 +1355,7 @@
     },
     "transferTicketDialog": {
       "sentMessage": {
-        "context": "Ticket ownership transfers only after the recipient accepts. Keep <recipient> markup around the email, and retain all placeholders."
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. The invitation email to <recipient>{{email}}</recipient> to accept {{ticket}} is on its way. The ticket stays with you until they accept."
       },
       "recipientNameLabel": {
         "context": "Form label. The recipient name is optional; email is required. Preserve <optional> markup."
@@ -1286,6 +1367,9 @@
       },
       "cancelMessage": {
         "context": "Cancel the invitation to transfer this ticket, not the ticket itself. The sender keeps the valid ticket. Preserve recipient markup."
+      },
+      "expires": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Date and time are always Pacific/Guam; label this Guam time."
       }
     },
     "ticketPage": {
@@ -1297,7 +1381,63 @@
       },
       "ticketHPT": {
         "context": "Admission ticket identifier. Keep the HP-T prefix and id placeholder exactly as written."
+      },
+      "shareTicket": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Share ticket link"
+      },
+      "findMyOrder": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Find my order"
+      },
+      "entryState": {
+        "checked_in": {
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This ticket has already been used."
+        },
+        "transferred": {
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This ticket has been transferred and cannot be used by the previous holder."
+        },
+        "cancelled": {
+          "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. This ticket is cancelled and cannot be used for entry."
+        }
+      },
+      "tryAgain": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Try again"
+      },
+      "failedToLoadTicketPleaseTryAgain": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load this ticket."
+      },
+      "sharingDoesNotTransfer": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Sharing this link does not transfer the ticket."
+      },
+      "checkOutMyTicketFor": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ticket link for {{event}}. Sharing this link does not transfer the ticket."
       }
+    },
+    "privacyRequests": {
+      "empty": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No requests yet."
+      },
+      "tryAgain": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Try again"
+      },
+      "loadError": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load your requests."
+      },
+      "loading": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Loading your requests…"
+      }
+    },
+    "myTicketsPage": {
+      "entryPaused": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Entry paused"
+      }
+    }
+  },
+  "organizerVerification": {
+    "previewBanner": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Private preview — this event isn't public, and tickets aren't available here."
+    },
+    "previewTicketsDisabled": {
+      "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Tickets aren't available in this private preview."
     }
   }
 }

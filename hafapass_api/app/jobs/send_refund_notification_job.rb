@@ -6,14 +6,13 @@ class SendRefundNotificationJob < ApplicationJob
   # Retry with exponential backoff for transient failures
   retry_on StandardError, wait: :polynomially_longer, attempts: 5
 
-  def perform(order_id)
+  def perform(order_id, delivery_id = nil)
     order = Order.find_by(id: order_id)
     return unless order # Order was deleted
 
-    EmailService.send_refund_notification(order)
-    Rails.logger.info("[SendRefundNotificationJob] Sent refund notification for order #{order_id}")
-  rescue => e
-    Rails.logger.error("[SendRefundNotificationJob] Failed for order #{order_id}: #{e.message}")
-    raise # Re-raise to trigger retry
+    delivery = MessageDelivery.find_by(id: delivery_id, order_id: order.id, template: "refund_notification")
+    raise MessageWirePayload::Unavailable, "Legacy refund email requires its existing durable delivery; reconcile before sending" unless delivery
+
+    MessageDeliveryJob.new.perform(delivery.id)
   end
 end

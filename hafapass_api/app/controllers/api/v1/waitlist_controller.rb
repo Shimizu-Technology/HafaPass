@@ -98,6 +98,7 @@ module Api
           quantity: entry.quantity,
           position: entry.position,
           status: entry.status,
+          availability_email_sent: entry.availability_email_sent?,
           notified_at: entry.notified_at,
           expires_at: entry.expires_at,
           created_at: entry.created_at
@@ -118,6 +119,7 @@ module Api
           id: entry.id,
           position: entry.position,
           status: entry.status,
+          availability_email_sent: entry.availability_email_sent?,
           quantity: entry.quantity,
           ticket_type_id: entry.ticket_type_id,
           created_at: entry.created_at

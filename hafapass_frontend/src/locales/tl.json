@@ -23,7 +23,6 @@
     "backToEvent": "Bumalik sa Event",
     "continueToPayment": "Magpatuloy sa Pagbabayad",
     "discount": "Diskuwento",
-    "editInfo": "Baguhin ang impormasyon",
     "emailAddress": "Email Address",
     "enterCode": "Ilagay ang code",
     "feesUnavailable": "Hindi namin makuha ang kasalukuyang bayad sa serbisyo, kaya hindi pa namin maipakita ang iyong kabuuang babayaran.",
@@ -162,10 +161,8 @@
   "pricing": {
     "currentPrice": "{{name}} — {{price}}",
     "earlyBird": "Diskuwento sa Maagang Pagbili",
-    "endsIn": "Magtatapos pagkalipas ng {{days}} araw",
     "onlyLeft": "{{count}} na lang ang natitira sa presyong ito!",
-    "priceGoesUp": "Tataas ang presyo sa {{price}} pagkatapos ng {{date}}",
-    "regularPrice": "Regular na presyo: {{price}}"
+    "priceGoesUp": "Tataas ang presyo sa {{price}} pagkatapos ng {{date}}"
   },
   "tickets": {
     "addToHomeScreen": "Idagdag sa Home Screen",

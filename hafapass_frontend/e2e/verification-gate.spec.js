@@ -148,7 +148,7 @@ for (const width of [375, 1280]) {
     await page.goto('/events/private-island-show?preview_token=synthetic-secret')
     await expect(page).toHaveURL(/\/events\/private-island-show\/preview#t=synthetic-secret$/)
     await expect(page.getByRole('heading', { name: 'Private Island Show' })).toBeVisible()
-    await expect(page.getByText(/Preview — this event isn't public yet/)).toBeVisible()
+    await expect(page.getByText(/Private preview — this event isn't public, and tickets aren't available here/)).toBeVisible()
     await expect(page.getByText(/Tickets aren't available in this private preview/)).toHaveCount(1)
     await expect(page.getByRole('button', { name: /Get tickets/i })).toBeDisabled()
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
@@ -193,7 +193,7 @@ for (const width of [375, 1280]) {
     await page.goto('/events/private-island-show/preview#t=synthetic-secret')
     await expect(page).toHaveURL(/\/events\/private-island-show$/)
     await expect(page.getByRole('heading', { name: 'Private Island Show' })).toBeVisible()
-    await expect(page.getByText(/Preview — this event isn't public yet/)).toHaveCount(0)
+    await expect(page.getByText(/Private preview — this event isn't public, and tickets aren't available here/)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Increase quantity for Admission' })).toBeEnabled()
   })
 

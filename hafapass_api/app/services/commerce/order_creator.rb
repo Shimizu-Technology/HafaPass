@@ -71,7 +71,6 @@ module Commerce
         @checkout_attempt = claim.attempt
         @checkout_lease_token = claim.lease_token
       end
-      requires_payment = payment_required.nil? ? StripeService.payment_enabled? : payment_required
       order = nil
       payment = nil
 
@@ -121,6 +120,10 @@ module Commerce
         if @expected_total_cents.present? && @expected_total_cents.to_s != totals[:total_cents].to_s
           raise PriceChanged, "Ticket price changed. Review the updated total before paying."
         end
+        # Free orders never contact a payment provider and must remain usable
+        # even when paid checkout is unavailable.
+        requires_payment = totals[:total_cents].positive? &&
+          (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
         validate_production_payment!(totals, requires_payment)
         validate_live_money_proof_scope!(totals)
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now

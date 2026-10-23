@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import apiClient from '../api/client'
@@ -20,20 +21,25 @@ function RequestForm({ submit, pending, notice, error, guest = false }) {
 }
 
 function AccountSession({ identity, resourcePath }) {
+  const { t } = useTranslation()
   const { beginRequest } = usePlatformRequests(identity, resourcePath)
-  const [requests, setRequests] = useState([])
+  const [requests, setRequests] = useState(null)
+  const [loadError, setLoadError] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const load = useCallback(async () => {
     const request = beginRequest()
     if (!request) return
+    setLoading(true)
+    setLoadError(false)
     try {
       const response = await apiClient.get('/me/privacy_requests', request.config)
       if (request.current()) setRequests(response.data.requests || [])
     } catch {
-      if (request.current()) setError('Requests could not be loaded. Try again.')
-    } finally { request.release() }
+      if (request.current()) setLoadError(true)
+    } finally { if (request.current()) setLoading(false); request.release() }
   }, [beginRequest])
   useEffect(() => { load() }, [load])
   const submit = async kind => {
@@ -51,8 +57,10 @@ function AccountSession({ identity, resourcePath }) {
     <RequestForm submit={submit} pending={pending} notice={notice} error={error} />
     <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:p-6">
       <h2 className="font-semibold text-neutral-900">Your requests</h2>
-      {requests.length ? <ul className="mt-4 divide-y divide-neutral-200">{requests.map(item => <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span className="capitalize">{item.kind} request #{item.id}</span><span>{item.status.replaceAll('_', ' ')}</span></li>)}</ul>
-        : <p className="mt-3 text-sm text-content-muted">No requests yet.</p>}
+      {loading ? <p role="status" className="mt-3 text-sm text-content-muted">{t('buyerAccount.privacyRequests.loading')}</p>
+        : loadError ? <div className="mt-3"><p role="alert" className="text-sm text-red-700">{t('buyerAccount.privacyRequests.loadError')}</p><button type="button" className="btn-secondary mt-3" onClick={load}>{t('buyerAccount.privacyRequests.tryAgain')}</button></div>
+        : requests?.length ? <ul className="mt-4 divide-y divide-neutral-200">{requests.map(item => <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span className="capitalize">{item.kind} request #{item.id}</span><span>{item.status.replaceAll('_', ' ')}</span></li>)}</ul>
+        : <p className="mt-3 text-sm text-content-muted">{t('buyerAccount.privacyRequests.empty')}</p>}
     </section>
     <Link to="/my-tickets" className="text-sm font-semibold text-brand-700 underline">Back to my tickets</Link>
   </main>

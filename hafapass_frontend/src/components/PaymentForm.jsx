@@ -13,7 +13,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
   const stripe = useStripe()
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
-  const [statusMessage, setStatusMessage] = useState(null)
+  const [statusUnknown, setStatusUnknown] = useState(false)
   const errorRef = useRef(null)
 
   useEffect(() => { if (paymentError) errorRef.current?.focus() }, [paymentError])
@@ -29,7 +29,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
 
     setSubmitting(true)
     setPaymentError(null)
-    setStatusMessage(null)
+    setStatusUnknown(false)
 
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
@@ -44,6 +44,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
         setPaymentError(error.message)
       } else {
         setPaymentError(t('buyer.PaymentForm.anUnexpectedErrorOccurredPleaseTryAgain'))
+        setStatusUnknown(true)
       }
       setSubmitting(false)
       if (onError) onError(error)
@@ -53,7 +54,8 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       // the order instead of leaving them on a form they might submit twice.
       if (onSuccess) onSuccess(paymentIntent)
     } else {
-      setStatusMessage(t('buyer.PaymentForm.weCouldNotConfirmThePaymentStatusPlease'))
+      setPaymentError(t('buyer.PaymentForm.weCouldNotConfirmThePaymentStatusPlease'))
+      setStatusUnknown(true)
       setSubmitting(false)
     }
   }
@@ -65,11 +67,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
           <p className="text-red-700 text-sm">{paymentError}</p>
         </div>
       )}
-      {statusMessage && (
-        <div role="status" className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
-          <p className="text-blue-700 text-sm">{statusMessage}</p>
-        </div>
-      )}
+      {statusUnknown && returnUrl && <a href={returnUrl} className="btn-secondary mb-4 w-full">{t('buyer.PaymentForm.checkOrderStatus')}</a>}
 
       <div className="mb-4" role="group" aria-label={t('checkout.payment')}>
         <PaymentElement
@@ -87,7 +85,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
 
       <button
         type="submit"
-        disabled={!stripe || !elements || submitting}
+        disabled={!stripe || !elements || submitting || statusUnknown}
         className="w-full min-h-11 bg-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-content-inverse font-bold py-4 px-6 rounded-xl text-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
       >
         {submitting ? (
