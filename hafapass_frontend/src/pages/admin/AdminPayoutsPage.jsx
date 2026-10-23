@@ -1,3 +1,4 @@
+import { paidPayoutExplanation } from '../../utils/payoutLabels'
 import { useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
@@ -14,7 +15,7 @@ import {
 
 const PAYOUT_STATUSES = ['pending', 'processing', 'held', 'paid', 'failed', 'reversed']
 const OUTCOMES = {
-  paid: { label: 'Paid', body: 'The money reached the organizer’s bank account.' },
+  paid: { label: 'Paid', body: null },
   failed: { label: 'Failed', body: 'The transfer did not complete. The amount becomes available to pay out again.' },
   reversed: { label: 'Reversed', body: 'A transfer was returned or clawed back after it was sent.' },
 }
@@ -149,7 +150,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     <Dialog labelledBy={titleId} busy={busy} onClose={onClose} className="max-w-xl">
       <form noValidate onSubmit={submit}>
         <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Record outcome for payout #{payout.id}</h2>
-        <p className="mt-1 text-sm text-content-muted">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. {payout.withheld_cents > 0 && `${money(payout.withheld_cents, payout.currency)} withheld from ${money(payout.amount_cents, payout.currency)} gross. `}Record only what the bank or provider has confirmed; your name and evidence go into the audit log.</p>
+        <p className="mt-1 text-sm text-content-muted">{money(payout.disbursement_cents ?? payout.amount_cents, payout.currency)} to {payout.organization.name} for {payout.event.title}. {payout.withheld_cents > 0 && `${money(payout.withheld_cents, payout.currency)} withheld from ${money(payout.amount_cents, payout.currency)} gross. `}{isCheck ? 'Record the check details and date written on the check; this does not confirm clearance.' : 'Record only what the bank or provider has confirmed.'} Your name and evidence go into the audit log.</p>
         {payout.under_withheld_cents > 0 && <p className="mt-2 text-sm font-semibold text-amber-900">{money(payout.under_withheld_cents, payout.currency)} under-withheld; collect from a later payout.</p>}
         {needsCancellationConfirmation && <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">
           <p className="font-semibold">{payout.outstanding_buyer_balance_cents > 0 ? `${money(payout.outstanding_buyer_balance_cents, payout.currency)} remains owed to buyers for this cancelled event.` : 'Buyer refunds are still pending for this cancelled event.'}</p>
@@ -209,7 +210,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             {payout.allowed_outcomes.map(value => (
               <label key={value} className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${outcome === value ? 'border-brand-600 bg-brand-50' : 'border-neutral-200'}`}>
                 <input type="radio" name="outcome" value={value} checked={outcome === value} onChange={() => setOutcome(value)} className="mt-1 h-4 w-4 accent-brand-700" />
-                <span><span className="block font-medium text-neutral-900">{OUTCOMES[value].label}</span><span className="block text-sm text-content-muted">{OUTCOMES[value].body}</span></span>
+                <span><span className="block font-medium text-neutral-900">{OUTCOMES[value].label}</span><span className="block text-sm text-content-muted">{value === 'paid' ? paidPayoutExplanation(payout.provider) : OUTCOMES[value].body}</span></span>
               </label>
             ))}
           </div>

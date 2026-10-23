@@ -63,7 +63,7 @@ describe('Admin organizations', () => {
     apiClient.patch.mockResolvedValue({ data: {} })
     await userEvent.click(screen.getByRole('button', { name: 'Pause all sales' }))
     const confirm = within(screen.getByRole('dialog', { name: 'Pause all sales for Ambros Events?' }))
-    expect(confirm.getByText(/stop selling until you verify them again/)).toBeInTheDocument()
+    expect(confirm.getByText(/events are hidden from public pages and new ticket sales stop/)).toBeInTheDocument()
     await userEvent.click(confirm.getByRole('button', { name: 'Pause all sales' }))
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/organizer_profiles/4', { verification_status: 'suspended' }, expect.anything())
 

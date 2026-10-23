@@ -306,11 +306,11 @@ function RefundsPageSession({ eventId, identity }) {
    {accessRefreshing && <p role="status" className="mb-3 text-sm text-neutral-700">Loading orders…</p>}
    {notice && !pendingRequest?.financeReview && <p id="refund-notice" role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{notice}</p>}
    {pendingRequest?.financeReview && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
-    <p>The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.</p>
+    <p>The original refund request is saved. Contact support before starting another refund.</p>
     <SupportLink subject={`Refund review for order ${pendingRequest.orderId}`} className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink>
    </div>}
    {pendingRequest?.recoveryRequired && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved refund recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a refund.</p><SupportLink subject="Recover an unreadable refund request" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
-   {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. Its amount and payment identity stay fixed until the outcome is confirmed.</p>}
+   {pendingRequest && !pendingRequest.recoveryRequired && <p className="mb-4 break-words text-sm text-neutral-600">Saved refund for order #{pendingRequest.orderId}. The original refund request is saved. Contact support before starting another refund.</p>}
    {pendingRequest && !pendingRequest.recoveryRequired && !orders.some(order => order.id === pendingRequest.orderId) && <button disabled={processing || accessRefreshing} className="btn-secondary mb-4" onClick={() => handleRefund(pendingRequest.orderId)}>{pendingRequest.financeReview ? 'Check saved refund status' : pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund'}</button>}
    {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError} <button className="min-h-11 font-semibold underline" onClick={fetchOrders}>Retry</button></p>}
    {loadError && orders.length === 0 ? null : orders.length === 0 ? (

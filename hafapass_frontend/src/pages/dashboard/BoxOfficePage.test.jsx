@@ -123,3 +123,16 @@ describe('uncertain box office sale', () => {
     expect(screen.queryByText('Sale Complete!')).not.toBeInTheDocument()
   })
 })
+
+it.each([
+  [false, true, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
+  [false, false, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
+  [true, false, 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'],
+])('explains disabled card sales for capability %s and merchant %s', async (enabled, ready, message) => {
+  window.sessionStorage.clear()
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: enabled } } : url === '/organizer/card_present_account' ? { payment_ready: ready } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [] } }))
+  mountBoxOffice()
+  expect(await screen.findByText(message)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Card at Door' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Cash' })).toBeEnabled()
+})

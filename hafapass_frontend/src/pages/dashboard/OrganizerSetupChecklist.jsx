@@ -46,7 +46,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     {
       key: 'payout', title: 'How you get paid', done: profile.payout_ready,
       status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : payoutMethod} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
-      next: payoutMethod && !profile.payout_ready ? 'HåfaPass finance confirms the details. Paid events can go live after that.' : null,
+      next: !profile.payout_ready ? 'Complete and certify your W-9 in Tax information, then wait for finance approval.' : null,
       action: !profile.payout_ready && <Link to="/dashboard/settings" className="btn-secondary !px-4 !py-2 text-sm">{payoutMethod ? 'View payout details' : 'Choose check or bank transfer'}</Link>,
     },
     {

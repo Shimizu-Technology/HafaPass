@@ -31,7 +31,7 @@ describe('OrganizerSetupChecklist', () => {
     const { onAcceptPolicy } = show()
     await userEvent.click(screen.getByRole('button', { name: 'Review and accept' }))
     const dialog = within(screen.getByRole('dialog', { name: 'Accept the organizer agreement' }))
-    expect(dialog.getByText(/Payouts are made by check/)).toBeInTheDocument()
+    expect(dialog.getByText(/Payouts are made by check/)).toHaveTextContent('unless another payout method has been approved')
     await userEvent.click(dialog.getByRole('button', { name: 'Accept version 2026-10' }))
     expect(onAcceptPolicy).toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()

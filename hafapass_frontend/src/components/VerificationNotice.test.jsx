@@ -66,3 +66,16 @@ it.each(['instagram.com/islandevents', 'www.instagram.com/islandevents'])('norma
   await user.click(screen.getByRole('button', { name: 'Send request' }))
   expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_link: `https://${bare}` }), {})
 })
+
+it.each([
+  [new Error('response lost'), "We couldn't confirm the result. Refresh to check before trying again."],
+  [{ response: { status: 503, data: { error: 'The request was not sent.' } } }, "We couldn't confirm the result. Refresh to check before trying again."],
+  [{ response: { status: 422, data: { errors: ['Phone is invalid'] } } }, 'Phone is invalid'],
+])('preserves the request and distinguishes rejection from an unknown result (%j)', async (failure, message) => {
+  apiClient.post.mockRejectedValue(failure)
+  render(<VerificationNotice profile={{ ...profile, verification_phone: '+1-671-555-1234', verification_link: 'https://example.com' }} beginRequest={beginRequest} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Request verification' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(await screen.findByText(message)).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: /Contact phone/ })).toHaveValue('+1-671-555-1234')
+})

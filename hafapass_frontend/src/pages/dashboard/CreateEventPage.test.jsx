@@ -21,6 +21,7 @@ it('preserves permitted creation and fails closed when confirmation is unavailab
   apiClient.get.mockResolvedValue({ data: { permissions: { manage_events: true } } })
   const view = mount()
   await screen.findByRole('heading', { name: 'Create New Event' })
+  expect(screen.getByPlaceholderText('Maximum number of attendees')).toHaveAccessibleDescription('Required before publishing.')
   view.unmount()
   apiClient.get.mockRejectedValue(new Error('Unavailable'))
   mount()

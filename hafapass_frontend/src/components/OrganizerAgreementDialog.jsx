@@ -13,11 +13,11 @@ export default function OrganizerAgreementDialog({ version, reaccept = false, bu
       </h2>
       <p className="mt-1 text-sm text-neutral-500">Version {version}</p>
       {reaccept && <p className="mt-3 text-sm text-neutral-700">The agreement changed since you last accepted it. You need to accept this version before publishing events.</p>}
-      <p className="mt-3 text-sm font-medium text-neutral-900">{reaccept ? 'What changed' : 'Key points'}</p>
+      <p className="mt-3 text-sm font-medium text-neutral-900">Key points</p>
       <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm text-neutral-700">
         <li>Buyers see all-in ticket prices, including the service fee they pay, from the first price they see.</li>
         <li>You are named as the seller of your tickets. HåfaPass, operated by Shimizu Technology, sells them as your limited agent and collects the service fee.</li>
-        <li>The agreement states the current fees, your fee options (buyers pay, you absorb, or split) and payout timing. Payouts are made by check from Shimizu Technology’s business account.</li>
+        <li>The agreement states the current fees, your fee options (buyers pay, you absorb, or split) and payout timing. Payouts are made by check from Shimizu Technology’s business account unless another payout method has been approved.</li>
         <li>It also covers refunds, chargebacks, event cancellations and your responsibilities for the event.</li>
       </ul>
       <p className="mt-3 text-sm">

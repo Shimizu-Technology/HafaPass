@@ -82,7 +82,7 @@ describe('refund outcome and recovery', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
     await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
-    const notice = 'The payment records need a finance review. Contact support before starting another refund. This saved request and its payment identity are retained.'
+    const notice = 'The original refund request is saved. Contact support before starting another refund.'
     await screen.findByText(notice)
     const original = apiClient.post.mock.calls[0]
     const key = 'hafapass:pending-refund:v2:local-preview:default:37'

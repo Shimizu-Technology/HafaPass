@@ -739,7 +739,8 @@ function EditEventSession({ id, identity }) {
           <div className="space-y-4">
             <div>
               <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">Max Capacity</label>
-              <input id="max_capacity" aria-invalid={Boolean(formErrors.max_capacity)} aria-describedby={formErrors.max_capacity ? 'max_capacity-error' : undefined} type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Leave blank for unlimited" disabled={submitting} />
+              <input id="max_capacity" aria-invalid={Boolean(formErrors.max_capacity)} aria-describedby={`max_capacity-help${formErrors.max_capacity ? ' max_capacity-error' : ''}`} type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Maximum number of attendees" disabled={submitting} />
+              <p id="max_capacity-help" className="mt-1 text-sm text-neutral-600">Required before publishing.</p>
               {formErrors.max_capacity && <p id="max_capacity-error" className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
             </div>
             <div className="flex items-center gap-3">

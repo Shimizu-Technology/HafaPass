@@ -28,6 +28,16 @@ const renderAt = path => render(<MemoryRouter initialEntries={[path]}><AdminPayo
 describe('AdminPayoutsPage', () => {
   beforeEach(() => { vi.clearAllMocks(); respond() })
 
+  it.each([
+    ['check', 'Recorded as paid with the date on the check. This does not confirm the check has cleared.'],
+    ['manual', 'Recorded as paid after bank or provider payment confirmation.'],
+  ])('describes recorded payment accurately for %s', async (provider, explanation) => {
+    respond({ payouts: [{ ...payout, provider }] })
+    renderAt('/admin/payouts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    expect(within(screen.getByRole('dialog')).getByText(explanation)).toBeInTheDocument()
+  })
+
   it('blocks release while buyer refunds remain unresolved and points to recording an already sent transfer', async () => {
     const user = userEvent.setup()
     respond({ payouts: [{ ...payout, status: 'held', held_from_status: 'processing',

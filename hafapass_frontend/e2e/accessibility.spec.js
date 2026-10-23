@@ -349,7 +349,7 @@ for (const width of [375, 1440]) {
     const code = page.getByLabel('Ticket QR code')
     await tabTo(page, code)
     await page.keyboard.type('scan-test-7')
-    await tabTo(page, page.getByRole('button', { name: 'Check ticket' }))
+    await tabTo(page, page.getByRole('button', { name: 'Check in ticket' }))
     await page.keyboard.press('Enter')
     await expect(page.getByText(/Admitted/).first()).toBeVisible()
     await scan(page, 'scanner admission result')
