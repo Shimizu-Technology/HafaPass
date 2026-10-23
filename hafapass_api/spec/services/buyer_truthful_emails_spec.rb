@@ -23,7 +23,9 @@ RSpec.describe "Buyer email states", :webmock do
   it "uses the same signed guest order access for every confirmation link" do
     ticket_for_order
     html = confirmation.fetch("html")
-    links = Nokogiri::HTML(html).css("a").map { |link| URI.parse(link["href"]) }
+    anchors = Nokogiri::HTML(html).css("a")
+    expect(anchors.map(&:text)).to eq(["View your order", "View your order"])
+    links = anchors.map { |link| URI.parse(link["href"]) }
 
     expect(links.length).to eq(2)
     expect(links.map(&:to_s).uniq.length).to eq(1)
@@ -39,6 +41,7 @@ RSpec.describe "Buyer email states", :webmock do
     html = confirmation.fetch("html")
 
     expect(html).to include("My Tickets", "/my-tickets", "/tickets/#{ticket.display_credential}")
+    expect(Nokogiri::HTML(html).at_css("td a").text).to eq("View Ticket")
     expect(html).not_to include("guest_token=")
     expect(order.reload.guest_access_expires_at).to be_nil
   end

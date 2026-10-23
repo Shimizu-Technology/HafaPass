@@ -510,7 +510,8 @@
         "expired": "Offer expired",
         "cancelled": "cancelled"
       },
-      "checkFailed": "We couldn't check your saved waitlist entries. Try again.",
+      "checkFailed": "We couldn't check some saved waitlist entries. Try again.",
+      "savedEntriesUnavailable": "Some saved waitlist entries are no longer available. Their access links may have expired or been removed.",
       "notificationRequested": "Availability notification requested"
     },
     "WhosGoing": {

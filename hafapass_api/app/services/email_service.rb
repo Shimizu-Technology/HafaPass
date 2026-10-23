@@ -869,7 +869,7 @@ class EmailService
             <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">#{h([ticket_type_name(ticket.ticket_type), ticket.seat_label].compact.join(" — "))}<br><span style="color: #6b7280; font-size: 12px;">#{h(ticket.attendee_name)}</span></td>
             <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">#{ht("ticket_status.#{ticket.status}")}</td>
             <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb;">
-              <a href="#{guest_order_url || ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht('order_confirmation.view_ticket')}</a>
+              <a href="#{guest_order_url || ticket_url(ticket)}" style="color: #2563eb; text-decoration: none;">#{ht(guest_order_url ? 'order_confirmation.view_order' : 'order_confirmation.view_ticket')}</a>
             </td>
           </tr>
         HTML

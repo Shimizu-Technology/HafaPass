@@ -26,8 +26,38 @@ it('reports failed checks separately and retries saved credentials with readable
   render(<WaitlistForm event={{ slug: 'friday-show' }} />)
   await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
   await userEvent.click(screen.getByRole('button', { name: 'Check' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't check your saved waitlist entries.")
+  expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't check some saved waitlist entries.")
   expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Check' }))
   for (const label of ['Availability email sent', 'Ticket offer available', 'Tickets claimed', 'Offer expired', 'Availability notification requested']) expect(await screen.findByText(label)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it.each([
+  [{ response: { status: 404 } }, 'Some saved waitlist entries are no longer available.'],
+  [new Error('offline'), "We couldn't check some saved waitlist entries."],
+])('keeps valid entries visible when another saved token fails (%j)', async (failure, warning) => {
+  window.localStorage.setItem('hafapass:waitlist:friday-show:buyer@example.test', JSON.stringify([
+    { id: 1, token: 'stale-token' }, { id: 2, token: 'valid-token' },
+  ]))
+  api.get.mockImplementation((_url, { params }) => params.management_token === 'stale-token'
+    ? Promise.reject(failure)
+    : Promise.resolve({ data: { entries: [{ id: 2, position: 7, status: 'offered' }] } }))
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByText('Ticket offer available')).toBeInTheDocument()
+  expect(screen.getByText('#7')).toBeInTheDocument()
+  expect(screen.getByRole('alert')).toHaveTextContent(warning)
+  expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
+})
+
+it('does not claim no saved entries when every saved token is unavailable', async () => {
+  window.localStorage.setItem('hafapass:waitlist:friday-show:buyer@example.test', JSON.stringify([{ id: 1, token: 'stale-token' }]))
+  api.get.mockRejectedValue({ response: { status: 404 } })
+  render(<WaitlistForm event={{ slug: 'friday-show' }} />)
+  await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'buyer@example.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Check' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Their access links may have expired or been removed.')
+  expect(screen.queryByText(/No waitlist entries/)).not.toBeInTheDocument()
 })

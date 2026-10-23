@@ -48,8 +48,15 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
     setExistingEntries(null)
     try {
       const credentials = storedCredentials(checkEmail)
-      const responses = await Promise.all(credentials.map(value => apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { management_token: value.token } })))
-      setExistingEntries(responses.flatMap(response => response?.data?.entries || []))
+      const responses = await Promise.allSettled(credentials.map(value => apiClient.get(`/events/${event.slug}/waitlist/status`, { params: { management_token: value.token } })))
+      const failures = responses.filter(response => response.status === 'rejected')
+      const entries = responses.flatMap(response => response.status === 'fulfilled' ? response.value?.data?.entries || [] : [])
+      if (failures.length > 0) {
+        const unavailable = failures.every(response => response.reason?.response?.status === 404)
+        setCheckError(t(unavailable ? 'buyer.WaitlistForm.savedEntriesUnavailable' : 'buyer.WaitlistForm.checkFailed'))
+      }
+      // A failed lookup cannot establish that this browser has no saved entries.
+      if (entries.length > 0 || failures.length === 0) setExistingEntries(entries)
     } catch {
       setCheckError(t('buyer.WaitlistForm.checkFailed'))
     }

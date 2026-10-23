@@ -822,10 +822,13 @@
         }
       },
       "checkFailed": {
-        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't check your saved waitlist entries. Try again."
+        "context": "Some browser-saved waitlist lookups failed temporarily. Successful entries remain visible; retry checks every saved entry again."
       },
       "notificationRequested": {
         "context": "A waitlist availability alert was requested but provider acceptance has not been confirmed. Do not imply an email was sent."
+      },
+      "savedEntriesUnavailable": {
+        "context": "Saved waitlist access tokens returned HTTP 404. Links may be expired or revoked; other successful entries remain visible. Do not imply no entries exist for the email."
       }
     },
     "WhosGoing": {

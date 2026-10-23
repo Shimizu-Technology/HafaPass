@@ -204,7 +204,7 @@ RSpec.describe EmailService do
     ticket = create(:ticket)
     html = described_class.send(:build_order_confirmation_html, ticket.order, ticket.event, [ticket])
 
-    expect(html).to include("Your Tickets", "Only valid tickets can be used for entry.", "View Ticket")
+    expect(html).to include("Your Tickets", "Only valid tickets can be used for entry.", "View your order")
     expect(html).not_to include("were transferred")
   end
 
