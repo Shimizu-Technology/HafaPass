@@ -70,7 +70,7 @@ export default function RoleComparison({ onClose, initialRole = 'manager' }) {
               {group === 'Can' ? <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" /> : <X aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" />}
               <div><span>{row.label}</span>
                 {!['Yes', 'No'].includes(row.values[selectedRole]) && <p className="mt-1 text-xs font-medium text-neutral-700">{row.values[selectedRole] === 'Assigned events' ? 'Assigned events only' : row.values[selectedRole]}</p>}
-                {row.note && ({ manager: ['manage_events', 'staff'], marketer: ['content', 'marketing'], owner: ['organization'] }[selectedRole] || []).includes(row.key) && <p className="mt-1 text-xs text-content-muted">{row.note}</p>}
+                {row.note && ({ manager: ['manage_events', 'staff', 'activity'], marketer: ['content', 'marketing'], owner: ['organization'] }[selectedRole] || []).includes(row.key) && <p className="mt-1 text-xs text-content-muted">{row.note}</p>}
               </div>
             </li>)}
           </ul>

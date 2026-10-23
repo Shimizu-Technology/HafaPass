@@ -69,8 +69,8 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
   const [notice, setNotice] = useState(null)
   const [link, setLink] = useState(null)
   const [confirm, setConfirm] = useState(null)
-  const [comparingRoles, setComparingRoles] = useState(false)
-  const comparisonAction = compareRoles ? <CompareRolesButton onClick={() => setComparingRoles(true)} /> : null
+  const [comparingRole, setComparingRole] = useState(null)
+  const comparisonAction = compareRoles ? <CompareRolesButton onClick={() => setComparingRole(role)} /> : null
 
   const load = useCallback(async () => {
     if (isControlled) return
@@ -182,7 +182,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
                 </div>
                 <div className="flex flex-wrap items-start gap-2 lg:justify-end">
                   {isOwner ? <span className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 text-sm font-semibold text-emerald-800"><Crown aria-hidden="true" className="h-4 w-4" />Owner</span>
-                    : <RoleSelect label={`Role for ${membership.email}`} roles={TEAM_ROLES} value={membership.role} disabled={busy} onChange={next => changeRole(membership, next)} className="w-full sm:w-56" action={comparisonAction} />}
+                    : <RoleSelect label={`Role for ${membership.email}`} roles={TEAM_ROLES} value={membership.role} disabled={busy} onChange={next => changeRole(membership, next)} className="w-full sm:w-56" action={compareRoles ? <CompareRolesButton onClick={() => setComparingRole(membership.role)} /> : null} />}
                   {pending && <button type="button" disabled={busy} onClick={() => resend(membership)} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><RotateCw aria-hidden="true" className="h-4 w-4" />Resend</button>}
                   {statusOf(membership) === 'pending' && <button type="button" disabled={busy} onClick={() => copyLink(membership)} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />Copy link</button>}
                   {canTransfer && !isOwner && statusOf(membership) === 'accepted' && <button type="button" disabled={busy} onClick={() => setConfirm({ kind: 'transfer', membership })} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><Crown aria-hidden="true" className="h-4 w-4" />Make owner</button>}
@@ -201,7 +201,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
         </details>
       )}
 
-      {comparingRoles && <RoleComparison initialRole={role} onClose={() => setComparingRoles(false)} />}
+      {comparingRole && <RoleComparison initialRole={comparingRole} onClose={() => setComparingRole(null)} />}
       {confirm && (
         <Dialog labelledBy="team-confirm-title" onClose={() => setConfirm(null)} busy={busy} className="max-w-md">
           <h2 id="team-confirm-title" className="text-lg font-semibold text-neutral-900">

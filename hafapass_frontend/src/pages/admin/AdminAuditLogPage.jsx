@@ -30,7 +30,9 @@ const actionLabel = action => {
 function Entry({ entry }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
-  const changes = entry.changes?.map(change => ({ ...change, key: change.field })) || auditChanges(entry.before_data, entry.after_data)
+  const changes = entry.changes?.length
+    ? entry.changes.map(change => ({ ...change, key: change.field }))
+    : auditChanges(entry.before_data, entry.after_data)
   const metadata = entry.metadata && Object.keys(entry.metadata).length ? entry.metadata : null
   return (
     <li className="border-b border-neutral-100 last:border-b-0">

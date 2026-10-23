@@ -19,6 +19,32 @@ RSpec.describe "Admin activity filters and exports", type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  %w[organization_id actor_user_id event_id action].each do |filter|
+    it "keeps #{filter} alternatives available and switches values while retaining other filters" do
+      alternative_event = create(:event, organization: filter == "organization_id" ? create(:organization) : event.organization)
+      alternative_actor = create(:user, :admin)
+      first = AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, source: "admin", outcome: "failed")
+      second = AuditLogger.record!(action: filter == "action" ? "event.created" : "event.updated",
+        auditable: %w[organization_id event_id].include?(filter) ? alternative_event : event,
+        actor: filter == "actor_user_id" ? alternative_actor : admin, source: "admin", outcome: "failed")
+      # This row must stay excluded by another active filter, including from options.
+      excluded = AuditLogger.record!(action: "event.deleted", auditable: create(:event), actor: create(:user, :admin), source: "user")
+      filters = { "organization_id" => event.organization_id, "actor_user_id" => admin.id,
+        "event_id" => event.id, "action" => "event.updated", "source" => "admin", "outcome" => "failed", "area" => "events" }
+      filters.delete("event_id") if filter == "organization_id"
+      options_key = { "organization_id" => "organizations", "actor_user_id" => "actors", "event_id" => "events", "action" => "actions" }.fetch(filter)
+      [first, second].each do |entry|
+        get path, params: filters.merge(filter => entry.public_send(filter)), headers: headers
+        expect(response).to have_http_status(:ok), response.body
+        expect(response.parsed_body.fetch("audit_logs").pluck("id")).to eq([entry.id])
+        options = response.parsed_body.dig("filters", options_key)
+        values = filter == "action" ? options : options.pluck("id")
+        expect(values).to contain_exactly(first.public_send(filter), second.public_send(filter))
+        expect(values).not_to include(excluded.public_send(filter))
+      end
+    end
+  end
+
   it "combines exact organization, actor, action, event, outcome and source filters with registry area" do
     selected = AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, source: "admin", outcome: "failed")
     AuditLogger.record!(action: "event.updated", auditable: event, actor: admin, source: "admin", outcome: "succeeded")

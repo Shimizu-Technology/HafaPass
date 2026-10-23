@@ -13,7 +13,7 @@ const entry = {
   id: 31, action: 'site_settings.fee_terms_updated', occurred_at: '2026-10-20T01:00:00Z',
   actor: { id: 1, email: 'leon@example.com', name: 'Leon Shimizu' }, target: { type: 'SiteSetting', id: 1 }, organization: null,
   before_data: { service_fee_percent: '3.0', service_fee_flat_cents: '50' }, after_data: { service_fee_percent: '5.0', service_fee_flat_cents: '50' },
-  metadata: { source: 'admin' }, request_id: 'req-1',
+  metadata: { source: 'admin' }, request_id: 'req-1', changes: [],
 }
 
 describe('AdminAuditLogPage', () => {

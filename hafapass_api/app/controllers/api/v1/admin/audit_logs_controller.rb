@@ -18,13 +18,14 @@ class Api::V1::Admin::AuditLogsController < Api::V1::Admin::BaseController
   # Cache bounded identifiers, never contact details: privacy edits and deleted
   # records are reflected when names are read for the response.
   def filter_options(query)
-    cache_key = ["admin-activity-options-v1", Digest::SHA256.hexdigest(query.filters.sort.to_json)]
+    cache_key = ["admin-activity-options-v2", Digest::SHA256.hexdigest(query.filters.sort.to_json)]
     ids = Rails.cache.fetch(cache_key, expires_in: 1.minute) do
-      scope = query.relation
-      { organizations: scope.where.not(organization_id: nil).distinct.limit(500).pluck(:organization_id),
-        actors: scope.where.not(actor_user_id: nil).distinct.limit(500).pluck(:actor_user_id),
-        events: scope.where.not(event_id: nil).distinct.limit(500).pluck(:event_id),
-        actions: scope.distinct.order(:action).limit(500).pluck(:action) }
+      # Each option list keeps the other filters while allowing its own value to change.
+      facet = ->(key) { ActivityLogQuery.new(scope: query.base, params: query.filters.except(key), admin: true).relation }
+      { organizations: facet.call("organization_id").where.not(organization_id: nil).distinct.limit(500).pluck(:organization_id),
+        actors: facet.call("actor_user_id").where.not(actor_user_id: nil).distinct.limit(500).pluck(:actor_user_id),
+        events: facet.call("event_id").where.not(event_id: nil).distinct.limit(500).pluck(:event_id),
+        actions: facet.call("action").distinct.order(:action).limit(500).pluck(:action) }
     end
     { organizations: Organization.where(id: ids[:organizations]).order(:name).pluck(:id, :name).map { |id, name| { id: id, name: name } },
       actors: User.where(id: ids[:actors]).select(:id, :email, :first_name, :last_name).order(:email).map { |person| user_summary(person) },

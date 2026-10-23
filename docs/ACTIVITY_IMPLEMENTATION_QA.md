@@ -316,3 +316,91 @@ Lifecycle session `01a169e9-24d6-7c31-8167-2d49d58e69b1` reports no active owned
 resources. No resource handoff; Docker 3000/3088 and anything on 3011 untouched.
 Remote CI/review is separate from this local gate; the lead owns final-head
 monitoring. This PR remains unmerged.
+
+
+## Final review revision, 2026-10-24
+
+Starting head `146d0d38`, held PR #154, existing worktree
+`t3-d7dfd28a`. `origin/main` (`826ae3ed`) is already an ancestor.
+This revision preserves the Activity role/security contract established above.
+The app serves event organizers and admission staff; these fixes cover admin
+history filtering and the team role comparison, with no live provider actions.
+
+The GitHub REST comments API, paginated through all comments and filtered by
+`original_commit_id = 146d0d38351016db9e7bf97e7102e36b7fbb9481`, returned
+**four inline comments**, rather than seven. The matching review body has one
+additional outside-diff finding. All five actionable findings were verified:
+
+| Comment | Disposition |
+| --- | --- |
+| `4362910194`: admin options collapse | Each option query omits only its own filter and retains every other filter; bounded IDs and one-minute cache remain. Cache version changed to avoid old collapsed results. Four request cases select and switch organizations, actors, events and actions, excluding rows outside other filters. |
+| `4362910220`: tracked screenshots overwritten | Normal screenshots use `testInfo.outputPath`; only explicit `CAPTURE_ACTIVITY_EVIDENCE` writes to tracked evidence. |
+| `4362910235`: mobile Manager activity note | Activity note added to Manager's mobile list; Vitest and 375px browser assertion cover the full scope note. |
+| `4362910252`: member comparison uses invite role | Comparison state captures the clicked member role or current invite draft role. Both entry points, reopening, draft preservation and focus return are covered. |
+| Outside diff, `AdminAuditLogPage.jsx:33`: empty changes | Empty or absent projected changes fall back to sanitized admin before/after data. The fee-settings fixture now includes the real `changes: []` shape and verifies field count and changed values. |
+
+The mobile-note comment embeds static-analysis warnings too: mapped rows already
+have `key={row.key}` (no missing-key defect), and a maximum three-item constant
+allowlist does not warrant a Set conversion. The bot's broad docstring-coverage
+suggestion is cosmetic and deferred; no actionable behavior finding is deferred.
+
+Agent-executed affected-flow acceptance uses owned request fixtures and the
+repository's isolated test-auth/API browser fixtures. Required cases:
+
+- F01: select and switch all four admin option values without clearing;
+  remaining exact filters still constrain results/options. Request specs verify
+  the real backend; the 375/1280 browser journey also switches organizations.
+- F02: on a phone, select Manager and read the activity restrictions; compare an
+  existing Scanner after drafting a Finance invite, close, reopen the invite
+  comparison, and retain email, draft role and trigger focus. Desktop matrix
+  keyboard behavior remains covered.
+- F03: admin-only audit rows with `changes: []` show their recorded field changes.
+- F04: ordinary full Playwright execution leaves tracked evidence unchanged.
+- Preserved flows: Activity filters/recovery/pagination/saved CSV, admin exact
+  filters/links/technical details/CSV/recovery, event-overview Activity link and
+  axe checks at 375/1280.
+
+The first lint pass found the new Node `process` reference needed an explicit
+`node:process` import; fixed before the full frontend gate. The updated security
+advisory database reported GHSA-pq4g-8rxf-4g29 against locked `crass 1.0.7`.
+Verified against the upstream advisory and updated only that lockfile entry to
+patched `1.0.8`; final backend validation uses the patched gem.
+
+The first full backend run overlapped the lockfile update and produced eight
+subprocess `Bundler::GemNotFound` failures for `crass 1.0.8`; its parent had
+already loaded the old gem path. This was a local validation-environment error.
+The entire backend suite is rerun with consistent worktree-local gem paths.
+
+Final full-gate results and cleanup follow below. Browser
+coverage is Chromium at 375/1280, not native hardware or live Clerk/provider
+acceptance. No migrations or `hafapass_api/config/policies.yml` changes.
+
+
+Final source (committed together with this ledger) passed:
+
+- Full RSpec with patched `crass`: **3,223 examples, 0 failures**;
+  `.codex/review-rspec-final.log`. The initial environment failure is superseded.
+- RuboCop: **950 files, no offenses**. Brakeman: **0 warnings**.
+- Bundler Audit and production npm audit: **no vulnerabilities**.
+- ESLint, production build, role-matrix freshness, local freeze check (inactive),
+  secret/debug hygiene and whitespace: **passed**. Impeccable advisory: `[]`.
+- Vitest: **170 files / 1,861 tests passed**.
+- Complete final Playwright: **127 passed**; Chromium, one worker, owned port
+  4288. F01–F04 and the named preserved flows passed in the specified request,
+  component and 375/1280 browser dimensions. Admin `changes: []` now has browser
+  assertions for the field count and recorded value details as well.
+- Every tracked screenshot remains byte-unchanged after ordinary test execution.
+  New captures are under ignored `hafapass_frontend/test-results/`.
+
+Both owned Playwright runners (56421 and 84206), managed Vite and browser children
+exited; port 4288 is closed. The disposable
+`hafapass_activity_final_review_test` database was dropped and verified absent.
+Lifecycle session `01a16ac9-adb3-7380-82cc-36f0602d59f5` has no active owned
+resources. No resource handoff. Docker 3000/3088, port 3011 and protected/shared
+services were untouched. The held worktree/branch remain available.
+
+Remote CI and incremental review are separate gates. This delegated worker
+returns a single post-push snapshot and the exact head to the lead, who owns
+remote monitoring under the T3 delegated-task rules. No merge or production
+verification is claimed. Detailed remote state is in the local final-review
+handoff and PR replies.

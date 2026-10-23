@@ -2,8 +2,11 @@ import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import process from 'node:process'
 
-const evidencePath = name => fileURLToPath(new URL(`../../docs/activity-evidence/${name}`, import.meta.url))
+const evidencePath = (name, testInfo) => process.env.CAPTURE_ACTIVITY_EVIDENCE
+  ? fileURLToPath(new URL(`../../docs/activity-evidence/${name}`, import.meta.url))
+  : testInfo.outputPath(name)
 
 // Uses the repo's playwright.config.js development-auth fixture (Clerk off)
 // with isolated mocked API responses; no real audit records are modified.
@@ -39,7 +42,7 @@ async function accessibleAndFits(page) {
 }
 
 for (const width of [375, 1280]) {
-  test(`organizer activity filters, timeline, recovery and CSV at ${width}px`, async ({ page }) => {
+  test(`organizer activity filters, timeline, recovery and CSV at ${width}px`, async ({ page }, testInfo) => {
     await prepare(page, width)
     let failRead = false
     let failExport = true
@@ -77,10 +80,10 @@ for (const width of [375, 1280]) {
     await expect(page.getByText('Before: $20').filter({ visible: true })).toBeVisible()
     await expect(page.getByText('After: $25').filter({ visible: true })).toBeVisible()
     await accessibleAndFits(page)
-    await page.screenshot({ path: evidencePath(`activity-${width}.png`), fullPage: true })
+    await page.screenshot({ path: evidencePath(`activity-${width}.png`, testInfo), fullPage: true })
     if (width < 768) {
       await openFilters(page, width)
-      await page.screenshot({ path: evidencePath('activity-filters-open-375.png'), fullPage: true })
+      await page.screenshot({ path: evidencePath('activity-filters-open-375.png', testInfo), fullPage: true })
       await page.getByRole('button', { name: /^Filters/ }).click()
     }
     await page.getByRole('button', { name: 'Load more', exact: true }).click()
@@ -118,7 +121,7 @@ for (const width of [375, 1280]) {
     await accessibleAndFits(page)
   })
 
-  test(`admin exact filters, links, technical details and CSV at ${width}px`, async ({ page }) => {
+  test(`admin exact filters, links, technical details and CSV at ${width}px`, async ({ page }, testInfo) => {
     await prepare(page, width)
     const queries = []
     let exported
@@ -128,7 +131,7 @@ for (const width of [375, 1280]) {
       queries.push(Object.fromEntries(query))
       if (failRead) { failRead = false; return json(route, { error: 'Temporarily unavailable' }, 503) }
       if (query.get('q') === 'no matches') return json(route, { audit_logs: [], meta: { page: 1, total_pages: 0 }, filters: options })
-      return json(route, { audit_logs: [{ ...activity, action: 'ticket_type.updated', source: 'admin',
+      return json(route, { audit_logs: [{ ...activity, changes: [], action: 'ticket_type.updated', source: 'admin',
         event: { ...event, url: '/admin/events/4' }, organization: { id: 7, name: organization.name, url: '/admin/organizations/7' },
         actor: { name: 'Mina Cruz', email: `${'long-email'.repeat(12)}@example.test` }, target: { type: 'TicketType', id: 9 },
         before_data: { price_cents: 2000 }, after_data: { price_cents: 2500 }, metadata: { source: 'admin', note: '<script>alert(1)</script>' }, request_id: 'req-activity-31' }],
@@ -147,16 +150,23 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('link', { name: event.title, exact: true })).toHaveAttribute('href', '/admin/events/4')
     await page.getByRole('button', { name: 'Details for entry 31', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'What changed' })).toBeVisible()
+    await expect(page.getByText('price_cents', { exact: true })).toBeVisible()
+    await expect(page.getByText('1 field changed', { exact: false })).toBeVisible()
     await page.getByText('Technical details', { exact: true }).click()
     await expect(page.locator('pre')).toContainText('<script>alert(1)</script>')
     await expect(page.locator('pre script')).toHaveCount(0)
     await expect(page.getByText(/request req-activity-31/)).toBeVisible()
     await accessibleAndFits(page)
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.screenshot({ path: evidencePath(`admin-log-${width}.png`), fullPage: true })
+    await page.screenshot({ path: evidencePath(`admin-log-${width}.png`, testInfo), fullPage: true })
     await openFilters(page, width)
     await page.getByRole('searchbox', { name: 'Find organization' }).fill('Island')
     await expect(page.getByRole('option', { name: 'Other Organizer', exact: true })).toHaveCount(0)
+    await page.getByLabel('Organization', { exact: true }).selectOption('7')
+    await expect.poll(() => queries.at(-1)?.organization_id).toBe('7')
+    await page.getByRole('searchbox', { name: 'Find organization' }).fill('')
+    await page.getByLabel('Organization', { exact: true }).selectOption('8')
+    await expect.poll(() => queries.at(-1)?.organization_id).toBe('8')
     await page.getByLabel('Organization', { exact: true }).selectOption('7')
     await expect.poll(() => queries.at(-1)?.organization_id).toBe('7')
     for (const [label, value, key] of [['By', '11', 'actor_user_id'], ['Action', 'ticket_type.updated', 'action'], ['Event', '4', 'event_id'], ['Outcome', 'failed', 'outcome'], ['Source', 'admin', 'source'], ['Area', 'events', 'area']]) {
@@ -209,9 +219,9 @@ test('unassigned staff cannot request activity; assigned managers can use the ex
 })
 
 for (const width of [375, 1280]) {
-  test(`settings role comparison preserves invite draft and passes axe at ${width}px`, async ({ page }) => {
+  test(`settings role comparison preserves invite draft and passes axe at ${width}px`, async ({ page }, testInfo) => {
     await prepare(page, width)
-    await page.route('**/api/v1/organizer/memberships', route => json(route, []))
+    await page.route('**/api/v1/organizer/memberships', route => json(route, [{ id: 12, email: 'scanner@example.test', role: 'scanner', status: 'active' }]))
     await page.goto('/dashboard/settings')
     await expect(page.getByRole('link', { name: 'Activity', exact: true })).toBeVisible()
     await page.getByLabel('Teammate email').fill('door-staff@example.test')
@@ -230,6 +240,7 @@ for (const width of [375, 1280]) {
     } else {
       await dialog.getByRole('combobox', { name: 'Role' }).selectOption('manager')
       await expect(matrix.getByText('Event activity, without payment amounts', { exact: true })).toBeVisible()
+      await expect(matrix.getByText(/organization team and security history is Owner-only/)).toBeVisible()
       await dialog.getByRole('combobox', { name: 'Role' }).selectOption('finance')
     }
     if (width >= 1024) {
@@ -246,12 +257,26 @@ for (const width of [375, 1280]) {
       await dialog.getByRole('combobox', { name: 'Role' }).selectOption('finance')
     }
     await accessibleAndFits(page)
-    await page.screenshot({ path: evidencePath(`role-matrix-${width}.png`), fullPage: false })
+    await page.screenshot({ path: evidencePath(`role-matrix-${width}.png`, testInfo), fullPage: false })
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
     await expect(compare).toBeFocused()
     await expect(page.getByLabel('Teammate email')).toHaveValue('door-staff@example.test')
     await expect(page.getByRole('radio', { name: /^Finance/ })).toBeChecked()
+    const memberCompare = page.getByRole('list', { name: 'Team members' }).getByRole('button', { name: 'Compare roles' })
+    await memberCompare.click()
+    await expect(dialog).toBeVisible()
+    if (width < 1024) {
+      await expect(dialog.getByRole('combobox', { name: 'Role' })).toHaveValue('scanner')
+      await expect(dialog.getByLabel('Role permissions').getByText('Assigned events only', { exact: true }).first()).toBeVisible()
+    }
+    await page.keyboard.press('Escape')
+    await expect(memberCompare).toBeFocused()
+    await expect(page.getByLabel('Teammate email')).toHaveValue('door-staff@example.test')
+    await expect(page.getByRole('radio', { name: /^Finance/ })).toBeChecked()
+    await compare.click()
+    if (width < 1024) await expect(dialog.getByRole('combobox', { name: 'Role' })).toHaveValue('finance')
+    await page.keyboard.press('Escape')
     await page.getByRole('link', { name: 'Activity', exact: true }).click()
     await expect(page).toHaveURL('/dashboard/settings/activity')
   })

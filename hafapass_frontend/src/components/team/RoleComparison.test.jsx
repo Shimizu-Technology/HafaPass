@@ -39,6 +39,8 @@ describe('RoleComparison', () => {
     const can = within(mobile).getByRole('heading', { name: 'Can', exact: true }).closest('section')
     expect(within(can).getByText('Issue refunds')).toBeInTheDocument()
     expect(within(can).queryByText('Ticket types & prices')).not.toBeInTheDocument()
+    await user.selectOptions(within(mobile).getByRole('combobox'), 'manager')
+    expect(within(mobile).getByText(roleMatrix.rows.find(row => row.key === 'activity').note)).toBeInTheDocument()
     await user.selectOptions(within(mobile).getByRole('combobox'), 'scanner')
     expect(within(can).getByText('Scan tickets')).toBeInTheDocument()
     expect(within(can).getAllByText('Assigned events only').length).toBeGreaterThan(0)

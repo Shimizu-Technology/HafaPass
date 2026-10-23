@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import TeamManager from './TeamManager'
 
@@ -14,6 +14,22 @@ describe('TeamManager access and invitation limits', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove ended@example.com' }))
     expect(screen.getByRole('button', { name: 'Remove access' })).toBeInTheDocument()
     expect(screen.getAllByText(/Scanner phones that are offline keep working/)).toHaveLength(2)
+  })
+
+  it('compares the clicked member role and the invitation draft role independently', () => {
+    render(<TeamManager {...props} compareRoles />)
+    fireEvent.change(screen.getByLabelText('Teammate email'), { target: { value: 'new@example.com' } })
+    fireEvent.click(screen.getByRole('radio', { name: /^Finance/ }))
+    const [inviteCompare, memberCompare] = screen.getAllByRole('button', { name: 'Compare roles' })
+    fireEvent.click(memberCompare)
+    expect(within(screen.getByLabelText('Role permissions')).getByRole('combobox')).toHaveValue('scanner')
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(inviteCompare)
+    expect(within(screen.getByLabelText('Role permissions')).getByRole('combobox')).toHaveValue('finance')
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.getByLabelText('Teammate email')).toHaveValue('new@example.com')
+    expect(screen.getByRole('radio', { name: /^Finance/ })).toBeChecked()
+    expect(props.request).not.toHaveBeenCalled()
   })
 
   it('preserves invitation choices and displays a friendly quota refusal', async () => {
