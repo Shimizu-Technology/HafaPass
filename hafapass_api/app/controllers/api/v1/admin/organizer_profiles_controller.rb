@@ -8,7 +8,7 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
     before_data = profile_json(profile)
     previous_status = profile.verification_status
     profile.with_lock do
-      if params[:verification_status] == "verified" && profile.verification_status_pending? &&
+      if %w[verified rejected].include?(params[:verification_status].to_s) && profile.verification_status_pending? &&
           params[:verification_request_version].to_s != profile.verification_request_version.to_s
         raise StaleVerificationRequest
       end

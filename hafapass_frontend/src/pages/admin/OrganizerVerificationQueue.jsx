@@ -28,7 +28,7 @@ function VerificationDialog({ action, organizer, beginRequest, onClose, onSaved 
     setBusy(true)
     setError('')
     const body = { verification_status: rejecting ? 'rejected' : pausing ? 'suspended' : 'verified',
-      ...(organizer.verification_status === 'pending' && !rejecting && Number.isInteger(organizer.verification_request_version)
+      ...(organizer.verification_status === 'pending' && Number.isInteger(organizer.verification_request_version)
         ? { verification_request_version: organizer.verification_request_version } : {}),
       ...(note.trim() ? { verification_notes: note.trim() } : {}) }
     try {

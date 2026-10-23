@@ -123,6 +123,13 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
     expect(response.parsed_body.fetch("error")).to eq("This request changed — reload to review the latest details.")
     expect(profile.reload).to be_verification_status_pending
 
+    patch "/api/v1/admin/organizer_profiles/#{profile.id}", headers: auth_headers(admin),
+      params: { verification_status: "rejected", verification_notes: "Add a working link",
+                verification_request_version: opened.fetch("verification_request_version") }
+    expect(response).to have_http_status(:conflict)
+    expect(profile.reload).to be_verification_status_pending
+    expect(profile.verification_notes).to be_nil
+
     get "/api/v1/admin/dashboard", headers: auth_headers(admin)
     refreshed = response.parsed_body.fetch("organizers_awaiting_verification").find { |item| item["profile_id"] == profile.id }
     expect(refreshed.fetch("verification_change_diff")).to include("business_name" => {
