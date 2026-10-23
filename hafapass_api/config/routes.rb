@@ -115,6 +115,7 @@ Rails.application.routes.draw do
       end
       get "event_categories", to: "events#categories"
       get "events/:slug", to: "events#show", as: :event
+      get "events/:slug/private_preview", to: "events#private_preview"
       get "events/:slug/seating", to: "event_seating#show"
       post "events/:slug/seat_holds", to: "event_seating#create_hold"
       delete "events/:slug/seat_holds", to: "event_seating#destroy_hold"
@@ -149,6 +150,10 @@ Rails.application.routes.draw do
         resources :venue_layouts, only: [:index, :show, :create, :update]
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
+          member do
+            get :preview_link
+            post :rotate_preview_link
+          end
           collection do
             get :summary
           end

@@ -13,6 +13,7 @@ import { eventToolLinks } from '../../utils/eventWorkspaceNavigation'
 import { loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
+import { useTranslation } from 'react-i18next'
 
 const statusCopy = {
   draft: 'Draft — only your team can see it.',
@@ -43,6 +44,7 @@ export default function EventOverviewPage() {
 }
 
 function EventOverviewSession({ id, identity }) {
+  const { t } = useTranslation()
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}`)
   const [event, setEvent] = useState(null)
   // Sales and door numbers load after the event: { status, stats, admissions }.
@@ -53,6 +55,7 @@ function EventOverviewSession({ id, identity }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [copyState, setCopyState] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState('')
   const generation = useRef(0)
   const extrasGeneration = useRef(0)
   const capabilities = useLaunchCapabilities()
@@ -99,6 +102,9 @@ function EventOverviewSession({ id, identity }) {
         return
       }
       setEvent(saved)
+      if (saved.status === 'published' && saved.permissions?.manage_events) {
+        get(`/organizer/events/${id}/preview_link`).then(response => { if (canApply()) setPreviewUrl(response.data.url) }).catch(() => {})
+      }
       setLoading(false)
       void loadExtras(saved)
       if (verificationReasons[saved.sales_status?.reason]) {
@@ -128,6 +134,24 @@ function EventOverviewSession({ id, identity }) {
       await navigator.clipboard.writeText(url)
       setCopyState('copied')
     } catch { setCopyState('failed') }
+  }
+
+  const sharePreview = async () => {
+    if (!previewUrl) return
+    if (navigator.share) {
+      try { await navigator.share({ title: event.title, url: previewUrl }); return } catch { /* Copy fallback */ }
+    }
+    await copyLink(previewUrl)
+  }
+
+  const rotatePreview = async () => {
+    const request = beginRequest()
+    if (!request) return
+    try {
+      const response = await apiClient.post(`/organizer/events/${id}/rotate_preview_link`, {}, request.config)
+      if (request.current()) { setPreviewUrl(response.data.url); setCopyState(null) }
+    } catch { if (request.current()) setCopyState('failed') }
+    finally { request.release() }
   }
 
   if (loading && !event) {
@@ -163,6 +187,7 @@ function EventOverviewSession({ id, identity }) {
   const verificationState = verificationReasons[salesStatus?.reason]
   const verificationProfile = verificationState && (profile.status === 'ready' ? profile.data
     : profile.status === 'error' ? { verification_status: verificationState } : null)
+  const suspendedOrganizer = verificationProfile?.verification_status === 'suspended'
   const publicPath = event.slug ? `/events/${event.slug}` : null
   const tools = eventToolLinks(event, capabilities)
 
@@ -170,11 +195,12 @@ function EventOverviewSession({ id, identity }) {
     <div className="space-y-6">
       <section aria-labelledby="overview-status" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
         <h2 id="overview-status" className="text-lg font-semibold text-neutral-950">Overview</h2>
-        <p className="mt-1 text-sm text-neutral-700">{event.status === 'published' && !onSale ? 'Published — buyers can find it, but tickets are not on sale yet.' : statusCopy[event.status] || 'Event status unavailable.'}</p>
-        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-          <div className="flex items-start gap-2"><CalendarDays aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div><dt className="sr-only">Date</dt><dd className="text-neutral-900">{event.starts_at ? formatEventDateTime(event.starts_at, event.timezone) : 'Date not set yet'}</dd></div></div>
-          <div className="flex items-start gap-2"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div className="min-w-0"><dt className="sr-only">Venue</dt><dd className="break-words text-neutral-900">{event.venue_name || 'Venue not set yet'}{event.venue_city ? `, ${event.venue_city}` : ''}</dd></div></div>
-        </dl>
+        {event.status === 'published' && verificationState && <span className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-950">{t(suspendedOrganizer ? 'organizerVerification.suspendedChip' : 'organizerVerification.waitingChip')}</span>}
+        <p className="mt-1 text-sm text-neutral-700">{event.status === 'published' && verificationState ? t(suspendedOrganizer ? 'organizerVerification.suspendedBody' : 'organizerVerification.publishExplanation') : event.status === 'published' && !onSale ? 'Published — tickets are not on sale yet.' : statusCopy[event.status] || 'Event status unavailable.'}</p>
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+          <div className="flex items-start gap-2"><CalendarDays aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div><span className="sr-only">Date: </span><span className="text-neutral-900">{event.starts_at ? formatEventDateTime(event.starts_at, event.timezone) : 'Date not set yet'}</span></div></div>
+          <div className="flex items-start gap-2"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div className="min-w-0"><span className="sr-only">Venue: </span><span className="break-words text-neutral-900">{event.venue_name || 'Venue not set yet'}{event.venue_city ? `, ${event.venue_city}` : ''}</span></div></div>
+        </div>
       </section>
 
       <section aria-labelledby="overview-sales" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
@@ -223,7 +249,7 @@ function EventOverviewSession({ id, identity }) {
           {onSale
             ? <p className="mt-1 flex items-center gap-2 text-sm text-neutral-700"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-emerald-600" />Your event is live. Share it and get ready for the door.</p>
             : <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-              <p className="flex items-start gap-2 font-semibold"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{salesPaused ? 'Sales paused by HåfaPass.' : 'Visible but not on sale yet.'}</p>
+              <p className="flex items-start gap-2 font-semibold"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{verificationState ? t(suspendedOrganizer ? 'organizerVerification.suspendedChip' : 'organizerVerification.waitingChip') : salesPaused ? 'Sales paused by HåfaPass.' : 'Tickets are not on sale yet.'}</p>
               {(() => {
                 const detail = salesStatus.reason === 'event_paused' && event.policy_hold?.reason ? event.policy_hold.reason : salesDetail(salesStatus.message)
                 return detail && <p className="mt-1 whitespace-pre-wrap pl-6 [overflow-wrap:anywhere]">{detail}</p>
@@ -231,16 +257,20 @@ function EventOverviewSession({ id, identity }) {
               {verificationProfile && <VerificationNotice profile={verificationProfile} beginRequest={beginRequest} showSummary={false} inline className="mt-2 pl-6" />}
             </div>}
           <div className="mt-4 flex flex-wrap gap-2">
-            {publicPath && <Link to={publicPath} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />View public page</Link>}
-            {publicPath && <button type="button" onClick={() => copyLink(`${PUBLIC_WEB_URL}${publicPath}`)} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />{copyState === 'copied' ? 'Link copied' : 'Copy event link'}</button>}
+            {publicPath && !verificationState && <Link to={publicPath} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />View public page</Link>}
+            {publicPath && !verificationState && <button type="button" onClick={() => copyLink(`${PUBLIC_WEB_URL}${publicPath}`)} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />{copyState === 'copied' ? 'Link copied' : 'Copy event link'}</button>}
+            {previewUrl && verificationState && !suspendedOrganizer && <><a href={previewUrl} className="btn-secondary inline-flex min-h-11 gap-2 text-sm"><ExternalLink aria-hidden="true" className="h-4 w-4" />Preview event</a>
+              <button type="button" onClick={sharePreview} className="btn-secondary min-h-11 text-sm">{t('organizerVerification.sharePreview')}</button>
+              <button type="button" onClick={() => copyLink(previewUrl)} className="btn-secondary min-h-11 text-sm">{copyState === 'copied' ? t('organizerVerification.copied') : t('organizerVerification.copyPreview')}</button>
+              <button type="button" onClick={rotatePreview} className="btn-secondary min-h-11 text-sm">{t('organizerVerification.rotatePreview')}</button></>}
             {has('scan') && <Link to={`/dashboard/scanner?event=${event.id}`} className="btn-secondary inline-flex min-h-11 text-sm">Scan tickets</Link>}
           </div>
           <p className={copyState === 'failed' ? 'mt-3 text-sm text-neutral-700' : 'sr-only'} aria-live="polite">
-            {copyState === 'copied' ? 'Event link copied' : copyState === 'failed' ? "Couldn't copy. Select the link below." : ''}
+            {copyState === 'copied' ? t('organizerVerification.copied') : copyState === 'failed' ? "Couldn't copy. Select the link below." : ''}
           </p>
           {copyState === 'failed' && publicPath && <label className="mt-2 block text-sm text-neutral-700">
             <span className="sr-only">Event link</span>
-            <input type="text" readOnly value={`${PUBLIC_WEB_URL}${publicPath}`} onFocus={focusEvent => focusEvent.target.select()} className="input w-full min-w-0 text-sm" />
+            <input type="text" readOnly value={previewUrl || `${PUBLIC_WEB_URL}${publicPath}`} onFocus={focusEvent => focusEvent.target.select()} className="input w-full min-w-0 text-sm" />
           </label>}
         </>}
         {event.status === 'postponed' && <p className="mt-1 text-sm text-neutral-700">{has('edit_event_content') ? <>Set a new date in <Link to={`/dashboard/events/${event.id}/edit`} className="font-semibold text-brand-700 underline">event details</Link> when you have one.</> : 'Your event manager will set a new date.'}</p>}

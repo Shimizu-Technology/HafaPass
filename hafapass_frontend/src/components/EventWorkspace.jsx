@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { CalendarDays, MapPin, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react'
 import apiClient from '../api/client'
 import Dialog from './Dialog'
@@ -69,6 +70,7 @@ function MobileNavigation({ groups, location, onClose, onNavigate }) {
 }
 
 function WorkspaceSession({ suppliedEvent, eventId, identity, children, location, hasUnsavedChanges }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const loadEvent = suppliedEvent === undefined
   const { current, beginRequest } = useOrganizerRequests(identity, location.pathname)
@@ -136,7 +138,7 @@ function WorkspaceSession({ suppliedEvent, eventId, identity, children, location
       {correctEvent ? <>
         <div className="mt-2 flex flex-wrap items-start gap-3">
           <h1 className="min-w-0 flex-1 break-words text-2xl font-bold text-neutral-950 sm:text-3xl">{event.title}</h1>
-          <span className="rounded-md bg-neutral-100 px-2.5 py-1 text-sm font-medium text-neutral-800">{statusLabels[event.status] || 'Event'}</span>
+          <span className="rounded-md bg-neutral-100 px-2.5 py-1 text-sm font-medium text-neutral-800">{event.status === 'published' && event.publicly_visible === false ? t('organizerVerification.privatePreviewChip') : statusLabels[event.status] || 'Event'}</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-neutral-700">
           {event.starts_at && <p className="flex items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /><span>{formatEventDateTime(event.starts_at, event.timezone)} · {event.timezone || 'Pacific/Guam'}</span></p>}

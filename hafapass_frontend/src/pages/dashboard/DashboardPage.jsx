@@ -4,11 +4,13 @@ import OperationalPagination from '../../components/OperationalPagination'
 import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import { canManageOrganizationSettings, loadOrganizerOrganizations, resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import OrganizerSetupChecklist from './OrganizerSetupChecklist'
+import VerificationNotice from '../../components/VerificationNotice'
 import { roleLabel } from '../../utils/roles'
 import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, Plus, ScanLine, Settings } from 'lucide-react'
 import { useState, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext } from '../../api/client'
 import { formatEventDate } from '../../utils/eventTime'
 import { currentScannerOwner } from '../../utils/admissionStore'
@@ -133,6 +135,8 @@ function StatusBadge({ status }) {
 // Event managers land on the event overview. Other staff keep their direct
 // route to the one tool they were given.
 function EventListCard({ event }) {
+ const { t } = useTranslation()
+ const waitingForVerification = event.status === 'published' && event.publicly_visible === false
  const permissions = event.permissions || {}
  const destination = permissions.manage_events ? `/dashboard/events/${event.id}` : permissions.edit_event_content ? `/dashboard/events/${event.id}/edit` : permissions.box_office ? `/dashboard/events/${event.id}/box-office` : permissions.scan ? `/dashboard/scanner?event=${event.id}` : permissions.refund && permissions.view_finance ? `/dashboard/events/${event.id}/refunds` : permissions.view_finance ? `/dashboard/events/${event.id}/analytics` : `/dashboard/events/${event.id}/edit`
  const actionLabel = permissions.manage_events ? "Open event" : permissions.edit_event_content ? "Edit event" : permissions.box_office ? "Open box office" : permissions.scan ? "Scan tickets" : permissions.refund && permissions.view_finance ? "Open refunds" : permissions.view_finance ? "View sales" : "View event"
@@ -152,7 +156,7 @@ function EventListCard({ event }) {
       {formatEventDate(event.starts_at, event.timezone)} {event.venue_name && `· ${event.venue_name}`}
      </p>
     </div>
-    <StatusBadge status={event.status} />
+    {waitingForVerification ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950">{t('organizerVerification.waitingChip')}</span> : <StatusBadge status={event.status} />}
     <span className="text-sm font-semibold text-brand-600">{actionLabel}</span>
    </div>
    <div className="mt-3 flex items-center gap-4 text-sm text-neutral-600">
@@ -163,7 +167,7 @@ function EventListCard({ event }) {
      {ticketsSold} sold
     </span>
     {event.category && (
-     <span className="text-neutral-400 capitalize">{event.category.replace('_', ' ')}</span>
+     <span className="text-neutral-600 capitalize">{event.category.replace('_', ' ')}</span>
     )}
    </div>
   </Link>
@@ -271,6 +275,7 @@ function DashboardSession({ authContext }) {
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
  const [actionError, setActionError] = useState(null)
+ const [verificationRequestSignal, setVerificationRequestSignal] = useState(null)
  const [editor, setEditor] = useState(null)
  const editorRef = useRef(null)
  const editorGeneration = useRef(0)
@@ -631,11 +636,12 @@ function DashboardSession({ authContext }) {
     {noticeError && <p role="alert" className="mt-2 text-red-700">{noticeError}</p>}
    </section>}
 
+   {canManageProfile && <VerificationNotice key={organization?.id} profile={profile} beginRequest={() => beginRequest(profileContext)} onUpdated={fetchDashboard} requestSignal={verificationRequestSignal} organizationId={organization?.id} className="mb-6" />}
    {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
     agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
     onEditProfile={openEditor}
     onAcceptPolicy={() => updateReadiness('accept_policy')}
-    onSubmitVerification={() => updateReadiness('submit_verification')} />}
+    onSubmitVerification={() => setVerificationRequestSignal({ organizationId: organization?.id })} />}
    {/* Agreement errors show inside the agreement dialog only. */}
    {actionError && actionError.path !== 'accept_policy' && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError.message}</p>}
 

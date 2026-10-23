@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_000100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -698,6 +698,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.datetime "translation_requested_at"
     t.jsonb "localized_content_sources", default: {}, null: false
     t.jsonb "page_customization", default: {}, null: false
+    t.string "preview_token_digest"
+    t.integer "preview_token_version", default: 0, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -1386,6 +1388,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_190501) do
     t.integer "verification_status", default: 0, null: false
     t.datetime "verified_at"
     t.bigint "verified_by_user_id"
+    t.string "verification_phone"
+    t.string "verification_link"
+    t.text "verification_request_note"
     t.index ["organization_id"], name: "index_organizer_profiles_on_organization_id", unique: true
     t.index ["user_id"], name: "index_organizer_profiles_on_user_id", unique: true
     t.index ["verification_status"], name: "index_organizer_profiles_on_verification_status"

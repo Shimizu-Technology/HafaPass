@@ -29,6 +29,9 @@ test('a received Alpha review can finish without replacing Beta or losing its ed
   })
   await page.goto('/dashboard')
   await page.getByRole('button', { name: 'Submit for review' }).click()
+  await page.getByRole('textbox', { name: /Contact phone/ }).fill('+1-671-555-1234')
+  await page.getByRole('textbox', { name: /Website or social media link/ }).fill('https://example.com')
+  await page.getByRole('button', { name: 'Send request' }).click()
   await expect.poll(() => submittedOrganization).toBe('1')
   await page.getByLabel('Organization').selectOption('2')
   await expect(page.getByRole('heading', { name: 'Welcome, Beta' })).toBeVisible()
@@ -40,7 +43,7 @@ test('a received Alpha review can finish without replacing Beta or losing its ed
   await expect(page.getByLabel(/Business Name/)).toHaveValue('Beta draft')
   await page.getByRole('button', { name: 'Close profile editor' }).click()
   await page.getByLabel('Organization').selectOption('1')
-  await expect(page.getByText('Submitted — HåfaPass is reviewing it', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: "We're reviewing your account" })).toBeVisible()
   expect(profiles[2].verification_status).toBe('unverified')
 })
 

@@ -68,11 +68,6 @@ module Api
         return render json: { error: "Organizer profile not found" }, status: :not_found unless profile
         return render json: { error: "Owner permission required" }, status: :forbidden unless owner?(profile)
 
-        unless profile.business_name.present? && profile.business_description.present?
-          return render json: { error: "Add a business name and description before requesting verification" },
-            status: :unprocessable_entity
-        end
-
         if profile.verification_status_verified? || profile.verification_status_suspended?
           return render json: { error: "This organizer profile cannot be submitted for verification" },
             status: :unprocessable_entity
@@ -83,8 +78,13 @@ module Api
         previously_requested_at = profile.verification_requested_at
         notify = !profile.verification_status_pending? || previously_requested_at.nil? ||
           previously_requested_at < VERIFICATION_NOTICE_INTERVAL.ago
-        profile.update!(verification_status: :pending, verification_requested_at: notify ? Time.current : previously_requested_at,
-          verification_notes: nil)
+        profile.assign_attributes(verification_request_params)
+        profile.verification_status = :pending
+        profile.verification_requested_at = notify ? Time.current : previously_requested_at
+        profile.verification_notes = nil
+        unless profile.save(context: :verification_request)
+          return render json: { errors: profile.errors.full_messages }, status: :unprocessable_entity
+        end
         AuditLogger.record!(action: "organizer.verification_requested", auditable: profile, actor: current_user,
           request: request)
         EmailService.send_verification_request_async(profile) if notify
@@ -95,6 +95,11 @@ module Api
 
       def profile_params
         params.permit(:business_name, :business_description, :logo_url)
+      end
+
+      def verification_request_params
+        params.permit(:business_name, :business_description, :verification_phone,
+          :verification_link, :verification_request_note)
       end
 
       def require_requested_profile_context
@@ -152,6 +157,9 @@ module Api
           verification_requested_at: profile.verification_requested_at,
           verified_at: profile.verified_at,
           verification_notes: owner?(profile) ? profile.verification_notes : nil,
+          verification_phone: owner?(profile) ? profile.verification_phone : nil,
+          verification_link: owner?(profile) ? profile.verification_link : nil,
+          verification_request_note: owner?(profile) ? profile.verification_request_note : nil,
           policy_accepted_at: profile.policy_accepted_at,
           policy_version: profile.policy_version,
           current_policy_version: PolicyRegistry.organizer_agreement[:version],

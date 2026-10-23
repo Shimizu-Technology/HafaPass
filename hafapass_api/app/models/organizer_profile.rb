@@ -1,4 +1,7 @@
 class OrganizerProfile < ApplicationRecord
+  def self.verification_gate_enabled?
+    Rails.env.production? || ENV["HAFAPASS_ENFORCE_ORGANIZER_VERIFICATION"] == "true"
+  end
   # The person who set up the profile. Admin-created organizations have none
   # until the invited owner accepts.
   belongs_to :user, optional: true
@@ -9,6 +12,9 @@ class OrganizerProfile < ApplicationRecord
   enum :verification_status, { unverified: 0, pending: 1, verified: 2, rejected: 3, suspended: 4 }, prefix: true
 
   validates :business_name, presence: true
+  validates :business_description, :verification_phone, :verification_link, presence: true,
+    on: :verification_request
+  validate :verification_contact_format, on: :verification_request
   validate :logo_image_is_approved
   validates :user_id, uniqueness: true, allow_nil: true
 
@@ -22,6 +28,19 @@ class OrganizerProfile < ApplicationRecord
   # is one admin action; its note is optional.
   validates :verification_notes, presence: true, if: -> { verification_status_rejected? }
 
+  def verification_contact_format
+    digits = verification_phone.to_s.gsub(/\D/, "")
+    unless digits.match?(/\A(?:1671|671)\d{7}\z/) || digits.match?(/\A1[2-9]\d{9}\z/)
+      errors.add(:verification_phone, "must be a valid phone number (Guam +1-671 is accepted)")
+    end
+    uri = URI.parse(verification_link.to_s)
+    unless %w[http https].include?(uri.scheme) && uri.host.present? && uri.host.include?(".")
+      errors.add(:verification_link, "must be a full website or social media URL")
+    end
+  rescue URI::InvalidURIError
+    errors.add(:verification_link, "must be a full website or social media URL")
+  end
+
   def policy_accepted?(current: PolicyRegistry.organizer_agreement)
     policy_accepted_at.present? && policy_version == current[:version] && policy_digest == current[:digest]
   end
@@ -29,7 +48,7 @@ class OrganizerProfile < ApplicationRecord
   # Production lets unverified organizers publish (tickets sell only once
   # verified); elsewhere verification is still needed to publish.
   def ready_to_publish_free_events?
-    (verification_status_verified? || Rails.env.production?) && policy_accepted?
+    (verification_status_verified? || self.class.verification_gate_enabled?) && policy_accepted?
   end
 
   def ready_to_publish_paid_events?

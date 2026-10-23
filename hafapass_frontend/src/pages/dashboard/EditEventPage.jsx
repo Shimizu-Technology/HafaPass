@@ -519,7 +519,7 @@ function EditEventSession({ id, identity }) {
                 {item.complete ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : blocksPublishing(item) ? <XCircle className="w-4 h-4 shrink-0" /> : <Clock3 aria-hidden="true" className="w-4 h-4 shrink-0 text-amber-700" />}
                 <div className="min-w-0">{item.href && !item.complete ? <a href={item.href} className="underline underline-offset-2">{item.label}</a> : item.label}
                   {item.detail && <p className="mt-1 text-xs font-normal text-neutral-600">{item.detail}</p>}
-                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">You can publish now. Tickets go on sale once HåfaPass verifies your organization.</p>}
+                  {item.requestVerification && !blocksPublishing(item) && <p className="mt-1 text-xs font-normal text-neutral-700">Your event will be visible through a private preview link now, and goes public automatically once you're verified.</p>}
                   {item.requestVerification && <VerificationNotice profile={organizerProfile} beginRequest={beginRequest} showSummary={false} className="mt-2" />}
                 </div>
               </li>
@@ -533,7 +533,7 @@ function EditEventSession({ id, identity }) {
         <ConfirmModal
           title="Publish Event?"
           message={salesWaitOnVerification
-            ? `Publish the saved event “${event.title}”? Attendees will be able to find it. Tickets go on sale once HåfaPass verifies your organization.`
+            ? `Publish the saved event “${event.title}”? Your event will be visible through a private preview link now, and goes public automatically once you're verified.`
             : `Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
           confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
           confirmClass="bg-action-teal hover:bg-action-teal-hover"

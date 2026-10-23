@@ -76,7 +76,11 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
           profile_id: profile.id, business_name: profile.business_name, organization_id: profile.organization_id,
           owner_email: owner&.email || profile.user&.email, requested_at: profile.verification_requested_at,
           verification_status: profile.verification_status, payout_ready: profile.organization.payout_ready?,
-          event_count: profile.events.count
+          event_count: profile.events.count,
+          published_awaiting_events_count: profile.events.published.count,
+          verification_phone: profile.verification_phone, verification_link: profile.verification_link,
+          verification_request_note: profile.verification_request_note,
+          verification_notes: profile.verification_notes
         }
       end
   end

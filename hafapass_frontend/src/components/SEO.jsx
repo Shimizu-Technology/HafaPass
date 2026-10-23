@@ -15,6 +15,7 @@ export default function SEO({
   type = 'website',
   jsonLd,
   noIndex = false,
+  noSocial = false,
 }) {
   const fullTitle = title ? `${title} | ${SITE_NAME}` : DEFAULT_TITLE
   const canonicalUrl = url || SITE_URL
@@ -26,20 +27,20 @@ export default function SEO({
       {noIndex && <meta name="robots" content="noindex, nofollow, noarchive" />}
 
       {/* Open Graph */}
-      <meta property="og:title" content={title || DEFAULT_TITLE} />
-      <meta property="og:description" content={description} />
-      <meta property="og:image" content={image} />
-      <meta property="og:url" content={canonicalUrl} />
-      <meta property="og:type" content={type} />
-      <meta property="og:site_name" content={SITE_NAME} />
+      {!noSocial && <meta property="og:title" content={title || DEFAULT_TITLE} />}
+      {!noSocial && <meta property="og:description" content={description} />}
+      {!noSocial && <meta property="og:image" content={image} />}
+      {!noSocial && <meta property="og:url" content={canonicalUrl} />}
+      {!noSocial && <meta property="og:type" content={type} />}
+      {!noSocial && <meta property="og:site_name" content={SITE_NAME} />}
 
       {/* Twitter Card */}
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={title || DEFAULT_TITLE} />
-      <meta name="twitter:description" content={description} />
-      <meta name="twitter:image" content={image} />
+      {!noSocial && <meta name="twitter:card" content="summary_large_image" />}
+      {!noSocial && <meta name="twitter:title" content={title || DEFAULT_TITLE} />}
+      {!noSocial && <meta name="twitter:description" content={description} />}
+      {!noSocial && <meta name="twitter:image" content={image} />}
 
-      <link rel="canonical" href={canonicalUrl} />
+      {!noSocial && <link rel="canonical" href={canonicalUrl} />}
 
       {/* JSON-LD Structured Data */}
       {jsonLd && !noIndex && (

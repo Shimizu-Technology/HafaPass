@@ -243,7 +243,7 @@ it('shows organizer verification as one checklist step with a request action, an
     { code: 'pilot_readiness_approved', label: 'Pilot readiness', complete: true },
   ] }
   apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer_profile'
-    ? { verification_status: 'unverified', organization: { role: 'owner' } } : draft }))
+    ? { business_name: 'Island Events', business_description: 'Island events', verification_phone: '+1-671-555-1234', verification_link: 'https://example.com', verification_status: 'unverified', organization: { role: 'owner' } } : draft }))
   apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
   const user = userEvent.setup()
   mount()
@@ -252,8 +252,9 @@ it('shows organizer verification as one checklist step with a request action, an
   expect(checklist).not.toHaveTextContent(/launch review|Pilot readiness/i)
   expect(screen.getByRole('button', { name: 'Publish Event' })).toBeDisabled()
   await user.click(await within(checklist).findByRole('button', { name: 'Request verification' }))
-  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
-  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  await user.click(within(checklist).getByRole('button', { name: 'Send request' }))
+  expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_phone: '+1-671-555-1234' }), expect.objectContaining({ organizationId: '1' }))
+  expect(await within(checklist).findByText(/We're reviewing your account/)).toBeInTheDocument()
   window.localStorage.removeItem('hafapass_organization_id')
 })
 
@@ -267,12 +268,12 @@ it('lets an unverified organizer publish when verification only holds back sales
   const user = userEvent.setup()
   mount()
   const checklist = await screen.findByRole('list', { name: 'Publishing checklist' })
-  expect(checklist).toHaveTextContent('You can publish now. Tickets go on sale once HåfaPass verifies your organization.')
-  expect(await within(checklist).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+  expect(checklist).toHaveTextContent("Your event will be visible through a private preview link now, and goes public automatically once you're verified.")
+  expect(await within(checklist).findByText(/We're reviewing your account/)).toBeInTheDocument()
   const publish = screen.getByRole('button', { name: 'Publish Event' })
   expect(publish).toBeEnabled()
   await user.click(publish)
-  expect(screen.getByRole('dialog')).toHaveTextContent('Tickets go on sale once HåfaPass verifies your organization.')
+  expect(screen.getByRole('dialog')).toHaveTextContent("goes public automatically once you're verified.")
   expect(screen.getByRole('dialog')).not.toHaveTextContent('purchase tickets')
 })
 

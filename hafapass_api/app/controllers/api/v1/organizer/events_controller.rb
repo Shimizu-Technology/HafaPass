@@ -8,7 +8,8 @@ module Api
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
           :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate,
-          :cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded
+          :cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded,
+          :preview_link, :rotate_preview_link
         ]
 
         def index
@@ -41,6 +42,23 @@ module Api
 
         def show
           render json: event_json(@event, include_ticket_types: true)
+        end
+
+        def preview_link
+          return unless authorize_organization!(:manage_events, event: @event)
+          return head :not_found if @event.organizer_profile.verification_status_suspended?
+
+          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}?preview_token=#{@event.preview_token}" }
+        end
+
+        def rotate_preview_link
+          return unless authorize_organization!(:manage_events, event: @event)
+          return head :not_found if @event.organizer_profile.verification_status_suspended?
+
+          token = @event.rotate_preview_token!
+          AuditLogger.record!(action: "event.preview_link_rotated", auditable: @event, actor: current_user,
+            organization: current_organization, request: request)
+          render json: { url: "#{PublicSiteUrl.base}/events/#{@event.slug}?preview_token=#{token}" }
         end
 
         # Organization-wide home totals, scoped to the events this user may see.
@@ -457,6 +475,7 @@ module Api
         def event_change_snapshot(event)
           {
             status: event.status,
+            publicly_visible: event.publicly_visible?,
             starts_at: event.starts_at&.iso8601,
             ends_at: event.ends_at&.iso8601,
             doors_open_at: event.doors_open_at&.iso8601,
@@ -574,6 +593,7 @@ module Api
             doors_open_at: event.doors_open_at,
             timezone: event.timezone,
             status: event.status,
+            publicly_visible: event.publicly_visible?,
             category: event.category,
             category_label: event.category_label,
             age_restriction: event.age_restriction,

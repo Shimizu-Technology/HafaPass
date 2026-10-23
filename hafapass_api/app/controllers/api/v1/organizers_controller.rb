@@ -14,6 +14,7 @@ class Api::V1::OrganizersController < ApplicationController
 
   def show
     organization = Organization.status_active.includes(:organizer_profile).find_by!(slug: params[:slug])
+    raise ActiveRecord::RecordNotFound unless organization.events.merge(Event.publicly_visible).exists?
     events = organization.events.merge(Event.discoverable).includes(:venue, :organization, :organizer_profile,
       ticket_types: [:inventory_holds, :waitlist_offers,
         { event_seats: :active_precheckout_seat_holds },

@@ -52,4 +52,13 @@ describe('SEO', () => {
     expect(document.head.querySelector('meta[property="og:site_name"]')).toHaveAttribute('content', 'HåfaPass')
     expect(document.head.querySelector('meta[name="description"]').getAttribute('content')).toContain('(HafaPass)')
   })
+
+  it('keeps private preview pages out of social cards and indexes', async () => {
+    render(<HelmetProvider><SEO title="Private preview" noIndex noSocial url="https://example.test/events/private" /></HelmetProvider>)
+    await waitFor(() => expect(document.title).toBe('Private preview | HåfaPass'))
+    expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow, noarchive')
+    expect(document.head.querySelector('meta[property^="og:"]')).not.toBeInTheDocument()
+    expect(document.head.querySelector('meta[name^="twitter:"]')).not.toBeInTheDocument()
+    expect(document.head.querySelector('link[rel="canonical"]')).not.toBeInTheDocument()
+  })
 })

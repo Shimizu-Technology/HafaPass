@@ -152,18 +152,19 @@ describe('event overview', () => {
     apiClient.post.mockResolvedValue({ data: { verification_status: 'pending', verification_requested_at: '2026-10-21T00:30:00Z', organization: { role: 'owner' } } })
     mount({ ...base, sales_status: { on_sale: false, reason: 'organizer_not_verified', message: 'Visible but not on sale yet: waiting for HåfaPass to verify your organization.' } }, {
       '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 },
-      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+      '/organizer_profile': { business_name: 'Island Events', business_description: 'Island events', verification_phone: '+1-671-555-1234', verification_link: 'https://example.com', verification_status: 'unverified', organization: { role: 'owner' } },
     })
     const next = await screen.findByRole('region', { name: 'Next steps' })
-    expect(next).toHaveTextContent('Visible but not on sale yet.')
-    expect(next).toHaveTextContent('Waiting for HåfaPass to verify your organization.')
+    expect(next).toHaveTextContent('Waiting for verification')
+    expect(next).toHaveTextContent('Get verified to start selling tickets')
     expect(next).not.toHaveTextContent('Your event is live')
-    expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('tickets are not on sale yet')
-    expect(within(next).getByRole('link', { name: 'View public page' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('private preview link')
+    expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
     expect(within(next).getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
     await user.click(await within(next).findByRole('button', { name: 'Request verification' }))
-    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', {}, expect.objectContaining({ organizationId: '1' }))
-    expect(await within(next).findByText(/Verification requested .* HåfaPass will review it soon\./)).toBeInTheDocument()
+    await user.click(within(next).getByRole('button', { name: 'Send request' }))
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_phone: '+1-671-555-1234' }), expect.objectContaining({ organizationId: '1' }))
+    expect(await within(next).findByText(/We're reviewing your account/)).toBeInTheDocument()
   })
 
   it('shows the server reason when HåfaPass suspended sales for the event', async () => {

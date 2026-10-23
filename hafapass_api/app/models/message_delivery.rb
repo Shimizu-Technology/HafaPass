@@ -32,7 +32,8 @@ class MessageDelivery < ApplicationRecord
     "event_change" => :transactional, "refund_notification" => :transactional,
     "refund_reconciliation_digest" => :transactional, "guest_list" => :transactional,
     "ticket_transfer" => :transactional, "event_reminder" => :transactional,
-    "verification_request" => :transactional, "organization_invitation" => :transactional,
+    "verification_request" => :transactional, "verification_decision" => :transactional,
+    "organization_invitation" => :transactional,
     "platform_invitation" => :transactional, "fee_change_notice" => :transactional,
     "waitlist_notification" => :commercial,
     "waitlist_offer" => :commercial, "communication_campaign" => :commercial

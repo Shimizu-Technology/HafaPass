@@ -34,7 +34,9 @@ RSpec.describe "Organizer verification as the production sales gate", type: :req
     expect(response.parsed_body.fetch("sales_status")).to include("on_sale" => false, "reason" => "organizer_not_verified")
 
     expect do
-      post "/api/v1/organizer_profile/submit_verification", headers: org_headers
+      post "/api/v1/organizer_profile/submit_verification", headers: org_headers,
+        params: { business_name: profile.business_name, business_description: "Island events",
+          verification_phone: "+1-671-555-1234", verification_link: "https://example.com/organizer" }
     end.to change { MessageDelivery.where(template: "verification_request", recipient: admin.email).count }.by(1)
     expect(response).to have_http_status(:ok), response.body
 

@@ -88,7 +88,7 @@ export default function EventDetailPage() {
   // Public pages can reuse their outlet when reduced motion is enabled.
   // Event inventory and offer selections belong to this specific route/context.
   return <EventDetailContent key={JSON.stringify([slug, params.get('preview') === 'true',
-    params.get('live_money_proof') === 'true', params.get('waitlist_offer')])} />
+    params.get('preview_token'), params.get('live_money_proof') === 'true', params.get('waitlist_offer')])} />
 }
 
 function EventDetailContent() {
@@ -110,6 +110,7 @@ function EventDetailContent() {
   }, [])
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === 'true'
+  const previewToken = searchParams.get('preview_token')
   const isLiveMoneyProof = searchParams.get('live_money_proof') === 'true'
   const handedOffEvent = useRef(resolvedEventHandoff?.slug === slug ? resolvedEventHandoff.event : null)
   const liveLocation = useRef(location)
@@ -134,7 +135,7 @@ function EventDetailContent() {
     let active = true
     const current = () => active && liveRoute.current.slug === slug
     if (!current()) return undefined
-    captureQueryAttribution(window.location.search)
+    if (!previewToken) captureQueryAttribution(window.location.search)
     const initialEvent = handedOffEvent.current
     if (initialEvent && loadAttempt === 0) {
       resolvedEventHandoff = null
@@ -145,11 +146,15 @@ function EventDetailContent() {
     setLoading(true)
     setEvent(null)
     setError(null)
-    const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+    const url = previewToken ? `/events/${slug}/private_preview?token=${encodeURIComponent(previewToken)}` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
       .then(res => {
         if (!current()) return
+        if (res.data.redirect_to) {
+          navigate(`/events/${encodeURIComponent(res.data.redirect_to)}`, { replace: true })
+          return
+        }
         if (res.data.redirected_from === slug && res.data.slug && res.data.slug !== slug) {
           // An old link: show the event at its current address.
           const { search, hash, state } = liveLocation.current
@@ -159,7 +164,7 @@ function EventDetailContent() {
         }
         if (res.data.slug !== slug) throw new Error('Event response does not match its route')
         setEvent(res.data)
-        trackFunnel(apiClient, res.data.id, 'event_view')
+        if (!res.data.private_preview) trackFunnel(apiClient, res.data.id, 'event_view')
         setLoading(false)
       })
       .catch(error => { if (current()) {
@@ -169,7 +174,7 @@ function EventDetailContent() {
         setLoading(false)
       } })
     return () => { active = false }
-  }, [slug, isPreview, isLiveMoneyProof, loadAttempt, navigate])
+  }, [slug, isPreview, previewToken, isLiveMoneyProof, loadAttempt, navigate])
 
   // Switching language reloads the event text quietly, keeping the page (and any
   // ticket selection) in place; the first load already used the current language.
@@ -178,13 +183,13 @@ function EventDetailContent() {
     loadedLanguage.current = contentLanguage
     if (!event) return undefined
     let active = true
-    const url = isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
+    const url = previewToken ? `/events/${slug}/private_preview?token=${encodeURIComponent(previewToken)}` : isLiveMoneyProof ? `/events/${slug}?live_money_proof=true` :
       (isPreview ? `/events/${slug}?preview=true` : `/events/${slug}`)
     apiClient.get(url)
       .then(res => { if (active && liveRoute.current.slug === slug && res.data.slug === slug) setEvent(res.data) })
       .catch(() => { /* Keep the text already shown; the next navigation retries. */ })
     return () => { active = false }
-  }, [contentLanguage, event, slug, isPreview, isLiveMoneyProof])
+  }, [contentLanguage, event, slug, isPreview, previewToken, isLiveMoneyProof])
 
   useEffect(() => {
     if (!waitlistOfferToken) return undefined
@@ -202,12 +207,14 @@ function EventDetailContent() {
   }, [waitlistOfferToken, slug])
 
   const handleCheckout = (lineItems) => {
+    if (event?.private_preview) return
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     const offer = waitlistOfferToken && waitlistOffer && !waitlistOffer.error ? waitlistOffer : null
     navigate(`/checkout/${slug}`, { state: { event, lineItems, waitlistOfferToken, waitlistOffer: offer, liveMoneyProof: isLiveMoneyProof, browseFrom } })
   }
 
   const handleSeatCheckout = ({ lineItems, seatHoldToken, seatHoldExpiresAt, seats }) => {
+    if (event?.private_preview) return
     if (!mounted.current || liveRoute.current.slug !== slug || event?.slug !== slug) return
     navigate(`/checkout/${slug}`, {
       state: { event, lineItems, seatHoldToken, seatHoldExpiresAt, selectedSeats: seats, browseFrom },
@@ -294,7 +301,7 @@ function EventDetailContent() {
   const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
   const advertisedDescription = lowestPrice === null ? truncatedDescription
     : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t('pricing.allInNote', { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
-  const onSale = event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
+  const onSale = !event.private_preview && event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
   const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
 
   // Build JSON-LD structured data for the event
@@ -348,8 +355,12 @@ function EventDetailContent() {
         image={coverImage || undefined}
         url={eventUrl}
         jsonLd={eventJsonLd}
-        noIndex={isLiveMoneyProof}
+        noIndex={isLiveMoneyProof || event.private_preview}
+        noSocial={event.private_preview}
       />
+      {event.private_preview && <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-4 text-center text-sm font-semibold text-amber-950">
+        {t('organizerVerification.previewBanner')}
+      </div>}
       {/* Hero Section — full-width cover image with dark overlay */}
       <div className={`relative w-full overflow-hidden bg-neutral-950 ${coverImage ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
         {coverImage ? (
@@ -398,7 +409,7 @@ function EventDetailContent() {
                 </div>
               )}
             </div>
-            <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>
+            {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
           </div>
         </div>
       </div>
@@ -433,7 +444,13 @@ function EventDetailContent() {
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
                 <div className="card p-3 sm:p-5">
-                  {event.assigned_seating ? (
+                  {event.private_preview ? (
+                    <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-950">
+                      <p>{t('organizerVerification.previewTicketsDisabled')}</p>
+                      <button type="button" disabled aria-describedby="preview-ticket-explanation" className="btn-primary mt-3 w-full min-h-11 opacity-60">{t('buyer.EventDetail.getTickets')}</button>
+                      <span id="preview-ticket-explanation" className="sr-only">{t('organizerVerification.previewTicketsDisabled')}</span>
+                    </div>
+                  ) : event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (
                     <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} />
@@ -466,7 +483,7 @@ function EventDetailContent() {
             >
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2 mb-6">
-                {event.starts_at && (
+                {event.starts_at && !event.private_preview && (
                   <a
                     href={buildGoogleCalendarUrl(event)}
                     target="_blank"
@@ -475,19 +492,19 @@ function EventDetailContent() {
                   >
                     <CalendarPlus className="w-4 h-4" />{t('buyer.EventDetail.addToCalendar')}</a>
                 )}
-                <button
+                {!event.private_preview && <button
                   onClick={handleShare}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-neutral-700 hover:border-neutral-300 transition-colors text-sm font-medium"
                 >
                   {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
                   {copied ? t('buyer.EventDetail.copied') : t('buyer.EventDetail.share')}
-                </button>
-                <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
+                </button>}
+                {!event.private_preview && <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
                   <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
-                </button>
-                <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
+                </button>}
+                {!event.private_preview && <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
                   <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
-                </button>
+                </button>}
               </div>
 
               {/* Badges */}
@@ -520,7 +537,7 @@ function EventDetailContent() {
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}<Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div><button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button></div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}{event.private_preview ? <span className="text-lg font-bold text-neutral-900">{event.organizer.business_name}</span> : <Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>}{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div>{!event.private_preview && <button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button>}</div></div></FadeUp>}
 
               <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
 

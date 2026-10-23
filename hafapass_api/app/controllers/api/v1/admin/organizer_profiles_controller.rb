@@ -4,9 +4,11 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
   def update
     profile = OrganizerProfile.find(params[:id])
     before_data = profile_json(profile)
+    previous_status = profile.verification_status
     profile.with_lock do
       apply_verification!(profile) if params[:verification_status].present?
       profile.verification_notes = params[:verification_notes] if params.key?(:verification_notes)
+      profile.verification_notes = nil if profile.verification_status_verified? && !params.key?(:verification_notes)
       profile.save!
     end
 
@@ -19,6 +21,10 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
       after_data: profile_json(profile),
       request: request
     )
+
+    if profile.verification_status != previous_status && %w[verified rejected suspended].include?(profile.verification_status)
+      EmailService.send_verification_decision_async(profile)
+    end
 
     render json: profile_json(profile)
   rescue ActiveRecord::RecordInvalid => e
@@ -51,6 +57,10 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
       verification_requested_at: profile.verification_requested_at,
       verified_at: profile.verified_at,
       verification_notes: profile.verification_notes,
+      verification_phone: profile.verification_phone,
+      verification_link: profile.verification_link,
+      verification_request_note: profile.verification_request_note,
+      published_awaiting_events_count: profile.events.published.count,
       policy_accepted: profile.policy_accepted?,
       payout_ready: profile.organization.payout_ready?
     }

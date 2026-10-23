@@ -41,10 +41,25 @@ RSpec.describe "Api::V1::OrganizerProfiles", type: :request do
   end
 
   it "submits a complete profile for verification" do
-    post "/api/v1/organizer_profile/submit_verification", headers: headers
+    post "/api/v1/organizer_profile/submit_verification", headers: headers,
+      params: { business_name: "Island Events", business_description: "Community events on Guam",
+        verification_phone: "+1 (671) 555-1234", verification_link: "https://instagram.com/islandevents",
+        verification_request_note: "Our first event is next month." }
 
     expect(response).to have_http_status(:ok)
     expect(profile.reload).to be_verification_status_pending
     expect(profile.verification_requested_at).to be_present
+    expect(profile).to have_attributes(verification_phone: "+1 (671) 555-1234",
+      verification_link: "https://instagram.com/islandevents")
+  end
+
+  it "retains the profile state when verification contact details are invalid" do
+    post "/api/v1/organizer_profile/submit_verification", headers: headers,
+      params: { business_name: "Island Events", business_description: "Community events",
+        verification_phone: "123", verification_link: "javascript:alert(1)" }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("errors").join).to include("Verification phone", "Verification link")
+    expect(profile.reload).to be_verification_status_unverified
   end
 end

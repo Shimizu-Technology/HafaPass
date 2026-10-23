@@ -1,5 +1,6 @@
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import OrganizerAgreementDialog from '../../components/OrganizerAgreementDialog'
 import SupportLink from '../../components/SupportLink'
@@ -9,13 +10,14 @@ const VERIFICATION = {
   pending: { done: false, status: 'Submitted — HåfaPass is reviewing it', next: 'Nothing to do right now. HåfaPass contacts you if anything is missing.' },
   verified: { done: true, status: 'Verified by HåfaPass' },
   rejected: { done: false, status: 'Changes needed', next: 'Read the review note, update your profile, then submit again.' },
-  suspended: { done: false, status: 'Sales paused by HåfaPass', next: 'Your events stay visible but can’t sell. Contact the HåfaPass team to resolve this.' },
+  suspended: { done: false, status: 'Sales paused by HåfaPass' },
 }
 
 // The organizer's guided setup: one list, in order, with the next action
 // and what HåfaPass does at each step. Only the owner can accept the
 // agreement or submit for review; an admin viewing the workspace sees status.
 export default function OrganizerSetupChecklist({ profile, canCreate, adminView = false, busy, agreementError = null, onOpenAgreement, onEditProfile, onAcceptPolicy, onSubmitVerification }) {
+  const { t } = useTranslation()
   const [agreementOpen, setAgreementOpen] = useState(false)
   const progress = profile.setup_progress || {}
   const verification = VERIFICATION[profile.verification_status] || VERIFICATION.unverified
@@ -35,7 +37,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'verification', title: 'HåfaPass verifies your organization (tickets go on sale after this)', done: verification.done,
-      status: verification.status, next: verification.next,
+      status: verification.status, next: profile.verification_status === 'suspended' ? t('organizerVerification.suspendedChecklist') : verification.next,
       action: !adminView && (['unverified', 'rejected'].includes(profile.verification_status)
         ? <button type="button" disabled={busy || !hasDescription} onClick={onSubmitVerification} className="btn-secondary !px-4 !py-2 text-sm">{profile.verification_status === 'rejected' ? 'Submit again' : 'Submit for review'}</button>
         : profile.verification_status === 'suspended' ? <SupportLink subject={`Organizer review — ${profile.business_name}`} className="btn-secondary !px-4 !py-2 text-sm">Contact HåfaPass</SupportLink> : null),
@@ -54,7 +56,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'publish', title: 'Publish', done: (progress.published_events_count || 0) > 0,
-      status: (progress.published_events_count || 0) > 0 ? 'Live on HåfaPass' : 'Open your event and publish it when its checklist is complete',
+      status: (progress.published_events_count || 0) > 0 ? profile.verification_status === 'verified' ? 'Live on HåfaPass' : t('organizerVerification.publishedInPreview') : 'Open your event and publish it when its checklist is complete',
       next: (progress.published_events_count || 0) > 0 ? null : 'HåfaPass may confirm launch details with you before the first sale.',
     },
   ]

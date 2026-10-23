@@ -320,6 +320,7 @@
       "action": "keep",
       "pii_columns": [
         "description",
+        "preview_token_digest",
         "policy_hold_reason",
         "sales_suspension_reason",
         "short_description",
@@ -594,6 +595,9 @@
       "pii_columns": [
         "business_description",
         "business_name",
+        "verification_phone",
+        "verification_link",
+        "verification_request_note",
         "verification_notes",
         "verification_requested_at",
         "verification_status"
@@ -1582,6 +1586,8 @@
     },
     "events": {
       "id": "system",
+      "preview_token_digest": "pii",
+      "preview_token_version": "system",
       "age_restriction": "non-personal",
       "buyer_fee_percent": "financial",
       "category": "system",
@@ -2074,6 +2080,9 @@
       "id": "system",
       "business_description": "pii",
       "business_name": "pii",
+      "verification_phone": "pii",
+      "verification_link": "pii",
+      "verification_request_note": "pii",
       "created_at": "system",
       "is_ambros_partner": "non-personal",
       "logo_url": "pii",

@@ -46,7 +46,7 @@ RSpec.describe "Event sales gate in production" do
 
     expect(event.reload.sales_open?).to be(false)
     expect(event.sales_status).to include(on_sale: false, reason: "organizer_not_verified")
-    expect(event.sales_status[:message]).to include("Visible but not on sale yet", "verify your organization")
+    expect(event.sales_status[:message]).to include("Private preview only", "organizer verification")
 
     profile.update!(verification_status: :pending)
     expect(event.reload.sales_blocker).to eq(:organizer_verification_requested)
