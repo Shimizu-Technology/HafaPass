@@ -70,4 +70,12 @@ describe('EventStaffPage one-step invitations', () => {
     expect(await screen.findByText(/Ask your organization owner if you need it/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Send invitation' })).not.toBeInTheDocument()
   })
+  it('shows ended assignment access and the offline revocation window', async () => {
+    staff.assignments = [{ id: 1, email: 'expired@example.com', role: 'scanner', status: 'active', expires_at: '2025-01-01T00:00:00Z' }]
+    show()
+    expect(await screen.findByText('Access ended Jan 1, 10:00 AM Guam time')).toBeInTheDocument()
+    expect(screen.getByText('Door scanner · Access ended')).toBeInTheDocument()
+    expect(screen.getByText(/Scanner phones that are offline keep working/)).toBeInTheDocument()
+  })
+
 })

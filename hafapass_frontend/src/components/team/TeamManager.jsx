@@ -2,7 +2,7 @@ import { Copy, Crown, Mail, RotateCw, Trash2, UserPlus, Users } from 'lucide-rea
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from '../Dialog'
 import { RoleRadioGroup, RoleSelect } from './RoleChoice'
-import { INVITATION_STATUS, TEAM_ROLES, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
+import { INVITATION_STATUS, TEAM_ROLES, OFFLINE_SCANNER_ACCESS_NOTE, accessExpiryLabel, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
 
 const toneClass = {
   success: 'bg-emerald-50 text-emerald-800',
@@ -16,7 +16,7 @@ export function InvitationStatusPill({ status }) {
 }
 
 // Older responses carry only `status`; derive the invitation state from it.
-const statusOf = membership => membership.invitation_status
+const statusOf = membership => membership.status === 'active' && membership.expires_at && Date.parse(membership.expires_at) <= Date.now() ? 'access_ended' : membership.invitation_status
   || (membership.status === 'active' ? 'accepted' : membership.status === 'revoked' ? 'revoked' : 'pending')
 
 const formatDate = value => value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
@@ -128,7 +128,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
       if (action.kind === 'remove') {
         await request('delete', `${basePath}/${action.membership.id}`)
         setMemberships(items => items.map(item => item.id === action.membership.id ? { ...item, status: 'revoked', invitation_status: 'revoked' } : item))
-        setNotice(statusOf(action.membership) === 'accepted' ? `${action.membership.email} no longer has access.` : `The invitation for ${action.membership.email} was cancelled.`)
+        setNotice(['accepted', 'access_ended'].includes(statusOf(action.membership)) ? `${action.membership.email} no longer has access.` : `The invitation for ${action.membership.email} was cancelled.`)
       } else {
         const response = await request('post', `${basePath}/${action.membership.id}/transfer_ownership`)
         setMemberships(Array.isArray(response.data) ? response.data : [])
@@ -146,6 +146,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
       <div className="flex items-center gap-3"><Users aria-hidden="true" className="h-5 w-5 text-brand-600" /><h2 id="team-heading" className="text-lg font-semibold text-neutral-900">{heading}</h2></div>
       <p className="mt-1 text-sm text-content-muted">{description || 'Give each person only the access they need. We email the invitation; they join by signing in with that email.'}</p>
 
+      <p className="mt-3 text-sm text-content-muted">{OFFLINE_SCANNER_ACCESS_NOTE}</p>
       <form onSubmit={invite} className="mt-5 space-y-4">
         <label className="block text-sm font-medium text-neutral-900">
           Teammate email
@@ -173,6 +174,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
                   {membership.name && <p className="text-sm text-content-muted [overflow-wrap:anywhere]">{membership.email}</p>}
                   {membership.pending_events?.length > 0 && <p className="mt-1 text-sm text-neutral-700">Event access on joining: {membership.pending_events.map(item => `${item.title} (${roleLabel(item.role)})`).join(', ')}</p>}
                   {statusOf(membership) === 'pending' && <p className="mt-1 text-sm text-content-muted"><Mail aria-hidden="true" className="mr-1 inline h-3.5 w-3.5" />{emailDeliveryLabel(membership.email_delivery)} Link expires {formatDate(membership.invitation_expires_at)}.</p>}
+                  {membership.status === 'active' && membership.expires_at && <p className="mt-1 text-sm text-content-muted">{accessExpiryLabel(membership.expires_at)}</p>}
                   {statusOf(membership) === 'expired' && <p className="mt-1 text-sm text-content-muted">The invitation link expired. Resend it to email a new one.</p>}
                 </div>
                 <div className="flex flex-wrap items-start gap-2 lg:justify-end">
@@ -199,18 +201,19 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
       {confirm && (
         <Dialog labelledBy="team-confirm-title" onClose={() => setConfirm(null)} busy={busy} className="max-w-md">
           <h2 id="team-confirm-title" className="text-lg font-semibold text-neutral-900">
-            {confirm.kind === 'transfer' ? `Make ${confirm.membership.name || confirm.membership.email} the owner?` : statusOf(confirm.membership) === 'accepted' ? `Remove ${confirm.membership.email}?` : 'Cancel this invitation?'}
+            {confirm.kind === 'transfer' ? `Make ${confirm.membership.name || confirm.membership.email} the owner?` : ['accepted', 'access_ended'].includes(statusOf(confirm.membership)) ? `Remove ${confirm.membership.email}?` : 'Cancel this invitation?'}
           </h2>
           <p className="mt-2 text-sm text-neutral-700">
             {confirm.kind === 'transfer'
               ? 'They will manage the team, payouts and all events. The current owner becomes a Manager and can no longer move money. This is recorded in the audit log.'
-              : statusOf(confirm.membership) === 'accepted' ? 'They lose access to this organization and every event they were assigned to.' : 'The invitation link stops working.'}
+              : ['accepted', 'access_ended'].includes(statusOf(confirm.membership)) ? 'They lose access to this organization and every event they were assigned to.' : 'The invitation link stops working.'}
           </p>
+          {confirm.kind === 'remove' && ['accepted', 'access_ended'].includes(statusOf(confirm.membership)) && <p className="mt-3 text-sm text-neutral-700">{OFFLINE_SCANNER_ACCESS_NOTE}</p>}
           {error && <p role="alert" className="mt-3 text-sm text-red-800">{error}</p>}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setConfirm(null)} disabled={busy} className="btn-secondary">Keep as is</button>
             <button type="button" onClick={confirmAction} disabled={busy} className={confirm.kind === 'transfer' ? 'btn-primary' : 'btn-danger'}>
-              {busy ? 'Saving…' : confirm.kind === 'transfer' ? 'Transfer ownership' : statusOf(confirm.membership) === 'accepted' ? 'Remove access' : 'Cancel invitation'}
+              {busy ? 'Saving…' : confirm.kind === 'transfer' ? 'Transfer ownership' : ['accepted', 'access_ended'].includes(statusOf(confirm.membership)) ? 'Remove access' : 'Cancel invitation'}
             </button>
           </div>
         </Dialog>

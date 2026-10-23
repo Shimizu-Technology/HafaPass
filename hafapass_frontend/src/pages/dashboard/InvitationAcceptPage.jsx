@@ -1,33 +1,53 @@
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import apiClient from '../../api/client'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import apiClient, { getApiAuthContext } from '../../api/client'
+import { useOrganizerIdentity } from '../../hooks/useOrganizerContext'
 import { resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { roleDescription, roleLabel } from '../../utils/roles'
 
 export default function InvitationAcceptPage() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const identity = useOrganizerIdentity()
+  const token = searchParams.get('token')
+  const visitKey = `${location.key}:${location.pathname}:${token}:${identity.accountKey}`
+  const latestVisit = useRef(visitKey)
+  latestVisit.current = visitKey
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   // A token is single use: StrictMode replays effects, so submit it once.
   const submitted = useRef(null)
 
   useEffect(() => {
-    const token = searchParams.get('token')
-    if (token && submitted.current === token) return
-    submitted.current = token
+    let active = true
+    setResult(null)
+    setError(null)
     if (!token) {
       setError('This invitation link is missing its secure token. Open the link from your invitation email again.')
       return
     }
-    apiClient.post('/organization_invitations/accept', { token })
-      .then(response => {
-        window.localStorage.setItem('hafapass_organization_id', response.data.organization_id.toString())
-        resetOrganizerOrganizations()
-        setResult(response.data)
-      })
-      .catch(requestError => setError(requestError.response?.data?.error || 'This invitation is invalid or expired.'))
-  }, [searchParams])
+    if (!identity.ready || location.pathname !== '/organization-invitations/accept') return
+    const authContext = identity.authContext
+    if (submitted.current?.visitKey !== visitKey) {
+      const organizationId = window.localStorage.getItem('hafapass_organization_id')
+      submitted.current = { visitKey, organizationId,
+        promise: apiClient.post('/organization_invitations/accept', { token }, { authContext, organizationId }) }
+    }
+    const submission = submitted.current
+    const current = () => active && latestVisit.current === visitKey && getApiAuthContext() === authContext
+      && window.localStorage.getItem('hafapass_organization_id') === submission.organizationId
+    submission.promise.then(response => {
+      if (!current()) return
+      window.localStorage.setItem('hafapass_organization_id', response.data.organization_id.toString())
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_organization_id' }))
+      resetOrganizerOrganizations()
+      setResult(response.data)
+    }).catch(requestError => {
+      if (current()) setError(requestError.response?.data?.error || 'This invitation is invalid or expired.')
+    })
+    return () => { active = false }
+  }, [token, visitKey, identity.authContext, identity.ready, location.pathname])
 
   const events = result?.events || []
   const eventOnly = ['box_office', 'scanner'].includes(result?.role)

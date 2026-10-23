@@ -5,6 +5,8 @@ class CommunicationCampaign < ApplicationRecord
 
   belongs_to :event
   belongs_to :created_by_user, class_name: "User"
+  belongs_to :scheduled_by_user, class_name: "User", optional: true
+  belongs_to :sent_by_user, class_name: "User", optional: true
   has_many :message_deliveries, dependent: :restrict_with_error
 
   enum :status, { draft: 0, scheduled: 1, sending: 2, sent: 3, cancelled: 4, failed: 5 }

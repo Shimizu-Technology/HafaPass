@@ -38,6 +38,7 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
     post "/api/v1/organizer/memberships/#{id}/invitation_link", headers: headers_for(owner)
     expect(response.parsed_body["invitation_token"]).to eq(body["invitation_token"])
 
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/memberships/#{id}/resend", headers: headers_for(owner)
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body["invitation_token"]).not_to eq(body["invitation_token"])
@@ -62,6 +63,7 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
     get "/api/v1/organizer/memberships", headers: headers_for(owner)
     expect(response.parsed_body.find { |item| item["id"] == membership.id }).to include("invitation_status" => "expired")
 
+    OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
     post "/api/v1/organizer/memberships/#{membership.id}/resend", headers: headers_for(owner)
     expect(response.parsed_body).to include("invitation_status" => "pending")
   end
@@ -192,6 +194,7 @@ RSpec.describe "Organizer team invitations and ownership", type: :request do
         params: { email: "door@example.com", role: "scanner" }, headers: headers_for(owner)
       membership_id = response.parsed_body.dig("invitation", "membership_id")
 
+      OrganizationInvitationDispatch.where(organization: organization).update_all(created_at: 2.minutes.ago)
       post "/api/v1/organizer/events/#{event.id}/staff_invitations/#{membership_id}/resend", headers: headers_for(owner)
       expect(response).to have_http_status(:ok)
 

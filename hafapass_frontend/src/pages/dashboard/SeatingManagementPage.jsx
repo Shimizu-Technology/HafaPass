@@ -247,7 +247,8 @@ function SeatingSession({ id, identity }) {
             <section className="card p-5">
               <h2 className="font-semibold text-neutral-900">Emergency sales control</h2>
               <label className="mt-3 block text-sm font-medium text-neutral-700">Operational reason<textarea className="input mt-1" rows="3" value={reason} onChange={eventValue => setReason(eventValue.target.value)} /></label>
-              {seating.suspended ? <button className="btn-primary mt-3 flex w-full items-center justify-center gap-2" disabled={locked} onClick={() => operation('resume')}><PlayCircle className="h-4 w-4" />Resume sales</button>
+              {seating.platform_suspended && <p className="mt-3 text-sm text-amber-950">HåfaPass has paused sales. Only HåfaPass can lift this restriction. Your seating pause is managed separately.</p>}
+              {(seating.organizer_suspended ?? seating.suspended) ? <button className="btn-primary mt-3 flex w-full items-center justify-center gap-2" disabled={locked} onClick={() => operation('resume')}><PlayCircle className="h-4 w-4" />Resume seating sales</button>
                 : <button className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 font-semibold text-amber-900" disabled={locked || !reason.trim()} onClick={() => operation('suspend', { reason })}><PauseCircle className="h-4 w-4" />Pause all sales</button>}
             </section>
             <section className="card p-5">

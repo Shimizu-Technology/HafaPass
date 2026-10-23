@@ -32,7 +32,9 @@ class OrganizationTeam
 
       membership = nil
       token = nil
-      organization.with_lock do
+      OrganizationInvitationQuota.within!(organization: organization, actor: actor, email: email) do
+        raise TeamError, "That person is already on this team" if active_member_for(organization, email)
+
         reusable = find_reusable(organization, email)
         if reusable&.owner? && !allow_owner
           raise TeamError, "That email has an Owner invitation. Only a HåfaPass admin can change it."
@@ -83,7 +85,8 @@ class OrganizationTeam
 
     def resend!(membership:, actor:, request: nil)
       token = nil
-      membership.with_lock do
+      OrganizationInvitationQuota.within!(organization: membership.organization, actor: actor, email: membership.invited_email) do
+        membership.lock!
         raise TeamError, "Only pending or expired invitations can be resent" unless membership.status_invited?
         if membership.owner?
           raise TeamError, "Only a HåfaPass admin can resend an Owner invitation" unless actor&.admin?
@@ -117,11 +120,12 @@ class OrganizationTeam
     end
 
     def revoke!(membership:, actor:, request: nil)
-      raise TeamError, "Transfer ownership before removing the owner" if membership.owner? && membership.status_active?
-      raise TeamError, "This person's access is already removed" if membership.status_revoked?
-      raise TeamError, "Only a HåfaPass admin can cancel an Owner invitation" if membership.owner? && !actor&.admin?
+      membership.organization.with_lock do
+        membership.lock!
+        raise TeamError, "Transfer ownership before removing the owner" if membership.owner? && membership.status_active?
+        raise TeamError, "This person's access is already removed" if membership.status_revoked?
+        raise TeamError, "Only a HåfaPass admin can cancel an Owner invitation" if membership.owner? && !actor&.admin?
 
-      membership.with_lock do
         OrganizationInvitation.revoke!(membership)
         if membership.user_id
           membership.organization.event_staff_assignments.status_active.where(user_id: membership.user_id)
@@ -135,16 +139,20 @@ class OrganizationTeam
 
     def change_role!(membership:, role:, actor:, request: nil, expires_at: :unchanged)
       role = role.to_s
-      if membership.owner? || role == "owner"
-        raise TeamError, "Ownership changes use Transfer ownership"
-      end
-      raise TeamError, "Choose a valid team role" unless INVITABLE_ROLES.include?(role)
-      raise TeamError, "This person's access was removed. Invite them again instead." if membership.status_revoked?
+      before_data = nil
+      membership.organization.with_lock do
+        membership.lock!
+        if membership.owner? || role == "owner"
+          raise TeamError, "Ownership changes use Transfer ownership"
+        end
+        raise TeamError, "Choose a valid team role" unless INVITABLE_ROLES.include?(role)
+        raise TeamError, "This person's access was removed. Invite them again instead." if membership.status_revoked?
 
-      before_data = snapshot(membership)
-      attributes = { role: role }
-      attributes[:expires_at] = expires_at unless expires_at == :unchanged
-      membership.update!(attributes)
+        before_data = snapshot(membership)
+        attributes = { role: role }
+        attributes[:expires_at] = expires_at unless expires_at == :unchanged
+        membership.update!(attributes)
+      end
       AuditLogger.record!(action: "organization.membership_updated", auditable: membership, actor: actor,
         organization: membership.organization, before_data: before_data, after_data: snapshot(membership),
         request: request)
@@ -168,7 +176,7 @@ class OrganizationTeam
         end
 
         owners = organization.organization_memberships.where(role: :owner).where.not(id: to_membership.id)
-        actor_owner = owners.find_by(user_id: actor.id)
+        actor_owner = owners.effective.find_by(user_id: actor.id)
         raise TeamError, "Only the owner or a HåfaPass admin can transfer ownership" unless actor_owner || actor.admin?
 
         previous = (actor_owner ? [actor_owner] : owners.to_a)

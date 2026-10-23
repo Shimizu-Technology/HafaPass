@@ -14,8 +14,8 @@ module OrganizationRoles
 
   DESCRIPTIONS = {
     "owner" => "manages the team, payouts and all events",
-    "manager" => "runs events day to day, sees sales, can't move money",
-    "finance" => "sales reports, refunds and payouts",
+    "manager" => "runs events day to day and sees sales; can't cancel events or move money",
+    "finance" => "sales reports, refunds and payouts, including buyer contact details in refunds and finance exports",
     "marketer" => "event pages, promo codes and messages",
     "box_office" => "door sales and fixes for assigned events, plus scanning",
     "scanner" => "scans tickets at assigned events only"
@@ -28,6 +28,7 @@ module OrganizationRoles
   }.freeze
 
   # Roles that can be invited straight onto one event from its Team page.
+  EVENT_ASSIGNMENT_DESCRIPTION = "Event assignments add access for this event only."
   EVENT_STAFF_INVITE_ROLES = %w[box_office scanner].freeze
 
   module_function

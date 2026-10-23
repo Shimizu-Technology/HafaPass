@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe OrganizationTeam do
   include ActiveJob::TestHelper
+  include ActiveSupport::Testing::TimeHelpers
 
   let(:owner) { create(:user, :organizer, email: "owner@example.com") }
   let(:profile) { create(:organizer_profile, user: owner) }
@@ -39,6 +40,7 @@ RSpec.describe OrganizationTeam do
       role: "finance", actor: owner)
     stale = MessageDelivery.find_by!(organization_membership: membership)
 
+    travel 61.seconds
     second_token = described_class.resend!(membership: membership, actor: owner)
 
     expect(second_token).not_to eq(first_token)

@@ -101,9 +101,13 @@ class Ticket < ApplicationRecord
     allocation[tickets.index(id)] || 0
   end
 
-  def check_in!(credential: nil)
+  def check_in!(credential: nil, actor: nil)
     order.with_lock do
       with_lock do
+        if actor && !OrganizationAuthorization.allowed?(user: actor, organization: event.organization,
+            permission: :scan, event: event)
+          raise AdmissionError, "Scanner assignment is no longer active"
+        end
         raise AdmissionError, "Ticket is not in issued status" unless issued?
         raise AdmissionError, "Ticket order is not fulfilled" unless order.ticket_fulfilled?
         if order.ticket_access_blocked?

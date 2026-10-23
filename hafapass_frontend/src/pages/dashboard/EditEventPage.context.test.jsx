@@ -14,7 +14,7 @@ vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'oth
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const dto = id => ({ id, title: id === 11 ? 'Alpha event' : 'Beta event', status: 'draft', venue_name: 'Synthetic venue',
+const dto = id => ({ id, can_create_events: true, title: id === 11 ? 'Alpha event' : 'Beta event', status: 'draft', venue_name: 'Synthetic venue',
   starts_at: '2026-11-20T07:00:00Z', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', ticket_types: [],
   permissions: { edit_event_content: true, manage_events: true, manage_inventory: true }, publish_checklist: [] })
 const Location = () => <p data-testid="editor-location">{useLocation().pathname}</p>

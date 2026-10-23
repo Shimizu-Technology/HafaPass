@@ -17,4 +17,31 @@ RSpec.describe CommunicationCampaigns::Sender do
     expect(campaign.recipient_count).to eq(1)
     expect(campaign.message_deliveries.first.metadata).to include("subject" => campaign.subject, "body" => campaign.body)
   end
+  it "reauthorizes scheduled campaigns at execution and leaves a visible attention reason" do
+    event = create(:event, :published)
+    scheduler = create(:user)
+    membership = create(:organization_membership, organization: event.organization, user: scheduler, role: :marketer)
+    campaign = create(:communication_campaign, event: event, scheduled_by_user: scheduler,
+      scheduled_at: 1.minute.ago, status: :scheduled)
+    membership.update!(expires_at: 1.second.ago)
+    expect { CommunicationCampaignJob.perform_now(campaign.id) }.not_to change(MessageDelivery, :count)
+    expect(campaign.reload).to be_failed
+    expect(campaign.last_error).to include("Needs attention", "no longer has permission")
+    expect(campaign.sent_by_user).to be_nil
+  end
+
+  it "attributes send-now deliveries to the sender rather than the campaign author" do
+    event = create(:event, :published)
+    event.organization.update!(marketing_mailing_address: "123 Marine Drive, Hagåtña, GU 96910",
+      marketing_address_certified_at: Time.current)
+    sender = create(:user)
+    create(:organization_membership, organization: event.organization, user: sender, role: :manager)
+    type = create(:ticket_type, event: event)
+    order = create(:order, event: event, buyer_email: "opted-in@example.com", marketing_opt_in: true)
+    create(:ticket, order: order, event: event, ticket_type: type)
+    campaign = create(:communication_campaign, event: event)
+    described_class.call(campaign, actor: sender)
+    expect(campaign.reload.sent_by_user).to eq(sender)
+    expect(campaign.message_deliveries.first.requested_by).to eq(sender)
+  end
 end

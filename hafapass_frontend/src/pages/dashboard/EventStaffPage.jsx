@@ -7,7 +7,7 @@ import EventAccessNotice from '../../components/EventAccessNotice'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { RoleRadioGroup, RoleSelect } from '../../components/team/RoleChoice'
 import { InvitationLinkPanel, InvitationStatusPill } from '../../components/team/TeamManager'
-import { EVENT_ASSIGNMENT_ROLES, EVENT_INVITE_ROLES, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
+import { EVENT_ASSIGNMENT_ROLES, EVENT_INVITE_ROLES, OFFLINE_SCANNER_ACCESS_NOTE, accessExpiryLabel, effectiveAssignmentStatus, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
 
 const label = roleLabel
 
@@ -164,7 +164,8 @@ function EventStaffSession({ id, identity }) {
   const locked = refreshing || busy || Boolean(pending)
   return (
     <EventWorkspace eventId={id} event={event}><main className="mx-auto max-w-3xl">
-      <div className="mt-5 flex items-start gap-3"><UserRoundCog className="mt-1 h-6 w-6 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-950">Event team</h2><p className="mt-1 text-sm text-neutral-500">{event?.title} · assignments can expire or be revoked without changing organization membership.</p></div></div>
+      <div className="mt-5 flex items-start gap-3"><UserRoundCog className="mt-1 h-6 w-6 text-brand-600" /><div><h2 className="text-2xl font-bold text-neutral-950">Event team</h2><p className="mt-1 text-sm text-neutral-500">{event?.title} · Assignments add access for this event only and can expire or be removed without changing organization membership.</p></div></div>
+      <p className="mt-3 text-sm text-content-muted">{OFFLINE_SCANNER_ACCESS_NOTE}</p>
       {error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
       <div className="mt-4 flex flex-wrap items-center gap-3"><button disabled={busy || refreshing} onClick={load} className="btn-secondary">{refreshing ? 'Refreshing staff…' : 'Refresh saved staff'}</button></div>
@@ -221,9 +222,9 @@ function EventStaffSession({ id, identity }) {
         <div className="border-b border-neutral-100 px-5 py-4"><h2 className="font-semibold text-neutral-900">Current assignments</h2></div>
         <div className="divide-y divide-neutral-100">
           {assignments.map(assignment => (
-            <div key={assignment.id} className="flex items-center justify-between gap-3 px-5 py-4">
-              <div><p className="font-medium text-neutral-900">{assignment.email}</p><p className="text-sm text-neutral-500">{label(assignment.role)} · {label(assignment.status)}</p></div>
-              <button disabled={locked || assignment.status === 'revoked'} onClick={() => revoke(assignment)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${assignment.email}`}><Trash2 className="h-4 w-4" /></button>
+            <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div className="min-w-0 [overflow-wrap:anywhere]"><p className="font-medium text-neutral-900">{assignment.email}</p><p className="text-sm text-neutral-500">{label(assignment.role)} · {effectiveAssignmentStatus(assignment)}</p>{assignment.expires_at && <p className="text-sm text-neutral-500">{accessExpiryLabel(assignment.expires_at)}</p>}</div>
+              <button disabled={locked || assignment.status === 'revoked'} onClick={() => revoke(assignment)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg p-2 text-red-600 hover:bg-red-50" aria-label={`Revoke ${assignment.email}`}><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
           {assignments.length === 0 && <p className="px-5 py-8 text-center text-sm text-neutral-500">No event-specific assignments yet.</p>}

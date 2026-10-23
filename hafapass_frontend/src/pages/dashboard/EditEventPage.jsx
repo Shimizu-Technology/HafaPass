@@ -476,7 +476,7 @@ function EditEventSession({ id, identity }) {
               <Eye className="w-4 h-4" /> Preview saved event
             </a>
           )}
-          {canManage && <button
+          {event.can_create_events === true && <button
             onClick={async () => {
               if (cloning) return
               const request = beginRequest()
@@ -777,7 +777,7 @@ function EditEventSession({ id, identity }) {
         </section>
 
         {/* Recurring Event Section */}
-        <section hidden={!capabilities.recurring_events}>
+        <section hidden={!capabilities.recurring_events || event?.can_create_events !== true}>
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Recurring Event</h2>
           <div className="space-y-4">
             <div>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_000300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -331,14 +331,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type"=>"all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
     t.string "subject", null: false
     t.datetime "updated_at", null: false
+    t.bigint "scheduled_by_user_id"
+    t.bigint "sent_by_user_id"
+    t.text "last_error"
     t.index ["created_by_user_id"], name: "index_communication_campaigns_on_created_by_user_id"
     t.index ["event_id"], name: "index_communication_campaigns_on_event_id"
+    t.index ["scheduled_by_user_id"], name: "index_communication_campaigns_on_scheduled_by_user_id"
+    t.index ["sent_by_user_id"], name: "index_communication_campaigns_on_sent_by_user_id"
     t.index ["status", "scheduled_at"], name: "index_communication_campaigns_on_status_and_scheduled_at"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "communication_campaigns_status_valid"
   end
@@ -700,6 +705,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
     t.jsonb "page_customization", default: {}, null: false
     t.string "preview_token_digest"
     t.integer "preview_token_version", default: 0, null: false
+    t.datetime "organizer_sales_suspended_at"
+    t.text "organizer_sales_suspension_reason"
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -1315,6 +1322,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
     t.check_constraint "subtotal_cents >= 0", name: "orders_subtotal_nonnegative"
     t.check_constraint "total_cents = GREATEST(subtotal_cents + service_fee_cents - discount_cents, 0)", name: "orders_total_matches_components"
     t.check_constraint "total_cents >= 0", name: "orders_total_nonnegative"
+  end
+
+  create_table "organization_invitation_dispatches", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "actor_user_id", null: false
+    t.string "recipient", null: false
+    t.datetime "created_at", null: false
+    t.index ["actor_user_id", "created_at"], name: "index_invitation_dispatches_actor_time"
+    t.index ["actor_user_id"], name: "index_organization_invitation_dispatches_on_actor_user_id"
+    t.index ["organization_id", "created_at"], name: "index_invitation_dispatches_org_time"
+    t.index ["organization_id", "recipient", "created_at"], name: "index_invitation_dispatches_recipient_time"
+    t.index ["organization_id"], name: "index_organization_invitation_dispatches_on_organization_id"
   end
 
   create_table "organization_memberships", force: :cascade do |t|
@@ -2233,7 +2252,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
     t.integer "fee_notice_days", default: 30, null: false
     t.string "backup_withholding_mode", default: "block", null: false
     t.integer "backup_withholding_rate_bps", default: 2400, null: false
-    t.jsonb "tax_reporting_thresholds", default: { "1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000 }, null: false
+    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
@@ -2778,6 +2797,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
   add_foreign_key "checkout_attempts", "orders"
   add_foreign_key "communication_campaigns", "events", on_delete: :restrict
   add_foreign_key "communication_campaigns", "users", column: "created_by_user_id", on_delete: :restrict
+  add_foreign_key "communication_campaigns", "users", column: "scheduled_by_user_id"
+  add_foreign_key "communication_campaigns", "users", column: "sent_by_user_id"
   add_foreign_key "connected_accounts", "organizations", on_delete: :restrict
   add_foreign_key "disputes", "orders", on_delete: :restrict
   add_foreign_key "disputes", "payments", on_delete: :restrict
@@ -2906,6 +2927,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000200) do
   add_foreign_key "orders", "events"
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
+  add_foreign_key "organization_invitation_dispatches", "organizations"
+  add_foreign_key "organization_invitation_dispatches", "users", column: "actor_user_id"
   add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
   add_foreign_key "organization_memberships", "users", column: "invited_by_user_id", on_delete: :nullify
   add_foreign_key "organization_memberships", "users", on_delete: :restrict
