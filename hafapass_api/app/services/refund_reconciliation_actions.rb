@@ -217,6 +217,8 @@ class RefundReconciliationActions
   end
 
   def audit!(action, auditable, metadata)
+    @audit_operation_id ||= @request&.request_id.presence || AuditContext.request_id.presence ||
+      AuditContext.job_id.presence || SecureRandom.uuid
     outcome = case action
     when "refund_reconciliation.action_attempted", "refund_reconciliation.retry",
         "refund_reconciliation.cancellation_retry", "refund_reconciliation.request_executed" then "requested"
@@ -234,6 +236,6 @@ class RefundReconciliationActions
     AuditLogger.record!(action: action, auditable: auditable, actor: @actor,
       organization: event.organization, event: event, metadata: metadata, request: @request,
       source: @system ? "system" : (@actor&.admin? ? "admin" : "user"), outcome: outcome,
-      deduplication_key: "refund_reconciliation:#{@type}:#{auditable.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(metadata.stringify_keys.sort.to_h))}")
+      deduplication_key: "refund_reconciliation:#{@type}:#{auditable.id}:#{@audit_operation_id}:#{@actor&.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(metadata.stringify_keys.sort.to_h))}")
   end
 end

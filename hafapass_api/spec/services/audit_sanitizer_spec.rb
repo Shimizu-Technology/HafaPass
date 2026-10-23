@@ -24,4 +24,9 @@ RSpec.describe AuditSanitizer do
     expect(clean.to_json).not_to include("buyer")
     expect(clean["message"].length).to be <= 500
   end
+
+  it "preserves typed monetary and identity numbers while rejecting numeric tax fields" do
+    expect(described_class.call({ amount_cents: 123456789, event_id: 123456789, tax_id: 123456789 }))
+      .to eq("amount_cents" => 123456789, "event_id" => 123456789, "tax_id" => "[redacted]")
+  end
 end

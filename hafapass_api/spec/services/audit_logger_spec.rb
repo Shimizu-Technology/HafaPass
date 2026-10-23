@@ -33,7 +33,7 @@ RSpec.describe AuditLogger do
     first = described_class.record!(**args)
     expect { expect(described_class.record!(**args).id).to eq(first.id) }.not_to change(AuditLog, :count)
     expect { described_class.record!(**args.merge(outcome: "invented"), deduplication_key: "provider/event-2") }
-      .to raise_error(ActiveRecord::RecordInvalid)
+      .to raise_error(AuditLogger::WriteError)
     expect { described_class.record!(**args.merge(auditable: create(:event))) }.to raise_error(ArgumentError)
   end
 

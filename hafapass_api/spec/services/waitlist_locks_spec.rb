@@ -21,7 +21,11 @@ RSpec.describe WaitlistLocks do
     next unless defined?(@test_event_id) && @test_event_id
 
     deliveries = MessageDelivery.where(event_id: @test_event_id)
-    AuditLog.where(organization_id: @test_organization_id).delete_all
+    raise "Isolated test database required" unless Rails.env.test? &&
+      ActiveRecord::Base.connection_db_config.database.end_with?("_test")
+    # Production identities cannot be deleted, even by test teardown. Reset
+    # the isolated test table using the same approach as other concurrency specs.
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE audit_logs RESTART IDENTITY")
     MessageProviderEvent.where(message_delivery_id: deliveries.select(:id)).delete_all
     deliveries.delete_all
     WaitlistOffer.where(event_id: @test_event_id).delete_all

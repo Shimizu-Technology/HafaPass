@@ -135,6 +135,7 @@ class AuditActions
       tenant: true, event_required: true,
       snapshots: %w[sales_suspended_at], metadata: %w[], actions: {
         "event.sales_resumed" => "Resumed event ticket sales.",
+        "event.sales_suspended" => "Paused event ticket sales.",
         "event.preview_link_rotated" => "Replaced the event preview link.",
         "event.page_customized" => "Updated the event page design."
       }
@@ -499,6 +500,19 @@ class AuditActions
         "platform.activity_logging_started" => "Started platform activity logging."
       }
 
+    define registry, area: "platform", audience: %w[admin_only], tenant: false, event_required: false, actions: {
+      "platform.demo_seed_completed" => "Created the local demo fixture set."
+    }
+
+    define registry, area: "events", audience: %w[org_owner org_manager], tenant: true, event_required: true,
+      snapshots: %w[operational_status], metadata: %w[event_seat_id ticket_id venue_layout_id event_seat_count previous_event_seat_id target_event_seat_id], actions: {
+        "seating.configuration_activated" => "Activated event seating.",
+        "seat.status_changed" => "Changed a seat's availability.",
+        "accessible_seat.released" => "Released an accessible seat.",
+        "seat.exchanged" => "Exchanged a ticket's seat.",
+        "seat.released_from_ticket" => "Released a cancelled ticket's seat."
+      }
+
     define registry, area: "messaging", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
       snapshots: %w[status scheduled_at], metadata: %w[campaign_id recipient_count], actions: {
@@ -516,6 +530,226 @@ class AuditActions
       snapshots: %w[status], metadata: %w[event_id manifest_version entry_count], actions: {
         "scanner_device.renamed" => "Renamed an event scanner device.",
         "scanner_device.manifest_downloaded" => "Downloaded an event scanner manifest."
+      }
+
+    define registry, area: "events", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[status organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "event.created" => "Created an event.",
+        "event.updated" => "Updated an event.",
+        "event.deleted" => "Deleted an event.",
+        "event.cloned" => "Cloned event.",
+        "event.recurrence_created" => "Created a recurring event.",
+        "event.published" => "Published event.",
+        "event.postponed" => "Postponed event.",
+        "event.resumed" => "Resumed event.",
+        "event.cancelled" => "Cancelled event.",
+        "event.completed" => "Completed event.",
+        "event.archived" => "Archived event."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "ticket_type.created" => "Created a ticket type.",
+        "ticket_type.updated" => "Updated a ticket type.",
+        "ticket_type.deleted" => "Deleted a ticket type."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[ticket_type_id price_cents tier_type quantity_limit starts_at ends_at position], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "pricing_tier.created" => "Created a pricing tier.",
+        "pricing_tier.updated" => "Updated a pricing tier.",
+        "pricing_tier.deleted" => "Deleted a pricing tier."
+      }
+
+    define registry, area: "promotions", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id discount_type discount_value max_uses active starts_at expires_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "promo_code.created" => "Created a promo code.",
+        "promo_code.updated" => "Updated a promo code.",
+        "promo_code.deleted" => "Deleted a promo code."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id ticket_type_id quantity redeemed order_id], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "guest_list.created" => "Created a guest list entry.",
+        "guest_list.updated" => "Updated a guest list entry.",
+        "guest_list.deleted" => "Deleted a guest list entry.",
+        "guest_list.redeemed" => "Redeemed guest list."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id ticket_type_id quantity position status notified_at expires_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "waitlist.joined" => "Joined the waitlist.",
+        "waitlist.updated" => "Updated a waitlist entry.",
+        "waitlist.deleted" => "Deleted a waitlist entry.",
+        "waitlist.rejoined" => "Rejoined the waitlist.",
+        "waitlist.requeued" => "Returned a waitlist entry to the queue.",
+        "waitlist.notification_requested" => "Requested a waitlist notification.",
+        "waitlist.offered" => "Offered waitlist.",
+        "waitlist.converted" => "Converted waitlist.",
+        "waitlist.expired" => "Expired waitlist.",
+        "waitlist.cancelled" => "Cancelled waitlist."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at order_id], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "waitlist_offer.created" => "Created a waitlist offer.",
+        "waitlist_offer.updated" => "Updated a waitlist offer.",
+        "waitlist_offer.deleted" => "Deleted a waitlist offer.",
+        "waitlist_offer.offered" => "Offered waitlist offer.",
+        "waitlist_offer.claimed" => "Claimed waitlist offer.",
+        "waitlist_offer.converted" => "Converted waitlist offer.",
+        "waitlist_offer.expired" => "Expired waitlist offer.",
+        "waitlist_offer.cancelled" => "Cancelled waitlist offer."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[status cancelled_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "ticket.cancelled" => "Cancelled ticket.",
+        "ticket.scan_credential_rotated" => "Rotated a ticket scan code.",
+        "ticket.display_credential_revoked" => "Revoked a ticket display credential."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[ticket_id status expires_at accepted_at cancelled_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "ticket_transfer.created" => "Created a ticket transfer.",
+        "ticket_transfer.updated" => "Updated a ticket transfer.",
+        "ticket_transfer.deleted" => "Deleted a ticket transfer.",
+        "ticket_transfer.pending" => "Pending ticket transfer.",
+        "ticket_transfer.accepted" => "Accepted ticket transfer.",
+        "ticket_transfer.declined" => "Declined ticket transfer.",
+        "ticket_transfer.cancelled" => "Cancelled ticket transfer.",
+        "ticket_transfer.expired" => "Expired ticket transfer."
+      }
+
+    define registry, area: "events", audience: %w[org_owner org_manager],
+      tenant: true, event_required: false,
+      snapshots: %w[organization_id venue_id version status renderer], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "venue_layout.created" => "Created a venue layout.",
+        "venue_layout.updated" => "Updated a venue layout.",
+        "venue_layout.deleted" => "Deleted a venue layout."
+      }
+
+    define registry, area: "promotions", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id commission_bps active], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "promoter.created" => "Created a promoter.",
+        "promoter.updated" => "Updated a promoter.",
+        "promoter.deleted" => "Deleted a promoter."
+      }
+
+    define registry, area: "marketing_partners", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id distribution_partner_id active expires_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "distribution_link.created" => "Created a distribution link.",
+        "distribution_link.updated" => "Updated a distribution link.",
+        "distribution_link.deleted" => "Deleted a distribution link."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id kind price_cents minimum_price_cents maximum_price_cents inventory_quantity active position], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "catalog_item.created" => "Created a catalog item.",
+        "catalog_item.updated" => "Updated a catalog item.",
+        "catalog_item.deleted" => "Deleted a catalog item."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[order_item_id status fulfilled_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "catalog_fulfillment.created" => "Created a catalog fulfillment.",
+        "catalog_fulfillment.updated" => "Updated a catalog fulfillment.",
+        "catalog_fulfillment.deleted" => "Deleted a catalog fulfillment.",
+        "catalog_fulfillment.pending" => "Pending catalog fulfillment.",
+        "catalog_fulfillment.fulfilled" => "Fulfilled catalog fulfillment.",
+        "catalog_fulfillment.cancelled" => "Cancelled catalog fulfillment."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id kind required active position], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "registration_question.created" => "Created a registration question.",
+        "registration_question.updated" => "Updated a registration question.",
+        "registration_question.deleted" => "Deleted a registration question."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_id active required], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "event_waiver.created" => "Created an event waiver.",
+        "event_waiver.updated" => "Updated an event waiver.",
+        "event_waiver.deleted" => "Deleted an event waiver."
+      }
+
+    define registry, area: "door", audience: %w[org_owner org_manager org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[order_id amount_cents currency ticket_count], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+        "box_office.cash_sale_created" => "Recorded a box office cash sale."
+      }
+
+    define registry, area: "attendees", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[event_waiver_id version accepted_at], actions: {
+        "waiver.accepted" => "Accepted an event waiver."
+      }
+
+    define registry, area: "orders", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[policy_version accepted_at], actions: {
+        "order.agreement_accepted" => "Accepted the buyer agreement."
+      }
+
+    define registry, area: "refunds", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[status failure_code], metadata: %w[order_id payment_id amount_cents currency manual_record], actions: {
+        "refund.buyer_requested" => "Requested a refund through buyer self-service.",
+        "refund.requested" => "Reserved a refund request.",
+        "refund.submission_requested" => "Requested a provider refund.",
+        "refund.pending" => "Recorded a pending provider refund.",
+        "refund.succeeded" => "Completed a refund.",
+        "refund.failed" => "Recorded a failed refund.",
+        "refund.unknown" => "Flagged an unknown refund result.",
+        "refund.provider_result_conflict" => "Flagged conflicting refund provider results."
+      }
+
+    define registry, area: "payouts", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[status amount_cents currency], metadata: %w[amount_cents currency settlement_id], actions: {
+        "payout.created" => "Reserved a payout.",
+        "payout.submission_requested" => "Requested a provider payout."
+      }
+
+    define registry, area: "disputes", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[status amount_cents currency], metadata: %w[order_id payment_id], actions: {
+        "dispute.opened" => "Opened a payment dispute.",
+        "dispute.updated" => "Updated a payment dispute.",
+        "dispute.won" => "Won a payment dispute.",
+        "dispute.lost" => "Lost a payment dispute."
+      }
+
+    define registry, area: "orders", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[status], metadata: %w[refund_id amount_cents currency], actions: {
+        "order.completed" => "Completed an order.",
+        "order.cancelled" => "Cancelled an order.",
+        "order.expired" => "Expired an unpaid order.",
+        "order.refunded" => "Refunded an order.",
+        "order.partially_refunded" => "Partially refunded an order."
+      }
+
+    define registry, area: "fees", audience: %w[org_owner org_finance],
+      tenant: true, event_required: false,
+      snapshots: %w[service_fee_percent service_fee_flat_cents], metadata: %w[], actions: {
+        "organization.fee_terms_activated" => "Activated fee terms for the organization."
       }
 
     deep_freeze(registry)

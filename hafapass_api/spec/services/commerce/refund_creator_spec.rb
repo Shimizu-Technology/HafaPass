@@ -420,6 +420,27 @@ RSpec.describe Commerce::RefundCreator do
     expect(StripeService).to have_received(:find_refund).with(payment.provider_payment_id, idempotency_key: "uncertain", payment: payment)
   end
 
+  it "keeps a changed recovery problem after an initial timeout without duplicating its retry" do
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError, "response lost")
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "changed-observation") }
+      .to raise_error(described_class::RefundError, /unknown/)
+    refund = order.refunds.find_by!(idempotency_key: "changed-observation")
+    allow(StripeService).to receive(:find_refund).and_return(
+      OpenStruct.new(id: "re_mismatched_observation", amount: 1500, currency: "usd", status: "succeeded"))
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "changed-observation") }
+      .to raise_error(described_class::RefundError, /does not match/)
+    expect { described_class.call(order: order, amount_cents: 1000, idempotency_key: "changed-observation") }
+      .to raise_error(described_class::RefundError, /finance review/)
+    expect do
+      described_class.reconcile_refund!(refund: refund,
+        provider_refund: OpenStruct.new(id: "re_mismatched_observation", amount: 1500, currency: "usd", status: "succeeded"))
+    end.to raise_error(described_class::RefundError, /does not match/)
+    rows = AuditLog.where(auditable: refund, action: "refund.unknown")
+    expect(rows.count).to eq(2)
+    expect(rows.map { |entry| entry.after_data.fetch("failure_code") })
+      .to contain_exactly("provider_result_unknown", "provider_result_mismatch")
+  end
+
   it "recovers an old uncertain operation by metadata without creating another provider refund" do
     pending = create(:refund, order: order, payment: payment, amount_cents: 1000, status: :pending,
       provider_refund_id: nil, failure_code: "provider_result_unknown", idempotency_key: "old-uncertain", created_at: 3.days.ago)

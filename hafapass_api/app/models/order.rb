@@ -1,4 +1,15 @@
 class Order < ApplicationRecord
+  after_create :audit_buyer_agreement
+
+  def audit_buyer_agreement
+    return unless buyer_terms_version.present? && buyer_terms_digest.present? && buyer_terms_accepted_at.present?
+
+    AuditLogger.record!(action: "order.agreement_accepted", auditable: self, event: event, source: "system",
+      after_data: { policy_version: buyer_terms_version, policy_digest: buyer_terms_digest, accepted_at: buyer_terms_accepted_at },
+      deduplication_key: "order-agreement/#{id}")
+  end
+  private :audit_buyer_agreement
+
   attr_readonly :checkout_key_digest, :checkout_request_digest, :checkout_recovery_expires_at,
     :processing_fee_bearer_snapshot
 

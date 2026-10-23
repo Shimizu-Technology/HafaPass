@@ -68,12 +68,18 @@ module OperationalAuditable
   def record_operational_audit!(action:, before_data: {}, after_data: {}, metadata: {}, actor: AuditContext.current.actor,
     deduplication_key: nil)
     AuditLogger.record!(action: action, auditable: self, event: operational_audit_event,
-      actor: actor, source: actor ? (AuditContext.current.source.presence || "user") : "system",
+      actor: actor, source: operational_audit_source(action, actor),
       outcome: operational_audit_outcome(action), before_data: before_data, after_data: after_data, metadata: metadata,
       deduplication_key: deduplication_key)
   end
 
   def operational_audit_outcome(_action)
     "succeeded"
+  end
+
+  def operational_audit_source(action, actor)
+    return "system" if %w[waitlist.joined waitlist.rejoined waitlist.converted waitlist_offer.claimed waitlist_offer.converted].include?(action)
+
+    actor ? (AuditContext.current.source.presence || "user") : "system"
   end
 end

@@ -172,8 +172,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_100000) do
     t.index ["organization_id", "occurred_at"], name: "index_audit_logs_on_organization_id_and_occurred_at"
     t.index ["organization_id"], name: "index_audit_logs_on_organization_id"
     t.index ["retention_anonymized_at"], name: "index_audit_logs_on_retention_anonymized_at"
-    t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'unknown'::character varying]::text[]))", name: "audit_logs_outcome"
-    t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying, 'system'::character varying, 'provider'::character varying, 'admin'::character varying]::text[]))", name: "audit_logs_source"
+    t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'unknown'::character varying::text]))", name: "audit_logs_outcome"
+    t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying::text, 'system'::character varying::text, 'provider'::character varying::text, 'admin'::character varying::text]))", name: "audit_logs_source"
   end
 
   create_table "balance_adjustments", force: :cascade do |t|

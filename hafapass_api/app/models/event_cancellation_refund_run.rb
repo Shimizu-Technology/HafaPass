@@ -31,7 +31,7 @@ class EventCancellationRefundRun < ApplicationRecord
         unless completed?
           update!(status: :completed, completed_at: Time.current)
           AuditLogger.record!(action: "event.cancellation_refunds_completed", auditable: event,
-            actor: started_by, organization: event.organization,
+            actor: AuditContext.actor || started_by, organization: event.organization,
             metadata: { total_orders: items.count, total_cents: items.sum(:amount_cents) })
         end
       elsif !needs_attention?

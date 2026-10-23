@@ -3,6 +3,35 @@
 require "rails_helper"
 
 RSpec.describe "Operational audit coverage" do
+  it "audits sales suspension and resumption atomically, once per mutation" do
+    event = create(:event)
+    actor = create(:user, :admin)
+    AuditContext.set(actor: actor, source: "admin") do
+      event.update!(sales_suspended_at: Time.current, sales_suspension_reason: "Seating adjustment")
+    end
+    suspension = AuditLog.find_by!(action: "event.sales_suspended", auditable: event)
+    expect(suspension).to have_attributes(organization: event.organization, event: event, actor_user: actor)
+    EventSalesSuspension.lift!(event: event, actor: actor, note: "Ready")
+    expect(AuditLog.where(action: "event.sales_resumed", auditable: event).count).to eq(1)
+    expect(AuditLog.find_by!(action: "event.sales_resumed", auditable: event).actor_user).to eq(actor)
+    allow(AuditLogger).to receive(:record!).and_raise("audit unavailable")
+    expect { event.update!(sales_suspended_at: Time.current) }.to raise_error("audit unavailable")
+    expect(event.reload.sales_suspended_at).to be_nil
+  end
+
+  it "promotes consequential seat actions and keeps buyer hold churn in the seat ledger" do
+    event = create(:event)
+    actor = event.organizer_profile.user
+    Seating::Audit.record!(event: event, action: "seating.configuration_activated", actor: actor,
+      metadata: { venue_layout_id: 22, event_seat_count: 5 })
+    entry = AuditLog.find_by!(action: "seating.configuration_activated", auditable: event)
+    expect(entry).to have_attributes(organization: event.organization, event: event, actor_user: actor)
+    expect(entry.metadata).to include("venue_layout_id" => 22, "event_seat_count" => 5)
+    expect do
+      Seating::Audit.record!(event: event, action: "seat_hold.created")
+    end.not_to change(AuditLog, :count)
+  end
+
   it "audits each implicit staff revocation and retains the target and prior role" do
     event = create(:event)
     member = create(:organization_membership, organization: event.organization, role: :scanner)

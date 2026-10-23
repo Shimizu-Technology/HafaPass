@@ -15,18 +15,19 @@ class EventSalesSuspension
     note = note.is_a?(String) ? note.strip.presence : nil
     raise SuspensionError, "Keep the note under #{MAX_NOTE_LENGTH} characters" if note && note.length > MAX_NOTE_LENGTH
 
-    event.with_lock do
+    AuditContext.set(actor: actor, source: "admin", request_id: request&.request_id || AuditContext.request_id,
+      ip_address: request&.remote_ip || AuditContext.ip_address) do
+      event.with_lock do
       raise SuspensionError, "Sales for this event are not paused" if event.sales_suspended_at.nil?
 
-      before_data = { "sales_suspended_at" => event.sales_suspended_at.iso8601,
-        "sales_suspension_reason" => event.sales_suspension_reason }
+      event.audit_sales_note = note
       event.update!(sales_suspended_at: nil, sales_suspension_reason: nil)
-      AuditLogger.record!(action: "event.sales_resumed", auditable: event, actor: actor, organization: event.organization,
-        before_data: before_data, after_data: { "sales_suspended_at" => nil }, metadata: { note: note }.compact,
-        request: request)
+      end
     end
     event
   rescue ActiveRecord::RecordInvalid => e
     raise SuspensionError, e.record.errors.full_messages.to_sentence
+  ensure
+    event.audit_sales_note = nil
   end
 end

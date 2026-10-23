@@ -6,6 +6,7 @@ class Api::V1::Admin::OrganizerProfilesController < Api::V1::Admin::BaseControll
 
   def update
     profile = OrganizerProfile.find(params[:id])
+    profile.lock!
     before_data = profile_json(profile)
     previous_status = profile.verification_status
     profile.with_lock do

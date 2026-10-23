@@ -150,6 +150,7 @@ RSpec.describe Operations::SyntheticDataPurge do
       migrations_before = connection.select_value("SELECT COUNT(*) FROM schema_migrations").to_i
       expect(Order.count).to be_positive
       users_before = User.count
+      audits_before = AuditLog.count
 
       result = purge
 
@@ -180,7 +181,7 @@ RSpec.describe Operations::SyntheticDataPurge do
         "kept_user_emails" => ["Ops@HafaPass.example", "owner@hafapass.example"],
         "deleted_user_count" => users_before - 2
       )
-      expect(audit.metadata["row_counts_before"]).to include("orders" => 3, "users" => users_before, "audit_logs" => 1)
+      expect(audit.metadata["row_counts_before"]).to include("orders" => 3, "users" => users_before, "audit_logs" => audits_before)
       expect(audit.metadata["row_counts_after"]).to include("orders" => 0, "users" => 2, "audit_logs" => 0)
       expect(audit.metadata["purged_at"]).to be_present
     end

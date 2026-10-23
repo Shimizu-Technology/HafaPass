@@ -2,7 +2,8 @@ class Event < ApplicationRecord
   include OperationalAuditable
 
   # Source identity is transient, supplied by the clone operation before save.
-  attr_accessor :audit_clone_source
+  attr_accessor :audit_clone_source, :audit_sales_note
+  after_update :audit_sales_suspension_change
 
   audits_operations :event,
     fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
@@ -500,6 +501,17 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def audit_sales_suspension_change
+    return unless saved_change_to_sales_suspended_at?
+
+    AuditLogger.record!(action: sales_suspended_at ? "event.sales_suspended" : "event.sales_resumed",
+      auditable: self, event: self,
+      before_data: { sales_suspended_at: sales_suspended_at_before_last_save,
+        sales_suspension_reason: sales_suspension_reason_before_last_save },
+      after_data: { sales_suspended_at: sales_suspended_at, sales_suspension_reason: sales_suspension_reason },
+      metadata: { note: audit_sales_note }.compact)
+  end
 
   def operational_audit_action(operation)
     if operation == :create

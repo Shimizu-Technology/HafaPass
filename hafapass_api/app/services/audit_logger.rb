@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class AuditLogger
+  # Business validation handlers must not turn a rejected audit into a 422 that
+  # commits a privileged mutation in an enclosing transaction.
+  class WriteError < StandardError; end
+
   def self.record!(action:, auditable:, actor: nil, organization: nil, event: nil, before_data: {}, after_data: {}, metadata: {}, request: nil,
     source: nil, outcome: nil, deduplication_key: nil)
     inferred_event = related(auditable, Event)
@@ -34,7 +38,7 @@ class AuditLogger
       before_data: AuditSanitizer.call(before_data),
       after_data: AuditSanitizer.call(after_data),
       metadata: AuditSanitizer.call(metadata),
-      request_id: request&.request_id || AuditContext.request_id,
+      request_id: AuditSanitizer.call(request&.request_id || AuditContext.request_id),
       ip_address: request&.remote_ip || AuditContext.ip_address,
       occurred_at: Time.current
     }
@@ -50,6 +54,8 @@ class AuditLogger
         raise ArgumentError, "Audit retry key belongs to a different subject"
       end
     end
+  rescue ActiveRecord::RecordInvalid => error
+    raise WriteError, "Audit record could not be saved", cause: error
   end
 
   def self.related(record, type, seen = [])
@@ -57,8 +63,9 @@ class AuditLogger
     return record if record.is_a?(type)
 
     seen = seen + [[record.class.name, record.id]]
-    associations = type == Event ? [:event, :order, :ticket, :order_item, :payment, :refund, :communication_campaign] :
-      [:organization, :event, :order, :ticket, :order_item, :payment, :refund, :organization_membership, :communication_campaign]
+    associations = type == Event ? [:event, :order, :ticket, :ticket_type, :order_item, :payment, :refund, :communication_campaign] :
+      [:organization, :event, :order, :ticket, :ticket_type, :order_item, :payment, :refund, :organization_membership, :communication_campaign,
+        :venue_layout, :seating_section, :seating_row]
     associations.each do |association|
       next unless record.respond_to?(association)
 

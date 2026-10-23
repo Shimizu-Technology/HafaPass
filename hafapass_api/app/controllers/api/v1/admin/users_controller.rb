@@ -27,6 +27,7 @@ class Api::V1::Admin::UsersController < Api::V1::Admin::BaseController
   # PATCH /api/v1/admin/users/:id
   def update
     user = User.find(params[:id])
+    user.lock!
     requested_role = params[:role].to_s
 
     unless User.roles.key?(requested_role)

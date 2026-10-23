@@ -229,7 +229,8 @@ class StripeWebhookProcessor
       ReconciliationException.create!(order: refund.order, payment: refund.payment, webhook_event: receipt, code: code)
       AuditLogger.record!(action: "refund.#{action}", auditable: refund,
         organization: refund.order.event.organization, event: refund.order.event,
-        source: "provider", outcome: "unknown", deduplication_key: "refund:#{refund.id}:#{action}",
+        source: "provider", outcome: "unknown",
+        deduplication_key: "stripe:webhook:#{receipt.provider_event_id}:refund:#{refund.id}:#{action}:#{code}",
         metadata: { order_id: refund.order_id, payment_id: refund.payment_id,
           amount_cents: refund.amount_cents, code: code })
     end

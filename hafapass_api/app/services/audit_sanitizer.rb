@@ -27,7 +27,10 @@ class AuditSanitizer
     when String
       sanitize_text(value, key: key)
     when Integer
-      value.to_s.match?(/\A(?:\d{9}|\d{13,19})\z/) ? REDACTED : value
+      # Typed monetary values and record identities are numbers, not pasted
+      # account/card data. Sensitive keys were rejected before this branch.
+      typed_number = key.to_s.match?(/(?:_cents|_bps|_id|_count)\z|\A(?:id|quantity|position|version)\z/)
+      !typed_number && value.to_s.match?(/\A(?:\d{9}|\d{13,19})\z/) ? REDACTED : value
     else
       value
     end

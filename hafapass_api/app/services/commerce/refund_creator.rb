@@ -330,15 +330,22 @@ module Commerce
       end
     end
 
-    def audit_refund!(refund, action, outcome:, source: nil)
+    def audit_refund!(refund, action, outcome:, source: nil, observation: nil)
       options = {}
       options[:source] = source || "provider" if source || provider_refund
+      observed = {}
+      { id: :id, status: :status, amount_cents: :amount, currency: :currency }.each do |key, attribute|
+        observed[key] = observation.public_send(attribute) if observation&.respond_to?(attribute)
+      end
+      snapshot = refund.attributes.slice("status", "provider_refund_id", "failure_code")
+      fingerprint = Digest::SHA256.hexdigest(JSON.generate([snapshot, observed]))
       AuditLogger.record!(action: "refund.#{action}", auditable: refund, actor: requested_by,
         organization: refund.order.event.organization, event: refund.order.event,
-        outcome: outcome, deduplication_key: "refund:#{refund.id}:#{action}",
-        after_data: refund.attributes.slice("status", "provider_refund_id", "failure_code"),
+        outcome: outcome, deduplication_key: "refund:#{refund.id}:#{action}:#{fingerprint}",
+        after_data: snapshot,
         metadata: { order_id: refund.order_id, payment_id: refund.payment_id,
           amount_cents: refund.amount_cents, currency: refund.currency,
+          provider_observation: observed,
           manual_record: cash_return.present? || manual_card_return.present? }, **options)
     end
 
@@ -361,7 +368,7 @@ module Commerce
           if contradictory
             ReconciliationException.create!(order: refund.order, payment: refund.payment,
               code: "refund_terminal_status_conflict")
-            audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider")
+            audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider", observation: provider_refund)
           end
           return refund
         end
@@ -393,7 +400,7 @@ module Commerce
           return refund.reload
         end
         unless provider_status == "succeeded"
-          audit_refund!(refund, "pending", outcome: "requested", source: "provider")
+          audit_refund!(refund, "pending", outcome: "requested", source: "provider", observation: provider_refund)
           return refund.reload
         end
 
@@ -416,7 +423,7 @@ module Commerce
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
         audit_refund!(refund, "succeeded", outcome: "succeeded",
-          source: cash_return || manual_card_return ? nil : "provider")
+          source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
         AuditLogger.record!(action: "order.#{full_refund ? 'refunded' : 'partially_refunded'}",
           auditable: refund.order, actor: requested_by, organization: refund.order.event.organization,
           event: refund.order.event, outcome: "succeeded",

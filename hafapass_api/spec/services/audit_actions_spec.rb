@@ -40,6 +40,7 @@ RSpec.describe AuditActions do
     def self.audit_emitter?(source)
       tree = Ripper.sexp(source)
       raise "Cannot parse application source" unless tree
+      return true if nodes(tree, :command).any? { |call| call.dig(1, 1) == "audits_operations" }
       (nodes(tree, :call) + nodes(tree, :command_call)).any? do |call|
         call.dig(3, 1) == "record!" && nodes(call[1], :@const).any? { |token| token[1] == "AuditLogger" }
       end
@@ -69,6 +70,17 @@ RSpec.describe AuditActions do
 
     def visit(node, audit_value = false)
       return unless node.is_a?(Array)
+      # Provider event types in case labels/comparisons are inputs to the
+      # webhook router, not audit action keys. Still visit each branch body.
+      if node[0] == :when
+        visit(node[2], audit_value)
+        visit(node[3], audit_value)
+        return
+      end
+      if node[0] == :binary && self.class.nodes(node[1], :@ident).any? { |token| token[1] == "type" } && node.dig(3, 0) == :string_literal
+        visit(node[1], audit_value)
+        return
+      end
       if node[0] == :assoc_new && audit_value == :arguments
         visit(node[2], node.dig(1, 1) == "action:")
         return
@@ -90,12 +102,13 @@ RSpec.describe AuditActions do
         content = node[1]
         fragments = self.class.nodes(content, :@tstring_content).map { |token| token[1] }
         if self.class.nodes(content, :string_embexpr).any?
-          @dynamic << self.class.normalized(node) if audit_value == true || fragments.first&.match?(/\A[a-z][a-z_]*\./)
+          @dynamic << self.class.normalized(node) if audit_value == true || fragments.first&.match?(/\A[a-z][a-z_]*\./) || fragments == ["."]
         elsif audit_value == true || fragments.join.match?(ACTION)
           @keys << fragments.join
         end
         return
       end
+      @keys << node[1] if node[0] == :@tstring_content && node[1].match?(ACTION)
       node.each { |child| visit(child, audit_value) }
     end
   end
@@ -122,10 +135,36 @@ RSpec.describe AuditActions do
   it "requires an explicit inventory for every interpolated action expression" do
     expected = {
       "services/live_pilot_runs/manager.rb" => [AuditActionSourceInventory.string_tree('"live_pilot_run.#{kind}"')],
-      "services/payout_creator.rb" => [AuditActionSourceInventory.string_tree('"payout.#{attributes.fetch(:status)}"')]
+      "services/payout_creator.rb" => [AuditActionSourceInventory.string_tree('"payout.#{attributes.fetch(:status)}"')],
+      "models/concerns/operational_auditable.rb" => [AuditActionSourceInventory.string_tree('"#{operational_audit_prefix}.#{suffix}"')],
+      "models/event_state_change.rb" => [AuditActionSourceInventory.string_tree('"event.#{suffix}"')],
+      "models/waitlist_entry.rb" => [AuditActionSourceInventory.string_tree('"waitlist.#{status}"')],
+      "models/waitlist_offer.rb" => [AuditActionSourceInventory.string_tree('"waitlist_offer.#{status}"')],
+      "models/ticket_transfer.rb" => [AuditActionSourceInventory.string_tree('"ticket_transfer.#{status}"')],
+      "models/catalog_fulfillment.rb" => [AuditActionSourceInventory.string_tree('"catalog_fulfillment.#{status}"')],
+      "services/commerce/refund_creator.rb" => [AuditActionSourceInventory.string_tree('"refund.#{action}"'),
+        AuditActionSourceInventory.string_tree('"order.#{full_refund ? \'refunded\' : \'partially_refunded\'}"')],
+      "services/stripe_webhook_processor.rb" => [AuditActionSourceInventory.string_tree('"refund.#{action}"'),
+        AuditActionSourceInventory.string_tree('"dispute.#{status}"')],
+      "services/commerce/order_lifecycle.rb" => [AuditActionSourceInventory.string_tree('"order.#{expired ? \'expired\' : \'cancelled\'}"')]
     }
     actual = inventory.transform_values(&:dynamic).reject { |_path, expressions| expressions.empty? }
     expect(actual).to eq(expected), "Audit interpolation changed: enumerate its possible keys before recording it"
+  end
+
+  it "registers callback CRUD actions and every reachable operational enum transition" do
+    prefixes = Dir[File.join(app_root, "models/*.rb")].flat_map do |path|
+      File.read(path).scan(/\baudits_operations\s+:([a-z_]+)/).flatten
+    end
+    suppressed = %w[ticket.created ticket.updated ticket.deleted waitlist.created]
+    keys = prefixes.product(%w[created updated deleted]).map { |prefix, suffix| "#{prefix}.#{suffix}" } - suppressed
+    %w[waitlist_offer ticket_transfer catalog_fulfillment].each do |prefix|
+      keys += AuditActionSourceInventory.enum_keys(File.join(app_root, "models/#{prefix}.rb"), "status").map { |status| "#{prefix}.#{status}" }
+    end
+    keys += %w[offered converted expired cancelled].map { |status| "waitlist.#{status}" }
+    keys += %w[published postponed resumed cancelled completed archived].map { |status| "event.#{status}" }
+    expect(prefixes.size).to be >= 16
+    expect(keys - described_class.keys).to be_empty
   end
 
   it "registers every pilot run kind and payout status, including enum additions" do
@@ -234,7 +273,7 @@ RSpec.describe AuditActions do
   end
 
   it "excludes buyer contacts, network identifiers, internal notes and review evidence from all allowlists" do
-    prohibited = /email|phone|address|\Arequest_id\z|ip_address|note|reason\z|evidence|digest|token|credential|buyer|attendee_name|provider_result|filter|columns|payout_details|capabilities|controls/
+    prohibited = /email|phone|address|\Arequest_id\z|ip_address|note|reason\z|evidence|digest|token|credential|buyer_(?:name|contact)|attendee_name|provider_result|filter|columns|payout_details|capabilities|controls/
     described_class.keys.each do |key|
       fields = described_class.fetch(key)[:organization_fields].values.flatten
       expect(fields.grep(prohibited)).to be_empty, "Unsafe organization fields for #{key}: #{fields.grep(prohibited)}"

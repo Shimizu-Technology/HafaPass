@@ -43,6 +43,27 @@ RSpec.describe EventCancellationRefundJob do
     expect(order.refunds.count).to eq(1)
   end
 
+  it "attributes a queued retry to its initiator instead of the original cancellation starter" do
+    order = paid_order(email: "retry-initiator@example.test")
+    EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
+    run = event.reload.event_cancellation_refund_run
+    item = run.items.find_by!(order: order)
+    item.update!(retry_generation: 1)
+    operator = create(:user, :admin)
+    serialized = AuditContext.set(actor: operator, source: "admin", request_id: "retry-initiator-request") do
+      described_class.new(run.id).serialize
+    end
+    ActiveJob::Base.deserialize(serialized).perform_now
+    refund = order.refunds.find_by!(idempotency_key: item.refund_key)
+    expect(refund.requested_by).to eq(operator)
+    rows = AuditLog.where(auditable: refund, action: %w[refund.requested refund.submission_requested refund.succeeded])
+    expect(rows.count).to eq(3)
+    expect(rows.map(&:actor_user_id).uniq).to eq([operator.id])
+    expect(rows.map(&:request_id).uniq).to eq(["retry-initiator-request"])
+    completion = AuditLog.find_by!(auditable: event, action: "event.cancellation_refunds_completed")
+    expect(completion.actor_user).to eq(operator)
+  end
+
   it "keeps the succeeded refund amount when provider confirmation resumes the job" do
     order = paid_order(email: "confirmed@example.com", amount_cents: 9650)
     EventLifecycle.call(event: event, action: :cancel, actor: actor, reason: "Storm")
