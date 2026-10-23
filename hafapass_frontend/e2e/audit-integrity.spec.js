@@ -31,6 +31,7 @@ for (const width of [375, 1280]) {
     await expect(page.getByText('2000', { exact: true })).toBeVisible()
     await expect(page.locator('dd').filter({ hasText: '2500' })).toBeVisible()
     await expect(page.getByText(/request qa-audit-request/)).toBeVisible()
+    if (width < 768) await page.getByText('Filters', { exact: true }).click()
     await page.getByRole('searchbox', { name: 'Search the audit log' }).fill('ticket_type.updated')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect.poll(() => searched).toBe(true)

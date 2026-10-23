@@ -10,7 +10,7 @@ import { formatMoneyCents } from '../../utils/money'
 import { PUBLIC_WEB_URL } from '../../utils/site'
 import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { eventToolLinks } from '../../utils/eventWorkspaceNavigation'
-import { loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
+import { canViewOrganizationActivity, loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { organizerChecklist } from '../../utils/organizerChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
 import { useTranslation } from 'react-i18next'
@@ -50,6 +50,7 @@ function EventOverviewSession({ id, identity }) {
   // Sales and door numbers load after the event: { status, stats, admissions }.
   const [extras, setExtras] = useState({ status: 'idle' })
   const [currency, setCurrency] = useState('USD')
+  const [canViewActivity, setCanViewActivity] = useState(false)
   // GET /organizer_profile, loaded only when verification holds back sales.
   const [profile, setProfile] = useState({ status: 'idle' })
   const [loading, setLoading] = useState(true)
@@ -94,7 +95,7 @@ function EventOverviewSession({ id, identity }) {
     if (!current()) return
     const attempt = ++generation.current
     const canApply = () => current() && attempt === generation.current
-    setLoading(true); setError(null); setExtras({ status: 'idle' })
+    setLoading(true); setError(null); setExtras({ status: 'idle' }); setCanViewActivity(false)
     try {
       const saved = (await get(`/organizer/events/${id}`)).data
       if (!canApply()) return
@@ -120,6 +121,7 @@ function EventOverviewSession({ id, identity }) {
       loadOrganizerOrganizations(identity.authContext).then(response => {
         const match = (Array.isArray(response.data) ? response.data : []).find(item => String(item.id) === String(saved.organization_id))
         if (canApply() && match?.currency) setCurrency(match.currency)
+        if (canApply()) setCanViewActivity(canViewOrganizationActivity(match))
       }).catch(() => {})
     } catch (requestError) {
       if (!canApply()) return
@@ -212,6 +214,8 @@ function EventOverviewSession({ id, identity }) {
           <div className="flex items-start gap-2"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" /><div className="min-w-0"><span className="sr-only">Venue: </span><span className="break-words text-neutral-900">{event.venue_name || 'Venue not set yet'}{event.venue_city ? `, ${event.venue_city}` : ''}</span></div></div>
         </div>
       </section>
+
+      {(canViewActivity || has('view_activity_events')) && <Link to={`/dashboard/settings/activity?event_id=${encodeURIComponent(event.id)}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">View activity</Link>}
 
       <section aria-labelledby="overview-sales" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
         <h2 id="overview-sales" className="text-lg font-semibold text-neutral-950">Sales so far</h2>
