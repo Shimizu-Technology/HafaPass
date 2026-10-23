@@ -4,7 +4,7 @@
 # visibility, required scope, and safe fields explicit; never infer them from
 # an action prefix or from a caller's permissions.
 class AuditActions
-  AREAS = %w[organization team verification events tickets promotions attendees door scanning orders refunds disputes payouts payout_settings tax fees exports messaging marketing_partners privacy platform].freeze
+  AREAS = %w[organization team event_staff verification events tickets promotions attendees door scanning orders refunds disputes payouts payout_settings tax fees exports messaging marketing_partners privacy platform].freeze
   DISPLAY_FIELDS = %w[event_title subject_label team_member_label team_role ticket_type_label order_reference].freeze
   AUDIENCES = %w[org_owner org_manager org_finance admin_only].freeze
 
@@ -37,8 +37,13 @@ class AuditActions
     # actions produce empty projections. Nested objects and arrays are dropped,
     # even under allowed keys, so a new caller cannot smuggle private payloads.
     # This does not alter the private before_data/after_data/metadata record.
-    def organization_payload(action, before_data: {}, after_data: {}, metadata: {})
+    def organization_definition(action, audience: :org_owner)
       definition = fetch(action)
+      definition.merge(definition.fetch(:audience_variants, {}).fetch(audience.to_s, {}))
+    end
+
+    def organization_payload(action, audience: :org_owner, before_data: {}, after_data: {}, metadata: {})
+      definition = organization_definition(action, audience: audience)
       inputs = { before_data: before_data, after_data: after_data, metadata: metadata }
       inputs.to_h do |column, data|
         allowed = definition.fetch(:organization_fields).fetch(column)
@@ -65,7 +70,7 @@ class AuditActions
       value.freeze
     end
 
-    def define(registry, area:, audience:, tenant:, event_required:, snapshots: [], metadata: [], actions:)
+    def define(registry, area:, audience:, tenant:, event_required:, snapshots: [], metadata: [], manager_snapshots: nil, variants: {}, actions:)
       audiences = Array(audience).map(&:to_s)
       raise ArgumentError, "Invalid audit area" unless AREAS.include?(area)
       raise ArgumentError, "Invalid audit audience" unless (audiences - AUDIENCES).empty? && audiences.any?
@@ -80,13 +85,19 @@ class AuditActions
         display_fields = audiences == ["admin_only"] ? [] : ["event_title"]
         display_fields += %w[subject_label] if %w[ticket_type pricing_tier promo_code catalog_item campaign].include?(action.split(".").first)
         display_fields += %w[ticket_type_label quantity] if action.start_with?("guest_list.")
-        display_fields += %w[team_member_label team_role] if area == "team"
+        display_fields += %w[team_member_label team_role] if %w[team event_staff].include?(area)
         display_fields += %w[order_reference amount_cents currency] if %w[refunds disputes payouts orders door].include?(area)
         fields_for_action = fields.merge(metadata: audiences == ["admin_only"] ? [] : (fields[:metadata] + display_fields).uniq)
         raise ArgumentError, "Duplicate audit action: #{action}" if registry.key?(action)
 
         registry[action] = deep_freeze({ area: area, audience: audiences.dup, tenant: tenant,
-          event_required: event_required, organization_fields: fields_for_action, template: template })
+          event_required: event_required, organization_fields: fields_for_action, template: template,
+          audience_variants: (audiences.include?("org_manager") ? { "org_manager" => {
+            organization_fields: fields_for_action.merge(before_data: manager_snapshots || snapshots, after_data: manager_snapshots || snapshots)
+          } } : {}).merge(variants.to_h do |audience, variant|
+            [audience.to_s, { organization_fields: { before_data: variant.fetch(:snapshots), after_data: variant.fetch(:snapshots),
+              metadata: variant.fetch(:metadata) }, sentence_template: variant.fetch(:templates).fetch(action) }]
+          end) })
       end
     end
   end
@@ -132,7 +143,7 @@ class AuditActions
         "organization.ownership_transferred" => "Transferred organization ownership."
       }
 
-    define registry, area: "team", audience: %w[org_owner org_manager],
+    define registry, area: "event_staff", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
       snapshots: %w[event_id role status expires_at target_user_id target_name], metadata: %w[], actions: {
         "event_staff.assigned" => "Assigned event staff.",
@@ -260,13 +271,13 @@ class AuditActions
         "annual_tax_report.statement_downloaded" => "Downloaded an annual tax statement."
       }
 
-    define registry, area: "tax", audience: %w[org_owner org_finance],
+    define registry, area: "tax", audience: %w[org_owner],
       tenant: true, event_required: false,
       snapshots: %w[], metadata: %w[certification_version], actions: {
         "organizer_tax_information.updated" => "Updated organizer tax information."
       }
 
-    define registry, area: "tax", audience: %w[org_owner org_finance],
+    define registry, area: "tax", audience: %w[org_owner],
       tenant: true, event_required: false,
       snapshots: %w[backup_withholding_required tin_matching_status], metadata: %w[], actions: {
         "tax_information.withholding_flag_changed" => "Updated tax withholding status."
@@ -293,7 +304,7 @@ class AuditActions
         "tin_matching.import_failed" => "Failed to import taxpayer identification matching results."
       }
 
-    define registry, area: "payout_settings", audience: %w[org_owner org_finance],
+    define registry, area: "payout_settings", audience: %w[org_owner],
       tenant: true, event_required: false,
       snapshots: %w[provider status charges_enabled payouts_enabled details_submitted last_synced_at], metadata: %w[], actions: {
         "connected_account.onboarding_started" => "Started payout account setup.",
@@ -371,7 +382,12 @@ class AuditActions
 
     define registry, area: "door", audience: %w[org_owner org_manager org_finance],
       tenant: true, event_required: true,
-      snapshots: %w[status amount_cents], metadata: %w[lifecycle_result], actions: {
+      snapshots: %w[status amount_cents], metadata: %w[lifecycle_result],
+      variants: { org_manager: { snapshots: [], metadata: %w[event_title], templates: {
+        "card_present.payment_succeeded" => "%{actor} recorded a door sale for %{event}.",
+        "card_present.payment_failed" => "A card payment at the door failed.",
+        "card_present.payment_result_unknown" => "A card payment at the door needs review."
+      } } }, actions: {
         "card_present.payment_succeeded" => "Completed a card-present payment.",
         "card_present.payment_failed" => "Failed a card-present payment.",
         "card_present.payment_result_unknown" => "Flagged an unknown card-present payment result."
@@ -602,7 +618,8 @@ class AuditActions
 
     define registry, area: "attendees", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[event_id ticket_type_id quantity redeemed order_id], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[event_id ticket_type_id quantity redeemed order_id],
+      manager_snapshots: %w[event_id ticket_type_id quantity redeemed], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "guest_list.created" => "Created a guest list entry.",
         "guest_list.updated" => "Updated a guest list entry.",
         "guest_list.deleted" => "Deleted a guest list entry.",
@@ -626,7 +643,8 @@ class AuditActions
 
     define registry, area: "attendees", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at order_id], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at order_id],
+      manager_snapshots: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "waitlist_offer.created" => "Created a waitlist offer.",
         "waitlist_offer.updated" => "Updated a waitlist offer.",
         "waitlist_offer.deleted" => "Deleted a waitlist offer.",
@@ -692,7 +710,8 @@ class AuditActions
 
     define registry, area: "attendees", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[order_item_id status fulfilled_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[order_item_id status fulfilled_at],
+      manager_snapshots: %w[status fulfilled_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "catalog_fulfillment.created" => "Created a catalog fulfillment.",
         "catalog_fulfillment.updated" => "Updated a catalog fulfillment.",
         "catalog_fulfillment.deleted" => "Deleted a catalog fulfillment.",
@@ -719,7 +738,10 @@ class AuditActions
 
     define registry, area: "door", audience: %w[org_owner org_manager org_finance],
       tenant: true, event_required: true,
-      snapshots: %w[order_id amount_cents currency ticket_count], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[order_id amount_cents currency ticket_count], metadata: %w[source_event_id event_state_change_id ticket_count],
+      variants: { org_manager: { snapshots: %w[ticket_count], metadata: %w[event_title ticket_count], templates: {
+        "box_office.cash_sale_created" => "%{actor} recorded a door sale%{tickets} for %{event}."
+      } } }, actions: {
         "box_office.cash_sale_created" => "Recorded a box office cash sale."
       }
 

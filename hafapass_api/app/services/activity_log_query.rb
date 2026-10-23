@@ -8,10 +8,11 @@ class ActivityLogQuery
 
   attr_reader :filters, :base, :organization
 
-  def initialize(scope:, params:, organization: nil, admin: false)
+  def initialize(scope:, params:, organization: nil, admin: false, access: nil)
     @base = scope
     @organization = organization
     @admin = admin
+    @access = access
     @filters = FILTERS.index_with { |key| params[key].to_s.strip.presence }.compact
     @filters.except!("organization_id", "action", "source", "target_type", "target_id") unless admin
     validate!
@@ -44,7 +45,7 @@ class ActivityLogQuery
     end
     result = result.where("audit_logs.occurred_at >= ?", day("from")) if filters["from"]
     result = result.where("audit_logs.occurred_at < ?", day("to") + 1.day) if filters["to"]
-    filters["q"] ? search(result) : result
+    filters["q"] && @admin ? search(result) : result
   end
 
   def page(cursor: nil, limit: nil, identity:)
@@ -58,7 +59,24 @@ class ActivityLogQuery
     if boundary
       result = result.where("(audit_logs.occurred_at, audit_logs.id) < (?, ?)", Time.iso8601(boundary.fetch("time")), boundary.fetch("id"))
     end
-    records = result.includes(:actor_user, :organization, :event).order(occurred_at: :desc, id: :desc).limit(size + 1).to_a
+    # Rendered search can be sparse. Scan bounded keyset batches until the
+    # requested page is full; never collect every matching history ID.
+    batch_size = filters["q"] && !@admin ? 500 : size + 1
+    records = []
+    remaining = result
+    loop do
+      batch = remaining.includes(:actor_user, :organization, :event).order(occurred_at: :desc, id: :desc).limit(batch_size).to_a
+      break if batch.empty?
+
+      batch.each do |entry|
+        records << entry if matches?(entry)
+        break if records.length > size
+      end
+      break if records.length > size
+
+      last_scanned = batch.last
+      remaining = result.where("(audit_logs.occurred_at, audit_logs.id) < (?, ?)", last_scanned.occurred_at, last_scanned.id)
+    end
     has_more = records.length > size
     records = records.first(size)
     last = records.last
@@ -67,6 +85,15 @@ class ActivityLogQuery
     [records, next_cursor]
   rescue KeyError, ArgumentError
     raise InvalidFilter, "Invalid activity cursor"
+  end
+
+  def matches?(entry)
+    return true if @admin || !filters["q"]
+
+    @member_ids ||= organization.organization_memberships.effective.pluck(:user_id).to_set
+    text = ActivityLogPresenter.new(entry, organization: organization, member_ids: @member_ids,
+      audience: @access ? @access.audience_for(entry.action) : :org_owner).search_text
+    text.downcase.include?(filters.fetch("q").downcase)
   end
 
   def self.started_at
@@ -99,31 +126,8 @@ class ActivityLogQuery
   def search(result)
     term = filters.fetch("q")
     pattern = "%#{ActiveRecord::Base.sanitize_sql_like(term)}%"
-    if @admin
-      return result.left_joins(:actor_user, :event, :organization).where(
-        "audit_logs.action ILIKE :q OR users.email ILIKE :q OR audit_logs.auditable_type ILIKE :q " \
-        "OR audit_logs.request_id = :exact OR events.title ILIKE :q OR organizations.name ILIKE :q", q: pattern, exact: term)
-    end
-
-    # Search only displayed sentences, areas, event titles and safe actor labels.
-    # Only registry-allowlisted display context is searched in JSON; never
-    # private payloads, buyer contacts, internal action/target/request IDs.
-    matching_actions = AuditActions.keys.select do |key|
-      definition = AuditActions.fetch(key)
-      [definition[:template], definition[:area]].any? { |text| text.downcase.include?(term.downcase) }
-    end
-    member_ids = organization.organization_memberships.effective.where(user_id: User.where.not(role: [:admin, :support])
-      .where("concat_ws(' ', first_name, last_name) ILIKE :q OR email ILIKE :q", q: pattern)).select(:user_id)
-    labels = { "provider" => "Stripe", "system" => "HåfaPass", "admin" => "HåfaPass administrator" }
-      .select { |_source, name| name.downcase.include?(term.downcase) }.keys
-    matching_events = organization.events.where("title ILIKE ?", pattern).select(:id)
-    matches = result.where(action: matching_actions).or(result.where(event_id: matching_events))
-      .or(result.where(source: "user", actor_user_id: member_ids)).or(result.where(source: labels))
-    AuditActions::DISPLAY_FIELDS.each do |key|
-      actions = AuditActions.keys.select { |action| AuditActions.fetch(action)[:organization_fields][:metadata].include?(key) }
-      matches = matches.or(result.where(action: actions).where(
-        "jsonb_typeof(audit_logs.metadata -> ?) = 'string' AND audit_logs.metadata ->> ? ILIKE ?", key, key, pattern))
-    end
-    matches
+    result.left_joins(:actor_user, :event, :organization).where(
+      "audit_logs.action ILIKE :q OR users.email ILIKE :q OR audit_logs.auditable_type ILIKE :q " \
+      "OR audit_logs.request_id = :exact OR events.title ILIKE :q OR organizations.name ILIKE :q", q: pattern, exact: term)
   end
 end

@@ -84,7 +84,7 @@ RSpec.describe OrganizationRoleMatrix do
     changed[:finance] |= %i[view_activity_finance]
     stub_const("OrganizationAuthorization::PERMISSIONS", changed)
 
-    expect(values("activity")).to eq("owner" => "All activity", "manager" => "Events", "finance" => "Money",
+    expect(values("activity")).to eq("owner" => "All activity", "manager" => "Event activity, without payment amounts", "finance" => "Money",
       "marketer" => "No", "box_office" => "No", "scanner" => "No")
   end
 end

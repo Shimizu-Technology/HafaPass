@@ -248,3 +248,71 @@ CodeRabbit's completed initial review covered `fdbb0344`; all six verified
 findings were fixed in this revision. Final-head Actions and incremental review
 are separate remote gates owned by the lead after the delegated implementation
 returns. No merge or production verification is claimed.
+
+## Security revision, 2026-10-24
+
+Starting head `c515eb21`; `origin/main` is already an ancestor. The scope is the
+Activity projection for event organizers and door operators (Clerk identity,
+effective organization/event grants, Rails registry; no live payments). The
+current project notes still identify paid launch as gated (Brain Dump,
+`work/shimizu-tech/company-positioning-and-project-review-2026-10-04.md`).
+
+Required acceptance for this revision is agent-executed affected-flow QA:
+
+- S01: Manager and event-assigned Manager JSON/CSV show door-sale context without
+  transaction money, order identifiers or provider details; Owner/Finance retain
+  full sentences. All Manager-visible registry fields are audited; configured
+  ticket prices remain visible.
+- S02: Event staff uses its own event-operations area and effective event scope.
+  Organization membership, ownership, verification, payout/tax settings stay
+  Owner-only in JSON and CSV.
+- S03: Search matches only this viewer's rendered sentence and displayed labels,
+  including renamed/deleted events and hidden money fields; sparse matches keep
+  stable pagination, and filtered CSV uses the same predicate.
+- S04: Filter actor options restrict to effective members in SQL before loading.
+- U05: Role comparison accurately describes Manager activity scope at 375/1280;
+  Activity event-staff labeling, recovery and CSV remain usable. Playwright's
+  isolated test-auth/API fixtures execute these interface journeys; request specs
+  establish backend authorization. Live Clerk/native hardware are excluded.
+
+Disposable test database: `hafapass_activity_security_test`. Shared Docker
+3000/3088 and port 3011 remain borrowed and untouched. Results follow below.
+
+Security revision results (source changes atop `c515eb21`, committed together
+with this ledger; exact pushed SHA in the local handoff and PR):
+
+- S01–S03 passed in request/registry regressions: Manager and event-assigned
+  Manager door JSON/CSV omit amounts, order references, currency, provider status
+  and lifecycle details; Owner/Finance retain amount/order sentences. The full
+  Manager field inventory excludes transaction-money/reference fields and keeps
+  configured prices. Guest-list/waitlist/fulfillment order identifiers are absent.
+- S02 passed for Owner, organization Manager, event-assigned Manager and Finance:
+  event-staff area/event filter and organization security exclusion in JSON/CSV.
+- S03 passed for renamed/deleted events, hidden amount/order search, filtered
+  CSV and sparse cursor pagination. Search scans bounded batches of rendered
+  rows; a search without matches may scan the authorized history, trading query
+  time for correct per-viewer matching without unbounded record loading.
+- S04 verified in source: the distinct history actor subquery is restricted by
+  effective member IDs before users are loaded; existing inactive/platform-staff
+  option/filter privacy regressions pass.
+- U05 passed at 375/1280: Event staff tag, Manager scope in the role comparison,
+  invite-draft/focus preservation, Activity filtering/recovery/saved CSV and axe.
+  The first browser run had one new mobile assertion matching both mobile and
+  hidden desktop text. Scoping that assertion to the mobile list fixed the test;
+  the complete rerun passed. Updated screenshots are in `docs/activity-evidence/`.
+- Final full RSpec: **3,219 examples, 0 failures**; focused security/activity/
+  registry/matrix suite: **67 examples, 0 failures**.
+- RuboCop: **950 files, 0 offenses**; Brakeman: **0 warnings**; Bundler Audit:
+  **no vulnerabilities**. ESLint, production build and npm production audit pass.
+- Vitest: **170 files / 1,860 tests passed**. Full Playwright: **127 passed**,
+  Chromium workers=1 on owned port 4278, including axe and 375/1280 affected flows.
+- Matrix freshness, release freeze, hygiene and diff checks pass; advisory
+  Impeccable scan: `[]`. No migrations, dependencies or `config/policies.yml`
+  changes. Live Clerk, native devices and real provider/money flows were not run.
+
+Owned Playwright/Vite/browser children exited; port 4278 is closed. The disposable
+`hafapass_activity_security_test` database was dropped and verified absent.
+Lifecycle session `01a169e9-24d6-7c31-8167-2d49d58e69b1` reports no active owned
+resources. No resource handoff; Docker 3000/3088 and anything on 3011 untouched.
+Remote CI/review is separate from this local gate; the lead owns final-head
+monitoring. This PR remains unmerged.

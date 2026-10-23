@@ -401,10 +401,10 @@
     {
       "key": "activity",
       "label": "View activity log (all / events / money)",
-      "note": "Event activity for event managers is limited to assigned events.",
+      "note": "Managers see event operations and event staff history, without payment amounts, order references or payment details. Event managers are limited to assigned events; organization team and security history is Owner-only.",
       "values": {
         "owner": "All activity",
-        "manager": "Events",
+        "manager": "Event activity, without payment amounts",
         "finance": "Money",
         "marketer": "No",
         "box_office": "No",

@@ -32,7 +32,7 @@ This table describes role permissions for active memberships. Event lifecycle, v
 | Assign staff to events | Yes | Yes | No | No | No | No |
 | Organization profile & verification | Yes | No | No | No | No | No |
 | Transfer ownership | Yes | No | No | No | No | No |
-| View activity log (all / events / money) | All activity | Events | Money | No | No | No |
+| View activity log (all / events / money) | All activity | Event activity, without payment amounts | Money | No | No | No |
 
 ## Access notes
 
@@ -48,7 +48,7 @@ This table describes role permissions for active memberships. Event lifecycle, v
 - **Promo codes, promoters & buyer emails:** Buyer emails means sending campaigns; it does not grant the attendee contact list.
 - **Assign staff to events:** Event managers can assign door staff on their events. Organization-wide invitations and role changes require the Owner.
 - **Organization profile & verification:** Owners manage the profile and submit verification; HåfaPass controls verification approval.
-- **View activity log (all / events / money):** Event activity for event managers is limited to assigned events.
+- **View activity log (all / events / money):** Managers see event operations and event staff history, without payment amounts, order references or payment details. Event managers are limited to assigned events; organization team and security history is Owner-only.
 
 ## Keeping the matrix current
 

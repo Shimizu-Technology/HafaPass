@@ -33,6 +33,13 @@ class OrganizationActivityAccess
     visible
   end
 
+  def audience_for(action)
+    return :org_owner if all?
+    return :org_finance if finance? && AuditActions.visible_to?(action, :org_finance)
+
+    :org_manager
+  end
+
   def fingerprint
     Digest::SHA256.hexdigest([organization.id, user.id, all?, events?, finance?, assigned_event_ids.sort].to_json)
   end

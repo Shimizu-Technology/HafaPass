@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { formatEventTime } from '../../utils/eventTime'
 import { activityDateKey, activityDay, activityPath } from '../../utils/activity'
 
-const areaLabels = { scanning: 'Check-in', door: 'Door sales', attendees: 'Guest list', messaging: 'Campaigns', payout_settings: 'Payout settings', marketing_partners: 'Marketing partners' }
+const areaLabels = { event_staff: 'Event staff', scanning: 'Check-in', door: 'Door sales', attendees: 'Guest list', messaging: 'Campaigns', payout_settings: 'Payout settings', marketing_partners: 'Marketing partners' }
 const humanLabel = value => areaLabels[value] || String(value).replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase())
 
 const TIME_ZONE = 'Pacific/Guam'

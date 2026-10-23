@@ -35,7 +35,7 @@ class OrganizationRoleMatrix
       note: "Owners manage the profile and submit verification; HåfaPass controls verification approval." },
     { key: "ownership", label: "Transfer ownership", permissions: %i[manage_members manage_organization], organization_only: true },
     { key: "activity", label: "View activity log (all / events / money)", permissions: [], organization_only: true,
-      note: "Event activity for event managers is limited to assigned events." }
+      note: "Managers see event operations and event staff history, without payment amounts, order references or payment details. Event managers are limited to assigned events; organization team and security history is Owner-only." }
   ].freeze
 
   def self.data
@@ -99,7 +99,7 @@ class OrganizationRoleMatrix
       return "All activity" if grants?(role, :view_activity_all)
 
       return %i[view_activity_events view_activity_finance].filter_map do |permission|
-        { view_activity_events: "Events", view_activity_finance: "Money" }.fetch(permission) if grants?(role, permission)
+        { view_activity_events: "Event activity, without payment amounts", view_activity_finance: "Money" }.fetch(permission) if grants?(role, permission)
       end.join(" & ").then { |text| text.empty? ? "No" : text }
     end
 

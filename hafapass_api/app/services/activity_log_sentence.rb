@@ -3,15 +3,20 @@
 # All variable text comes from the same allowlist used for organization JSON
 # and CSV. Historical records use stable record IDs when context was not saved.
 class ActivityLogSentence
-  def initialize(entry, actor_name:)
+  def initialize(entry, actor_name:, audience: :org_owner)
     @entry, @actor = entry, actor_name
-    @definition = AuditActions.fetch(entry.action)
-    safe = AuditActions.organization_payload(entry.action, before_data: entry.before_data,
+    @definition = AuditActions.organization_definition(entry.action, audience: audience)
+    safe = AuditActions.organization_payload(entry.action, audience: audience, before_data: entry.before_data,
       after_data: entry.after_data, metadata: entry.metadata)
     @before, @after, @metadata = safe.values_at(:before_data, :after_data, :metadata)
   end
 
   def call
+    if definition[:sentence_template]
+      return format(definition[:sentence_template], actor: actor, event: event_name,
+        tickets: value("ticket_count") ? " of #{value('ticket_count')} tickets" : "")
+    end
+
     specific_sentence || contextual_sentence
   end
 

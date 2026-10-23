@@ -4,10 +4,11 @@
 # as_json with a blacklist. Sentences interpolate only registry-allowlisted
 # scalar snapshots, never the private audit payload.
 class ActivityLogPresenter
-  def initialize(entry, organization: nil, member_ids: nil)
+  def initialize(entry, organization: nil, member_ids: nil, audience: :org_owner)
     @entry = entry
     @organization = organization
     @member_ids = member_ids
+    @audience = audience
   end
 
   def organization_json
@@ -26,6 +27,17 @@ class ActivityLogPresenter
       metadata: AuditSanitizer.call(entry.metadata), request_id: AuditSanitizer.call(entry.request_id))
   end
 
+  # Searchable text is built from exactly the labels and values returned to
+  # this viewer, never from stored-but-undisplayed metadata or identifiers.
+  def search_text
+    data = organization_json
+    area_label = { "scanning" => "Check-in", "door" => "Door sales", "attendees" => "Guest list", "messaging" => "Campaigns" }.fetch(data[:area], data[:area].humanize)
+    outcome_label = data[:outcome] == "unknown" ? "Needs review" : data[:outcome].humanize
+    [data[:sentence], area_label, outcome_label, data[:actor].values,
+      data[:event]&.dig(:title), data[:target]&.dig(:label),
+      data[:changes].flat_map { |change| change.values }].flatten.compact.join(" ")
+  end
+
   private
 
   attr_reader :entry, :organization
@@ -33,7 +45,7 @@ class ActivityLogPresenter
   def definition = AuditActions.fetch(entry.action)
 
   def sentence(actor_name: actor[:name])
-    ActivityLogSentence.new(entry, actor_name: actor_name).call
+    ActivityLogSentence.new(entry, actor_name: actor_name, audience: @audience).call
   end
 
   def actor
@@ -76,7 +88,7 @@ class ActivityLogPresenter
   end
 
   def changes
-    safe = AuditActions.organization_payload(entry.action, before_data: entry.before_data, after_data: entry.after_data)
+    safe = AuditActions.organization_payload(entry.action, audience: @audience, before_data: entry.before_data, after_data: entry.after_data)
     before = safe[:before_data]
     after = safe[:after_data]
     (before.keys | after.keys).filter_map do |field|

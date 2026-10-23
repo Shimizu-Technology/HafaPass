@@ -59,7 +59,10 @@ module ActivityLogExports
         break if batch.empty?
 
         batch.each do |entry|
-          presenter = ActivityLogPresenter.new(entry, organization: export_organization, member_ids: member_ids)
+          next unless query.matches?(entry)
+
+          presenter = ActivityLogPresenter.new(entry, organization: export_organization, member_ids: member_ids,
+            audience: export_admin? ? :org_owner : @activity_access.audience_for(entry.action))
           data = export_admin? ? presenter.admin_json : presenter.organization_json
           output << csv_row(data)
           count += 1
@@ -101,7 +104,7 @@ module ActivityLogExports
 
   def export_query(filters)
     ActivityLogQuery.new(scope: export_admin? ? AuditLog.all : @activity_access.relation,
-      params: filters, organization: export_organization, admin: export_admin?)
+      params: filters, organization: export_organization, admin: export_admin?, access: @activity_access)
   end
 
   def find_export

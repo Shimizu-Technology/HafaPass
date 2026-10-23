@@ -161,7 +161,7 @@ RSpec.describe "Organization activity", type: :request do
     expect(ids).to be_empty
     get path, params: { q: "event.updated" }, headers: headers
     expect(ids).to be_empty
-    get path, params: { q: "Updated an event" }, headers: headers
+    get path, params: { q: "updated #{event.title}" }, headers: headers
     expect(ids).to include(log.id)
     get path, params: { q: event.title }, headers: headers
     expect(ids).to include(log.id)

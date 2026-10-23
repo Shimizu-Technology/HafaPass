@@ -27,6 +27,7 @@ and operated-pilot gates still open at that time.
 | `:event_required` | Boolean: the logger must resolve an event when true. |
 | `:organization_fields` | Hash with `:before_data`, `:after_data`, and `:metadata` string field allowlists. |
 | `:template` | Plain English sentence describing the action without private interpolation. |
+| `:audience_variants` | Viewer-specific field allowlists and optional sentence templates, selected by `organization_definition(action, audience:)`. |
 
 `AuditActions.tenant?(action)` and `AuditActions.event_required?(action)` return
 those explicit booleans. `registered?(action)` distinguishes a registered key
@@ -45,7 +46,7 @@ definition = AuditActions.fetch(action)
 AuditActions.tenant?(action)
 AuditActions.event_required?(action)
 
-safe = AuditActions.organization_payload(action,
+safe = AuditActions.organization_payload(action, audience: :org_finance,
   before_data: log.before_data, after_data: log.after_data, metadata: log.metadata)
 # => { before_data: { "status" => "pending" },
 #      after_data: { "status" => "paid" }, metadata: { "amount_cents" => 100 } }
@@ -54,7 +55,10 @@ safe = AuditActions.organization_payload(action,
 `organization_payload` returns the three symbol column keys above, with string
 keys inside each projected hash. Only explicitly allowed scalar strings,
 numbers, booleans and nil survive; hashes, arrays and other objects are dropped.
-It preserves zero and false. Private audit columns are not changed. Admin-only
+It preserves zero and false. `audience` selects the viewer-specific allowlist;
+callers authorize rows separately. Organization search scans rendered sentences
+and displayed labels in bounded batches, including current event labels, never
+hidden stored metadata. Private audit columns are not changed. Admin-only
 and unknown actions return three empty hashes. Apply audience authorization
 before returning a projected row; an empty payload does not itself authorize a
 row. Request IDs, IP addresses, buyer contacts, freeform internal notes,
@@ -66,18 +70,25 @@ are domain identifiers, distinct from HTTP request IDs.
 
 Owners see every organization-visible definition. Managers see operational event,
 event staff, scanning, door, messaging and export-summary history. Finance staff
-see orders, refunds, payouts, fees, tax-status and finance-export history. The
-card-present outcome summaries are shared with managers and finance staff.
-Organization-wide team role and ownership changes are owner-only; event staff
-assignment changes are available to managers.
+see orders, refunds, payouts, fees, annual tax statements and finance exports.
+Door-sale summaries are shared, but Managers receive only event/ticket-count
+context and generic door outcomes: no transaction amounts, order identifiers,
+currency, provider status or lifecycle details. Owner and Finance retain the full
+money sentences. Ticket prices and other event configuration remain visible.
+Guest-list, waitlist-offer and catalog-fulfillment Manager snapshots also exclude
+order and order-item identifiers. Registry audience variants define these
+allowlists and sentences; JSON, CSV and search use the same projection.
+Organization team, ownership, verification, payout settings and tax settings are
+Owner-only. Event staff has its own `event_staff` area under event operations and
+is limited to the Manager's accessible events.
 
 Support lookups and notes, platform roles/settings/invitations, internal event
 policy holds, capability/readiness/pilot evidence, legal holds and privacy
 requests remain admin-only. Organizer verification exposes status and version
 fields to owners; it excludes notes, evidence, phone numbers and links. Payout
 setup exposes status flags, while internal readiness decisions remain admin-only.
-Tax B-notice and IRS evidence actions remain private; the withholding-status
-change has a finance-visible summary.
+Tax B-notice and IRS evidence actions remain private; withholding-status and
+tax-information changes are Owner-only.
 
 Audience and scope are independent. `support.note_created` is private but must
 resolve the organization from its order, ticket or event subject. Platform tax
@@ -118,7 +129,10 @@ Audience abbreviations: **O** = `org_owner`, **M** = `org_manager`, **F** =
 `before_data` and `after_data`; metadata fields apply only to `metadata`.
 `—` means an empty allowlist. The table includes finite supported callback and
 enum branches; it does not assert that each branch has occurred. Legacy action
-keys remain defined so old records can still be interpreted.
+keys remain defined so old records can still be interpreted. Fields and sentences
+below show the default Owner/Finance projection where those audiences are granted.
+Manager overrides for door, guest-list, waitlist-offer and catalog-fulfillment
+entries are described above and defined in the registry's audience variants.
 
 | Action | Logged | Area | Audience | Tenant | Event | Snapshot fields | Metadata fields | Sentence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -152,8 +166,8 @@ keys remain defined so old records can still be interpreted.
 | `catalog_item.created` | yes | tickets | O/M | yes | yes | `event_id`, `kind`, `price_cents`, `minimum_price_cents`, `maximum_price_cents`, `inventory_quantity`, `active`, `position` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Created a catalog item. |
 | `catalog_item.deleted` | yes | tickets | O/M | yes | yes | `event_id`, `kind`, `price_cents`, `minimum_price_cents`, `maximum_price_cents`, `inventory_quantity`, `active`, `position` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Deleted a catalog item. |
 | `catalog_item.updated` | yes | tickets | O/M | yes | yes | `event_id`, `kind`, `price_cents`, `minimum_price_cents`, `maximum_price_cents`, `inventory_quantity`, `active`, `position` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Updated a catalog item. |
-| `connected_account.onboarding_started` | yes | payout_settings | O/F | yes | no | `provider`, `status`, `charges_enabled`, `payouts_enabled`, `details_submitted`, `last_synced_at` | `event_title` | Started payout account setup. |
-| `connected_account.payout_details_updated` | yes | payout_settings | O/F | yes | no | `provider`, `status`, `charges_enabled`, `payouts_enabled`, `details_submitted`, `last_synced_at` | `event_title` | Updated payout account details. |
+| `connected_account.onboarding_started` | yes | payout_settings | O | yes | no | `provider`, `status`, `charges_enabled`, `payouts_enabled`, `details_submitted`, `last_synced_at` | `event_title` | Started payout account setup. |
+| `connected_account.payout_details_updated` | yes | payout_settings | O | yes | no | `provider`, `status`, `charges_enabled`, `payouts_enabled`, `details_submitted`, `last_synced_at` | `event_title` | Updated payout account details. |
 | `connected_account.readiness_approved` | yes | payout_settings | A | yes | no | — | — | Approved payout account readiness. |
 | `connected_account.readiness_recomputed` | yes | payout_settings | A | yes | no | — | — | Recomputed payout account readiness. |
 | `connected_account.readiness_revoked` | yes | payout_settings | A | yes | no | — | — | Revoked payout account readiness approval. |
@@ -192,10 +206,10 @@ keys remain defined so old records can still be interpreted.
 | `event_day_rehearsal.rejected` | yes | platform | A | yes | yes | — | — | Rejected event-day rehearsal evidence. |
 | `event_day_rehearsal.revoked` | yes | platform | A | yes | yes | — | — | Revoked event-day rehearsal approval. |
 | `event_day_rehearsal.submitted` | yes | platform | A | yes | yes | — | — | Submitted event-day rehearsal evidence. |
-| `event_staff.assigned` | yes | team | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Assigned event staff. |
-| `event_staff.invitation_revoked` | yes | team | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff invitation. |
-| `event_staff.revoked` | yes | team | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff assignment. |
-| `event_staff.updated` | yes | team | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Updated an event staff assignment. |
+| `event_staff.assigned` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Assigned event staff. |
+| `event_staff.invitation_revoked` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff invitation. |
+| `event_staff.revoked` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff assignment. |
+| `event_staff.updated` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Updated an event staff assignment. |
 | `event_waiver.created` | yes | attendees | O/M | yes | yes | `event_id`, `active`, `required` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Created an event waiver. |
 | `event_waiver.deleted` | yes | attendees | O/M | yes | yes | `event_id`, `active`, `required` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Deleted an event waiver. |
 | `event_waiver.updated` | yes | attendees | O/M | yes | yes | `event_id`, `active`, `required` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Updated an event waiver. |
@@ -251,7 +265,7 @@ keys remain defined so old records can still be interpreted.
 | `organizer.verification_request_updated` | yes | verification | O | yes | no | `verification_status`, `verification_requested_at`, `verification_request_version`, `verified_at` | `event_title` | Updated an organizer verification request. |
 | `organizer.verification_requested` | yes | verification | O | yes | no | `verification_status`, `verification_requested_at`, `verification_request_version`, `verified_at` | `event_title` | Requested organizer verification. |
 | `organizer.verification_updated` | yes | verification | O | yes | no | `verification_status`, `verification_requested_at`, `verification_request_version`, `verified_at` | `event_title` | Updated organizer verification status. |
-| `organizer_tax_information.updated` | yes | tax | O/F | yes | no | — | `certification_version`, `event_title` | Updated organizer tax information. |
+| `organizer_tax_information.updated` | yes | tax | O | yes | no | — | `certification_version`, `event_title` | Updated organizer tax information. |
 | `payment_readiness.approved` | yes | platform | A | yes | no | — | — | Approved payment readiness evidence. |
 | `payment_readiness.rejected` | yes | platform | A | yes | no | — | — | Rejected payment readiness evidence. |
 | `payment_readiness.revoked` | yes | platform | A | yes | no | — | — | Revoked payment readiness approval. |
@@ -365,7 +379,7 @@ keys remain defined so old records can still be interpreted.
 | `tax_information.b_notice_sent` | yes | tax | A | yes | no | — | — | Sent a tax B notice. |
 | `tax_information.irs_notice_received` | yes | tax | A | yes | no | — | — | Recorded receipt of a tax notice. |
 | `tax_information.second_b_notice_validated` | yes | tax | A | yes | no | — | — | Validated a second tax B notice. |
-| `tax_information.withholding_flag_changed` | yes | tax | O/F | yes | no | `backup_withholding_required`, `tin_matching_status` | `event_title` | Updated tax withholding status. |
+| `tax_information.withholding_flag_changed` | yes | tax | O | yes | no | `backup_withholding_required`, `tin_matching_status` | `event_title` | Updated tax withholding status. |
 | `tax_report.exported` | yes | tax | A | no | no | — | — | Exported platform tax reports. |
 | `ticket.admission_reconciled` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Reconciled a ticket admission. |
 | `ticket.cancelled` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Cancelled ticket. |

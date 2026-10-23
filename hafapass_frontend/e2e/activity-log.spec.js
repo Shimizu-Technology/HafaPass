@@ -12,7 +12,7 @@ const organization = { id: 7, name: 'Island Community Events', role: 'owner', ac
 const event = { id: 4, title: 'Reef Night — Celebrating Guam’s Music, Food and Community at Tumon Bay, with Island Performers and Guests from across the Marianas', url: '/dashboard/events/4' }
 const activity = { id: 31, occurred_at: '2026-10-23T18:00:00Z', sentence: 'Mina Cruz changed General Admission’s price from $20.00 to $25.00.', area: 'tickets', outcome: 'succeeded',
   actor: { name: 'Mina Cruz' }, event, target: null, changes: [{ field: 'Price', before: '$20', after: '$25' }] }
-const options = { actors: [{ id: 11, name: 'Mina Cruz', email: 'mina@example.test' }], areas: ['events', 'tickets', 'refunds', 'disputes', 'scanning', 'payouts'], events: [{ id: 4, title: event.title }] }
+const options = { actors: [{ id: 11, name: 'Mina Cruz', email: 'mina@example.test' }], areas: ['events', 'event_staff', 'tickets', 'refunds', 'disputes', 'scanning', 'payouts'], events: [{ id: 4, title: event.title }] }
 const csv = 'When,Activity\n2026-10-24,Mina Cruz changed General Admission’s price from $20.00 to $25.00.\n'
 const exportId = 'opaque.signed-export_9'
 
@@ -52,6 +52,7 @@ for (const width of [375, 1280]) {
       return json(route, { activity_logs: query.get('q') === 'no matches' ? [] : query.get('cursor')
         ? [{ ...activity, id: 33, sentence: 'Mina Cruz requested a $1,250.00 payout for Reef Night.', occurred_at: '2026-10-21T18:00:00Z', outcome: 'requested' }]
         : [activity,
+          { ...activity, id: 37, sentence: 'Mina Cruz assigned Ana Cruz as Door scanner for Reef Night.', area: 'event_staff', changes: [] },
           { ...activity, id: 34, sentence: 'Mina Cruz changed General Admission’s inventory from 100 to 150.', changes: [], event: { ...event, title: 'Reef Night' } },
           { ...activity, id: 35, sentence: 'Stripe reported a dispute on order HP-1042 for $45.00.', area: 'disputes', outcome: 'unknown', changes: [], event: { ...event, title: 'Reef Night' } },
           { ...activity, id: 36, sentence: 'Noah Santos undid check-in for ticket #482 at Reef Night.', area: 'scanning', changes: [], event: { ...event, title: 'Reef Night' } },
@@ -71,6 +72,7 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Yesterday', exact: true })).toBeVisible()
     await expect(page.getByText('Activity is recorded from Oct 22, 2026. Earlier changes aren’t shown.')).toBeVisible()
+    await expect(page.getByText('Event staff', { exact: true }).last()).toBeVisible()
     await page.getByText('Details for activity 31', { exact: true }).click()
     await expect(page.getByText('Before: $20').filter({ visible: true })).toBeVisible()
     await expect(page.getByText('After: $25').filter({ visible: true })).toBeVisible()
@@ -130,7 +132,7 @@ for (const width of [375, 1280]) {
         event: { ...event, url: '/admin/events/4' }, organization: { id: 7, name: organization.name, url: '/admin/organizations/7' },
         actor: { name: 'Mina Cruz', email: `${'long-email'.repeat(12)}@example.test` }, target: { type: 'TicketType', id: 9 },
         before_data: { price_cents: 2000 }, after_data: { price_cents: 2500 }, metadata: { source: 'admin', note: '<script>alert(1)</script>' }, request_id: 'req-activity-31' }],
-      meta: { page: 1, total_pages: 1, total_count: 1 }, areas: ['events', 'tickets', 'refunds', 'disputes', 'scanning', 'payouts'], filters: { ...options, actions: ['ticket_type.updated'],
+      meta: { page: 1, total_pages: 1, total_count: 1 }, areas: ['events', 'event_staff', 'tickets', 'refunds', 'disputes', 'scanning', 'payouts'], filters: { ...options, actions: ['ticket_type.updated'],
         organizations: [{ id: 7, name: organization.name }, { id: 8, name: 'Other Organizer' }] } })
     })
     await page.route('**/api/v1/admin/activity_log_exports', route => {
@@ -223,6 +225,13 @@ for (const width of [375, 1280]) {
     await expect(dialog.getByText(/up to 24 hours/)).toBeVisible()
     const matrix = width >= 1024 ? dialog.getByRole('table') : dialog.getByLabel('Role permissions')
     await expect(matrix).toBeVisible()
+    if (width >= 1024) {
+      await expect(dialog.getByRole('cell', { name: 'Event activity, without payment amounts', exact: true })).toBeVisible()
+    } else {
+      await dialog.getByRole('combobox', { name: 'Role' }).selectOption('manager')
+      await expect(matrix.getByText('Event activity, without payment amounts', { exact: true })).toBeVisible()
+      await dialog.getByRole('combobox', { name: 'Role' }).selectOption('finance')
+    }
     if (width >= 1024) {
       await page.keyboard.press('Tab')
       await expect(dialog.getByRole('region', { name: 'Role comparison table' })).toBeFocused()
