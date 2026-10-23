@@ -28,6 +28,106 @@ RSpec.describe Commerce::RefundCreator do
     allow(event).to receive(:notify_waitlist_if_available)
   end
 
+  it "audits buyer intent before submission and books the scoped outcome once on replay" do
+    buyer = create(:user)
+    baseline_transactions = Refund.connection.open_transactions
+    allow(StripeService).to receive(:refund_payment) do
+      refund = order.refunds.find_by!(idempotency_key: "buyer-audit")
+      expect(Refund.connection.open_transactions).to eq(baseline_transactions)
+      expect(AuditLog.where(auditable: refund).pluck(:action)).to contain_exactly(
+        "refund.requested", "refund.submission_requested")
+      expect(AuditLog.where(auditable: refund)).to all(have_attributes(
+        actor_user_id: buyer.id, organization_id: event.organization_id, event_id: event.id,
+        outcome: "requested"))
+      OpenStruct.new(id: "re_buyer_audit", status: "succeeded")
+    end
+
+    2.times do
+      described_class.call(order: order, amount_cents: 1000, requested_by: buyer, idempotency_key: "buyer-audit")
+    end
+    refund = order.refunds.sole
+    expect(AuditLog.where(auditable: refund).pluck(:action)).to contain_exactly(
+      "refund.requested", "refund.submission_requested", "refund.succeeded")
+    expect(AuditLog.find_by!(auditable: refund, action: "refund.succeeded")).to have_attributes(
+      outcome: "succeeded", source: "provider", organization_id: event.organization_id, event_id: event.id)
+    expect(StripeService).to have_received(:refund_payment).once
+  end
+
+  it "rolls back a reservation and never calls the provider when its intent audit fails" do
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "refund.requested"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    allow(StripeService).to receive(:refund_payment)
+    expect do
+      described_class.call(order: order, amount_cents: 1000, idempotency_key: "broken-intent-audit")
+    end.to raise_error(ActiveRecord::RecordInvalid)
+    expect(order.refunds.reload).to be_empty
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "cannot reuse another organization's refund key or attach audit history to that tenant" do
+    described_class.call(order: order, amount_cents: 1000, idempotency_key: "tenant-refund-key")
+    other_order = create(:order)
+    create(:payment, :succeeded, order: other_order, provider_payment_id: "sim_pi_other_tenant")
+    allow(StripeService).to receive(:refund_payment)
+    expect do
+      described_class.call(order: other_order, amount_cents: 1000, idempotency_key: "tenant-refund-key")
+    end.to raise_error(ActiveRecord::RecordInvalid, /Idempotency key has already been taken/)
+    expect(other_order.refunds.reload).to be_empty
+    expect(AuditLog.where(action: "refund.requested", organization_id: other_order.event.organization_id)).not_to exist
+    expect(AuditLog.where(action: "refund.requested", organization_id: event.organization_id).count).to eq(1)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "retains unknown results without success or raw errors and reconciles the same operation once" do
+    allow(StripeService).to receive(:refund_payment).and_raise(IOError, "private-provider-error")
+    expect do
+      described_class.call(order: order, amount_cents: 1000, idempotency_key: "unknown-audit")
+    end.to raise_error(described_class::RefundError, /unknown/)
+    refund = order.refunds.sole
+    allow(StripeService).to receive(:find_refund).and_return(nil)
+    expect do
+      described_class.call(order: order, amount_cents: 1000, idempotency_key: "unknown-audit")
+    end.to raise_error(described_class::RefundError, /unknown/)
+    unknown = AuditLog.find_by!(auditable: refund, action: "refund.unknown")
+    expect(unknown).to have_attributes(outcome: "unknown", source: "provider",
+      organization_id: event.organization_id, event_id: event.id)
+    expect(unknown.attributes.to_json).not_to include("private-provider-error")
+    expect(AuditLog.where(auditable: refund, action: "refund.succeeded")).not_to exist
+
+    response = OpenStruct.new(id: "re_recovered_audit", status: "succeeded")
+    2.times { described_class.reconcile_refund!(refund: refund, provider_refund: response) }
+    expect(AuditLog.where(auditable: refund, action: "refund.succeeded").count).to eq(1)
+    expect(AuditLog.where(auditable: refund, action: "refund.unknown").count).to eq(1)
+    expect(order.reload.refunded_cents).to eq(1000)
+  end
+
+  it "records an explicit provider rejection as failure without inventing returned money" do
+    allow(StripeService).to receive(:refund_payment).and_raise(StripeService::PaymentError, "private-rejection")
+    expect do
+      described_class.call(order: order, amount_cents: 1000, idempotency_key: "rejected-audit")
+    end.to raise_error(described_class::RefundError, /rejected/)
+    refund = order.refunds.sole
+    audit = AuditLog.find_by!(auditable: refund, action: "refund.failed")
+    expect(audit).to have_attributes(outcome: "failed", source: "provider")
+    expect(audit.attributes.to_json).not_to include("private-rejection")
+    expect(order.reload.refunded_cents).to eq(0)
+  end
+
+  it "rolls back successful allocations and order changes if the outcome audit cannot persist" do
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_audit_rollback", status: "succeeded"))
+    allow(AuditLogger).to receive(:record!).and_call_original
+    allow(AuditLogger).to receive(:record!).with(hash_including(action: "refund.succeeded"))
+      .and_raise(ActiveRecord::RecordInvalid.new(AuditLog.new))
+    expect do
+      described_class.call(order: order, amount_cents: 1000, idempotency_key: "outcome-rollback")
+    end.to raise_error(ActiveRecord::RecordInvalid)
+    expect(order.refunds.sole).to be_pending
+    expect(order.reload).to be_completed
+    expect(order.refunds.sole.refund_items).to be_empty
+    expect(AuditLog.where(action: "order.partially_refunded", auditable: order)).not_to exist
+  end
+
   it "records multiple partial refunds as additive item allocations" do
     first = described_class.call(order: order, amount_cents: 1000, reason: "first", idempotency_key: "refund-one")
     second = described_class.call(order: order, amount_cents: 500, reason: "second", idempotency_key: "refund-two")
@@ -375,6 +475,9 @@ RSpec.describe Commerce::RefundCreator do
     expect(result).to be_pending
     expect(result.failure_code).to be_nil
     expect(result.provider_refund_id).to eq("re_ack")
+    expect(AuditLog.find_by!(auditable: result, action: "refund.pending")).to have_attributes(
+      source: "provider", outcome: "requested")
+    expect(AuditLog.where(auditable: result, action: "refund.succeeded")).not_to exist
   end
 
   it "treats a legacy pending reservation without a recorded response as uncertain after the replay window" do

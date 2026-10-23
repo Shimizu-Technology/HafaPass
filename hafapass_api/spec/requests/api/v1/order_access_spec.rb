@@ -123,6 +123,8 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:ok)
     expect(ticket.reload).to be_cancelled
     expect(free_order.reload).to be_cancelled
+    expect(AuditLog.find_by!(action: "order.cancelled", auditable: free_order)).to have_attributes(
+      event_id: event.id, organization_id: event.organization_id, outcome: "succeeded")
     expect(free_type.reload.quantity_sold).to eq(0)
     expect(TicketCredential.find_scan(credential)).to be_nil
 
@@ -192,6 +194,9 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("decision" => "refund_requested", "refund_status" => "pending", "reconciliation_required" => true)
     refund = order.refunds.sole
+    intent = AuditLog.find_by!(action: "refund.buyer_requested", auditable: change.event_change_responses.sole)
+    expect(intent).to have_attributes(source: "user", outcome: "requested", event_id: event.id,
+      organization_id: event.organization_id, actor_user_id: nil)
     expect(response.parsed_body["refund_id"]).to eq(refund.id)
     expect(ticket.reload).to be_issued
 
@@ -203,6 +208,9 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response.parsed_body).to include("refund_id" => refund.id, "refund_status" => "failed", "reconciliation_required" => false)
     expect(StripeService).to have_received(:refund_payment).once
     expect(order.refunds.count).to eq(1)
+    expect(AuditLog.where(action: "refund.buyer_requested", auditable: change.event_change_responses.sole).count).to eq(1)
+    expect(AuditLog.find_by!(action: "refund.failed", auditable: refund)).to have_attributes(
+      source: "provider", outcome: "failed", event_id: event.id, organization_id: event.organization_id)
     expect(ticket.reload).to be_issued
   end
 
@@ -225,6 +233,10 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response).to have_http_status(:created)
     expect(response.parsed_body).to include(first_outcome.merge("refund_status" => "succeeded", "reconciliation_required" => false))
     expect(StripeService).to have_received(:refund_payment).once
+
+    audits = AuditLog.where(auditable: order.refunds.sole)
+    expect(audits.pluck(:action)).to contain_exactly("refund.requested", "refund.submission_requested", "refund.succeeded")
+    expect(audits).to all(have_attributes(event_id: event.id, organization_id: event.organization_id))
 
     other = create(:ticket, :cancelled, order: order, event: event, ticket_type: ticket_type)
     post "/api/v1/orders/#{order.id}/tickets/#{other.id}/cancel", headers: headers

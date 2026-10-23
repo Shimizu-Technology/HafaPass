@@ -28,15 +28,6 @@ module Api
             **options
           )
 
-          AuditLogger.record!(
-            action: "refund.created",
-            auditable: refund,
-            actor: current_user,
-            organization: current_organization,
-            metadata: { order_id: @order.id, amount_cents: refund.amount_cents },
-            request: request
-          )
-
           render json: refund_json(refund), status: :created
         rescue Commerce::RefundCreator::RefundError => e
           outcome = Commerce::RefundOutcome.call(order: @order, idempotency_key: request.headers["Idempotency-Key"])

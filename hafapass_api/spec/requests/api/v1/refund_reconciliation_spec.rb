@@ -139,7 +139,9 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(refund.reload).to be_pending
     expect(RefundReconciliationQueue.call.fetch(:items)).to include(include(
-      id: refund.id, unable_reason: "Multiple matches; manual review"))
+      id: refund.id, unable_reason: "Provider refund lookup is ambiguous; manual finance review is required"))
+    expect(AuditLog.where(action: "refund_reconciliation.unable", auditable: refund).sole.metadata)
+      .not_to have_value("Multiple matches; manual review")
   end
 
   it "does not retry a failed refund when Stripe says the earlier transfer succeeded" do

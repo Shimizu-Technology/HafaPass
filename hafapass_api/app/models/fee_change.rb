@@ -73,8 +73,17 @@ class FeeChange < ApplicationRecord
         settings.update!(change.new_terms)
         change.update!(activated_at: Time.current)
         AuditLogger.record!(action: "site_settings.fee_terms_activated", auditable: settings,
+          source: "system", outcome: "succeeded", deduplication_key: "fee_change:#{change.id}:activated",
           before_data: change.old_terms, after_data: change.new_terms,
           metadata: { fee_change_id: change.id, effective_at: change.effective_at.iso8601 })
+        organization_ids = (change.notices.pluck(:organization_id) + affected_events.distinct.pluck(:organization_id)).uniq
+        Organization.where(id: organization_ids).find_each do |organization|
+          AuditLogger.record!(action: "organization.fee_terms_activated", auditable: change,
+            organization: organization, source: "system", outcome: "succeeded",
+            deduplication_key: "fee_change:#{change.id}:organization:#{organization.id}:activated",
+            before_data: change.old_terms, after_data: change.new_terms,
+            metadata: { fee_change_id: change.id, effective_at: change.effective_at.iso8601 })
+        end
       end
     end
   end

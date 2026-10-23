@@ -82,6 +82,11 @@ module Commerce
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
           order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
+          AuditLogger.record!(action: "order.completed", auditable: order,
+            organization: order.event.organization, event: order.event, outcome: "succeeded",
+            deduplication_key: "order:#{order.id}:completed",
+            after_data: { status: order.status }, metadata: { payment_id: payment&.id },
+            **(webhook_event ? { source: "provider" } : {}))
           record_marketplace_purchase!(order)
           EmailService.send_order_confirmation_async(order)
           completed_now = true
@@ -217,6 +222,11 @@ module Commerce
           expired_at: expired ? at : nil,
           expires_at: nil
         )
+        AuditLogger.record!(action: "order.#{expired ? 'expired' : 'cancelled'}", auditable: order,
+          organization: order.event.organization, event: order.event, outcome: "succeeded",
+          deduplication_key: "order:#{order.id}:#{order.status}",
+          before_data: { status: "pending" }, after_data: { status: order.status },
+          metadata: { reason: reason })
       end
 
       def issue_tickets!(order)

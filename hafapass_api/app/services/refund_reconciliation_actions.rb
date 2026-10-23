@@ -35,7 +35,8 @@ class RefundReconciliationActions
   rescue StripeService::AmbiguousRefund => e
     raise if @system
 
-    audit!("refund_reconciliation.unable", @record, { reason: e.message }) if @type == "refund"
+    audit!("refund_reconciliation.unable", @record,
+      { reason: "Provider refund lookup is ambiguous; manual finance review is required", error_class: e.class.name }) if @type == "refund"
     raise ActionError, e.message
   rescue Stripe::RateLimitError, StripeService::BudgetExceeded => e
     raise if @system
@@ -216,7 +217,23 @@ class RefundReconciliationActions
   end
 
   def audit!(action, auditable, metadata)
+    outcome = case action
+    when "refund_reconciliation.action_attempted", "refund_reconciliation.retry",
+        "refund_reconciliation.cancellation_retry", "refund_reconciliation.request_executed" then "requested"
+    when "refund_reconciliation.unable" then "unknown"
+    when "refund_reconciliation.resynced"
+      if @record.succeeded?
+        "succeeded"
+      elsif @record.failed? || @record.cancelled?
+        "failed"
+      else
+        "requested"
+      end
+    else "succeeded"
+    end
     AuditLogger.record!(action: action, auditable: auditable, actor: @actor,
-      organization: event.organization, metadata: metadata, request: @request)
+      organization: event.organization, event: event, metadata: metadata, request: @request,
+      source: @system ? "system" : (@actor&.admin? ? "admin" : "user"), outcome: outcome,
+      deduplication_key: "refund_reconciliation:#{@type}:#{auditable.id}:#{action}:#{Digest::SHA256.hexdigest(JSON.generate(metadata.stringify_keys.sort.to_h))}")
   end
 end

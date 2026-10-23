@@ -338,11 +338,18 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
     end
 
-    response = existing_response || change.event_change_responses.create!(
-      order: @order,
-      decision: decision,
-      responded_at: Time.current
-    )
+    response = existing_response || EventChangeResponse.transaction do
+      recorded_response = change.event_change_responses.create!(
+        order: @order, decision: decision, responded_at: Time.current)
+      if decision == "refund_requested"
+        AuditLogger.record!(action: "refund.buyer_requested", auditable: recorded_response,
+          actor: @current_user, organization: @order.event.organization, event: @order.event,
+          source: @current_user&.admin? ? "admin" : "user", outcome: "requested",
+          deduplication_key: "event_change_response:#{recorded_response.id}:refund_requested",
+          metadata: { order_id: @order.id, event_change_id: change.id }, request: request)
+      end
+      recorded_response
+    end
 
     if decision == "refund_requested"
       refundable_tickets = @order.tickets.where(status: :issued).to_a
@@ -428,6 +435,10 @@ class Api::V1::OrdersController < ApplicationController
       )
       unless ticket.order.tickets.where.not(id: ticket.id).where.not(status: :cancelled).exists?
         ticket.order.update!(status: :cancelled)
+        AuditLogger.record!(action: "order.cancelled", auditable: ticket.order, actor: @current_user,
+          organization: ticket.event.organization, event: ticket.event, outcome: "succeeded",
+          deduplication_key: "order:#{ticket.order_id}:cancelled",
+          after_data: { status: "cancelled" }, metadata: { reason: reason }, request: request)
       end
     end
     ticket.event.notify_waitlist_if_available

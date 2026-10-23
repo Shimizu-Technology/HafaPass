@@ -74,7 +74,7 @@ module Commerce
       fail_refund!(refund, "provider_error", e.message)
       raise RefundError, "Refund provider rejected the request"
     rescue Stripe::StripeError, IOError, Timeout::Error => e
-      refund&.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      mark_unknown!(refund, "provider_result_unknown", e.message)
       raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
 
@@ -191,6 +191,7 @@ module Commerce
         selected_tickets&.each do |ticket|
           refund.refund_tickets.create!(ticket: ticket, amount_cents: ticket.refundable_cents)
         end
+        audit_refund!(refund, "requested", outcome: "requested")
         refund
       end
     rescue ActiveRecord::RecordNotUnique
@@ -221,6 +222,7 @@ module Commerce
         # A process crash must not make an attempted operation look unsubmitted.
         if mark_unknown
           refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund provider response is pending")
+          audit_refund!(refund, "submission_requested", outcome: "requested")
         end
         true
       end
@@ -273,7 +275,7 @@ module Commerce
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError
       raise
     rescue StandardError => e
-      refund.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      mark_unknown!(refund, "provider_result_unknown", e.message)
       Sentry.capture_exception(e)
       raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
@@ -283,11 +285,12 @@ module Commerce
       return response if response
       return if refund.created_at > PROVIDER_REPLAY_WINDOW.ago
 
+      mark_unknown!(refund, "provider_result_unknown", "Provider replay window expired without a matching refund")
       raise RefundError, "Refund provider result is unknown; finance must reconcile before another submission"
     rescue RefundError
       raise
     rescue StandardError => e
-      refund.update!(failure_code: "provider_result_unknown", failure_message: e.message)
+      mark_unknown!(refund, "provider_result_unknown", e.message)
       Sentry.capture_exception(e)
       raise RefundError, "Refund provider result is unknown; provider lookup failed, reconcile before retrying"
     end
@@ -312,7 +315,31 @@ module Commerce
 
         refund.refund_tickets.update_all(released_at: Time.current)
         refund.update!(status: status, failed_at: Time.current, failure_code: code, failure_message: message)
+        audit_refund!(refund, "failed", outcome: "failed", source: "provider")
       end
+    end
+
+    def mark_unknown!(refund, code, message)
+      return unless refund
+
+      refund.with_lock do
+        return refund unless refund.pending?
+
+        refund.update!(failure_code: code, failure_message: message)
+        audit_refund!(refund, "unknown", outcome: "unknown", source: "provider")
+      end
+    end
+
+    def audit_refund!(refund, action, outcome:, source: nil)
+      options = {}
+      options[:source] = source || "provider" if source || provider_refund
+      AuditLogger.record!(action: "refund.#{action}", auditable: refund, actor: requested_by,
+        organization: refund.order.event.organization, event: refund.order.event,
+        outcome: outcome, deduplication_key: "refund:#{refund.id}:#{action}",
+        after_data: refund.attributes.slice("status", "provider_refund_id", "failure_code"),
+        metadata: { order_id: refund.order_id, payment_id: refund.payment_id,
+          amount_cents: refund.amount_cents, currency: refund.currency,
+          manual_record: cash_return.present? || manual_card_return.present? }, **options)
     end
 
     def finalize_refund!(refund, provider_refund)
@@ -334,19 +361,20 @@ module Commerce
           if contradictory
             ReconciliationException.create!(order: refund.order, payment: refund.payment,
               code: "refund_terminal_status_conflict")
+            audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider")
           end
           return refund
         end
 
         unless %w[succeeded pending requires_action failed canceled cancelled].include?(provider_status) && provider_refund.respond_to?(:id) && provider_refund.id.present?
-          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund response is incomplete")
+          mark_unknown!(refund, "provider_result_unknown", "Refund response is incomplete")
           validation_error = "Refund provider result is unknown; reconcile before retrying"
           next
         end
 
         if (provider_refund.respond_to?(:amount) && provider_refund.amount.to_i != refund.amount_cents) ||
             (provider_refund.respond_to?(:currency) && provider_refund.currency.to_s.downcase != refund.currency)
-          refund.update!(failure_code: "provider_result_mismatch", failure_message: "Refund response does not match the reservation")
+          mark_unknown!(refund, "provider_result_mismatch", "Refund response does not match the reservation")
           ReconciliationException.create!(order: refund.order, payment: refund.payment, code: "refund_operation_mismatch")
           validation_error = "Refund provider result does not match the reservation; reconcile before retrying"
           next
@@ -364,7 +392,10 @@ module Commerce
             status: provider_status == "failed" ? :failed : :cancelled)
           return refund.reload
         end
-        return refund.reload unless provider_status == "succeeded"
+        unless provider_status == "succeeded"
+          audit_refund!(refund, "pending", outcome: "requested", source: "provider")
+          return refund.reload
+        end
 
         refund.update!(status: :succeeded, succeeded_at: Time.current, failure_code: nil, failure_message: nil)
         allocate_items!(refund)
@@ -384,6 +415,15 @@ module Commerce
           stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+        audit_refund!(refund, "succeeded", outcome: "succeeded",
+          source: cash_return || manual_card_return ? nil : "provider")
+        AuditLogger.record!(action: "order.#{full_refund ? 'refunded' : 'partially_refunded'}",
+          auditable: refund.order, actor: requested_by, organization: refund.order.event.organization,
+          event: refund.order.event, outcome: "succeeded",
+          deduplication_key: "order:#{refund.order_id}:refund:#{refund.id}",
+          after_data: { status: refund.order.status, refund_amount_cents: succeeded_total },
+          metadata: { refund_id: refund.id, amount_cents: refund.amount_cents },
+          **(cash_return || manual_card_return ? {} : { source: "provider" }))
         StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
         if full_refund
           release_fully_refunded_inventory!(refund)
