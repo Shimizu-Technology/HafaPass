@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Plain-language names and one-line descriptions for every role a person can
-# be given. The frontend keeps the same copy in src/utils/roles.js.
+# be given. Labels and comparison notes are exported by script/generate_role_matrix.rb.
 module OrganizationRoles
   LABELS = {
     "owner" => "Owner",
@@ -30,6 +30,14 @@ module OrganizationRoles
   # Roles that can be invited straight onto one event from its Team page.
   EVENT_ASSIGNMENT_DESCRIPTION = "Event assignments add access for this event only."
   EVENT_STAFF_INVITE_ROLES = %w[box_office scanner].freeze
+
+  ROLE_MATRIX_NOTES = {
+    "scope" => "Organization roles apply across the organization, except Box office and Door scanner, which require assigned events. Event managers have access to their assigned events only; creating, copying and repeating events requires an organization Manager or Owner role.",
+    "manager" => "Managers can't cancel events or move money.",
+    "finance" => "Finance sees buyer contact details in refunds and finance exports, but does not get the attendee contact list.",
+    "assignments" => EVENT_ASSIGNMENT_DESCRIPTION,
+    "offline" => "Scanner phones that are offline keep working until they reconnect or for up to 24 hours. Removing access stops them as soon as they reconnect."
+  }.freeze
 
   module_function
 

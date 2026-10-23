@@ -3,11 +3,11 @@ import { roleDescription, roleLabel } from '../../utils/roles'
 
 // Radio cards: every option shows its one-line description, so the choice
 // is understood before it is made. Use where a role is picked for someone new.
-export function RoleRadioGroup({ legend, roles, value, onChange, disabled = false, name }) {
+export function RoleRadioGroup({ legend, roles, value, onChange, disabled = false, name, action }) {
   const fallbackName = useId()
   return (
     <fieldset disabled={disabled} className="min-w-0">
-      <legend className="text-sm font-medium text-neutral-900">{legend}</legend>
+      <legend className={`${action ? 'w-full ' : ''}text-sm font-medium text-neutral-900`}>{action ? <span className="flex min-h-11 flex-wrap items-center justify-between gap-x-3">{legend}{action}</span> : legend}</legend>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {roles.map(role => (
           <label key={role} className={`flex min-h-11 cursor-pointer gap-3 rounded-xl border p-3 transition-colors duration-150 ease-out-strong ${value === role ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 bg-white [@media(hover:hover)]:hover:border-neutral-300'}`}>
@@ -25,7 +25,7 @@ export function RoleRadioGroup({ legend, roles, value, onChange, disabled = fals
 
 // A compact select for changing an existing person's role; the selected
 // role's description sits underneath and is announced with the control.
-export function RoleSelect({ label, roles, value, onChange, disabled = false, className = '' }) {
+export function RoleSelect({ label, roles, value, onChange, disabled = false, className = '', action }) {
   const descriptionId = useId()
   return (
     <div className={`min-w-0 ${className}`}>
@@ -33,6 +33,7 @@ export function RoleSelect({ label, roles, value, onChange, disabled = false, cl
         {roles.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}
       </select>
       <p id={descriptionId} className="mt-1 text-xs text-content-muted">{roleDescription(value)}</p>
+      {action}
     </div>
   )
 }

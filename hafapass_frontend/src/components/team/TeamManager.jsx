@@ -2,6 +2,7 @@ import { Copy, Crown, Mail, RotateCw, Trash2, UserPlus, Users } from 'lucide-rea
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from '../Dialog'
 import { RoleRadioGroup, RoleSelect } from './RoleChoice'
+import RoleComparison, { CompareRolesButton } from './RoleComparison'
 import { INVITATION_STATUS, TEAM_ROLES, OFFLINE_SCANNER_ACCESS_NOTE, accessExpiryLabel, emailDeliveryLabel, invitationUrl, roleLabel } from '../../utils/roles'
 
 const toneClass = {
@@ -47,7 +48,7 @@ export function InvitationLinkPanel({ url, email, onDismiss }) {
 // Pass `memberships` and `onMembershipsChange` when the caller loads the list
 // itself (Settings loads it alongside its own access check); otherwise the
 // list is loaded here.
-export default function TeamManager({ basePath, request, canTransfer = false, heading = 'Team', description, inviteRoles = TEAM_ROLES, onChanged, memberships: controlled, onMembershipsChange }) {
+export default function TeamManager({ basePath, request, canTransfer = false, heading = 'Team', description, inviteRoles = TEAM_ROLES, onChanged, memberships: controlled, onMembershipsChange, compareRoles = false }) {
   const [ownMemberships, setOwnMemberships] = useState([])
   const isControlled = Array.isArray(controlled)
   const memberships = isControlled ? controlled : ownMemberships
@@ -68,6 +69,8 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
   const [notice, setNotice] = useState(null)
   const [link, setLink] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [comparingRoles, setComparingRoles] = useState(false)
+  const comparisonAction = compareRoles ? <CompareRolesButton onClick={() => setComparingRoles(true)} /> : null
 
   const load = useCallback(async () => {
     if (isControlled) return
@@ -152,7 +155,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
           Teammate email
           <input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="input mt-1" placeholder="teammate@example.com" autoComplete="off" disabled={busy} />
         </label>
-        <RoleRadioGroup legend="Role" roles={inviteRoles} value={role} onChange={setRole} disabled={busy} name="team-invite-role" />
+        <RoleRadioGroup legend="Role" roles={inviteRoles} value={role} onChange={setRole} disabled={busy} name="team-invite-role" action={comparisonAction} />
         <button disabled={busy || !email.trim()} className="btn-primary w-full gap-2 sm:w-auto"><UserPlus aria-hidden="true" className="h-4 w-4" />{busy ? 'Sending…' : 'Invite'}</button>
       </form>
 
@@ -179,7 +182,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
                 </div>
                 <div className="flex flex-wrap items-start gap-2 lg:justify-end">
                   {isOwner ? <span className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 text-sm font-semibold text-emerald-800"><Crown aria-hidden="true" className="h-4 w-4" />Owner</span>
-                    : <RoleSelect label={`Role for ${membership.email}`} roles={TEAM_ROLES} value={membership.role} disabled={busy} onChange={next => changeRole(membership, next)} className="w-full sm:w-56" />}
+                    : <RoleSelect label={`Role for ${membership.email}`} roles={TEAM_ROLES} value={membership.role} disabled={busy} onChange={next => changeRole(membership, next)} className="w-full sm:w-56" action={comparisonAction} />}
                   {pending && <button type="button" disabled={busy} onClick={() => resend(membership)} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><RotateCw aria-hidden="true" className="h-4 w-4" />Resend</button>}
                   {statusOf(membership) === 'pending' && <button type="button" disabled={busy} onClick={() => copyLink(membership)} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><Copy aria-hidden="true" className="h-4 w-4" />Copy link</button>}
                   {canTransfer && !isOwner && statusOf(membership) === 'accepted' && <button type="button" disabled={busy} onClick={() => setConfirm({ kind: 'transfer', membership })} className="btn-secondary gap-2 !px-3 !py-2 text-sm"><Crown aria-hidden="true" className="h-4 w-4" />Make owner</button>}
@@ -198,6 +201,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
         </details>
       )}
 
+      {comparingRoles && <RoleComparison onClose={() => setComparingRoles(false)} />}
       {confirm && (
         <Dialog labelledBy="team-confirm-title" onClose={() => setConfirm(null)} busy={busy} className="max-w-md">
           <h2 id="team-confirm-title" className="text-lg font-semibold text-neutral-900">

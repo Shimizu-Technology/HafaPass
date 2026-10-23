@@ -217,7 +217,7 @@ function SettingsPageSession({ identity }) {
               <button type="submit" className="btn-primary" disabled={busy}>Save marketing address</button>
             </form>
           </section>}
-          {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team"
+          {canManageTeam && <TeamManager basePath="/organizer/memberships" request={teamRequest} canTransfer={canTransfer} heading="Organization team" compareRoles
             memberships={memberships} onMembershipsChange={setMemberships} />}
           {canManagePayouts && <TaxInformationSection request={teamRequest}
             mailingAddress={accounts.find(account => account.provider === 'check')?.payout_details?.mailing_address || ''}
