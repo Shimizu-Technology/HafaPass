@@ -22,29 +22,29 @@ export function formatEventDate(value, timeZone = DEFAULT_EVENT_TIME_ZONE, optio
   })
 }
 
-export function formatEventTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
+function formatZoned(value, timeZone, options) {
   const date = validDate(value)
   if (!date) return ''
-  return date.toLocaleTimeString(activeIntlLocale(), {
-    timeZone,
-    hour: 'numeric',
-    minute: '2-digit',
-    ...options,
-  })
+  const { locale = activeIntlLocale(), ...formatOptions } = options
+  return new Intl.DateTimeFormat(locale, { ...formatOptions, timeZone, timeZoneName: 'short' })
+    .formatToParts(date)
+    .map(part => part.type === 'timeZoneName' && timeZone === DEFAULT_EVENT_TIME_ZONE ? 'Guam time' : part.value)
+    .join('').replaceAll('\u202f', ' ')
+}
+
+export function formatEventTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
+  return formatZoned(value, timeZone, { hour: 'numeric', minute: '2-digit', ...options })
 }
 
 export function formatEventDateTime(value, timeZone = DEFAULT_EVENT_TIME_ZONE, options = {}) {
-  const date = validDate(value)
-  if (!date) return ''
-  return date.toLocaleString(activeIntlLocale(), {
-    timeZone,
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    ...options,
+  return formatZoned(value, timeZone, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', ...options,
   })
+}
+
+// Finance and platform operations use Guam time, regardless of browser locale.
+export function formatPlatformDateTime(value) {
+  return formatEventDateTime(value, DEFAULT_EVENT_TIME_ZONE, { locale: 'en-US' })
 }
 
 export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_ZONE) {

@@ -15,6 +15,16 @@ const show = (profile = base, props = {}) => {
 }
 
 describe('OrganizerSetupChecklist', () => {
+  it.each(['eBay_Events', 'island_nights'])('preserves the business name %s in the profile status', business_name => {
+    show({ ...base, business_name })
+    expect(screen.getByText(`${business_name} — shown on your event pages`)).toBeInTheDocument()
+  })
+
+  it('formats an unknown payout enum before composing its status', () => {
+    show({ ...base, setup_progress: { ...base.setup_progress, payout_method: 'future_provider' } })
+    expect(screen.getByText('Future provider saved — waiting for HåfaPass finance review')).toBeInTheDocument()
+  })
+
   it('walks the steps in order and marks the next one', () => {
     show()
     const steps = screen.getAllByRole('listitem')

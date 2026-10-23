@@ -178,7 +178,7 @@ function PilotCloseoutDialogSession({ event, onComplete }) {
 
   const triggerLabel = event.pilot_closeout?.pending_submission ? 'Review Gate J closeout' :
     event.pilot_closeout?.approved ? `Gate J · ${event.pilot_closeout.expansion_decision?.replaceAll('_', ' ')}` :
-      event.pilot_closeout?.approval_recorded ? 'Revalidate Gate J closeout' : 'Prepare Gate J closeout'
+      event.pilot_closeout?.approval_recorded ? 'Revalidate Gate J closeout' : 'Prepare pilot closeout'
 
   return <>
     <button ref={triggerRef} type="button" onClick={openCaptured} className="min-h-11 text-left text-xs font-semibold text-violet-800 underline decoration-violet-300 underline-offset-4 hover:text-violet-950">{triggerLabel}</button>

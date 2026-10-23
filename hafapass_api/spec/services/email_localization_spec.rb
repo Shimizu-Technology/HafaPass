@@ -14,7 +14,7 @@ RSpec.describe "Buyer email language" do
   def store_korean_copy
     I18n.backend.eager_load! # load the committed files first so these test strings win
     I18n.backend.store_translations(:ko, emails: {
-      formats: { event_datetime: "%{year}년 %{month_name} %{day}일 %{meridiem} %{hour}:%{minute}",
+      formats: { event_datetime: "%{year}년 %{month_name} %{day}일 %{meridiem} %{hour}:%{minute} %{zone}",
                  month_names: (1..12).map { |month| "#{month}월" }, am: "오전", pm: "오후" },
       order_confirmation: { subject: "HåfaPass 티켓 - %{event}", heading: "티켓이 확정되었습니다!",
                             total: "합계: %{amount}" },
@@ -22,6 +22,15 @@ RSpec.describe "Buyer email language" do
     })
     event.update_columns(translations: { "title" => AppLocale::TRANSLATION_TARGETS.index_with { |locale| "#{locale}:Sunset Fiesta" }
       .merge("_digest" => Translatable.digest("Sunset Fiesta")) })
+  end
+
+  it "labels venue times with Guam time or the event zone's daylight-saving abbreviation" do
+    expect(EmailService.send(:format_local_datetime, Time.utc(2026, 8, 15, 9), "Pacific/Guam"))
+      .to eq("August 15, 2026 at 7:00 PM Guam time")
+    expect(EmailService.send(:format_local_datetime, Time.utc(2026, 8, 15, 9), "America/New_York"))
+      .to end_with("5:00 AM EDT")
+    expect(EmailService.send(:format_local_datetime, Time.utc(2026, 1, 15, 9), "America/New_York"))
+      .to end_with("4:00 AM EST")
   end
 
   it "writes the order confirmation in the order's language" do
@@ -74,7 +83,7 @@ RSpec.describe "Buyer email language" do
       recipient: "friend@example.com", metadata: { ticket_transfer_id: transfer.id })
     payload = EmailService.prepare_delivery_payload(delivery)
     expect(payload.fetch("html")).to include('<html lang="en">', "Sunset Fiesta", "friend@example.com",
-      "November 19, 2026 at 7:00 PM ChST")
+      "November 19, 2026 at 7:00 PM Guam time")
     expect(payload.fetch("html")).not_to include("ja:Sunset Fiesta")
   end
 

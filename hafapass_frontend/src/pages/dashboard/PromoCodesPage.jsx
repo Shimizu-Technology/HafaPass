@@ -2,11 +2,12 @@ import EventWorkspace from '../../components/EventWorkspace'
 import Dialog from '../../components/Dialog'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Plus, Tag, Trash2, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
+import { Plus, Tag, Trash2, Pencil, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import SupportLink from '../../components/SupportLink'
-import { formatEventDate } from '../../utils/eventTime'
+import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime, toEventLocalInput, fromEventLocalInput } from '../../utils/eventTime'
+import { promoDiscountToApi, promoDiscountFromApi } from '../../utils/promoDiscount'
 
 const readPendingOperation = key => {
   try {
@@ -38,10 +39,11 @@ function PromoCodesSession({ eventId, identity }) {
   const [codes, setCodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingCode, setEditingCode] = useState(null)
   const [form, setForm] = useState({ code: '', discount_type: 'percentage', discount_value: '', max_uses: '', expires_at: '' })
-  const saving = activeMutation === 'create_code'
+  const saving = activeMutation === 'create_code' || activeMutation === 'edit_code'
   const clearPrivateState = useCallback(() => {
-    setConfirmation(null); setEvent(null); setCodes([]); setShowForm(false)
+    setConfirmation(null); setEvent(null); setCodes([]); setShowForm(false); setEditingCode(null)
     setForm({ code: '', discount_type: 'percentage', discount_value: '', max_uses: '', expires_at: '' })
   }, [])
   const fetchData = useCallback(async () => {
@@ -73,6 +75,7 @@ function PromoCodesSession({ eventId, identity }) {
     }
   }, [beginRequest, clearPrivateState, eventId])
   useEffect(() => { fetchData() }, [fetchData])
+  const eventTimeZone = event?.timezone || DEFAULT_EVENT_TIME_ZONE
   const canManage = event?.permissions?.manage_marketing === true
   const mutationsLocked = !canManage || refreshing || Boolean(loadError) || Boolean(activeMutation) || Boolean(unconfirmed)
 
@@ -134,12 +137,22 @@ function PromoCodesSession({ eventId, identity }) {
 
   const handleCreate = submitEvent => {
     submitEvent.preventDefault()
-    const payload = { code: form.code, discount_type: form.discount_type, discount_value: parseInt(form.discount_value, 10),
-      max_uses: form.max_uses ? parseInt(form.max_uses, 10) : null, expires_at: form.expires_at || null }
-    performMutation('create_code', config => apiClient.post(`/organizer/events/${eventId}/promo_codes`, payload, config), () => {
+    const payload = { code: form.code, discount_type: form.discount_type, discount_value: promoDiscountToApi(form.discount_value, form.discount_type),
+      max_uses: form.max_uses ? parseInt(form.max_uses, 10) : null, expires_at: editingCode && form.expires_at === toEventLocalInput(editingCode.expires_at, eventTimeZone)
+        ? editingCode.expires_at : form.expires_at ? fromEventLocalInput(form.expires_at, eventTimeZone)?.toISOString() : null }
+    if (payload.discount_value === null || (form.expires_at && !payload.expires_at)) { setMutationError('Enter a valid discount and expiration time.'); return }
+    const codeId = editingCode?.id
+    performMutation(codeId ? 'edit_code' : 'create_code', config => codeId
+      ? apiClient.patch(`/organizer/events/${eventId}/promo_codes/${codeId}`, payload, config)
+      : apiClient.post(`/organizer/events/${eventId}/promo_codes`, payload, config), () => {
       setForm({ code: '', discount_type: 'percentage', discount_value: '', max_uses: '', expires_at: '' })
-      setShowForm(false); setNotice('Promo code created.')
+      setShowForm(false); setEditingCode(null); setNotice(codeId ? 'Promo code updated.' : 'Promo code created.')
     })
+  }
+  const editCode = code => {
+    setEditingCode(code)
+    setForm({ code: code.code, discount_type: code.discount_type, discount_value: promoDiscountFromApi(code.discount_value, code.discount_type), max_uses: code.max_uses ? String(code.max_uses) : '', expires_at: toEventLocalInput(code.expires_at, eventTimeZone) })
+    setShowForm(true)
   }
   const toggleActive = code => performMutation('update_code', config => apiClient.patch(`/organizer/events/${eventId}/promo_codes/${code.id}`, { active: !code.active }, config), () => setNotice('Promo code updated.'))
   const deleteCode = code => {
@@ -148,7 +161,7 @@ function PromoCodesSession({ eventId, identity }) {
   if (loading) return <div className="flex justify-center py-20" role="status"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /> Loading promo codes…</div>
   if (!event) return <main className="mx-auto max-w-3xl px-4 py-8">
     <Link to="/dashboard" className="inline-flex min-h-11 items-center font-medium text-brand-800">All events</Link>
-    <h1 className="mt-3 text-2xl font-bold">Promo Codes</h1>
+    <h1 className="mt-3 text-2xl font-bold">Promo codes</h1>
     <p role="alert" className="mt-4 text-sm text-red-800">{loadError || mutationError || 'Event access is unavailable.'}</p>
     <button type="button" disabled={refreshing} onClick={fetchData} className="btn-secondary mt-3">Retry promo codes</button>
   </main>
@@ -158,11 +171,14 @@ function PromoCodesSession({ eventId, identity }) {
 
    <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between">
     <div>
-     <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Promo Codes</h2>
+     <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Promo codes</h2>
      <p className="text-sm text-neutral-500 mt-1">Create discount codes for your event</p>
     </div>
-    <button disabled={mutationsLocked} onClick={() => setShowForm(!showForm)} className="btn-primary text-sm !py-2.5 gap-1.5">
-     <Plus className="w-4 h-4" /> New Code
+    <button disabled={mutationsLocked} onClick={() => {
+      if (editingCode) { setEditingCode(null); setForm({ code: '', discount_type: 'percentage', discount_value: '', max_uses: '', expires_at: '' }); setShowForm(true) }
+      else setShowForm(!showForm)
+    }} className="btn-primary text-sm !py-2.5 gap-1.5">
+     <Plus className="w-4 h-4" /> New code
     </button>
    </div>
 
@@ -180,36 +196,36 @@ function PromoCodesSession({ eventId, identity }) {
 
    {showForm && (
     <form onSubmit={handleCreate} className="card p-4 sm:p-6 mb-6"><fieldset className="min-w-0" disabled={mutationsLocked}>
-     <h3 className="font-semibold text-neutral-900 mb-4">Create Promo Code</h3>
+     <h3 className="font-semibold text-neutral-900 mb-4">{editingCode ? 'Edit promo code' : 'Create promo code'}</h3>
      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
        <label htmlFor="promo-code" className="block text-sm font-medium text-neutral-700 mb-1.5">Code</label>
        <input id="promo-code" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} className="input min-w-0 max-w-full uppercase" placeholder="SUMMER20" required />
       </div>
       <div>
-       <label htmlFor="promo-discount_type" className="block text-sm font-medium text-neutral-700 mb-1.5">Discount Type</label>
+       <label htmlFor="promo-discount_type" className="block text-sm font-medium text-neutral-700 mb-1.5">Discount type</label>
        <select id="promo-discount_type" value={form.discount_type} onChange={e => setForm({...form, discount_type: e.target.value})} className="input min-w-0 max-w-full">
         <option value="percentage">Percentage (%)</option>
-        <option value="fixed">Fixed Amount (cents)</option>
+        <option value="fixed">Fixed discount ($)</option>
        </select>
       </div>
       <div>
        <label htmlFor="promo-discount_value" className="block text-sm font-medium text-neutral-700 mb-1.5">
-        {form.discount_type === 'percentage' ? 'Discount (%)' : 'Discount (cents)'}
+        {form.discount_type === 'percentage' ? 'Discount (%)' : 'Discount ($)'}
        </label>
-       <input type="number" id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input min-w-0 max-w-full" placeholder={form.discount_type === 'percentage' ? '20' : '500'} required />
+       <input type="number" min={form.discount_type === 'percentage' ? 1 : 0.01} max={form.discount_type === 'percentage' ? 100 : undefined} step={form.discount_type === 'percentage' ? 1 : 0.01} id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input min-w-0 max-w-full" placeholder={form.discount_type === 'percentage' ? '20' : '5.00'} required />
       </div>
       <div>
-       <label htmlFor="promo-max_uses" className="block text-sm font-medium text-neutral-700 mb-1.5">Max Uses <span className="text-content-muted font-normal">(optional)</span></label>
+       <label htmlFor="promo-max_uses" className="block text-sm font-medium text-neutral-700 mb-1.5">Maximum uses <span className="text-content-muted font-normal">(optional)</span></label>
        <input type="number" id="promo-max_uses" value={form.max_uses} onChange={e => setForm({...form, max_uses: e.target.value})} className="input min-w-0 max-w-full" placeholder="Unlimited" />
       </div>
       <div className="sm:col-span-2">
-       <label htmlFor="promo-expires_at" className="block text-sm font-medium text-neutral-700 mb-1.5">Expires At <span className="text-content-muted font-normal">(optional)</span></label>
+       <label htmlFor="promo-expires_at" className="block text-sm font-medium text-neutral-700 mb-1.5">Expires ({event.timezone === 'Pacific/Guam' || !event.timezone ? 'Guam time' : event.timezone}) <span className="text-content-muted font-normal">(optional)</span></label>
        <input type="datetime-local" id="promo-expires_at" value={form.expires_at} onChange={e => setForm({...form, expires_at: e.target.value})} className="input min-w-0 max-w-full" />
       </div>
      </div>
      <div className="flex flex-wrap gap-3 mt-5">
-      <button type="submit" disabled={saving} className="btn-primary text-sm !py-2.5">{saving ? 'Creating...' : 'Create Code'}</button>
+      <button type="submit" disabled={saving} className="btn-primary text-sm !py-2.5">{saving ? 'Saving…' : editingCode ? 'Save changes' : 'Create code'}</button>
       <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-sm !py-2.5">Cancel</button>
      </div>
     </fieldset></form>
@@ -232,13 +248,14 @@ function PromoCodesSession({ eventId, identity }) {
         <div className="min-w-0 flex-1">
          <p className="font-mono font-semibold text-neutral-900 [overflow-wrap:anywhere]">{pc.code}</p>
          <p className="text-sm text-content-muted [overflow-wrap:anywhere]">
-          {pc.discount_type === 'percentage' ? `${pc.discount_value}% off` : `$${(pc.discount_value / 100).toFixed(2)} off`}
+          {pc.discount_type === 'percentage' ? `${pc.discount_value}% off` : `$${promoDiscountFromApi(pc.discount_value, pc.discount_type)} off`}
           {' '}&middot; {pc.current_uses}{pc.max_uses ? `/${pc.max_uses}` : ''} used
-          {pc.expires_at && ` · Expires ${formatEventDate(pc.expires_at)}`}
+          {pc.expires_at && ` · Expires ${formatEventDateTime(pc.expires_at, eventTimeZone)}`}
          </p>
         </div>
        </div>
        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
+        <button type="button" disabled={mutationsLocked} onClick={() => editCode(pc)} aria-label={`Edit promo code ${pc.code}`} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-brand-700"><Pencil className="h-4 w-4" /></button>
         <button
          disabled={mutationsLocked} onClick={() => toggleActive(pc)}
          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 disabled:opacity-50 transition-colors"

@@ -67,7 +67,7 @@ test('admin approves the exact Gate J closeout and Guam expansion decision', asy
   })
 
   await page.goto('/admin/events')
-  await page.getByRole('button', { name: /^Release gates for / }).click()
+  await page.getByRole('button', { name: /^Launch reviews for / }).click()
   await page.getByRole('button', { name: 'Review Gate J closeout' }).click()
   await expect(page.getByText('limited guam expansion', { exact: true })).toBeVisible()
   await expect(page.getByText('Publish organizer-success response targets')).toBeVisible()

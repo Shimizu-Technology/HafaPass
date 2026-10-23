@@ -596,7 +596,7 @@ class EmailService
             <p style="color:#6b7280">#{h(event_title(event))} — #{h(ticket_type_name(transfer.ticket.ticket_type))}</p>
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('transfer.accept')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('transfer.sign_in', email: transfer.recipient_email,
-              expires_at: format_local_datetime(transfer.expires_at, event.timezone, with_zone: true))}</p>
+              expires_at: format_local_datetime(transfer.expires_at, event.timezone))}</p>
           HTML
         end
         [body, safe_subject(t("transfer.subject", event: event_title(event)))]
@@ -617,7 +617,7 @@ class EmailService
               ticket_type: ticket_type_name(offer.ticket_type), event: event_title(event))}</p>
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('waitlist_offer.cta')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('waitlist_offer.expires',
-              expires_at: format_local_datetime(offer.expires_at, event.timezone, with_zone: true))}</p>
+              expires_at: format_local_datetime(offer.expires_at, event.timezone))}</p>
             #{details[:footer]}
           HTML
         end
@@ -659,7 +659,7 @@ class EmailService
       html = email_wrapper("Event reminder") do
         <<~HTML
           <h2 style="color:#1f2937">#{h(event.title)} is coming up</h2>
-          <p style="color:#6b7280">#{h(event.venue_name)} · #{h(event.starts_at.in_time_zone(event.timezone).strftime('%A, %B %-d at %-I:%M %p %Z'))}</p>
+          <p style="color:#6b7280">#{h(event.venue_name)} · #{h(format_event_date(event))}</p>
           #{url ? %(<p><a href="#{h(url)}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{order && !event.publicly_visible? ? 'View your order' : 'View event'}</a></p>) : '<p>Contact the organizer for event details.</p>'}
         HTML
       end
@@ -1103,18 +1103,18 @@ class EmailService
       format_local_datetime(event.starts_at, event.timezone)
     end
 
-    # "October 5, 2026 at 7:00 PM" in English; word order, month names and
-    # AM/PM come from the email copy of the current language. Deadlines add
-    # the zone ("ChST") so a buyer elsewhere is not misled.
-    def format_local_datetime(time, zone, with_zone: false)
+    # Event times and deadlines always name the venue time zone.
+    # Word order, month names and AM/PM follow the email language.
+    def format_local_datetime(time, zone)
       return nil unless time
 
       local = time.in_time_zone(zone.presence || "Pacific/Guam")
       text = I18n.t("emails.formats.event_datetime",
         month_name: Array(I18n.t("emails.formats.month_names"))[local.month - 1], day: local.day,
         year: local.year, hour: local.strftime("%-I"), minute: local.strftime("%M"),
-        meridiem: I18n.t(local.hour < 12 ? "emails.formats.am" : "emails.formats.pm"))
-      with_zone ? "#{text} #{local.strftime('%Z')}" : text
+        meridiem: I18n.t(local.hour < 12 ? "emails.formats.am" : "emails.formats.pm"),
+        zone: local.time_zone.tzinfo.identifier == "Pacific/Guam" ? "Guam time" : local.strftime("%Z"))
+      text.strip
     end
 
     # Buyer emails are written in the language recorded on the order, waitlist
@@ -1156,7 +1156,7 @@ class EmailService
     end
 
     def format_invitation_expiry(time)
-      time&.in_time_zone("Pacific/Guam")&.strftime("%B %-d, %Y at %-I:%M %p ChST") || "soon"
+      time&.in_time_zone("Pacific/Guam")&.strftime("%B %-d, %Y at %-I:%M %p Guam time") || "soon"
     end
 
     def h(value)

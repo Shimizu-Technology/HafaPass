@@ -37,7 +37,7 @@ emails:
   footer: "Powered by HåfaPass · Shimizu Technology"
   my_tickets: "My Tickets"
   formats:
-    event_datetime: "%{month_name} %{day}, %{year} at %{hour}:%{minute} %{meridiem}"
+    event_datetime: "%{month_name} %{day}, %{year} at %{hour}:%{minute} %{meridiem} %{zone}"
     month_names:
       - January
       - February

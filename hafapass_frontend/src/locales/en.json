@@ -266,7 +266,7 @@
     "view": "View"
   },
   "footer": {
-    "tagline": "Your pass to every event on Guam. Discover, book, and experience the island's best.",
+    "tagline": "Find events on Guam, buy tickets, and keep them ready on your phone.",
     "platform": "Platform",
     "browseEvents": "Browse Events",
     "forOrganizers": "For Organizers",
@@ -277,7 +277,7 @@
     "privacy": "Privacy Policy",
     "connect": "Connect",
     "copyright": "Shimizu Technology. All rights reserved.",
-    "madeWith": "Made with aloha on Guam",
+    "madeWith": "Built on Guam by Shimizu Technology",
     "help": "Get help",
     "findTickets": "Find your tickets",
     "contactSupport": "Contact support",
@@ -806,9 +806,9 @@
     },
     "saved": {
       "savedEvents": "Saved events",
-      "yourHåfaPassFavoritesFollowedOrganizersAndEvent": "Your HåfaPass favorites, followed organizers, and event reminders.",
+      "yourHåfaPassFavoritesFollowedOrganizersAndEvent": "Your saved events, followed organizers, and event reminders.",
       "saved": "Saved",
-      "favoriteEvents": "Favorite events",
+      "favoriteEvents": "Saved events",
       "favoriteAnEventToKeepItHere": "Save an event to find it here.",
       "followedOrganizers": "Followed organizers",
       "noFollowedOrganizersYet": "No followed organizers yet.",
@@ -820,8 +820,8 @@
     },
     "collections": {
       "discoverGuam": "Discover Guam",
-      "curatedEventsForTonightThisWeekendFamilies": "Curated events for tonight, this weekend, families, visitors, and every village on Guam.",
-      "usefulLocalPicksCuratedByPeopleNot": "Useful local picks, curated by people—not an opaque ranking.",
+      "curatedEventsForTonightThisWeekendFamilies": "Explore featured collections of events on Guam.",
+      "usefulLocalPicksCuratedByPeopleNot": "",
       "freshEventsAreOnTheWay": "Fresh events are on the way",
       "browseAllCurrentInventoryOrPublishThe": "Browse all current inventory or publish the island’s next event.",
       "browseEvents": "Browse events",

@@ -134,7 +134,7 @@ function CreateEventSession({ identity }) {
     age_restriction: form.age_restriction,
     venue_name: form.venue_name.trim(),
     venue_address: form.venue_address.trim() || undefined,
-    venue_city: form.venue_city.trim() || 'Guam',
+    venue_city: form.venue_city.trim(),
     timezone: 'Pacific/Guam',
     starts_at: form.starts_at || undefined,
     ends_at: form.ends_at || undefined,
@@ -313,7 +313,7 @@ function CreateEventSession({ identity }) {
 
       <div>
        <label htmlFor="venue_city" className="block text-sm font-medium text-neutral-700 mb-1">
-        City
+        Village or city
        </label>
        <input
         id="venue_city"
@@ -321,7 +321,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_city}
         onChange={(e) => updateField('venue_city', e.target.value)}
         className="input"
-        placeholder="Guam"
+        placeholder="Tamuning"
         disabled={submitting}
        />
       </div>
