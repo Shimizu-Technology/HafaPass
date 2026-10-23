@@ -109,7 +109,9 @@ module CommunicationCampaigns
       raise ActiveJob::EnqueueError, "Campaign dispatcher enqueue rejected" unless job && job.successfully_enqueued?
     rescue StandardError => error
       campaign.with_lock do
-        campaign.update!(status: :failed, sent_at: nil, last_error: "Campaign dispatcher could not be queued. Review and retry the send.")
+        if (campaign.sending? || campaign.failed?) && campaign.last_error != CommunicationCampaign::AUTHORIZATION_ERROR
+          campaign.update!(status: :failed, sent_at: nil, last_error: "Campaign dispatcher could not be queued. Review and retry the send.")
+        end
         AuditLogger.record!(action: "campaign.send_failed", auditable: campaign, event: campaign.event,
           outcome: "failed", metadata: { failure_code: "dispatcher_enqueue_failed", exception_type: error.class.name })
       end

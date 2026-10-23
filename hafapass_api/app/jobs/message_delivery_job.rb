@@ -246,7 +246,8 @@ class MessageDeliveryJob < ApplicationJob
             provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
         end
         delivery.communication_campaign&.with_lock do
-          delivery.communication_campaign.fail_authorization!
+          campaign = delivery.communication_campaign
+          campaign.fail_authorization!(preserve_state: campaign.draft? || campaign.scheduled? || campaign.cancelled?)
         end
         :authorization_cancelled
       end

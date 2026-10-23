@@ -32,10 +32,10 @@ class CommunicationCampaign < ApplicationRecord
       permission: :manage_marketing, event: event)
   end
 
-  def fail_authorization!
+  def fail_authorization!(preserve_state: false)
     return if failed? && last_error == AUTHORIZATION_ERROR
 
-    update!(status: :failed, last_error: AUTHORIZATION_ERROR, sent_at: nil)
+    update!(status: :failed, last_error: AUTHORIZATION_ERROR, sent_at: nil) unless preserve_state
     AuditLogger.record!(action: "campaign.reauthorization_failed", auditable: self, event: event,
       outcome: "failed", metadata: { failure_code: "sender_permission_revoked" })
   end

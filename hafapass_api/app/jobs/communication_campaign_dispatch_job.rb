@@ -39,9 +39,10 @@ class CommunicationCampaignDispatchJob < ApplicationJob
   rescue StandardError => error
     if campaign
       campaign.with_lock do
-        campaign.update!(status: :failed, sent_at: nil,
-          last_error: "Campaign deliveries could not all be queued. Review and retry the send.") unless campaign.sent? || campaign.cancelled? ||
-          campaign.last_error == CommunicationCampaign::AUTHORIZATION_ERROR
+        if (campaign.sending? || campaign.failed?) && campaign.last_error != CommunicationCampaign::AUTHORIZATION_ERROR
+          campaign.update!(status: :failed, sent_at: nil,
+            last_error: "Campaign deliveries could not all be queued. Review and retry the send.")
+        end
         AuditLogger.record!(action: "campaign.send_failed", auditable: campaign, event: campaign.event,
           outcome: "failed", metadata: { failure_code: "delivery_enqueue_failed", exception_type: error.class.name })
       end

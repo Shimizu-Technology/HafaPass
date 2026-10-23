@@ -50,7 +50,7 @@ Fail-open writes run inside a `requires_new` savepoint. A rejected SQL statement
 
 ### Campaign queueing
 
-Campaign status changes no longer imply successful queueing. Sender commits the recipient outbox in `sending` and registers a dispatcher after all enclosing transactions commit, preserving the initiating audit context. Only the dispatcher writes `campaign.send_completed`, atomically with `sent`, after every `MessageDeliveryJob` reports an accepted enqueue outside a business transaction. This is queue acceptance, not provider delivery. A dispatcher or child-enqueue error records `campaign.send_failed` with a fixed failure code and exception class, clears `sent_at` and leaves `failed`. Partial sends reuse the same delivery IDs and provider idempotency keys; existing delivery leases/terminal guards tolerate repeated job enqueues. The worker retries five times; after exhaustion an authorized `send_now` request on the failed campaign retries the existing outbox without rebuilding recipients. Failed/sending campaigns remain non-editable so retry cannot change already-queued content. A process crash after outbox commit but before dispatcher enqueue can leave `sending`; operators may re-enqueue `CommunicationCampaignDispatchJob` for that campaign ID after inspecting the queue. The durable outbox is retained for this recovery.
+Campaign status changes no longer imply successful queueing. Sender commits the recipient outbox in `sending` and registers a dispatcher after all enclosing transactions commit, preserving the initiating audit context. Only the dispatcher writes `campaign.send_completed`, atomically with `sent`, after every `MessageDeliveryJob` reports an accepted enqueue outside a business transaction. This is queue acceptance, not provider delivery. A dispatcher or child-enqueue error records `campaign.send_failed` with a fixed failure code and exception class, clears `sent_at` and leaves `failed`. Partial sends reuse the same delivery IDs and provider idempotency keys; existing delivery leases/terminal guards tolerate repeated job enqueues. The worker retries five times; after exhaustion an authorized `send_now` request on the failed campaign retries the existing outbox without rebuilding recipients. Sending campaigns remain non-editable. Failed campaigns support authorized review and rescheduling; existing outbox content and audience stay frozen so retry cannot change already-queued messages. A process crash after outbox commit but before dispatcher enqueue can leave `sending`; operators may re-enqueue `CommunicationCampaignDispatchJob` for that campaign ID after inspecting the queue. The durable outbox is retained for this recovery.
 
 ### Foreign keys and deletion paths
 
@@ -101,7 +101,9 @@ are part of this integration.
 - Provider dispatch retains the organization lock across its bounded provider
   call, serializing revocation. A permission refusal cancels the delivery,
   preserves any unknown prior provider result and marks/audits the campaign's
-  authorization failure. Already accepted external sends cannot be undone.
+  authorization failure. Obsolete enqueue/delivery attempts cannot replace an
+  already reviewed draft or future schedule with their old failure state;
+  their failures are still audited. Already accepted external sends cannot be undone.
 - Organizer seating suspension uses its separate organizer columns and
   `seating.organizer_sales_suspended` / `seating.organizer_sales_resumed`.
   Mutation, detailed seat ledger and central audit commit together. Resuming

@@ -75,6 +75,16 @@ RSpec.describe CommunicationCampaignDispatchJob do
     expect(AuditLog.where(auditable: campaign, action: "campaign.send_completed")).not_to exist
   end
 
+  it "does not overwrite a reviewed schedule after an obsolete enqueue attempt fails" do
+    allow(MessageDeliveryJob).to receive(:perform_later) do
+      campaign.update!(status: :scheduled, scheduled_by_user: event_owner, scheduled_at: 1.day.from_now)
+      raise ActiveJob::EnqueueError, "Queue unavailable"
+    end
+    expect { described_class.new.perform(campaign.id) }.to raise_error(ActiveJob::EnqueueError)
+    expect(campaign.reload).to be_scheduled
+    expect(AuditLog.where(auditable: campaign, action: "campaign.send_completed")).not_to exist
+  end
+
   it "does not create completion from a status update alone" do
     campaign.update!(status: :sent)
     expect(AuditLog.where(auditable: campaign, action: "campaign.send_completed")).not_to exist
