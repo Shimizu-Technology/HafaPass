@@ -181,7 +181,7 @@ documents:
 
           Organizer tax information: legal and business names, federal tax classification, tax identification number (SSN or EIN), address, exemption details, and signed tax certification. We use this for payout and tax reporting duties and share it with tax authorities as legally required. Tax identification numbers are encrypted at rest, masked in normal screens, and accessible in full only through audited admin actions.
 
-          Organizer verification details: the contact phone, website or social media link, and optional note you submit when you ask us to verify your organization, along with our review decision and any notes we send you. We use them to confirm who runs an organization before its events go public and to contact you about the review. Only your organization's owner and {{platform_name}} staff who review organizers can see them. Your business name and description appear on your public event pages.
+          Organizer verification details: the contact phone, website or social media link, and optional note you submit when you ask us to verify your organization, along with our review decision and any notes we send you. We use them to confirm who runs an organization before its events go public and to contact you about the review. Only your organization's owner and {{platform_name}} staff who review organizers can see your contact details and notes; your team can see whether the organization is verified. Your business name and description appear on your public event pages.
 
           We do not store your card number. Card details are entered into and handled by our payment processor, Stripe.
       - heading: How we use it
@@ -375,7 +375,7 @@ documents:
           Payment provider events, email delivery history, support notes, and security logs are kept only as long as needed for delivery, incident response, disputes, and abuse prevention.
       - heading: Organizer verification records
         body: |-
-          We keep organizer profiles, verification contact details, and review decisions for as long as the organization's account exists, so we can show who verified it and respond to disputes or abuse reports. Contact us {{support_contact}} if you want them removed after closing your account.
+          We keep organizer profiles, verification contact details, and review decisions for as long as the organization's account exists, so we can show who verified it and respond to disputes or abuse reports. After you close your account, you can ask us to remove them by contacting us {{support_contact}}. We review each request and may keep some records where the law, an open dispute, or an abuse investigation requires it.
       - heading: Organizer sales exports
         body: |-
           Large organizer sales exports are kept in private file storage for two days after preparation, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}. The underlying order and attendee records have separate retention needs described above.
