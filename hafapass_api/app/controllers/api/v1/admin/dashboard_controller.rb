@@ -9,6 +9,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
 
   # GET /api/v1/admin/dashboard
   def show
+    response.headers["Cache-Control"] = "no-store"
     financials = Commerce::LedgerTotals.call(Order.where(status: [:completed, :partially_refunded, :refunded]))
     render json: {
       total_events: Event.group(:status).count,
@@ -28,6 +29,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       recent_orders: recent_orders_json,
       setup_required: setup_required_json,
       organizers_awaiting_verification: organizers_awaiting_verification_json,
+      payout_setups_awaiting_approval: PayoutMethodReview.queue,
       verified_organizers: verified_organizers_json,
       suspended_organizers: suspended_organizers_json
     }

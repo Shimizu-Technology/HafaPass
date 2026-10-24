@@ -12,7 +12,7 @@ class AuditSanitizer
 
   def self.call(value, key: nil, depth: 0)
     return REDACTED if depth > 12
-    return REDACTED if key.to_s.match?(SENSITIVE_KEY) || key.to_s.match?(TIN_KEY)
+    return REDACTED if key.to_s.match?(SENSITIVE_KEY) || key.to_s.match?(TIN_KEY) || key.to_s.match?(/\A(?:bank_)?account_number\z/i)
     return value.present? if key.to_s.match?(SEARCH_KEY)
 
     case value

@@ -77,6 +77,8 @@ class EmailService
       when "verification_decision"
         profile = OrganizerProfile.find(delivery.metadata.fetch("organizer_profile_id"))
         send_verification_decision(profile, delivery: delivery)
+      when "payout_method_decision"
+        send_payout_method_decision(delivery)
       when "refund_reconciliation_digest"
         send_refund_reconciliation_digest(delivery, delivery: delivery)
       when "organization_invitation"
@@ -353,6 +355,42 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e) if delivery
       Rails.logger.error("[VerificationDecision] Unable to queue profile=#{profile.id}: #{e.class}")
+    end
+
+    def send_payout_method_decision_async(review)
+      organization = review.connected_account.organization
+      owner = organization.organization_memberships.effective.find_by(role: :owner)
+      recipient = owner&.user&.email || organization.organizer_profile&.user&.email
+      return if recipient.blank?
+
+      delivery = create_delivery(event: organization.events.order(:id).first, organization_membership: owner,
+        requested_by: review.actor_user, template: "payout_method_decision", recipient: recipient,
+        idempotency_key: "payout-method-decision/#{review.id}", metadata: {
+          organization_name: organization.name, decision: review.decision, note: review.reason,
+          payout_method: review.connected_account.provider == "check" ? "check" : "bank transfer",
+          review_by: review.expires_at.to_date.iso8601, payment_readiness_review_id: review.id
+        })
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
+    end
+
+    def send_payout_method_decision(delivery)
+      approved = delivery.metadata.fetch("decision") == "approval"
+      heading = approved ? "Your payout method is approved" : "Please update your payout details"
+      body = approved ? "Approved — paid tickets can go on sale. Event setup, organizer verification and other sales requirements still apply." :
+        "Review the HåfaPass note below, then update How you get paid in your organizer settings."
+      html = email_wrapper(heading) do
+        <<~HTML
+          <h2>#{h(heading)}</h2>
+          <p>#{h(delivery.metadata.fetch("organization_name"))} · #{h(delivery.metadata.fetch("payout_method"))}</p>
+          <p>#{h(body)}</p>
+          #{delivery.metadata["note"].present? ? "<p>HåfaPass note: #{h(delivery.metadata['note'])}</p>" : ""}
+          #{approved ? "<p>Review by #{h(delivery.metadata.fetch('review_by'))}. Changing your payout details or W-9 requires a new approval.</p>" : ""}
+          <p><a href="#{h(frontend_url)}/dashboard/settings">Open organizer settings</a></p>
+        HTML
+      end
+      deliver(to: delivery.recipient, subject: safe_subject(heading), html: html,
+        tag: "payout_method_decision", delivery: delivery)
     end
 
     def send_verification_decision(profile, delivery: nil)

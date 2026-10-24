@@ -390,6 +390,10 @@ Rails.application.routes.draw do
         resources :organizer_profiles, only: [:update]
         resources :orders, only: [:index]
         resources :connected_accounts, only: [:update] do
+          member do
+            post :approve_payout_method
+            post :request_payout_changes
+          end
           resources :payment_readiness_reviews, only: [:create]
         end
         resources :payment_readiness_reviews, only: [] do

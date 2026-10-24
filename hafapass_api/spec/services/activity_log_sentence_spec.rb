@@ -43,7 +43,8 @@ RSpec.describe ActivityLogSentence do
 
   it "renders every registry action safely even when old records have no snapshots" do
     AuditActions.keys.each do |key|
-      expect(sentence(key)).to start_with("Mina Cruz ")
+      actor = %w[payout_method.approved payout_method.changes_requested].include?(key) ? "HåfaPass " : "Mina Cruz "
+      expect(sentence(key)).to start_with(actor)
       expect(sentence(key)).not_to include("{}", "  ")
     end
   end

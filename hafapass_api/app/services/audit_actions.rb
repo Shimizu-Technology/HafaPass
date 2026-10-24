@@ -311,6 +311,13 @@ class AuditActions
         "connected_account.payout_details_updated" => "Updated payout account details."
       }
 
+    define registry, area: "payout_settings", audience: %w[org_owner org_finance],
+      tenant: true, event_required: false,
+      snapshots: %w[provider organization_name review_by], actions: {
+        "payout_method.approved" => "Approved the payout method.",
+        "payout_method.changes_requested" => "Asked for changes to the payout method."
+      }
+
     define registry, area: "payout_settings", audience: %w[admin_only],
       tenant: true, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {

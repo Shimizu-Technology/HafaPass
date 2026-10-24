@@ -7,6 +7,8 @@ class PaymentReadinessReview < ApplicationRecord
     fee_tax_schedule_approved liability_schedule_approved
   ].freeze
   MERCHANTS_OF_RECORD = %w[platform organizer provider_managed].freeze
+  MANUAL_CONTROL_KEYS = %w[payee_matches details_complete organization_confirmed].freeze
+  REVIEW_KINDS = %w[provider_evidence manual_payout manual_change_request].freeze
 
   belongs_to :connected_account
   belongs_to :parent_review, class_name: "PaymentReadinessReview", optional: true
@@ -21,6 +23,7 @@ class PaymentReadinessReview < ApplicationRecord
   validates :evidence_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validates :provider_state_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validates :merchant_of_record, inclusion: { in: MERCHANTS_OF_RECORD }
+  validates :review_kind, inclusion: { in: REVIEW_KINDS }
   validate :complete_control_snapshot
   validate :valid_parent_relationship
   validate :parent_snapshot_matches
@@ -30,7 +33,7 @@ class PaymentReadinessReview < ApplicationRecord
   attr_readonly :connected_account_id, :parent_review_id, :actor_user_id, :decision,
     :evidence_reference, :evidence_digest, :provider_approval_reference, :merchant_of_record,
     :fee_tax_schedule_reference, :liability_schedule_reference, :controls, :effective_at,
-    :expires_at, :provider_state_digest, :reason
+    :expires_at, :provider_state_digest, :reason, :review_kind, :reviewed_snapshot
 
   before_update :prevent_mutation
   before_destroy :prevent_mutation
@@ -49,8 +52,11 @@ class PaymentReadinessReview < ApplicationRecord
   private
 
   def complete_control_snapshot
+    return if review_kind == "manual_change_request" && !decision_approval?
+
     normalized = controls.to_h.stringify_keys
-    missing = CONTROL_KEYS.reject { |key| normalized[key] == true }
+    keys = review_kind == "provider_evidence" ? CONTROL_KEYS : MANUAL_CONTROL_KEYS
+    missing = keys.reject { |key| normalized[key] == true }
     errors.add(:controls, "must affirm: #{missing.join(', ')}") if missing.any?
   end
 
@@ -85,7 +91,7 @@ class PaymentReadinessReview < ApplicationRecord
     fields = %w[
       evidence_reference evidence_digest provider_approval_reference merchant_of_record
       fee_tax_schedule_reference liability_schedule_reference controls effective_at expires_at
-      provider_state_digest
+      provider_state_digest review_kind reviewed_snapshot
     ]
     errors.add(:base, "Evidence snapshot must match the parent review") unless fields.all? do |field|
       public_send(field) == parent_review.public_send(field)

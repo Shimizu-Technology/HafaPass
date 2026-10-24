@@ -1,6 +1,31 @@
 # frozen_string_literal: true
 
 class Api::V1::Admin::ConnectedAccountsController < Api::V1::Admin::BaseController
+  before_action -> { response.headers["Cache-Control"] = "no-store" }
+
+  def approve_payout_method
+    account = ConnectedAccount.find(params[:id])
+    controls = params[:controls].respond_to?(:permit) ? params[:controls].permit(*PaymentReadinessReview::MANUAL_CONTROL_KEYS).to_h : {}
+    PayoutMethodReview.approve!(account: account, actor: current_user, controls: controls,
+      expected_digest: params[:expected_digest], review_by: params[:review_by], note: params[:note], request: request)
+    render json: PayoutMethodReview.account_json(account.reload), status: :created
+  rescue PayoutMethodReview::StateChanged => e
+    render json: { error: e.message }, status: :conflict
+  rescue PayoutMethodReview::ReviewError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def request_payout_changes
+    account = ConnectedAccount.find(params[:id])
+    PayoutMethodReview.request_changes!(account: account, actor: current_user,
+      expected_digest: params[:expected_digest], note: params[:note], request: request)
+    render json: PayoutMethodReview.account_json(account.reload), status: :created
+  rescue PayoutMethodReview::StateChanged => e
+    render json: { error: e.message }, status: :conflict
+  rescue PayoutMethodReview::ReviewError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   def update
     account = ConnectedAccount.find(params[:id])
     account = ConnectedAccounts::Manager.sync!(

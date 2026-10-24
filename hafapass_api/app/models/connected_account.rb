@@ -3,6 +3,9 @@
 class ConnectedAccount < ApplicationRecord
   PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
   CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
+  MANUAL_PROVIDERS = %w[check manual].freeze
+  encrypts :bank_account_number
+  self.filter_attributes += [:bank_account_number]
 
   belongs_to :organization
   has_many :payouts, dependent: :restrict_with_error
@@ -85,6 +88,40 @@ class ConnectedAccount < ApplicationRecord
     return {} unless provider == "check"
 
     payout_details.to_h.slice("payee_name", "delivery_method", "mailing_address", "pickup_note", "memo")
+  end
+
+  def manual_payout?
+    MANUAL_PROVIDERS.include?(provider)
+  end
+
+  # Full account numbers are encrypted at rest and never serialized or audited.
+  def safe_payout_details
+    return check_payee if provider == "check"
+    return {} unless provider == "manual"
+
+    payout_details.to_h.slice("bank_name", "account_holder_name").merge(
+      "masked_account" => if bank_account_number.blank?
+        nil
+                          elsif bank_account_number.length <= 4
+        "••••"
+                          else
+        "•••• #{bank_account_number.last(4)}"
+                          end
+    )
+  end
+
+  def manual_payout_missing
+    missing = []
+    missing << "W-9 not certified yet" unless organization.organizer_tax_information&.certified_at.present?
+    complete = if provider == "check"
+      check_payee["payee_name"].present? && CHECK_DELIVERY_METHODS.include?(check_payee["delivery_method"]) &&
+        (check_payee["delivery_method"] == "pickup" || check_payee["mailing_address"].present?)
+    elsif provider == "manual"
+      payout_details.to_h.values_at("bank_name", "account_holder_name").all?(&:present?) && bank_account_number.present?
+    end
+    missing << "Payout details incomplete" unless complete
+    missing << "Payout method is disabled" if status_disabled?
+    missing
   end
 
   private

@@ -7,7 +7,7 @@ module PaymentReadinessReviews
     SNAPSHOT_FIELDS = %i[
       evidence_reference evidence_digest provider_approval_reference merchant_of_record
       fee_tax_schedule_reference liability_schedule_reference controls effective_at expires_at
-      provider_state_digest
+      provider_state_digest review_kind reviewed_snapshot
     ].freeze
 
     def self.submit!(account:, attributes:, actor:, request: nil)
@@ -16,7 +16,7 @@ module PaymentReadinessReviews
         ActiveModel::Type::Boolean.new.cast(value)
       end
       review = nil
-      account.with_lock do
+      with_account_lock(account) do
         raise ReviewError, "Provider capabilities and onboarding must be complete first" unless account.externally_ready?
         snapshot[:provider_state_digest] = account.readiness_state_digest
 
@@ -33,7 +33,8 @@ module PaymentReadinessReviews
       raise ReviewError, error_message(e)
     end
 
-    def self.approve!(submission:, actor:, request: nil)
+    def self.approve!(submission:, actor:, request: nil, reason: nil)
+      raise ReviewError, "A change request cannot be approved" if submission.review_kind == "manual_change_request"
       raise ReviewError, "Only a submission can be approved" unless submission.decision_submission?
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
         raise ReviewError, "This submission already has a decision"
@@ -41,7 +42,7 @@ module PaymentReadinessReviews
       raise ReviewError, "The evidence approval window is not yet effective" if submission.effective_at > Time.current
       raise ReviewError, "The evidence approval window has expired" if submission.expires_at <= Time.current
       review = nil
-      submission.connected_account.with_lock do
+      with_account_lock(submission.connected_account) do
         if submission.reload.child_reviews.where(decision: [:approval, :rejection]).exists?
           raise ReviewError, "This submission already has a decision"
         end
@@ -57,7 +58,7 @@ module PaymentReadinessReviews
           snapshot(submission).merge(
             decision: :approval,
             parent_review: submission,
-            actor_user: actor
+            actor_user: actor, reason: reason
           )
         )
         ConnectedAccounts::Manager.refresh_readiness!(
@@ -80,7 +81,7 @@ module PaymentReadinessReviews
       raise ReviewError, "A specific revocation reason is required" if reason.to_s.strip.blank?
 
       review = nil
-      approval.connected_account.with_lock do
+      with_account_lock(approval.connected_account) do
         raise ReviewError, "This approval has already been revoked" if approval.reload.revoked?
         review = approval.connected_account.payment_readiness_reviews.create!(
           snapshot(approval).merge(
@@ -112,7 +113,7 @@ module PaymentReadinessReviews
       raise ReviewError, "A specific rejection reason is required" if reason.to_s.strip.blank?
 
       review = nil
-      submission.connected_account.with_lock do
+      with_account_lock(submission.connected_account) do
         if submission.reload.child_reviews.where(decision: [:approval, :rejection]).exists?
           raise ReviewError, "This submission already has a decision"
         end
@@ -130,6 +131,11 @@ module PaymentReadinessReviews
     rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e
       raise ReviewError, error_message(e)
     end
+
+    def self.with_account_lock(account, &block)
+      account.organization.with_lock { account.with_lock(&block) }
+    end
+    private_class_method :with_account_lock
 
     def self.snapshot(review)
       review.attributes.symbolize_keys.slice(*SNAPSHOT_FIELDS)
