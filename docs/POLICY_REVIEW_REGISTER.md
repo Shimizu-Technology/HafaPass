@@ -1,6 +1,6 @@
 # HåfaPass policy and professional review register
 
-Status: **owner-approved and operative as published**, effective October 22, 2026. Registry version `2026-10-22`; status `approved`. Leon has decided these are the live policies. Professional review remains scheduled through the public links and is tracked here and in the [counsel review packet](COUNSEL_REVIEW_PACKET.md). Do not describe this owner decision as attorney, CPA, or privacy-reviewer certification.
+Status: **owner-approved and operative as published**, effective October 24, 2026. Registry version `2026-10-24`; status `approved`. Leon has decided these are the live policies. Professional review remains scheduled through the public links and is tracked here and in the [counsel review packet](COUNSEL_REVIEW_PACKET.md). Do not describe this owner decision as attorney, CPA, or privacy-reviewer certification.
 
 | Artifact | Live route | Reviewer | Evidence needed | State |
 |---|---|---|---|---|
@@ -68,7 +68,7 @@ Risk levels rank what must be checked before operational approval, not legal con
 
 ### Acceptance and deployment checks
 
-- Confirm policy register version `2026-10-22`, `approved` status, effective date, internal review notes, no unfilled placeholders, and exact digest.
+- Confirm policy register version `2026-10-24`, `approved` status, effective date, internal review notes, no unfilled placeholders, and exact digest.
 - Confirm the legal name on policy pages, receipts and emails against registration and payment-provider records; confirm the configured support mailbox and mailing address.
 - Confirm organizers re-accept the new agreement and an admin approves the new register digest. This operational approval does not constitute counsel approval.
 - Test all-in event, ticket and checkout totals, cancellation exceptions, export permissions and two-day file expiry in the deployed build. The code inspection does not establish production configuration or delivery.
