@@ -19,3 +19,8 @@ export const payoutAccountLabel = account => `${payoutProviderLabel(account.prov
 export const paidPayoutExplanation = provider => provider === 'check'
   ? 'Recorded as paid with the date on the check. This does not confirm the check has cleared.'
   : 'Recorded as paid after bank or provider payment confirmation.'
+
+export const payoutReviewLabel = account => ({
+  waiting: 'Waiting for HåfaPass review', approved: 'Payout method approved',
+  changes_requested: 'Changes requested', incomplete: 'Setup incomplete',
+})[account.payout_review?.status] || (account.payout_ready ? 'Payout method approved' : 'Waiting for HåfaPass review')

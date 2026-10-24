@@ -1,4 +1,5 @@
-import { payoutRequirementLabel } from '../../utils/payoutLabels'
+import BankPayoutDetails from './BankPayoutDetails'
+import { payoutReviewLabel, payoutRequirementLabel } from '../../utils/payoutLabels'
 import { CheckCircle2, CircleAlert, Landmark, Mail, WalletCards } from 'lucide-react'
 import { useState } from 'react'
 import SupportLink from '../../components/SupportLink'
@@ -12,9 +13,12 @@ function AccountStatus({ account }) {
     <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm">
       <p className={`flex items-center gap-2 font-semibold ${account.payout_ready ? 'text-emerald-800' : 'text-amber-900'}`}>
         {account.payout_ready ? <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> : <CircleAlert aria-hidden="true" className="h-4 w-4" />}
-        {account.payout_ready ? 'Paid-ticket setup approved' : 'Saved — waiting for HåfaPass review'}
+        {account.payout_review ? payoutReviewLabel(account) : account.payout_ready ? 'Paid-ticket setup approved' : 'Saved — waiting for HåfaPass review'}
       </p>
-      {!account.payout_ready && account.requirements_due?.length > 0 && (
+      {account.payout_review?.note && <p className="mt-2 whitespace-pre-line [overflow-wrap:anywhere]">Review note: {account.payout_review.note}</p>}
+      {account.payout_review?.missing?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 [overflow-wrap:anywhere]">{account.payout_review.missing.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+      {account.payout_review?.review_by && <p className="mt-2">Review again by {account.payout_review.review_by}</p>}
+      {!account.payout_review && !account.payout_ready && account.requirements_due?.length > 0 && (
         <>
           <p className="mt-2 text-neutral-700">What HåfaPass does next:</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-neutral-700">{account.requirements_due.map(code => <li key={code}>{payoutRequirementLabel(code)}</li>)}</ul>
@@ -27,7 +31,7 @@ function AccountStatus({ account }) {
 
 // How an organizer gets paid. HåfaPass collects ticket money and pays the
 // organizer after each event settles; a check from Shimizu Technology is the
-// standard method, bank transfer is available on request.
+// standard method, bank details are entered in the organizer workspace.
 export default function PayoutMethodSection({ organizationId, accounts, busy, onSave, error, notice }) {
   const fees = usePlatformFeeTerms()
   const checkAccount = accounts.find(item => item.provider === 'check')
@@ -62,7 +66,7 @@ export default function PayoutMethodSection({ organizationId, accounts, busy, on
         <div className="grid gap-2 sm:grid-cols-2">
           {[
             { value: 'check', icon: Mail, title: 'Check', body: 'A check from Shimizu Technology, mailed to you or ready for pickup.' },
-            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'HåfaPass finance collects your bank details securely, never by email.' },
+            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'Save your bank details here for HåfaPass finance to review.' },
           ].map(option => (
             <label key={option.value} className={`flex min-h-11 cursor-pointer gap-3 rounded-xl border p-3 transition-colors duration-150 ease-out-strong ${method === option.value ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 [@media(hover:hover)]:hover:border-neutral-300'}`}>
               <input type="radio" name="payout-method" value={option.value} checked={method === option.value} onChange={() => setMethod(option.value)} className="mt-1 h-4 w-4 shrink-0 accent-brand-600" />
@@ -134,16 +138,9 @@ export default function PayoutMethodSection({ organizationId, accounts, busy, on
 
       {method === 'manual' && (
         <div className="mt-5 space-y-3 text-sm text-neutral-700">
-          <ol className="list-decimal space-y-2 pl-5">
-            <li><strong>You:</strong> choose bank transfer below, then contact the HåfaPass team.</li>
-            <li><strong>HåfaPass finance:</strong> arranges a secure way to collect your bank details. Never email bank details or ID documents.</li>
-            <li><strong>HåfaPass finance:</strong> approves the account. Complete and certify your W-9 in Tax information too.</li>
-          </ol>
-          <div className="flex flex-wrap gap-3">
-            {!bankAccount && <button type="button" disabled={busy} onClick={() => onSave({ provider: 'manual' })} className="btn-primary">Choose bank transfer</button>}
-            <SupportLink subject={`HåfaPass bank transfer setup — organization ${organizationId}`} className="btn-secondary">Contact HåfaPass team</SupportLink>
-          </div>
-          <p className="text-xs text-content-muted">The contact link opens your email app; nothing is sent until you send that message.</p>
+          <BankPayoutDetails account={bankAccount} busy={busy} onSave={onSave} />
+          <SupportLink subject={`HåfaPass bank transfer setup — organization ${organizationId}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Contact HåfaPass team</SupportLink>
+          <p className="text-xs text-content-muted">The contact link opens your email app. Do not include bank details.</p>
           <AccountStatus account={bankAccount} />
         </div>
       )}
