@@ -149,7 +149,9 @@ class PayoutMethodReview
     text = note.to_s.strip
     raise ReviewError, "Keep the note to 500 characters" if text.length > 500
     contains_account = account.bank_account_number.present? && text.gsub(/\D/, "").include?(account.bank_account_number)
-    if contains_account || !BackupWithholding.safe_text?(text) || text.match?(/(?<!\d)(?:\d[\s.\-–—\/,]*){5,34}(?!\d)/)
+    numeric_sequence = /(?<!\d)(?:\d[\s.\-–—\/,]*){8,34}(?!\d)/
+    account_reference = /\b(?:account|acct|bank|routing|tin)\s*[:#=]?\s*(?:\d[\s.\-–—\/,]*){4,34}/i
+    if contains_account || !BackupWithholding.safe_text?(text) || text.match?(numeric_sequence) || text.match?(account_reference)
       raise ReviewError, "Leave tax IDs and full bank account numbers out of the note"
     end
 

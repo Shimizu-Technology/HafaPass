@@ -56,7 +56,7 @@ RSpec.describe "Manual payout method approval", type: :request do
     post "/api/v1/organizer/events/#{event.id}/publish", headers: owner_headers
     expect(response).to have_http_status(:unprocessable_entity)
 
-    approve(note: "Payee and mailing address reviewed.", evidence_digest: "spoofed")
+    approve(note: "Payee and mailing address reviewed in GU 96910.", evidence_digest: "spoofed")
     expect(response).to have_http_status(:created), response.body
     expect(response.parsed_body.dig("payout_review", "status")).to eq("approved")
     expect(account.reload).to be_payout_ready
@@ -81,9 +81,9 @@ RSpec.describe "Manual payout method approval", type: :request do
       "connected_account.synced", "payment_readiness.submitted", "payment_readiness.approved", "connected_account.readiness_approved")
     delivery = MessageDelivery.find_by!(template: "payout_method_decision")
     expect(delivery.recipient).to eq(profile.user.email)
-    expect(delivery.metadata).to include("decision" => "approval", "note" => "Payee and mailing address reviewed.")
+    expect(delivery.metadata).to include("decision" => "approval", "note" => "Payee and mailing address reviewed in GU 96910.")
     payload = EmailService.prepare_delivery_payload(delivery)
-    expect(payload["html"]).to include("paid tickets can go on sale", "Payee and mailing address reviewed.")
+    expect(payload["html"]).to include("paid tickets can go on sale", "Payee and mailing address reviewed in GU 96910.")
   end
 
   it "requires every human confirmation, a future valid date and the current reviewed state" do
