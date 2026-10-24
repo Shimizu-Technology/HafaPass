@@ -52,7 +52,13 @@ class PayoutMethodReview
     latest_decision = account.payment_readiness_reviews.where(review_kind: %w[manual_payout manual_change_request])
       .where(decision: [:approval, :rejection]).order(created_at: :desc, id: :desc).first
     change_request = latest_decision&.decision_rejection? && latest_decision.provider_state_digest == account.readiness_state_digest
-    missing = account.manual_payout? ? account.manual_payout_missing : []
+    missing = if account.manual_payout?
+      account.manual_payout_missing
+    elsif !account.payout_supported?
+      [ConnectedAccount::BANK_UNAVAILABLE_REASON]
+    else
+      []
+    end
     status = if account.status_disabled?
       "disabled"
     elsif account.payout_ready?

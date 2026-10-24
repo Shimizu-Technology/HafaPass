@@ -102,6 +102,11 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
       expect(existing.reload.bank_account_number).to eq("123456789012")
       expect(existing).not_to be_payout_ready
+      legacy = create(:connected_account, provider: "legacy_manual")
+      expect(legacy).not_to be_payout_ready
+      expect(PayoutMethodReview.account_json(legacy).dig(:payout_review, :missing)).to include(ConnectedAccount::BANK_UNAVAILABLE_REASON)
+      expect { ConnectedAccounts::Manager.select!(account: legacy, actor: admin) }
+        .to raise_error(ConnectedAccounts::Manager::AccountError, /currently pays by check/)
       expect(PayoutMethodReview.account_json(existing).dig(:payout_review, :missing)).to include(ConnectedAccount::BANK_UNAVAILABLE_REASON)
       expect {
         PayoutMethodReview.approve!(account: existing, actor: admin,
