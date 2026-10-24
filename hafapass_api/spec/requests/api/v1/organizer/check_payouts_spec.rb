@@ -65,7 +65,7 @@ RSpec.describe "Check payout method", type: :request do
     digest = account.provider_configuration_digest
     expect(account.reload.payout_details).to eq({})
     expect(account.provider_configuration_digest).to eq(digest)
-    expect(account).to be_payout_ready
+    expect(account).not_to be_payout_ready
   end
 
   it "is limited to people who manage payouts" do

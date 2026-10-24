@@ -46,6 +46,11 @@ class ActivityLogSentence
 
   def specific_sentence
     case entry.action
+    when "payout_method.approved", "payout_method.changes_requested"
+      method = value("provider") == "check" ? "check" : "bank transfer"
+      organization = value("organization_name") || "organization ##{entry.organization_id}"
+      entry.action == "payout_method.approved" ? "HåfaPass approved the #{method} payout method for #{organization}." :
+        "HåfaPass asked for changes to the #{method} payout method for #{organization}."
     when "ticket_type.updated", "pricing_tier.updated", "catalog_item.updated"
       if before.key?("price_cents") && after.key?("price_cents") && before["price_cents"] != after["price_cents"]
         return "#{actor} changed #{subject}'s price from #{money(before['price_cents']) || 'not set'} to #{money(after['price_cents']) || 'not set'}."

@@ -35,7 +35,7 @@ describe('PaymentReadinessReviewDialog', () => {
       requirements_due: ['independent_readiness_approval'],
     }} onComplete={onComplete} />)
 
-    await user.click(screen.getByRole('button', { name: 'Submit Gate B evidence' }))
+    await user.click(screen.getByRole('button', { name: 'Submit payout evidence' }))
     const submit = screen.getByRole('button', { name: 'Submit evidence' })
     expect(submit).toBeDisabled()
 

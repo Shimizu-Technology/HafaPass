@@ -139,7 +139,7 @@ function SettingsPageSession({ identity }) {
         ? await requestApi('patch', `/organizer/connected_accounts/${accountId}`, { payout_details: details })
         : await requestApi('post', '/organizer/connected_accounts', { provider, ...(details ? { payout_details: details } : {}) })
       if (!canApply()) return false
-      setAccounts(items => [...items.filter(account => account.provider !== response.data.provider), response.data])
+      setAccounts(items => [...items.filter(account => account.provider !== response.data.provider).map(account => ({ ...account, selected: false })), response.data])
       setNotice(response.data.next_action)
       return true
     } catch (requestError) {

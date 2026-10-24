@@ -162,6 +162,7 @@
       "trigger": "created_at",
       "action": "keep",
       "pii_columns": [
+        "bank_account_number",
         "details_submitted",
         "payout_details"
       ]
@@ -667,7 +668,8 @@
       "pii_columns": [
         "evidence_digest",
         "evidence_reference",
-        "reason"
+        "reason",
+        "reviewed_snapshot"
       ]
     },
     "payments": {
@@ -1399,6 +1401,7 @@
     },
     "connected_accounts": {
       "id": "system",
+      "bank_account_number": "pii",
       "capabilities": "pii",
       "charges_enabled": "non-personal",
       "country": "system",
@@ -2114,7 +2117,8 @@
       "timezone": "system",
       "updated_at": "system",
       "marketing_mailing_address": "pii",
-      "marketing_address_certified_at": "system"
+      "marketing_address_certified_at": "system",
+      "payout_connected_account_id": "system"
     },
     "organizer_follows": {
       "id": "system",
@@ -2232,7 +2236,9 @@
       "provider_approval_reference": "pii",
       "provider_state_digest": "pii",
       "reason": "pii",
-      "updated_at": "system"
+      "updated_at": "system",
+      "review_kind": "system",
+      "reviewed_snapshot": "pii"
     },
     "payments": {
       "id": "system",

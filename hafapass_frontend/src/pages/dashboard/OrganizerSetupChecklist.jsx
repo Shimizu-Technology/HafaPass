@@ -1,3 +1,4 @@
+import { payoutReviewLabel } from '../../utils/payoutLabels'
 import { adminLabel as readableLabel } from '../admin/adminLabels'
 import { CheckCircle2, Circle, ListChecks } from 'lucide-react'
 import { useState } from 'react'
@@ -23,6 +24,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
   const progress = profile.setup_progress || {}
   const verification = VERIFICATION[profile.verification_status] || VERIFICATION.unverified
   const payoutMethod = progress.payout_method || profile.connected_account?.provider
+  const payoutReview = profile.connected_account?.payout_review
   const hasDescription = Boolean(profile.business_description?.trim())
 
   const steps = [
@@ -46,7 +48,7 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
     },
     {
       key: 'payout', title: 'How you get paid', done: profile.payout_ready,
-      status: profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : readableLabel(payoutMethod)} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
+      status: payoutReview ? payoutReviewLabel(profile.connected_account) : profile.payout_ready ? 'Approved' : payoutMethod ? `${payoutMethod === 'check' ? 'Check' : payoutMethod === 'manual' ? 'Bank transfer' : readableLabel(payoutMethod)} saved — waiting for HåfaPass finance review` : 'Only needed for paid tickets. Free events can skip this.',
       next: !profile.payout_ready ? 'Only needed for paid tickets: complete Tax information and How you get paid in Settings, then wait for finance approval.' : null,
       action: !profile.payout_ready && <Link to="/dashboard/settings" className="btn-secondary !px-4 !py-2 text-sm">{payoutMethod ? 'View payout details' : 'Choose check or bank transfer'}</Link>,
     },
@@ -90,6 +92,8 @@ export default function OrganizerSetupChecklist({ profile, canCreate, adminView 
                     <p className="text-sm text-neutral-700 [overflow-wrap:anywhere]">{step.status}</p>
                     {!step.done && step.next && <p className="mt-1 text-sm text-content-muted">{step.next}</p>}
                     {step.key === 'verification' && profile.verification_notes && !step.done && <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Review note: {profile.verification_notes}</p>}
+                    {step.key === 'payout' && payoutReview?.note && <p className="mt-2 whitespace-pre-line text-sm text-amber-900 [overflow-wrap:anywhere]">Review note: {payoutReview.note}</p>}
+                    {step.key === 'payout' && payoutReview?.missing?.length > 0 && <ul className="mt-2 list-disc pl-5 text-sm text-neutral-700 [overflow-wrap:anywhere]">{payoutReview.missing.map((item, index) => <li key={index}>{item}</li>)}</ul>}
                     {step.hint && <p className="mt-1 text-sm text-amber-900">{step.hint}</p>}
                   </div>
                 </div>

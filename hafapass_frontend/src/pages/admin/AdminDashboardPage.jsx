@@ -8,6 +8,7 @@ import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../.
 import { StaggerContainer, StaggerItem } from '../../components/ui/ScrollReveal'
 import { adminLabel } from './adminLabels'
 import Dialog from '../../components/Dialog'
+import PayoutAccountReviewQueue from '../../components/PayoutAccountReview'
 import OrganizerVerificationQueue from './OrganizerVerificationQueue'
 import { mutationErrorMessage } from './adminOperations'
 
@@ -97,7 +98,7 @@ function AdminDashboardSession({ identity }) {
       if (current()) { setData(response.data); setError('') }
     } catch (failure) {
       if (!current() || request.handleError(failure)) return
-      if (!quiet) setError('Unable to load the administrator dashboard. Please try again.')
+      setError('Unable to load the administrator dashboard. Please try again.')
     } finally {
       request.release()
       if (current()) setLoading(false)
@@ -196,6 +197,8 @@ function AdminDashboardSession({ identity }) {
           <Link to="/support" className="font-semibold underline">Open support console</Link>
         </div>
       </div>
+
+      <PayoutAccountReviewQueue queue={data.payout_setups_awaiting_approval} beginRequest={beginRequest} onChanged={refreshQuietly} />
 
       <OrganizerVerificationQueue awaiting={data.organizers_awaiting_verification} verified={data.verified_organizers} suspended={data.suspended_organizers} beginRequest={beginRequest} onChanged={refreshQuietly} />
 

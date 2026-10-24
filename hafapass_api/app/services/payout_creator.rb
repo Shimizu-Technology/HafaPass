@@ -189,8 +189,9 @@ class PayoutCreator
       withholding_review = tax.nil? || tax.certified_at.nil? || tax.backup_withholding_required?
       account = settlement.organization.payout_account
       if account.nil? && withholding_review
-        account = settlement.organization.connected_accounts.find do |candidate|
-          candidate.externally_ready? && candidate.active_payment_readiness_approval.present?
+        candidate = settlement.organization.connected_accounts.find_by(id: settlement.organization.payout_connected_account_id)
+        if candidate&.payout_supported? && candidate.externally_ready? && candidate.active_payment_readiness_approval.present?
+          account = candidate
         end
       end
       raise PayoutError, "A payout-ready connected account is required" unless account

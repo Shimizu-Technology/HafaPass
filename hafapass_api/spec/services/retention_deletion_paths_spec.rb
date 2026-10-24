@@ -51,8 +51,8 @@ RSpec.describe "Deletion path inventory" do
     ],
     "services/connected_accounts/manager.rb" => [
       [/values\.delete/, 2, "exempt: removes in-memory form fields"],
-      [/allowed\.delete/, 1, "exempt: removes in-memory form field"],
-      [/data\.delete/, 1, "exempt: removes in-memory response field"]
+      [/\.to_s\.delete/, 1, "exempt: normalizes an in-memory bank account string"],
+      [/allowed\.delete/, 1, "exempt: removes in-memory form field"]
     ],
     "services/organizer_tax_information_updater.rb" => [
       [/values\.delete/, 1, "exempt: removes in-memory form field"]

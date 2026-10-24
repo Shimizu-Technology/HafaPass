@@ -29,7 +29,8 @@ FactoryBot.define do
       payout_ready { true }
 
       after(:create) do |profile|
-        create(:connected_account, organization: profile.organization, provider: "legacy_manual")
+        create(:connected_account, organization: profile.organization, provider: "check",
+          payout_details: { "payee_name" => profile.business_name, "delivery_method" => "pickup" })
       end
     end
   end

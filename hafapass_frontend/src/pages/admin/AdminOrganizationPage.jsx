@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BadgeCheck, LayoutDashboard, Loader2 } from 'lucide-react'
+import PayoutAccountReviewQueue from '../../components/PayoutAccountReview'
 import Dialog from '../../components/Dialog'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
@@ -96,6 +97,7 @@ function AdminOrganizationSession({ id, identity }) {
             </div>
             <p className="mt-4 text-sm text-content-muted">Opening the dashboard lets you work inside this organization as an admin. Everything you change is recorded in the audit log.</p>
           </section>
+          <PayoutAccountReviewQueue accounts={organization.payout_accounts || []} beginRequest={beginRequest} onChanged={load} />
           <section aria-labelledby="organization-tax-heading" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
             <h2 id="organization-tax-heading" className="text-lg font-semibold">Tax information (W-9)</h2>
             {organization.tax_information ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">

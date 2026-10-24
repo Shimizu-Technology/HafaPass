@@ -6,5 +6,5 @@
 Rails.application.config.filter_parameters += [
   :credential, :qr_code, :passw, :email, :phone, :secret, :token, :authorization, :_key, :crypt, :salt,
   :certificate, :code, :verification_code, :otp, :ssn, :tin, :tax_information,
-  :card_number, :cvv, :cvc, :file, :upload, :"X-Preview-Token", :"HTTP_X_PREVIEW_TOKEN"
+  :card_number, :account_number, :bank_account_number, :note, :cvv, :cvc, :file, :upload, :"X-Preview-Token", :"HTTP_X_PREVIEW_TOKEN"
 ]

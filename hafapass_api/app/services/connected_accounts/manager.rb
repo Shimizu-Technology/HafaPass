@@ -21,8 +21,10 @@ module ConnectedAccounts
         raise AccountError, "Choose check, bank transfer, PayPal, or Stripe"
       end
 
+      raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON if provider == "manual" && !ConnectedAccount::BANK_TRANSFERS_ENABLED
+
       account = organization.connected_accounts.find_or_initialize_by(provider: provider)
-      if account.persisted? && provider == "check"
+      if account.persisted? && account.manual_payout?
         # Restarting a check setup only updates who the check is for.
         return update_payout_details!(account: account, payout_details: payout_details, actor: actor, request: request)
       end
@@ -34,6 +36,7 @@ module ConnectedAccounts
         last_synced_at: Time.current
       )
       account.payout_details = normalize_check_details(payout_details) if provider == "check"
+      assign_bank_details!(account, payout_details) if provider == "manual" && payout_details.present?
       account.save!
       AuditLogger.record!(
         action: "connected_account.onboarding_started",
@@ -51,14 +54,20 @@ module ConnectedAccounts
     # Changing who a check is written to (or where it goes) is a change to
     # where money goes, so any earlier readiness approval stops applying.
     def self.update_payout_details!(account:, payout_details:, actor:, request: nil)
-      raise AccountError, "Only check payouts have payee details" unless account.provider == "check"
-      details = normalize_check_details(payout_details)
-      ensure_no_check_in_flight!(account.organization)
+      raise AccountError, "Only manual payouts have payee details" unless account.manual_payout?
+      raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
+      details = normalize_check_details(payout_details) if account.provider == "check"
+      if account.provider == "check"
+        ensure_no_check_in_flight!(account.organization)
+      elsif account.payouts.where(status: [:pending, :processing, :held]).exists?
+        raise AccountError, "A bank payout is in progress. You can change bank details after HåfaPass resolves it."
+      end
 
       before_data = readiness_snapshot(account)
       provider_configuration_before = account.provider_configuration_digest
-      account.payout_details = details
-      if account.provider_configuration_digest != provider_configuration_before
+      account.payout_details = details if account.provider == "check"
+      assign_bank_details!(account, payout_details) if account.provider == "manual"
+      if account.provider_configuration_digest != provider_configuration_before || account.bank_account_number_changed?
         account.readiness_revision += 1
         account.status = derived_status(account, disabled: account.status_disabled?)
       end
@@ -76,6 +85,25 @@ module ConnectedAccounts
       account
     rescue ActiveRecord::RecordInvalid => e
       raise AccountError, e.record.errors.full_messages.to_sentence
+    end
+
+    def self.select!(account:, actor:, request: nil)
+      organization = account.organization
+      organization.with_lock do
+        account.lock!
+        raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
+        raise AccountError, "This payout method is disabled" if account.status_disabled?
+        return account if organization.payout_connected_account_id == account.id
+        if organization.payouts.where(status: [:pending, :processing, :held]).exists?
+          raise AccountError, "A payout is in progress. Change the payout method after HåfaPass resolves it."
+        end
+        previous = organization.payout_connected_account_id
+        organization.update!(payout_connected_account: account)
+        AuditLogger.record!(action: "connected_account.destination_selected", auditable: account,
+          actor: actor, organization: organization, request: request,
+          before_data: { payout_connected_account_id: previous }, after_data: { payout_connected_account_id: account.id })
+      end
+      account
     end
 
     CHECK_IN_FLIGHT_MESSAGE = "A check payout is in progress. You can change payee details after HåfaPass records it."
@@ -98,7 +126,31 @@ module ConnectedAccounts
     end
     private_class_method :normalize_check_details
 
+    def self.assign_bank_details!(account, details)
+      values = details.respond_to?(:to_unsafe_h) ? details.to_unsafe_h : details
+      raise AccountError, "Enter the bank name, account holder and account number" unless values.is_a?(Hash)
+
+      values = values.stringify_keys
+      account.payout_details = values.slice("bank_name", "account_holder_name").transform_values { |value| value.to_s.strip }
+      if values["account_number"].present?
+        number = values["account_number"].to_s.delete(" -")
+        raise AccountError, "Enter a bank account number with 4 to 34 digits" unless number.match?(/\A\d{4,34}\z/)
+
+        account.bank_account_number = number
+      end
+      if account.payout_details.values.any? { |value| value.length > 200 }
+        raise AccountError, "Bank details are too long"
+      end
+    end
+    private_class_method :assign_bank_details!
+
     def self.sync!(account:, attributes:, actor:, request: nil)
+      account.organization.with_lock do
+        account.with_lock { sync_locked!(account: account, attributes: attributes, actor: actor, request: request) }
+      end
+    end
+
+    def self.sync_locked!(account:, attributes:, actor:, request: nil)
       before_data = readiness_snapshot(account)
       provider_configuration_before = account.provider_configuration_digest
       allowed = attributes.to_h.symbolize_keys.slice(
@@ -135,6 +187,7 @@ module ConnectedAccounts
     rescue ActiveRecord::RecordInvalid => e
       raise AccountError, e.record.errors.full_messages.to_sentence
     end
+    private_class_method :sync_locked!
 
     def self.refresh_readiness!(account:, actor:, request: nil, action: "connected_account.readiness_recomputed")
       before_data = readiness_snapshot(account)
@@ -197,7 +250,7 @@ module ConnectedAccounts
         "provider", "provider_account_id", "status", "charges_enabled", "payouts_enabled",
         "details_submitted", "requirements_due", "capabilities", "readiness_revision", "last_synced_at",
         "payout_details"
-      ).tap { |data| data.delete("payout_details") unless account.provider == "check" }
+      ).tap { |data| data["payout_details"] = account.safe_payout_details }
     end
     private_class_method :readiness_snapshot
   end

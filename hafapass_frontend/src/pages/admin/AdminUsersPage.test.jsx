@@ -21,12 +21,12 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('mobile administrator user controls', () => {
   it('exposes verification and readiness review in the phone card', async () => {
-    show(); const mobile = await card()
+    show(); const mobile = await card(); await userEvent.click(mobile.getByText('Advanced'))
     expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toBeEnabled()
     expect(mobile.getByRole('button', { name: 'Record provider status' })).toBeEnabled()
     expect(mobile.getByRole('button', { name: 'Disable' })).toBeEnabled()
     expect(mobile.getByRole('region', { name: 'Organizer readiness for organizer@example.test' })).not.toHaveClass('hidden')
-    await userEvent.click(mobile.getByRole('button', { name: 'Submit Gate B evidence' }))
+    await userEvent.click(mobile.getByRole('button', { name: 'Submit payout evidence' }))
     expect(await screen.findByRole('dialog', { name: 'stripe payment readiness' })).toBeInTheDocument()
     expect(screen.getByText('Every item must be supported by the referenced evidence—not assumed from a sandbox test.')).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -44,16 +44,17 @@ describe('mobile administrator user controls', () => {
     await waitFor(() => expect(mobile.getByRole('combobox', { name: 'Verification status for Guam Test Events' })).toHaveValue('verified'))
   })
   it('keeps capability sync confirmation separate from evidence approval', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    show(); const mobile = await card()
+    const confirm = vi.spyOn(window, 'confirm')
+    show(); const mobile = await card(); await userEvent.click(mobile.getByText('Advanced'))
     await userEvent.click(mobile.getByRole('button', { name: 'Record provider status' }))
-    expect(confirm).toHaveBeenCalledWith('Record the provider capability sync? Finance approval will still be required.')
+    expect(confirm).not.toHaveBeenCalled()
     expect(apiClient.patch).not.toHaveBeenCalled()
-    confirm.mockReturnValue(true)
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
     apiClient.patch.mockResolvedValue({ data: { ...organizer.organizer_profile.connected_account, charges_enabled: true, payouts_enabled: true, details_submitted: true, payout_ready: false, requirements_due: ['independent_readiness_approval'] } })
     await userEvent.click(mobile.getByRole('button', { name: 'Record provider status' }))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Record provider status' }))
     expect(apiClient.patch).toHaveBeenCalledWith('/admin/connected_accounts/11', { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    await waitFor(() => expect(mobile.getByRole('button', { name: 'Submit Gate B evidence' })).toBeEnabled())
+    await waitFor(() => expect(mobile.getByRole('button', { name: 'Submit payout evidence' })).toBeEnabled())
     expect(apiClient.post).not.toHaveBeenCalled()
   })
   it('confirms any role change in a dialog and restores the select on cancel', async () => {
@@ -138,7 +139,7 @@ describe('mobile administrator user controls', () => {
   it('blocks and explains a second change while one is saving', async () => {
     let finish
     apiClient.patch.mockReturnValue(new Promise(resolve => { finish = resolve }))
-    show(); const mobile = await card()
+    show(); const mobile = await card(); await userEvent.click(mobile.getByText('Advanced'))
     await userEvent.selectOptions(mobile.getByRole('combobox', { name: 'Role for organizer@example.test' }), 'support')
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Change role' }))
     const dialog = within(screen.getByRole('dialog', { name: 'Change platform role?' }))

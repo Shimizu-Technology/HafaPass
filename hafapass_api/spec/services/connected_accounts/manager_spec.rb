@@ -30,7 +30,7 @@ RSpec.describe ConnectedAccounts::Manager do
   end
 
   it "moves accounts to requirements due and disabled states deterministically" do
-    account = described_class.start!(organization: organization, provider: "manual", actor: actor)
+    account = described_class.start!(organization: organization, provider: "paypal", actor: actor)
     account = described_class.sync!(account: account, actor: actor,
       attributes: { details_submitted: true, requirements_due: ["bank_account_review"] })
     expect(account).to be_status_requirements_due

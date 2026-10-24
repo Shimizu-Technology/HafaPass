@@ -87,6 +87,7 @@ class Api::V1::Admin::OrganizationsController < Api::V1::Admin::BaseController
     profile = organization.organizer_profile
     organization_summary(organization).merge(
       tax_information: organization.organizer_tax_information&.safe_json,
+      payout_accounts: organization.connected_accounts.order(updated_at: :desc, id: :desc).map { |account| PayoutMethodReview.account_json(account) },
       timezone: organization.timezone,
       events_count: organization.events.count,
       organizer_profile: profile && {

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -172,8 +172,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
     t.index ["organization_id", "occurred_at"], name: "index_audit_logs_on_organization_id_and_occurred_at"
     t.index ["organization_id"], name: "index_audit_logs_on_organization_id"
     t.index ["retention_anonymized_at"], name: "index_audit_logs_on_retention_anonymized_at"
-    t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'unknown'::character varying]::text[]))", name: "audit_logs_outcome"
-    t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying, 'system'::character varying, 'provider'::character varying, 'admin'::character varying]::text[]))", name: "audit_logs_source"
+    t.check_constraint "outcome IS NULL OR (outcome::text = ANY (ARRAY['requested'::character varying::text, 'succeeded'::character varying::text, 'failed'::character varying::text, 'unknown'::character varying::text]))", name: "audit_logs_outcome"
+    t.check_constraint "source IS NULL OR (source::text = ANY (ARRAY['user'::character varying::text, 'system'::character varying::text, 'provider'::character varying::text, 'admin'::character varying::text]))", name: "audit_logs_source"
   end
 
   create_table "audit_write_failures", force: :cascade do |t|
@@ -386,6 +386,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.jsonb "payout_details", default: {}, null: false
+    t.text "bank_account_number"
     t.index ["organization_id", "provider"], name: "index_connected_accounts_on_organization_id_and_provider", unique: true
     t.index ["organization_id"], name: "index_connected_accounts_on_organization_id"
     t.index ["provider", "provider_account_id"], name: "idx_connected_accounts_unique_provider_id", unique: true, where: "(provider_account_id IS NOT NULL)"
@@ -1394,6 +1395,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
     t.datetime "updated_at", null: false
     t.text "marketing_mailing_address"
     t.datetime "marketing_address_certified_at"
+    t.bigint "payout_connected_account_id"
+    t.index ["payout_connected_account_id"], name: "index_organizations_on_payout_connected_account_id"
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
@@ -1537,6 +1540,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
     t.string "provider_state_digest", null: false
     t.text "reason"
     t.datetime "updated_at", null: false
+    t.string "review_kind", default: "provider_evidence", null: false
+    t.jsonb "reviewed_snapshot", default: {}, null: false
     t.index ["actor_user_id"], name: "index_payment_readiness_reviews_on_actor_user_id"
     t.index ["connected_account_id", "created_at"], name: "idx_payment_reviews_account_timeline"
     t.index ["connected_account_id"], name: "index_payment_readiness_reviews_on_connected_account_id"
@@ -2952,6 +2957,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_110000) do
   add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
   add_foreign_key "organization_memberships", "users", column: "invited_by_user_id", on_delete: :nullify
   add_foreign_key "organization_memberships", "users", on_delete: :restrict
+  add_foreign_key "organizations", "connected_accounts", column: "payout_connected_account_id"
   add_foreign_key "organizer_follows", "organizations", on_delete: :cascade
   add_foreign_key "organizer_follows", "users", on_delete: :cascade
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict

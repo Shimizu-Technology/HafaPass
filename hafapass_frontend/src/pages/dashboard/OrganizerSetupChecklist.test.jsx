@@ -20,6 +20,15 @@ describe('OrganizerSetupChecklist', () => {
     expect(screen.getByText(`${business_name} — shown on your event pages`)).toBeInTheDocument()
   })
 
+  it.each([['waiting', 'Waiting for HåfaPass approval'], ['changes_requested', 'Changes requested'], ['incomplete', 'Setup incomplete'], ['approved', 'Approved — paid tickets can go on sale']])('uses the %s payout review and organizer note in the checklist', (status, label) => {
+    show({ ...base, connected_account: { provider: 'manual', payout_review: { status, note: 'Confirm the business name.', missing: ['W-9 needs certification.'] } } })
+    const payout = within(screen.getByText('How you get paid').closest('li'))
+    expect(payout.getByText(label)).toBeVisible()
+    expect(payout.getByText('Review note: Confirm the business name.')).toBeVisible()
+    expect(payout.getByText('W-9 needs certification.')).toBeVisible()
+    expect(payout.getByRole('link', { name: 'View payout details' })).toHaveAttribute('href', '/dashboard/settings')
+  })
+
   it('formats an unknown payout enum before composing its status', () => {
     show({ ...base, setup_progress: { ...base.setup_progress, payout_method: 'future_provider' } })
     expect(screen.getByText('Future provider saved — waiting for HåfaPass finance review')).toBeInTheDocument()

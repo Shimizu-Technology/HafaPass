@@ -1,6 +1,7 @@
+import { Link } from 'react-router-dom'
 import { payoutAccountLabel, payoutRequirementLabel } from '../../utils/payoutLabels'
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useId, useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
@@ -94,6 +95,8 @@ function AccessPicker({ user, busy, onChange, className = '' }) {
 }
 
 function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount, fetchUsers }) {
+  const [confirmProvider, setConfirmProvider] = useState(false)
+  const providerTitleId = useId()
   const profile = user.organizer_profile
   if (!profile) return <p className="text-sm text-content-muted">No organizer profile.</p>
   const account = profile.connected_account
@@ -110,10 +113,10 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
           <p className="break-words font-semibold text-neutral-800">{payoutAccountLabel(account)}</p>
           {account.provider === 'check' && account.payout_details?.payee_name && <p className="mt-1 [overflow-wrap:anywhere] text-neutral-800">Check to {account.payout_details.payee_name} · {account.payout_details.delivery_method === 'pickup' ? 'pickup' : 'mail'}</p>}
           <p className="mt-1 [overflow-wrap:anywhere] text-content-muted">{account.requirements_due?.length ? `Still needed: ${account.requirements_due.map(payoutRequirementLabel).join(', ')}` : 'No outstanding requirements'}</p>
+          {['check', 'manual'].includes(account.provider) && account.organization_id && <Link to={`/admin/organizations/${account.organization_id}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Review payout setup</Link>}
+          <details className="mt-2"><summary className="min-h-11 cursor-pointer py-3 font-semibold">Advanced</summary>
           <div className="mt-2 flex flex-wrap gap-2">
-            {!profile.payout_ready && <button onClick={() => {
-              if (window.confirm('Record the provider capability sync? Finance approval will still be required.')) syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] })
-            }} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
+            {!profile.payout_ready && <button onClick={() => setConfirmProvider(true)} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Record provider status</button>}
             {account.status !== 'disabled' && <button onClick={() => syncConnectedAccount(user, { disabled: true })} disabled={busy} className="min-h-11 rounded px-2 font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">Disable</button>}
           </div>
           {(account.requirements_due?.includes('independent_readiness_approval') || account.readiness_submission || account.readiness_approval) && (
@@ -121,8 +124,14 @@ function OrganizerReadiness({ user, busy, reviewOrganizer, syncConnectedAccount,
               <PaymentReadinessReviewDialog account={account} onComplete={fetchUsers} />
             </div>
           )}
+          </details>
         </div>
       ) : <p className="text-sm text-amber-800">Organizer has not started payout onboarding.</p>}
+      {confirmProvider && <Dialog labelledBy={providerTitleId} busy={busy} onClose={() => setConfirmProvider(false)} className="max-w-md">
+        <h2 id={providerTitleId} className="text-lg font-semibold">Record provider status?</h2>
+        <p className="mt-2 text-sm text-neutral-700">Record the provider capability sync. Finance approval will still be required.</p>
+        <div className="mt-6 flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} className="btn-secondary" onClick={() => setConfirmProvider(false)}>Cancel</button><button type="button" disabled={busy} className="btn-primary" onClick={() => { setConfirmProvider(false); syncConnectedAccount(user, { charges_enabled: true, payouts_enabled: true, details_submitted: true, requirements_due: [] }) }}>Record provider status</button></div>
+      </Dialog>}
     </div>
   )
 }

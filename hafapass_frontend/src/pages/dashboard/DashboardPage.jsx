@@ -274,6 +274,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
 
 function DashboardSession({ authContext }) {
  const [profile, setProfile] = useState(null)
+ const [payoutAccount, setPayoutAccount] = useState(null)
  const [events, setEvents] = useState([])
  const [loading, setLoading] = useState(true)
  const [error, setError] = useState(null)
@@ -434,6 +435,7 @@ function DashboardSession({ authContext }) {
   requests.current.clear()
   closeEditor(editorRef.current)
   setReadinessLoading(false)
+  setPayoutAccount(null)
   // An earlier organization's setup error must not look like this one's.
   setActionError(null)
   const requestedOrganization = window.localStorage.getItem('hafapass_organization_id')
@@ -475,6 +477,19 @@ function DashboardSession({ authContext }) {
    if (!current()) return
    setProfile(profileRes.data)
    setProfileContext(context)
+   if (selectedOrganization?.permissions?.manage_payout_settings) {
+    const payoutRequest = beginRequest(context)
+    if (payoutRequest) {
+     void apiClient.get('/organizer/connected_accounts', { ...payoutRequest.config, organizationId: expectedOrganization })
+      .then(response => {
+       if (!payoutRequest.current()) return
+       const accounts = Array.isArray(response.data) ? response.data : []
+       setPayoutAccount(accounts.find(account => account.payout_ready) || accounts.find(account => ['check', 'manual'].includes(account.provider)) || null)
+      })
+      .catch(() => { /* Settings offers a retry if payout details are unavailable. */ })
+      .finally(() => payoutRequest.release())
+    }
+   }
 
    eventsStarted = true
    void fetchEventsRef.current(context)
@@ -641,7 +656,7 @@ function DashboardSession({ authContext }) {
    </section>}
 
    {canManageProfile && <VerificationNotice key={organization?.id} profile={profile} beginRequest={() => beginRequest(profileContext)} onUpdated={fetchDashboard} requestSignal={verificationRequestSignal} organizationId={organization?.id} className="mb-6" />}
-   {canManageProfile && <OrganizerSetupChecklist profile={profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
+   {canManageProfile && <OrganizerSetupChecklist profile={payoutAccount ? { ...profile, connected_account: payoutAccount, payout_ready: payoutAccount.payout_ready } : profile} canCreate={canCreate} adminView={Boolean(organization?.admin_view)} busy={readinessLoading}
     agreementError={actionError?.path === 'accept_policy' ? actionError.message : null} onOpenAgreement={() => setActionError(null)}
     onEditProfile={openEditor}
     onAcceptPolicy={() => updateReadiness('accept_policy')}
