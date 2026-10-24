@@ -99,15 +99,14 @@ class ConnectedAccount < ApplicationRecord
     return check_payee if provider == "check"
     return {} unless provider == "manual"
 
-    payout_details.to_h.slice("bank_name", "account_holder_name").merge(
-      "masked_account" => if bank_account_number.blank?
-        nil
-                          elsif bank_account_number.length <= 4
-        "••••"
-                          else
-        "•••• #{bank_account_number.last(4)}"
-                          end
-    )
+    masked = if bank_account_number.blank?
+      nil
+    elsif bank_account_number.length <= 4
+      "••••"
+    else
+      "•••• #{bank_account_number.last(4)}"
+    end
+    payout_details.to_h.slice("bank_name", "account_holder_name").merge("masked_account" => masked)
   end
 
   def manual_payout_missing

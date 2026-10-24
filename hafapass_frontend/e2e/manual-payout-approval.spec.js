@@ -115,6 +115,18 @@ for (const width of [375, 1280]) {
     expect(requests[1]).toEqual({ payout_details: { bank_name: 'Renamed Bank', account_holder_name: 'Island Events LLC' } })
     await accessible(page, width)
     await expect(payouts.getByText('Renamed Bank')).toBeVisible()
+    account.payout_review = { ...account.payout_review, status: 'waiting', note: null, missing: [] }
+    await page.reload()
+    await expect(payouts.getByText('Waiting for HåfaPass approval', { exact: true })).toBeVisible()
+    await accessible(page, width)
+    account.payout_ready = true
+    account.payout_review.status = 'approved'
+    await page.reload()
+    await expect(payouts.getByText('Approved — paid tickets can go on sale', { exact: true })).toBeVisible()
+    await accessible(page, width)
+    account.payout_ready = false
+    account.payout_review = { ...account.payout_review, status: 'changes_requested', note: 'Please confirm your legal name.' }
+
     await page.route('**/api/v1/organizer_profile', route => json(route, { id: 1, business_name: 'Island Events', business_description: 'Community events', verification_status: 'verified', policy_accepted: true, payout_ready: false, setup_progress: { events_count: 0, published_events_count: 0 } }))
     await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [], meta: { current_page: 1, total_pages: 1, total_count: 0 } }))
     await page.route('**/api/v1/organizer/events/summary', route => json(route, { upcoming_events_count: 0, tickets_sold: 0, next_event: null }))

@@ -20,7 +20,7 @@ describe('OrganizerSetupChecklist', () => {
     expect(screen.getByText(`${business_name} — shown on your event pages`)).toBeInTheDocument()
   })
 
-  it.each([['waiting', 'Waiting for HåfaPass review'], ['changes_requested', 'Changes requested'], ['incomplete', 'Setup incomplete'], ['approved', 'Payout method approved']])('uses the %s payout review and organizer note in the checklist', (status, label) => {
+  it.each([['waiting', 'Waiting for HåfaPass approval'], ['changes_requested', 'Changes requested'], ['incomplete', 'Setup incomplete'], ['approved', 'Approved — paid tickets can go on sale']])('uses the %s payout review and organizer note in the checklist', (status, label) => {
     show({ ...base, connected_account: { provider: 'manual', payout_review: { status, note: 'Confirm the business name.', missing: ['W-9 needs certification.'] } } })
     const payout = within(screen.getByText('How you get paid').closest('li'))
     expect(payout.getByText(label)).toBeVisible()

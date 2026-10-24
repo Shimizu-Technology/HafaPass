@@ -21,6 +21,6 @@ export const paidPayoutExplanation = provider => provider === 'check'
   : 'Recorded as paid after bank or provider payment confirmation.'
 
 export const payoutReviewLabel = account => ({
-  waiting: 'Waiting for HåfaPass review', approved: 'Payout method approved',
+  waiting: 'Waiting for HåfaPass approval', approved: 'Approved — paid tickets can go on sale',
   changes_requested: 'Changes requested', incomplete: 'Setup incomplete',
-})[account.payout_review?.status] || (account.payout_ready ? 'Payout method approved' : 'Waiting for HåfaPass review')
+})[account.payout_review?.status] || (account.payout_ready ? 'Approved — paid tickets can go on sale' : 'Waiting for HåfaPass approval')

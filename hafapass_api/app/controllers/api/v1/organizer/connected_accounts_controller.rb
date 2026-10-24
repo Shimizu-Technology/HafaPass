@@ -45,7 +45,7 @@ class Api::V1::Organizer::ConnectedAccountsController < Api::V1::Organizer::Base
     case account.provider
     when "check" then "Saved. HåfaPass finance will confirm the payee details, then mails or holds your check after each event settles."
     when "paypal" then "HåfaPass marketplace approval and PayPal seller onboarding are required"
-    when "manual" then "Submit banking documents for finance review"
+    when "manual" then "Saved. Waiting for HåfaPass approval. We'll contact you if anything needs to change."
     when "stripe" then "Do not continue until Stripe confirms Guam entity and bank eligibility in writing"
     end
   end
