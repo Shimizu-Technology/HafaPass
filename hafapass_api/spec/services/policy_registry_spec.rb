@@ -98,10 +98,10 @@ RSpec.describe PolicyRegistry do
   end
 
   it "serves the owner-approved policies with a shared effective date" do
-    expect(described_class.version).to eq("2026-10-22")
-    expect(described_class.effective_date).to eq("2026-10-22")
+    expect(described_class.version).to eq("2026-10-24")
+    expect(described_class.effective_date).to eq("2026-10-24")
     expect(described_class.status).to eq("approved")
-    expect(described_class.review_summary).to include(draft: false, effective_date: "2026-10-22")
+    expect(described_class.review_summary).to include(draft: false, effective_date: "2026-10-24")
     expect(described_class.public_documents.keys).to include(
       "buyer-terms", "refunds", "privacy", "organizer-agreement", "acceptable-use", "retention", "cookies", "accessibility"
     )
@@ -149,7 +149,7 @@ RSpec.describe PolicyRegistry do
 
     expect(profile.reload).not_to be_policy_accepted
     expect(described_class.buyer_terms[:digest]).not_to eq(buyer_digest)
-    expect(described_class.buyer_terms[:version]).to eq("2026-10-22")
+    expect(described_class.buyer_terms[:version]).to eq("2026-10-24")
   end
 
   it "treats acceptance of the previous pilot draft as stale" do
