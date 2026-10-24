@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Evidence-backed payout reconciliation", type: :request do
+  # Retain coverage for historical bank transfers behind the execution gate.
+  before { stub_const("ConnectedAccount::BANK_TRANSFERS_ENABLED", true) }
   let(:admin) { create(:user, :admin) }
   let(:organization) { create(:organization) }
   let(:profile) { create(:organizer_profile, organization: organization) }
@@ -16,6 +18,20 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
 
   def reconcile(attributes = payload, actor: admin)
     patch "/api/v1/admin/payouts/#{payout.id}", params: attributes, headers: auth_headers(actor)
+  end
+
+  context "with the current check-only policy" do
+    before { stub_const("ConnectedAccount::BANK_TRANSFERS_ENABLED", false) }
+
+    it "still records an already-issued bank transfer after explicit approved-payee confirmation" do
+      reconcile
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("Confirm this payout was already sent")
+      reconcile(payload.merge(evidence: evidence.merge(approved_tax_payee_confirmed: true)))
+      expect(response).to have_http_status(:ok)
+      expect(payout.reload).to be_status_paid
+      expect(account.reload).not_to be_payout_ready
+    end
   end
 
   it "records an issued payment after a new withholding flag without rewriting its net" do

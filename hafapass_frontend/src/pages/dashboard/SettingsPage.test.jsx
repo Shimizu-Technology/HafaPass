@@ -140,12 +140,12 @@ describe('SettingsPage', () => {
     expect(screen.getByText('payee details review')).toBeInTheDocument()
   })
 
-  it('keeps an assisted bank transfer status after reload', async () => {
+  it('shows check-only payouts for a saved bank account after reload', async () => {
     accounts = [{ id: 4, provider: 'manual', status: 'onboarding', payout_ready: false, requirements_due: ['bank_account_review'] }]
     show()
-    await screen.findByText('bank details review')
-    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
-    expect(screen.getByRole('link', { name: 'Contact HåfaPass team' })).toHaveAttribute('href', expect.stringContaining('mailto:'))
+    await screen.findByText('Not available yet — HåfaPass currently pays by check.')
+    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeDisabled()
+    expect(screen.queryByLabelText('Account number')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Choose bank transfer' })).not.toBeInTheDocument()
   })
 

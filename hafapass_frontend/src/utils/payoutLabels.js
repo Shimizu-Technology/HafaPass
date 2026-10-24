@@ -20,7 +20,10 @@ export const paidPayoutExplanation = provider => provider === 'check'
   ? 'Recorded as paid with the date on the check. This does not confirm the check has cleared.'
   : 'Recorded as paid after bank or provider payment confirmation.'
 
-export const payoutReviewLabel = account => ({
+export const payoutReviewLabel = account => account.payout_review?.status === 'approved' && account.selected === false
+  ? 'Approved — select this method to receive payouts'
+  : ({
+  disabled: 'Disabled',
   waiting: 'Waiting for HåfaPass approval', approved: 'Approved — paid tickets can go on sale',
   changes_requested: 'Changes requested', incomplete: 'Setup incomplete',
 })[account.payout_review?.status] || (account.payout_ready ? 'Approved — paid tickets can go on sale' : 'Waiting for HåfaPass approval')

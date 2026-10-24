@@ -2,6 +2,8 @@
 
 class ConnectedAccount < ApplicationRecord
   PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
+  BANK_TRANSFERS_ENABLED = false
+  BANK_UNAVAILABLE_REASON = "Bank transfer is not available yet — HåfaPass currently pays by check"
   CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
   MANUAL_PROVIDERS = %w[check manual].freeze
   encrypts :bank_account_number
@@ -24,7 +26,11 @@ class ConnectedAccount < ApplicationRecord
   validate :check_payee_details, if: -> { provider == "check" }
 
   def payout_ready?
-    organization.organizer_tax_information&.certified_at.present? && externally_ready? && active_payment_readiness_approval.present?
+    payout_supported? && organization.organizer_tax_information&.certified_at.present? && externally_ready? && active_payment_readiness_approval.present?
+  end
+
+  def payout_supported?
+    !%w[manual legacy_manual].include?(provider) || BANK_TRANSFERS_ENABLED
   end
 
   def externally_ready?
@@ -42,7 +48,10 @@ class ConnectedAccount < ApplicationRecord
       .where(provider_state_digest: readiness_state_digest)
       .where.not(id: revoked_approval_ids)
       .order(created_at: :desc)
-      .first
+      .find do |review|
+        !manual_payout? || (review.review_kind == "manual_payout" &&
+          review.evidence_digest == PayoutMethodReview.digest(self.class.find(id)))
+      end
   end
 
   def latest_payment_readiness_approval
@@ -111,6 +120,7 @@ class ConnectedAccount < ApplicationRecord
 
   def manual_payout_missing
     missing = []
+    missing << BANK_UNAVAILABLE_REASON unless payout_supported?
     missing << "W-9 not certified yet" unless organization.organizer_tax_information&.certified_at.present?
     complete = if provider == "check"
       check_payee["payee_name"].present? && CHECK_DELIVERY_METHODS.include?(check_payee["delivery_method"]) &&

@@ -34,6 +34,7 @@ module PaymentReadinessReviews
     end
 
     def self.approve!(submission:, actor:, request: nil, reason: nil)
+      raise ReviewError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless submission.connected_account.payout_supported?
       raise ReviewError, "A change request cannot be approved" if submission.review_kind == "manual_change_request"
       raise ReviewError, "Only a submission can be approved" unless submission.decision_submission?
       if submission.child_reviews.where(decision: [:approval, :rejection]).exists?
@@ -48,7 +49,7 @@ module PaymentReadinessReviews
         end
         raise ReviewError, "The evidence approval window is not yet effective" if submission.effective_at > Time.current
         raise ReviewError, "The evidence approval window has expired" if submission.expires_at <= Time.current
-        unless submission.provider_state_digest == submission.connected_account.readiness_state_digest
+        unless submission.send(:provider_state_unchanged?)
           raise ReviewError, "Provider state changed; submit a new evidence snapshot"
         end
         if submission.connected_account.active_payment_readiness_approval

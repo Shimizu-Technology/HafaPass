@@ -7,19 +7,29 @@ class PayoutMethodReview
   class ReviewError < StandardError; end
   class StateChanged < ReviewError; end
 
-  TAX_FIELDS = %w[w9_on_file legal_name business_name masked_tin tax_classification certified_at certification_version].freeze
+  TAX_FIELDS = %w[w9_on_file legal_name business_name masked_tin tax_classification mailing_address certified_at certification_version].freeze
 
   def self.tax_snapshot(account)
-    account.organization.organizer_tax_information&.safe_json&.slice(*TAX_FIELDS) || { "w9_on_file" => false }
+    OrganizerTaxInformation.find_by(organization_id: account.organization_id)&.safe_json&.slice(*TAX_FIELDS) || { "w9_on_file" => false }
   end
 
   def self.snapshot(account)
     {
-      "version" => "manual-payout-v1", "organization_id" => account.organization_id,
+      "version" => "manual-payout-v2", "organization_id" => account.organization_id,
       "organization_name" => account.organization.name, "provider" => account.provider,
       "country" => account.country, "currency" => account.currency,
       "payout_details" => account.safe_payout_details, "tax_information" => tax_snapshot(account),
+      "identity_fingerprints" => identity_fingerprints(account),
       "readiness_state_digest" => account.readiness_state_digest
+    }
+  end
+
+  def self.identity_fingerprints(account)
+    tax = OrganizerTaxInformation.find_by(organization_id: account.organization_id)
+    {
+      "tin" => (OrganizerTaxInformation.tin_digest_for(tax.tin) if tax&.tin.present?),
+      "check_payee" => OpenSSL::HMAC.hexdigest("SHA256",
+        Rails.application.key_generator.generate_key("hafapass/check-payee/v1", 32), canonical(account.check_payee).to_json)
     }
   end
 
@@ -43,7 +53,9 @@ class PayoutMethodReview
       .where(decision: [:approval, :rejection]).order(created_at: :desc, id: :desc).first
     change_request = latest_decision&.decision_rejection? && latest_decision.provider_state_digest == account.readiness_state_digest
     missing = account.manual_payout? ? account.manual_payout_missing : []
-    status = if account.payout_ready?
+    status = if account.status_disabled?
+      "disabled"
+    elsif account.payout_ready?
       "approved"
     elsif change_request
       "changes_requested"
@@ -55,6 +67,7 @@ class PayoutMethodReview
     {
       id: account.id, provider: account.provider, organization_id: account.organization_id,
       organization_name: organization.name, owner_email: owner&.user&.email || organization.organizer_profile&.user&.email,
+      selected: organization.payout_connected_account_id == account.id,
       status: account.status, payout_ready: account.payout_ready?, payout_details: account.safe_payout_details,
       tax_information: tax_snapshot(account),
       readiness_submission: review_json(account.pending_payment_readiness_submission),
@@ -78,7 +91,7 @@ class PayoutMethodReview
   end
 
   def self.queue
-    accounts = ConnectedAccount.where(provider: ConnectedAccount::MANUAL_PROVIDERS)
+    accounts = ConnectedAccount.where(provider: ConnectedAccount::MANUAL_PROVIDERS).where.not(status: :disabled)
       .includes(:payment_readiness_reviews, organization: [:organizer_tax_information, :organizer_profile, { organization_memberships: :user }])
       .order(updated_at: :desc, id: :desc).reject(&:payout_ready?)
     { count: accounts.size, items: accounts.map { |account| account_json(account) } }

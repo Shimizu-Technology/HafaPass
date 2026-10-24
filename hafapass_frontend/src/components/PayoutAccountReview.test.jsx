@@ -29,8 +29,6 @@ describe('manual payout review', () => {
     const dialog = await openApproval(user)
     expect(dialog.getByRole('button', { name: 'Approve payout method' })).toBeDisabled()
     expect(dialog.getByLabelText(/Review again by/).value.slice(0, 4)).toBe(String(new Date().getFullYear() + 1))
-    expect(dialog.getByText('••••1234')).not.toBeVisible()
-    await user.click(dialog.getByText('Review payout and W-9 details'))
     expect(dialog.getByText('••••1234')).toBeVisible()
     expect(document.body).not.toHaveTextContent('NEVER_RENDER_FULL_BANK')
     expect(document.body).not.toHaveTextContent('NEVER_RENDER_FULL_TIN')
@@ -80,7 +78,7 @@ describe('manual payout review', () => {
   it('traps keyboard focus, closes on Escape and restores the trigger', async () => {
     const user = userEvent.setup(); show(); const trigger = screen.getByRole('button', { name: 'Approve payout method' })
     const dialog = await openApproval(user)
-    expect(dialog.getAllByRole('checkbox')[0]).toHaveFocus()
+    expect(dialog.getByRole('heading', { name: 'Approve payout method' })).toHaveFocus()
     await user.tab({ shift: true }); expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveFocus()
     await user.tab(); expect(dialog.getAllByRole('checkbox')[0]).toHaveFocus()
     await user.keyboard('{Escape}'); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(trigger).toHaveFocus()

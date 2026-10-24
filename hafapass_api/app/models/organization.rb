@@ -9,6 +9,8 @@ class Organization < ApplicationRecord
   has_many :events, dependent: :restrict_with_error
   has_many :event_staff_assignments, dependent: :restrict_with_error
   has_many :connected_accounts, dependent: :restrict_with_error
+  belongs_to :payout_connected_account, class_name: "ConnectedAccount", optional: true
+  validate :payout_destination_belongs_to_organization
   has_many :settlements, dependent: :restrict_with_error
   has_many :payouts, dependent: :restrict_with_error
   has_many :live_money_proof_reviews, dependent: :restrict_with_error
@@ -32,7 +34,8 @@ class Organization < ApplicationRecord
   before_validation :generate_slug, if: -> { slug.blank? || name_changed? }
 
   def payout_account
-    connected_accounts.find(&:payout_ready?)
+    account = connected_accounts.find_by(id: payout_connected_account_id)
+    account if account&.payout_ready?
   end
 
   def payout_ready?
@@ -44,6 +47,12 @@ class Organization < ApplicationRecord
   end
 
   private
+
+  def payout_destination_belongs_to_organization
+    if payout_connected_account && payout_connected_account.organization_id != id
+      errors.add(:payout_connected_account, "must belong to this organization")
+    end
+  end
 
   def certified_marketing_address_is_postal
     return if marketing_address_certified_at.blank?

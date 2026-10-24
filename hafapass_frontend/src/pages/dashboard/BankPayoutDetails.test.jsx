@@ -37,12 +37,12 @@ describe('organizer bank payout details', () => {
     await user.click(screen.getByRole('button', { name: 'Save bank details' }))
     expect(save).toHaveBeenCalledWith({ provider: 'manual', accountId: 4, payout_details: { bank_name: 'New Bank', account_holder_name: 'Island Events LLC' } })
   })
-  it('shows the organizer the review status, missing items and note without internal codes', () => {
+  it('blocks bank selection and entry while explaining check-only payouts', () => {
     render(<MemoryRouter><PayoutMethodSection accounts={[account]} onSave={vi.fn()} /></MemoryRouter>)
     const section = within(screen.getByRole('region', { name: 'How you get paid' }))
-    expect(section.getByText('Changes requested')).toBeVisible()
-    expect(section.getByText('Confirm the account holder.')).toBeVisible()
-    expect(section.getByText('Review note: Please use your legal business name.')).toBeVisible()
-    expect(document.body).not.toHaveTextContent('Gate B')
+    expect(section.getByRole('radio', { name: /Bank transfer/ })).toBeDisabled()
+    expect(section.getByText('Not available yet — HåfaPass currently pays by check.')).toBeVisible()
+    expect(section.queryByLabelText('Account number')).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent('NEVER_RENDER_FULL_BANK')
   })
 })

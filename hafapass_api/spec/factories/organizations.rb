@@ -44,6 +44,7 @@ FactoryBot.define do
     end
 
     after(:create) do |account, evaluator|
+      account.organization.update!(payout_connected_account: account) unless account.organization.payout_connected_account_id
       if evaluator.with_tax_information && !account.organization.organizer_tax_information
         create(:organizer_tax_information, organization: account.organization)
       end
@@ -63,6 +64,10 @@ FactoryBot.define do
         expires_at: 1.year.from_now,
         provider_state_digest: account.readiness_state_digest
       }
+      if account.manual_payout?
+        snapshot.merge!(review_kind: "manual_payout", reviewed_snapshot: PayoutMethodReview.canonical(PayoutMethodReview.snapshot(account)),
+          evidence_digest: PayoutMethodReview.digest(account), controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true))
+      end
       submission = create(:payment_readiness_review, :submission, connected_account: account,
         actor_user: submitter, **snapshot)
       create(:payment_readiness_review, :approval, connected_account: account,

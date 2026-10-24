@@ -21,6 +21,8 @@ module ConnectedAccounts
         raise AccountError, "Choose check, bank transfer, PayPal, or Stripe"
       end
 
+      raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON if provider == "manual" && !ConnectedAccount::BANK_TRANSFERS_ENABLED
+
       account = organization.connected_accounts.find_or_initialize_by(provider: provider)
       if account.persisted? && account.manual_payout?
         # Restarting a check setup only updates who the check is for.
@@ -53,6 +55,7 @@ module ConnectedAccounts
     # where money goes, so any earlier readiness approval stops applying.
     def self.update_payout_details!(account:, payout_details:, actor:, request: nil)
       raise AccountError, "Only manual payouts have payee details" unless account.manual_payout?
+      raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
       details = normalize_check_details(payout_details) if account.provider == "check"
       if account.provider == "check"
         ensure_no_check_in_flight!(account.organization)
@@ -82,6 +85,25 @@ module ConnectedAccounts
       account
     rescue ActiveRecord::RecordInvalid => e
       raise AccountError, e.record.errors.full_messages.to_sentence
+    end
+
+    def self.select!(account:, actor:, request: nil)
+      organization = account.organization
+      organization.with_lock do
+        account.lock!
+        raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
+        raise AccountError, "This payout method is disabled" if account.status_disabled?
+        return account if organization.payout_connected_account_id == account.id
+        if organization.payouts.where(status: [:pending, :processing, :held]).exists?
+          raise AccountError, "A payout is in progress. Change the payout method after HåfaPass resolves it."
+        end
+        previous = organization.payout_connected_account_id
+        organization.update!(payout_connected_account: account)
+        AuditLogger.record!(action: "connected_account.destination_selected", auditable: account,
+          actor: actor, organization: organization, request: request,
+          before_data: { payout_connected_account_id: previous }, after_data: { payout_connected_account_id: account.id })
+      end
+      account
     end
 
     CHECK_IN_FLIGHT_MESSAGE = "A check payout is in progress. You can change payee details after HåfaPass records it."

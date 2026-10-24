@@ -11,7 +11,9 @@ RSpec.describe "Manual payout method approval", type: :request do
   let(:owner_headers) { auth_headers(profile.user).merge("X-Organization-Id" => organization.id.to_s) }
   let(:details) { { "payee_name" => "Island Events LLC", "delivery_method" => "mail", "mailing_address" => "PO Box 1, Hagåtña, GU 96910" } }
   let!(:account) do
-    ConnectedAccounts::Manager.start!(organization: organization, provider: "check", actor: profile.user, payout_details: details)
+    ConnectedAccounts::Manager.start!(organization: organization, provider: "check", actor: profile.user, payout_details: details).tap do |saved|
+      ConnectedAccounts::Manager.select!(account: saved, actor: profile.user)
+    end
   end
   let(:controls) { PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true) }
 
@@ -29,7 +31,7 @@ RSpec.describe "Manual payout method approval", type: :request do
 
   it "lists only unapproved manual methods newest first with a full count and safe review details" do
     create(:connected_account, organization: organization, provider: "paypal", with_readiness_approval: false, with_tax_information: false)
-    newer = ConnectedAccounts::Manager.start!(organization: organization, provider: "manual", actor: profile.user)
+    newer = create(:connected_account, organization: organization, provider: "manual", with_readiness_approval: false, with_tax_information: false)
     create(:organizer_tax_information, organization: organization)
     ready = create(:connected_account, provider: "check", payout_details: details)
     result = queue
@@ -186,5 +188,34 @@ RSpec.describe "Manual payout method approval", type: :request do
     expect(account.payment_readiness_reviews).to be_empty
     expect(AuditLog.where(action: "connected_account.synced", auditable: account)).not_to exist
     expect(MessageDelivery.where(template: "payout_method_decision")).to be_empty
+  end
+  it "invalidates identity changes that bypass revision tracking, including a TIN with the same last four" do
+    tax = create(:organizer_tax_information, organization: organization)
+    approve
+    revision = account.reload.readiness_revision
+    old_digest = PayoutMethodReview.digest(account)
+    tax.update_columns(tin: "987655678")
+    expect(tax.reload.masked_tin).to eq("***-**-5678")
+    expect(account.active_payment_readiness_approval).to be_nil
+    expect(account).not_to be_payout_ready
+    expect(PayoutMethodReview.digest(account)).not_to eq(old_digest)
+    expect(account.reload.readiness_revision).to eq(revision)
+    approve
+    expect(account.reload).to be_payout_ready
+    stale_account = ConnectedAccount.find(account.id)
+    account.update_columns(payout_details: details.merge("mailing_address" => "PO Box 99, Hagåtña, GU 96910"))
+    expect(stale_account.active_payment_readiness_approval).to be_nil
+    expect(account.active_payment_readiness_approval).to be_nil
+    expect(account).not_to be_payout_ready
+    fingerprints = account.latest_payment_readiness_approval.reviewed_snapshot.fetch("identity_fingerprints")
+    expect(fingerprints.values).to all(match(/\A[0-9a-f]{64}\z/))
+    expect(account.latest_payment_readiness_approval.reviewed_snapshot.to_json).not_to include(tax.tin)
+  end
+
+  it "excludes disabled accounts from the waiting count while exposing their reason on the organization" do
+    account.update!(status: :disabled)
+    expect(queue["count"]).to eq(0)
+    expect(PayoutMethodReview.account_json(account).dig(:payout_review, :status)).to eq("disabled")
+    expect(PayoutMethodReview.account_json(account).dig(:payout_review, :can_approve)).to be(false)
   end
 end

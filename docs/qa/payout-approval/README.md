@@ -1,5 +1,7 @@
 # Manual payout approval acceptance
 
+**Review-fix update:** [review-fixes.md](review-fixes.md) supersedes the bank-entry/approval behavior and records the selected destination, check-only policy, identity fingerprints and refreshed evidence.
+
 Task base: `87c3e21d`, 24 October 2026. Implementation branch: `codex/hafapass-simple-payout-approval`. Hold: do not merge.
 
 HåfaPass serves Guam event organizers, buyers and event staff. This change serves the sole platform admin and organization owners/finance members setting up check or approved bank-transfer payouts. Stripe buyer payments remain separate. HåfaPass collects as the organizer's limited agent. No production payments or external email sends are part of this verification.

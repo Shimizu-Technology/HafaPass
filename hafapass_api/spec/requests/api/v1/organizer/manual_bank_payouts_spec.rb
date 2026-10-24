@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe "Manual bank transfer payout details", type: :request do
+  before { stub_const("ConnectedAccount::BANK_TRANSFERS_ENABLED", true) }
   let(:profile) { create(:organizer_profile) }
   let(:organization) { profile.organization }
   let(:admin) { create(:user, :admin) }
@@ -86,6 +87,27 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
         expected_digest: PayoutMethodReview.digest(account), note: "Account 1234" }
     expect(response).to have_http_status(:unprocessable_entity)
     expect(account.payment_readiness_reviews).to be_empty
+  end
+
+  context "while bank transfers are unavailable" do
+    before { stub_const("ConnectedAccount::BANK_TRANSFERS_ENABLED", false) }
+
+    it "rejects bank entry, selection and approval without deleting existing encrypted data" do
+      existing = create(:connected_account, organization: organization, provider: "manual",
+        bank_account_number: "123456789012", payout_details: details.except(:account_number).stringify_keys)
+      post "/api/v1/organizer/connected_accounts", headers: headers, params: { provider: "manual", payout_details: details }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq(ConnectedAccount::BANK_UNAVAILABLE_REASON)
+      patch "/api/v1/organizer/connected_accounts/#{existing.id}", headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(existing.reload.bank_account_number).to eq("123456789012")
+      expect(existing).not_to be_payout_ready
+      expect(PayoutMethodReview.account_json(existing).dig(:payout_review, :missing)).to include(ConnectedAccount::BANK_UNAVAILABLE_REASON)
+      expect {
+        PayoutMethodReview.approve!(account: existing, actor: admin,
+          controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true), expected_digest: PayoutMethodReview.digest(existing))
+      }.to raise_error(PayoutMethodReview::ReviewError, /currently pays by check/)
+    end
   end
 
   it "reports incomplete banking details and refuses approval without recording provider status" do

@@ -15,7 +15,7 @@ class Api::V1::Organizer::ConnectedAccountsController < Api::V1::Organizer::Base
       actor: current_user,
       request: request,
       payout_details: params[:payout_details]
-    ) }
+    ).tap { |saved| ConnectedAccounts::Manager.select!(account: saved, actor: current_user, request: request) } }
     render json: account_json(account).merge(next_action: next_action(account)), status: :created
   rescue ConnectedAccounts::Manager::AccountError => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -26,7 +26,8 @@ class Api::V1::Organizer::ConnectedAccountsController < Api::V1::Organizer::Base
     current_organization.with_lock do
       account.lock!
       ConnectedAccounts::Manager.update_payout_details!(account: account, payout_details: params[:payout_details],
-        actor: current_user, request: request)
+        actor: current_user, request: request) if params.key?(:payout_details)
+      ConnectedAccounts::Manager.select!(account: account, actor: current_user, request: request)
     end
     render json: account_json(account).merge(next_action: next_action(account))
   rescue ActiveRecord::RecordNotFound
@@ -53,6 +54,7 @@ class Api::V1::Organizer::ConnectedAccountsController < Api::V1::Organizer::Base
   def account_json(account)
     {
       id: account.id,
+      selected: current_organization.reload.payout_connected_account_id == account.id,
       provider: account.provider,
       status: account.status,
       charges_enabled: account.charges_enabled,

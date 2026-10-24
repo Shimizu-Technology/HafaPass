@@ -2117,7 +2117,8 @@
       "timezone": "system",
       "updated_at": "system",
       "marketing_mailing_address": "pii",
-      "marketing_address_certified_at": "system"
+      "marketing_address_certified_at": "system",
+      "payout_connected_account_id": "system"
     },
     "organizer_follows": {
       "id": "system",

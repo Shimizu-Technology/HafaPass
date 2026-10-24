@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_300000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1395,6 +1395,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_300000) do
     t.datetime "updated_at", null: false
     t.text "marketing_mailing_address"
     t.datetime "marketing_address_certified_at"
+    t.bigint "payout_connected_account_id"
+    t.index ["payout_connected_account_id"], name: "index_organizations_on_payout_connected_account_id"
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
     t.check_constraint "char_length(currency::text) = 3", name: "organizations_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "organizations_status_valid"
@@ -2955,6 +2957,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_300000) do
   add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
   add_foreign_key "organization_memberships", "users", column: "invited_by_user_id", on_delete: :nullify
   add_foreign_key "organization_memberships", "users", on_delete: :restrict
+  add_foreign_key "organizations", "connected_accounts", column: "payout_connected_account_id"
   add_foreign_key "organizer_follows", "organizations", on_delete: :cascade
   add_foreign_key "organizer_follows", "users", on_delete: :cascade
   add_foreign_key "organizer_profiles", "organizations", on_delete: :restrict

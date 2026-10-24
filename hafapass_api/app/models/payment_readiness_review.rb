@@ -105,7 +105,9 @@ class PaymentReadinessReview < ApplicationRecord
   end
 
   def provider_state_unchanged?
-    provider_state_digest == connected_account.readiness_state_digest
+    provider_state_digest == connected_account.readiness_state_digest &&
+      (!connected_account.manual_payout? ||
+        (review_kind == "manual_payout" && evidence_digest == PayoutMethodReview.digest(ConnectedAccount.find(connected_account_id))))
   end
 
   def prevent_mutation
