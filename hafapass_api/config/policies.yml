@@ -1,6 +1,6 @@
-version: "2026-10-22"
+version: "2026-10-24"
 status: approved
-effective_date: "2026-10-22"
+effective_date: "2026-10-24"
 # Outstanding legal-review items. Not served publicly and not part of any
 # digest: they are shown to admins in the policy register as information.
 # Keep docs/POLICY_REVIEW_REGISTER.md in step with this list.
@@ -181,6 +181,8 @@ documents:
 
           Organizer tax information: legal and business names, federal tax classification, tax identification number (SSN or EIN), address, exemption details, and signed tax certification. We use this for payout and tax reporting duties and share it with tax authorities as legally required. Tax identification numbers are encrypted at rest, masked in normal screens, and accessible in full only through audited admin actions.
 
+          Organizer verification details: the contact phone, website or social media link, and optional note you submit when you ask us to verify your organization, along with our review decision and any notes we send you. We use them to confirm who runs an organization before its events go public and to contact you about the review. Only your organization's owner and {{platform_name}} staff who review organizers can see them. Your business name and description appear on your public event pages.
+
           We do not store your card number. Card details are entered into and handled by our payment processor, Stripe.
       - heading: How we use it
         body: |-
@@ -191,7 +193,7 @@ documents:
         body: |-
           When you buy a ticket or register for an event, the organizer receives the information it needs to run that event: your name, email address, phone number if you gave one, attendee names, your answers to its questions, and check-in status. Organizers may use this information only for their own events and must follow the law and our Organizer Agreement. They are responsible for their own use of it.
 
-          Authorized organizer owners, managers, and assigned box-office staff can export attendee information for their events. Staff with finance access alone can export transaction details without attendee names or contact details. Export files for large sales lists are kept in private storage for two days after they are prepared, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}.
+          Authorized organizer owners, managers, and assigned box-office staff can export attendee information for their events. Staff with finance access alone can export order and payment details, which include the buyer's name and email address, but not attendee lists. Export files for large sales lists are kept in private storage for two days after they are prepared, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}.
       - heading: Service providers
         body: |-
           We use these providers to run {{platform_name}}. The information each receives depends on the feature you use and may be processed outside Guam.
@@ -245,6 +247,8 @@ documents:
           This agreement is between you, the organizer, and {{operator_name}}, which runs {{platform_name}}. You must be at least 18 and able to enter contracts. If you act for a business or group, you confirm that you have authority to bind it.
 
           You confirm that you have the right to hold and sell tickets to each event you list, including any permission you need from the venue, performers, or rights holders.
+
+          Before your published events become public and can sell tickets, {{platform_name}} reviews your organization once. You must give accurate contact details for that review and keep them current. Until we verify you, published events are available only through a private preview link. We may decline or pause verification, which hides your events from public listings.
       - heading: Accurate listings
         body: |-
           Event listings must be accurate and kept current, including the local date and time, venue, ticket types and quantities, all-in prices, age rules, accessibility information, and refund policy. If you don't state a refund policy, tickets are refundable for cancellation or postponement, for another material change where we or the law determine a refund is due, or where the law otherwise requires.
@@ -298,7 +302,7 @@ documents:
           You may not list events or sell tickets that our Acceptable Use Policy prohibits.
       - heading: Buyer information
         body: |-
-          Authorized owners, managers, and assigned box-office staff can export buyer and attendee information for your events. Finance-only staff can export transaction details without attendee personal information. Large sales export files are stored privately for two days after preparation, then deleted. You may use buyer and attendee information to run that event, provide customer service, and meet legal obligations. Organizer marketing through {{platform_name}} is limited to buyers who chose it at checkout and have not unsubscribed; each marketing email has a one-click unsubscribe link. If you conduct marketing outside {{platform_name}} using data you lawfully hold, you are responsible for any required consent, accurate sender details, an effective opt-out, and honoring opt-outs. Keep attendee data secure, do not sell it, and notify us promptly if it is lost, misused, or accessed without authority. You are independently responsible for your use of this information; we remain responsible for our own platform processing.
+          Authorized owners, managers, and assigned box-office staff can export buyer and attendee information for your events. Finance-only staff can export order and payment details, which include buyers' names and email addresses, but not attendee lists. Large sales export files are stored privately for two days after preparation, then deleted. You may use buyer and attendee information to run that event, provide customer service, and meet legal obligations. Organizer marketing through {{platform_name}} is limited to buyers who chose it at checkout and have not unsubscribed; each marketing email has a one-click unsubscribe link. If you conduct marketing outside {{platform_name}} using data you lawfully hold, you are responsible for any required consent, accurate sender details, an effective opt-out, and honoring opt-outs. Keep attendee data secure, do not sell it, and notify us promptly if it is lost, misused, or accessed without authority. You are independently responsible for your use of this information; we remain responsible for our own platform processing.
       - heading: Content license
         body: |-
           You keep ownership of the names, logos, images, and descriptions you upload. You grant {{operator_name}} a non-exclusive, royalty-free license to use them to list, promote, and sell tickets to your events on {{platform_name}} and in related marketing. You confirm you have the rights needed to grant this license.
@@ -369,6 +373,9 @@ documents:
       - heading: Operational and support data
         body: |-
           Payment provider events, email delivery history, support notes, and security logs are kept only as long as needed for delivery, incident response, disputes, and abuse prevention.
+      - heading: Organizer verification records
+        body: |-
+          We keep organizer profiles, verification contact details, and review decisions for as long as the organization's account exists, so we can show who verified it and respond to disputes or abuse reports. Contact us {{support_contact}} if you want them removed after closing your account.
       - heading: Organizer sales exports
         body: |-
           Large organizer sales exports are kept in private file storage for two days after preparation, then deleted. Smaller exports download directly and are not kept as export files by {{platform_name}}. The underlying order and attendee records have separate retention needs described above.

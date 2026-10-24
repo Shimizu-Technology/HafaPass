@@ -30,7 +30,7 @@ RSpec.describe "Admin platform capabilities", type: :request do
     get "/api/v1/admin/platform_capabilities", headers: auth_headers(submitter)
     policy = response.parsed_body.fetch("capabilities").find { |item| item["capability"] == "policy_register" }
     summary = policy.fetch("policy_documents")
-    expect(summary).to include("version" => "2026-10-22", "effective_date" => "2026-10-22", "status" => "approved",
+    expect(summary).to include("version" => "2026-10-24", "effective_date" => "2026-10-24", "status" => "approved",
       "draft" => false, "approval_blockers" => [])
     expect(summary).not_to have_key("draft_acknowledgment")
     expect(summary.fetch("review_notes")).to include(include("title" => "Organizer Agreement", "section" => "Tax information",

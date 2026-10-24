@@ -8,8 +8,8 @@ RSpec.describe "Public policies", type: :request do
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body
-    expect(body).to include("buyer_terms_version" => "2026-10-22", "policy_status" => "approved",
-      "policy_effective_date" => "2026-10-22")
+    expect(body).to include("buyer_terms_version" => "2026-10-24", "policy_status" => "approved",
+      "policy_effective_date" => "2026-10-24")
     expect(body.fetch("policies").keys).to include("buyer-terms", "refunds", "privacy", "cookies",
       "accessibility", "organizer-agreement")
     expect(body.fetch("policies").to_json).not_to match(/draft|pending counsel|subject to review|not final|Counsel to|Lawyer to|Accountant to/i)
