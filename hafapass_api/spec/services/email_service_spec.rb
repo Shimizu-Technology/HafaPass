@@ -27,7 +27,8 @@ RSpec.describe EmailService, "guest privacy challenge" do
 
     delivery = described_class.send_guest_privacy_challenge_now(item, code)
 
-    expect(Resend::Emails).to have_received(:send).with(hash_including("html" => include(code)),
+    expect(Resend::Emails).to have_received(:send).with(hash_including("html" => include(code),
+      "tags" => include({ "name" => "application", "value" => "hafapass" }, { "name" => "category", "value" => "privacy_request" })),
       options: { idempotency_key: delivery.idempotency_key })
     expect(delivery.reload).to have_attributes(status: "sent", provider_id: "provider-message-id",
       metadata: {}, outbound_payload: {}, outbound_wire_body: nil)

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe "Admin operational review", type: :request do
+RSpec.describe "Admin operational review", :webmock, type: :request do
   include ActiveSupport::Testing::TimeHelpers
 
   let(:admin) { create(:user, :admin) }
@@ -27,6 +27,23 @@ RSpec.describe "Admin operational review", type: :request do
     expect(enqueued_jobs).to eq(jobs)
     expect(response).to have_http_status(:ok)
     response.parsed_body.fetch("items").pluck("id")
+  end
+
+  it "serves retained external history only to admins and keeps dashboard warnings on the actionable count" do
+    rows = Array.new(4) { receipt }
+    unknown = receipt
+    ExternalMessageReceipts.call(actor: admin, receipts: rows.map { |row| row.attributes.slice(*ExternalMessageReceipts::IDENTITY_KEYS) },
+      proof_reference: "receipt-origin:admin-history-proof")
+    expect(ids_for("external_message_receipts")).to eq(rows.map(&:id))
+    expect(response.parsed_body.dig("history_counts", "external_message_receipts")).to eq(4)
+    expect(response.parsed_body.dig("signals", "stale_message_events")).to eq(1)
+    expect(response.body).not_to include("private-provider-id", "private@example.invalid", "admin-history-proof")
+    expect(ids_for("stale_message_events")).to eq([unknown.id])
+    get "/api/v1/admin/dashboard", headers: auth_headers(admin)
+    expect(response.parsed_body.dig("operational_signals", "stale_message_events")).to eq(1)
+    get path, params: { category: "external_message_receipts" }, headers: auth_headers(create(:user))
+    expect(response).to have_http_status(:forbidden)
+    expect(response.body).not_to include("external_confirmed", "private-provider-id")
   end
 
   it "uses exactly the dashboard scopes for stale, unlinked, linked, errored, fresh and processed receipts" do

@@ -27,6 +27,32 @@ afterEach(() => { cleanup(); publishAccountRole(null, null); clearAuth(); clearA
 const renderPage = (path = '/admin/operations') => render(<MemoryRouter initialEntries={[path]}><AdminOperationsPage /></MemoryRouter>)
 
 describe('operational review', () => {
+  it('keeps retained external history separate from actionable totals and preserves the category URL on refresh', async () => {
+    const history = { ...records, category: 'external_message_receipts',
+      signals: { ...signals, stale_message_events: 1 }, history_counts: { external_message_receipts: 4 },
+      items: records.items.map(item => ({ ...item, review_state: 'external_confirmed',
+        provider_message_id: 'private-provider-id', payload: { to: 'private@example.test' } })) }
+    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: config?.params?.category === 'external_message_receipts' ? history : {
+      ...records, signals: history.signals, history_counts: history.history_counts, items: [records.items[0]],
+      meta: { page: 1, total_count: 1, total_pages: 1 },
+    } }))
+    renderPage()
+    expect(await screen.findByText(/1 operational records need review/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmed external email receipts: 4' }))
+    expect(await screen.findByRole('heading', { name: 'Confirmed external email receipts (4)' })).toBeVisible()
+    expect(screen.getAllByText('Confirmed external · retained')).toHaveLength(4)
+    expect(screen.getByText(/Original receipts remain available for normal reconciliation/)).toBeVisible()
+    expect(screen.getByText(/1 operational records need review/)).toBeVisible()
+    expect(screen.queryByText(/private-provider-id|private@example.test/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh operational records' }))
+    expect(await screen.findByText('Record #103')).toBeVisible()
+    expect(apiClient.get).toHaveBeenLastCalledWith('/admin/operations', expect.objectContaining({ params: { category: 'external_message_receipts', page: 1 } }))
+    await userEvent.click(screen.getByRole('button', { name: 'Unprocessed email receipts · over 5 minutes: 1' }))
+    expect(await screen.findByRole('heading', { name: 'Unprocessed email receipts · over 5 minutes (1)' })).toBeVisible()
+    expect(screen.queryByText('Record #103')).not.toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
   it('clicks from dashboard count 4 to the four underlying receipts even when Support deliveries are empty', async () => {
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/admin/dashboard' ? {
       total_events: {}, total_users: {}, total_revenue_cents: 0, total_tickets_sold: 0, recent_events: [], recent_orders: [], operational_signals: signals,

@@ -249,7 +249,9 @@ class AuditActions
     define registry, area: "messaging", audience: %w[admin_only],
       tenant: false, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {
-        "message_delivery.replayed" => "Replayed a message delivery."
+        "message_delivery.replayed" => "Replayed a message delivery.",
+        "message_provider_event.external_confirmed" => "Confirmed an external email receipt using reviewed evidence.",
+        "message_provider_event.external_source_confirmed" => "Confirmed an external email receipt from signed application provenance."
       }
 
     define registry, area: "exports", audience: %w[org_owner org_manager],
