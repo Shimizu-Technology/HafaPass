@@ -149,13 +149,20 @@ RSpec.describe RefundReconciliationQueue do
       expect([order.refunds.count, order.refundable_cents, order.reload.refund_amount_cents]).to eq(before)
     end
 
-    [nil, {}, { amount_cents: "1200" }, { amount_cents: -1 }].each do |details|
+    [{}, [], "legacy scalar", 42, false, { amount_cents: "1200" }, { amount_cents: -1 }].each do |details|
       it "keeps an unknown operation amount unknown for #{details.inspect}" do
         order = paid_order(event: event)
-        issue = issue_for(order, code: "refund_operation_not_found", details: details || {})
+        issue = issue_for(order, code: "refund_operation_not_found", details: details)
         expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil, provider_amount_kind: "operation",
           provider_reported_amount_cents: nil, provider_verification_amount_cents: nil)
       end
+    end
+
+    it "preserves an aggregate observation when legacy details is not an object" do
+      order = paid_order(event: event)
+      issue = issue_for(order, actual: 1200, details: ["legacy"])
+      expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil,
+        provider_reported_amount_cents: 1200, provider_verification_amount_cents: 1200)
     end
 
     it "reports a failed operation's observed amount without making it a buyer debt" do

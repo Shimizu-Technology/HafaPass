@@ -140,7 +140,8 @@ class RefundReconciliationQueue
 
   def provider_verification_amounts(issue)
     aggregate = issue.code == "refund_aggregate_requires_reconciliation"
-    reported = aggregate ? issue.actual_amount_cents : issue.details["amount_cents"]
+    details = issue.details.is_a?(Hash) ? issue.details : {}
+    reported = aggregate ? issue.actual_amount_cents : details["amount_cents"]
     reported = nil unless reported.is_a?(Integer) && reported >= 0
     # An aggregate gap is only a discrepancy to investigate. It neither proves
     # an operation succeeded nor reduces/reserves the current buyer balance.

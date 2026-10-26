@@ -128,8 +128,9 @@ module Commerce
     end
 
     def self.issue_observations(issue, payment)
-      if issue.details["provider_refund_id"].present?
-        return [issue.details.slice("provider_refund_id", "provider_payment_id", "amount_cents", "currency", "status")]
+      details = issue.details.is_a?(Hash) ? issue.details : {}
+      if details["provider_refund_id"].present?
+        return [details.slice("provider_refund_id", "provider_payment_id", "amount_cents", "currency", "status")]
       end
 
       # Legacy exceptions did not identify which embedded operation failed.

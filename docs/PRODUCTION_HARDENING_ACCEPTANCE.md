@@ -30,6 +30,11 @@ native app release. Payout recording does not itself issue a check or bank trans
 - Manifest download, scanner synchronization/renewal, staff changes, and refund recovery
   use consistent lock ordering. Concurrent requests must finish without a deadlock; the
   release record identifies the tested revision and outcome.
+- Buyer QR rotation, transfer creation/acceptance/cancellation/expiry, and direct check-in
+  follow the parent and audit foreign-key ordering in [LOCKING.md](LOCKING.md).
+  Record the tested revision and each lock-order, holder/credential, admission and
+  persisted-audit outcome from `ticket_locking_spec.rb` and `scanner_locking_spec.rb`,
+  including event-first commerce compatibility and required-audit rollback.
 - An online scanner checks a fresh manifest before declaring an unfamiliar credential
   invalid. New and transferred credentials work without a manual-refresh workaround.
 - A current manager can recover supported historical scans from a revoked device using
