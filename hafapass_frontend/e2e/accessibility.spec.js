@@ -339,9 +339,12 @@ for (const width of [375, 1440]) {
     await page.route('**/api/v1/organizer/events/42/admissions', route => json(route,
       { counts: { admitted: 0, remaining: 1, conflicts: 0, rejected: 0 }, devices: [device],
         recent_actions: [], permissions: { can_reverse: true } }))
-    await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', route => json(route,
-      { results: [{ result: 'accepted', reason_code: 'admitted', attendee: {} }],
-        device: { ...device, last_sequence: 1 }, summary: { admitted: 1, remaining: 0, conflicts: 0, rejected: 0 } }))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/8/sync', route => {
+      const actions = route.request().postDataJSON().actions
+      return json(route, { results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'admitted', attendee: {} })),
+        device: { ...device, last_sequence: actions.at(-1).sequence },
+        summary: { admitted: 1, issued_not_checked_in: 0, eligible_not_checked_in: 0, remaining: 0, conflicts: 0, rejected: 0 } })
+    })
     await page.goto('/dashboard/scanner?event=42#manual-ticket-entry')
     await expect(page.getByText('Device details')).toBeVisible()
     await expect(page.getByLabel('Ticket QR code')).toBeEnabled()
@@ -351,7 +354,8 @@ for (const width of [375, 1440]) {
     await page.keyboard.type('scan-test-7')
     await tabTo(page, page.getByRole('button', { name: 'Check in ticket' }))
     await page.keyboard.press('Enter')
-    await expect(page.getByText(/Admitted/).first()).toBeVisible()
+    await expect(page.getByText('Admission confirmed', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
     await scan(page, 'scanner admission result')
   })
 }
