@@ -126,7 +126,7 @@ RSpec.describe "Manager admission journal recovery", type: :request do
     # A different ID still requires the same effective membership/assignment.
     post base, params: { identifier: "new-logical-id", name: "Replacement" }, headers: staff_headers
     expect(response).to have_http_status(:created)
-    membership.update!(status: :revoked)
+    OrganizationTeam.revoke!(membership: membership, actor: manager)
     post base, params: { identifier: "another-id", name: "No authority" }, headers: staff_headers
     expect(response).not_to have_http_status(:created)
     post "#{base}/#{@device.id}/sync", params: { actions: [@input] }, headers: staff_headers

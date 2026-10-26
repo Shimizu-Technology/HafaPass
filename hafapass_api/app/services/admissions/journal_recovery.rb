@@ -79,30 +79,26 @@ module Admissions
           .where("occurred_at <= ?", download.occurred_at).order(:id).last&.after_data&.fetch("authorization_expires_at", nil)
         next unless lease
 
-        [downloaded_at, Time.iso8601(lease)]
+        [downloaded_at, Time.iso8601(lease), download]
       rescue KeyError, ArgumentError, TypeError
         nil
       end
       occurred = input.fetch(:occurred_at)
-      stop = [manifest.expires_at, device.revoked_at, historical_access_end].compact.min
+      stop = [manifest.expires_at, device.revoked_at].compact.min
       valid = occurred >= @window_start && occurred < @window_end && occurred >= manifest.generated_at &&
-        occurred >= device.created_at && occurred < stop && evidence.any? { |downloaded, lease| occurred >= downloaded && occurred < lease }
+        occurred >= device.created_at && occurred < stop && evidence.any? do |downloaded, lease, download|
+          next false unless occurred >= downloaded && occurred < lease
+
+          @authorities ||= {}
+          authority = @authorities[download.id] ||= HistoricalScanAuthority.new(device: device, download: download)
+          authority.allowed?(at: occurred)
+        end
       raise SyncError, "Scan is outside the reviewed server-issued device/manifest window; retain it for manual investigation" unless valid
 
       entry = entries_for(manifest)[input[:ticket_id].to_i]
       unless entry && entry["state"] == "valid" && secure_equal?(entry["credential_hash"], input[:credential_hash])
         raise SyncError, "Recovery requires a ticket eligible in the known downloaded manifest"
       end
-    end
-
-    def historical_access_end
-      # Use immutable revocation audits where available. Explicit device
-      # revocation and lease end are independent from staff-session loss.
-      @historical_access_end ||= AuditLog.where(organization_id: device.organization_id,
-        action: %w[organization.membership_revoked event_staff.revoked])
-        .where("after_data ->> 'target_user_id' = ?", device.user_id.to_s)
-        .where("event_id IS NULL OR event_id = ?", device.event_id)
-        .where("occurred_at >= ?", device.created_at).minimum(:occurred_at)
     end
 
     def validate_replay!(existing, input)
