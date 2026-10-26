@@ -6,6 +6,7 @@ class OperationalReview
   PAGE_SIZE = 50
   CATEGORIES = %w[failed_messages_last_hour stale_message_events failed_payment_webhooks
     open_reconciliation_exceptions unknown_card_present_results].freeze
+  HISTORY_CATEGORY = "external_message_receipts"
 
   def initialize(now: Time.current)
     @now = now
@@ -31,14 +32,15 @@ class OperationalReview
   def review(category:, page:)
     counts = signals
     category = CATEGORIES.find { |key| counts.fetch(key.to_sym).positive? } || CATEGORIES.first if category.blank?
-    raise ArgumentError, "Unknown operational category" unless CATEGORIES.include?(category)
+    raise ArgumentError, "Unknown operational category" unless (CATEGORIES + [HISTORY_CATEGORY]).include?(category)
 
     page = [page.to_s.to_i, 1].max
-    total = counts.fetch(category.to_sym)
-    items = scopes.fetch(category).order(:id).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE)
+    history = ExternalMessageReceipts.resolved
+    total = category == HISTORY_CATEGORY ? history.count : counts.fetch(category.to_sym)
+    items = (category == HISTORY_CATEGORY ? history : scopes.fetch(category)).order(:id).offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE)
     {
-      signals: counts, checked_at: @now.iso8601, category: category,
-      items: items.map { |record| serialize(record) },
+      signals: counts, history_counts: { external_message_receipts: history.count }, checked_at: @now.iso8601, category: category,
+      items: items.map { |record| serialize(record, external: category == HISTORY_CATEGORY) },
       meta: { page: page, per_page: PAGE_SIZE, total_count: total, total_pages: (total.to_f / PAGE_SIZE).ceil }
     }
   end
@@ -46,14 +48,15 @@ class OperationalReview
   def scopes
     @scopes ||= {
       "failed_messages_last_hour" => MessageDelivery.failed.where(updated_at: (@now - 1.hour)..),
-      "stale_message_events" => MessageProviderEvent.where(processed_at: nil).where("received_at < ?", @now - 5.minutes),
+      "stale_message_events" => MessageProviderEvent.where(processed_at: nil).where("received_at < ?", @now - 5.minutes)
+        .where.not(id: ExternalMessageReceipts.resolved.select(:id)),
       "failed_payment_webhooks" => WebhookEvent.failed,
       "open_reconciliation_exceptions" => ReconciliationException.open,
       "unknown_card_present_results" => CardPresentPaymentAttempt.status_result_unknown
     }
   end
 
-  def serialize(record)
+  def serialize(record, external: false)
     case record
     when MessageProviderEvent
       {
@@ -61,7 +64,7 @@ class OperationalReview
         event_type: MessageProviderEventProcessor::STATUS_BY_EVENT.key?(record.event_type) ? record.event_type : "other",
         received_at: record.received_at, occurred_at: record.occurred_at,
         delivery_id: record.message_delivery_id, processing_error: record.processing_error.present?,
-        review_state: record.processing_error.present? ? "processing_error" :
+        review_state: external ? "external_confirmed" : record.processing_error.present? ? "processing_error" :
           (record.message_delivery_id ? "awaiting_processing" : "no_linked_delivery")
       }
     when MessageDelivery

@@ -5,6 +5,7 @@ import OperationalPagination from '../../components/OperationalPagination'
 import { compactParams, formatDateTime, useAdminList } from './adminOperations'
 
 const endpoint = '/admin/operations'
+const historyCategory = 'external_message_receipts'
 const categories = {
   failed_messages_last_hour: {
     label: 'Failed deliveries · last hour',
@@ -29,11 +30,16 @@ const categories = {
     label: 'Unknown in-person card results',
     guidance: 'Card attempts with an unknown result. Ask the event finance owner to check the original provider transaction and local order before taking another payment. An unknown result is not a failed charge.',
   },
+  [historyCategory]: {
+    label: 'Confirmed external email receipts',
+    guidance: 'Retained receipts confirmed to belong to another application. These records are excluded from operational warnings while unmatched and error-free. A matching HåfaPass delivery or processing error returns them to review. Original receipts remain available for normal reconciliation.',
+  },
 }
 const states = {
   no_linked_delivery: 'No linked delivery',
   awaiting_processing: 'Linked delivery · awaiting processing',
   processing_error: 'Processing error recorded',
+  external_confirmed: 'Confirmed external · retained',
 }
 
 function Record({ item, receipt }) {
@@ -41,7 +47,7 @@ function Record({ item, receipt }) {
     <p className="font-semibold text-neutral-900">Record #{item.id}</p>
     {receipt ? <>
       <p className="mt-1 text-sm text-neutral-800">{item.provider} · {item.event_type}</p>
-      <p className="mt-2 text-sm font-medium text-amber-950">{states[item.review_state] || 'Needs review'}</p>
+      <p className={`mt-2 text-sm font-medium ${item.review_state === 'external_confirmed' ? 'text-neutral-800' : 'text-amber-950'}`}>{states[item.review_state] || 'Needs review'}</p>
       <p className="mt-1 text-sm text-neutral-700">{item.delivery_id ? `Linked delivery #${item.delivery_id}` : 'No HåfaPass delivery linked to this receipt.'} {item.processing_error ? 'Error details are restricted; ask the operations owner to inspect them securely.' : 'No processing error recorded.'}</p>
       <p className="mt-2 text-xs text-neutral-600">Received {formatDateTime(item.received_at)} · Provider time {formatDateTime(item.occurred_at)}</p>
     </> : <>
@@ -62,7 +68,7 @@ function OperationsSession({ identity, resourcePath }) {
   const data = list.data
   const selected = data?.category
   const content = categories[selected]
-  const total = data ? Object.keys(categories).reduce((sum, key) => sum + (data.signals[key] || 0), 0) : null
+  const total = data ? Object.keys(categories).filter(key => key !== historyCategory).reduce((sum, key) => sum + (data.signals[key] || 0), 0) : null
   const showingCurrent = data && (!category || selected === category) && data.meta.page === page
   const navigate = (nextCategory, nextPage = 1) => setParams({ category: nextCategory, page: String(nextPage) })
 
@@ -80,13 +86,13 @@ function OperationsSession({ identity, resourcePath }) {
       <div className="mb-5 grid gap-2 sm:grid-cols-2" aria-label="Operational categories">
         {Object.entries(categories).map(([key, entry]) => <button key={key} type="button" aria-pressed={selected === key} disabled={list.loading}
           className={`min-h-11 rounded-lg border p-3 text-left text-sm focus-visible:ring-2 focus-visible:ring-focus ${selected === key ? 'border-brand-300 bg-brand-50 text-brand-950' : 'border-neutral-200 bg-white text-neutral-800'}`}
-          onClick={() => navigate(key)}>{entry.label}: <strong>{data.signals[key]}</strong></button>)}
+          onClick={() => navigate(key)}>{entry.label}: <strong>{key === historyCategory ? (data.history_counts?.[key] || 0) : data.signals[key]}</strong></button>)}
       </div>
       {showingCurrent && !list.loading && !list.error && content && <section aria-labelledby="operational-category-heading">
         <h2 id="operational-category-heading" className="text-lg font-semibold text-neutral-900">{content.label} ({data.meta.total_count})</h2>
         <p className="mt-2 max-w-3xl text-sm text-neutral-700">{content.guidance}</p>
         {content.link && <Link className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline" to={content.link}>{content.linkLabel}</Link>}
-        {data.items.length ? <ul className="mt-4 space-y-3">{data.items.map(item => <Record key={item.id} item={item} receipt={selected === 'stale_message_events'} />)}</ul>
+        {data.items.length ? <ul className="mt-4 space-y-3">{data.items.map(item => <Record key={item.id} item={item} receipt={selected === 'stale_message_events' || selected === historyCategory} />)}</ul>
           : <p role="status" className="mt-4 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-700">{data.meta.total_count > 0 ? 'No records on this page. Return to the first page or refresh.' : 'No records in this category. Other categories may still need review.'}</p>}
         <OperationalPagination meta={data.meta} page={page} onPage={next => navigate(selected, next)} busy={list.loading} label="Operational record pages" />
         {page > 1 && <button type="button" className="btn-secondary mt-3 min-h-11" onClick={() => navigate(selected)}>First page</button>}

@@ -126,8 +126,14 @@ class MessageProviderEventProcessor
       "bounce" => data["bounce"].is_a?(Hash) ? data["bounce"].slice("type", "subType", "message", "code", "diagnosticCode") : nil,
       "failed" => data["failed"].is_a?(Hash) ? data["failed"].slice("reason") : nil,
       "error" => data["error"].is_a?(Hash) ? data["error"].slice("code", "message") : nil,
-      "tags" => data["tags"].is_a?(Hash) ? data["tags"].slice("category") : nil
+      "tags" => safe_category,
+      "provenance" => MessageReceiptProvenance.application(data["tags"])&.then { |application| { "application" => application } }
     }.compact
+  end
+
+  def safe_category
+    category = data["tags"]["category"] if data["tags"].is_a?(Hash)
+    { "category" => category } if category.is_a?(String) && category.match?(/\A[a-z0-9_-]{1,64}\z/)
   end
 
   def apply_to_delivery!(delivery, receipt)

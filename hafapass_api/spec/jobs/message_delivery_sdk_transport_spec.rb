@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe MessageDeliveryJob do
+RSpec.describe MessageDeliveryJob, :webmock do
   let(:delivery) { create(:message_delivery, template: "order_recovery", provider: "resend") }
   let(:http) { instance_double(Net::HTTP) }
 
@@ -32,6 +32,24 @@ RSpec.describe MessageDeliveryJob do
       expect(request["Idempotency-Key"]).to eq(delivery.idempotency_key)
       expect(request.body.b).to eq(delivery.outbound_wire_body.b)
       expect(JSON.parse(request.body)).to eq(delivery.outbound_payload)
+      expect(JSON.parse(request.body).fetch("tags")).to include(
+        { "name" => "application", "value" => "hafapass" }, { "name" => "category", "value" => "order_recovery" })
+    end
+  end
+
+  it "sends an already frozen legacy payload without injecting application tags or changing its idempotency identity" do
+    legacy = { "from" => "sender@example.invalid", "to" => delivery.recipient,
+      "subject" => "Legacy frozen request", "html" => "Synthetic", "tags" => [{ "name" => "category", "value" => "order_recovery" }] }
+    wire = JSON.generate(legacy)
+    delivery.update!(outbound_payload: legacy, outbound_wire_body: wire, wire_body_digest: Digest::SHA256.hexdigest(wire),
+      payload_digest: Digest::SHA256.hexdigest(JSON.generate(legacy.sort.to_h)), transport_context_digest: EmailService.transport_context_digest)
+    identity = delivery.attributes.slice("idempotency_key", "outbound_payload", "outbound_wire_body", "wire_body_digest", "payload_digest")
+    allow(http).to receive(:request).and_return(provider_response(200, '{"id":"legacy-provider-message"}'))
+    described_class.new.perform(delivery.id)
+    expect(delivery.reload.attributes.slice(*identity.keys)).to eq(identity)
+    expect(http).to have_received(:request) do |request|
+      expect(request.body.b).to eq(wire.b)
+      expect(request["Idempotency-Key"]).to eq(identity.fetch("idempotency_key"))
     end
   end
 

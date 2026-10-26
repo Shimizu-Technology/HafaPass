@@ -835,7 +835,8 @@ class EmailService
       reply_to = ENV["MAILER_REPLY_TO"].to_s.strip.presence
       params[:reply_to] = reply_to if reply_to
       params[:subject] = "[HåfaPass TEST] #{subject}" if ProviderRehearsal.enabled?
-      params[:tags] = [{ name: "category", value: tag }] if tag.present?
+      params[:tags] = [{ name: "application", value: "hafapass" }]
+      params[:tags] << { name: "category", value: tag } if tag.present?
       if log_meta[:unsubscribe_url]
         params[:headers] = { "List-Unsubscribe" => "<#{log_meta[:unsubscribe_url]}>",
           "List-Unsubscribe-Post" => "List-Unsubscribe=One-Click" }
