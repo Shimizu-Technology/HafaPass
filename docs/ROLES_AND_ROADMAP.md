@@ -2,6 +2,7 @@
 
 Status: supporting reference
 Authoritative roadmap: [TICKETING_PLATFORM_BLUEPRINT.md](TICKETING_PLATFORM_BLUEPRINT.md)
+Post-pilot direction: [POST_PILOT_PLAN.md](POST_PILOT_PLAN.md) — readiness evidence, buyer web/PWA, focused staff tooling and positioning hypotheses.
 Delivery phases: [PHASE_DELIVERY_PLAYBOOK.md](PHASE_DELIVERY_PLAYBOOK.md)
 Current capability table: [ROLE_MATRIX.md](ROLE_MATRIX.md), generated from backend permissions and shared with the Settings role comparison.
 

@@ -2,6 +2,8 @@
 
 Status: engineering controls implemented through Gate J; external approvals, production drills, a real bounded pilot, and inspected closeout evidence are still required.
 
+The [post-pilot plan](POST_PILOT_PLAN.md) records physical-device and real-flow acceptance still needed before a paid pilot, then the proposed mobile and differentiation priorities. It does not replace Gates E–J.
+
 ## Release authority and named ownership
 
 The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technology**. This assignment must be explicitly confirmed for each pilot event, with a named backup, phone number, and private escalation channel recorded in the deployment system—not in source control. The event organizer must also name an event commander, door lead, finance contact, and venue safety contact.
@@ -52,6 +54,20 @@ Money/event-day providers: complete the evidence gates in [Guam Payment and Payo
 | P2 | isolated delivery failure, individual ticket/support issue, degraded noncritical feature | Ticket and handle within the event support window |
 
 For every incident: record UTC and Guam timestamps, scope, release, request/job/provider IDs, decisions, customer impact, recovery, reconciliation, and follow-up. Never paste secrets, raw webhook bodies, complete payment data, or unnecessary PII into tickets or chat.
+
+## Operational warning review
+
+The admin dashboard's **Review operational records** link opens `/admin/operations`. Only platform administrators can read it; support order lookup does not grant this access. The page uses the same five scopes as readiness:
+
+- failed deliveries updated within the last hour;
+- unprocessed email provider receipts received more than five minutes ago;
+- failed payment webhooks;
+- all open reconciliation exceptions;
+- in-person card attempts with an unknown result.
+
+These are counted records, not necessarily distinct incidents or failed emails. A sent/delivered receipt without a linked delivery can appear here while Support has no deliveries. The receipt is retained for review: its presence alone does not establish delivery failure. Read the local record number, fixed event type, receipt time, linkage and processing-error flag. Ask the operations owner to compare provider account/webhook configuration and delivery history using restricted evidence. Do not paste raw payloads, recipient addresses or processing-error text into shared notes, and do not resend, delete or mark a receipt processed merely to clear the count.
+
+Counts and rows refresh together on the review page, with 50 rows per page and a preserved full category count. The dashboard and review page are separate reads; processing and moving time windows can change totals between visits. Refresh to check current state. An unavailable read is an error, not an empty queue. Payment and unknown-card rows require the payment/finance owner to inspect original provider state. The linked refund queue covers refund work only; it does not claim to contain every reconciliation exception. This drilldown has no repair controls.
 
 ## Provider outage
 

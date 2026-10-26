@@ -286,6 +286,7 @@ Rails.application.routes.draw do
         patch "annual_tax_reports/:organization_id", to: "annual_tax_reports#update"
         resource :settings, only: [:show, :update]
         get "settings/fee_change_preview", to: "settings#fee_change_preview"
+        resources :operations, only: [:index]
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           member do
