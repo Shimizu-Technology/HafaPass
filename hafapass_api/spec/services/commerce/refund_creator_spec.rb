@@ -265,13 +265,8 @@ RSpec.describe Commerce::RefundCreator do
     )
 
     expect do
-      result = described_class.reconcile_provider_total!(
-        order: order,
-        payment: payment,
-        amount_cents: 1000,
-        provider_refund_id: "re_webhook",
-        idempotency_key: "webhook-refund"
-      )
+      result = described_class.reconcile_refund!(refund: pending,
+        provider_refund: OpenStruct.new(id: "re_webhook", status: "succeeded", amount: 1000, currency: "usd"))
       expect(result.id).to eq(pending.id)
       expect(result).to be_succeeded
       expect(result.provider_refund_id).to eq("re_webhook")
@@ -690,5 +685,25 @@ RSpec.describe Commerce::RefundCreator do
   it "does not block a refund for a nonfinancial exception" do
     create(:reconciliation_exception, order: order, code: "ticket_email_delivery_failure")
     expect(described_class.call(order: order, amount_cents: 1000, idempotency_key: "delivery-only")).to be_succeeded
+  end
+
+  %w[pending succeeded failed].each do |existing_status|
+    it "R1-02 refuses to rename an acknowledged #{existing_status} provider operation in the shared finalizer" do
+      selected = order.tickets.order(:id).first
+      allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_bound_A", status: existing_status))
+      refund = described_class.call(order: order, tickets: [selected], idempotency_key: "bound-identity")
+      initial_total = order.reload.refund_amount_cents
+      initial_sold = ticket_type.reload.quantity_sold
+      expect do
+        described_class.reconcile_refund!(refund: refund, provider_refund: OpenStruct.new(
+          id: "re_distinct_B", status: "succeeded", amount: 2625, currency: "usd"))
+      end.to raise_error(described_class::RefundError, /identity differs/)
+      expect(refund.reload).to have_attributes(provider_refund_id: "re_bound_A", status: existing_status)
+      expect(refund.tickets).to contain_exactly(selected)
+      expect(order.reload.refund_amount_cents).to eq(initial_total)
+      expect(ticket_type.reload.quantity_sold).to eq(initial_sold)
+      expect(order.reconciliation_exceptions.open).to exist(code: "refund_operation_mismatch")
+      expect(StripeService).to have_received(:refund_payment).once
+    end
   end
 end

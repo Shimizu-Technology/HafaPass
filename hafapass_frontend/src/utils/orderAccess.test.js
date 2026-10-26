@@ -1,8 +1,44 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { CheckoutAttemptConflict, checkoutDefinitelyRejected, prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, recordCheckoutOutcome, saveActiveCheckout, getActiveCheckout, clearActiveCheckout, getOrderAccess, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
+import { bindOrderAccessOwner, saveOrderAccess, CheckoutAttemptConflict, checkoutDefinitelyRejected, prepareCheckoutAttempt, getCheckoutAttempt, clearCheckoutAttempt, recordCheckoutOutcome, saveActiveCheckout, getActiveCheckout, clearActiveCheckout, getOrderAccess, getBuyerRefundAttempt, prepareBuyerRefundAttempt, recordBuyerRefundOutcome } from './orderAccess'
 
 describe('buyer refund request persistence', () => {
   beforeEach(() => { window.sessionStorage.clear(); window.localStorage.clear() })
+  it('preserves guest access across reloads and unchanged identity preparation', () => {
+    saveOrderAccess(12, 'guest-link')
+    bindOrderAccessOwner(null)
+    expect(getOrderAccess(12)).toBe('guest-link')
+  })
+
+  it.each([null, 'buyer-b'])('withdraws private order links when buyer-a changes to %s, preserving uncertain checkout identities', owner => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    const attempt = prepareCheckoutAttempt('event', { buyer_email: 'buyer@example.invalid' })
+    saveOrderAccess(12, 'private-link')
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    else window.localStorage.removeItem('hafapass_scanner_user_id')
+    expect(getOrderAccess(12)).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    expect(getCheckoutAttempt('event')).toEqual(attempt)
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    expect(getOrderAccess(12)).toBeNull()
+  })
+
+  it('does not inherit a guest link on sign-in, but permits explicitly opening a fresh link', () => {
+    saveOrderAccess(12, 'guest-link')
+    bindOrderAccessOwner('buyer-a')
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    expect(getOrderAccess(12)).toBeNull()
+    saveOrderAccess(12, 'explicitly-opened-link')
+    expect(getOrderAccess(12)).toBe('explicitly-opened-link')
+  })
+
+  it('keeps legacy guest links usable only in a guest context', () => {
+    window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-guest')
+    expect(getOrderAccess(12)).toBe('legacy-guest')
+    window.sessionStorage.removeItem('hafapass:order-access-owner')
+    window.localStorage.setItem('hafapass_scanner_user_id', 'buyer-a')
+    expect(getOrderAccess(12)).toBeNull()
+  })
+
   it('preserves unknown and pending operation identities, including contradictory reconciliation metadata', () => {
     const initial = prepareBuyerRefundAttempt(12, 'ticket:34')
     recordBuyerRefundOutcome(12, 'ticket:34', null)

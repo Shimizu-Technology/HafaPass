@@ -7,6 +7,16 @@ module Commerce
     class InvalidTransition < StandardError; end
 
     class << self
+      # Match completion/failure's event -> order order before inspecting a
+      # reservation. Recovery must never enter lifecycle code holding order first.
+      def with_order_lock!(order)
+        Order.transaction do
+          lock_event_context!(order)
+          order.lock!
+          yield
+        end
+      end
+
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
         AuditContext.set(fail_open: true) do
           complete_with_audit!(order, payment: payment, webhook_event: webhook_event,

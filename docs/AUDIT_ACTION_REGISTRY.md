@@ -329,6 +329,7 @@ entries are described above and defined in the registry's audience variants.
 | `promoter.updated` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Updated a promoter. |
 | `refund.buyer_requested` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Requested a refund through buyer self-service. |
 | `refund.created` | historical | refunds | O/F | yes | yes | `status`, `amount_cents` | `order_id`, `amount_cents`, `event_title`, `order_reference`, `currency` | Requested a refund. |
+| `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |
 | `refund.provider_result_conflict` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Flagged conflicting refund provider results. |
@@ -356,6 +357,7 @@ entries are described above and defined in the registry's audience variants.
 | `sales.export_requested` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view`, `event_title` | Requested an event sales export. |
 | `sales.exported` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view`, `event_title` | Exported an event sales summary. |
 | `scanner_device.authorized` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `event_title` | Authorized an event scanner device. |
+| `scanner_device.journal_recovered` | yes | scanning | O/M | yes | yes | — | `entry_count`, `window_start`, `window_end`, `event_title` | Recovered a reviewed offline admission journal. |
 | `scanner_device.lease_updated` | yes | scanning | O/M | yes | yes | `status`, `lease_expires_at` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Updated an event scanner authorization lease. |
 | `scanner_device.manifest_downloaded` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Downloaded an event scanner manifest. |
 | `scanner_device.renamed` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Renamed an event scanner device. |

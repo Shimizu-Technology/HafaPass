@@ -94,10 +94,11 @@ class TicketType < ApplicationRecord
     inventory_holds.current.joins(:order).where(orders: { source: "box_office" }).sum(:quantity)
   end
 
-  def door_available_quantity
-    return available_quantity if door_allocation.nil?
+  def door_available_quantity(reserved_seat_quantity: 0)
+    available = available_quantity + reserved_seat_quantity
+    return available if door_allocation.nil?
 
-    [available_quantity, [door_allocation - door_sold_quantity - door_held_quantity, 0].max].min
+    [available, [door_allocation - door_sold_quantity - door_held_quantity, 0].max].min
   end
 
   def on_sale?(at: Time.current)

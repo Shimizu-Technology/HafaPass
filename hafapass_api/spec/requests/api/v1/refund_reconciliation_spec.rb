@@ -32,6 +32,95 @@ RSpec.describe "Refund reconciliation", type: :request do
     run.items.create!(order: order, status: :needs_manual, amount_cents: 5250)
   end
 
+  it "exposes provider verification separately to admin and organizer and blocks another refund" do
+    failed = pending_refund(status: :failed)
+    order = failed.order
+    payment = failed.payment
+    create(:refund, order: order, payment: payment, status: :succeeded, amount_cents: 1000)
+    issue = create(:reconciliation_exception, order: order, payment: payment,
+      code: "refund_aggregate_requires_reconciliation", actual_amount_cents: 3000)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
+    allow(StripeService).to receive(:refund_payment)
+
+    [["admin", admin], ["organizer", profile.user]].each do |role, actor|
+      get "/api/v1/#{role}/refund_reconciliation", params: { event_id: event.id }, headers: auth_headers(actor)
+      expect(response).to have_http_status(:ok), response.body
+      rows = response.parsed_body.fetch("items")
+      expect(rows.find { |row| row["type"] == "exception" }).to include(
+        "id" => issue.id, "amount_cents" => 0, "buyer_amount_cents" => nil, "provider_amount_kind" => "aggregate",
+        "provider_reported_amount_cents" => 3000, "provider_verification_amount_cents" => 2000,
+        "buyer_amount_unverified" => true)
+      expect(rows.find { |row| row["type"] == "refund" }).to include("buyer_amount_unverified" => true)
+    end
+    expect do
+      post "/api/v1/admin/refund_reconciliation/refund/#{failed.id}/retry", headers: auth_headers(admin)
+    end.not_to change(Refund, :count)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to match(/finance review/)
+    expect(StripeService).not_to have_received(:refund_payment)
+    expect(issue.reload).to be_open
+    expect(OrganizationPayoutBalance.available_cents(event.organization)).to eq(0)
+    create(:payout, event: event, organization: event.organization, status: :held,
+      held_from_status: "pending", with_tax_snapshot: false)
+    get "/api/v1/admin/payouts", headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok), response.body
+    expect(response.parsed_body.fetch("payouts").size).to eq(1)
+  end
+
+  it "verifies a failed historical operation without sending money or clearing other payout holds" do
+    failed = pending_refund(status: :failed)
+    order = failed.order
+    payment = failed.payment
+    issue = create(:reconciliation_exception, order: order, payment: payment,
+      code: "refund_operation_not_found", details: { provider_refund_id: "re_history_queue",
+        provider_payment_id: payment.provider_payment_id, amount_cents: 1200, currency: "usd", status: "failed" })
+    other = create(:reconciliation_exception, order: order, payment: payment, code: "fee_review")
+    allow(StripeService).to receive(:list_refunds).and_return([OpenStruct.new(id: "re_history_queue",
+      payment_intent: payment.provider_payment_id, amount: 1200, currency: "usd", status: "failed")])
+    allow(StripeService).to receive(:refund_payment)
+    2.times do
+      post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/resync", headers: auth_headers(admin)
+      expect(response).to have_http_status(:ok), response.body
+    end
+    expect(issue.reload).to be_resolved
+    expect(other.reload).to be_open
+    expect(order.refunds.succeeded).to be_empty
+    expect(order.refunds.where(provider_refund_id: "re_history_queue").count).to eq(1)
+    expect(order.refundable_cents).to eq(5250)
+    expect(StripeService).not_to have_received(:refund_payment)
+    expect(OrganizationPayoutBalance.available_cents(event.organization)).to eq(0)
+    get "/api/v1/admin/refund_reconciliation", params: { event_id: event.id }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("items")).to contain_exactly(include("type" => "refund", "id" => failed.id,
+      "buyer_amount_unverified" => false))
+  end
+
+  [[], "legacy scalar", 42, false].each do |details|
+    it "retains unresolved legacy evidence after status checks for #{details.inspect}" do
+      failed = pending_refund(status: :failed)
+      payment = failed.payment
+      issue = create(:reconciliation_exception, order: failed.order, payment: payment,
+        code: "refund_operation_not_found", details: details)
+      allow(StripeService).to receive(:list_refunds).and_return([OpenStruct.new(id: "re_malformed_history",
+        payment_intent: payment.provider_payment_id, amount: 1200, currency: "usd", status: "failed")])
+      allow(StripeService).to receive(:refund_payment)
+
+      2.times do
+        post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/resync", headers: auth_headers(admin)
+        expect(response).to have_http_status(:ok), response.body
+      end
+      expect(issue.reload).to be_open
+      expect(payment.refunds.where(provider_refund_id: "re_malformed_history").count).to eq(1)
+      expect(payment.refunds.succeeded).to be_empty
+      expect(failed.order.refundable_cents).to eq(5250)
+      expect(StripeService).not_to have_received(:refund_payment)
+      expect(OrganizationPayoutBalance.available_cents(event.organization)).to eq(0)
+      get "/api/v1/admin/refund_reconciliation", params: { event_id: event.id }, headers: auth_headers(admin)
+      expect(response).to have_http_status(:ok), response.body
+      expect(response.parsed_body.fetch("items")).to include(include("id" => issue.id, "type" => "exception",
+        "buyer_amount_cents" => nil, "provider_reported_amount_cents" => nil))
+    end
+  end
+
   it "keeps separate administrators' pending resync observations" do
     refund = pending_refund
     other_admin = create(:user, :admin)

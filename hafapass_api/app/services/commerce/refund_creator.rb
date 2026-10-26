@@ -13,26 +13,37 @@ module Commerce
       new(**).call
     end
 
-    def self.reconcile_provider_total!(order:, payment:, amount_cents:, provider_refund_id:, idempotency_key:)
-      succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
-      delta = amount_cents.to_i - succeeded_total
-      return if delta <= 0
+    # Provider IDs are durable. Metadata can recover an unacknowledged
+    # reservation, but cannot rename one that already has an operation ID.
+    def self.provider_binding_conflict?(refund, provider_id)
+      provider_id.present? && refund.provider_refund_id.present? && refund.provider_refund_id != provider_id
+    end
 
-      provider_refund = OpenStruct.new(id: provider_refund_id, status: "succeeded")
-      pending = order.refunds.pending.find_by(payment: payment, provider_refund_id: provider_refund_id)
-      unless pending
-        candidates = order.refunds.pending.where(payment: payment, amount_cents: delta, provider_refund_id: nil)
-        pending = candidates.first if candidates.count == 1
+    def self.find_provider_operation(payment:, provider_refund:)
+      intent = provider_refund.respond_to?(:payment_intent) ? provider_refund.payment_intent : nil
+      if intent.present? && intent != payment.provider_payment_id
+        raise RefundError, "Provider refund belongs to another payment intent"
       end
-      creator = new(
-        order: order,
-        payment: payment,
-        amount_cents: delta,
-        reason: "provider_webhook_reconciliation",
-        idempotency_key: pending&.idempotency_key || idempotency_key,
-        provider_refund: provider_refund
-      )
-      creator.call
+      provider_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
+      refund = Refund.find_by(provider: "stripe", provider_refund_id: provider_id) if provider_id.present?
+      if refund.nil? && provider_id.present?
+        refund = ExternalRefundRecovery.restore_historical_identity!(payment: payment, provider_id: provider_id)
+      end
+      if refund
+        raise RefundError, "Provider refund belongs to another payment" unless refund.payment_id == payment.id
+
+        return refund
+      end
+      metadata = provider_refund.respond_to?(:metadata) ? provider_refund.metadata.to_h.stringify_keys : {}
+      key = metadata["hafapass_refund_key"]
+      return if key.blank?
+
+      refund = Refund.find_by(provider: "stripe", idempotency_key: key)
+      return unless refund
+      raise RefundError, "Provider refund metadata belongs to another payment" unless refund.payment_id == payment.id
+      return if provider_binding_conflict?(refund, provider_id)
+
+      refund
     end
 
     def self.reconcile_refund!(refund:, provider_refund:)
@@ -135,7 +146,7 @@ module Commerce
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
         next validate_replay!(existing) if existing
-        unless order.completed? || order.partially_refunded?
+        unless order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
 
@@ -235,9 +246,27 @@ module Commerce
     end
 
     def ensure_financial_review_resolved!
-      return unless RefundSafety.finance_review_required?(order)
+      ignored_codes = refundable_late_capture? ? %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry] : []
+      return unless RefundSafety.finance_review_required?(order, except_codes: ignored_codes)
 
       raise RefundError, "Refund needs finance review; contact support before submitting another request"
+    end
+
+    # A verified late capture is money owed back, never a new fulfillment.
+    # Require the released, unfulfilled reservation and the exact captured sum.
+    def refundable_late_capture?
+      return false unless order.cancelled? || order.expired? || order.partially_refunded?
+      return false if order.completed_at.present? || order.tickets.exists?
+      return false if order.inventory_holds.where.not(status: [:released, :expired]).exists? ||
+        order.catalog_item_holds.where.not(status: [:released, :expired]).exists?
+
+      captures = order.payments.where(status: [:succeeded, :partially_refunded])
+      payment = captured_payment || (captures.sole if captures.count == 1)
+      payment && payment.order_id == order.id && payment.provider == "stripe" &&
+        %w[test live].include?(payment.provider_environment) && payment.succeeded_at.present? &&
+        payment.amount_cents == order.total_cents && payment.currency == order.currency &&
+        ReconciliationException.where(order: order, payment: payment,
+          code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
     end
 
     def lock_selected_tickets!
@@ -371,6 +400,18 @@ module Commerce
         refund.order.event.lock!
         refund.order.lock!
         refund.lock!
+        incoming_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
+        owner = if incoming_id.present? && refund.provider == "stripe" && refund.payment
+          self.class.find_provider_operation(payment: refund.payment, provider_refund: provider_refund)
+        end
+        if self.class.provider_binding_conflict?(refund, incoming_id) || (owner && owner.id != refund.id)
+          ReconciliationException.create!(order: refund.order, payment: refund.payment,
+            code: "refund_operation_mismatch", details: { provider_refund_id: incoming_id,
+              acknowledged_provider_refund_id: refund.provider_refund_id, bound_refund_id: owner&.id })
+          audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider", observation: provider_refund)
+          validation_error = "Refund provider identity differs from the acknowledged operation; finance review is required"
+          next
+        end
         # A webhook can finish this operation while the original POST is still
         # in flight. Re-read every terminal state under the same locks before
         # touching its released ticket reservations or financial allocations.
@@ -434,6 +475,7 @@ module Commerce
           stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+        resolve_repaid_late_capture!(refund)
         audit_refund!(refund, "succeeded", outcome: "succeeded",
           source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
         AuditLogger.record!(action: "order.#{full_refund ? 'refunded' : 'partially_refunded'}",
@@ -529,8 +571,20 @@ module Commerce
       payment.update!(status: succeeded_total >= payment.amount_cents ? :refunded : :partially_refunded)
     end
 
+    def resolve_repaid_late_capture!(refund)
+      return unless refund.payment.refunded? && refund.order.completed_at.nil? && refund.order.tickets.empty?
+
+      ReconciliationException.open.where(order: refund.order, payment: refund.payment,
+        code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).find_each(&:resolve!)
+    end
+
     def release_fully_refunded_inventory!(refund)
       refunded_order = refund.order
+      if refunded_order.completed_at.nil? && refunded_order.tickets.empty? &&
+          ReconciliationException.where(order: refunded_order, payment: refund.payment,
+            code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
+        return
+      end
       refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end

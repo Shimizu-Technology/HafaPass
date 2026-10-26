@@ -133,6 +133,28 @@ class StripeService
       raise AmbiguousRefund, "Stripe refund pagination limit reached; manual finance review is required"
     end
 
+    # Finance recovery fetches durable operations, never infers one from a
+    # charge aggregate. Fail closed on incomplete pagination.
+    def list_refunds(payment:, call_budget: nil)
+      raise PaymentError, "Simulated refunds cannot be reconciled with Stripe" if payment.provider_environment == "simulate"
+
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance, call_budget: call_budget)
+      refunds = []
+      cursor = nil
+      REFUND_LOOKUP_PAGE_LIMIT.times do
+        params = { payment_intent: payment.provider_payment_id, limit: 100 }
+        params[:starting_after] = cursor if cursor
+        call_budget&.charge!
+        page = client.v1.refunds.list(params, options)
+        refunds.concat(page.data)
+        return refunds unless page.has_more
+
+        cursor = page.data.last&.id
+        raise AmbiguousRefund, "Stripe refund pagination was incomplete; finance review is required" unless cursor
+      end
+      raise AmbiguousRefund, "Stripe refund pagination limit reached; finance review is required"
+    end
+
     def retrieve_refund(refund_id, payment:, call_budget: nil)
       raise PaymentError, "Simulated refunds cannot be reconciled with Stripe" if payment.provider_environment == "simulate"
 

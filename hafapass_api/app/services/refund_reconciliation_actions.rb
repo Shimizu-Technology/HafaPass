@@ -5,7 +5,7 @@ class RefundReconciliationActions
   class Forbidden < ActionError; end
 
   TYPES = { "refund" => Refund, "cancellation" => EventCancellationRefundItem,
-    "request" => EventChangeResponse, "dispute" => Dispute }.freeze
+    "request" => EventChangeResponse, "dispute" => Dispute, "exception" => ReconciliationException }.freeze
 
   def self.call(**options)
     new(**options).call
@@ -83,7 +83,11 @@ class RefundReconciliationActions
     end
     raise ActionError, "Only a failed or cancelled Stripe refund can be retried" unless
       @type == "refund" && (@record.failed? || @record.cancelled?) && @record.provider == "stripe"
+    raise ActionError, "Historical provider observations are not refund requests to retry" if @record.historical_observation?
     raise ActionError, "Resolve the unknown provider result before retrying" if @record.failure_code == "provider_result_unknown"
+
+    replacement = order.refunds.find_by(idempotency_key: "refund-reconciliation/#{@record.id}")
+    return replacement if replacement
 
     provider = find_provider_refund(@record)
     if provider && provider.status.to_s != "failed" && !%w[canceled cancelled].include?(provider.status.to_s)
@@ -95,6 +99,7 @@ class RefundReconciliationActions
     raise ActionError, "The buyer balance is already resolved" unless amount.positive?
 
     result = Commerce::RefundCreator.call(order: order, payment: @record.payment, amount_cents: amount,
+      tickets: @record.tickets.to_a.presence,
       reason: @record.reason.presence || "refund_reconciliation_retry", requested_by: @actor,
       idempotency_key: "refund-reconciliation/#{@record.id}")
     audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: amount })
@@ -142,6 +147,14 @@ class RefundReconciliationActions
   end
 
   def resync_refund!
+    if @type == "exception"
+      unless Commerce::ExternalRefundRecovery::RECOVERABLE_CODES.include?(@record.code)
+        raise ActionError, "This finance exception requires manual review"
+      end
+      result = Commerce::ExternalRefundRecovery.call(issue: @record, call_budget: @stripe_call_budget)
+      audit!("refund_reconciliation.resynced", @record, { payment_id: @record.payment_id })
+      return result
+    end
     raise ActionError, "Only a pending Stripe refund can be checked" unless @type == "refund" && @record.pending? && @record.provider == "stripe"
 
     provider = find_provider_refund(@record)
@@ -230,9 +243,9 @@ class RefundReconciliationActions
         "refund_reconciliation.cancellation_retry", "refund_reconciliation.request_executed" then "requested"
     when "refund_reconciliation.unable" then "unknown"
     when "refund_reconciliation.resynced"
-      if @record.succeeded?
+      if (@type == "exception" && @record.resolved?) || (@type != "exception" && @record.succeeded?)
         "succeeded"
-      elsif @record.failed? || @record.cancelled?
+      elsif @type != "exception" && (@record.failed? || @record.cancelled?)
         "failed"
       else
         "requested"

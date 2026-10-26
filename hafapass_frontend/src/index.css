@@ -30,6 +30,12 @@
   button, a, [role="button"] { touch-action: manipulation; }
   button { user-select: none; }
   input, select, textarea { scroll-margin-block: 7rem 4rem; }
+  /* Keep Safari from zooming the form while preserving pinch-to-zoom. */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
+      font-size: max(1rem, 16px);
+    }
+  }
   /* Native checkboxes, radios and ranges use the brand instead of browser blue. */
   input[type="checkbox"], input[type="radio"], input[type="range"], progress {
     accent-color: theme('colors.action.teal');

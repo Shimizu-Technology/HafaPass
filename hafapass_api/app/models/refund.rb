@@ -22,6 +22,10 @@ class Refund < ApplicationRecord
   after_commit :resume_event_cancellation_refunds,
     if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
 
+  def historical_observation?
+    provider_payload["historical_observation"] == true
+  end
+
   def resume_event_cancellation_refunds
     run = order.event.event_cancellation_refund_run
     EventCancellationRefundJob.perform_later(run.id) if run && run.items.where(order_id: order_id).exists?

@@ -1,6 +1,26 @@
 const accessKey = (orderId) => `hafapass:order-access:${orderId}`
 const activeCheckoutKey = (slug) => `hafapass:active-checkout:${slug}`
 const activeCheckoutBuyerKey = slug => `hafapass:active-checkout-buyer:${slug}`
+const accessOwnerKey = 'hafapass:order-access-owner'
+
+export function withdrawSavedOrderAccess() {
+  const keys = Object.keys(window.sessionStorage).filter(key => key.startsWith('hafapass:order-access:'))
+  keys.forEach(key => window.sessionStorage.removeItem(key))
+}
+
+// Session storage survives Clerk sign-out and is copied when a tab is
+// duplicated. Keep guest capabilities within this tab's confirmed identity.
+export function bindOrderAccessOwner(owner, { withdraw = false } = {}) {
+  const identity = JSON.stringify(owner)
+  const previous = window.sessionStorage.getItem(accessOwnerKey)
+  if (previous === identity && !withdraw) return
+  // Legacy unbound links remain available to a guest, but cannot silently
+  // grant access to the next signed-in account on a shared browser.
+  if (withdraw || previous !== null || owner !== null) {
+    withdrawSavedOrderAccess()
+  }
+  window.sessionStorage.setItem(accessOwnerKey, identity)
+}
 
 export function checkoutBuyerIdentity() {
   // Written by ClerkProviderWrapper only after binding the authenticated user.
@@ -9,12 +29,16 @@ export function checkoutBuyerIdentity() {
 
 export function saveOrderAccess(orderId, token) {
   if (!orderId || !token) return
+  bindOrderAccessOwner(checkoutBuyerIdentity())
   window.sessionStorage.setItem(accessKey(orderId), token)
 }
 
 export function getOrderAccess(orderId) {
   if (!orderId) return null
-  return window.sessionStorage.getItem(accessKey(orderId))
+  try {
+    bindOrderAccessOwner(checkoutBuyerIdentity())
+    return window.sessionStorage.getItem(accessKey(orderId))
+  } catch { return null }
 }
 
 export function orderAccessHeaders(orderId, token = getOrderAccess(orderId)) {

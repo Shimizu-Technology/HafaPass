@@ -12,7 +12,7 @@ class OrganizerSalesExport
     "price_paid" => "Total paid", "discount_promo" => "Discount / promo",
     "channel" => "Channel", "status" => "Status", "check_in_time" => "Check-in time",
     "transferred_to" => "Transferred to", "purchase_date" => "Purchase date",
-    "notes_custom_answers" => "Notes / custom answers"
+    "notes_custom_answers" => "Registration answers"
   }.freeze
   DEFAULT_COLUMNS = %w[name email order_number ticket_type total_paid channel status check_in_time purchase_date].freeze
   TRANSACTION_COLUMNS = %w[order_number ticket_type ticket_price discount fee tax total_paid channel status purchase_date].freeze
@@ -76,7 +76,7 @@ class OrganizerSalesExport
     when "check_in_time" then self.class.local_time(ticket ? ticket.checked_in_at : order.tickets.filter_map(&:checked_in_at).max, @query.event)
     when "transferred_to" then transferred_to(ticket ? [ticket] : order.tickets)
     when "purchase_date" then self.class.local_time(order.completed_at || order.created_at, @query.event)
-    when "notes_custom_answers" then notes_and_answers(ticket, order)
+    when "notes_custom_answers" then registration_answers(order)
     end
   end
 
@@ -126,10 +126,10 @@ class OrganizerSalesExport
     FinanceExports.money(cents)
   end
 
-  def notes_and_answers(ticket, order)
-    notes = [*order.support_notes, *(ticket ? ticket.support_notes : [])].map(&:body)
-    answers = order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{answer.answer.to_json}" }
-    (notes + answers).join("; ")
+  def registration_answers(order)
+    # Keep the column key compatible with saved export requests. Internal
+    # support notes have a separate audience and never belong in this export.
+    order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{answer.answer.to_json}" }.join("; ")
   end
 
   def transferred_to(tickets)

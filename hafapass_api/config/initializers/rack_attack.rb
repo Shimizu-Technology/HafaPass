@@ -23,13 +23,45 @@ class Rack::Attack
     req.ip == "127.0.0.1" || req.ip == "::1" if Rails.env.development?
   end
 
+  # Only verified existing accounts receive a separate venue-scanner budget.
+  # Caller-supplied user/device IDs and forwarded identity headers are not proof.
+  scanner_request = lambda do |req|
+    path = req.path.to_s.downcase
+    base = %r{\A/api/v1/organizer/events/[^/]+/}
+    path.match?(base) && (
+      (req.post? && path.match?(%r{/scanner_devices/[^/]+/sync(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.get? && path.match?(%r{/(?:scanner_devices/[^/]+/manifest|admissions(?:/search)?)(?:\.[a-z0-9]+)?/*\z}))
+    )
+  end
+  scanner_user = lambda do |req|
+    next unless scanner_request.call(req)
+    next req.env["hafapass.scanner_rate_user"] if req.env.key?("hafapass.scanner_rate_user")
+
+    token = req.get_header("HTTP_AUTHORIZATION").to_s.match(/\ABearer (\S+)\z/i)&.captures&.first
+    payload = ClerkAuthenticator.verify(token) if token
+    req.env["hafapass.scanner_rate_user"] = User.where(clerk_id: payload["sub"]).pick(:id) if payload&.dig("sub").present?
+    req.env["hafapass.scanner_rate_user"] ||= nil
+  end
+  throttle("scanner/ip", limit: 2400, period: 1.minute) do |req|
+    req.ip if scanner_request.call(req)
+  end
+  throttle("scanner/unverified-ip", limit: 60, period: 1.minute) do |req|
+    req.ip if scanner_request.call(req) && !scanner_user.call(req)
+  end
+  throttle("scanner/user", limit: 180, period: 1.minute) do |req|
+    scanner_user.call(req)
+  end
+  throttle("scanner-manifest/user", limit: 12, period: 1.minute) do |req|
+    scanner_user.call(req) if req.get? && req.path.to_s.downcase.match?(%r{/scanner_devices/[^/]+/manifest(?:\.[a-z0-9]+)?/*\z})
+  end
+
   # ─── General Throttles ────────────────────────────────────────────────────
 
   # Throttle all requests by IP (300 requests per 5 minutes)
   # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
   # or a small provider IP pool, so they have their own limits below.
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/")
+    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") || scanner_user.call(req)
   end
 
   # ─── Authentication Throttles ─────────────────────────────────────────────

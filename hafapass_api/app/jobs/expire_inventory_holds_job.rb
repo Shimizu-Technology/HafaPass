@@ -12,9 +12,10 @@ class ExpireInventoryHoldsJob < ApplicationJob
     end
     WaitlistOffer.where(status: :offered, expires_at: ..now).find_each { |offer| offer.expire!(at: now) }
     TicketTransfer.pending.where(expires_at: ..now).find_each do |transfer|
-      transfer.with_lock do
-        transfer.update!(status: :expired, token_version: transfer.token_version + 1) if transfer.pending?
-      end
+      TicketTransfers::Manager.expire!(transfer, at: now)
+    rescue StandardError => e
+      Sentry.capture_exception(e)
+      Rails.logger.error({ event: "ticket_transfer_expiry_failed", ticket_transfer_id: transfer.id, error_class: e.class.name }.to_json)
     end
   end
 end

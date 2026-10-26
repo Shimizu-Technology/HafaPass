@@ -20,7 +20,7 @@ module Commerce
     def call
       card_policy_blocked = false
       expired = false
-      snapshot = @order.with_lock do
+      snapshot = OrderLifecycle.with_order_lock!(@order) do
         payment = @order.payments.order(:id).last
         return result(nil, nil) unless @order.pending?
         if @order.expires_at.present? && @order.expires_at <= Time.current
@@ -39,7 +39,7 @@ module Commerce
       # Account verification and provider retrieval must not hold the order's
       # row lock. Reload the reservation and exact payment identity afterwards.
       intent = Timeout.timeout(PROVIDER_REQUEST_TIMEOUT) { StripeService.retrieve_payment_intent(payment) }
-      recovery = @order.with_lock do
+      recovery = OrderLifecycle.with_order_lock!(@order) do
         payment = @order.payments.order(:id).last
         payment&.lock!
         return result(nil, nil) unless @order.pending?

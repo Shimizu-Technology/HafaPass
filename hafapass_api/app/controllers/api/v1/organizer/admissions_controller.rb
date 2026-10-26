@@ -51,7 +51,6 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
   end
 
   def admission_dashboard
-    ticket_counts = @event.tickets.group(:status).count
     actions = @event.admission_actions.includes(:scanner_device, :actor_user, :reversal_action).order(received_at: :desc).limit(50)
     {
       event: {
@@ -63,18 +62,14 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
         ends_at: @event.ends_at,
         timezone: @event.timezone
       },
-      counts: {
-        total: ticket_counts.values.sum,
-        admitted: ticket_counts.fetch("checked_in", 0),
-        remaining: ticket_counts.fetch("issued", 0),
-        cancelled: ticket_counts.fetch("cancelled", 0),
-        conflicts: @event.admission_actions.result_conflict.count,
-        rejected: @event.admission_actions.result_rejected.count
-      },
+      counts: Admissions::Counts.call(event: @event),
       devices: @event.scanner_devices.includes(:user).order(last_seen_at: :desc).map { |device| device_summary(device) },
       recent_actions: actions.map { |action| action_summary(action) },
       latest_manifest: manifest_summary(@event.admission_manifests.order(version: :desc).first),
       permissions: {
+        can_recover: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+          permission: :manage_staff, event: @event) && OrganizationAuthorization.allowed?(user: current_user,
+          organization: current_organization, permission: :manage_attendees, event: @event),
         can_reverse: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
           permission: :manage_attendees, event: @event)
       }

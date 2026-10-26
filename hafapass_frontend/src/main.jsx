@@ -12,7 +12,9 @@ import './index.css'
 import ServiceCheck from './ServiceCheck.jsx'
 import { initializeMonitoring, Sentry } from './monitoring'
 import ErrorFallback from './components/ErrorFallback'
+import { initializeInstallationOffers } from './utils/installationOffers'
 
+initializeInstallationOffers()
 initializeMonitoring()
 
 async function removeLegacyPrivateCaches() {

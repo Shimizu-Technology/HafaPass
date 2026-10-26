@@ -283,7 +283,7 @@ RSpec.describe "Stripe webhooks", type: :request do
     post_stripe_event(
       "charge.refunded",
       { id: "ch_refunded", payment_intent: "pi_provider_refund", amount_refunded: checkout.payment.amount_cents,
-        currency: "usd", refunds: { data: [{ id: "re_actual_provider_refund", status: "succeeded" }] } },
+        currency: "usd", refunds: { data: [{ id: "re_actual_provider_refund", status: "succeeded", amount: checkout.payment.amount_cents, currency: "usd" }] } },
       event_id: "evt_provider_refund"
     )
 
@@ -583,6 +583,12 @@ RSpec.describe "Stripe webhooks", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(checkout.payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(500)
+      unless includes_operation_amount
+        expect(second_payment.reload.refunds).to be_empty
+        expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_aggregate_requires_reconciliation")
+        expect(RefundReconciliationQueue.new(event_id: checkout.order.event_id).entries).to include(include(type: "exception"))
+        next
+      end
       expect(second_payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(750)
       expect(checkout.order.reload.refunded_cents).to eq(1250)
       expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)
@@ -632,7 +638,7 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(checkout.order.reconciliation_exceptions).to be_empty
   end
 
-  it "defers a charge snapshot without embedded refunds and later books the operation event" do
+  it "keeps an unexpanded aggregate discrepancy actionable until verified recovery" do
     checkout = create_pending_checkout(intent_id: "pi_no_embedded_refunds")
     post_stripe_event("payment_intent.succeeded", { id: "pi_no_embedded_refunds",
       amount_received: checkout.payment.amount_cents, currency: "usd" })
@@ -644,14 +650,19 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(response).to have_http_status(:ok)
     expect(refund.reload).to be_pending
     expect(checkout.order.reload.refunded_cents).to eq(0)
-    expect(checkout.order.reconciliation_exceptions).to be_empty
+    expect(checkout.order.reconciliation_exceptions.open).to exist(code: "refund_aggregate_requires_reconciliation")
 
     post_stripe_event("refund.updated", { id: "re_unexpanded", payment_intent: "pi_no_embedded_refunds",
       amount: 1000, currency: "usd", status: "succeeded" })
     expect(response).to have_http_status(:ok)
     expect(refund.reload).to be_succeeded
     expect(checkout.order.reload.refunded_cents).to eq(1000)
-    expect(checkout.order.reconciliation_exceptions).to be_empty
+    expect(checkout.order.reconciliation_exceptions.open).to exist(code: "refund_aggregate_requires_reconciliation")
+    issue = checkout.order.reconciliation_exceptions.open.find_by!(code: "refund_aggregate_requires_reconciliation")
+    allow(StripeService).to receive(:list_refunds).and_return([OpenStruct.new(id: "re_unexpanded",
+      payment_intent: "pi_no_embedded_refunds", amount: 1000, currency: "usd", status: "succeeded")])
+    RefundReconciliationActions.call(type: "exception", id: issue.id, action: "resync", actor: create(:user, :admin))
+    expect(issue.reload).to be_resolved
   end
 
   it "quarantines a lower charge snapshot whose listed operation does not match its booked amount" do

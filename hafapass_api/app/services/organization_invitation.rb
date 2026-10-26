@@ -39,47 +39,65 @@ class OrganizationInvitation
       version = (payload["version"] || payload[:version]).to_i
       raise InvitationError, "Invitation is invalid or expired" unless membership
 
-      membership.organization.with_lock do
-        membership.lock!
-        unless membership.status_invited? && membership.invitation_version == version && membership.invitation_open?
-          raise InvitationError, "Invitation is invalid or expired"
-        end
-        unless email_matches?(membership, user)
-          raise InvitationError, "We could not verify the recipient email. Sign in with the verified email address that received this invitation and try again."
-        end
-        if membership.organization.organization_memberships.effective.exists?(user: user)
-          raise InvitationError, "You are already a member of this organization"
-        end
+      # Acceptance already has its user: own ACTOR before ORG, including
+      # callers with a wider audit transaction, then update the derived label
+      # while that same user lock is still owned.
+      user.with_lock("FOR NO KEY UPDATE") do
+        membership.organization.with_lock do
+          membership.lock!
+          unless membership.status_invited? && membership.invitation_version == version && membership.invitation_open?
+            raise InvitationError, "Invitation is invalid or expired"
+          end
+          unless email_matches?(membership, user)
+            raise InvitationError, "We could not verify the recipient email. Sign in with the verified email address that received this invitation and try again."
+          end
+          if membership.organization.organization_memberships.effective.exists?(user: user)
+            raise InvitationError, "You are already a member of this organization"
+          end
 
-        if membership.owner? && membership.organization.organization_memberships.where(role: :owner)
-            .where.not(id: membership.id).any?(&:effective?)
-          raise InvitationError, "This organization already has an owner. Ask HåfaPass to send a new invitation."
-        end
+          if membership.owner? && membership.organization.organization_memberships.where(role: :owner)
+              .where.not(id: membership.id).any?(&:effective?)
+            raise InvitationError, "This organization already has an owner. Ask HåfaPass to send a new invitation."
+          end
 
-        earlier = membership.organization.organization_memberships.where(user: user).where.not(id: membership.id).first
-        accepted = earlier ? rejoin!(earlier, membership) : membership
-        accepted.update!(
-          user: user,
-          status: :active,
-          accepted_at: Time.current,
-          expires_at: nil,
-          invitation_version: accepted.invitation_version + 1
-        )
-        apply_pending_event_assignments!(accepted)
-        adopt_organizer_profile!(accepted) if accepted.owner?
-        membership = accepted
+          earlier = membership.organization.organization_memberships.where(user: user).where.not(id: membership.id).first
+          accepted = earlier ? rejoin!(earlier, membership) : membership
+          accepted.update!(
+            user: user,
+            status: :active,
+            accepted_at: Time.current,
+            expires_at: nil,
+            invitation_version: accepted.invitation_version + 1
+          )
+          apply_pending_event_assignments!(accepted)
+          adopt_organizer_profile!(accepted) if accepted.owner?
+          membership = accepted
+        end
+        user.sync_member_label!
       end
-      user.sync_member_label!
       membership
     end
 
     def revoke!(membership)
       membership.update!(status: :revoked, invitation_version: membership.invitation_version + 1,
         pending_event_assignments: [])
-      membership.user&.sync_member_label!
+      refresh_member_label_after_commit(membership.user)
     end
 
     private
+
+    # The label is derived, never authorization. Revocation and its
+    # audits stay atomic under ORG; updating USER there would invert the
+    # actor -> ORG order used by scanning, staff mutations and invite quotas.
+    # Wait for the outermost commit, then reload/lock USER before deriving the
+    # label so a delayed callback observes any later committed membership.
+    def refresh_member_label_after_commit(user)
+      return unless user
+
+      ActiveRecord.after_all_transactions_commit do
+        user.with_lock("FOR NO KEY UPDATE") { user.sync_member_label! }
+      end
+    end
 
     # Someone removed earlier (or whose access ended) keeps one row per
     # organization: the new invitation's role and events move onto it and the

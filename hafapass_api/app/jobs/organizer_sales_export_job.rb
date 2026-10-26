@@ -26,7 +26,7 @@ class OrganizerSalesExportJob < ApplicationJob
       attendee_access: attendees)
     builder = OrganizerSalesExport.new(query: query, columns: export_request.columns,
       finance: finance, attendees: attendees)
-    key = "private/sales-exports/#{org.id}/#{export_request.id}-#{SecureRandom.hex(12)}.csv"
+    key = "#{OrganizerSalesExportRequest::PRIVATE_STORAGE_PREFIX}/#{org.id}/#{export_request.id}-#{SecureRandom.hex(12)}.csv"
     count = 0
     Tempfile.create(["sales-export", ".csv"]) do |file|
       file.binmode

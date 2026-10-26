@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class RefundReconciliationQueue
-  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open].freeze
+  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open provider_review].freeze
   PAGE_SIZE = 50
 
   def self.call(**options)
@@ -15,7 +15,10 @@ class RefundReconciliationQueue
   def self.recovery_amount_for_event(event)
     return 0 unless event.cancelled? && event.payouts.status_paid.exists?
 
-    new(event_id: event.id).entries.sum { |entry| entry[:amount_cents] }
+    # Provider observations are verification work, not another buyer liability.
+    # The existing cancellation/refund/dispute rows retain the recorded exposure.
+    new(event_id: event.id).entries.reject { |entry| entry[:type] == "exception" }
+      .sum { |entry| entry[:amount_cents] }
   end
 
   def initialize(event_id: nil, organization_id: nil, status: nil, age_days: nil, page: 1, per_page: PAGE_SIZE)
@@ -62,6 +65,7 @@ class RefundReconciliationQueue
     cancellation_order_ids = cancellation.map(&:order_id).to_set
     refunds = Refund.where(order_id: ids, status: [:pending, :failed, :cancelled]).includes(includes, :payment).to_a
     refunds.select! { |refund| live_payment_ids.include?(refund.payment_id) } if live_payment_ids
+    refunds.reject!(&:historical_observation?)
     retry_parent_ids = refunds.map(&:order).uniq.flat_map(&:refunds).filter_map do |refund|
       refund.idempotency_key[%r{\Arefund-reconciliation/(\d+)\z}, 1]&.to_i
     end.to_set
@@ -113,8 +117,38 @@ class RefundReconciliationQueue
       rows << row(dispute, "dispute", "dispute_open", dispute.amount_cents,
         dispute.reason.presence || "Payment dispute is open", nil)
     end
+    issues = ReconciliationException.open.where(order_id: ids,
+      code: Commerce::ExternalRefundRecovery::RECOVERABLE_CODES).includes(includes, :payment).to_a
+    issues.select! { |issue| live_payment_ids.include?(issue.payment_id) } if live_payment_ids
+    issues.each do |issue|
+      rows << row(issue, "exception", "provider_review", 0,
+        "External Stripe refund needs verification", nil).merge(provider_verification_amounts(issue))
+    end
+    unverified_order_ids = issues.map(&:order_id).to_set
+    rows.each do |entry|
+      entry[:buyer_amount_unverified] = unverified_order_ids.include?(entry[:order_id])
+      # amount_cents remains a numeric recorded-liability contribution for
+      # existing payout consumers; zero does not assert the buyer is owed zero.
+      entry[:buyer_amount_cents] = entry[:buyer_amount_unverified] ? nil : entry[:amount_cents]
+      if entry[:buyer_amount_unverified] && entry[:type] != "exception"
+        entry[:next_action] = "Verify external Stripe refunds before returning more money"
+      end
+    end
     attach_unable_reasons(rows)
     rows
+  end
+
+  def provider_verification_amounts(issue)
+    aggregate = issue.code == "refund_aggregate_requires_reconciliation"
+    details = issue.details.is_a?(Hash) ? issue.details : {}
+    reported = aggregate ? issue.actual_amount_cents : details["amount_cents"]
+    reported = nil unless reported.is_a?(Integer) && reported >= 0
+    # An aggregate gap is only a discrepancy to investigate. It neither proves
+    # an operation succeeded nor reduces/reserves the current buyer balance.
+    booked = issue.order.refunds.select { |refund| refund.payment_id == issue.payment_id && refund.succeeded? }.sum(&:amount_cents)
+    verification = aggregate && reported ? [reported - booked, 0].max : reported
+    { provider_amount_kind: aggregate ? "aggregate" : "operation",
+      provider_reported_amount_cents: reported, provider_verification_amount_cents: verification }
   end
 
   def manual_type(order, item)
@@ -135,6 +169,7 @@ class RefundReconciliationQueue
     when "pending", "waiting_on_pending_refund" then "Check the provider refund status"
     when "needs_manual" then manual == "cash" ? "Return cash and record the receipt" : "Return the card payment and record the reference"
     when "waiting_on_dispute", "dispute_open" then "Review the dispute outcome"
+    when "provider_review" then "Check Stripe status to retrieve and verify the refund operations"
     when "request_unexecuted" then "Review and issue the buyer refund"
     else "Review the refund"
     end
@@ -149,7 +184,7 @@ class RefundReconciliationQueue
 
   def attach_unable_reasons(rows)
     types = { "refund" => "Refund", "cancellation" => "EventCancellationRefundItem",
-      "request" => "EventChangeResponse", "dispute" => "Dispute" }
+      "request" => "EventChangeResponse", "dispute" => "Dispute", "exception" => "ReconciliationException" }
     logs = AuditLog.where(action: "refund_reconciliation.unable", auditable_type: types.values,
       auditable_id: rows.map { |row| row[:id] }).order(:occurred_at, :id)
     reasons = logs.each_with_object({}) { |log, hash| hash[[log.auditable_type, log.auditable_id]] = log.metadata["reason"] }

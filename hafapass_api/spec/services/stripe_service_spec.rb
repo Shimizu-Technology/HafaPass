@@ -72,6 +72,37 @@ RSpec.describe StripeService do
     )
   end
 
+  describe ".list_refunds" do
+    let(:refunds_api) { double("refund operations API") }
+    let(:payment) { create(:payment, :succeeded, provider_environment: "test", provider_platform_account_id: "acct_testplatform", provider_account_id: "acct_connected") }
+
+    before do
+      allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_test_recovery")
+      client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds_api, accounts: accounts_api))
+      allow(Stripe::StripeClient).to receive(:new).with("rk_test_recovery").and_return(client)
+    end
+
+    it "reads every bounded page in the payment's verified connected account" do
+      first, second = OpenStruct.new(id: "re_first"), OpenStruct.new(id: "re_second")
+      allow(refunds_api).to receive(:list).and_return(OpenStruct.new(data: [first], has_more: true), OpenStruct.new(data: [second], has_more: false))
+      expect(described_class.list_refunds(payment: payment)).to eq([first, second])
+      expect(refunds_api).to have_received(:list).with({ payment_intent: payment.provider_payment_id,
+        limit: 100, starting_after: "re_first" }, { stripe_account: "acct_connected" })
+    end
+
+    it "fails closed on truncated pagination instead of returning a partial reconciliation" do
+      allow(refunds_api).to receive(:list).and_return(OpenStruct.new(data: [], has_more: true))
+      expect { described_class.list_refunds(payment: payment) }.to raise_error(described_class::AmbiguousRefund, /incomplete/)
+    end
+
+    it "rejects the lookup before listing if the platform account does not match" do
+      client = instance_double(Stripe::StripeClient, v1: double("v1", refunds: refunds_api, accounts: accounts_api("acct_wrong")))
+      allow(Stripe::StripeClient).to receive(:new).with("rk_test_recovery").and_return(client)
+      expect(refunds_api).not_to receive(:list)
+      expect { described_class.list_refunds(payment: payment) }.to raise_error(described_class::PaymentError, /different platform/)
+    end
+  end
+
   describe ".find_refund" do
     let(:refunds_api) { double("refunds API") }
     let(:created) { Time.current.change(usec: 0) }

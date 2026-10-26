@@ -104,12 +104,7 @@ module Admissions
 
     def reconcile(input)
       AdmissionAction.transaction do
-        device.lock!
-        # Serialize role/membership/assignment revocation with the admission.
-        # NO KEY UPDATE still permits foreign-key audit references to the actor.
-        actor.lock!("FOR NO KEY UPDATE")
-        device.organization.organization_memberships.where(user_id: actor.id).order(:id).lock.load
-        device.event.event_staff_assignments.where(user_id: actor.id).order(:id).lock.load
+        lock_admission_context!
         validate_authorization!
         existing = AdmissionAction.find_by(action_uuid: input.fetch(:action_uuid))
         return validate_replay!(existing, input) if existing
@@ -119,6 +114,22 @@ module Admissions
 
         input.fetch(:kind) == "reverse" ? reconcile_reversal(input) : reconcile_admission(input)
       end
+    end
+
+    def lock_admission_context!
+      # Staff mutations/invitation quotas start at ACTOR, then ORG. Downloads
+      # start at ORG/EVENT, then SCANNER. Take both prefixes before the device
+      # or grant rows; admission/audit inserts also need parent FK key shares.
+      # NO KEY UPDATE permits those references, but conflicts with another
+      # actor lock. It must never be acquired after the device/parent locks.
+      actor.lock!("FOR NO KEY UPDATE")
+      # This still excludes staff/tenant mutations' strong parent locks, but
+      # permits event-first commerce's audit FK while we wait for EVENT.
+      device.organization.lock!("FOR NO KEY UPDATE")
+      device.event.lock!
+      device.lock!
+      device.organization.organization_memberships.where(user_id: actor.id).order(:id).lock.load
+      device.event.event_staff_assignments.where(user_id: actor.id).order(:id).lock.load
     end
 
     def reconcile_admission(input)

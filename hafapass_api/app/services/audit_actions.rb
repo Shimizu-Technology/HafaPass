@@ -228,6 +228,12 @@ class AuditActions
         "scanner_device.revoked" => "Revoked an event scanner device."
       }
 
+    define registry, area: "scanning", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[entry_count window_start window_end], actions: {
+        "scanner_device.journal_recovered" => "Recovered a reviewed offline admission journal."
+      }
+
     define registry, area: "orders", audience: %w[org_owner org_finance],
       tenant: true, event_required: true,
       snapshots: %w[], metadata: %w[recovered_tickets], actions: {
@@ -779,6 +785,7 @@ class AuditActions
         "refund.pending" => "Recorded a pending provider refund.",
         "refund.succeeded" => "Completed a refund.",
         "refund.failed" => "Recorded a failed refund.",
+        "refund.external_observed" => "Recorded a terminal external refund observation.",
         "refund.unknown" => "Flagged an unknown refund result.",
         "refund.provider_result_conflict" => "Flagged conflicting refund provider results."
       }

@@ -59,6 +59,8 @@ describe('account-bound scanner authentication bootstrap', () => {
 
   it.each([null, 'owner-b'])('removes saved attendee access before mounting routes after confirmed account change to %s', async owner => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    window.sessionStorage.setItem('hafapass:order-access-owner', JSON.stringify('owner-a'))
+    window.sessionStorage.setItem('hafapass:order-access:12', 'previous-private-link')
     let finishClear
     clear.mockReturnValue(new Promise(resolve => { finishClear = resolve }))
     const { rerender } = render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
@@ -68,6 +70,7 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Preparing your account')
     expect(clear).toHaveBeenCalledOnce()
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
     await act(async () => finishClear())
     expect(screen.getByText('Normal routes')).toBeInTheDocument()
     expect(window.localStorage.getItem('hafapass_scanner_user_id')).toBe(owner)
@@ -95,6 +98,103 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(window.localStorage.getItem('hafapass_scanner_user_id')).toBe(owner)
     expect(window.localStorage.getItem('hafapass_organization_id')).toBeNull()
     expect(clear).toHaveBeenCalledTimes(2)
+  })
+
+  it('withdraws an unbound legacy guest capability during a confirmed sign-out before routes reopen', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-private-link')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout-identity')
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    render(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    await act(async () => finishClear())
+    expect(screen.getByText('Normal routes')).toBeInTheDocument()
+    const { getOrderAccess, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(getOrderAccess(12)).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout-identity')
+    saveOrderAccess(12, 'explicit-new-email-link')
+    expect(getOrderAccess(12)).toBe('explicit-new-email-link')
+  })
+
+  it.each(['owner-a', null].flatMap(owner => ['mounted', 'remount', 'reload'].map(boot => [owner, boot])))('withdraws legacy access after completed peer sign-out (initial %s, %s)', async (owner, boot) => {
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-private-link')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout-identity')
+    let mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    // A peer may finish both withdrawal and binding while this tab awaits Clerk.
+    await act(async () => {
+      window.localStorage.setItem('hafapass_scanner_binding_pending', 'pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'pending', storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_user_id')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_user_id', newValue: null, storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: null, storageArea: window.localStorage }))
+    })
+    if (boot !== 'mounted') {
+      mounted.unmount()
+      if (boot === 'reload') {
+        vi.resetModules()
+        Wrapper = (await import('./ClerkProviderWrapper')).default
+      }
+      mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    }
+    expect(window.sessionStorage.getItem('hafapass_scanner_binding_pending')).toBe('pending')
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    mounted.rerender(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    await act(async () => finishClear())
+    expect(screen.getByText('Normal routes')).toBeInTheDocument()
+    const { getOrderAccess, orderAccessHeaders, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(orderAccessHeaders(12)).toEqual({})
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout-identity')
+    saveOrderAccess(12, 'explicit-new-email-link')
+    expect(getOrderAccess(12)).toBe('explicit-new-email-link')
+  })
+
+  it.each(['owner-a', null])('withdraws saved guest access at quota before a fresh boot after peer sign-out (initial %s)', async owner => {
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    window.sessionStorage.setItem('hafapass:order-access-owner', JSON.stringify(null))
+    window.sessionStorage.setItem('hafapass:order-access:12', 'previous-guest-token')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout')
+    window.sessionStorage.setItem('hafapass:buyer-refund:12:ticket:34', 'uncertain-refund')
+    const setItem = Storage.prototype.setItem
+    let atQuota = true
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === window.sessionStorage && key === 'hafapass_scanner_binding_pending' && atQuota) {
+        throw new DOMException('Storage quota exceeded', 'QuotaExceededError')
+      }
+      return setItem.call(this, key, value)
+    })
+    const mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    await act(async () => {
+      window.localStorage.setItem('hafapass_scanner_binding_pending', 'pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'pending', storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_user_id')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_user_id', newValue: null, storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: null, storageArea: window.localStorage }))
+    })
+    expect(window.sessionStorage.getItem('hafapass_scanner_binding_pending')).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    mounted.unmount()
+    vi.resetModules()
+    Wrapper = (await import('./ClerkProviderWrapper')).default
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    render(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(await screen.findByText('Normal routes')).toBeInTheDocument()
+    const { orderAccessHeaders, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(orderAccessHeaders(12)).toEqual({})
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout')
+    expect(window.sessionStorage.getItem('hafapass:buyer-refund:12:ticket:34')).toBe('uncertain-refund')
+    atQuota = false
+    saveOrderAccess(12, 'explicit-new-link')
+    expect(orderAccessHeaders(12)).toEqual({ 'X-Guest-Order-Token': 'explicit-new-link' })
   })
 
   it.each(['resolve', 'reject'])('ignores a stale %s result after the authenticated account changes again', async outcome => {

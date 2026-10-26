@@ -198,10 +198,11 @@ class StripeWebhookProcessor
   end
 
   def process_refund_operation!(receipt, payment, object)
-    refund = Refund.find_by(provider: "stripe", provider_refund_id: value(object, :id))
-    operation_key = nested_value(value(object, :metadata), :hafapass_refund_key)
-    refund ||= Refund.find_by(provider: "stripe", idempotency_key: operation_key) if operation_key.present?
+    refund = Commerce::RefundCreator.find_provider_operation(payment: payment, provider_refund: object) if payment
     if refund.nil?
+      if payment
+        return Commerce::ExternalRefundRecovery.ingest!(payment: payment, provider_refund: object)
+      end
       ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
         code: "refund_operation_not_found")
       return
@@ -222,6 +223,11 @@ class StripeWebhookProcessor
     end
 
     Commerce::RefundCreator.reconcile_refund!(refund: refund, provider_refund: object)
+  rescue Commerce::RefundCreator::RefundError => e
+    ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
+      code: "refund_operation_not_found", details: { error: e.message,
+        provider_refund_id: value(object, :id), provider_payment_id: value(object, :payment_intent) || payment&.provider_payment_id,
+        amount_cents: value(object, :amount), currency: value(object, :currency), status: value(object, :status) })
   end
 
   def record_refund_provider_issue!(receipt, refund, code:, action:)
@@ -246,25 +252,26 @@ class StripeWebhookProcessor
     # Modern charge snapshots need not embed refund operations. Their aggregate
     # cannot identify or verify an operation, and may predate later refunds.
     # The subscribed refund.created/updated events carry the durable identities.
-    return if provider_refunds.empty?
+    if provider_refunds.empty?
+      if value(object, :amount_refunded).to_i > payment.refunds.succeeded.sum(:amount_cents)
+        record_aggregate_gap!(receipt, payment, object)
+      end
+      return
+    end
 
     provider_refunds.each do |entry|
       next unless value(entry, :amount).present?
 
-      if Refund.exists?(provider: "stripe", provider_refund_id: value(entry, :id)) ||
-          nested_value(value(entry, :metadata), :hafapass_refund_key).present?
-        process_refund_operation!(receipt, payment, entry)
-      elsif value(entry, :status) == "succeeded"
-        Commerce::RefundCreator.call(order: payment.order, payment: payment, amount_cents: value(entry, :amount),
-          reason: "provider_webhook_reconciliation", idempotency_key: "provider:stripe:refund:#{value(entry, :id)}",
-          provider_refund: entry)
-      else
-        ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
-          code: "refund_operation_not_found")
-      end
+      process_refund_operation!(receipt, payment, entry)
     end
-    return if provider_refunds.any? { |entry| value(entry, :status).to_s != "succeeded" }
     provider_total = value(object, :amount_refunded).to_i
+    succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
+    # A recent/truncated page may omit returned money. Neither a pending
+    # reservation nor a failed operation covers an unbooked aggregate.
+    if provider_refunds.any? { |entry| value(entry, :status).to_s != "succeeded" }
+      record_aggregate_gap!(receipt, payment, object) if provider_total > succeeded_total
+      return
+    end
     if payment.order.order_items.empty?
       ReconciliationException.create!(
         order: payment.order,
@@ -275,7 +282,6 @@ class StripeWebhookProcessor
       )
       return
     end
-    succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
     if provider_total < succeeded_total
       # Charge events carry a point-in-time aggregate. A delayed snapshot of
       # already-booked operations must not undo or quarantine newer refunds.
@@ -293,20 +299,17 @@ class StripeWebhookProcessor
     end
     return if provider_total == succeeded_total
 
-    new_provider_id = provider_refund_id(object)
-    unless new_provider_id && provider_refunds.length == 1 && provider_total <= payment.amount_cents
-      ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
-        code: "refund_aggregate_requires_reconciliation", actual_amount_cents: provider_total)
-      return
-    end
+    record_aggregate_gap!(receipt, payment, object)
+  rescue Commerce::RefundCreator::RefundError => e
+    ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
+      code: "refund_operation_not_found", details: { error: e.message })
+  end
 
-    Commerce::RefundCreator.reconcile_provider_total!(
-      order: payment.order,
-      payment: payment,
-      amount_cents: provider_total,
-      provider_refund_id: new_provider_id,
-      idempotency_key: "webhook:#{receipt.provider_event_id}:refund",
-    )
+  def record_aggregate_gap!(receipt, payment, object)
+    ReconciliationException.find_or_create_by!(order: payment.order, payment: payment,
+      webhook_event: receipt, code: "refund_aggregate_requires_reconciliation") do |issue|
+      issue.actual_amount_cents = value(object, :amount_refunded).to_i
+    end
   end
 
   def recorded_refund_snapshot?(payment, provider_refunds, provider_total)
@@ -397,13 +400,6 @@ class StripeWebhookProcessor
     end
     order.event.notify_waitlist_if_available
     dispute
-  end
-
-  def provider_refund_id(object)
-    refunds = value(object, :refunds)
-    data = nested_value(refunds, :data)
-    Array(data).filter_map { |provider_refund| value(provider_refund, :id) }
-      .find { |id| !Refund.exists?(provider: "stripe", provider_refund_id: id) }
   end
 
   def normalized_event_data(object)

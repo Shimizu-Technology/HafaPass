@@ -54,16 +54,31 @@ Use three separate devices or isolated browser profiles and a test event with re
 5. Confirm dashboard totals, per-device last-sync times, recent actions, and append-only audit history. An authorized manager may queue an Undo; the original admission must remain recorded.
 6. Confirm all local queues reach zero. Download a fresh manifest so all devices share the reconciled ticket state.
 
-Automated coverage exercises a 500-ticket signed manifest, three device records, cross-device duplicate resolution, revoked credentials, authorization boundaries, and online p95 below 500 ms. Browser coverage verifies offline local acceptance, duplicate blocking, reconnection, queue drain, and cached p95 below 100 ms. A real-device drill is still mandatory before every pilot because camera, battery, browser, and venue-network conditions cannot be proven in CI.
+Automated coverage exercises signed manifests, duplicate reconciliation, revoked credentials, authorization boundaries, and queue recovery. The isolated scale fixture and local HTTP measurements are engineering evidence; they do not establish physical ingress or Render/Neon/venue capacity. Agree on realistic gate volume and latency targets, then measure the complete journey on the intended phones and venue network before a pilot.
 
 ## Live door operation
 
-- Keep the Admissions control page open and watch Online/Offline, queued count, manifest expiration, admitted/remaining, conflicts, rejected actions, and device last-sync.
+- Keep the Admissions control page open and watch Online/Offline, queued count, manifest expiration, server-confirmed check-ins, eligible unadmitted tickets, issued unadmitted tickets, conflicts, rejected actions, and device last-sync. These totals are not occupancy or saleable inventory; disconnected gates have not yet contributed their queued entries.
 - A green local result means the signed cached data permitted admission. If offline, it is explicitly provisional until reconciliation.
 - An amber duplicate means the ticket was already queued/admitted on that device or the server found a prior admission. Escalate to the manager; do not wave the attendee through twice.
 - A red result must not be overridden by changing the payment method or sharing another ticket. Use attendee lookup, order support, or the printed list under the event's documented exception policy.
 - Manual attendee lookup returns no buyer email. It may admit only a ticket present and valid in the signed manifest.
+- An online scanner makes a bounded fresh-list attempt for an unfamiliar QR before calling it invalid. If verification or connectivity fails, inspect that message and use **Sync now** after recovery. Repeated invalid scans do not trigger unlimited downloads. Quiet successful scans use the sync acknowledgement without downloading the whole list each time.
 - Keep devices charged, prevent screen sleep where practical, and sync before moving a device to another door. Never share one registered browser profile between staff accounts.
+
+## Recovering a retained offline journal
+
+Sync queues before retiring access whenever possible. If staff or their device was already revoked, preserve the original browser/profile and journal; do not clear site data or admit those guests again.
+
+1. The original account can use **Export saved scans for event …** to download its retained journal. Share it privately with the event manager. Export does not clear the source queue and is not proof that the server accepted it.
+2. A current manager with scanning, staff-management, and attendee-management permissions opens **Manager: recover an offline journal** on that event. Independently compare entries with the physical gate log and staff handover. Client timestamps alone cannot prove entry.
+3. Choose the original file, enter an explicit ISO-8601 window with timezone (Guam is `+10:00`), describe the evidence, and attest to the review. The end is exclusive. The window must be within the last 48 hours and at most 24 hours long. The supported file contains 1–500 admissions and is at most 2 MB; online scans and Undo requests need separate investigation.
+4. Select **Recover reviewed admissions**. The server requires the known device's original downloaded manifest and lease, effective historical staff authority, pre-revocation times, and current ticket eligibility. Re-granting staff access does not fill an earlier authorization gap. Missing or contradictory history, unsupported changes, or unusable legacy lease evidence can require manual investigation; never invent replacement IDs or times.
+5. Save the recovery receipt and investigate each conflict or rejection. An uncertain response is retried with the same original actions. The source journal stays retained, and recovery does not restore the revoked device or staff permission.
+
+Revoking a logical device ID does not sign out a physical phone. For a lost phone or stolen login, also revoke its Clerk session and remove every applicable organization membership or event assignment. A person who still has scanning authority can register another device ID. If a lost device cannot export its journal, retain the incident and physical gate evidence; do not claim the entries were recovered.
+
+Scanner routes have separate bounded budgets for verified users and shared public IPs. Other dashboard traffic still uses the generic API budget. Rehearse all gates behind the actual venue NAT/proxy, including invalid credentials and reconnect bursts; a local middleware test does not establish that network's capacity.
 
 ## Door sales
 
@@ -93,7 +108,7 @@ Required production configuration:
 |---|---|
 | API/network unavailable, valid unexpired manifest | Continue local scanning; monitor queue and reconnect deliberately. |
 | Manifest expired or signature/key validation fails | Stop electronic admission; reconnect. Use the printed list only under the event lead's exception log. |
-| Device authorization expired/revoked | Stop using that device. A manager must restore authorized access online. |
+| Device authorization expired/revoked | Stop using that registration. Preserve queued scans; use the bounded manager journal-recovery procedure when its evidence qualifies. Recovery does not restore scanning permission. |
 | Queue will not sync | Preserve the browser/profile, stop clearing site data, record device/event/time, and escalate. Other devices may continue. |
 | Repeated conflicts | Check device sync/order, isolate the affected lane, and use attendee lookup or manager desk. |
 | Clover result unknown | Do not retry with a new key and do not issue tickets. Reconcile provider and HåfaPass records. |
@@ -105,16 +120,16 @@ Required production configuration:
 1. Reconnect every scanner, sync until each queue is zero, and download the final dashboard/door totals.
 2. Resolve conflicts, rejections, unknown card results, cash variance, and open reconciliation exceptions before settlement finalization.
 3. Revoke devices that will not be reused. Do not clear browser storage until the server proves its queue was received.
-4. Preserve append-only admission and payment audit records under the approved production retention policy. At event closeout, confirm every device is synced, export evidence, revoke its assignment, and use **Reset this device** to remove the IndexedDB manifest, device token, queue, and local scan state. Complete this within 24 hours after closeout unless an active incident/legal hold requires specifically documented evidence; a lost device is revoked immediately. Final server-side retention remains blocked on the professional review register.
+4. Preserve append-only admission and payment audit records under the current retention and legal-hold policy. Confirm each queue was received or its retained recovery evidence was reviewed before any cleanup. **Reset trusted device** requires online access and an empty queue; it is not a way to discard unresolved scans. Record any retained original journal, receipt, incident, and cleanup owner. A lost device requires immediate session and applicable grant revocation as described above.
 5. Record any printed-list exceptions, device failures, network outage, card ambiguity, and attendee-impacting decision in the incident log.
 
 ## Release checklist
 
-The completed artifacts are submitted and approved through [Gate G Physical Event-Day Rehearsal Evidence](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md). Automated coverage does not satisfy the physical rehearsal.
+Record the actual physical rehearsal and its named operator. The [Gate G evidence form](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md) can hold that record when used by the current launch plan; optional historical forms do not establish readiness. Automated coverage does not satisfy the physical rehearsal, and application policy records do not establish independent provider permission.
 
 - [ ] Stable signing key configured, backed up, and rotation procedure tested.
 - [ ] Three real devices pass the offline drill with the production candidate.
-- [ ] 500-ticket load and p95 targets pass in CI and the pilot environment.
+- [ ] Agreed realistic volume and latency targets pass through the complete gate journey on the intended devices and pilot network.
 - [ ] Named event lead, technical escalation owner, spare devices/batteries, and venue-network fallback assigned.
 - [ ] Emergency list printed immediately before doors and handled as restricted attendee data.
 - [ ] Cash handling/variance procedure approved.

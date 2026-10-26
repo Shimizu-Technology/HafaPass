@@ -348,7 +348,7 @@ function AttendeesPageSession({ id, identity }) {
     ['ticket_type', 'Ticket type'], ['ticket_price', 'Ticket price'], ['discount', 'Discount'],
     ['fee', 'Fee'], ['tax', 'Tax'], ['total_paid', 'Total paid'], ['channel', 'Channel'], ['status', 'Status'],
     ['check_in_time', 'Check-in time'], ['transferred_to', 'Transferred to'],
-    ['purchase_date', 'Purchase date'], ['notes_custom_answers', 'Notes / custom answers']
+    ['purchase_date', 'Purchase date'], ['notes_custom_answers', 'Registration answers']
   ].filter(([key]) => (canSeeFinance || !financeColumns.includes(key)) && (permissions.view_attendees === true || !attendeeColumns.includes(key)))
 
   return (
