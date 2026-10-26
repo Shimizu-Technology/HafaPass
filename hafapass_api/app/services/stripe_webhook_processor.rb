@@ -264,8 +264,14 @@ class StripeWebhookProcessor
 
       process_refund_operation!(receipt, payment, entry)
     end
-    return if provider_refunds.any? { |entry| value(entry, :status).to_s != "succeeded" }
     provider_total = value(object, :amount_refunded).to_i
+    succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
+    # A recent/truncated page may omit returned money. Neither a pending
+    # reservation nor a failed operation covers an unbooked aggregate.
+    if provider_refunds.any? { |entry| value(entry, :status).to_s != "succeeded" }
+      record_aggregate_gap!(receipt, payment, object) if provider_total > succeeded_total
+      return
+    end
     if payment.order.order_items.empty?
       ReconciliationException.create!(
         order: payment.order,
@@ -276,7 +282,6 @@ class StripeWebhookProcessor
       )
       return
     end
-    succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
     if provider_total < succeeded_total
       # Charge events carry a point-in-time aggregate. A delayed snapshot of
       # already-booked operations must not undo or quarantine newer refunds.

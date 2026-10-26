@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "ostruct"
+
 module Commerce
   class ExternalRefundRecovery
     RECOVERABLE_CODES = %w[refund_operation_not_found refund_aggregate_requires_reconciliation].freeze
@@ -28,16 +30,10 @@ module Commerce
           end
           return RefundCreator.reconcile_refund!(refund: refund, provider_refund: object)
         end
-        # Historical failures returned no money. Retain their verified evidence
-        # without creating a reservation against today's remaining balance.
+        # Terminal observations consume no current balance, but must retain
+        # identity so an older success snapshot cannot create returned money.
         if FAILED_STATUSES.include?(value(object, :status))
-          AuditLogger.record!(action: "refund.external_observed", auditable: payment,
-            event: payment.order.event, organization: payment.order.event.organization,
-            source: "provider", outcome: "failed",
-            deduplication_key: "external-refund:#{payment.id}:#{id}:#{value(object, :status)}",
-            metadata: { provider_refund_id: id, provider_payment_id: payment.provider_payment_id,
-              amount_cents: amount, currency: currency, status: value(object, :status) })
-          return
+          return record_historical_failure!(payment: payment, provider_refund: object)
         end
         raise RefundCreator::RefundError, "Refund item ledger is missing" if payment.order.order_items.empty?
 
@@ -53,6 +49,52 @@ module Commerce
           reason: "provider_webhook_reconciliation", idempotency_key: "provider:stripe:refund:#{id}",
           provider_refund: object)
       end
+    end
+
+    def self.record_historical_failure!(payment:, provider_refund:)
+      id, amount, currency, status = %i[id amount currency status].map { |key| value(provider_refund, key) }
+      unless id.present? && amount.is_a?(Integer) && amount.positive? && currency == payment.currency && FAILED_STATUSES.include?(status)
+        raise RefundCreator::RefundError, "Historical refund context is incomplete"
+      end
+
+      Refund.transaction do
+        payment.order.event.organization.lock!
+        payment.order.event.lock!
+        payment.order.lock!
+        existing = Refund.find_by(provider: "stripe", provider_refund_id: id)
+        if existing
+          raise RefundCreator::RefundError, "Historical refund belongs to another payment" unless existing.payment_id == payment.id
+
+          return existing
+        end
+        refund = payment.refunds.create!(order: payment.order, provider: "stripe", provider_refund_id: id,
+          idempotency_key: "provider:stripe:refund:#{id}", amount_cents: amount, currency: currency,
+          status: status == "failed" ? :failed : :cancelled, failed_at: Time.current,
+          reason: "provider_historical_observation", failure_code: "provider_#{status}",
+          provider_payload: { historical_observation: true, status: status,
+            provider_payment_id: payment.provider_payment_id, provider_environment: payment.provider_environment,
+            provider_platform_account_id: payment.provider_platform_account_id, provider_account_id: payment.provider_account_id })
+        AuditLogger.record!(action: "refund.external_observed", auditable: payment,
+          event: payment.order.event, organization: payment.order.event.organization,
+          source: "provider", outcome: "failed", deduplication_key: "external-refund:#{payment.id}:#{id}:#{status}",
+          metadata: { provider_refund_id: id, provider_payment_id: payment.provider_payment_id,
+            amount_cents: amount, currency: currency, status: status })
+        refund
+      end
+    end
+
+    # Earlier versions stored only an immutable provider audit. Restore its
+    # terminal binding before any new observation of that provider identity.
+    def self.restore_historical_identity!(payment:, provider_id:)
+      observation = AuditLog.where(action: "refund.external_observed", auditable_type: "Payment")
+        .where("metadata ->> 'provider_refund_id' = ?", provider_id).order(:id).first
+      return unless observation
+      unless observation.auditable_id == payment.id && observation.metadata["provider_payment_id"] == payment.provider_payment_id
+        raise RefundCreator::RefundError, "Historical refund belongs to another payment"
+      end
+      object = observation.metadata
+      record_historical_failure!(payment: payment, provider_refund: OpenStruct.new(id: provider_id,
+        amount: object["amount_cents"], currency: object["currency"], status: object["status"]))
     end
 
     def self.call(issue:, call_budget: nil)

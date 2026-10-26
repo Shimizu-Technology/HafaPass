@@ -385,7 +385,11 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
           allow(StripeService).to receive(:refund_payment)
           2.times { admin_resync(issue) }
           expect(issue.reload).to be_resolved
-          expect(order.refunds.pluck(:provider_refund_id)).to eq(["re_returned"])
+          expect(order.refunds.succeeded.pluck(:provider_refund_id)).to eq(["re_returned"])
+          history = order.refunds.find_by!(provider_refund_id: "re_historical")
+          expect(history).to be_historical_observation
+          expect(history.refund_items).to be_empty
+          expect(history.pending?).to be(false)
           expect(order.reload.refund_amount_cents).to eq(returned_amount)
           expect(type.reload.quantity_sold).to eq(returned_amount == 5250 ? 0 : 2)
           expect(AuditLog.where(auditable: payment, action: "refund.external_observed").count).to eq(1)
@@ -507,7 +511,10 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
         expect(response).to have_http_status(:ok), response.body
       end
       expect(order.reload).to be_refunded
-      expect(order.refunds.count).to eq(1)
+      expect(order.refunds.succeeded.count).to eq(1)
+      history = order.refunds.find_by!(provider_refund_id: "re_historical")
+      expect(history).to be_historical_observation
+      expect(history.refund_items).to be_empty
       expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(5250)
       expect(AuditLog.where(auditable: payment, action: "refund.external_observed").count).to eq(1)
     end
@@ -544,6 +551,212 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
     issue = order.reconciliation_exceptions.open.find_by!(code: "refund_operation_not_found")
     expect(issue.details["provider_payment_id"]).to eq("pi_other_payment")
     expect(OrganizationPayoutBalance.available_cents(order.event.organization)).to eq(0)
+  end
+
+  %i[failed_history pending_history partial_coverage covered_old].each do |variant|
+    [false, true].each do |reverse|
+      it "R2-01 retains only unbooked mixed-list aggregate money for #{variant} in both orders (reverse=#{reverse})" do
+        order, payment, type = checkout_fixture
+        booked = variant == :partial_coverage ? 1312 : (variant == :covered_old ? 2625 : 0)
+        if booked.positive?
+          signed_webhook("refund.updated", provider_operation(payment, id: "re_booked", amount: booked))
+          expect(response).to have_http_status(:ok)
+        end
+        local = reserve_operation(order, payment) if variant == :pending_history
+        failed = provider_operation(payment, id: "re_page_failed", amount: 2625, status: "failed")
+        page = [failed, provider_operation(payment, id: "re_page_canceled", amount: 2625, status: "canceled")]
+        page[1] = provider_operation(payment, id: "re_local", status: "pending") if local
+        page[1] = provider_operation(payment, id: "re_booked", amount: booked) if booked.positive?
+        page.reverse! if reverse
+        observed = variant == :covered_old ? 1312 : 2625
+        payload = { id: "ch_truncated", payment_intent: payment.provider_payment_id, amount_refunded: observed,
+          currency: "usd", refunds: { has_more: true, data: page } }
+        2.times do
+          signed_webhook("charge.refunded", payload, id: "evt_mixed_truncated")
+          expect(response).to have_http_status(:ok), response.body
+        end
+        if variant == :covered_old
+          expect(order.reconciliation_exceptions.open.where(code: "refund_aggregate_requires_reconciliation")).to be_empty
+          expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(booked)
+          expect(type.reload.quantity_sold).to eq(2)
+          next
+        end
+        issue = order.reconciliation_exceptions.open.find_by!(code: "refund_aggregate_requires_reconciliation")
+        expect(RefundReconciliationQueue.new(event_id: order.event_id).entries).to include(include(type: "exception", id: issue.id))
+        expect(OrganizationPayoutBalance.available_cents(order.event.organization)).to eq(0)
+        if local
+          expect(local.reload).to be_pending
+          expect(order.tickets.reload).to all(satisfy { |ticket| !ticket.admission_allowed? })
+          allow(StripeService).to receive(:retrieve_refund).and_return(OpenStruct.new(provider_operation(payment, id: "re_local", status: "failed")))
+          admin_resync(local, type: "refund")
+          expect(issue.reload).to be_open
+        end
+        omitted = provider_operation(payment, id: "re_omitted", amount: observed - booked)
+        verified = [omitted, failed]
+        verified << provider_operation(payment, id: "re_local", status: "failed") if local
+        verified << provider_operation(payment, id: "re_booked", amount: booked) if booked.positive?
+        verified.reverse! if reverse
+        unrelated = create(:reconciliation_exception, order: order, payment: payment, code: "payment_amount_mismatch")
+        allow(StripeService).to receive(:list_refunds).and_return(verified.map { |entry| OpenStruct.new(entry) })
+        2.times { admin_resync(issue) }
+        expect(issue.reload).to be_resolved
+        expect(unrelated.reload).to be_open
+        expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(observed)
+        expect(order.refunds.succeeded.find_by!(provider_refund_id: "re_omitted").amount_cents).to eq(observed - booked)
+        expect(order.reload.refund_amount_cents).to eq(observed)
+        expect(type.reload.quantity_sold).to eq(2)
+      end
+    end
+  end
+
+  %w[failed canceled].each do |terminal|
+    [2625, 5250].each do |amount|
+      %i[webhook admin].each do |channel|
+        [false, true].each do |success_first|
+          it "R2-02 quarantines #{terminal}/success contradiction via #{channel}, amount=#{amount}, success_first=#{success_first}" do
+            order, payment, type = checkout_fixture
+            failed = provider_operation(payment, id: "re_terminal", amount: amount, status: terminal)
+            success = failed.merge(status: "succeeded")
+            first, second = success_first ? [success, failed] : [failed, success]
+            if channel == :webhook
+              2.times do
+                signed_webhook(first[:status] == "failed" ? "refund.failed" : "refund.updated", first, id: "evt_terminal_first")
+                expect(response).to have_http_status(:ok)
+              end
+            else
+              issue = observe_aggregate(payment, amount: amount)
+              allow(StripeService).to receive(:list_refunds).and_return([OpenStruct.new(first)])
+              2.times { admin_resync(issue) }
+            end
+            initial_booked = success_first ? amount : 0
+            initial_sold = success_first && amount == 5250 ? 0 : 2
+            expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(initial_booked)
+            expect(type.reload.quantity_sold).to eq(initial_sold)
+            if !success_first
+              historical = order.refunds.find_by!(provider_refund_id: "re_terminal")
+              expect(historical.status).to eq(terminal == "failed" ? "failed" : "cancelled")
+              expect(historical.refund_items).to be_empty
+              expect(order.refundable_cents).to eq(5250)
+            end
+            2.times do
+              signed_webhook(second[:status] == "failed" ? "refund.failed" : "refund.updated", second, id: "evt_terminal_second")
+              expect(response).to have_http_status(:ok), response.body
+            end
+            expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(initial_booked)
+            expect(order.reload.refund_amount_cents).to eq(initial_booked)
+            expect(type.reload.quantity_sold).to eq(initial_sold)
+            expect(order.reconciliation_exceptions.open).to exist(code: "refund_terminal_status_conflict")
+            expect(OrganizationPayoutBalance.available_cents(order.event.organization)).to eq(0)
+            expect(order.tickets.reload).to all(be_issued) unless initial_sold.zero?
+          end
+        end
+      end
+    end
+  end
+
+  %i[amount currency payment].each do |mismatch|
+    it "R2-02 retains an unknown failed operation's immutable #{mismatch} binding" do
+      order, payment, type = checkout_fixture
+      original = provider_operation(payment, id: "re_immutable_failure", amount: 2625, status: "failed")
+      signed_webhook("refund.failed", original)
+      expect(response).to have_http_status(:ok)
+      other_order, other_payment, = checkout_fixture if mismatch == :payment
+      changed = original.merge(status: "succeeded")
+      changed[:amount] = 5250 if mismatch == :amount
+      changed[:currency] = "eur" if mismatch == :currency
+      changed[:payment_intent] = other_payment.provider_payment_id if other_payment
+      signed_webhook("refund.updated", changed)
+      expect(response).to have_http_status(:ok)
+      historical = order.refunds.find_by!(provider_refund_id: original[:id])
+      expect(historical).to have_attributes(status: "failed", amount_cents: 2625, currency: "usd", payment_id: payment.id)
+      expect(order.refunds.succeeded).to be_empty
+      expect(type.reload.quantity_sold).to eq(2)
+      expect(other_order.refunds).to be_empty if other_order
+      expect(ReconciliationException.open.where(code: %w[refund_operation_mismatch refund_operation_not_found])).to exist
+    end
+  end
+
+  [false, true].each do |reverse|
+    it "R2-02 keeps failure identities after admin history and allows a genuinely distinct successful replacement (reverse=#{reverse})" do
+      order, payment, type = checkout_fixture
+      issue = observe_aggregate(payment)
+      failed = provider_operation(payment, id: "re_old_terminal", status: "failed")
+      replacement = provider_operation(payment, id: "re_distinct_replacement")
+      list = [replacement, failed]
+      list.reverse! if reverse
+      allow(StripeService).to receive(:list_refunds).and_return(list.map { |entry| OpenStruct.new(entry) })
+      2.times { admin_resync(issue) }
+      expect(issue.reload).to be_resolved
+      expect(order.refunds.find_by!(provider_refund_id: failed[:id])).to be_failed
+      expect(order.refunds.succeeded.sole.provider_refund_id).to eq(replacement[:id])
+      expect(type.reload.quantity_sold).to eq(0)
+      signed_webhook("refund.updated", failed.merge(status: "succeeded"))
+      expect(response).to have_http_status(:ok)
+      expect(order.refunds.succeeded.sole.provider_refund_id).to eq(replacement[:id])
+      expect(payment.refunds.succeeded.sum(:amount_cents)).to eq(5250)
+      expect(order.reconciliation_exceptions.open).to exist(code: "refund_terminal_status_conflict")
+    end
+  end
+
+  it "R2-02 restores legacy audit-only terminal identity before accepting a delayed snapshot" do
+    order, payment, type = checkout_fixture
+    AuditLogger.record!(action: "refund.external_observed", auditable: payment, event: order.event,
+      organization: order.event.organization, source: "provider", outcome: "failed",
+      deduplication_key: "external-refund:#{payment.id}:re_legacy_terminal:failed",
+      metadata: { provider_refund_id: "re_legacy_terminal", provider_payment_id: payment.provider_payment_id,
+        amount_cents: 5250, currency: "usd", status: "failed" })
+    expect(order.refunds).to be_empty
+    signed_webhook("refund.updated", provider_operation(payment, id: "re_legacy_terminal"))
+    expect(response).to have_http_status(:ok)
+    expect(payment.refunds.succeeded).to be_empty
+    expect(order.refunds.find_by!(provider_refund_id: "re_legacy_terminal")).to be_failed
+    expect(type.reload.quantity_sold).to eq(2)
+    expect(order.reconciliation_exceptions.open).to exist(code: "refund_terminal_status_conflict")
+  end
+
+  %w[failed canceled].each do |status|
+    it "R2-02 records #{status} history without reserving balance or offering another money submission" do
+      order, payment, type = checkout_fixture
+      allow(StripeService).to receive(:refund_payment)
+      signed_webhook("refund.updated", provider_operation(payment, id: "re_no_reservation", status: status))
+      expect(response).to have_http_status(:ok)
+      history = order.refunds.find_by!(provider_refund_id: "re_no_reservation")
+      expect(history).to be_historical_observation
+      expect(history.provider_payload).to include("provider_environment" => payment.provider_environment,
+        "provider_platform_account_id" => payment.provider_platform_account_id,
+        "provider_payment_id" => payment.provider_payment_id)
+      expect(order.refundable_cents).to eq(5250)
+      expect(history.refund_items).to be_empty
+      expect(history.refund_tickets).to be_empty
+      expect(RefundReconciliationQueue.new(event_id: order.event_id).entries).to be_empty
+      expect(order.tickets.reload).to all(be_admission_allowed)
+      expect(type.reload.quantity_sold).to eq(2)
+      post "/api/v1/admin/refund_reconciliation/refund/#{history.id}/retry", headers: auth_headers(create(:user, :admin))
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(StripeService).not_to have_received(:refund_payment)
+    end
+  end
+
+  it "R2-02 quarantines a terminal provider identity colliding with an unidentified local reservation instead of rebinding or returning500" do
+    order, payment, type = checkout_fixture
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::APIConnectionError.new("lost local response"))
+    expect { Commerce::RefundCreator.call(order: order, payment: payment, idempotency_key: "unidentified-before-history") }
+      .to raise_error(Commerce::RefundCreator::RefundError)
+    pending = order.refunds.pending.sole
+    object = provider_operation(payment, id: "re_registered_terminal", status: "failed")
+    signed_webhook("refund.failed", object)
+    expect(response).to have_http_status(:ok)
+    history = order.refunds.find_by!(provider_refund_id: object[:id])
+    allow(StripeService).to receive(:find_refund).and_return(OpenStruct.new(object))
+    post "/api/v1/admin/refund_reconciliation/refund/#{pending.id}/resync", headers: auth_headers(create(:user, :admin))
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(history.reload).to be_failed
+    expect(pending.reload).to be_pending
+    expect(pending.provider_refund_id).to be_nil
+    expect(order.refunds.succeeded).to be_empty
+    expect(order.tickets.reload).to all(satisfy { |ticket| !ticket.admission_allowed? })
+    expect(type.reload.quantity_sold).to eq(2)
+    expect(order.reconciliation_exceptions.open).to exist(code: "refund_operation_mismatch")
   end
 
   [["succeeded", "payment_intent.succeeded"], ["canceled", "payment_intent.succeeded"],

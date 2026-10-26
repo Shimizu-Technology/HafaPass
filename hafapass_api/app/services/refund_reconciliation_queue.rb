@@ -62,6 +62,7 @@ class RefundReconciliationQueue
     cancellation_order_ids = cancellation.map(&:order_id).to_set
     refunds = Refund.where(order_id: ids, status: [:pending, :failed, :cancelled]).includes(includes, :payment).to_a
     refunds.select! { |refund| live_payment_ids.include?(refund.payment_id) } if live_payment_ids
+    refunds.reject!(&:historical_observation?)
     retry_parent_ids = refunds.map(&:order).uniq.flat_map(&:refunds).filter_map do |refund|
       refund.idempotency_key[%r{\Arefund-reconciliation/(\d+)\z}, 1]&.to_i
     end.to_set

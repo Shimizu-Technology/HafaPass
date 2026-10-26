@@ -26,6 +26,9 @@ module Commerce
       end
       provider_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
       refund = Refund.find_by(provider: "stripe", provider_refund_id: provider_id) if provider_id.present?
+      if refund.nil? && provider_id.present?
+        refund = ExternalRefundRecovery.restore_historical_identity!(payment: payment, provider_id: provider_id)
+      end
       if refund
         raise RefundError, "Provider refund belongs to another payment" unless refund.payment_id == payment.id
 
@@ -398,10 +401,13 @@ module Commerce
         refund.order.lock!
         refund.lock!
         incoming_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
-        if self.class.provider_binding_conflict?(refund, incoming_id)
+        owner = if incoming_id.present? && refund.provider == "stripe" && refund.payment
+          self.class.find_provider_operation(payment: refund.payment, provider_refund: provider_refund)
+        end
+        if self.class.provider_binding_conflict?(refund, incoming_id) || (owner && owner.id != refund.id)
           ReconciliationException.create!(order: refund.order, payment: refund.payment,
             code: "refund_operation_mismatch", details: { provider_refund_id: incoming_id,
-              acknowledged_provider_refund_id: refund.provider_refund_id })
+              acknowledged_provider_refund_id: refund.provider_refund_id, bound_refund_id: owner&.id })
           audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider", observation: provider_refund)
           validation_error = "Refund provider identity differs from the acknowledged operation; finance review is required"
           next

@@ -83,6 +83,7 @@ class RefundReconciliationActions
     end
     raise ActionError, "Only a failed or cancelled Stripe refund can be retried" unless
       @type == "refund" && (@record.failed? || @record.cancelled?) && @record.provider == "stripe"
+    raise ActionError, "Historical provider observations are not refund requests to retry" if @record.historical_observation?
     raise ActionError, "Resolve the unknown provider result before retrying" if @record.failure_code == "provider_result_unknown"
 
     replacement = order.refunds.find_by(idempotency_key: "refund-reconciliation/#{@record.id}")
