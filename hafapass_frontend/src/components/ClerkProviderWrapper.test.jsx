@@ -59,6 +59,8 @@ describe('account-bound scanner authentication bootstrap', () => {
 
   it.each([null, 'owner-b'])('removes saved attendee access before mounting routes after confirmed account change to %s', async owner => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    window.sessionStorage.setItem('hafapass:order-access-owner', JSON.stringify('owner-a'))
+    window.sessionStorage.setItem('hafapass:order-access:12', 'previous-private-link')
     let finishClear
     clear.mockReturnValue(new Promise(resolve => { finishClear = resolve }))
     const { rerender } = render(<Wrapper loadingFallback={<p>Verified saved scanner</p>}><p>Normal routes</p></Wrapper>)
@@ -68,6 +70,7 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Preparing your account')
     expect(clear).toHaveBeenCalledOnce()
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
     await act(async () => finishClear())
     expect(screen.getByText('Normal routes')).toBeInTheDocument()
     expect(window.localStorage.getItem('hafapass_scanner_user_id')).toBe(owner)

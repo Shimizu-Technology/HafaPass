@@ -16,6 +16,7 @@ import { signInDestination } from '../utils/authDestination'
 import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
+import InstallAppHelp from '../components/InstallAppHelp'
 
 const TICKETS_PER_PAGE = 100
 const MAX_TICKET_PAGES = 20
@@ -286,6 +287,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
           className="max-w-3xl mx-auto px-4 py-8"
         >
           {recoveryNotice}
+          <InstallAppHelp />
           <div className="mb-5 text-right"><Link to="/account/settings" className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">{t('buyerAccount.myTicketsPage.accountSettingsAndPrivacy')}</Link></div>
           <div role="tablist" aria-label={t('buyerAccount.myTicketsPage.purchaseHistory')} className="mb-6 flex gap-2 border-b border-neutral-200">
             {['tickets', 'orders'].map(value => <button key={value} type="button" role="tab" id={`history-${value}-tab`} aria-controls={`history-${value}-panel`} aria-selected={tab === value}

@@ -60,10 +60,10 @@ class OrganizerSalesQuery
 
     ids.each_slice(size) do |slice|
       records = relation.except(:order).where(id: slice).includes(view == "orders" ?
-        [:promo_code, :registration_responses, :support_notes, :order_items,
+        [:promo_code, :registration_responses, :order_items,
           { tickets: [:ticket_type, :ticket_transfers] }] :
-        [:ticket_type, :order_item, :ticket_transfers, :support_notes,
-          { order: [:promo_code, :registration_responses, :support_notes, :order_items] }]).index_by(&:id)
+        [:ticket_type, :order_item, :ticket_transfers,
+          { order: [:promo_code, :registration_responses, :order_items] }]).index_by(&:id)
       batch = slice.filter_map { |id| records[id] }
       on_batch&.call(batch)
       batch.each { |record| yield record }

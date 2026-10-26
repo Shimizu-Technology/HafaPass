@@ -271,7 +271,7 @@ describe('sales list controls', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
     const dialog = screen.getByRole('dialog', { name: 'Export this list' })
     expect(within(dialog).queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
-    expect(within(dialog).queryByRole('checkbox', { name: 'Notes / custom answers' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: 'Registration answers' })).not.toBeInTheDocument()
     expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
   })
 
