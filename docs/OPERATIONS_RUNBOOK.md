@@ -90,6 +90,15 @@ After restoring the database/queue or restarting its owning service:
 
 ## Deployment verification
 
+### Refund recovery
+
+- In **Refund issues**, retry a failed local refund only after checking the earlier provider attempt. A selected-ticket retry retains its selection: pending blocks those tickets, and success releases only their eligible inventory once. A provider timeout is an unknown result, not permission to submit a second return.
+- **External refund needs verification** offers **Check Stripe status**. This retrieves operations using the payment's recorded account and environment; an aggregate returned amount alone never fabricates a refund. Historical failed/cancelled external observations reserve no money and do not appear as retryable local requests. Contradictory terminal outcomes, identity collisions, or incomplete provider evidence remain finance-review cases.
+- A capture after order expiry/cancellation must not issue tickets or reclaim released capacity. Review the captured charge, return it through the authorized provider/refund process, and verify the recorded return and repeated callback handling. Do not close the exception with a direct database edit or compensate by issuing tickets.
+- Keep the original operation identifiers, provider evidence, and independent finance holds until the ledger reconciles. A cleared refund queue alone does not prove that a check was issued, a provider returned money, or settlement is complete.
+
+### Release checks
+
 Every release must pass `./scripts/gate.sh` and CI before merge. After deployment:
 
 1. Verify `/up`, `/api/v1/health` and `/api/v1/readiness`. Configure Render's platform health path as `/up`; it never probes dependencies. Production HTTPS/HSTS and exact API Host authorization apply to application paths. Only `/up` bypasses SSL redirect and Host enforcement for the platform probe.
