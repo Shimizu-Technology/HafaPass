@@ -20,7 +20,7 @@ module ActivityLogExports
   def create
     query = export_query(request.query_parameters.merge(request.request_parameters))
     ticket = nil
-    current_user.with_lock do
+    current_user.with_lock("FOR NO KEY UPDATE") do
       if AuditLog.where(actor_user: current_user, action: "activity_log.export_requested", occurred_at: 1.hour.ago..).count >= 10
         return render json: { error: "Export limit reached. Try again later." }, status: :too_many_requests
       end

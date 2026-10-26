@@ -21,7 +21,7 @@ module Admissions
 
     def call
       AdmissionAction.transaction do
-        device.lock!
+        lock_admission_context!
         results = super
         # Required privileged audit: failure rolls back check-ins, actions and
         # sequence updates together. Normal door scanning remains fail-open.

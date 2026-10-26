@@ -24,7 +24,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     blocked = false
     # Lock the actor row while counting and inserting the audit record. This
     # serializes requests across app processes, including different events.
-    current_user.with_lock do
+    current_user.with_lock("FOR NO KEY UPDATE") do
       if AuditLog.where(actor_user: current_user, action: "sales.export_requested", occurred_at: 1.hour.ago..).count >= 10
         blocked = true
       else

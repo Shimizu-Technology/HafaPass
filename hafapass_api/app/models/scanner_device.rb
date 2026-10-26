@@ -15,7 +15,7 @@ class ScannerDevice < ApplicationRecord
   validates :last_manifest_version, :last_sequence,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :relationships_share_organization
-  before_update :lock_manifest_context, if: :will_save_change_to_manifest_downloaded_at?
+  before_update :lock_operational_context, if: :operational_context_changed?
   after_update :audit_operational_changes
 
   def effective?(at: Time.current)
@@ -30,18 +30,23 @@ class ScannerDevice < ApplicationRecord
   # one transaction. Reload the device only after both parent locks are held.
   def with_manifest_lock
     self.class.transaction do
-      lock_manifest_context
+      lock_operational_context
       with_lock { yield }
     end
   end
 
   private
 
-  # Also protect direct download updates: after_update already owns the
-  # scanner row and must never acquire a previously unowned parent lock.
-  def lock_manifest_context
+  # Every operational audit needs an organization FK key share. Own the
+  # parents before UPDATE owns SCANNER, including rename/revoke/lease writes.
+  def lock_operational_context
     organization.lock!
     event.lock!
+  end
+
+  def operational_context_changed?
+    will_save_change_to_name? || will_save_change_to_authorization_expires_at? ||
+      will_save_change_to_manifest_downloaded_at? || (will_save_change_to_status? && status_revoked?)
   end
 
   def audit_operational_changes

@@ -1,11 +1,13 @@
 # Waitlist, inventory, and email delivery invariants
 
-This is the lock contract for code that changes a waitlist entry, reserves or releases inventory, or processes a waitlist delivery. The organization lock is taken first when needed. Paths that do not need it start at the event. A path may skip ranks, but never go back up a rank. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions except the bounded campaign dispatch authorization boundary described below.
+This is the lock contract for code that changes admissions, staff authority, waitlist entries, inventory or deliveries. Event-staff mutations, invitation acceptance/quotas and admission reconciliation take the actor row before organization, event or scanner locks. Other paths start at organization when needed, or event. A path may skip ranks, but never go back up a rank. Reacquiring a row already owned by the same transaction is harmless; new callers should avoid it. Keep network calls outside these transactions except the bounded campaign dispatch authorization boundary described below.
 
 | Rank | Locks, in order within the rank |
 | --- | --- |
+| 0 | Actor/user row (`FOR NO KEY UPDATE` for admission authority, invitations and export quotas) |
 | 1 | Organization row |
 | 2 | Event row (`FOR NO KEY UPDATE` is enough for capacity serialization) |
+| 2a | Scanner device, then actor's organization memberships ordered by ID, then event assignments ordered by ID, when reconciling admissions |
 | 3 | Order row, then its payment, holds, and related financial rows, sorted by ID where there are several |
 | 4 | Waitlist advisory transaction lock keyed by entry ID, then offer, entry, and delivery rows |
 | 5 | Ticket type rows, then pricing tier rows, then seat session and seat rows; sort each set by ID |
@@ -24,11 +26,23 @@ This is the lock contract for code that changes a waitlist entry, reserves or re
 | Completion of a claimed order | Organization → event → order → payment and holds → advisory → offer → entry → ticket types → tiers → seat session. Offer conversion uses the already held rank 4 rows. |
 | Cancel, fail, or expire a claimed order | Organization → event → order → payment (when supplied) → advisory → offer → entry → held inventory and seat session. Offer release uses the already held rank 4 rows. |
 | Refund and refund webhook finalization | Organization → event → order → payment/refund/tickets → ticket types and tiers when inventory is reversed. A refund of a converted order does not reopen its waitlist offer. |
-| Scanner registration/renewal and manifest download | Organization → event → scanner device. Download holds all three through manifest construction, current authorization/lease rechecks, device update and historical grant snapshot/audit watermark. Direct download updates take the parent locks before the scanner write; the snapshot callback only reacquires an owned organization lock. Never enter a download update holding only the scanner lock. |
+| Scanner registration/renewal, manifest download and audited device changes | Organization → event → scanner device. Download holds all three through manifest construction, current authorization/lease rechecks, device update and historical grant snapshot/audit watermark. Rename, lease, revoke and direct download updates take the parent locks before the scanner write; their audit/snapshot callback only reacquires an owned organization lock. Never enter an audited device change holding only the scanner lock. |
+| Admission sync and manager journal recovery | Actor (`FOR NO KEY UPDATE`) → organization → event → scanner → actor memberships → actor event assignments → order → ticket. Recovery owns this prefix in its outer transaction before validating historical evidence, and holds it through every action, device sequence and required recovery audit. Each ordinary sync action owns the same prefix and rechecks current authority after lock waits. The final timestamp/sequence-only device update acquires no later parent/grant locks and triggers no operational audit. |
+| Staff assignment mutation and invitation quota | Actor (`FOR NO KEY UPDATE`) → organization → membership/assignment. Recheck current permission under the organization lock. Invitation acceptance takes its accepting user first, then organization and membership/assignments; its derived user label update reuses the owned user lock. |
+| Membership revocation and role/ownership changes | Organization → membership/assignments. Revocation and required audits commit together. Revocation's derived user-label refresh runs only after the outermost commit, then locks/reloads user (`FOR NO KEY UPDATE`) and reads current memberships. It acquires no organization/grant lock. Rollback discards the refresh; a successful request returns after it completes. |
+| Sales and activity export quota | Actor (`FOR NO KEY UPDATE`) → quota count and required export audit. The audit needs an organization FK key share. The actor lock serializes competing requests while allowing manifest/registration/campaign FK references to that user. |
 | Unsubscribe and rejoin | Organization → event → advisory → active offer → entry. Each request commits before the next; the claimed offer of an existing order is left for that order's lifecycle. |
 | Waitlist receipt, alert round, and delivery job | Organization → event → advisory → offer (if any) → entry → delivery. The receipt record is idempotency evidence; it never determines the order of waitlist row locks. |
 
 The order is covered by latch-based PostgreSQL specs with a short `lock_timeout`. Each competing worker signals immediately before attempting its contested lock; a failed cycle raises instead of hanging. No timed sleep is used as a concurrency assertion.
+
+### Admission counterpaths and foreign keys
+
+Include implicit row locks in this order. Admission actions reference organization, event, device and actor; manifests reference organization, event and their generating user; operational audits reference organization. A device-first admission or audited device update can therefore wait for a manifest's organization/event lock even without an explicit parent `lock!`. Admission reconciliation takes the parent prefix before the device or authorization rows to prevent that inversion. Financial finalization keeps organization/event before order/ticket and never acquires a scanner or a strong actor lock afterward.
+
+`FOR NO KEY UPDATE` conflicts with another `FOR NO KEY UPDATE`; it serializes same-user scanning, staff mutation and invitation/export quotas. Its compatibility is with FK `KEY SHARE`, not with another actor lock. Downloads, registration and campaign authoring/queueing/dispatch can hold organization while referencing a user, but do not then request a strong user lock. Export quotas must likewise use `FOR NO KEY UPDATE`, rather than `FOR UPDATE`, or a new manifest's generating-user FK can cycle with the export audit's organization FK.
+
+Do not update a target user's derived member label while owning organization or grant rows. Revocation defers that update until commit; acceptance already owns its accepting user before organization. A delayed refresh takes the user lock before deriving the label, so later committed membership changes determine the result. Permission checks continue to use memberships, assignments and the user's real platform role; the derived organizer label grants no authority.
 
 ## Delivery status
 
@@ -54,10 +68,10 @@ Resend documents [permanent and transient bounce types](https://resend.com/chang
 ## Campaign authorization
 
 Campaign queueing takes organization → campaign, rechecks the sender, and commits
-all deliveries before enqueueing jobs. Team mutations use actor (`FOR NO KEY
-UPDATE`, for invitation quotas) → organization → membership/assignment. Ownership
-transfers and permission revocations share the organization lock. Event-staff
-mutations use this same order and recheck `manage_staff` after waiting.
+all deliveries before enqueueing jobs. Invitation quotas and event-staff mutations use actor (`FOR NO KEY UPDATE`) →
+organization → membership/assignment. Membership changes and ownership transfers
+share the organization lock. Event-staff mutations recheck `manage_staff` after
+waiting. Derived user-label refreshes follow the commit boundary above.
 
 A campaign delivery commits its existing durable payload and lease before network
 activity, then takes the organization lock and rechecks `requested_by` immediately
