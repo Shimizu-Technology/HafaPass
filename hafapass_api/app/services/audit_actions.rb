@@ -785,6 +785,7 @@ class AuditActions
         "refund.pending" => "Recorded a pending provider refund.",
         "refund.succeeded" => "Completed a refund.",
         "refund.failed" => "Recorded a failed refund.",
+        "refund.external_observed" => "Recorded a terminal external refund observation.",
         "refund.unknown" => "Flagged an unknown refund result.",
         "refund.provider_result_conflict" => "Flagged conflicting refund provider results."
       }

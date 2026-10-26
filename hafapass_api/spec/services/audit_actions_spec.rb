@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "ripper"
+require "json"
 require_relative "../../app/services/audit_actions"
 
 RSpec.describe AuditActions do
@@ -77,7 +78,7 @@ RSpec.describe AuditActions do
         visit(node[3], audit_value)
         return
       end
-      if node[0] == :binary && self.class.nodes(node[1], :@ident).any? { |token| token[1] == "type" } && node.dig(3, 0) == :string_literal
+      if node[0] == :binary && self.class.nodes(node[1], :@ident).any? { |token| %w[type event_type].include?(token[1]) } && node.dig(3, 0) == :string_literal
         visit(node[1], audit_value)
         return
       end
@@ -87,6 +88,13 @@ RSpec.describe AuditActions do
       end
       if node[0] == :method_add_arg
         callable = node[1]
+        # Membership tests on provider event names classify webhook input.
+        # Still inspect argument expressions and explicit audit action values.
+        if call_name(callable) == "include?" && callable.dig(1, 0) == :array &&
+            self.class.nodes(node[2], :@ident).any? { |token| token[1] == "event_type" }
+          visit(node[2], audit_value)
+          return
+        end
         if SQL_METHODS.include?(call_name(callable))
           visit(callable)
           return
@@ -195,6 +203,24 @@ RSpec.describe AuditActions do
     expect(result.dynamic).to eq([AuditActionSourceInventory.string_tree('"sample.#{kind}"')])
     expect(AuditActionSourceInventory.audit_emitter?("AuditLogger.\n  record!(action: 'sample.new')")).to be(true)
     expect(AuditActionSourceInventory.audit_emitter?('# AuditLogger.record!(action: "fake.comment")')).to be(false)
+  end
+
+  it "distinguishes webhook event comparisons from explicit audit actions" do
+    source = <<~'SOURCE'
+      receipt.event_type == "charge.refunded"
+      %w[refund.created refund.updated refund.failed charge.refund.updated].include?(receipt.event_type)
+      AuditLogger.record!(action: "refund.external_observed")
+      AuditLogger.record!(action: "charge.refunded")
+      audit!("sample.forwarded")
+    SOURCE
+    expect(AuditActionSourceInventory.new(source).keys).to contain_exactly(
+      "refund.external_observed", "charge.refunded", "sample.forwarded")
+    definition = described_class.fetch("refund.external_observed")
+    expect(definition[:audience]).to eq(%w[org_owner org_finance])
+    expect(definition.values_at(:tenant, :event_required)).to eq([true, true])
+    expect(described_class.organization_payload("refund.external_observed",
+      metadata: { provider_refund_id: "re_private", provider_payment_id: "pi_private", amount_cents: 100, currency: "usd" })[:metadata])
+      .to eq("amount_cents" => 100, "currency" => "usd")
   end
 
   it "fails closed for unknown keys without guessing scope from a prefix" do
@@ -309,6 +335,6 @@ RSpec.describe AuditActions do
       action_uuids: ["private-action"], original_user_id: 42, entry_count: 2,
       window_start: "2026-10-26T00:00:00Z", window_end: "2026-10-26T01:00:00Z" })
     expect(payload[:metadata]).to include("entry_count" => 2)
-    expect(payload.to_json).not_to include("private gate evidence", "private-action", "original_user_id")
+    expect(JSON.generate(payload)).not_to include("private gate evidence", "private-action", "original_user_id")
   end
 end
