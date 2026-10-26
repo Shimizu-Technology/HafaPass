@@ -23,7 +23,8 @@ jobs:
   backend-test:
     name: Backend / RSpec
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Real PostgreSQL concurrency and integration coverage can exceed ten minutes.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
