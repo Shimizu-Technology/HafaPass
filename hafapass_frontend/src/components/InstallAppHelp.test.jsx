@@ -1,9 +1,12 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InstallAppHelp from './InstallAppHelp'
+import { initializeInstallationOffers } from '../utils/installationOffers'
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+let stopOffers
+beforeEach(() => { stopOffers = initializeInstallationOffers() })
+afterEach(() => { cleanup(); stopOffers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('offers browser instructions without implying every ticket works offline', async () => {
   render(<InstallAppHelp />)
@@ -14,6 +17,25 @@ it('offers browser instructions without implying every ticket works offline', as
 })
 
 describe('browser installation offer', () => {
+  it('retains an early offer across page mounts and consumes it only once', async () => {
+    const event = new Event('beforeinstallprompt', { cancelable: true })
+    const prompt = vi.fn().mockResolvedValue(undefined)
+    Object.assign(event, { prompt, userChoice: Promise.resolve({ outcome: 'dismissed' }) })
+    fireEvent(window, event)
+    expect(event.defaultPrevented).toBe(true)
+    const first = render(<InstallAppHelp />)
+    first.unmount()
+    const second = render(<InstallAppHelp />)
+    await userEvent.click(screen.getByText('Add HåfaPass to your phone'))
+    expect(prompt).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Install HåfaPass' }))
+    expect(prompt).toHaveBeenCalledOnce()
+    second.unmount()
+    render(<InstallAppHelp />)
+    await userEvent.click(screen.getByText('Add HåfaPass to your phone'))
+    expect(screen.queryByRole('button', { name: 'Install HåfaPass' })).not.toBeInTheDocument()
+  })
+
   it('opens installation only after the buyer asks and disappears once installed', async () => {
     render(<InstallAppHelp />)
     await userEvent.click(screen.getByText('Add HåfaPass to your phone'))

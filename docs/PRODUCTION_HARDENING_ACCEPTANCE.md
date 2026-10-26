@@ -27,6 +27,9 @@ native app release. Payout recording does not itself issue a check or bank trans
   tickets, consuming released capacity, or repeatedly failing signed callbacks.
 - Concurrent payment recovery and webhook completion use consistent lock ordering and
   fulfill once without a deadlock. Unknown external refunds have a verified recovery path.
+- Manifest download, scanner synchronization/renewal, staff changes, and refund recovery
+  use consistent lock ordering. Concurrent requests must finish without a deadlock; the
+  release record identifies the tested revision and outcome.
 - An online scanner checks a fresh manifest before declaring an unfamiliar credential
   invalid. New and transferred credentials work without a manual-refresh workaround.
 - A current manager can recover supported historical scans from a revoked device using
