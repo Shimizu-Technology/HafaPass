@@ -37,6 +37,7 @@ describe('scanner authorization through actual service and auth boundaries', () 
   })
   beforeEach(async () => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     camera.stops = []
     Object.assign(state, { status: 'available', loaded: true, owner: 'staff-a' })
     await clearAllAdmissionData()

@@ -1,3 +1,5 @@
+import { withdrawSavedOrderAccess } from './orderAccess'
+
 export const SCANNER_OWNER_KEY = 'hafapass_scanner_user_id'
 const PENDING_BINDING_KEY = 'hafapass_scanner_binding_pending'
 const WITHDRAWN_OWNER = '!'
@@ -13,6 +15,9 @@ const storageChanged = event => {
     if (event.key === null || (event.key === PENDING_BINDING_KEY && event.newValue !== null)
       || (event.key === SCANNER_OWNER_KEY && (event.newValue === null || event.newValue === WITHDRAWN_OWNER))) {
       ++withdrawalRevision
+      // Remove this tab's capabilities immediately. Removal also works at
+      // quota, when creating the durable pending marker below can fail.
+      try { withdrawSavedOrderAccess() } catch { bindingBlocked = true }
       // A peer can finish sign-out before this tab resolves Clerk. Keep our
       // own withdrawal pending across remount/reload until preparation succeeds.
       try { window.sessionStorage.setItem(PENDING_BINDING_KEY, 'pending') } catch { bindingBlocked = true }

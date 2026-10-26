@@ -157,6 +157,46 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(getOrderAccess(12)).toBe('explicit-new-email-link')
   })
 
+  it.each(['owner-a', null])('withdraws saved guest access at quota before a fresh boot after peer sign-out (initial %s)', async owner => {
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    window.sessionStorage.setItem('hafapass:order-access-owner', JSON.stringify(null))
+    window.sessionStorage.setItem('hafapass:order-access:12', 'previous-guest-token')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout')
+    window.sessionStorage.setItem('hafapass:buyer-refund:12:ticket:34', 'uncertain-refund')
+    const setItem = Storage.prototype.setItem
+    let atQuota = true
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === window.sessionStorage && key === 'hafapass_scanner_binding_pending' && atQuota) {
+        throw new DOMException('Storage quota exceeded', 'QuotaExceededError')
+      }
+      return setItem.call(this, key, value)
+    })
+    const mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    await act(async () => {
+      window.localStorage.setItem('hafapass_scanner_binding_pending', 'pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'pending', storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_user_id')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_user_id', newValue: null, storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: null, storageArea: window.localStorage }))
+    })
+    expect(window.sessionStorage.getItem('hafapass_scanner_binding_pending')).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    mounted.unmount()
+    vi.resetModules()
+    Wrapper = (await import('./ClerkProviderWrapper')).default
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    render(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(await screen.findByText('Normal routes')).toBeInTheDocument()
+    const { orderAccessHeaders, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(orderAccessHeaders(12)).toEqual({})
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout')
+    expect(window.sessionStorage.getItem('hafapass:buyer-refund:12:ticket:34')).toBe('uncertain-refund')
+    atQuota = false
+    saveOrderAccess(12, 'explicit-new-link')
+    expect(orderAccessHeaders(12)).toEqual({ 'X-Guest-Order-Token': 'explicit-new-link' })
+  })
+
   it.each(['resolve', 'reject'])('ignores a stale %s result after the authenticated account changes again', async outcome => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
     let finishOld

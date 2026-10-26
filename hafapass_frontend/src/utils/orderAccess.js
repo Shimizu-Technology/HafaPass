@@ -3,6 +3,11 @@ const activeCheckoutKey = (slug) => `hafapass:active-checkout:${slug}`
 const activeCheckoutBuyerKey = slug => `hafapass:active-checkout-buyer:${slug}`
 const accessOwnerKey = 'hafapass:order-access-owner'
 
+export function withdrawSavedOrderAccess() {
+  const keys = Object.keys(window.sessionStorage).filter(key => key.startsWith('hafapass:order-access:'))
+  keys.forEach(key => window.sessionStorage.removeItem(key))
+}
+
 // Session storage survives Clerk sign-out and is copied when a tab is
 // duplicated. Keep guest capabilities within this tab's confirmed identity.
 export function bindOrderAccessOwner(owner, { withdraw = false } = {}) {
@@ -12,8 +17,7 @@ export function bindOrderAccessOwner(owner, { withdraw = false } = {}) {
   // Legacy unbound links remain available to a guest, but cannot silently
   // grant access to the next signed-in account on a shared browser.
   if (withdraw || previous !== null || owner !== null) {
-    const keys = Object.keys(window.sessionStorage).filter(key => key.startsWith('hafapass:order-access:'))
-    keys.forEach(key => window.sessionStorage.removeItem(key))
+    withdrawSavedOrderAccess()
   }
   window.sessionStorage.setItem(accessOwnerKey, identity)
 }
