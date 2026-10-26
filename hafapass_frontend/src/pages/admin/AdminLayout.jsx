@@ -24,6 +24,7 @@ const navGroups = [
     { to: '/admin/refund_reconciliation', label: 'Refund issues', icon: RotateCcw },
   ] },
   { label: 'Platform', items: [
+    { to: '/admin/operations', label: 'Operational review', icon: LifeBuoy },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
     { to: '/admin/privacy', label: 'Privacy requests', icon: LockKeyhole },
     { to: '/admin/provider-readiness', label: 'Integrations & policies', icon: ShieldCheck },

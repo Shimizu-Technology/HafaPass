@@ -54,6 +54,7 @@ const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage')
 const AdminEventsPage = lazy(() => import('./pages/admin/AdminEventsPage'))
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'))
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
+const AdminOperationsPage = lazy(() => import('./pages/admin/AdminOperationsPage'))
 const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
 const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
@@ -136,6 +137,7 @@ function App() {
           <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
           <Route path="/admin/refund_reconciliation" element={<AdminRoute><AdminRefundReconciliationPage /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
+          <Route path="/admin/operations" element={<AdminRoute><AdminOperationsPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />

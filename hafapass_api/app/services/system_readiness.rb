@@ -94,15 +94,7 @@ class SystemReadiness
     end
 
     def operational_signals
-      {
-        ready: true,
-        status: "observable",
-        failed_messages_last_hour: MessageDelivery.failed.where(updated_at: 1.hour.ago..).count,
-        stale_message_events: MessageProviderEvent.where(processed_at: nil).where("received_at < ?", 5.minutes.ago).count,
-        failed_payment_webhooks: WebhookEvent.failed.count,
-        open_reconciliation_exceptions: ReconciliationException.open.count,
-        unknown_card_present_results: CardPresentPaymentAttempt.status_result_unknown.count
-      }
+      OperationalReview.new.signals
     rescue ActiveRecord::StatementInvalid
       { ready: true, status: "migration_pending" }
     end

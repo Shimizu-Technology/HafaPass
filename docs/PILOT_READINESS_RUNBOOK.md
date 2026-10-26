@@ -1,6 +1,10 @@
 # HåfaPass Pilot Readiness and Incident Runbook
 
-Status: engineering controls implemented through Gate J; external approvals, production drills, a real bounded pilot, and inspected closeout evidence are still required.
+Status: engineering controls are deployed; physical-device, provider and real-event acceptance must still be evidenced.
+
+**Current policy:** [Production cutover](PRODUCTION_CUTOVER.md) is authoritative for enforced controls. Detailed Gates E–J are optional records and never block publishing or sales. The operational checklists below recommend preparation and evidence; they are not additional software-enforced launch approvals. Existing policy/provider capability approvals, organizer verification, payment-mode and payout requirements remain in force.
+
+The [post-pilot plan](POST_PILOT_PLAN.md) records physical-device and real-flow acceptance still needed before a paid pilot, then the proposed mobile and differentiation priorities. It complements the current production controls; optional Gates E–J can hold supporting evidence.
 
 ## Release authority and named ownership
 
@@ -8,15 +12,15 @@ The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technolo
 
 One administrator may submit and approve production payment configuration, payout evidence and reconciliation exceptions, but never silently: every submission and approval is recorded in the audit log with who, what and when. The existing role and audit controls remain authoritative.
 
-Record the event-specific owners, controls, evidence reference, and approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
+Record event-specific owners, controls and evidence. [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md) is an optional place to retain them; its review status or event-state digest does not control sales.
 
-After Gates E–H are current, use [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) to authorize the exact inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger, and post-event reconciliation. Production checkout remains closed unless that event has a current Gate I approval and an active run.
+For a bounded live pilot, agree on the inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger and post-event reconciliation. [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) can optionally record this operating plan. A Gate I approval or active run is not required by production checkout.
 
-After Gate I is completed, use [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) to bind the exact run and current local state to the external evidence, outcome metrics, retrospective actions, cleanup, and an approved hold/repeat/limited-Guam decision. Gate J never bypasses the next event's gates or authorizes a new region.
+After the pilot, review the evidence, outcome metrics, retrospective actions and cleanup, then record a hold/repeat/limited-expansion decision. [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) is an optional record for that review. It neither enables sales nor overrides current controls for another event or region.
 
-## Hard production gates
+## Recommended pre-pilot acceptance
 
-Do not open paid pilot inventory until every item has dated evidence and an owner:
+Use this checklist to prepare a paid pilot, with dated evidence and an owner. It does not add mandatory E–J review approvals to the current production policy:
 
 - GitHub release commit is green, reviewed, and deployable; no open P0 finding.
 - Guam/US counsel approves buyer terms, organizer agreement, privacy, acceptable use, refunds/cancellations, and retention schedule.
@@ -52,6 +56,20 @@ Money/event-day providers: complete the evidence gates in [Guam Payment and Payo
 | P2 | isolated delivery failure, individual ticket/support issue, degraded noncritical feature | Ticket and handle within the event support window |
 
 For every incident: record UTC and Guam timestamps, scope, release, request/job/provider IDs, decisions, customer impact, recovery, reconciliation, and follow-up. Never paste secrets, raw webhook bodies, complete payment data, or unnecessary PII into tickets or chat.
+
+## Operational warning review
+
+The admin dashboard's **Review operational records** link opens `/admin/operations`. Only platform administrators can read it; support order lookup does not grant this access. The page uses the same five scopes as readiness:
+
+- failed deliveries updated within the last hour;
+- unprocessed email provider receipts received more than five minutes ago;
+- failed payment webhooks;
+- all open reconciliation exceptions;
+- in-person card attempts with an unknown result.
+
+These are counted records, not necessarily distinct incidents or failed emails. A sent/delivered receipt without a linked delivery can appear here while Support has no deliveries. The receipt is retained for review: its presence alone does not establish delivery failure. Read the local record number, fixed event type, receipt time, linkage and processing-error flag. Ask the operations owner to compare provider account/webhook configuration and delivery history using restricted evidence. Do not paste raw payloads, recipient addresses or processing-error text into shared notes, and do not resend, delete or mark a receipt processed merely to clear the count.
+
+Counts and rows refresh together on the review page, with 50 rows per page and a preserved full category count. The dashboard and review page are separate reads; processing and moving time windows can change totals between visits. Refresh to check current state. An unavailable read is an error, not an empty queue. Payment and unknown-card rows require the payment/finance owner to inspect original provider state. The linked refund queue covers refund work only; it does not claim to contain every reconciliation exception. This drilldown has no repair controls.
 
 ## Provider outage
 
@@ -111,19 +129,19 @@ Run on current iOS Safari, Android Chrome, desktop Chrome, Safari, Firefox, and 
 
 Record device/browser versions, tester, timestamp, result, screenshots without PII, and issue links. A failed P0/P1 scenario blocks pilot.
 
-## Live Gate I cadence
+## Optional Gate I record workflow
 
-The incident commander opens the approved Gate I run only after the private support/incident channel, provider dashboards, readiness/worker state, venue contacts, scanners, and stop authority are confirmed. Record monitoring checkpoints after activation, first checkout/provider outcome, each inventory release, before doors, at peak entry, after queues drain, after incident recovery, and after event completion. Report P0/P1 and mandatory safety categories in the Gate I console; continued selling on an uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure is prohibited.
+If the team chooses to use the optional Gate I console, the incident commander opens its approved run only after the private support/incident channel, provider dashboards, readiness/worker state, venue contacts, scanners, and stop authority are confirmed. Record monitoring checkpoints after activation, first checkout/provider outcome, each inventory release, before doors, at peak entry, after queues drain, after incident recovery, and after event completion. Within that chosen workflow, report P0/P1 and mandatory safety categories in the Gate I console. Whether or not the optional console is used, continued selling on an uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure is prohibited.
 
-Resume requires a separate resolution record and a new safe post-pause checkpoint. Completion requires the event to be completed, a safe checkpoint created afterward, no pending local operation, no unresolved mandatory incident, all closeout affirmations, zero unexplained variance, and a digest-bound restricted evidence bundle.
+Within the optional Gate I record, resume requires a separate resolution record and a new safe post-pause checkpoint. Completing that record requires the event to be completed, a safe checkpoint created afterward, no pending local operation, no unresolved mandatory incident, all closeout affirmations, zero unexplained variance, and a digest-bound restricted evidence bundle.
 
 ## Closeout
 
-1. Complete Gate I and export/reference its append-only plan, decisions, run actions, checkpoints, incidents/resolutions, and completion evidence.
+1. Collect the operating plan, decisions, checkpoints, incidents/resolutions and completion evidence. If the team used the optional Gate I record, complete and export/reference it.
 2. Reconcile sales, discounts, taxes, fees, refunds, disputes, add-ons, cash/card door sales, settlement, payout, scans, messages, and support to zero unexplained variance or unresolved exception.
 3. Finalize a settlement for the current financial state, complete paid-payout reconciliation, and resolve pending/unknown provider operations before making attestations.
 4. Revoke temporary staff and scanner devices, sync and purge device-local data within the approved window, and retain cleanup proof under policy.
 5. Calculate the metric report with definitions and denominators; gather privacy-safe organizer/buyer feedback; hold the retrospective; and assign dated, evidence-backed actions.
-6. In **Admin → Events → Gate J pilot closeout**, enter the restricted bundle reference/digest, eight evidence references, external outcomes, reconciliation/cleanup affirmations, actions, and explicit decision.
-7. Have an administrator (the submitter may approve) inspect the artifacts and approve or reject the exact snapshot. If local state or the application changed, prepare a new submission.
-8. Expand only within a current Gate J approval: hold, one more bounded Guam pilot, or at most 10 Guam events/1,000 tickets per event for no more than 90 days. Every future event still completes its applicable Gates A–I.
+6. Record the restricted evidence reference, external outcomes, reconciliation/cleanup results, actions and explicit hold/repeat/limited-expansion decision. **Admin → Events → Gate J pilot closeout** is an optional place to retain those details.
+7. Have the event and finance owners inspect the evidence before acting on the retrospective. If the team chooses a Gate J submission, its administrator may approve or reject the exact snapshot; prepare a new submission when that optional record becomes stale. This is not an additional sales permission.
+8. Choose the next event’s scope from observed outcomes and unresolved risks; a further bounded pilot may be appropriate. Recheck current production controls and relevant operational/device evidence for every future event. Gates E–J remain optional records, and their approval is not a prerequisite for selling or operating the next event.

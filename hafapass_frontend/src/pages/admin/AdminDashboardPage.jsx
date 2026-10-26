@@ -191,10 +191,10 @@ function AdminDashboardSession({ identity }) {
         </div>
       )}
 
-      <div className={`mb-8 rounded-xl border px-4 py-3 text-sm ${operationalIssueCount > 0 ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`} role="status">
+      <div className={`mb-8 rounded-xl border px-4 py-3 text-sm ${signals.status !== 'observable' || operationalIssueCount > 0 ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`} role="status">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span>{operationalIssueCount > 0 ? `${operationalIssueCount} operational ${operationalIssueCount === 1 ? 'issue needs' : 'issues need'} review (messages, payment updates, reconciliation or in-person card payments).` : 'No operational issues need review.'}</span>
-          <Link to="/support" className="font-semibold underline">Open support console</Link>
+          <span>{operationalIssueCount > 0 ? `${operationalIssueCount} operational ${operationalIssueCount === 1 ? 'record needs' : 'records need'} review.` : signals.status === 'observable' ? 'No operational records need review.' : 'Operational review counts are unavailable.'}</span>
+          <Link to="/admin/operations" className="inline-flex min-h-11 items-center font-semibold underline">Review operational records</Link>
         </div>
       </div>
 
