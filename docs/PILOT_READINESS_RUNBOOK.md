@@ -1,8 +1,10 @@
 # HåfaPass Pilot Readiness and Incident Runbook
 
-Status: engineering controls implemented through Gate J; external approvals, production drills, a real bounded pilot, and inspected closeout evidence are still required.
+Status: engineering controls are deployed; physical-device, provider and real-event acceptance must still be evidenced.
 
-The [post-pilot plan](POST_PILOT_PLAN.md) records physical-device and real-flow acceptance still needed before a paid pilot, then the proposed mobile and differentiation priorities. It does not replace Gates E–J.
+**Current policy:** [Production cutover](PRODUCTION_CUTOVER.md) is authoritative for enforced controls. Detailed Gates E–J are optional records and never block publishing or sales. The operational checklists below recommend preparation and evidence; they are not additional software-enforced launch approvals. Existing policy/provider capability approvals, organizer verification, payment-mode and payout requirements remain in force.
+
+The [post-pilot plan](POST_PILOT_PLAN.md) records physical-device and real-flow acceptance still needed before a paid pilot, then the proposed mobile and differentiation priorities. It complements the current production controls; optional Gates E–J can hold supporting evidence.
 
 ## Release authority and named ownership
 
@@ -10,15 +12,15 @@ The proposed primary event-day/on-call owner is **Leon Shimizu, Shimizu Technolo
 
 One administrator may submit and approve production payment configuration, payout evidence and reconciliation exceptions, but never silently: every submission and approval is recorded in the audit log with who, what and when. The existing role and audit controls remain authoritative.
 
-Record the event-specific owners, controls, evidence reference, and approval through [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md). Do not open production inventory merely because the generic checklist below is complete; the approval must match the current event-state digest.
+Record event-specific owners, controls and evidence. [Gate E Pilot Readiness Evidence](GATE_E_PILOT_READINESS_EVIDENCE.md) is an optional place to retain them; its review status or event-state digest does not control sales.
 
-After Gates E–H are current, use [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) to authorize the exact inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger, and post-event reconciliation. Production checkout remains closed unless that event has a current Gate I approval and an active run.
+For a bounded live pilot, agree on the inventory cap, support windows, accountable owners, pause thresholds, live checkpoints, incident ledger and post-event reconciliation. [Gate I Bounded Live-Pilot Operations](GATE_I_BOUNDED_LIVE_PILOT.md) can optionally record this operating plan. A Gate I approval or active run is not required by production checkout.
 
-After Gate I is completed, use [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) to bind the exact run and current local state to the external evidence, outcome metrics, retrospective actions, cleanup, and an approved hold/repeat/limited-Guam decision. Gate J never bypasses the next event's gates or authorizes a new region.
+After the pilot, review the evidence, outcome metrics, retrospective actions and cleanup, then record a hold/repeat/limited-expansion decision. [Gate J Pilot Closeout and Expansion Decision](GATE_J_PILOT_CLOSEOUT.md) is an optional record for that review. It neither enables sales nor overrides current controls for another event or region.
 
-## Hard production gates
+## Recommended pre-pilot acceptance
 
-Do not open paid pilot inventory until every item has dated evidence and an owner:
+Use this checklist to prepare a paid pilot, with dated evidence and an owner. It does not add mandatory E–J review approvals to the current production policy:
 
 - GitHub release commit is green, reviewed, and deployable; no open P0 finding.
 - Guam/US counsel approves buyer terms, organizer agreement, privacy, acceptable use, refunds/cancellations, and retention schedule.
