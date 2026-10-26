@@ -64,6 +64,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
         now: Time.current, pending_cutoff: 1.day.ago).order(created_at: :desc).limit(10)
     render json: { exports: exports.filter_map { |item|
       next if item.status == "expired" || (item.expires_at && item.expires_at <= Time.current)
+      next if item.status == "ready" && !item.privacy_safe_artifact?
       begin
         query = OrganizerSalesQuery.new(event: @event, params: item.filters, attendee_access: attendees?)
         OrganizerSalesExport.new(query: query, columns: item.columns, finance: finance?, attendees: attendees?)
@@ -85,6 +86,9 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     return render json: { status: "failed", error: export_request.failure_reason || "Export failed. Run it again." }, status: :unprocessable_entity if export_request.status == "failed"
     return render json: { status: export_request.status }, status: :accepted unless export_request.status == "ready"
     return head :gone if export_request.expires_at <= Time.current
+    unless export_request.privacy_safe_artifact?
+      return render json: { error: "This export predates a privacy update. Run the export again." }, status: :gone
+    end
 
     query = OrganizerSalesQuery.new(event: @event, params: export_request.filters, attendee_access: attendees?)
     OrganizerSalesExport.new(query: query, columns: export_request.columns, finance: finance?, attendees: attendees?)

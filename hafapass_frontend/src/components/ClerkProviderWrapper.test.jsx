@@ -100,6 +100,25 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(clear).toHaveBeenCalledTimes(2)
   })
 
+  it('withdraws an unbound legacy guest capability during a confirmed sign-out before routes reopen', async () => {
+    window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
+    window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-private-link')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout-identity')
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    render(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    await act(async () => finishClear())
+    expect(screen.getByText('Normal routes')).toBeInTheDocument()
+    const { getOrderAccess, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(getOrderAccess(12)).toBeNull()
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout-identity')
+    saveOrderAccess(12, 'explicit-new-email-link')
+    expect(getOrderAccess(12)).toBe('explicit-new-email-link')
+  })
+
   it.each(['resolve', 'reject'])('ignores a stale %s result after the authenticated account changes again', async outcome => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
     let finishOld

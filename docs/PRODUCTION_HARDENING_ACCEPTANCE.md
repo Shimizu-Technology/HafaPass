@@ -35,6 +35,9 @@ native app release. Payout recording does not itself issue a check or bank trans
   Shared-network limits preserve both legitimate scanner traffic and abuse protection.
 - Organizer exports contain buyer registration answers, never internal support-note
   bodies. The legacy export column key remains compatible; its label describes answers.
+  Downloads of older unversioned answer exports are refused without deleting retained
+  evidence. Newly generated private artifacts use a versioned storage path, including
+  requests queued before the privacy update.
 - Confirmed account changes withdraw saved guest-order capabilities. Unchanged guests
   retain their links, and uncertain checkout identities remain available for safe recovery.
 - Installation help respects the buyer's choice and describes offline limits. Form inputs

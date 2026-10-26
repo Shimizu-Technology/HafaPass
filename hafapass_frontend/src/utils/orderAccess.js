@@ -5,13 +5,13 @@ const accessOwnerKey = 'hafapass:order-access-owner'
 
 // Session storage survives Clerk sign-out and is copied when a tab is
 // duplicated. Keep guest capabilities within this tab's confirmed identity.
-export function bindOrderAccessOwner(owner) {
+export function bindOrderAccessOwner(owner, { withdraw = false } = {}) {
   const identity = JSON.stringify(owner)
   const previous = window.sessionStorage.getItem(accessOwnerKey)
-  if (previous === identity) return
+  if (previous === identity && !withdraw) return
   // Legacy unbound links remain available to a guest, but cannot silently
   // grant access to the next signed-in account on a shared browser.
-  if (previous !== null || owner !== null) {
+  if (withdraw || previous !== null || owner !== null) {
     const keys = Object.keys(window.sessionStorage).filter(key => key.startsWith('hafapass:order-access:'))
     keys.forEach(key => window.sessionStorage.removeItem(key))
   }

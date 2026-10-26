@@ -59,4 +59,48 @@ RSpec.describe "Organizer registration-answer export privacy", type: :request do
     expect(response).to have_http_status(:not_found)
     expect(response.body).not_to include("Vegetarian", "INTERNAL_ORDER_CASE_DETAILS")
   end
+
+  it "refuses a stored pre-update answer export without downloading or deleting its retained bytes" do
+    actor = event.organizer_profile.user
+    item = OrganizerSalesExportRequest.create!(event: event, actor_user: actor,
+      filters: {}, columns: %w[notes_custom_answers], status: "ready",
+      expires_at: 1.day.from_now, storage_key: "private/sales-exports/legacy.csv")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:get_object).and_yield("INTERNAL_ORDER_CASE_DETAILS")
+    expect(client).not_to receive(:get_object)
+    expect(S3Service).not_to receive(:delete_private_export!)
+
+    get "#{base}/sales_exports/#{item.id}", headers: auth_headers(actor)
+    expect(response).to have_http_status(:gone)
+    expect(response.parsed_body.fetch("error")).to include("privacy update")
+    expect(response.body).not_to include("INTERNAL_ORDER_CASE_DETAILS")
+    expect(item.reload).to have_attributes(status: "ready", storage_key: "private/sales-exports/legacy.csv")
+
+    get "#{base}/sales_exports", headers: auth_headers(actor)
+    expect(response.parsed_body.fetch("exports")).to be_empty
+  end
+
+  it "generates a versioned safe artifact from an older queued request and serves its actual answer bytes" do
+    actor = event.organizer_profile.user
+    item = OrganizerSalesExportRequest.create!(event: event, actor_user: actor,
+      filters: {}, columns: %w[notes_custom_answers], row_count: 1)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-private-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    stored_bytes = nil
+    allow(client).to receive(:put_object) { |options| stored_bytes = options.fetch(:body).read }
+    allow(client).to receive(:get_object) { |_options, &block| block.call(stored_bytes) }
+
+    OrganizerSalesExportJob.perform_now(item.id)
+    expect(item.reload).to be_privacy_safe_artifact
+    expect(item.storage_key).to start_with("private/sales-exports/v2/#{event.organization_id}/#{item.id}-")
+    get "#{base}/sales_exports/#{item.id}", headers: auth_headers(actor)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to eq(stored_bytes)
+    expect(response.body).to include("Registration answers", "Meal preference", "Vegetarian")
+    expect(response.body).not_to include("INTERNAL_ORDER_CASE_DETAILS", "INTERNAL_TICKET_CASE_DETAILS")
+  end
 end

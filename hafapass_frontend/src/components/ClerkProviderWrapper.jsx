@@ -42,10 +42,10 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
       try {
         bindingContext = captureScannerBindingContext()
         if (!bindingContext) throw new Error('Scanner binding storage is unavailable')
-        let orderBindingError
-        try { bindOrderAccessOwner(currentUserId) } catch (error) { orderBindingError = error }
         const previous = bindingContext.owner
         const changed = (previous && previous !== currentUserId) || hasPendingScannerBinding()
+        let orderBindingError
+        try { bindOrderAccessOwner(currentUserId, { withdraw: Boolean(changed) }) } catch (error) { orderBindingError = error }
         if (changed) {
           setBindingWithdrawn(true)
           withdrawScannerBinding()
