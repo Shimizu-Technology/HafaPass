@@ -198,11 +198,9 @@ class StripeWebhookProcessor
   end
 
   def process_refund_operation!(receipt, payment, object)
-    refund = Refund.find_by(provider: "stripe", provider_refund_id: value(object, :id))
-    operation_key = nested_value(value(object, :metadata), :hafapass_refund_key)
-    refund ||= Refund.find_by(provider: "stripe", idempotency_key: operation_key) if operation_key.present?
+    refund = Commerce::RefundCreator.find_provider_operation(payment: payment, provider_refund: object) if payment
     if refund.nil?
-      if payment && operation_key.blank?
+      if payment
         return Commerce::ExternalRefundRecovery.ingest!(payment: payment, provider_refund: object)
       end
       ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
@@ -227,7 +225,9 @@ class StripeWebhookProcessor
     Commerce::RefundCreator.reconcile_refund!(refund: refund, provider_refund: object)
   rescue Commerce::RefundCreator::RefundError => e
     ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
-      code: "refund_operation_not_found", details: { error: e.message })
+      code: "refund_operation_not_found", details: { error: e.message,
+        provider_refund_id: value(object, :id), provider_payment_id: value(object, :payment_intent) || payment&.provider_payment_id,
+        amount_cents: value(object, :amount), currency: value(object, :currency), status: value(object, :status) })
   end
 
   def record_refund_provider_issue!(receipt, refund, code:, action:)
@@ -253,7 +253,7 @@ class StripeWebhookProcessor
     # cannot identify or verify an operation, and may predate later refunds.
     # The subscribed refund.created/updated events carry the durable identities.
     if provider_refunds.empty?
-      if value(object, :amount_refunded).to_i > payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      if value(object, :amount_refunded).to_i > payment.refunds.succeeded.sum(:amount_cents)
         record_aggregate_gap!(receipt, payment, object)
       end
       return

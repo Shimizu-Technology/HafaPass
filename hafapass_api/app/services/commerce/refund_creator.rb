@@ -13,6 +13,36 @@ module Commerce
       new(**).call
     end
 
+    # Provider IDs are durable. Metadata can recover an unacknowledged
+    # reservation, but cannot rename one that already has an operation ID.
+    def self.provider_binding_conflict?(refund, provider_id)
+      provider_id.present? && refund.provider_refund_id.present? && refund.provider_refund_id != provider_id
+    end
+
+    def self.find_provider_operation(payment:, provider_refund:)
+      intent = provider_refund.respond_to?(:payment_intent) ? provider_refund.payment_intent : nil
+      if intent.present? && intent != payment.provider_payment_id
+        raise RefundError, "Provider refund belongs to another payment intent"
+      end
+      provider_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
+      refund = Refund.find_by(provider: "stripe", provider_refund_id: provider_id) if provider_id.present?
+      if refund
+        raise RefundError, "Provider refund belongs to another payment" unless refund.payment_id == payment.id
+
+        return refund
+      end
+      metadata = provider_refund.respond_to?(:metadata) ? provider_refund.metadata.to_h.stringify_keys : {}
+      key = metadata["hafapass_refund_key"]
+      return if key.blank?
+
+      refund = Refund.find_by(provider: "stripe", idempotency_key: key)
+      return unless refund
+      raise RefundError, "Provider refund metadata belongs to another payment" unless refund.payment_id == payment.id
+      return if provider_binding_conflict?(refund, provider_id)
+
+      refund
+    end
+
     def self.reconcile_refund!(refund:, provider_refund:)
       new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key,
         provider_refund: provider_refund).send(:finalize_refund!, refund, provider_refund)
@@ -367,6 +397,15 @@ module Commerce
         refund.order.event.lock!
         refund.order.lock!
         refund.lock!
+        incoming_id = provider_refund.respond_to?(:id) ? provider_refund.id : nil
+        if self.class.provider_binding_conflict?(refund, incoming_id)
+          ReconciliationException.create!(order: refund.order, payment: refund.payment,
+            code: "refund_operation_mismatch", details: { provider_refund_id: incoming_id,
+              acknowledged_provider_refund_id: refund.provider_refund_id })
+          audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider", observation: provider_refund)
+          validation_error = "Refund provider identity differs from the acknowledged operation; finance review is required"
+          next
+        end
         # A webhook can finish this operation while the original POST is still
         # in flight. Re-read every terminal state under the same locks before
         # touching its released ticket reservations or financial allocations.
