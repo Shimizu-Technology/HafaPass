@@ -596,6 +596,10 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
       { version: 2, expires_at: renewedDevice.authorization_expires_at }))
     await act(async () => heldAck.resolve(response(ackConfig, { device: { ...oldDevice, last_sequence: action.sequence },
       results: [{ ...action, result: 'accepted', reason_code: 'admitted' }], summary: {} })))
+    // Quiet admission ACKs no longer download a full manifest. Exercise the
+    // same refusal race through the explicit empty-queue refresh.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Sync now' }))
     await waitFor(() => expect(manifestConfig).toBeDefined())
     if (refreshedAgain) {
       const newest = { ...renewedDevice, authorization_expires_at: new Date(Date.now() + 7_200_000).toISOString() }

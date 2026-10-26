@@ -381,6 +381,15 @@ export async function saveDevice(eventId, device, { isCurrent = () => true, cont
   }
 }
 
+// Minimal recovery inventory survives lost event membership and cleared access.
+// Never enumerate another signed-in account's retained journals.
+export async function pendingDeviceIdentities() {
+  const owner = currentScannerOwner()
+  if (!owner) return []
+  const identities = await (await database()).getAll('journal_devices')
+  return owner === currentScannerOwner() ? identities.filter(item => item.owner_user_id === owner) : []
+}
+
 export async function loadPendingDeviceIdentity(eventId, verifiedBackendUserId = null) {
   const owner = currentScannerOwner()
   if (!owner) return null

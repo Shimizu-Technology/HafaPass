@@ -39,7 +39,8 @@ class ScannerDevice < ApplicationRecord
     end
     if saved_change_to_manifest_downloaded_at?
       AuditLogger.record!(action: "scanner_device.manifest_downloaded", auditable: self, event: event,
-        after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at })
+        after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at,
+          lease_expires_at: authorization_expires_at })
     end
     if saved_change_to_status? && status_revoked?
       AuditLogger.record!(action: "scanner_device.revoked", auditable: self, event: event,

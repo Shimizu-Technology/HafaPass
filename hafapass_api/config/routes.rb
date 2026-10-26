@@ -190,6 +190,7 @@ Rails.application.routes.draw do
             member do
               get :manifest
               post :sync
+              post :recover
             end
           end
           resource :admissions, only: [:show], controller: "admissions" do

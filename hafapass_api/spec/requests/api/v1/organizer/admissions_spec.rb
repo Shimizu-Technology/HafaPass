@@ -125,4 +125,22 @@ RSpec.describe "Organizer event-day admissions", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body.fetch("error")).to include("filtered organizer door list")
   end
+  it "distinguishes issued from eligible entry, stock and persisted check-ins in mixed blocked states" do
+    cancelled = create(:ticket, :cancelled, event: event, order: order, ticket_type: ticket_type)
+    create(:ticket, :transferred, event: event, order: order, ticket_type: ticket_type)
+    create(:ticket, :checked_in, event: event, order: order, ticket_type: ticket_type)
+    create(:ticket, event: event, order: create(:order, :pending, event: event), ticket_type: ticket_type)
+    blocked_order = create(:order, event: event)
+    blocked_ticket = create(:ticket, event: event, order: blocked_order, ticket_type: ticket_type)
+    refund = create(:refund, order: blocked_order, status: :pending, provider_refund_id: nil, succeeded_at: nil)
+    refund.refund_tickets.create!(ticket: blocked_ticket, amount_cents: refund.amount_cents)
+    retained = create(:ticket, :checked_in, event: event, order: order, ticket_type: ticket_type)
+    Commerce::FinancialReversalInventory.call(ticket: retained, refund: create(:refund, order: order))
+    retained.reverse_check_in!
+    get "/api/v1/organizer/events/#{event.id}/admissions", headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("counts")).to include("total" => 7, "issued" => 4,
+      "remaining" => 4, "eligible_unadmitted" => 1, "admitted" => 1, "cancelled" => 1)
+    expect(cancelled.reload).not_to be_admission_allowed
+  end
 end

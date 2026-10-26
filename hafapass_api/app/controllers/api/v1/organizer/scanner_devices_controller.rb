@@ -2,7 +2,7 @@
 
 class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseController
   before_action :set_event
-  before_action :set_device, only: [:update, :destroy, :manifest, :sync]
+  before_action :set_device, only: [:update, :destroy, :manifest, :sync, :recover]
 
   def index
     return unless authorize_organization!(:scan, event: @event)
@@ -76,6 +76,21 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
       device: device_json(@device.reload),
       summary: admission_summary
     }
+  rescue Admissions::Reconciler::SyncError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  # Separate authority from normal scanning: this never renews the device.
+  def recover
+    return unless authorize_organization!(:manage_staff, event: @event)
+    return unless authorize_organization!(:manage_attendees, event: @event)
+
+    results = Admissions::JournalRecovery.call(device: @device, actor: current_user,
+      actions: params[:actions]&.map { |action| action.respond_to?(:to_unsafe_h) ? action.to_unsafe_h : action },
+      reason: params[:reason], window_start: params[:window_start], window_end: params[:window_end],
+      request: request)
+    render json: { results: results.map { |result| action_json(result.action) },
+      device: device_json(@device.reload), summary: admission_summary }
   rescue Admissions::Reconciler::SyncError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
@@ -154,11 +169,6 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
   end
 
   def admission_summary
-    {
-      admitted: @event.tickets.checked_in.count,
-      remaining: @event.tickets.issued.count,
-      conflicts: @event.admission_actions.result_conflict.count,
-      rejected: @event.admission_actions.result_rejected.count
-    }
+    Admissions::Counts.call(event: @event)
   end
 end

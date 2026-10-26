@@ -356,6 +356,7 @@ entries are described above and defined in the registry's audience variants.
 | `sales.export_requested` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view`, `event_title` | Requested an event sales export. |
 | `sales.exported` | yes | exports | O/M | yes | yes | — | `row_count`, `export_request_id`, `outcome`, `view`, `event_title` | Exported an event sales summary. |
 | `scanner_device.authorized` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `event_title` | Authorized an event scanner device. |
+| `scanner_device.journal_recovered` | yes | scanning | O/M | yes | yes | — | `entry_count`, `window_start`, `window_end`, `event_title` | Recovered a reviewed offline admission journal. |
 | `scanner_device.lease_updated` | yes | scanning | O/M | yes | yes | `status`, `lease_expires_at` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Updated an event scanner authorization lease. |
 | `scanner_device.manifest_downloaded` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Downloaded an event scanner manifest. |
 | `scanner_device.renamed` | yes | scanning | O/M | yes | yes | `status` | `event_id`, `manifest_version`, `entry_count`, `event_title` | Renamed an event scanner device. |

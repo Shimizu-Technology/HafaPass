@@ -301,4 +301,14 @@ RSpec.describe AuditActions do
     expect { described_class.fetch("payout.paid")[:audience] << "org_manager" }.to raise_error(FrozenError)
     expect { described_class.fetch("payout.paid")[:organization_fields][:metadata] << "buyer_email" }.to raise_error(FrozenError)
   end
+  it "classifies historical journal recovery as scoped manager activity without exposing gate evidence" do
+    action = "scanner_device.journal_recovered"
+    expect(described_class.fetch(action)).to include(tenant: true, event_required: true, area: "scanning")
+    expect(described_class.visible_to?(action, :org_manager)).to be(true)
+    payload = described_class.organization_payload(action, metadata: { reason: "private gate evidence",
+      action_uuids: ["private-action"], original_user_id: 42, entry_count: 2,
+      window_start: "2026-10-26T00:00:00Z", window_end: "2026-10-26T01:00:00Z" })
+    expect(payload[:metadata]).to include("entry_count" => 2)
+    expect(payload.to_json).not_to include("private gate evidence", "private-action", "original_user_id")
+  end
 end
