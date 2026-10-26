@@ -15,7 +15,10 @@ class RefundReconciliationQueue
   def self.recovery_amount_for_event(event)
     return 0 unless event.cancelled? && event.payouts.status_paid.exists?
 
-    new(event_id: event.id).entries.sum { |entry| entry[:amount_cents] }
+    # Provider observations are verification work, not another buyer liability.
+    # The existing cancellation/refund/dispute rows retain the recorded exposure.
+    new(event_id: event.id).entries.reject { |entry| entry[:type] == "exception" }
+      .sum { |entry| entry[:amount_cents] }
   end
 
   def initialize(event_id: nil, organization_id: nil, status: nil, age_days: nil, page: 1, per_page: PAGE_SIZE)
@@ -118,11 +121,33 @@ class RefundReconciliationQueue
       code: Commerce::ExternalRefundRecovery::RECOVERABLE_CODES).includes(includes, :payment).to_a
     issues.select! { |issue| live_payment_ids.include?(issue.payment_id) } if live_payment_ids
     issues.each do |issue|
-      rows << row(issue, "exception", "provider_review", issue.actual_amount_cents || issue.order.refundable_cents,
-        "External Stripe refund needs verification", nil)
+      rows << row(issue, "exception", "provider_review", 0,
+        "External Stripe refund needs verification", nil).merge(provider_verification_amounts(issue))
+    end
+    unverified_order_ids = issues.map(&:order_id).to_set
+    rows.each do |entry|
+      entry[:buyer_amount_unverified] = unverified_order_ids.include?(entry[:order_id])
+      # amount_cents remains a numeric recorded-liability contribution for
+      # existing payout consumers; zero does not assert the buyer is owed zero.
+      entry[:buyer_amount_cents] = entry[:buyer_amount_unverified] ? nil : entry[:amount_cents]
+      if entry[:buyer_amount_unverified] && entry[:type] != "exception"
+        entry[:next_action] = "Verify external Stripe refunds before returning more money"
+      end
     end
     attach_unable_reasons(rows)
     rows
+  end
+
+  def provider_verification_amounts(issue)
+    aggregate = issue.code == "refund_aggregate_requires_reconciliation"
+    reported = aggregate ? issue.actual_amount_cents : issue.details["amount_cents"]
+    reported = nil unless reported.is_a?(Integer) && reported >= 0
+    # An aggregate gap is only a discrepancy to investigate. It neither proves
+    # an operation succeeded nor reduces/reserves the current buyer balance.
+    booked = issue.order.refunds.select { |refund| refund.payment_id == issue.payment_id && refund.succeeded? }.sum(&:amount_cents)
+    verification = aggregate && reported ? [reported - booked, 0].max : reported
+    { provider_amount_kind: aggregate ? "aggregate" : "operation",
+      provider_reported_amount_cents: reported, provider_verification_amount_cents: verification }
   end
 
   def manual_type(order, item)

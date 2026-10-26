@@ -120,4 +120,108 @@ RSpec.describe RefundReconciliationQueue do
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
+
+  describe "provider verification amounts" do
+    def issue_for(order, code: "refund_aggregate_requires_reconciliation", actual: nil, details: {})
+      create(:reconciliation_exception, order: order, payment: order.payments.first,
+        code: code, actual_amount_cents: actual, details: details)
+    end
+
+    def exception_row(issue)
+      described_class.new(event_id: event.id).entries.find { |entry| entry[:type] == "exception" && entry[:id] == issue.id }
+    end
+
+    def mark_organizer_paid
+      event.update!(status: :cancelled)
+      create(:payout, event: event, organization: organization, status: :paid, with_tax_snapshot: false)
+    end
+
+    it "distinguishes the unbooked aggregate from money owed without booking or reserving it" do
+      order = paid_order(event: event)
+      pending_refund(order, status: :succeeded, amount_cents: 1000)
+      pending_refund(order, amount_cents: 500)
+      issue = issue_for(order, actual: 3000)
+      before = [order.refunds.count, order.refundable_cents, order.refund_amount_cents]
+
+      expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil, provider_amount_kind: "aggregate",
+        provider_reported_amount_cents: 3000, provider_verification_amount_cents: 2000,
+        buyer_amount_unverified: true)
+      expect([order.refunds.count, order.refundable_cents, order.reload.refund_amount_cents]).to eq(before)
+    end
+
+    [nil, {}, { amount_cents: "1200" }, { amount_cents: -1 }].each do |details|
+      it "keeps an unknown operation amount unknown for #{details.inspect}" do
+        order = paid_order(event: event)
+        issue = issue_for(order, code: "refund_operation_not_found", details: details || {})
+        expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil, provider_amount_kind: "operation",
+          provider_reported_amount_cents: nil, provider_verification_amount_cents: nil)
+      end
+    end
+
+    it "reports a failed operation's observed amount without making it a buyer debt" do
+      mark_organizer_paid
+      order = paid_order(event: event)
+      issue = issue_for(order, code: "refund_operation_not_found", details: { amount_cents: 1200, status: "failed" })
+      expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil, provider_amount_kind: "operation",
+        provider_reported_amount_cents: 1200, provider_verification_amount_cents: 1200)
+      expect(described_class.recovery_amount_for_event(event)).to eq(0)
+      expect(described_class.outstanding_for_event?(event)).to be(true)
+      expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+    end
+
+    it "counts cancellation recovery once despite several aggregate and operation exceptions" do
+      mark_organizer_paid
+      order = paid_order(event: event)
+      pending_refund(order, status: :succeeded, amount_cents: 1000)
+      run = event.create_event_cancellation_refund_run!(started_by: create(:user, :admin))
+      item = run.items.create!(order: order, status: :failed, amount_cents: 5250)
+      issues = [issue_for(order, actual: 3000), issue_for(order, actual: 4000),
+        issue_for(order, code: "refund_operation_not_found", details: { amount_cents: 2000 })]
+
+      rows = described_class.new(event_id: event.id).entries
+      expect(rows.count { |entry| entry[:type] == "exception" }).to eq(3)
+      expect(rows.find { |entry| entry[:type] == "cancellation" && entry[:id] == item.id })
+        .to include(amount_cents: 4250, buyer_amount_unverified: true)
+      expect(described_class.recovery_amount_for_event(event)).to eq(4250)
+      expect(issues.map(&:reload)).to all(be_open)
+    end
+
+    [0, 5250].each do |reported|
+      it "keeps zero/full booked aggregate #{reported} visible and holds payout with no extra recovery" do
+        mark_organizer_paid
+        order = paid_order(event: event)
+        pending_refund(order, status: :succeeded, amount_cents: 5250)
+        issue = issue_for(order, actual: reported)
+        expect(exception_row(issue)).to include(amount_cents: 0, buyer_amount_cents: nil, provider_verification_amount_cents: 0)
+        expect(described_class.recovery_amount_for_event(event)).to eq(0)
+        expect(described_class.outstanding_for_event?(event)).to be(true)
+        held = create(:payout, event: event, organization: organization, status: :held,
+          held_from_status: "pending", connected_account: organization.connected_accounts.first, with_tax_snapshot: false)
+        admin = create(:user, :admin)
+        expect { PayoutHoldRelease.call(payout: held, actor: admin) }
+          .to raise_error(PayoutHoldRelease::ReleaseError, /outstanding buyer refund/)
+        expect(PayoutHoldRelease.call(payout: held, actor: admin, automatic: true)).to be(false)
+        expect(held.reload).to be_status_held
+      end
+    end
+
+    it "scopes booked aggregate money to its payment rather than another payment on the order" do
+      order = paid_order(event: event)
+      other = create(:payment, :succeeded, order: order)
+      create(:refund, order: order, payment: other, status: :succeeded, amount_cents: 1000)
+      issue = issue_for(order, actual: 3000)
+      expect(exception_row(issue)).to include(provider_verification_amount_cents: 3000)
+    end
+
+    it "keeps the non-live production exception and its uncertainty out of the live queue" do
+      order = paid_order(event: event)
+      failed = pending_refund(order, status: :failed)
+      test_payment = create(:payment, :succeeded, order: order, provider_environment: "test")
+      create(:reconciliation_exception, order: order, payment: test_payment,
+        code: "refund_aggregate_requires_reconciliation", actual_amount_cents: 3000)
+      allow(Rails.env).to receive(:production?).and_return(true)
+      expect(described_class.new(event_id: event.id).entries).to contain_exactly(
+        include(type: "refund", id: failed.id, buyer_amount_unverified: false))
+    end
+  end
 end

@@ -114,4 +114,44 @@ describe('AdminRefundReconciliationPage', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry refund' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/refund/9/retry', {}, expect.anything()))
   })
+
+  it('shows an aggregate gap as provider verification, never as still owed or another refund', async () => {
+    respond([{ ...item, type: 'exception', status: 'provider_review', amount_cents: 0, buyer_amount_cents: null,
+      provider_amount_kind: 'aggregate', provider_reported_amount_cents: 3000,
+      provider_verification_amount_cents: 2000, organizer_already_paid: true }])
+    const user = userEvent.setup()
+    mount()
+    expect(await screen.findByText('Buyer balance needs verification')).toBeInTheDocument()
+    expect(screen.getByText(/Stripe reports.*\$30.00.*returned in total/)).toBeInTheDocument()
+    expect(screen.getByText(/\$20.00.*not yet matched to booked refunds/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry refund|Issue refund|Record.*return|Mark unable/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Organizer was already paid; recover from organizer')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Check Stripe status' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.queryByText(/still owed/)).not.toBeInTheDocument()
+    expect(dialog.getByText(/does not send another refund/)).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Check Stripe status' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/exception/9/resync', {}, expect.anything()))
+  })
+
+  it.each([null, 0, 1200])('keeps operation amount %s distinct from buyer owed', async amount => {
+    respond([{ ...item, type: 'exception', status: 'provider_review', amount_cents: 0, buyer_amount_cents: null,
+      provider_amount_kind: 'operation', provider_reported_amount_cents: amount,
+      provider_verification_amount_cents: amount }])
+    mount()
+    expect(await screen.findByText('Buyer balance needs verification')).toBeInTheDocument()
+    expect(screen.queryByText(/still owed/)).not.toBeInTheDocument()
+    if (amount === null) expect(screen.getByText('Provider operation amount is unknown.')).toBeInTheDocument()
+    else expect(screen.getByText(/Provider operation amount:/)).toHaveTextContent(amount === 0 ? '$0.00' : '$12.00')
+  })
+
+  it('keeps related cancellation liability as a recorded amount and requires provider verification before retry', async () => {
+    respond([{ ...item, type: 'cancellation', status: 'failed', buyer_amount_unverified: true,
+      organizer_already_paid: true, amount_cents: 4250 }])
+    mount()
+    expect(await screen.findByText('Buyer balance needs verification')).toBeInTheDocument()
+    expect(screen.getByText('Recorded liability: $42.50')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry refund|Issue refund|Mark unable/ })).not.toBeInTheDocument()
+  })
+
 })
