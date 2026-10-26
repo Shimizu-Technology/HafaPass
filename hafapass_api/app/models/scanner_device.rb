@@ -15,6 +15,7 @@ class ScannerDevice < ApplicationRecord
   validates :last_manifest_version, :last_sequence,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :relationships_share_organization
+  before_update :lock_manifest_context, if: :will_save_change_to_manifest_downloaded_at?
   after_update :audit_operational_changes
 
   def effective?(at: Time.current)
@@ -25,7 +26,23 @@ class ScannerDevice < ApplicationRecord
     update!(status: :revoked, revoked_at: at)
   end
 
+  # Keep manifest construction, the current lease and the authority audit in
+  # one transaction. Reload the device only after both parent locks are held.
+  def with_manifest_lock
+    self.class.transaction do
+      lock_manifest_context
+      with_lock { yield }
+    end
+  end
+
   private
+
+  # Also protect direct download updates: after_update already owns the
+  # scanner row and must never acquire a previously unowned parent lock.
+  def lock_manifest_context
+    organization.lock!
+    event.lock!
+  end
 
   def audit_operational_changes
     if saved_change_to_name?
@@ -39,8 +56,8 @@ class ScannerDevice < ApplicationRecord
     end
     if saved_change_to_manifest_downloaded_at?
       AuditLogger.record!(action: "scanner_device.manifest_downloaded", auditable: self, event: event,
-        after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at,
-          lease_expires_at: authorization_expires_at, scan_authority: Admissions::HistoricalScanAuthority.snapshot(self) })
+        after_data: { manifest_version: last_manifest_version, downloaded_at: manifest_downloaded_at.iso8601(6),
+          lease_expires_at: authorization_expires_at.iso8601(6), scan_authority: Admissions::HistoricalScanAuthority.snapshot(self) })
     end
     if saved_change_to_status? && status_revoked?
       AuditLogger.record!(action: "scanner_device.revoked", auditable: self, event: event,

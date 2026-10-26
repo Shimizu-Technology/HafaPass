@@ -8,16 +8,24 @@ module Admissions
     TYPES = %w[OrganizationMembership EventStaffAssignment].freeze
 
     def self.snapshot(device)
+      # Download updates acquire organization -> event before writing the
+      # scanner row. This reacquires that same organization lock, keeping the
+      # grant image and audit watermark stable through the download commit.
       device.organization.with_lock do
         {
           version: 1, captured_at: Time.current.iso8601(6),
           audit_id: AuditLog.where(organization_id: device.organization_id).maximum(:id).to_i,
           admin: device.user.admin?,
-          memberships: device.organization.organization_memberships.where(user_id: device.user_id).map { |row| row.attributes.slice("id", *FIELDS) },
-          assignments: device.event.event_staff_assignments.where(user_id: device.user_id).map { |row| row.attributes.slice("id", *FIELDS) }
+          memberships: device.organization.organization_memberships.where(user_id: device.user_id).map { |row| grant_image(row) },
+          assignments: device.event.event_staff_assignments.where(user_id: device.user_id).map { |row| grant_image(row) }
         }
       end
     end
+
+    def self.grant_image(row)
+      row.attributes.slice("id", *FIELDS).merge("expires_at" => row.expires_at&.getutc&.iso8601(6))
+    end
+    private_class_method :grant_image
 
     def initialize(device:, download:)
       @device = device

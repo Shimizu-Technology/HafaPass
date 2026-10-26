@@ -32,6 +32,7 @@ module Admissions
       device = nil
       AuditContext.set(actor: user) do
         ScannerDevice.transaction do
+          event.organization.lock!
           event.lock!
           unless OrganizationAuthorization.allowed?(user: user, organization: event.organization, permission: :scan, event: event)
             raise RegistrationError, "You are not assigned to scan this event"
