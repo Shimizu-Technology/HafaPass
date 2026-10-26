@@ -119,6 +119,35 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(getOrderAccess(12)).toBe('explicit-new-email-link')
   })
 
+  it.each(['owner-a', null])('withdraws legacy access when a peer completes sign-out before Clerk resolves (initial owner %s)', async owner => {
+    if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
+    window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-private-link')
+    window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout-identity')
+    const { rerender } = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    // A peer may finish both withdrawal and binding while this tab awaits Clerk.
+    await act(async () => {
+      window.localStorage.setItem('hafapass_scanner_binding_pending', 'pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'pending', storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_user_id')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_user_id', newValue: null, storageArea: window.localStorage }))
+      window.localStorage.removeItem('hafapass_scanner_binding_pending')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: null, storageArea: window.localStorage }))
+    })
+    let finishClear
+    clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
+    Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
+    rerender(<Wrapper><p>Normal routes</p></Wrapper>)
+    expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
+    expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
+    await act(async () => finishClear())
+    expect(screen.getByText('Normal routes')).toBeInTheDocument()
+    const { getOrderAccess, orderAccessHeaders, saveOrderAccess } = await import('../utils/orderAccess')
+    expect(orderAccessHeaders(12)).toEqual({})
+    expect(window.sessionStorage.getItem('hafapass:checkout-attempt:event')).toBe('uncertain-checkout-identity')
+    saveOrderAccess(12, 'explicit-new-email-link')
+    expect(getOrderAccess(12)).toBe('explicit-new-email-link')
+  })
+
   it.each(['resolve', 'reject'])('ignores a stale %s result after the authenticated account changes again', async outcome => {
     window.localStorage.setItem('hafapass_scanner_user_id', 'owner-a')
     let finishOld

@@ -13,6 +13,7 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
   useSyncExternalStore(subscribeScannerBinding, scannerBindingRevision)
   const initialFallbackOwner = useRef(currentScannerOwner())
+  const observedOwner = useRef(initialFallbackOwner.current)
   const verifiedWithdrawal = useRef(scannerWithdrawalRevision())
   const [boundUser, setBoundUser] = useState(null)
   const [bindingReady, setBindingReady] = useState(false)
@@ -43,7 +44,9 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
         bindingContext = captureScannerBindingContext()
         if (!bindingContext) throw new Error('Scanner binding storage is unavailable')
         const previous = bindingContext.owner
-        const changed = (previous && previous !== currentUserId) || hasPendingScannerBinding()
+        const changed = (previous && previous !== currentUserId)
+          || (observedOwner.current && observedOwner.current !== currentUserId)
+          || verifiedWithdrawal.current !== scannerWithdrawalRevision() || hasPendingScannerBinding()
         let orderBindingError
         try { bindOrderAccessOwner(currentUserId, { withdraw: Boolean(changed) }) } catch (error) { orderBindingError = error }
         if (changed) {
@@ -60,6 +63,7 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
         if (!current()) return
         if (changed) window.localStorage.removeItem('hafapass_organization_id')
         completeScannerBinding(currentUserId, { context: bindingContext })
+        observedOwner.current = currentUserId
         verifiedWithdrawal.current = scannerWithdrawalRevision()
         setBindingWithdrawn(false)
         setBoundUser(currentUserId)
