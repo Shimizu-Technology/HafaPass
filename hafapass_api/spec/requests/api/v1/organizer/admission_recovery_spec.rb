@@ -189,4 +189,60 @@ RSpec.describe "Manager admission journal recovery", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
     expect(AdmissionAction.count).to eq(1)
   end
+  ["2026-10-26", "2026-10-26T08:00:00", "08:00:00+10:00", "2026-02-30T08:00:00+10:00",
+    "2026-10-26T24:00:00Z", "2026-10-26T08:60:00Z", "2026-10-26T08:00:00+24:00", "nonsense"].each do |bound|
+    it "refuses incomplete or invalid review bound #{bound.inspect} without mutation" do
+      [:window_start, :window_end].each do |key|
+        recover(**{ key => bound })
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body.fetch("error")).to include("explicit ISO-8601")
+        expect(AdmissionAction).not_to exist
+        expect(AuditLog.where(action: "scanner_device.journal_recovered")).not_to exist
+        expect(@device.reload.last_sequence).to eq(0)
+      end
+    end
+  end
+
+  it "accepts explicit Guam and UTC bounds as the same exact attested instants" do
+    recover(window_start: @start.getlocal("+10:00").iso8601(6), window_end: @end.getlocal("+10:00").iso8601(6))
+    expect(response).to have_http_status(:ok)
+    audit = AuditLog.where(action: "scanner_device.journal_recovered").last!
+    expect(Time.iso8601(audit.metadata.fetch("window_start"))).to eq(@start)
+    expect(Time.iso8601(audit.metadata.fetch("window_end"))).to eq(@end)
+    recover(window_start: @start.getutc.iso8601(6), window_end: @end.getutc.iso8601(6))
+    expect(response).to have_http_status(:ok)
+    expect(AdmissionAction.count).to eq(1)
+  end
+
+  it "queries immutable download and legacy lease evidence once per manifest in a multi-entry batch" do
+    other = create(:ticket, event: event, order: create(:order, event: event), ticket_type: ticket.ticket_type)
+    # The second ticket needs to be in the original signed manifest. Preserve
+    # a real server-issued download, then emulate its supported legacy lease key.
+    travel_to(@start + 1.second)
+    @device.update!(status: :active, revoked_at: nil)
+    get "#{base}/#{@device.id}/manifest", headers: staff_headers
+    expect(response).to have_http_status(:ok)
+    version = response.parsed_body.dig("payload", "version")
+    download = AuditLog.where(auditable: @device, action: "scanner_device.manifest_downloaded").last!
+    AuditLog.redact!(AuditLog.where(id: download.id), after_data: download.after_data.except("lease_expires_at"))
+    # Historical legacy authorized records may predate the sanitizer's redaction.
+    grant = AuditLog.where(auditable: @device, action: "scanner_device.authorized").last!
+    AuditLog.redact!(AuditLog.where(id: grant.id), after_data: grant.after_data.merge("authorization_expires_at" => @device.authorization_expires_at.iso8601(6)))
+    travel_to(@end)
+    @device.revoke!
+    travel 10.seconds
+    first = @input.merge(manifest_version: version)
+    second = first.merge(action_uuid: "second-retained", sequence: 2, ticket_id: other.id,
+      credential_hash: Digest::SHA256.hexdigest(other.scan_credential))
+    queries = []
+    callback = ->(*args) { payload = args.last; queries << payload if payload[:sql].match?(/SELECT.*FROM "audit_logs"/) }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { recover(actions: [first, second]) }
+    expect(response).to have_http_status(:ok), response.parsed_body.inspect
+    expect(response.parsed_body.fetch("results").map { |row| row["result"] }).to eq(%w[accepted accepted])
+    %w[scanner_device.manifest_downloaded scanner_device.authorized].each do |action|
+      selected = queries.select { |row| row[:binds].any? { |bind| bind.respond_to?(:value_for_database) && bind.value_for_database == action } }
+      expect(selected.size).to eq(1), "queries for #{action}: #{queries.map { |row| row[:sql] }}"
+    end
+    expect(@device.reload.last_sequence).to eq(2)
+  end
 end

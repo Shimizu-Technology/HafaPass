@@ -3,7 +3,7 @@ import { openDB } from 'idb'
 import { act, render as testingRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { formatEventDateTime } from '../../utils/eventTime'
 import * as admissionStore from '../../utils/admissionStore'
@@ -12,6 +12,10 @@ import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 
 const render = element => testingRender(<MemoryRouter>{element}</MemoryRouter>)
+function ScannerVisit({ eventId }) {
+  const navigate = useNavigate()
+  return <><button onClick={() => navigate(`/dashboard/scanner?event=${eventId}`)}>Restart scanner visit</button><ScannerPage /></>
+}
 
 const camera = vi.hoisted(() => ({ callbacks: [], stops: [] }))
 async function findManifest(version) {
@@ -389,7 +393,7 @@ describe('scanner recovery and camera ownership', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
   })
 
-  it('does not let an older refused handler replace the newer same-ticket accepted command', async () => {
+  it('does not let a refused handler from an older visit replace the newer same-ticket accepted command', async () => {
     const eventId = 92001
     const device = { id: 91, identifier: 'later-command-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const ticket = { ticket_id: 501, state: 'valid', attendee_name: 'Later Guest', ticket_type: 'General', credential_hash: await sha256Hex('later-command-qr') }
@@ -410,13 +414,17 @@ describe('scanner recovery and camera ownership', () => {
       if (first) await new Promise(resolve => { releaseFirst = resolve })
       return action
     })
-    render(<ScannerPage />)
+    render(<ScannerVisit eventId={eventId} />)
     await findManifest(1)
     const user = userEvent.setup()
     for (let index = 0; index < 2; index += 1) {
       await user.type(screen.getByLabelText('Ticket QR code'), 'later-command-qr')
       await user.click(screen.getByRole('button', { name: 'Check in ticket' }))
-      if (index === 0) await waitFor(() => expect(releaseFirst).toBeDefined())
+      if (index === 0) {
+        await waitFor(() => expect(releaseFirst).toBeDefined())
+        await user.click(screen.getByRole('button', { name: 'Restart scanner visit' }))
+        await findManifest(1)
+      }
     }
     await screen.findByText('Admission confirmed')
     await act(async () => releaseFirst())
@@ -426,7 +434,7 @@ describe('scanner recovery and camera ownership', () => {
     expect(await queuedActions(eventId, device.id)).toHaveLength(0)
   })
 
-  it('keeps the older unknown journal while its late handler cannot overwrite the newer accepted result', async () => {
+  it('keeps the older visit journal while its late handler cannot overwrite the newer accepted result', async () => {
     const eventId = 92001
     const device = { id: 91, identifier: 'unknown-journal-scanner', effective: true, authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
     const tickets = await Promise.all([501, 502].map(async ticket_id => ({ ticket_id, code: `HP-T${ticket_id}`, state: 'valid',
@@ -446,12 +454,14 @@ describe('scanner recovery and camera ownership', () => {
       else await applySyncResults(eventId, device, [{ action_uuid: action.action_uuid, ticket_id: 502, kind: 'admit', result: 'accepted' }])
       return action
     })
-    render(<ScannerPage />)
+    render(<ScannerVisit eventId={eventId} />)
     await findManifest(1)
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Ticket QR code'), 'unknown-501')
     await user.click(screen.getByRole('button', { name: 'Check in ticket' }))
     await waitFor(() => expect(releaseFirst).toBeDefined())
+    await user.click(screen.getByRole('button', { name: 'Restart scanner visit' }))
+    await findManifest(1)
     await user.type(screen.getByLabelText('Ticket QR code'), 'unknown-502')
     await user.click(screen.getByRole('button', { name: 'Check in ticket' }))
     await screen.findByText('Admission confirmed')

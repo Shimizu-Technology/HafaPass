@@ -5,6 +5,9 @@ module Admissions
   # payment, refund or dispute graph. These are current persisted states, not
   # saleable stock or physical occupancy. `remaining` is the legacy issued alias.
   class Counts
+    # Ruby String#blank?'s Unicode whitespace, independent of PostgreSQL locale.
+    BLANK_CHARACTERS = "\u0009\u000a\u000b\u000c\u000d \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000".freeze
+
     def self.call(event:)
       new(event).call
     end
@@ -59,11 +62,17 @@ module Admissions
           SELECT 1 FROM payments p WHERE p.order_id = o.id
             AND p.status IN (#{Payment.statuses.values_at('succeeded', 'partially_refunded').join(',')})
             AND p.amount_cents >= o.total_cents AND p.currency = o.currency
-            AND p.provider_payment_id ~ '[^[:space:]]' AND LEFT(p.provider_payment_id, 4) <> 'sim_'
+            AND #{present_sql('p.provider_payment_id')} AND LEFT(p.provider_payment_id, 4) <> 'sim_'
             AND (p.provider_payload -> 'simulated') IS DISTINCT FROM 'true'::jsonb
-            AND (p.provider <> 'stripe' OR (p.provider_environment IN (#{environments}) AND p.provider_platform_account_id ~ '[^[:space:]]'))
+            AND (p.provider <> 'stripe' OR (p.provider_environment IN (#{environments}) AND #{present_sql('p.provider_platform_account_id')}))
         ))
       SQL
+    end
+
+    def present_sql(column)
+      # Keep whitespace out of the literal while payment_predicate is squished.
+      characters = BLANK_CHARACTERS.codepoints.map { |point| "\\#{point.to_s(16).rjust(4, '0')}" }.join
+      "LENGTH(translate(#{column}, U&'#{characters}', '')) > 0"
     end
   end
 end

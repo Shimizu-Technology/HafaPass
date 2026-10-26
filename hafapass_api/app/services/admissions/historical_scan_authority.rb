@@ -123,7 +123,10 @@ module Admissions
     def normalize(state)
       state.dup.tap do |result|
         expiry = result["expires_at"]
-        result["expires_at"] = (expiry.respond_to?(:to_time) ? expiry.to_time : Time.iso8601(expiry)).getutc.iso8601(6) if expiry
+        # Generic grant audit images retain only milliseconds. Truncate every
+        # compared expiry to that precision; never round up or extend authority.
+        # The immutable download snapshot itself keeps its original six digits.
+        result["expires_at"] = (expiry.respond_to?(:to_time) ? expiry.to_time : Time.iso8601(expiry)).getutc.iso8601(3) if expiry
       end
     end
 

@@ -1,5 +1,6 @@
 import { openDB } from 'idb'
-import { currentScannerOwner } from './scannerAccountBinding'
+import apiClient, { getApiAuthContext } from '../api/client'
+import { captureScannerBindingContext, scannerBindingContextCurrent, currentScannerOwner } from './scannerAccountBinding'
 
 export { currentScannerOwner } from './scannerAccountBinding'
 
@@ -7,6 +8,35 @@ const DB_NAME = 'hafapass-admissions'
 const DB_VERSION = 2
 
 const manifestContextError = message => Object.assign(new Error(message), { manifestContextChanged: true })
+let legacyOwnerProof = null
+
+function currentLegacyOwner() {
+  const proof = legacyOwnerProof
+  if (proof && navigator.onLine && proof.owner === currentScannerOwner()
+    && proof.auth === getApiAuthContext() && scannerBindingContextCurrent(proof.binding)) return proof.legacy
+  legacyOwnerProof = null
+  return null
+}
+
+// An unsigned numeric ID in browser storage is never identity evidence. This
+// proof comes only from the authenticated /me response, fenced to its exact
+// Clerk session and binding. It permits journal reads, never scanner access.
+export async function verifyLegacyJournalOwner({ isCurrent = () => true, force = false } = {}) {
+  if (!force && isCurrent() && currentLegacyOwner()) return true
+  legacyOwnerProof = null
+  const owner = currentScannerOwner()
+  const auth = getApiAuthContext()
+  const binding = captureScannerBindingContext()
+  const current = () => isCurrent() && owner && owner === currentScannerOwner()
+    && auth === getApiAuthContext() && scannerBindingContextCurrent(binding)
+  if (!navigator.onLine || !auth?.ready || auth.userId !== owner || !current()) return false
+  const identities = await (await database()).getAll('journal_devices')
+  if (!current() || !identities.some(item => typeof item.owner_user_id === 'string' && item.owner_user_id.startsWith('legacy:'))) return false
+  const response = await apiClient.get('/me', { authContext: auth, timeout: 8000 })
+  if (!current() || response.data?.clerk_id !== owner || !Number.isSafeInteger(response.data?.id) || response.data.id <= 0) return false
+  legacyOwnerProof = { owner, auth, binding, legacy: `legacy:${response.data.id}` }
+  return true
+}
 
 const database = () => openDB(DB_NAME, DB_VERSION, {
   upgrade(db, oldVersion, _newVersion, transaction) {
@@ -355,7 +385,7 @@ export async function saveDevice(eventId, device, { isCurrent = () => true, cont
     const prior = previous?.owner_user_id === owner ? previous : null
     const pending = await transaction.objectStore('queue').index('event_device').getAll([Number(eventId), Number(device.id)])
     assertCurrent()
-    const legacy = device.user?.id ? await journal.get([`legacy:${device.user.id}`, Number(eventId)]) : null
+    const legacy = currentLegacyOwner() === `legacy:${device.user?.id}` ? await journal.get([currentLegacyOwner(), Number(eventId)]) : null
     assertCurrent()
     const ownedPending = pending.filter(action => action.owner_user_id === owner || (!action.owner_user_id && legacy?.device_id === device.id))
     for (const action of ownedPending.filter(action => !action.owner_user_id)) {
@@ -387,16 +417,23 @@ export async function pendingDeviceIdentities() {
   const owner = currentScannerOwner()
   if (!owner) return []
   const identities = await (await database()).getAll('journal_devices')
-  return owner === currentScannerOwner() ? identities.filter(item => item.owner_user_id === owner) : []
+  if (owner !== currentScannerOwner()) return []
+  const owned = identities.filter(item => item.owner_user_id === owner)
+  const legacy = identities.filter(item => item.owner_user_id === currentLegacyOwner()
+    && !owned.some(saved => saved.event_id === item.event_id && saved.device_id === item.device_id))
+  return [...owned, ...legacy.map(item => ({ ...item, legacy_owner_user_id: item.owner_user_id, owner_user_id: owner }))]
 }
 
-export async function loadPendingDeviceIdentity(eventId, verifiedBackendUserId = null) {
+export async function loadPendingDeviceIdentity(eventId) {
   const owner = currentScannerOwner()
   if (!owner) return null
   const db = await database()
   const identity = await db.get('journal_devices', [owner, Number(eventId)])
-  if (identity || !verifiedBackendUserId) return identity
-  return db.get('journal_devices', [`legacy:${Number(verifiedBackendUserId)}`, Number(eventId)])
+  if (owner !== currentScannerOwner()) return null
+  const legacyOwner = currentLegacyOwner()
+  if (identity || !legacyOwner) return identity
+  const legacy = await db.get('journal_devices', [legacyOwner, Number(eventId)])
+  return owner === currentScannerOwner() && currentLegacyOwner() === legacyOwner && legacy ? { ...legacy, owner_user_id: owner } : null
 }
 
 export async function loadDevice(eventId) {
@@ -535,8 +572,15 @@ export async function queueReversal({ eventId, deviceId, manifestVersion, ticket
 }
 
 export async function queuedActions(eventId, deviceId) {
-  const actions = await (await database()).getAllFromIndex('queue', 'event_device', [Number(eventId), Number(deviceId)])
-  return actions.filter(action => action.owner_user_id === currentScannerOwner()).sort((left, right) => left.sequence - right.sequence)
+  const owner = currentScannerOwner()
+  if (!owner) return []
+  const db = await database()
+  const actions = await db.getAllFromIndex('queue', 'event_device', [Number(eventId), Number(deviceId)])
+  const legacyOwner = currentLegacyOwner()
+  const legacy = legacyOwner ? await db.get('journal_devices', [legacyOwner, Number(eventId)]) : null
+  if (owner !== currentScannerOwner()) return []
+  return actions.filter(action => action.owner_user_id === owner || (!action.owner_user_id
+    && currentLegacyOwner() === legacyOwner && legacy?.device_id === Number(deviceId))).sort((left, right) => left.sequence - right.sequence)
 }
 
 export async function localScanState(eventId, ticketId) {

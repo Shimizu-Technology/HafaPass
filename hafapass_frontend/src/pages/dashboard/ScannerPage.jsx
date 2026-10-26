@@ -15,7 +15,7 @@ import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api
 import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime } from '../../utils/eventTime'
 import {
   applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
-  queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess,
+  queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess, verifyLegacyJournalOwner,
 } from '../../utils/admissionStore'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
 
@@ -138,6 +138,20 @@ function defaultScannerEvent(events, now = Date.now()) {
 // widens event selection. Abandoning the page aborts it immediately.
 const SCANNER_DEFAULT_LOOKUP_DEADLINE_MS = 4000
 const UNKNOWN_REFRESH_INTERVAL_MS = 5000
+const scannerPolicyMessages = {
+  refused: 'Reconnect and verify scanner access before scanning.',
+  authorizationExpired: 'This scanner authorization expired. Reconnect before scanning.',
+  manifestExpired: 'The saved ticket list is missing or expired. Reconnect before scanning.',
+}
+const scannerPolicyError = policy => Object.assign(new Error(scannerPolicyMessages[policy]), { scannerPolicy: policy })
+
+function retryDelayMs(error) {
+  const value = error.response?.headers?.['retry-after'] ?? error.response?.data?.retry_after
+  const seconds = value == null || value === '' ? NaN : Number(value)
+  const date = typeof value === 'string' && !Number.isFinite(seconds) ? Date.parse(value) : NaN
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Number.isFinite(date) ? date - Date.now() : 15_000
+  return Math.min(300_000, Math.max(5000, delay))
+}
 
 async function scannerDefaultCandidates(config, q) {
   const parent = config.signal
@@ -253,6 +267,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [searching, setSearching] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [credentialBusy, setCredentialBusy] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const [sessionCount, setSessionCount] = useState(0)
 
@@ -265,6 +280,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const credentialInFlightRef = useRef(false)
   const unknownRefreshRef = useRef({ scope: null, after: 0 })
   const syncRetryAfterRef = useRef(0)
+  const syncRetryTimerRef = useRef(null)
+  const syncQueueRef = useRef(null)
+  const onlineRef = useRef(online)
+  onlineRef.current = online
   const setupGenerationRef = useRef(0)
   const mountedRef = useRef(false)
   const presentationRef = useRef(0)
@@ -286,9 +305,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const refusedAccessRef = useRef(new Set())
   const routeScopeRef = useRef(null)
   routeScopeRef.current = JSON.stringify([routeScope, selectionVisit])
+  const cancelSyncRetry = useCallback(() => {
+    window.clearTimeout(syncRetryTimerRef.current)
+    syncRetryTimerRef.current = null
+    syncRetryAfterRef.current = 0
+  }, [])
 
   useEffect(() => {
     const abortReads = () => {
+      cancelSyncRetry()
       ++privateReadGenerationRef.current
       searchRequestRef.current?.abort()
       downloadRequestRef.current?.abort()
@@ -301,12 +326,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     abortReads()
     const unsubscribe = subscribeApiAuthContext(abortReads)
     return () => { unsubscribe(); abortReads() }
-  }, [eventId, location.key])
+  }, [eventId, location.key, cancelSyncRetry])
 
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false; setupGenerationRef.current += 1 }
-  }, [])
+    return () => { mountedRef.current = false; setupGenerationRef.current += 1; cancelSyncRetry() }
+  }, [cancelSyncRetry])
+
+  useEffect(() => cancelSyncRetry, [eventId, device?.id, online, cancelSyncRetry])
 
   const ticketsByHash = useMemo(
     () => new Map((manifest?.payload?.tickets || []).map(ticket => [ticket.credential_hash, ticket])),
@@ -336,6 +363,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   }, [])
 
   const withdrawPresentation = useCallback(() => {
+    cancelSyncRetry()
+    credentialInFlightRef.current = false
+    setCredentialBusy(false)
     ++setupGenerationRef.current
     ++presentationRef.current
     ++privateReadGenerationRef.current
@@ -361,7 +391,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setPendingCount(0)
     setError(null)
     setSetupBusy(true)
-  }, [stopCamera])
+  }, [stopCamera, cancelSyncRetry])
 
   useLayoutEffect(() => {
     // Withdraw private presentation before the next paint, keeping the journal.
@@ -516,7 +546,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     try {
       response = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${selectedDevice.id}/manifest`, { timeout: 8000 })
     } catch (manifestError) {
-      if ([401, 403, 404, 410, 422].includes(manifestError.response?.status)) {
+      manifestError.manifestUnavailable = manifestError.response?.status === 422
+      if ([401, 403, 404, 410].includes(manifestError.response?.status)) {
         const removed = await purgeExpiredAdmissionAccess(selectedEventId, { context })
         manifestError.scannerAccessRefused = true
         manifestError.scannerAccessPurged = removed && current()
@@ -565,11 +596,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       ? admissionAcknowledgement(existing, receipt) : existing)
   }, [])
 
-  const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false } = {}) => {
+  const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false, automaticRetry = false } = {}) => {
     if (!selectedEventId || !selectedDevice || selectedDevice.owner_user_id !== currentScannerOwner() || !online || syncingRef.current || (quiet && Date.now() < syncRetryAfterRef.current)) return
     const owner = currentScannerOwner()
     const generation = setupGenerationRef.current
-    const current = () => owner === currentScannerOwner() && eventIdRef.current === String(selectedEventId) && generation === setupGenerationRef.current
+    const auth = getApiAuthContext()
+    const organizationId = window.localStorage.getItem('hafapass_organization_id')
+    const current = () => mountedRef.current && owner === currentScannerOwner() && eventIdRef.current === String(selectedEventId)
+      && generation === setupGenerationRef.current && auth === getApiAuthContext()
+      && organizationId === window.localStorage.getItem('hafapass_organization_id')
     const ownsJournal = async () => {
       const identity = await loadPendingDeviceIdentity(selectedEventId)
       return current() && identity?.device_id === selectedDevice.id
@@ -659,6 +694,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         remaining = pendingAfterSync
       }
       if (!await ownsJournal()) return
+      cancelSyncRetry()
       await refreshPending(selectedEventId, currentDevice)
       const retainedAccess = await loadDevice(selectedEventId)
       if (!current()) return
@@ -673,11 +709,24 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       setDevice(currentDevice)
       if (!quiet || refreshRequired) await Promise.all([downloadManifest(selectedEventId, currentDevice), fetchDashboard(selectedEventId)])
     } catch (syncError) {
-      if (syncError.response?.status === 429 || !syncError.response || syncError.response.status >= 500) {
-        const seconds = Number(syncError.response?.headers?.['retry-after'] || syncError.response?.data?.retry_after)
-        syncRetryAfterRef.current = Date.now() + Math.min(300_000, Math.max(5000, Number.isFinite(seconds) ? seconds * 1000 : 15_000))
-      }
       if (!current()) return
+      if (syncError.response?.status === 429 || !syncError.response || syncError.response.status >= 500) {
+        const delay = retryDelayMs(syncError)
+        window.clearTimeout(syncRetryTimerRef.current)
+        syncRetryTimerRef.current = null
+        syncRetryAfterRef.current = Date.now() + delay
+        // One automatic follow-up per user/connectivity attempt. A continuing
+        // outage retains the journal for manual retry rather than polling.
+        if (!automaticRetry) syncRetryTimerRef.current = window.setTimeout(async () => {
+          syncRetryTimerRef.current = null
+          if (!current() || !onlineRef.current || hasStoredRefusal(owner, selectedEventId)) return
+          try {
+            const access = await loadAuthorizedScanner(selectedEventId)
+            if (!current() || !onlineRef.current || access?.device.id !== selectedDevice.id) return
+            void syncQueueRef.current?.({ selectedEventId, selectedDevice: access.device, quiet: true, automaticRetry: true })
+          } catch { /* Keep the journal if storage or access cannot be verified. */ }
+        }, delay)
+      }
       try {
         if (!await ownsJournal()) return
       } catch {
@@ -688,7 +737,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       }
       if (syncError.scannerAccessRefused) {
         if (syncError.scannerAccessPurged) setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
-      } else if ([401, 403, 404, 410, 422].includes(syncError.response?.status)) {
+      } else if ([401, 403, 404, 410, 422].includes(syncError.response?.status) && !syncError.manifestUnavailable) {
         if (!await purgeExpiredAdmissionAccess(selectedEventId, { context: failureContext }) || !current()) return
         if (eventIdRef.current === String(selectedEventId)) { setDevice(null); setManifest(null); setRecoveryDevice(null) }
         setError(syncError.response?.data?.error || 'Scanner authorization was refused. Saved scans remain available to the original staff account after access is restored.')
@@ -708,7 +757,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       syncingRef.current = false
       setSyncing(false)
     }
-  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online, reconcileStoredResult])
+  }, [device, downloadManifest, eventId, fetchDashboard, refreshPending, online, reconcileStoredResult, cancelSyncRetry])
+  syncQueueRef.current = syncQueue
 
   const configureEvent = useCallback(async selectedEventId => {
     if (!selectedEventId) return
@@ -740,15 +790,16 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       if (!current()) return
       if (online) {
         let networkPhase = true
+        let manifestRequest = false
         let failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
         try {
           if (!current()) return
           let previousIdentity = await loadPendingDeviceIdentity(selectedEventId)
           if (!current()) return
           if (!previousIdentity) {
-            const me = await apiClient.get('/me')
+            await verifyLegacyJournalOwner({ isCurrent: current })
             if (!current()) return
-            previousIdentity = await loadPendingDeviceIdentity(selectedEventId, me.data.id)
+            previousIdentity = await loadPendingDeviceIdentity(selectedEventId)
           }
           if (!current()) return
           const registration = await apiClient.post(`/organizer/events/${selectedEventId}/scanner_devices`, {
@@ -763,6 +814,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           if (current()) setRecoveryDevice(registeredDevice)
           await refreshPending(selectedEventId, registeredDevice)
           networkPhase = true
+          manifestRequest = true
           failureContext = await captureAdmissionAccessContext(selectedEventId, { isCurrent: current })
           const downloaded = await apiClient.get(`/organizer/events/${selectedEventId}/scanner_devices/${registration.data.id}/manifest`)
           networkPhase = false
@@ -778,7 +830,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           if (current()) await fetchDashboard(selectedEventId).catch(() => {})
         } catch (connectionError) {
           // Explicit authorization failures invalidate local trust. Dependency outages do not.
-          if (connectionError.response?.status >= 400 && connectionError.response.status < 500 && ![408, 429].includes(connectionError.response.status)) {
+          if ([401, 403, 404, 410].includes(connectionError.response?.status)
+            || (connectionError.response?.status === 422 && !manifestRequest)) {
             if (!await purgeExpiredAdmissionAccess(selectedEventId, { context: failureContext }) || !current()) return
             if (current()) setRecoveryDevice(null)
             throw connectionError
@@ -1030,13 +1083,16 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     const generation = setupGenerationRef.current
     const current = () => mountedRef.current && owner && device?.owner_user_id === owner && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
+    const credentialOwner = Symbol('credential')
+    credentialInFlightRef.current = credentialOwner
+    setCredentialBusy(true)
     try {
-      if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw new Error('Reconnect and verify scanner access before scanning.')
+      if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw scannerPolicyError('refused')
       if (!device?.effective || new Date(device.authorization_expires_at).getTime() <= Date.now()) {
-        throw new Error('This scanner authorization expired. Reconnect before scanning.')
+        throw scannerPolicyError('authorizationExpired')
       }
       if (!manifest || new Date(manifest.payload.expires_at).getTime() <= Date.now()) {
-        throw new Error('The saved ticket list is missing or expired. Reconnect before scanning.')
+        throw scannerPolicyError('manifestExpired')
       }
       const hash = await sha256Hex(credentialValue(raw))
       if (!current() || currentManifestRef.current?.digest !== manifest.digest) return
@@ -1048,14 +1104,12 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           showResult({ type: 'warning', message: 'Ticket not verified yet', detail: 'Ticket-list refresh is paused briefly. Wait a few seconds and retry, or use Sync now. Do not admit until verified.' })
           return
         }
-        credentialInFlightRef.current = true
         unknownRefreshRef.current = { scope, after: Date.now() + UNKNOWN_REFRESH_INTERVAL_MS }
         showResult({ type: 'pending', message: 'Checking the latest ticket list', detail: 'Keep this guest at the gate while this ticket is verified.' })
         try {
           scanManifest = await downloadManifest(eventId, device)
         } catch (refreshError) {
-          const seconds = Number(refreshError.response?.headers?.['retry-after'] || refreshError.response?.data?.retry_after)
-          unknownRefreshRef.current.after = Date.now() + Math.min(300_000, Math.max(5000, Number.isFinite(seconds) ? seconds * 1000 : 15_000))
+          unknownRefreshRef.current.after = Date.now() + retryDelayMs(refreshError)
           throw refreshError
         }
         if (!current() || !scanManifest || currentManifestRef.current?.digest !== scanManifest.digest) return
@@ -1067,10 +1121,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         return
       }
       await admitEntry(ticket, hash, startedAt, 'locally_accepted', presentation, scanManifest)
-    } catch {
-      if (current()) showResult({ type: 'error', message: 'Scanner unavailable', detail: 'Ticket could not be verified. Do not admit yet. Retry while connected or ask a door manager. Saved scans remain on this device.', latency: performance.now() - startedAt })
+    } catch (scanError) {
+      const policyMessage = Object.hasOwn(scannerPolicyMessages, scanError.scannerPolicy) ? scannerPolicyMessages[scanError.scannerPolicy] : null
+      if (current()) showResult({ type: 'error', message: policyMessage ? 'Scanner access needs verification' : 'Scanner unavailable', detail: policyMessage || 'Ticket could not be verified. Do not admit yet. Retry while connected or ask a door manager. Saved scans remain on this device.', latency: performance.now() - startedAt })
     } finally {
-      credentialInFlightRef.current = false
+      if (credentialInFlightRef.current === credentialOwner) {
+        credentialInFlightRef.current = false
+        if (mountedRef.current) setCredentialBusy(false)
+      }
     }
   }, [admitEntry, device, downloadManifest, eventId, manifest, online, showResult, ticketsByHash])
 
@@ -1353,9 +1411,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
           <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">A valid ticket will be recorded as admitted. Camera not working? Paste the QR code or link from the ticket. For a ticket number such as HP-T123, use attendee lookup below.</p>
           <label htmlFor="manual-ticket-code" className="mb-1 block text-sm font-medium text-neutral-800">Ticket QR code</label>
-          <form onSubmit={event => { event.preventDefault(); processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
+          <form onSubmit={event => { event.preventDefault(); if (credentialInFlightRef.current) return; processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
             <input value={manualCode} onChange={event => setManualCode(event.target.value)} id="manual-ticket-code" className="input min-w-0 flex-1" aria-describedby="manual-ticket-help" placeholder="Paste ticket QR code or link" disabled={!ready} />
-            <button className="btn-primary" disabled={!ready || !manualCode.trim()}>Check in ticket</button>
+            <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy}>{credentialBusy ? 'Checking ticket…' : 'Check in ticket'}</button>
           </form>
         </section>
 

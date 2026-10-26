@@ -6,6 +6,7 @@ module Admissions
   # evidence bounds the review; it does not make the journal tamper-proof.
   class JournalRecovery < Reconciler
     MAX_AGE = 48.hours
+    WINDOW_FORMAT = /\A\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))\z/
 
     def self.call(**)
       AuditContext.set(fail_open: false) { new(**).call }
@@ -14,10 +15,8 @@ module Admissions
     def initialize(reason:, window_start:, window_end:, **options)
       super(**options)
       @reason = reason.to_s.strip
-      @window_start = Time.iso8601(window_start.to_s)
-      @window_end = Time.iso8601(window_end.to_s)
-    rescue ArgumentError
-      raise SyncError, "Review requires an explicit ISO-8601 historical window"
+      @window_start = parse_window(window_start)
+      @window_end = parse_window(window_end)
     end
 
     def call
@@ -36,6 +35,20 @@ module Admissions
     end
 
     private
+
+    def parse_window(value)
+      string = value.to_s
+      parts = WINDOW_FORMAT.match(string)
+      unless parts && parts[1].to_i < 24 && parts[2].to_i < 60 && parts[3].to_i < 60 &&
+          parts[4].to_i < 24 && parts[5].to_i < 60
+        raise SyncError, "Review requires an explicit ISO-8601 historical window"
+      end
+
+      Date.iso8601(string.first(10)) # Time.iso8601 alone normalizes invalid calendar dates.
+      Time.iso8601(string)
+    rescue ArgumentError
+      raise SyncError, "Review requires an explicit ISO-8601 historical window"
+    end
 
     def validate_authorization!
       %i[scan manage_staff manage_attendees].each do |permission|
@@ -67,22 +80,7 @@ module Admissions
       manifest = manifest_for(input.fetch(:manifest_version))
       raise SyncError, "No known manifest for this event" unless manifest
 
-      # Do not accept an arbitrary event manifest never issued to this device.
-      downloads = AuditLog.where(auditable: device, action: "scanner_device.manifest_downloaded")
-        .where("after_data ->> 'manifest_version' = ?", manifest.version.to_s).order(:id)
-      evidence = downloads.filter_map do |download|
-        downloaded_at = Time.iso8601(download.after_data.fetch("downloaded_at"))
-        lease = download.after_data["lease_expires_at"]
-        # Legacy downloads did not snapshot the lease. Use the recorded grant
-        # preceding that download, never today's renewed authorization.
-        lease ||= AuditLog.where(auditable: device, action: "scanner_device.authorized")
-          .where("occurred_at <= ?", download.occurred_at).order(:id).last&.after_data&.fetch("authorization_expires_at", nil)
-        next unless lease
-
-        [downloaded_at, Time.iso8601(lease), download]
-      rescue KeyError, ArgumentError, TypeError
-        nil
-      end
+      evidence = evidence_for(manifest)
       occurred = input.fetch(:occurred_at)
       stop = [manifest.expires_at, device.revoked_at].compact.min
       valid = occurred >= @window_start && occurred < @window_end && occurred >= manifest.generated_at &&
@@ -98,6 +96,29 @@ module Admissions
       entry = entries_for(manifest)[input[:ticket_id].to_i]
       unless entry && entry["state"] == "valid" && secure_equal?(entry["credential_hash"], input[:credential_hash])
         raise SyncError, "Recovery requires a ticket eligible in the known downloaded manifest"
+      end
+    end
+
+    def evidence_for(manifest)
+      @evidence ||= {}
+      return @evidence[manifest.id] if @evidence.key?(manifest.id)
+
+      # Only immutable download/lease evidence is cached for this batch. Each
+      # action still checks its own clock, authority interval and ticket state.
+      downloads = AuditLog.where(auditable: device, action: "scanner_device.manifest_downloaded")
+        .where("after_data ->> 'manifest_version' = ?", manifest.version.to_s).order(:id)
+      @evidence[manifest.id] = downloads.filter_map do |download|
+        downloaded_at = Time.iso8601(download.after_data.fetch("downloaded_at"))
+        lease = download.after_data["lease_expires_at"]
+        # Legacy downloads did not snapshot the lease. Use the recorded grant
+        # preceding that download, never today's renewed authorization.
+        lease ||= AuditLog.where(auditable: device, action: "scanner_device.authorized")
+          .where("occurred_at <= ?", download.occurred_at).order(:id).last&.after_data&.fetch("authorization_expires_at", nil)
+        next unless lease
+
+        [downloaded_at, Time.iso8601(lease), download]
+      rescue KeyError, ArgumentError, TypeError
+        nil
       end
     end
 

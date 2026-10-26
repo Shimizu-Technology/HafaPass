@@ -152,4 +152,87 @@ RSpec.describe "Historical admission authority intervals", type: :request do
     expect(response).to have_http_status(:ok)
     expect(@tickets.first.reload).to be_checked_in
   end
+  %w[membership assignment legacy].each do |kind|
+    it "uses conservative millisecond expiry for persisted sub-ms #{kind} images, shortening and re-grant gaps" do
+      original = @start + 5.hours + Rational(123789, 1_000_000)
+      @member.update!(expires_at: original)
+      @assignment.update!(expires_at: original)
+      download(legacy: kind == "legacy")
+      proof = AuditLog.where(auditable: @device, action: "scanner_device.manifest_downloaded").last!
+      unless kind == "legacy"
+        expect(proof.after_data.dig("scan_authority", "memberships", 0, "expires_at")).to eq(original.getutc.iso8601(6))
+      end
+      travel_to(@start + 1.hour)
+      boundary = @start + 2.hours + Rational(456789, 1_000_000)
+      kind == "assignment" ? assignment_update(expires_at: boundary.iso8601(6)) : member_update(expires_at: boundary.iso8601(6))
+      row = kind == "assignment" ? @assignment.reload : @member.reload
+      audit = AuditLog.where(auditable: row, action: kind == "assignment" ? "event_staff.updated" : "organization.membership_updated").last!
+      expect(row.expires_at.usec).to eq(456789)
+      expect(audit.after_data.fetch("expires_at")).to eq(boundary.getutc.iso8601(3))
+      travel_to(@start + 3.hours)
+      renewed = @start + 5.hours + Rational(987654, 1_000_000)
+      kind == "assignment" ? assignment_update(expires_at: renewed.iso8601(6)) : member_update(expires_at: renewed.iso8601(6))
+      retire_and_review
+      # Refuse at the truncated deadline, within its sub-ms uncertainty, just
+      # beyond the actual expiry, and in the gap before the new grant.
+      [boundary - Rational(789, 1_000_000), boundary - Rational(1, 1_000_000), boundary + Rational(1, 1_000_000), @start + 150.minutes].each do |at|
+        import([input(at)])
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(@device.reload.last_sequence).to eq(0)
+        expect(@event.admission_actions).not_to exist
+      end
+      import([input(boundary - Rational(1, 1000))])
+      expect(response).to have_http_status(:ok)
+      expect(@tickets.first.reload).to be_checked_in
+      import([input(@start + 3.hours + 1.minute, index: 1, sequence: 2)])
+      expect(response).to have_http_status(:ok)
+      expect(@device.reload).to be_status_revoked
+    end
+  end
+
+  %w[membership assignment].each do |kind|
+    it "accepts role-only #{kind} audits retaining a fractional expiry without manufacturing an expiry change" do
+      expiry = @start + 5.hours + Rational(123789, 1_000_000)
+      @member.update!(expires_at: expiry)
+      @assignment.update!(expires_at: expiry)
+      download
+      travel_to(@start + 1.hour)
+      if kind == "membership"
+        member_update(role: "manager", expires_at: expiry.iso8601(6))
+      else
+        patch "#{@base}/staff_assignments/#{@assignment.id}", params: { role: "manager", expires_at: expiry.iso8601(6) }, headers: @headers, as: :json
+        expect(response).to have_http_status(:ok)
+        audit = AuditLog.where(auditable: @assignment, action: "event_staff.updated").last!
+        expect(audit.before_data).not_to have_key("expires_at")
+        expect(audit.after_data.fetch("expires_at")).to eq(expiry.getutc.iso8601(3))
+      end
+      retire_and_review
+      import([input(@start + 30.minutes), input(@start + 2.hours, index: 1, sequence: 2)])
+      expect(response).to have_http_status(:ok)
+      expect(@tickets.map { |ticket| ticket.reload.status }).to eq(%w[checked_in checked_in])
+    end
+  end
+
+  it "preserves a grant gap before a newly created fractional-expiry assignment" do
+    member_update(role: "manager")
+    delete "#{@base}/staff_assignments/#{@assignment.id}", headers: @headers
+    expect(response).to have_http_status(:no_content)
+    download
+    travel_to(@start + 1.hour)
+    member_update(role: "finance")
+    travel_to(@start + 2.hours)
+    expiry = @start + 3.hours + Rational(987654, 1_000_000)
+    post "#{@base}/staff_assignments", params: { user_id: @staff.id, role: "manager", expires_at: expiry.iso8601(6) }, headers: @headers, as: :json
+    expect(response).to have_http_status(:created)
+    retire_and_review
+    import([input(@start + 90.minutes)])
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(@event.admission_actions).not_to exist
+    import([input(expiry + Rational(1, 1_000_000))])
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(@device.reload.last_sequence).to eq(0)
+    import([input(@start + 150.minutes)])
+    expect(response).to have_http_status(:ok)
+    expect(@tickets.first.reload).to be_checked_in
+  end
 end

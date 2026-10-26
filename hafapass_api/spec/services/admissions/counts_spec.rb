@@ -63,4 +63,27 @@ RSpec.describe Admissions::Counts do
       expect(instantiated).to be_empty
     end
   end
+  it "matches Ruby blankness for provider IDs across explicit Unicode whitespace and real PostgreSQL" do
+    # Exercise the locale where POSIX SQL space classes miss Unicode blanks.
+    # Transactional DDL affects only this example in its isolated test database.
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      ALTER TABLE payments
+        ALTER COLUMN provider_payment_id TYPE varchar COLLATE "C",
+        ALTER COLUMN provider_platform_account_id TYPE varchar COLLATE "C"
+    SQL
+    settings = SiteSetting.instance
+    allow(SiteSetting).to receive(:instance).and_return(settings)
+    allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+    allow(settings).to receive(:payment_mode).and_return("live")
+    payment = create(:payment, :succeeded, order: order, provider_environment: "live")
+    whitespace = (0x09..0x0d).to_a + [0x20, 0x85, 0xa0, 0x1680] + (0x2000..0x200a).to_a + [0x2028, 0x2029, 0x202f, 0x205f, 0x3000]
+    ["provider_payment_id", "provider_platform_account_id"].each do |field|
+      (whitespace.map { |code| code.chr(Encoding::UTF_8) } + ["", " \u00a0\t", "\u200b", "\ufeff", "x\u00a0"]).each do |value|
+        Payment.where(id: payment.id).update_all({ "provider_payment_id" => "pi_whitespace", "provider_platform_account_id" => "acct_whitespace" }.merge(field => value))
+        expected = ticket.reload.admission_allowed? ? 1 : 0
+        expect(expected).to eq(value.present? ? 1 : 0), "Ruby #{field} U+#{value.codepoints.inspect}"
+        expect(described_class.call(event: event)[:eligible_unadmitted]).to eq(expected), "SQL #{field} U+#{value.codepoints.inspect}"
+      end
+    end
+  end
 end
