@@ -7,10 +7,16 @@ RSpec.describe ExternalMessageReceipts, :webmock do
   def clean_test_data(connection = ApplicationRecord.connection)
     configuration = connection.pool.db_config.configuration_hash
     database = connection.select_value("SELECT current_database()")
-    # CI connects through localhost to Docker's private server address. Verify
-    # the local client target and actual database, not inet_server_addr().
+    hostaddr = configuration[:hostaddr].to_s
+    hostaddr = ENV["PGHOSTADDR"].to_s if hostaddr.empty?
+    service = configuration[:service].to_s
+    service = ENV["PGSERVICE"].to_s if service.empty?
+    # Docker has a private server address. Require a loopback client destination,
+    # including independent address overrides, rather than inet_server_addr().
     raise "Local test database required" unless Rails.env.test? && database.end_with?("_test") &&
-      database == configuration[:database] && %w[localhost 127.0.0.1 ::1].include?(configuration[:host])
+      database == configuration[:database] && %w[localhost 127.0.0.1 ::1].include?(configuration[:host]) &&
+      service.empty? && ["", "127.0.0.1", "::1"].include?(hostaddr) &&
+      %w[127.0.0.1 ::1].include?(connection.raw_connection.hostaddr)
 
     connection.execute("TRUNCATE audit_logs, audit_write_failures, users, events, message_deliveries, message_provider_events, site_settings RESTART IDENTITY CASCADE")
   end
@@ -28,6 +34,28 @@ RSpec.describe ExternalMessageReceipts, :webmock do
       connection = double(pool: double(db_config: configuration), select_value: actual)
       expect(connection).not_to receive(:execute)
       expect { clean_test_data(connection) }.to raise_error("Local test database required")
+    end
+  end
+
+  [
+    ["configured remote hostaddr", { hostaddr: "192.0.2.1" }, {}, "127.0.0.1"],
+    ["mixed hostaddr list", { hostaddr: "127.0.0.1,192.0.2.1" }, {}, "127.0.0.1"],
+    ["configured service", { service: "unverified_service" }, {}, "127.0.0.1"],
+    ["inherited remote hostaddr", {}, { "PGHOSTADDR" => "192.0.2.1" }, "127.0.0.1"],
+    ["inherited service", {}, { "PGSERVICE" => "unverified_service" }, "127.0.0.1"],
+    ["remote active client address", {}, {}, "192.0.2.1"],
+    ["missing active client address", {}, {}, ""]
+  ].each do |label, options, environment, peer|
+    it "refuses cleanup with #{label} without truncating" do
+      original = %w[PGHOSTADDR PGSERVICE].to_h { |key| [key, ENV[key]] }
+      environment.each { |key, value| ENV[key] = value }
+      configuration = double(configuration_hash: { host: "localhost", database: "isolated_test" }.merge(options))
+      connection = double(pool: double(db_config: configuration), select_value: "isolated_test",
+        raw_connection: double(hostaddr: peer))
+      expect(connection).not_to receive(:execute)
+      expect { clean_test_data(connection) }.to raise_error("Local test database required")
+    ensure
+      original&.each { |key, value| ENV[key] = value }
     end
   end
 
