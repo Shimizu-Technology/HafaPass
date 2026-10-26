@@ -28,7 +28,7 @@ const actionLabel = (action, item) => {
 function availableActions(item, admin, canRecordCash) {
   const actions = []
   if (admin && ((['refund', 'cancellation'].includes(item.type) && ['failed', 'cancelled'].includes(item.status)) || (item.type === 'request' && item.status === 'request_unexecuted'))) actions.push('retry')
-  if (admin && item.type === 'refund' && item.status === 'pending') actions.push('resync')
+  if (admin && ((item.type === 'refund' && item.status === 'pending') || item.type === 'exception')) actions.push('resync')
   if ((canRecordCash && returnKind(item) === 'cash') || (admin && returnKind(item))) actions.push('manual_return')
   if (admin) actions.push('unable')
   return actions
@@ -39,6 +39,7 @@ const issueLabel = status => ({
   waiting_on_pending_refund: 'Waiting for Stripe',
   waiting_on_dispute: 'Waiting for dispute',
   dispute_open: 'Dispute open',
+  provider_review: 'External refund needs verification',
 })[status] || adminLabel(status)
 
 function ActionDialog({ item, action, onClose, onAction, busy }) {

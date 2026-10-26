@@ -13,28 +13,6 @@ module Commerce
       new(**).call
     end
 
-    def self.reconcile_provider_total!(order:, payment:, amount_cents:, provider_refund_id:, idempotency_key:)
-      succeeded_total = payment.refunds.succeeded.sum(:amount_cents)
-      delta = amount_cents.to_i - succeeded_total
-      return if delta <= 0
-
-      provider_refund = OpenStruct.new(id: provider_refund_id, status: "succeeded")
-      pending = order.refunds.pending.find_by(payment: payment, provider_refund_id: provider_refund_id)
-      unless pending
-        candidates = order.refunds.pending.where(payment: payment, amount_cents: delta, provider_refund_id: nil)
-        pending = candidates.first if candidates.count == 1
-      end
-      creator = new(
-        order: order,
-        payment: payment,
-        amount_cents: delta,
-        reason: "provider_webhook_reconciliation",
-        idempotency_key: pending&.idempotency_key || idempotency_key,
-        provider_refund: provider_refund
-      )
-      creator.call
-    end
-
     def self.reconcile_refund!(refund:, provider_refund:)
       new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key,
         provider_refund: provider_refund).send(:finalize_refund!, refund, provider_refund)
@@ -135,7 +113,7 @@ module Commerce
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
         next validate_replay!(existing) if existing
-        unless order.completed? || order.partially_refunded?
+        unless order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
 
@@ -235,9 +213,27 @@ module Commerce
     end
 
     def ensure_financial_review_resolved!
-      return unless RefundSafety.finance_review_required?(order)
+      ignored_codes = refundable_late_capture? ? %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry] : []
+      return unless RefundSafety.finance_review_required?(order, except_codes: ignored_codes)
 
       raise RefundError, "Refund needs finance review; contact support before submitting another request"
+    end
+
+    # A verified late capture is money owed back, never a new fulfillment.
+    # Require the released, unfulfilled reservation and the exact captured sum.
+    def refundable_late_capture?
+      return false unless order.cancelled? || order.expired? || order.partially_refunded?
+      return false if order.completed_at.present? || order.tickets.exists?
+      return false if order.inventory_holds.where.not(status: [:released, :expired]).exists? ||
+        order.catalog_item_holds.where.not(status: [:released, :expired]).exists?
+
+      captures = order.payments.where(status: [:succeeded, :partially_refunded])
+      payment = captured_payment || (captures.sole if captures.count == 1)
+      payment && payment.order_id == order.id && payment.provider == "stripe" &&
+        %w[test live].include?(payment.provider_environment) && payment.succeeded_at.present? &&
+        payment.amount_cents == order.total_cents && payment.currency == order.currency &&
+        ReconciliationException.where(order: order, payment: payment,
+          code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
     end
 
     def lock_selected_tickets!
@@ -434,6 +430,7 @@ module Commerce
           stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
         )
         update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+        resolve_repaid_late_capture!(refund)
         audit_refund!(refund, "succeeded", outcome: "succeeded",
           source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
         AuditLogger.record!(action: "order.#{full_refund ? 'refunded' : 'partially_refunded'}",
@@ -529,8 +526,20 @@ module Commerce
       payment.update!(status: succeeded_total >= payment.amount_cents ? :refunded : :partially_refunded)
     end
 
+    def resolve_repaid_late_capture!(refund)
+      return unless refund.payment.refunded? && refund.order.completed_at.nil? && refund.order.tickets.empty?
+
+      ReconciliationException.open.where(order: refund.order, payment: refund.payment,
+        code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).find_each(&:resolve!)
+    end
+
     def release_fully_refunded_inventory!(refund)
       refunded_order = refund.order
+      if refunded_order.completed_at.nil? && refunded_order.tickets.empty? &&
+          ReconciliationException.where(order: refunded_order, payment: refund.payment,
+            code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
+        return
+      end
       refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end

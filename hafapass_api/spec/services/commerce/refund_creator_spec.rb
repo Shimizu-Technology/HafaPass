@@ -265,13 +265,8 @@ RSpec.describe Commerce::RefundCreator do
     )
 
     expect do
-      result = described_class.reconcile_provider_total!(
-        order: order,
-        payment: payment,
-        amount_cents: 1000,
-        provider_refund_id: "re_webhook",
-        idempotency_key: "webhook-refund"
-      )
+      result = described_class.reconcile_refund!(refund: pending,
+        provider_refund: OpenStruct.new(id: "re_webhook", status: "succeeded", amount: 1000, currency: "usd"))
       expect(result.id).to eq(pending.id)
       expect(result).to be_succeeded
       expect(result.provider_refund_id).to eq("re_webhook")

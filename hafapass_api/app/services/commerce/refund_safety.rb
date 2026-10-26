@@ -13,10 +13,10 @@ module Commerce
       refund_aggregate_requires_reconciliation
     ].freeze
 
-    def self.finance_review_required?(order)
+    def self.finance_review_required?(order, except_codes: [])
       return false unless order
 
-      relevant = ReconciliationException.open.where(code: FINANCIAL_CODES)
+      relevant = ReconciliationException.open.where(code: FINANCIAL_CODES - except_codes)
       relevant.where(order_id: order.id).or(relevant.where(payment_id: order.payments.select(:id))).exists?
     end
   end

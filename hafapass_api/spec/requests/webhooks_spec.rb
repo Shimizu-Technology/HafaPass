@@ -283,7 +283,7 @@ RSpec.describe "Stripe webhooks", type: :request do
     post_stripe_event(
       "charge.refunded",
       { id: "ch_refunded", payment_intent: "pi_provider_refund", amount_refunded: checkout.payment.amount_cents,
-        currency: "usd", refunds: { data: [{ id: "re_actual_provider_refund", status: "succeeded" }] } },
+        currency: "usd", refunds: { data: [{ id: "re_actual_provider_refund", status: "succeeded", amount: checkout.payment.amount_cents, currency: "usd" }] } },
       event_id: "evt_provider_refund"
     )
 
@@ -583,6 +583,12 @@ RSpec.describe "Stripe webhooks", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(checkout.payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(500)
+      unless includes_operation_amount
+        expect(second_payment.reload.refunds).to be_empty
+        expect(checkout.order.reconciliation_exceptions).to exist(code: "refund_aggregate_requires_reconciliation")
+        expect(RefundReconciliationQueue.new(event_id: checkout.order.event_id).entries).to include(include(type: "exception"))
+        next
+      end
       expect(second_payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(750)
       expect(checkout.order.reload.refunded_cents).to eq(1250)
       expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)

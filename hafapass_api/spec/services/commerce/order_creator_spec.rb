@@ -108,6 +108,46 @@ RSpec.describe Commerce::OrderCreator do
     end.to raise_error(described_class::CheckoutError, /Only 0 door tickets remain/)
   end
 
+  [nil, 1].each do |allocation|
+    %w[door_cash door_card].each do |method|
+      it "F08 sells the cashier's last held seat with #{method} and door allocation #{allocation.inspect}" do
+        allow(EmailService).to receive(:send_order_confirmation_async)
+        event.update!(venue: create(:venue), max_capacity: 1)
+        ticket_type.update!(quantity_available: 1, door_allocation: allocation)
+        configuration = create(:event_seating_configuration, event: event)
+        seat = create(:event_seat, event_seating_configuration: configuration, ticket_type: ticket_type)
+        hold = Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id],
+          accessibility_attested: false, source: "box_office")
+        expect(ticket_type.reload.door_available_quantity).to eq(0)
+        expect do
+          Seating::HoldAllocator.call(event: event, event_seat_ids: [seat.id],
+            accessibility_attested: false, source: "box_office")
+        end.to raise_error(Seating::HoldAllocator::HoldError, /no longer available/)
+        checkout = described_class.call(event: event,
+          line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+          buyer_email: "cashier@example.invalid", buyer_name: "Walk-in",
+          seat_hold_token: hold.token, source: "box_office", payment_method: method,
+          payment_required: method == "door_card", payment_provider: method == "door_card" ? "boh_clover" : nil,
+          service_fee: false)
+        if method == "door_card"
+          expect(checkout.order).to be_pending
+          Commerce::OrderLifecycle.complete!(checkout.order, payment: checkout.payment,
+            provider_amount_cents: checkout.order.total_cents, provider_currency: "usd")
+        end
+        expect(checkout.order.reload).to be_completed
+        expect(checkout.order.tickets.sole.event_seat_id).to eq(seat.id)
+        expect(hold.session.reload).to be_status_consumed
+        expect(ticket_type.reload.quantity_sold).to eq(1)
+        expect(ticket_type.door_available_quantity).to eq(0)
+        expect do
+          described_class.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+            buyer_email: "competitor@example.invalid", buyer_name: "Another buyer", source: "box_office",
+            payment_method: "door_cash", payment_required: false, service_fee: false)
+        end.to raise_error(described_class::CheckoutError, /Only 0/)
+      end
+    end
+  end
+
   it "cancels the provider intent and releases inventory when attaching it fails" do
     intent = OpenStruct.new(id: "pi_orphan_candidate", client_secret: "secret")
     allow(StripeService).to receive(:payment_enabled?).and_return(true)

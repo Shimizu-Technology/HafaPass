@@ -384,7 +384,7 @@ module Commerce
         if ticket_type.max_per_order && quantity > ticket_type.max_per_order
           raise CheckoutError, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"
         end
-        enforce_door_allocation!(ticket_type, quantity) if source == "box_office"
+        enforce_door_allocation!(ticket_type, quantity, reserved_seat_quantity: reserved_seat_quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
 
         tier = tiers[ticket_type_id]
@@ -481,8 +481,8 @@ module Commerce
       end
     end
 
-    def enforce_door_allocation!(ticket_type, requested_quantity)
-      remaining = ticket_type.door_available_quantity
+    def enforce_door_allocation!(ticket_type, requested_quantity, reserved_seat_quantity: 0)
+      remaining = ticket_type.door_available_quantity(reserved_seat_quantity: reserved_seat_quantity)
       return if requested_quantity <= remaining
 
       raise CheckoutError, "Only #{remaining} door tickets remain for #{ticket_type.name}"

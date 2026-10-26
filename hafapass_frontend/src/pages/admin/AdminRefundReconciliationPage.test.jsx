@@ -53,6 +53,17 @@ describe('AdminRefundReconciliationPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Stripe status checked')
   })
 
+  it('retrieves external refund operations from the finance exception action', async () => {
+    respond([{ ...item, type: 'exception', status: 'provider_review' }])
+    const user = userEvent.setup()
+    mount()
+    expect(await screen.findByText('External refund needs verification')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Check Stripe status' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Check Stripe status' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/exception/9/resync', {}, expect.anything()))
+    expect(await screen.findByRole('status')).toHaveTextContent('Stripe status checked')
+  })
+
   it('requires manual return evidence and sends the reference, date and note', async () => {
     const user = userEvent.setup()
     respond([{ ...item, type: 'cancellation', id: 21, status: 'needs_manual', manual_type: 'cash' }])

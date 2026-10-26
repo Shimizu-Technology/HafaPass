@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class RefundReconciliationQueue
-  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open].freeze
+  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open provider_review].freeze
   PAGE_SIZE = 50
 
   def self.call(**options)
@@ -113,6 +113,13 @@ class RefundReconciliationQueue
       rows << row(dispute, "dispute", "dispute_open", dispute.amount_cents,
         dispute.reason.presence || "Payment dispute is open", nil)
     end
+    issues = ReconciliationException.open.where(order_id: ids,
+      code: Commerce::ExternalRefundRecovery::RECOVERABLE_CODES).includes(includes, :payment).to_a
+    issues.select! { |issue| live_payment_ids.include?(issue.payment_id) } if live_payment_ids
+    issues.each do |issue|
+      rows << row(issue, "exception", "provider_review", issue.actual_amount_cents || issue.order.refundable_cents,
+        "External Stripe refund needs verification", nil)
+    end
     attach_unable_reasons(rows)
     rows
   end
@@ -135,6 +142,7 @@ class RefundReconciliationQueue
     when "pending", "waiting_on_pending_refund" then "Check the provider refund status"
     when "needs_manual" then manual == "cash" ? "Return cash and record the receipt" : "Return the card payment and record the reference"
     when "waiting_on_dispute", "dispute_open" then "Review the dispute outcome"
+    when "provider_review" then "Check Stripe status to retrieve and verify the refund operations"
     when "request_unexecuted" then "Review and issue the buyer refund"
     else "Review the refund"
     end
@@ -149,7 +157,7 @@ class RefundReconciliationQueue
 
   def attach_unable_reasons(rows)
     types = { "refund" => "Refund", "cancellation" => "EventCancellationRefundItem",
-      "request" => "EventChangeResponse", "dispute" => "Dispute" }
+      "request" => "EventChangeResponse", "dispute" => "Dispute", "exception" => "ReconciliationException" }
     logs = AuditLog.where(action: "refund_reconciliation.unable", auditable_type: types.values,
       auditable_id: rows.map { |row| row[:id] }).order(:occurred_at, :id)
     reasons = logs.each_with_object({}) { |log, hash| hash[[log.auditable_type, log.auditable_id]] = log.metadata["reason"] }
