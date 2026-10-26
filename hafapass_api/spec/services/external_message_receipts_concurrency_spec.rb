@@ -4,17 +4,32 @@ require "timeout"
 RSpec.describe ExternalMessageReceipts, :webmock do
   self.use_transactional_tests = false
 
-  def clean_test_data
-    connection = ApplicationRecord.connection
-    identity = connection.select_one("SELECT current_database() AS database, inet_server_addr()::text AS host")
-    raise "Local test database required" unless Rails.env.test? && identity.fetch("database").end_with?("_test") &&
-      ["127.0.0.1/32", "::1/128", "127.0.0.1", "::1", nil].include?(identity["host"])
+  def clean_test_data(connection = ApplicationRecord.connection)
+    configuration = connection.pool.db_config.configuration_hash
+    database = connection.select_value("SELECT current_database()")
+    # CI connects through localhost to Docker's private server address. Verify
+    # the local client target and actual database, not inet_server_addr().
+    raise "Local test database required" unless Rails.env.test? && database.end_with?("_test") &&
+      database == configuration[:database] && %w[localhost 127.0.0.1 ::1].include?(configuration[:host])
 
     connection.execute("TRUNCATE audit_logs, audit_write_failures, users, events, message_deliveries, message_provider_events, site_settings RESTART IDENTITY CASCADE")
   end
 
   before { clean_test_data }
   after { clean_test_data }
+
+  [
+    ["remote database", "db.example.test", "isolated_test", "isolated_test"],
+    ["wrong database", "localhost", "unexpected_test", "isolated_test"],
+    ["non-test database", "localhost", "production", "production"]
+  ].each do |label, host, actual, configured|
+    it "refuses cleanup against a #{label} without truncating" do
+      configuration = double(configuration_hash: { host: host, database: configured })
+      connection = double(pool: double(db_config: configuration), select_value: actual)
+      expect(connection).not_to receive(:execute)
+      expect { clean_test_data(connection) }.to raise_error("Local test database required")
+    end
+  end
 
   def setup_receipt(**attributes)
     @admin = create(:user, :admin)
