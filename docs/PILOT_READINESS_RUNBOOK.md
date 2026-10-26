@@ -129,19 +129,19 @@ Run on current iOS Safari, Android Chrome, desktop Chrome, Safari, Firefox, and 
 
 Record device/browser versions, tester, timestamp, result, screenshots without PII, and issue links. A failed P0/P1 scenario blocks pilot.
 
-## Live Gate I cadence
+## Optional Gate I record workflow
 
-The incident commander opens the approved Gate I run only after the private support/incident channel, provider dashboards, readiness/worker state, venue contacts, scanners, and stop authority are confirmed. Record monitoring checkpoints after activation, first checkout/provider outcome, each inventory release, before doors, at peak entry, after queues drain, after incident recovery, and after event completion. Report P0/P1 and mandatory safety categories in the Gate I console; continued selling on an uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure is prohibited.
+If the team chooses to use the optional Gate I console, the incident commander opens its approved run only after the private support/incident channel, provider dashboards, readiness/worker state, venue contacts, scanners, and stop authority are confirmed. Record monitoring checkpoints after activation, first checkout/provider outcome, each inventory release, before doors, at peak entry, after queues drain, after incident recovery, and after event completion. Within that chosen workflow, report P0/P1 and mandatory safety categories in the Gate I console. Whether or not the optional console is used, continued selling on an uncertain payment, duplicate charge, oversell, credential compromise, cross-tenant disclosure, or widespread entry failure is prohibited.
 
-Resume requires a separate resolution record and a new safe post-pause checkpoint. Completion requires the event to be completed, a safe checkpoint created afterward, no pending local operation, no unresolved mandatory incident, all closeout affirmations, zero unexplained variance, and a digest-bound restricted evidence bundle.
+Within the optional Gate I record, resume requires a separate resolution record and a new safe post-pause checkpoint. Completing that record requires the event to be completed, a safe checkpoint created afterward, no pending local operation, no unresolved mandatory incident, all closeout affirmations, zero unexplained variance, and a digest-bound restricted evidence bundle.
 
 ## Closeout
 
-1. Complete Gate I and export/reference its append-only plan, decisions, run actions, checkpoints, incidents/resolutions, and completion evidence.
+1. Collect the operating plan, decisions, checkpoints, incidents/resolutions and completion evidence. If the team used the optional Gate I record, complete and export/reference it.
 2. Reconcile sales, discounts, taxes, fees, refunds, disputes, add-ons, cash/card door sales, settlement, payout, scans, messages, and support to zero unexplained variance or unresolved exception.
 3. Finalize a settlement for the current financial state, complete paid-payout reconciliation, and resolve pending/unknown provider operations before making attestations.
 4. Revoke temporary staff and scanner devices, sync and purge device-local data within the approved window, and retain cleanup proof under policy.
 5. Calculate the metric report with definitions and denominators; gather privacy-safe organizer/buyer feedback; hold the retrospective; and assign dated, evidence-backed actions.
-6. In **Admin → Events → Gate J pilot closeout**, enter the restricted bundle reference/digest, eight evidence references, external outcomes, reconciliation/cleanup affirmations, actions, and explicit decision.
-7. Have an administrator (the submitter may approve) inspect the artifacts and approve or reject the exact snapshot. If local state or the application changed, prepare a new submission.
-8. Expand only within a current Gate J approval: hold, one more bounded Guam pilot, or at most 10 Guam events/1,000 tickets per event for no more than 90 days. Every future event still completes its applicable Gates A–I.
+6. Record the restricted evidence reference, external outcomes, reconciliation/cleanup results, actions and explicit hold/repeat/limited-expansion decision. **Admin → Events → Gate J pilot closeout** is an optional place to retain those details.
+7. Have the event and finance owners inspect the evidence before acting on the retrospective. If the team chooses a Gate J submission, its administrator may approve or reject the exact snapshot; prepare a new submission when that optional record becomes stale. This is not an additional sales permission.
+8. Choose the next event’s scope from observed outcomes and unresolved risks; a further bounded pilot may be appropriate. Recheck current production controls and relevant operational/device evidence for every future event. Gates E–J remain optional records, and their approval is not a prerequisite for selling or operating the next event.

@@ -141,9 +141,14 @@ RSpec.describe "Admin operational review", type: :request do
   end
 
   it "reports query unavailability without a false empty result or SQL details" do
+    logged_errors = []
+    allow(Rails.logger).to receive(:error) { |message| logged_errors << message }
     allow(OperationalReview).to receive(:new).and_raise(ActiveRecord::StatementInvalid, "private SQL")
     get path, headers: auth_headers(admin)
     expect(response).to have_http_status(:service_unavailable)
     expect(response.parsed_body).to eq("error" => "Operational review is temporarily unavailable")
+    expect(logged_errors).to include({ event: "operational_review_failed",
+      error_class: "ActiveRecord::StatementInvalid" }.to_json)
+    expect(logged_errors.join).not_to include("private SQL")
   end
 end
