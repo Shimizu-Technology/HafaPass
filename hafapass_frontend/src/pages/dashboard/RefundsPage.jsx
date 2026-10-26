@@ -193,10 +193,14 @@ function RefundsPageSession({ eventId, identity }) {
   return response
  }
 
+ const verificationBlocksNewReturn = order => order.external_refund_verification_required === true
+  && !(pendingRequest?.orderId === order.id && !pendingRequest.recoveryRequired)
  const partialAmountError = order => !pendingRequest && refundForm.type === 'partial' ? partialRefundCents(refundForm.amount, order.refundable_cents).error : null
  const handleRefund = async (orderId) => {
     if (!current() || !authorizedEvent.current || pendingRequest?.recoveryRequired || (pendingRequest && pendingRequest.orderId !== orderId)) return
   if (processing || accessRefreshing) return
+  const selectedOrder = orders.find(order => order.id === orderId)
+  if (!pendingRequest && (!selectedOrder || selectedOrder.external_refund_verification_required === true)) return
   const epoch = accessEpoch.current
   const canApply = () => current() && epoch === accessEpoch.current
   setProcessing(true)
@@ -297,7 +301,7 @@ function RefundsPageSession({ eventId, identity }) {
 
    <section aria-labelledby="refund-issues-heading" className="mb-8">
     <h3 id="refund-issues-heading" className="mb-1 text-lg font-semibold text-neutral-900">Refunds needing follow-up</h3>
-    <p className="mb-3 text-sm text-neutral-600">These buyers are still owed a refund. Record a cash or card return only after you have returned the money.</p>
+    <p className="mb-3 text-sm text-neutral-600">Review unresolved refund outcomes before returning money. Record a cash or card return only after you have returned the money.</p>
     {queueError && <p role="alert" className="mb-3 text-sm text-red-700">{queueError} <button type="button" className="min-h-11 font-semibold underline" onClick={fetchOrders}>Try again</button></p>}
     {!queueError && <RefundReconciliationQueue items={queueItems} canRecordCash={canRecordCash} onAction={recordQueueReturn} busy={accessRefreshing} />}
     <OperationalPagination meta={queueMeta && { ...queueMeta, total_count: queueMeta.total_count ?? queueMeta.total }} page={queuePage} onPage={setQueuePage} busy={accessRefreshing} label="Refund issue pages" />
@@ -336,9 +340,10 @@ function RefundsPageSession({ eventId, identity }) {
           </p>
          </div>
         </div>
-        {refundingId !== order.id ? (
-         <button onClick={() => { setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm(initialRefundForm()) }}
-          disabled={processing || accessRefreshing || Boolean(pendingRequest) || order.refundable_cents <= 0}
+        {refundingId !== order.id || verificationBlocksNewReturn(order) ? (
+         <button onClick={() => { if (verificationBlocksNewReturn(order)) return; setRefundingId(order.id); setRefundRequestKey(newRefundRequestKey()); setRefundForm(initialRefundForm()) }}
+          disabled={processing || accessRefreshing || Boolean(pendingRequest) || order.refundable_cents <= 0 || verificationBlocksNewReturn(order)}
+          aria-describedby={verificationBlocksNewReturn(order) ? `external-refund-review-${order.id}` : undefined}
           className="btn-secondary min-h-11 text-sm !py-2 !px-4 gap-1.5 shrink-0 self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed">
           <RotateCcw className="w-4 h-4" /> {isCashOrder(order) ? 'Record cash already returned' : 'Refund'}
          </button>
@@ -347,8 +352,12 @@ function RefundsPageSession({ eventId, identity }) {
         )}
        </div>
 
+       {order.external_refund_verification_required === true && <p id={`external-refund-review-${order.id}`} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        External Stripe refunds need verification. Ask support to review the buyer balance before starting another return.{' '}
+        <SupportLink subject={`Verify external refunds for order ${order.id}`} className="font-semibold underline">Contact support to verify refunds</SupportLink>
+       </p>}
        {order.refunds?.filter(refund => refund.manual_record && refund.provider === 'door_cash').map(refund => <p key={refund.id} className="mt-3 break-words text-sm text-neutral-700">Cash return recorded: ${(refund.amount_cents / 100).toFixed(2)} · {refund.cash_return?.reference} · Returned {formatPlatformDateTime(refund.cash_return?.returned_at)} · Recorded {formatPlatformDateTime(refund.recorded_at)} · Organizer custody. No money transferred by HåfaPass.</p>)}
-       {refundingId === order.id && (
+       {refundingId === order.id && !verificationBlocksNewReturn(order) && (
         <div className="mt-4 pt-4 border-t border-neutral-100">
          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
@@ -385,7 +394,7 @@ function RefundsPageSession({ eventId, identity }) {
           <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || Boolean(partialAmountError(order))} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
            className="btn-primary text-sm !py-2.5 !bg-action-danger hover:!bg-action-danger-hover gap-1 disabled:opacity-50">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-           {pendingRequest?.financeReview ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
+           {pendingRequest?.financeReview || (pendingRequest && order.external_refund_verification_required === true) ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
           </button>
          </div>
          {partialAmountError(order) && <p id={`refund-amount-error-${order.id}`} className={`mt-2 text-sm ${refundForm.amount ? 'text-red-700' : 'text-neutral-600'}`}>{partialAmountError(order)}</p>}

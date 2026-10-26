@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../../api/client'
@@ -285,5 +285,108 @@ describe('unresolved refund follow-up', () => {
     expect(screen.queryByText('HP-922')).not.toBeInTheDocument()
     resolveVerification({ data: { id: 37, organization_id: 1, permissions: { refund: false, view_finance: true } } })
     expect(await screen.findByRole('alert')).toHaveTextContent('This event could not be authorized')
+  })
+})
+
+
+describe('external refund verification on order rows', () => {
+  const order = { id: 922, buyer_name: 'Verification buyer', buyer_email: 'review@example.invalid',
+    ticket_count: 2, total_cents: 5250, refundable_cents: 4250, external_refund_verification_required: true }
+  let currentOrders
+  beforeEach(() => {
+    vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
+    currentOrders = [order]
+    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/refund_reconciliation'
+      ? { items: [], meta: { page: 1, total_pages: 1, total: 0 } }
+      : { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: currentOrders } }))
+  })
+
+  it('blocks a new return from authoritative order data even when the queue page is empty, while another order stays available', async () => {
+    currentOrders = [order, { ...order, id: 923, buyer_name: 'Normal buyer',
+      external_refund_verification_required: false, finance_review_required: true }]
+    const user = userEvent.setup()
+    mountRefunds()
+    await screen.findByText(/Verification buyer/)
+    const blocked = screen.getByText(/Verification buyer/).closest('.card')
+    const normal = screen.getByText(/Normal buyer/).closest('.card')
+    expect(within(blocked).getByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
+    expect(within(blocked).getByRole('button', { name: 'Refund', exact: true }))
+      .toHaveAccessibleDescription(/External Stripe refunds need verification/)
+    expect(within(blocked).getByRole('link', { name: 'Contact support to verify refunds' }))
+      .toHaveAttribute('href', 'mailto:operator@example.test?subject=Verify%20external%20refunds%20for%20order%20922')
+    await user.click(within(blocked).getByRole('button', { name: 'Refund', exact: true }))
+    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument()
+    expect(screen.queryByText('These buyers are still owed a refund. Record a cash or card return only after you have returned the money.')).not.toBeInTheDocument()
+    expect(within(normal).getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
+    await user.click(within(normal).getByRole('button', { name: 'Refund', exact: true }))
+    expect(within(normal).getByLabelText('Type')).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+  })
+
+  it('restores an ordinary new-return form after verified server data clears the flag on reload', async () => {
+    const user = userEvent.setup()
+    const first = mountRefunds()
+    expect(await screen.findByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
+    first.unmount()
+    currentOrders = [{ ...order, external_refund_verification_required: false }]
+    mountRefunds()
+    const trigger = await screen.findByRole('button', { name: 'Refund', exact: true })
+    expect(trigger).toBeEnabled()
+    await user.click(trigger)
+    expect(screen.getByRole('button', { name: 'Refund $42.50' })).toBeEnabled()
+    expect(screen.queryByText(/External Stripe refunds need verification/)).not.toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  it('withdraws an already-open new-return form when a refreshed order requires verification', async () => {
+    currentOrders = [{ ...order, external_refund_verification_required: false }]
+    const user = userEvent.setup()
+    mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    expect(screen.getByLabelText('Type')).toBeInTheDocument()
+    currentOrders = [order]
+    await user.type(screen.getByRole('searchbox', { name: 'Find an order' }), 'review')
+    await user.click(screen.getByRole('button', { name: 'Search orders' }))
+    await screen.findByText(/External Stripe refunds need verification/)
+    expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
+    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+  })
+
+  it('preserves an uncertain saved operation and its exact request while verification blocks new returns', async () => {
+    currentOrders = [{ ...order, external_refund_verification_required: false }]
+    apiClient.post.mockImplementationOnce(() => {
+      currentOrders = [order]
+      return Promise.reject(new Error('Response lost'))
+    })
+    const user = userEvent.setup()
+    const first = mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    await user.click(screen.getByRole('button', { name: 'Refund $42.50' }))
+    await screen.findByRole('button', { name: 'Retry saved refund' })
+    const original = apiClient.post.mock.calls[0]
+    const key = 'hafapass:pending-refund:v2:local-preview:default:37'
+    const saved = window.sessionStorage.getItem(key)
+    expect(screen.getByLabelText('Type')).toBeDisabled()
+    first.unmount()
+    mountRefunds()
+    const check = await screen.findByRole('button', { name: 'Check saved refund status' })
+    expect(check).toBeEnabled()
+    expect(window.sessionStorage.getItem(key)).toBe(saved)
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'pending', finance_review_required: true, reconciliation_required: true } })
+    await user.click(check)
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
+    expect(JSON.parse(window.sessionStorage.getItem(key))).toMatchObject({ key: JSON.parse(saved).key, payload: JSON.parse(saved).payload, financeReview: true })
+    expect(screen.getByLabelText('Type')).toBeDisabled()
+    currentOrders = [{ ...order, external_refund_verification_required: false }]
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'failed', finance_review_required: false, reconciliation_required: false } })
+    await user.click(screen.getByRole('button', { name: 'Check saved refund status' }))
+    await screen.findByText('Refund failed. No refund has been confirmed.')
+    expect(operation(apiClient.post.mock.calls[2])).toEqual(operation(original))
+    expect(window.sessionStorage.getItem(key)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
   })
 })

@@ -23,15 +23,25 @@ module Api
             )
           end
           pagy, records = paginate(orders, items: params.fetch(:per_page, 20).to_i.clamp(1, 100))
+          verification_order_ids = external_refund_verification_order_ids(records)
           render json: {
-            orders: records.map { |order| order_json(order) },
+            orders: records.map { |order| order_json(order, verification_order_ids.include?(order.id)) },
             meta: pagination_meta(pagy)
           }
         end
 
         private
 
-        def order_json(order)
+        def external_refund_verification_order_ids(orders)
+          # Reuse the page's preloaded payments, including legacy payment-only
+          # exception bindings. Queue pagination must not decide refund safety.
+          payment_orders = orders.flat_map { |order| order.payments.map { |payment| [payment.id, order.id] } }.to_h
+          issues = ReconciliationException.open.where(code: Commerce::ExternalRefundRecovery::RECOVERABLE_CODES)
+          issues.where(order_id: orders.map(&:id)).or(issues.where(payment_id: payment_orders.keys))
+            .pluck(:order_id, :payment_id).flat_map { |order_id, payment_id| [order_id, payment_orders[payment_id]] }.compact.to_set
+        end
+
+        def order_json(order, verification_required)
           captured = order.payments.select { |payment| %w[succeeded partially_refunded refunded].include?(payment.status) }
           providers = captured.map(&:provider).uniq
           {
@@ -44,7 +54,7 @@ module Api
               } },
               ticket_count: order.tickets.size, total_cents: order.total_cents, status: order.status,
               refunded_cents: order.refunded_cents, refundable_cents: order.refundable_cents, created_at: order.created_at,
-              test_payment: order.test_payment?
+              test_payment: order.test_payment?, external_refund_verification_required: verification_required
           }
         end
       end
