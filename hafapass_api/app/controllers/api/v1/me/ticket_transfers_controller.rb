@@ -16,7 +16,7 @@ class Api::V1::Me::TicketTransfersController < ApplicationController
     transfer = ticket.ticket_transfers.pending.first
     return render json: { error: "Pending transfer not found" }, status: :not_found unless transfer
 
-    TicketTransfers::Manager.cancel!(transfer)
+    TicketTransfers::Manager.cancel!(transfer, initiated_by: current_user)
     render json: { status: transfer.status }
   rescue TicketTransfers::Manager::TransferError => e
     render json: { error: e.message }, status: :unprocessable_entity

@@ -123,7 +123,9 @@ module Admissions
       # NO KEY UPDATE permits those references, but conflicts with another
       # actor lock. It must never be acquired after the device/parent locks.
       actor.lock!("FOR NO KEY UPDATE")
-      device.organization.lock!
+      # This still excludes staff/tenant mutations' strong parent locks, but
+      # permits event-first commerce's audit FK while we wait for EVENT.
+      device.organization.lock!("FOR NO KEY UPDATE")
       device.event.lock!
       device.lock!
       device.organization.organization_memberships.where(user_id: actor.id).order(:id).lock.load

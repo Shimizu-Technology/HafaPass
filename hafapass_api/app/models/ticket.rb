@@ -57,7 +57,7 @@ class Ticket < ApplicationRecord
   end
 
   def rotate_scan_credential!
-    self.class.transaction do
+    with_entry_lock do
       increment!(:scan_credential_version)
       # increment! uses an atomic counter update and bypasses model callbacks.
       record_operational_audit!(action: "ticket.scan_credential_rotated",
@@ -67,7 +67,7 @@ class Ticket < ApplicationRecord
   end
 
   def revoke_display_credential!
-    self.class.transaction do
+    with_entry_lock do
       increment!(:display_credential_version)
       record_operational_audit!(action: "ticket.display_credential_revoked",
         metadata: { changed_fields: ["display_credential_version"] })
@@ -108,6 +108,22 @@ class Ticket < ApplicationRecord
     user.present? && holder_user_id == user.id
   end
 
+  # Include the audit's implicit organization FK lock in the mutation prefix.
+  # Callers must enter here before owning an order, ticket or transfer lock.
+  # Reconciliation already owns these parents; reacquiring them is harmless.
+  def with_entry_lock(actor: nil)
+    self.class.transaction do
+      actor&.lock!("FOR NO KEY UPDATE")
+      # Serialize authority changes, but allow event-first commerce to insert
+      # an organization audit FK while we wait for its event lock.
+      event.organization.lock!("FOR NO KEY UPDATE")
+      event.lock!
+      order.with_lock do
+        with_lock { yield }
+      end
+    end
+  end
+
   def refundable_cents
     return 0 unless order_item
 
@@ -117,42 +133,38 @@ class Ticket < ApplicationRecord
   end
 
   def check_in!(credential: nil, actor: nil)
-    order.with_lock do
-      with_lock do
-        if actor && !OrganizationAuthorization.allowed?(user: actor, organization: event.organization,
-            permission: :scan, event: event)
-          raise AdmissionError, "Scanner assignment is no longer active"
-        end
-        raise AdmissionError, "Ticket is not in issued status" unless issued?
-        raise AdmissionError, "Ticket order is not fulfilled" unless order.ticket_fulfilled?
-        if order.ticket_access_blocked?
-          raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
-        end
-        raise AdmissionError, "Ticket access is paused while its refund is pending" if refund_pending?
-        raise AdmissionError, "Refunded or disputed admission requires organizer review" if inventory_retained?
-        raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
-        if credential && !TicketCredential.valid_scan_for?(self, credential)
-          raise AdmissionError, "Ticket credential has been replaced"
-        end
-
-        at = Time.current
-        update!(status: :checked_in, checked_in_at: at, first_admitted_at: first_admitted_at || at)
+    with_entry_lock(actor: actor) do
+      if actor && !OrganizationAuthorization.allowed?(user: actor, organization: event.organization,
+          permission: :scan, event: event)
+        raise AdmissionError, "Scanner assignment is no longer active"
       end
+      raise AdmissionError, "Ticket is not in issued status" unless issued?
+      raise AdmissionError, "Ticket order is not fulfilled" unless order.ticket_fulfilled?
+      if order.ticket_access_blocked?
+        raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
+      end
+      raise AdmissionError, "Ticket access is paused while its refund is pending" if refund_pending?
+      raise AdmissionError, "Refunded or disputed admission requires organizer review" if inventory_retained?
+      raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
+      if credential && !TicketCredential.valid_scan_for?(self, credential)
+        raise AdmissionError, "Ticket credential has been replaced"
+      end
+
+      at = Time.current
+      update!(status: :checked_in, checked_in_at: at, first_admitted_at: first_admitted_at || at)
     end
   end
 
   def reverse_check_in!
-    order.with_lock do
-      with_lock do
-        raise AdmissionError, "Ticket is not checked in" unless checked_in?
+    with_entry_lock do
+      raise AdmissionError, "Ticket is not checked in" unless checked_in?
 
-        known_admission_at = first_admitted_at || [checked_in_at,
-          admission_actions.kind_admit.result_accepted.minimum(:received_at)].compact.min
-        if known_admission_at.nil? && !inventory_retained?
-          raise AdmissionError, "Admission history requires organizer review before Undo"
-        end
-        update!(status: :issued, checked_in_at: nil, first_admitted_at: known_admission_at)
+      known_admission_at = first_admitted_at || [checked_in_at,
+        admission_actions.kind_admit.result_accepted.minimum(:received_at)].compact.min
+      if known_admission_at.nil? && !inventory_retained?
+        raise AdmissionError, "Admission history requires organizer review before Undo"
       end
+      update!(status: :issued, checked_in_at: nil, first_admitted_at: known_admission_at)
     end
   end
 

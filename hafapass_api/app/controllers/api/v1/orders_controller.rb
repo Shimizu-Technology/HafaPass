@@ -216,8 +216,9 @@ class Api::V1::OrdersController < ApplicationController
     return render json: { error: "Ticket not found" }, status: :not_found unless ticket
     return render json: { error: "This ticket belongs to its new holder" }, status: :forbidden unless controls_ticket?(ticket)
 
-    rotated = ticket.with_lock do
-      next false unless ticket.issued? && !@order.ticket_access_blocked?
+    rotated = ticket.with_entry_lock do
+      next false unless controls_ticket?(ticket)
+      next false unless ticket.issued? && !ticket.order.ticket_access_blocked?
 
       ticket.rotate_scan_credential!
       true
@@ -294,7 +295,7 @@ class Api::V1::OrdersController < ApplicationController
     transfer = ticket.ticket_transfers.pending.first
     return render json: { error: "Pending transfer not found" }, status: :not_found unless transfer
 
-    TicketTransfers::Manager.cancel!(transfer)
+    TicketTransfers::Manager.cancel!(transfer, initiated_by: @current_user)
     render json: transfer_json(transfer)
   rescue TicketTransfers::Manager::TransferError => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -422,8 +423,10 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def cancel_free_ticket!(ticket, reason:)
-    ticket.order.with_lock do
-      ticket.lock!
+    ticket.with_entry_lock do
+      unless controls_ticket?(ticket)
+        raise Commerce::RefundCreator::RefundError, "Transferred tickets are controlled by their current holder"
+      end
       raise Commerce::RefundCreator::RefundError, "Only unused active tickets can be cancelled" unless ticket.issued?
 
       ticket.release_inventory!

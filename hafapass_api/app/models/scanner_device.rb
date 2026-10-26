@@ -40,7 +40,9 @@ class ScannerDevice < ApplicationRecord
   # Every operational audit needs an organization FK key share. Own the
   # parents before UPDATE owns SCANNER, including rename/revoke/lease writes.
   def lock_operational_context
-    organization.lock!
+    # Exclude grant/tenant mutations without blocking an event-first order's
+    # organization audit FK while we wait for EVENT.
+    organization.lock!("FOR NO KEY UPDATE")
     event.lock!
   end
 

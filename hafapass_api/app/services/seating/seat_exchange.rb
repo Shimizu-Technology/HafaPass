@@ -17,8 +17,10 @@ module Seating
     end
 
     def call
-      Ticket.transaction do
-        ticket.lock!
+      ticket.with_entry_lock do
+        if ticket.holder_user_id.present? && ticket.holder_user_id != actor&.id
+          raise ExchangeError, "This ticket belongs to its current holder"
+        end
         raise ExchangeError, "Only unused active tickets can change seats" unless ticket.issued?
         raise ExchangeError, "This ticket does not have an assigned seat" unless ticket.event_seat
 

@@ -7,7 +7,10 @@ class GuestPurchaseRecovery
     recovered_tickets = 0
 
     Order.where(user_id: nil).where("LOWER(BTRIM(buyer_email)) IN (?)", emails).find_each do |order|
-      order.with_lock do
+      Order.transaction do
+        order.event.organization.lock!("FOR NO KEY UPDATE")
+        order.event.lock!
+        order.lock!
         # Another recovery may have acquired this purchase while we waited.
         next unless order.user_id.nil? && emails.include?(order.buyer_email.strip.downcase)
 

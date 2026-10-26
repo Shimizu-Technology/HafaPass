@@ -49,14 +49,16 @@ class Api::V1::CheckInsController < ApplicationController
     end
 
     Ticket.transaction do
+      # check_in! owns ACTOR -> ORG -> EVENT -> ORDER -> TICKET; retain that
+      # prefix through the operational and seat audit foreign-key writes.
       ticket.check_in!(credential: credential, actor: current_user)
       AuditLogger.record!(
-      action: "ticket.checked_in",
-      auditable: ticket,
-      actor: current_user,
-      organization: ticket.event.organization,
-      metadata: { event_id: ticket.event_id },
-      request: request
+        action: "ticket.checked_in",
+        auditable: ticket,
+        actor: current_user,
+        organization: ticket.event.organization,
+        metadata: { event_id: ticket.event_id },
+        request: request
       )
       if ticket.event_seat
         Seating::Audit.record!(event: ticket.event, action: "seat.checked_in", event_seat: ticket.event_seat,

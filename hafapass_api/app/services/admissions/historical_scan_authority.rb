@@ -9,9 +9,11 @@ module Admissions
 
     def self.snapshot(device)
       # Download updates acquire organization -> event before writing the
-      # scanner row. This reacquires that same organization lock, keeping the
-      # grant image and audit watermark stable through the download commit.
-      device.organization.with_lock do
+      # scanner row. Reuse the same strong, FK-compatible organization lock:
+      # grant writers take FOR UPDATE before changing authority or its audit.
+      # Never upgrade it after owning EVENT/SCANNER; unrelated order audit
+      # inserts may need a compatible organization FK KEY SHARE.
+      device.organization.with_lock("FOR NO KEY UPDATE") do
         {
           version: 1, captured_at: Time.current.iso8601(6),
           audit_id: AuditLog.where(organization_id: device.organization_id).maximum(:id).to_i,

@@ -458,10 +458,19 @@ RSpec.describe "Scanner download lock ordering", type: :request, webmock: true d
   end
 
   %i[sales activity_log].each do |export|
-    it "finishes a new manifest while a same-actor #{export} export waits for its organization audit" do
+    it "finishes a new manifest while a same-actor #{export} export owns its quota lock at the audit boundary" do
       @membership.update!(role: :manager)
       path = export == :sales ? "/api/v1/organizer/events/#{@event.id}/sales_exports" : "/api/v1/organizer/activity_log_exports"
       ready, release, completed, outcomes, connections = Queue.new, Queue.new, Queue.new, Queue.new, Queue.new
+      audited, release_export = Queue.new, Queue.new
+      allow(AuditLogger).to receive(:write!).and_wrap_original do |original, **args|
+        result = original.call(**args)
+        if Thread.current[:scanner_worker] == :export && args[:action] == "#{export}.export_requested"
+          audited << true
+          Timeout.timeout(8) { release_export.pop }
+        end
+        result
+      end
       allow_any_instance_of(ScannerDevice).to receive(:lock!).and_wrap_original do |original, *args|
         if Thread.current[:scanner_worker] == :download && !Thread.current[:paused_device]
           Thread.current[:paused_device] = true
@@ -483,13 +492,20 @@ RSpec.describe "Scanner download lock ordering", type: :request, webmock: true d
         client.response.status
       end
       export_pid = connections.pop.last
-      await { blocked_by?(export_pid, download_pid) } # Export holds USER; its audit needs ORG FK KEY SHARE.
+      expect(export_pid).not_to eq(download_pid)
+      # A compatible ORG permits the actual export audit to finish while its
+      # USER quota lock remains owned. Also admit the former stronger ORG wait
+      # so this still detects the original incompatible USER FK lock cycle.
+      await { audited.size.positive? || blocked_by?(export_pid, download_pid) }
       release << true # New manifest needs generated_by_user FK KEY SHARE of that same USER.
+      Timeout.timeout(12) { workers.first.join }
+      release_export << true
       Timeout.timeout(12) { workers.each(&:join) }
       expect(2.times.map { outcomes.pop }.to_h).to eq(download: 200, export: export == :sales ? 200 : 201)
       expect(AuditLog.where(actor_user: @staff, action: "#{export}.export_requested").count).to eq(1)
       expect(@event.admission_manifests.sole.generated_by_user_id).to eq(@staff.id)
       expect(download_audits.count).to eq(1)
+      expect(AuditWriteFailure.count).to eq(0)
     ensure
       workers&.each { |thread| thread.kill if thread.alive? }
       workers&.each(&:join)

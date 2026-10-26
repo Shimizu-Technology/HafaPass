@@ -7,8 +7,9 @@ module TicketTransfers
     class << self
       def create!(ticket:, recipient_email:, recipient_name: nil, initiated_by: nil, locale: AppLocale::DEFAULT)
         transfer = nil
-        Ticket.transaction do
-          ticket.lock!
+        expected_holder_id = ticket.holder_user_id
+        ticket.with_entry_lock do
+          validate_holder!(ticket, initiated_by, expected_holder_id)
           validate_transferable!(ticket)
           normalized = recipient_email.to_s.strip.downcase
           raise TransferError, "Enter a valid recipient email" unless normalized.match?(URI::MailTo::EMAIL_REGEXP)
@@ -48,9 +49,11 @@ module TicketTransfers
         transfer = TicketTransferCredential.find(token)
         raise TransferError, "Transfer link is invalid or expired" unless transfer
 
-        TicketTransfer.transaction do
+        transfer.ticket.with_entry_lock do
           transfer.lock!
-          transfer.ticket.lock!
+          unless TicketTransferCredential.find(token)&.id == transfer.id
+            raise TransferError, "Transfer link is invalid or expired"
+          end
           raise TransferError, "Transfer is no longer available" unless transfer.active?
           unless ClerkIdentity.email_matches?(user: user, email: transfer.recipient_email)
             raise TransferError, "Sign in with the verified email address that received this transfer and try again"
@@ -75,8 +78,11 @@ module TicketTransfers
         transfer
       end
 
-      def cancel!(transfer)
-        transfer.with_lock do
+      def cancel!(transfer, initiated_by: nil)
+        expected_holder_id = transfer.ticket.holder_user_id
+        transfer.ticket.with_entry_lock do
+          transfer.lock!
+          validate_holder!(transfer.ticket, initiated_by, expected_holder_id)
           raise TransferError, "Only pending transfers can be cancelled" unless transfer.pending?
 
           transfer.update!(status: :cancelled, cancelled_at: Time.current, token_version: transfer.token_version + 1)
@@ -85,7 +91,26 @@ module TicketTransfers
         transfer
       end
 
+      def expire!(transfer, at: Time.current)
+        transfer.ticket.with_entry_lock do
+          transfer.lock!
+          if transfer.pending? && transfer.expires_at <= at
+            transfer.update!(status: :expired, token_version: transfer.token_version + 1)
+          end
+        end
+        transfer
+      end
+
       private
+
+      def validate_holder!(ticket, user, expected_holder_id)
+        # Internal callers may omit an actor; even then a lock wait cannot
+        # silently authorize a different holder from the one they observed.
+        if ticket.holder_user_id != expected_holder_id ||
+            (user && ticket.holder_user_id.present? && ticket.holder_user_id != user.id)
+          raise TransferError, "This ticket belongs to its current holder"
+        end
+      end
 
       def audit_seat!(ticket, action, actor, metadata = {})
         return unless ticket.event_seat
