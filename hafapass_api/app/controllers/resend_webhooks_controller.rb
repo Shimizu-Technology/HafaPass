@@ -16,6 +16,8 @@ class ResendWebhooksController < ActionController::API
     render json: { received: true, id: receipt.id }
   rescue ResendWebhookVerifier::VerificationError => e
     render json: { error: e.message }, status: :bad_request
+  rescue ExternalMessageReceipts::Rejected => e
+    render json: { error: e.message }, status: :conflict
   rescue ActiveRecord::RecordNotUnique
     render json: { received: true }
   end

@@ -191,6 +191,28 @@ RSpec.describe "Resend webhooks", :webmock, type: :request do
       expect(ExternalMessageReceipts.resolved).to be_empty
     end
 
+    it "returns a conflict for a source replay after a manually audited decision" do
+      allow(AuditLogger).to receive(:record!).and_raise(AuditLogger::WriteError, "synthetic source audit failure")
+      expect { send_event(tags: { "application" => "csg_learn" }) }.to raise_error(AuditLogger::WriteError)
+      row = MessageProviderEvent.sole
+      original = row.attributes
+      allow(AuditLogger).to receive(:record!).and_call_original
+      admin = create(:user, :admin)
+      decision = ExternalMessageReceipts.call(actor: admin,
+        receipts: [row.attributes.slice(*ExternalMessageReceipts::IDENTITY_KEYS)],
+        proof_reference: "receipt-origin:request-regression").sole
+
+      2.times do
+        send_event(tags: { "application" => "csg_learn" })
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body).to eq("error" => "Receipt already has a different external decision")
+      end
+      expect(row.reload.attributes).to eq(original)
+      expect(AuditLog.where(action: ExternalMessageReceipts::ACTIONS).pluck(:id)).to eq([decision.id])
+      expect(ExternalMessageReceipts.resolved.pluck(:id)).to eq([row.id])
+      expect(MessageDelivery.count).to eq(0)
+    end
+
     it "retains errors for review and does not turn an audit failure into a successful callback" do
       send_event(tags: { "application" => "csg_learn" })
       row = MessageProviderEvent.sole
