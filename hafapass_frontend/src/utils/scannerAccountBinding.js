@@ -11,7 +11,12 @@ const storageChanged = event => {
   if ((!event.storageArea || event.storageArea === window.localStorage)
     && (event.key === null || [SCANNER_OWNER_KEY, PENDING_BINDING_KEY].includes(event.key))) {
     if (event.key === null || (event.key === PENDING_BINDING_KEY && event.newValue !== null)
-      || (event.key === SCANNER_OWNER_KEY && (event.newValue === null || event.newValue === WITHDRAWN_OWNER))) ++withdrawalRevision
+      || (event.key === SCANNER_OWNER_KEY && (event.newValue === null || event.newValue === WITHDRAWN_OWNER))) {
+      ++withdrawalRevision
+      // A peer can finish sign-out before this tab resolves Clerk. Keep our
+      // own withdrawal pending across remount/reload until preparation succeeds.
+      try { window.sessionStorage.setItem(PENDING_BINDING_KEY, 'pending') } catch { bindingBlocked = true }
+    }
     notify()
   }
 }

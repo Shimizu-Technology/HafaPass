@@ -119,11 +119,11 @@ describe('account-bound scanner authentication bootstrap', () => {
     expect(getOrderAccess(12)).toBe('explicit-new-email-link')
   })
 
-  it.each(['owner-a', null])('withdraws legacy access when a peer completes sign-out before Clerk resolves (initial owner %s)', async owner => {
+  it.each(['owner-a', null].flatMap(owner => ['mounted', 'remount', 'reload'].map(boot => [owner, boot])))('withdraws legacy access after completed peer sign-out (initial %s, %s)', async (owner, boot) => {
     if (owner) window.localStorage.setItem('hafapass_scanner_user_id', owner)
     window.sessionStorage.setItem('hafapass:order-access:12', 'legacy-private-link')
     window.sessionStorage.setItem('hafapass:checkout-attempt:event', 'uncertain-checkout-identity')
-    const { rerender } = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    let mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
     // A peer may finish both withdrawal and binding while this tab awaits Clerk.
     await act(async () => {
       window.localStorage.setItem('hafapass_scanner_binding_pending', 'pending')
@@ -133,10 +133,19 @@ describe('account-bound scanner authentication bootstrap', () => {
       window.localStorage.removeItem('hafapass_scanner_binding_pending')
       window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: null, storageArea: window.localStorage }))
     })
+    if (boot !== 'mounted') {
+      mounted.unmount()
+      if (boot === 'reload') {
+        vi.resetModules()
+        Wrapper = (await import('./ClerkProviderWrapper')).default
+      }
+      mounted = render(<Wrapper><p>Normal routes</p></Wrapper>)
+    }
+    expect(window.sessionStorage.getItem('hafapass_scanner_binding_pending')).toBe('pending')
     let finishClear
     clear.mockReturnValueOnce(new Promise(resolve => { finishClear = resolve }))
     Object.assign(auth, { isLoaded: true, isSignedIn: false, user: null })
-    rerender(<Wrapper><p>Normal routes</p></Wrapper>)
+    mounted.rerender(<Wrapper><p>Normal routes</p></Wrapper>)
     expect(window.sessionStorage.getItem('hafapass:order-access:12')).toBeNull()
     expect(screen.queryByText('Normal routes')).not.toBeInTheDocument()
     await act(async () => finishClear())
