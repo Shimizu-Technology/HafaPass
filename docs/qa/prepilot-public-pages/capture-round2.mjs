@@ -70,7 +70,7 @@ try {
       await expect(passed).toContainText(buyer)
       await expect(absorbed).toContainText(proceeds)
       await expect(button).toBeFocused()
-      await expect(button).toHaveCSS('box-shadow', /.+/)
+      await expect(button).not.toHaveCSS('box-shadow', 'none')
     }
     await price.fill('12.50')
     await page.getByLabel('Tickets', { exact: true }).fill('2')
@@ -90,6 +90,7 @@ try {
     const faq = page.locator('summary').filter({ hasText: 'Does my door staff need an app?' })
     await faq.focus()
     await page.keyboard.press('Enter')
+    await expect(faq.locator('..')).toHaveAttribute('open', '')
     await expect(faq.locator('..')).toContainText('Each device must be prepared online before the event.')
     writeFileSync(`${evidence}/host-copy.txt`, await page.locator('main').innerText())
     await page.goto('/')

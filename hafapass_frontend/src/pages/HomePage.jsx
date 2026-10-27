@@ -138,7 +138,9 @@ export default function HomePage() {
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center gap-4 px-4 text-content-muted">
         <p role="status">{t('buyer.Home.loadingUpcomingEvents')}</p>
         <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
+        <Link to="/host" className="btn-primary">{t('buyer.Home.startHosting2')}</Link>
       </div>
+      <Footer />
     </div>
   )
 
@@ -168,7 +170,7 @@ export default function HomePage() {
           </div>
 
           {!showFeatured && <GuamPhoto photo="market" priority />}
-          {showFeatured && <FeaturedEvent key={featuredEvent.cover_image_url || featuredEvent.id} event={featuredEvent} />}
+          {showFeatured && <FeaturedEvent key={`${featuredEvent.id}:${featuredEvent.cover_image_url || ''}`} event={featuredEvent} />}
         </div>
       </section>
 

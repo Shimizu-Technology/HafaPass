@@ -1,6 +1,6 @@
 # Pre-pilot public pages
 
-2026-10-27. Agent-executed affected-flow QA; base `c55601ada2423ff71ce362ba25a8560c18871d41` (`origin/main`, verified by fetch). Branch `codex/prepilot-public-pages`. Netlify deploys main automatically; this PR is held for Leon and must not merge.
+2026-10-27. Agent-executed affected-flow QA; base `c55601ada2423ff71ce362ba25a8560c18871d41` (`origin/main`, verified by fetch). Branch `codex/prepilot-public-pages`. Netlify deploys main automatically. The lead (Claude) owns the merge decision under Leon's standing authorization; implementation workers do not merge.
 
 ## Product and acceptance brief
 
@@ -138,3 +138,36 @@ Owned resources were cleaned under session `01a17b6e-0682-7dc1-ae0d-3d29741e264d
 CodeRabbit had not reviewed the original head: its required success-labelled check was a rate-limit skip at 03:30:42 UTC, with capacity stated to return about 04:27:42 UTC / 14:27:42 Guam. This delegated implementation pass finishes before that reset and does not issue a premature duplicate request or start PR watching/polling. The lead must request `@coderabbitai review` once after the reset if review has not run, classify/fix material findings, reply to incorrect findings with evidence, resolve threads, and verify required CI against the final head. Required review remains a gate; local passes do not establish merge readiness. **Do not merge from this sub-agent.**
 
 The final production build records source `f4467cede7ef71b6aa1d882a019603339d98fd08` in `dist/release.json`. Subsequent commits update QA documentation/evidence only.
+
+## Round 3 review fixes and acceptance
+
+Refreshed against clean head `8e7a2105734fcd6cc294664577993e7f1d20022c`; fetched `origin/main` still `c55601ada2423ff71ce362ba25a8560c18871d41`, so no rebase was needed. The product, users, fee/policy invariants and exclusions in the sourced brief above remain applicable. This round changes Home's pending-request navigation and strengthens existing QA assertions. No backend, pricing logic, excluded buyer components or motion files changed.
+
+CodeRabbit's four findings on `8e7a2105`:
+
+- Focus assertion — material acceptance-coverage gap. The recorder now rejects `box-shadow: none`; the regular browser suite also checks focused presets have a non-`none` shadow.
+- FAQ keyboard assertion — material acceptance-coverage gap. Both recorder and browser suite require the parent `details` to have `open` after Enter, in addition to checking its preparation caveat.
+- Featured-event identity — nonblocking defensive improvement. The existing loading branch already unmounts the previous card on a content-language refetch. The key now includes both event ID and artwork URL. A regression test uses the content-language hook fixture, fails the first image, leaves the refetch pending, then supplies a different event with the same approved URL and checks that its image and destination render.
+- Pending Home navigation — material acceptance defect. Loading now retains Start Hosting and the complete Footer while postponing the hero choice. Unit coverage checks the unresolved request, hosting link and six policy destinations.
+
+Agent-executed affected-flow acceptance uses local Vite on port 5233 with Playwright Chromium and isolated route fixtures (`/health`, `/config`, pending/empty/featured `/events`). It does not start Rails, change a database, use Clerk, make payments or send messages. Required responsive dimensions are 375×812, 768×1024 and 1280×800. These are browser viewports; physical phones and installed PWA behavior are not run. The T3 tab was attempted, but snapshot failed twice with `Preview automation snapshot timed out after 15000ms.`; it was closed before the Playwright fallback.
+
+| ID | Starting fixture, action and expected observable outcome | Result |
+| --- | --- | --- |
+| R3-01 | Events request stays pending: no empty-inventory claim; browsing and hosting remain reachable; keyboard-open mobile policy disclosure; six visible policy links; keyboard hosting navigation reaches Host; Privacy link changes route; no horizontal overflow | passed (focused browser run) |
+| R3-02 | Host with known 5% + $1 fixture: focus and Enter on $59; non-`none` focus shadow; selected state and $62.95/$55.05 results; Enter on door FAQ actually opens its caveat | passed (focused browser run) |
+| R3-03 | Delayed empty/featured inventory and config: retained photo/no-art date tile behavior and CLS below 0.1 at each required viewport | passed (focused browser run) |
+
+The first focused browser attempts exposed ambiguous selectors in the new pending test (the shell has another status region and Footer has another Browse Events link). The full run also exposed that the nested footer has no `contentinfo` landmark role. The locators now target the loading message, secondary browsing action and `footer` element. All nine affected-flow browser cases then passed (22.4 s). Existing photo/focus/FAQ/CLS checks passed in those attempts; the complete final run below determines acceptance. The historical round-2 recorder was syntax-checked and strengthened; its real-API fixture capture is not repeated this round.
+
+Final local gate results and remote review/check state are recorded in the round-3 handoff after execution. Impeccable 4.6.0 reported `[]` for all five changed UI implementation paths (`round3-impeccable.json`).
+
+Round-3 local gates passed on the final implementation tree:
+
+- `npm run lint`: passed after the final test-locator correction.
+- `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test -- --maxWorkers=1`: 180 files passed, 1 existing skipped; 1,972 tests passed, 3 existing skipped (266.03 s).
+- `npm run build:no-translate`: passed. No translation command or paid translation ran.
+- Final `PLAYWRIGHT_PORT=5233 npm run test:e2e -- --workers=1`: 145 passed, 0 failures/skips (3.3 min). All three pending-navigation cases and all six photo/focus/FAQ/CLS cases passed. The known `event-day.spec.js:80` retry was not needed. The earlier full attempt had 142 passes and three new-test locator failures; this fresh complete run supersedes it.
+- Impeccable 4.6.0: `[]`; recorder syntax and `git diff --check` passed. Policy/backend/pricing/excluded-component diffs against `origin/main` remain empty.
+
+R3-01 through R3-03 passed all required viewport dimensions in both the corrected focused run and final full browser run. No required acceptance blocker remains locally. Remote required checks and CodeRabbit coverage must be evaluated against the pushed head, not the previous head's green checks. The lead owns that readiness and merge decision.

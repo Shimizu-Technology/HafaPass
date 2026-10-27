@@ -5,6 +5,35 @@ const json = (route, data) => route.fulfill({ contentType: 'application/json', b
 const config = { payment_mode: 'live', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event', support_email: 'public-pages-qa@example.test' }
 
 for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
+  test(`pending inventory preserves hosting and policy navigation at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, config))
+    await page.route('**/api/v1/events*', () => {}) // Deliberately leave inventory pending.
+    await page.goto('/')
+    await expect(page.getByRole('status').filter({ hasText: 'Loading upcoming events' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toHaveCount(0)
+    await expect(page.locator('a.btn-secondary').filter({ hasText: 'Browse Events' })).toHaveAttribute('href', '/events')
+    const footer = page.locator('footer')
+    if (width < 768) {
+      const policies = footer.locator('summary').filter({ hasText: 'Other policies' })
+      await policies.focus()
+      await page.keyboard.press('Enter')
+      await expect(policies.locator('..')).toHaveAttribute('open', '')
+    }
+    for (const policy of ['privacy', 'buyer-terms', 'refunds', 'organizer-agreement', 'accessibility', 'cookies']) {
+      await expect(footer.locator(`a[href="/policies/${policy}"]:visible`)).toBeVisible()
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    const host = page.getByRole('link', { name: 'Start Hosting', exact: true })
+    await host.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { level: 1, name: 'Host your event with HåfaPass' })).toBeVisible()
+    await page.goto('/')
+    await footer.locator('a[href="/policies/privacy"]').click()
+    await expect(page).toHaveURL(/\/policies\/privacy$/)
+  })
+
   test(`public photography, pricing and keyboard credits at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -30,6 +59,8 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(page.getByTestId('host-fee-summary')).toContainText('5% + $1.00 per paid ticket')
     const pick = page.getByRole('button', { name: '$59', exact: true })
     await pick.focus()
+    await expect(pick).toBeFocused()
+    await expect(pick).not.toHaveCSS('box-shadow', 'none')
     await page.keyboard.press('Enter')
     await expect(pick).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByLabel('Ticket price', { exact: true })).toHaveValue('59')
@@ -39,6 +70,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     const faq = page.locator('summary').filter({ hasText: 'Does my door staff need an app?' })
     await faq.focus()
     await page.keyboard.press('Enter')
+    await expect(faq.locator('..')).toHaveAttribute('open', '')
     await expect(faq.locator('..')).toContainText('Each device must be prepared online before the event.')
     const audit = await new AxeBuilder({ page }).include('main').withTags(['wcag2a', 'wcag2aa']).analyze()
     expect(audit.violations).toEqual([])

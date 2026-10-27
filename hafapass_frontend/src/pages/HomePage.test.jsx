@@ -5,6 +5,9 @@ import { Link, MemoryRouter, Navigate, Route, Routes, useNavigate, useLocation }
 import HomePage from './HomePage'
 import apiClient from '../api/client'
 
+const content = vi.hoisted(() => ({ language: 'en' }))
+vi.mock('../hooks/useContentLanguage', () => ({ default: () => content.language }))
+
 const auth = vi.hoisted(() => ({ isLoaded: true, isSignedIn: false }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
@@ -41,15 +44,19 @@ function BrowseDestination() {
   return <p>Browse destination {location.pathname}{location.search}</p>
 }
 
-function mount() {
-  return render(<MemoryRouter initialEntries={['/']}><Routes>
+function homeTree() {
+  return <MemoryRouter initialEntries={['/']}><Routes>
     <Route path='/' element={<HomePage />} />
     <Route path='/events' element={<BrowseDestination />} />
     <Route path='/host' element={<h1>Host your event with HåfaPass</h1>} />
     <Route path='/dashboard' element={<ProtectedRoute><h1>Create your organizer profile</h1></ProtectedRoute>} />
     <Route path='/sign-in' element={<SignInPage />} />
     <Route path='/sign-up' element={<SignUpPage />} />
-  </Routes></MemoryRouter>)
+  </Routes></MemoryRouter>
+}
+
+function mount() {
+  return render(homeTree())
 }
 
 const entryLink = async entry => {
@@ -64,6 +71,7 @@ describe('hosting entry navigation', () => {
     vi.clearAllMocks()
     apiClient.get.mockReset()
     auth.isSignedIn = false
+    content.language = 'en'
     apiClient.get.mockResolvedValue({ data: { events: [] } })
   })
 
@@ -111,6 +119,11 @@ describe('hosting entry navigation', () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
     expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
+    expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
+    const footer = screen.getByRole('contentinfo')
+    for (const policy of ['privacy', 'buyer-terms', 'refunds', 'organizer-agreement', 'accessibility', 'cookies']) {
+      expect(footer.querySelector(`a[href="/policies/${policy}"]`)).toBeInTheDocument()
+    }
     expect(screen.queryByText('No events are listed yet. Check back soon.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Events are coming soon/ })).not.toBeInTheDocument()
     await act(async () => finish({ data: { events: [] } }))
@@ -202,6 +215,34 @@ describe('hosting entry navigation', () => {
     expect(featured.querySelector('[class*="aspect-"]')).toBeNull()
     expect(within(featured).getByRole('link', { name: 'Get Tickets' })).toHaveAttribute('href', '/events/poster')
     expect(screen.getAllByRole('img').every(item => item.getAttribute('src') === artwork)).toBe(true)
+  })
+
+  it('retries shared artwork for a different featured event after a language refetch', async () => {
+    const artwork = 'https://storage.invalid/uploads/shared-poster.png'
+    const first = { id: 61, title: 'First event', cover_image_url: artwork, image_asset_host: 'storage.invalid',
+      is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }
+    let finish
+    apiClient.get.mockResolvedValueOnce({ data: { events: [first] } })
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const view = mount()
+    try {
+      const featured = await screen.findByRole('article', { name: 'Featured event' })
+      fireEvent.error(within(featured).getByRole('img', { name: 'Artwork for First event' }))
+      expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
+      content.language = 'ja'
+      view.rerender(homeTree())
+      expect(apiClient.get).toHaveBeenCalledTimes(2)
+      // The loading branch also unmounts event-specific failed-image state.
+      expect(screen.queryByRole('article')).not.toBeInTheDocument()
+      await act(async () => finish({ data: { events: [{ ...first, id: 62, title: 'Second event', slug: 'second' }] } }))
+      const next = await screen.findByRole('article')
+      expect(within(next).getByRole('heading', { name: 'Second event' })).toBeInTheDocument()
+      expect(within(next).getByRole('img', { name: /Second event/ })).toHaveAttribute('src', artwork)
+      expect(next.querySelector('a')).toHaveAttribute('href', '/events/second')
+    } finally {
+      view.unmount()
+      content.language = 'en'
+    }
   })
 
   it('groups event-local dates and sorts the listing without mutating the API array', async () => {
