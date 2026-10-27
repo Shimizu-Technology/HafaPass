@@ -56,19 +56,7 @@ export default function EventCard({ event }) {
           </div>
         )}
 
-        {/* Price badge */}
-        {priceLabel && (
-          <div className="absolute top-3 right-3">
-            <span className={`inline-flex flex-col items-center px-3 py-1 rounded-full text-sm font-semibold tabular-nums border border-neutral-200 ${
-              lowestPrice === 0
-                ? 'bg-emerald-700 text-white'
-                : 'bg-white text-neutral-900'
-            }`}>
-              {priceLabel}
-              {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <span className="text-xs font-normal">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</span>}
-            </span>
-          </div>
-        )}
+
       </div>
 
       </TicketTop>
@@ -102,6 +90,11 @@ export default function EventCard({ event }) {
             </div>
           )}
         </div>
+
+        {priceLabel && <div className="mb-4 text-neutral-900">
+          <p className="text-base font-semibold tabular-nums">{priceLabel}</p>
+          {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <p className="mt-1 text-xs text-content-muted">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</p>}
+        </div>}
 
         {event.attendee_count > 0 && (
           <div className="mb-3">

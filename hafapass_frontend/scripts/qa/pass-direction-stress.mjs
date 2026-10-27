@@ -7,8 +7,9 @@ try{
  await page.route('**/api/v1/**',r=>r.fulfill({json:r.request().url().endsWith('/events')?{events:[event,{...event,id:2,slug:'short',title:'Go',venue_name:null,ticket_types:[{price_cents:0,quantity_remaining:1,on_sale:true}]}]}:{service_fee_percent:'5',service_fee_flat_cents:100,processing_fee_bearer:'platform'}}))
  for(const path of ['/','/host']){
   await page.goto('http://127.0.0.1:5233'+path);await page.locator(path==='/'?'.event-card':'input').first().waitFor()
-  if(path==='/host'){await page.getByLabel('Ticket price',{exact:true}).fill('999999');await page.getByLabel('Tickets',{exact:true}).fill('1000')}
+  if(path==='/host'){await page.getByLabel('Ticket price',{exact:true}).fill('10000');await page.getByLabel('Tickets',{exact:true}).fill('1000');assert.ok((await page.getByRole('region',{name:'Buyer pays the fee',exact:true}).textContent()).includes('$10,501,000.00'))}
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),path+' overflow')
+  await page.evaluate(()=>window.scrollTo(0,0));await page.locator('.hero-ticket').evaluateAll(els=>Promise.all(els.flatMap(el=>el.getAnimations().map(a=>a.finished.catch(()=>{})))))
   await page.screenshot({path:new URL(`../../../docs/qa/pass-direction/after/375-${path==='/'?'home':'host'}-worst-case.png`,import.meta.url).pathname,fullPage:true})
   await page.addStyleTag({content:'html {font-size:200%}'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),path+' 200% text overflow')
  }
