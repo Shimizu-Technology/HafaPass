@@ -34,7 +34,7 @@ export default function EventCard({ event }) {
       <div className="ticket event-ticket">
       <TicketTop>
       {/* Image */}
-      <div className={hasArtwork ? 'h-44 overflow-hidden bg-neutral-100 relative' : 'relative flex h-44 items-center bg-brand-50 px-5 py-5'}>
+      <div className={hasArtwork ? 'h-44 overflow-hidden bg-neutral-100 relative' : 'relative h-44 bg-brand-800'}>
         {hasArtwork ? (
           <img
             src={event.cover_image_url}
@@ -45,7 +45,7 @@ export default function EventCard({ event }) {
             style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
-          <EventDateTile event={event} />
+          <EventDateTile event={event} artwork />
         )}
         {/* Completed overlay */}
         {event.status === 'completed' && (

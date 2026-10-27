@@ -268,7 +268,7 @@ function HostContent({ targets }) {
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
 
   return (
-    <div className="bg-stone-50 text-content">
+    <div className="public-intros bg-stone-50 text-content">
       <SEO
         title={t('buyerDiscovery.host.hostYourEvent')}
         description={t('buyerDiscovery.host.sellTicketsForYourGuamEventWith')}
@@ -312,15 +312,22 @@ function HostContent({ targets }) {
       </section>
 
       <section aria-labelledby="local-help-heading" className="bg-brand-50 py-12 sm:py-16">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 md:grid-cols-2 lg:gap-16 lg:px-8">
+        <div className={`mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 lg:gap-16 lg:px-8 ${support.email || support.tel ? 'md:grid-cols-2' : ''}`}>
           <div>
             <h2 id="local-help-heading" className="font-display text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">{t('buyerDiscovery.host.localHelp')}</h2>
             <p className="mt-5 text-lg leading-relaxed text-content-muted">{t('buyerDiscovery.host.localHelpBody')}</p>
             {support.email && <SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="btn-secondary mt-6 gap-2">{t('buyerDiscovery.host.firstEventHelp')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></SupportLink>}
           </div>
-          <Ticket className="mx-auto w-full max-w-md" stub={<div className="px-7 py-5"><p className="font-semibold text-brand-800">{t('pass.host.madeForGuam')}</p></div>}>
-            <div className="px-7 py-8"><p className="font-display text-4xl font-bold leading-tight tracking-tight text-brand-950">{t('pass.host.yourEvent')}</p></div>
-          </Ticket>
+          {(support.email || support.tel) && <Ticket className="mx-auto w-full max-w-md" stub={<div className="px-7 py-5"><p className="text-sm text-content-muted">{t('buyerDiscovery.host.hostingOnHåfaPass')}</p></div>}>
+            <div className="px-7 py-8">
+              <h3 className="font-display text-2xl font-bold text-brand-950">{t('buyerDiscovery.host.contactSupport')}</h3>
+              <div className="mt-5 flex flex-col items-start gap-4">
+                {support.email && <SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="ticket-link inline-flex min-h-11 items-center break-all rounded text-lg font-semibold text-brand-800 underline underline-offset-4">{support.email}</SupportLink>}
+                {support.tel && <a href={support.tel} className="ticket-link inline-flex min-h-11 items-center rounded text-lg font-semibold text-brand-800 underline underline-offset-4">{support.phone}</a>}
+              </div>
+            </div>
+          </Ticket>}
+
         </div>
       </section>
 

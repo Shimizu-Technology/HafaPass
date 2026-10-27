@@ -64,7 +64,7 @@ export default function HomePage() {
     <Link to="/host" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.sellTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
   </div>
   return (
-    <div className="min-h-dvh bg-brand-950 text-content">
+    <div className="public-intros min-h-dvh bg-brand-950 text-content">
       <SEO />
       <section className="bg-brand-950 pb-16 pt-8 text-white sm:pb-20 sm:pt-12 lg:pb-28 lg:pt-20">
         <div className="mx-auto grid max-w-6xl items-center gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-16 lg:px-8">
@@ -73,7 +73,7 @@ export default function HomePage() {
             <p className="mt-4 max-w-md text-base leading-relaxed text-brand-100 sm:text-lg">{t('pass.home.lede')}</p>
           </div>
           <Ticket className="hero-ticket text-content" stub={hostingStub}>
-            <div className="home-ticket-content px-6 py-6 sm:px-8 sm:py-7" aria-busy={loading}>
+            <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
               {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
                 <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
                 <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
@@ -103,16 +103,16 @@ export default function HomePage() {
           </Ticket>
         </div>
       </section>
-      <div className="relative -mt-6 min-h-[32rem] rounded-t-[2rem] bg-stone-50 pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-12">
+      <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-stone-50 pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          {inventoryEmpty ? <section aria-labelledby="coming-soon-heading" className="py-2 sm:py-4"><h2 id="coming-soon-heading" className="font-display text-2xl font-bold">{t('preInventory.title')}</h2><p className="mt-3 text-content-muted">{t('pass.home.noEvents')}</p></section> : !loading && !loadError ? <>
+          {!loading && !loadError && !inventoryEmpty ? <>
             <section aria-labelledby="upcoming-heading">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 id="upcoming-heading" className="font-display text-2xl font-bold sm:text-3xl">{t('pass.home.comingUp')}</h2><Link to="/events" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>
               <ul className="event-track" aria-label={t('pass.home.comingUp')}>{upcoming.map(event => <li key={`${event.id}:${event.cover_image_url || ''}`} className="min-w-0"><EventCard event={event} /></li>)}</ul>
             </section>
             <section aria-labelledby="categories-heading" className="pt-9"><h2 id="categories-heading" className="mb-4 font-display text-xl font-bold">{t('buyer.Home.exploreByCategory')}</h2><div className="flex flex-wrap gap-2">{categoriesFor(t).map(({name,slug}) => <Link key={slug} to={`/events?category=${slug}`} className="ticket-chip inline-flex min-h-11 items-center rounded-full border border-stone-200 bg-white px-4 text-sm font-medium">{name}</Link>)}</div></section>
           </> : null}
-          {!loading && <section className="mt-9">
+          {!loading && <section className={inventoryEmpty ? '' : 'mt-9'}>
             <Ticket className="planning-ticket" topClassName="!bg-brand-800 text-white" stubClassName="!bg-brand-800 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-primary gap-2">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
               <div className="px-6 py-6 sm:px-8"><h2 className="font-display text-2xl font-bold">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>
             </Ticket>

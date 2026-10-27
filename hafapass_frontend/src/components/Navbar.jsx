@@ -27,6 +27,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const isHeroPage = ['/', '/host'].includes(location.pathname)
+  const isTicketPage = location.pathname.startsWith('/tickets/')
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10)
@@ -69,7 +70,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const roleAlert = isSignedIn && currentRole?.status === 'failed'
 
   // Determine if navbar should be in "dark/transparent" mode
-  const isDarkMode = isHeroPage && !scrolled
+  const isDarkMode = isTicketPage || (isHeroPage && !scrolled)
 
   useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]')

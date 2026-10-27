@@ -20,9 +20,9 @@ for (const width of [375, 1280]) {
     })
     for (const path of ['/', '/events', '/discover']) {
       await page.goto(path)
-      await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: path === '/' ? 'The first events go on sale soon.' : 'Events are coming soon' })).toBeVisible()
       const main = page.getByRole('main')
-      await expect(main.getByText('No events are listed yet. Check back soon.')).toBeVisible()
+      await expect(main.getByText(path === '/' ? 'Come back soon to find your next night out.' : 'No events are listed yet. Check back soon.')).toBeVisible()
       if (path === '/') {
         await expect(main.getByRole('heading', { level: 1, name: 'Your night out on Guam starts here.' })).toBeVisible()
         await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)

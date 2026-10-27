@@ -366,7 +366,7 @@ function TicketContent({ authContext }) {
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
-    <div className="min-h-dvh bg-brand-950 flex items-center justify-center px-3 sm:px-4 py-8">
+    <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
         initial={reducedMotion ? false : { opacity: 1, y: 8 }}

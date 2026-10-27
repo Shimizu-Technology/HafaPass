@@ -14,7 +14,7 @@ test('opens the public marketplace when backend services are available', async (
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Start Hosting', exact: true })).toBeVisible()
 })
 
