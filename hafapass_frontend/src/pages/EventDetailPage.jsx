@@ -373,59 +373,56 @@ function EventDetailContent() {
       {event.private_preview && <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-4 text-center text-sm font-semibold text-amber-950">
         {t('organizerVerification.previewBanner')}
       </div>}
-      {/* Organizer artwork stays unobstructed; event information lives on a light surface. */}
-      <section className="border-b border-neutral-200 bg-stone-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8 sm:pb-10">
-          {/* Back link */}
-          <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
-            <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
-
-          {event.category && event.category !== 'other' && (
-            <span className="block text-sm font-semibold text-brand-800 mb-2">
-              {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
-            </span>
-          )}
-          <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-tight tracking-tight text-neutral-950 mb-3 break-words">{content.title}</h1>
-          {content.notice && <MachineTranslationNotice {...content.notice} className="mb-3" />}
-
-          {/* Date & Venue on hero */}
-          <div className="flex flex-wrap items-center gap-4 text-neutral-600 text-base">
-            {event.starts_at && (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <Calendar className="w-4 h-4 text-brand-800" />
-                <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
-                <span className="text-neutral-500">·</span>
-                <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
-              </div>
-            )}
-            {event.venue_name && (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <MapPin className="w-4 h-4 text-brand-800" />
-                <span>{event.venue_name}</span>
-              </div>
-            )}
-          </div>
-          {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11">{t('buyer.EventDetail.chooseTickets')}</a>}
-
-          {coverImage && (
-            <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
-              <img src={coverImage} alt={event.title} width="1600" height="900"
-                className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Light content area */}
+      {/* One grid keeps purchasing beside the title on desktop and after the artwork on phones. */}
       <div className="bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8">
+          <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
+            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-stone-50 px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
+              {/* Back link */}
+              <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
+                <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
+
+              {event.category && event.category !== 'other' && (
+                <span className="block text-sm font-semibold text-brand-800 mb-2">
+                  {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
+                </span>
+              )}
+              <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-tight tracking-tight text-neutral-950 mb-3 break-words">{content.title}</h1>
+              {content.notice && <MachineTranslationNotice {...content.notice} className="mb-3" />}
+
+              {/* Date & Venue on hero */}
+              <div className="flex flex-wrap items-center gap-4 text-neutral-600 text-base">
+                {event.starts_at && (
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Calendar className="w-4 h-4 text-brand-800" />
+                    <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
+                    <span className="text-neutral-500">·</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
+                  </div>
+                )}
+                {event.venue_name && (
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <MapPin className="w-4 h-4 text-brand-800" />
+                    <span>{event.venue_name}</span>
+                  </div>
+                )}
+              </div>
+              {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
+
+              {coverImage && (
+                <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
+                  <img src={coverImage} alt={event.title} width="1600" height="900"
+                    className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
+                </div>
+              )}
+            </section>
+
             {/* Sidebar - Tickets */}
             <motion.div
               ref={ticketPanel}
               id="tickets"
               tabIndex={-1}
-              className="order-1 min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:order-2 lg:col-span-1"
+              className="min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:self-stretch"
               initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: reducedMotion ? 0 : 0.3 }}
@@ -475,7 +472,7 @@ function EventDetailContent() {
 
             {/* Main content */}
             <motion.div
-              className="order-2 min-w-0 lg:order-1 lg:col-span-2"
+              className="min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-2"
               initial={false}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: reducedMotion ? 0 : 0.3 }}

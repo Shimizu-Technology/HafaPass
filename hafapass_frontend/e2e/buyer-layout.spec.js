@@ -21,6 +21,45 @@ async function prepare(page) {
   await page.route('**/api/v1/marketplace*', route => json(route, {}))
 }
 
+for (const [width, height] of [[375, 812], [1024, 768], [1280, 800], [1440, 900]]) {
+  test(`event artwork keeps purchasing reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await prepare(page)
+    const covered = { ...event, image_asset_host: 'art.example.test', cover_image_url: 'https://art.example.test/uploads/cover.jpg' }
+    await page.route(covered.cover_image_url, route => route.fulfill({ path: 'public/og-host.jpg', contentType: 'image/jpeg' }))
+    await page.route('**/api/v1/events/guam-community-night', route => json(route, covered))
+    await page.goto('/events/guam-community-night')
+    await expect(page.getByRole('heading', { name: event.title })).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const layout = await page.evaluate(() => {
+      const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON()
+      return { panel: rect('#tickets'), row: rect('#tickets h3'), image: rect('main img'),
+        title: rect('h1'), about: [...document.querySelectorAll('h2')].find(node => node.textContent === 'About').getBoundingClientRect().top,
+        width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }
+    })
+    expect(layout.content).toBeLessThanOrEqual(layout.width)
+    if (width >= 1024) {
+      expect(layout.row.bottom).toBeLessThan(height)
+      expect(layout.panel.left).toBeGreaterThan(layout.image.right)
+      await expect(page.getByRole('link', { name: 'Choose tickets', exact: true })).toBeHidden()
+      await page.evaluate(() => window.scrollTo(0, 400))
+      const stickyTop = await page.locator('#tickets > div').evaluate(node => node.getBoundingClientRect().top)
+      expect(stickyTop).toBeCloseTo(96, 0)
+    } else {
+      expect(layout.title.bottom).toBeLessThan(layout.image.top)
+      expect(layout.image.bottom).toBeLessThan(layout.panel.top)
+      expect(layout.panel.top).toBeLessThan(layout.about)
+      await page.getByRole('link', { name: 'Choose tickets', exact: true }).click()
+      await expect(page.locator('#tickets h2')).toBeInViewport()
+      await page.getByRole('heading', { name: 'About', exact: true }).evaluate(node => node.scrollIntoView({ block: 'start' }))
+      await expect(page.getByTestId('mobile-buy-bar')).toHaveAttribute('data-visible', 'true')
+      await page.getByTestId('mobile-buy-bar').getByRole('link', { name: 'Get tickets', exact: true }).click()
+      await expect(page.locator('#tickets')).toBeFocused()
+      await expect(page.locator('#tickets h2')).toBeInViewport()
+    }
+  })
+}
+
 for (const width of [320, 390, 1440]) {
   test(`buyer can select the current ticket and keep its displayed estimate on checkout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })

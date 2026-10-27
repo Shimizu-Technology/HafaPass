@@ -110,3 +110,51 @@ Line references are in the revised source. Each `text-neutral-400` below became 
 | `src/pages/admin/AdminOrdersPage.jsx` | 144, 211, 222 | Ledger labels, empty entitlements, empty order search |
 | `src/pages/dashboard/EventAnalyticsPage.jsx` | 236, 266, 414 | Total, check-in count, order timestamp |
 | `src/index.css` | 32–35, 114 | Custom-field default and shared input placeholder |
+
+
+## Round 3: desktop purchasing beside the title
+
+October 27, 2026. Incoming head `af8fb3db`; `git fetch origin` confirmed `origin/main` still at `c55601ad`, so no rebase was needed. The sourced app brief and buyer invariants above remain applicable. This round changes only EventDetailPage layout, a browser regression, and QA evidence. No backend, policy, pricing logic, or PR #163 files changed.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Full-width title and cover precede the desktop ticket grid; the round-1 1280 capture puts tickets below the first screen | One desktop grid: title/cover and details occupy two columns; the existing ticket panel spans both rows in the right column and sticks at 96px | Buyers can select tickets from the first screen |
+| Desktop repeats a Choose tickets jump link | Link remains on mobile and is hidden at lg+ | The desktop panel is already visible |
+
+Below 1024px the DOM order remains title → cover → tickets → details. Mobile Get tickets behavior is unchanged: it appears while both purchase targets are out of view, returns to and focuses tickets, and stays away from the footer. The new regression checks its return/focus behavior. The original failed desktop capture remains available at `af8fb3db:docs/qa/prepilot-buyer-path/after/1280-event-cover.png`.
+
+The agent executed affected-flow QA in local Chromium with synthetic public API responses and repository artwork served as an approved upload. Vite 4173 used Node 22.22.3 with Clerk disabled for these public fixtures. No account authentication, provider payment, email delivery, or live database acceptance is claimed. No database was created. T3 Preview opened, but two snapshot attempts failed with `Preview automation snapshot timed out after 15000ms.`; the owned tab was closed before using local Playwright. Physical phone, native wake-lock, and real Clerk limitations remain as recorded above.
+
+### Required fixture matrix
+
+All 8 cases passed at all 4 dimensions (32 dimension results). The captured application source is the round-3 EventDetailPage change on `af8fb3db`; captures are local QA, not production release evidence.
+
+| Case: starting fixture → action → expected visible outcome | 375×812 | 1024×768 | 1280×800 | 1440×900 |
+| --- | --- | --- | --- | --- |
+| Cover → read, increase quantity, buy → matching checkout opens; 16:9 artwork retains 35% 65% focal point | Pass | Pass | Pass | Pass |
+| No cover → select ticket → checkout opens; panel remains top-right on desktop | Pass | Pass | Pass | Pass |
+| Long title → read, select → wrapping stays inside column; desktop purchase row stays visible | Pass | Pass | Pass | Pass |
+| Sold out → no quantity controls; enter name/email, join waitlist → position confirmation shown | Pass | Pass | Pass | Pass |
+| Free → select → checkout opens with free admission | Pass | Pass | Pass | Pass |
+| Assigned seats → keyboard-select exact seat, reserve → seat label preserved in checkout | Pass | Pass | Pass | Pass |
+| Private preview → read banner and disabled ticket explanation → purchase remains disabled | Pass | Pass | Pass | Pass |
+| Waitlist offer → read reservation/expiry, claim → checkout opens | Pass | Pass | Pass | Pass |
+
+All dimensions have no document horizontal overflow. Assigned seating uses its existing wrapping row controls; every seat target remains at least 44×44px. At 1024px the outer column is 298.66px wide and at 1280px it is 341.34px. A 12-seat row, including an unavailable seat, remains usable through keyboard selection and reservation at both widths. No full-width seating exception or SeatSelector change is needed. Rows wrap as they already do on phones; this is not a spatial venue-plan renderer.
+
+### Above-the-fold measurement
+
+With scrollY=0 at 1280×800, the visible ticket card begins at y=96px. Its complete first admission row, including price and quantity controls, occupies y=161–321px. The desktop long-title and no-cover variants have the same first-row bounds. At 1024×768 and 1440×900 the first row also occupies y=161–321px. With a waitlist offer ahead of the card, the first row is y=371–531px, still visible. These are bounding-client-rect measurements after local fonts load; `round3-measurements.json` retains all state/viewport values. Its panel rectangle is the tall grid cell; the sticky child is the visible card container.
+
+Refreshed `after/{375,1024,1280,1440}-event-{cover,no-cover,long-title,sold-out,free,seating,preview,offer}.png` are full-page public synthetic captures. `1280-event-cover-viewport.png` directly shows first-screen purchase availability; `1024-event-seating-viewport.png` shows the narrow seat controls. Checkout/confirmation/ticket captures from prior rounds are retained because their UI did not change here.
+
+### Round 3 gates and ownership
+
+- Final lint: passed, zero warnings.
+- Full units with `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_API_URL`, `VITE_SUPPORT_EMAIL`, and `VITE_ENABLED_LOCALES` explicitly cleared: **1,970 passed, 3 skipped, zero failures**; 179 files passed and one skipped; 325.64 seconds on Node 22.22.3. A jsdom XHR diagnostic was logged; the command exited 0.
+- `build:no-translate`: passed; no translation command ran.
+- Full Playwright: **142 passed / zero failures** in the initial and final runs (1.2 and 1.3 minutes). Final run includes the four new responsive/artwork regressions and explicit mobile sticky-bar return/focus check. The known `event-day.spec.js:80` flake did not occur.
+- Impeccable 4.6 on changed UI path `src/pages/EventDetailPage.jsx`: `[]`, no findings. No hooks or packages installed in the repository.
+- Fixture walkthrough: **32/32 dimension results passed**, with keyboard seat selection/reservation and successful simulated waitlist responses; no persistent database writes.
+
+PR #162 remains held for the lead. Required CI and final-head CodeRabbit review are external gates; their final observed states are recorded in the handoff. The existing four round-2 CodeRabbit threads are resolved and acknowledged. A success-labelled skipped/rate-limited CodeRabbit check does not establish a completed review. No merge is authorized for this implementation agent.
