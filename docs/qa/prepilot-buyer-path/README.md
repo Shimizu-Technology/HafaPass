@@ -41,7 +41,7 @@ The initial borrowed `node_modules` link blocked font files in Vite. Those initi
 - Lint: passed, zero warnings.
 - `build:no-translate` and `build`: passed; the build explicitly skipped translation because GT credentials were absent. Locale JSON validation passed.
 - Focused Ticket/Checkout/Confirmation unit tests: 112 passed, including all four new wake-lock cases.
-- Full unit runs: first 1,967 passed / 1 failed / 3 skipped (journal export); second 1,966 passed / 2 failed / 3 skipped (draft-editor refresh). Both affected unmodified suites pass in isolation (11 and 13 tests). A final serial run is in progress to distinguish contention from a reproducible failure.
+- Full unit runs: first 1,967 passed / 1 failed / 3 skipped (journal export); second 1,966 passed / 2 failed / 3 skipped (draft-editor refresh). Both affected unmodified suites pass in isolation (11 and 13 tests). Final serial run (`npm test -- --maxWorkers=1`, with the three requested Vite variables cleared): **1,968 passed / 3 skipped / zero failures**, 179 passed files and one skipped file (266.28 seconds). The earlier failures did not recur after browser work stopped and the worker count was reduced.
 - Final full browser run: 122 passed / 14 failed. All failures are contrast checks in organizer/admin screens. Buyer-only follow-up: 11 passed.
 - Impeccable 4.6 advisory: `[]` (no findings).
 - Real Clerk authentication and physical-device testing: not run, as described above. Provider payment and email are simulated, not delivered.
@@ -56,4 +56,13 @@ A separate detached checkout at `c55601ad` ran the three affected suites: **29 p
 
 The agent verified completed orders directly in the isolated database: paid orders persisted at 2,000 cents subtotal + 200 cents fee = 2,200 cents total, with one issued ticket; free orders persisted at zero subtotal/fee/total with one issued ticket. The free-order checks also reloaded confirmation before opening the QR.
 
-Rails 3061, Vite 5231, and the baseline Vite 5239 were stopped. The database was dropped and its absence independently checked in `pg_database`. The temporary baseline worktree was removed. Browser contexts close in `finally`; final lifecycle status will be recorded with the review handoff. No runtime handoff is intended.
+Rails 3061, Vite 5231, and the baseline Vite 5239 were stopped. The database was dropped and its absence independently checked in `pg_database`. The temporary baseline worktree was removed. Browser contexts close in `finally`; final lifecycle status reports **no active owned resources**. All task-owned runtime resources are cleaned. No runtime handoff is intended.
+
+
+## Review handoff
+
+The tested application source is committed as `0a94f4c74c7c64d0532944f2d548fe989a723ac0`; this evidence update changes documentation only. The Vite captures/builds used that same implementation tree with base revision metadata, before the code commit; they are local QA, not release verification.
+
+PR: https://github.com/Shimizu-Technology/HafaPass/pull/162 — **do not merge**. At the one status snapshot, CodeRabbit was processing all 17 non-image files at the implementation commit and had no posted inline findings yet. Freeze contract, backend quality/security, repository hygiene, header/redirect checks and Netlify preview passed; RSpec, frontend and browser CI were still running. That snapshot is not final-head approval. CodeRabbit is a required branch-protection gate. As a delegated worker, this agent returns pending review/check state to the parent instead of watching or polling the PR.
+
+Next: the parent should inspect CodeRabbit and final-head checks, handle material review findings, and assign the out-of-scope contrast fixes before claiming readiness. No reviewer finding has been dismissed or marked resolved without inspection. Real Clerk sign-in, native wake-lock hardware behavior, and physical-phone testing remain unverified. The held implementation branch/worktree are preserved; the temporary comparison worktree is gone.
