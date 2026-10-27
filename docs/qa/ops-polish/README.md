@@ -16,10 +16,10 @@ Agent-executed affected-flow QA. Chromium at 375×812 and 1280×800. Fresh isola
 | --- | --- | --- |
 | OPS-1 Support initial | No orders heading, Search disabled and neutral, honest empty deliveries | Passed at both sizes; see final gate results below |
 | OPS-2 Search | Enter query, submit, show no matching orders only on success; preserve query after error | Passed at both sizes; see final gate results below |
-| OPS-3 Deliveries | Long recipient wraps; message/state/attempt/action visible; only failed unsent message retry enabled; keyboard resend produces one mocked POST and queue status | Passed at both sizes; see final gate results below |
-| OPS-4 Scanner membership | Exact membership 403 gives neutral guidance, workspace link, disabled camera; arbitrary refusal stays red | Passed at both sizes; see final gate results below |
-| OPS-5 Scanner assigned | Device and signed manifest prepare; offline manual admission persists one queued scan | Passed at both sizes; see final gate results below |
-| OPS-6 Disabled forms | Real PaymentForm with Stripe not ready, all five shared variants and Support submit; full opacity, neutral colors, no hover/press feedback or opacity transition | Passed at both sizes; see final gate results below |
+| OPS-3 Deliveries | Long recipient wraps; message/state/attempt/action visible; retry appears only for failed pre-provider messages; keyboard resend produces one mocked POST and queue status | Passed at both sizes; see final gate results below |
+| OPS-4 Scanner membership | Exact membership 403 gives only heading, team guidance, workspace link and online status; no scanner tools. Unfiltered empty assignments get the same minimal state; arbitrary refusal stays red | Passed at both sizes; see final gate results below |
+| OPS-5 Scanner assigned | Authorized preparation failure retains tools and a short device note; Device details opens; retry prepares a signed manifest; offline manual admission persists one queued scan | Passed at both sizes; see final gate results below |
+| OPS-6 Disabled forms | Real PaymentForm with Stripe not ready, all five shared variants and Support submit; height/min-height ≥44px, padding and radius, full opacity, neutral colors, no hover/press feedback or opacity transition; enabled brand colors restore | Passed at both sizes; see final gate results below |
 | OPS-7 Accessibility | Axe and no document overflow on changed fixture screens; full existing accessibility suite | Passed at both sizes; see final gate results below |
 | OPS-8 Shared tables | Payout/dispute/refund shared helpers retain labels and wrap long content below md | Passed at both sizes; see final gate results below |
 
@@ -54,7 +54,7 @@ The first full browser gate caught the disabled-to-enabled color interpolation i
 
 The collaborative browser failed twice with `Preview automation snapshot timed out after 15000ms`; it was closed and evidence came from the repository Playwright workflow. This is browser fixture coverage, not physical iPhone or signed-in Clerk acceptance.
 
-## Final gate results
+## Round 1 gate results
 
 Source under test: `27922b3de5d7706fc72e206682188cd633f2fb40`; the follow-up commit only records QA/review status. Node 22.22.3 on Leon’s Mac.
 
@@ -71,3 +71,36 @@ Static JSX inventory found 212 disabled/aria-disabled controls with explicit sha
 CodeRabbit automatic review reached the OSS capacity limit (reported next capacity in about 41 minutes). One `@coderabbitai review` retry was requested in PR #171. At the review audit there were no review findings/threads; the success-labelled CodeRabbit status is a rate-limited skip, not a completed review. CodeRabbit is a required main-branch gate. The PR remains held, and further review handling belongs to the parent/continuing session once capacity is available.
 
 No live deployment or signed-in Clerk/physical-iPhone acceptance is claimed. PR must remain unmerged.
+
+## Round 2 review fixes
+
+2026-10-28; implementation source `537edffcdcede94c44c7b7c159d8119f5a78863f`; fetched `origin/main` remains `3882764d`, so no rebase was needed. The app brief, deployment hold and coverage limits above still apply. This is agent-executed affected-flow QA with fresh synthetic browser fixtures at 375×812 and 1280×800.
+
+1. **Shared buttons:** the new computed-style regression first failed at both widths with `.btn-teal` min-height `0`. A PostCSS/Tailwind compilation confirmed that the original source emitted no standalone `.btn-teal` rules: no production JSX currently contains that literal class, so Tailwind pruned its component definition. The global disabled override still colored the bare element. Safelisting the five shared semantic variants in `tailwind.config.js` retains their full `@apply` expansion and variant colors. The regression checks every disabled variant’s height, minimum height, padding, radius, colors and press state; it also checks enabled primary/teal/danger colors. The shared CSS itself remains unchanged from round 1.
+2. **Scanner access:** the UI uses the existing exact membership refusal, scan-filtered assignment list and resolved selected event. Only a confirmed empty unfiltered list or the exact membership refusal, without a resolved assignment or ready grant, shows the minimal guidance state. Search filtering and offline-only restore do not imply no authority. The existing refusal, cache quarantine, journal retention, direct event resolution and offline verification pipelines are unchanged. Assigned users retain tools on setup failure and can retry verification. Device readiness gets a short staff explanation; expiry, export/recovery, account revocation and reset details sit inside Device details. Door-staff text does not name Clerk. Unnamed ready devices now say Device ready.
+3. **Deliveries:** the endpoint queues the original failed message, and rejects ineligible retries (`MessageDelivery#retryable?` also enforces its provider replay window). The UI now offers Retry delivery only on failed rows without a provider ID; delivered, queued and provider-accepted failed rows have no retry action. Server eligibility enforcement is unchanged. Unit coverage checks those four states; browser coverage verifies one keyboard-triggered POST and queue confirmation.
+
+The first focused browser run passed 9/10; its phone no-authority assertion mistakenly included the workspace menu button. Scoping the assertion to main content fixed the fixture. The corrected focused run passed 10/10 with zero axe violations. The collaborative browser again failed twice with `Preview automation snapshot timed out after 15000ms.` Its owned tab was closed; screenshots and interaction evidence use the repository Playwright workflow.
+
+Refreshed evidence under `after/`, at **both 375 and 1280**:
+
+- `disabled-payment-and-forms-{width}.png`
+- `scanner-no-membership-{width}.png` (no authority)
+- `scanner-authorized-unprepared-{width}.png` (assignment verified; synthetic preparation outage)
+- `scanner-ready-{width}.png` and the existing `scanner-assigned-{width}.png` (verified signed manifest)
+- `support-deliveries-{width}.png`
+
+The first full browser run passed 160 cases but failed the two disabled-variant cases: Vite had retained the pre-safelist Tailwind configuration. The production CSS contained all three standalone teal rules; the running server contained none. After restarting only the owned Vite tree, a direct CSS check found the three rules on the fresh server. The complete suite was rerun from fresh contexts.
+
+Round 2 gates on `537edffc`:
+
+- Lint: passed (`npm run lint`).
+- Build: passed (`npm run build:no-translate`), including service worker generation. The built CSS retains the teal component rules.
+- Full Playwright: **162 passed, zero failures** on the fresh server; no `event-day` retry. All ten ops fixture cases passed, including hidden no-authority tools, assigned preparation recovery, offline saved admission, truthful delivery retry, and disabled dimensions/enabled colors.
+- Axe: **zero violations**, including all affected fixture screens at both requested widths and the full existing accessibility/keyboard suite. No document overflow in the changed-screen fixtures. Eight affected-flow cases in the matrix above are accepted at both required viewport sizes.
+- Impeccable 4.6.0: JSON **[]** across all six production UI files in the PR plus `tailwind.config.js`.
+- Units: **2024 passed, 3 skipped; 182 files passed, 1 skipped**. Final command: `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test -- --testTimeout=15000`, using the configured two workers with no browser/server load. Existing jsdom XHR warnings did not fail tests. The first single-worker run was stopped after the new support fixture failed: its default router path was `/`, where SupportPage correctly renders nothing. Setting the fixture route to `/support` fixed it; all five SupportPage units then passed before the complete final run.
+
+Cleanup: the owned collaborative tab, Playwright workers, Vite 5237 and unit worker trees are stopped. Lifecycle session `01a17f69-cbd7-7893-9e7b-34a5b7f2d5ea` reports no active owned resources. No Rails server or database was started. Borrowed/protected services are unchanged.
+
+Logs: `/tmp/hafapass-ops-r2-{lint,units,build,playwright}.log` and `/tmp/hafapass-ops-r2-impeccable.json`. Initial failure logs remain separately named. Final GitHub review/check state is in the local handoff; CodeRabbit remains a required gate and is not claimed complete. The PR must remain unmerged. The round 1 results are historical and do not establish round 2 acceptance.
