@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
-import buildRuntimeCaching from './src/config/pwaRuntimeCaching.js'
+import { offlinePrecache } from './config/pwaPrecache.js'
 import { execFileSync } from 'node:child_process'
 import { releaseMetadataPlugin, resolveRevision } from './config/releaseMetadata.js'
 import { publicSitePlugin } from './config/publicSite.js'
@@ -35,26 +35,26 @@ function manualChunks(id) {
 export default defineConfig(({ mode }) => {
   // Domains are deploy configuration: VITE_PUBLIC_WEB_URL and VITE_API_URL.
   const env = loadEnv(mode, process.cwd(), 'VITE_')
+  const precache = offlinePrecache()
   return {
     define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
     plugins: [
       react(),
       releaseMetadataPlugin(applicationRevision),
       publicSitePlugin(env.VITE_PUBLIC_WEB_URL),
+      precache.plugin,
       VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.js',
         registerType: 'autoUpdate',
         // ReleaseUpdateCoordinator owns registration and the safe reload policy.
         injectRegister: 'auto',
         // Use the existing manifest.json in public/ — don't generate a new one
         manifest: false,
-        workbox: {
-          // Precache app shell assets
+        injectManifest: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          // Runtime caching strategies
-          runtimeCaching: buildRuntimeCaching(env.VITE_API_URL),
-          // Don't cache POST, auth, admin, or organizer endpoints
-          navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api/, /^\/robots\.txt$/, /^\/sitemap\.xml$/],
+          manifestTransforms: [precache.manifestTransform],
         },
       }),
       hasSentryUploadConfig && sentryVitePlugin({
