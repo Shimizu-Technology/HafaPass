@@ -1,19 +1,17 @@
-import useTranslatedContent from '../hooks/useTranslatedContent'
-import MachineTranslationNotice from '../components/MachineTranslationNotice'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { motion, useReducedMotion } from 'framer-motion'
-import { Loader2, Ticket, Calendar, MapPin, Clock, ChevronRight, Download } from 'lucide-react'
+import { Loader2, Ticket } from 'lucide-react'
 import { useAuth, useClerk } from '@clerk/clerk-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
-import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
+import TicketStock from '../components/Ticket'
+import BuyerTitleBand from '../components/BuyerTitleBand'
+import BuyerTicketPass from '../components/BuyerTicketPass'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatMoneyCents } from '../utils/money'
 import { signInDestination } from '../utils/authDestination'
 import TransferTicketDialog from '../components/TransferTicketDialog'
-import PendingTransfer from '../components/PendingTransfer'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import InstallAppHelp from '../components/InstallAppHelp'
 
@@ -36,7 +34,6 @@ export default function MyTicketsPage() {
 
 function MyTicketsContent({ refreshSession, signOut }) {
   const { t } = useTranslation()
-  const reducedMotion = useReducedMotion()
   const location = useLocation()
   const navigate = useNavigate()
   const [signedOut, setSignedOut] = useState(false)
@@ -181,7 +178,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
     <div className="mb-5 text-sm" role="status">
       {ticketNotice && <p className="rounded-xl border border-brand-200 bg-brand-50 p-4 text-brand-900">{ticketNotice}</p>}
       {ticketsCapped && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">{t('buyerAccount.myTicketsPage.ticketLimitNotice', { count: orders.length })}</p>}
-      {recovering && <p className="text-neutral-600">{t('buyerAccount.myTicketsPage.checkingForPurchasesMadeBeforeYouSignedIn')}</p>}
+      {recovering && <p className="sr-only">{t('buyerAccount.myTicketsPage.checkingForPurchasesMadeBeforeYouSignedIn')}</p>}
       {recoveryError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
         <p>{recoveryError}</p>
         <button onClick={recoverGuestPurchases} disabled={recovering} className="mt-2 min-h-11 font-semibold underline">{t('buyerAccount.myTicketsPage.retryGuestPurchaseRecovery')}</button>
@@ -191,16 +188,17 @@ function MyTicketsContent({ refreshSession, signOut }) {
 
   if (signedOut) {
     return (
-      <div className="max-w-md mx-auto px-4 py-12">
+      <div className="public-listing-min-height bg-stone-50">
         <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
-        <div className="card p-6 sm:p-8 text-center">
+        <BuyerTitleBand compact title={t('buyerAccount.myTicketsPage.myTickets')} description={t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')} />
+        <div className="mx-auto max-w-md px-4 py-8"><div className="card p-6 sm:p-8 text-center">
           <Ticket aria-hidden="true" className="mx-auto h-10 w-10 text-brand-700" />
-          <h1 className="mt-4 text-xl font-semibold text-neutral-900">{t('buyerAccount.myTicketsPage.yourSessionExpired')}</h1>
+          <h2 className="mt-4 text-xl font-semibold text-neutral-900">{t('buyerAccount.myTicketsPage.yourSessionExpired')}</h2>
           <p className="mt-2 text-neutral-600">{t('buyerAccount.myTicketsPage.signInAgainToSeeYourTickets')}</p>
           {signOut
             ? <button type="button" onClick={() => signOut({ redirectUrl: signInDestination(location) })} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</button>
             : <Link to={signInDestination(location)} className="btn-primary mt-6 w-full sm:w-auto">{t('buyerAccount.myTicketsPage.signInAgain')}</Link>}
-        </div>
+        </div></div>
       </div>
     )
   }
@@ -236,14 +234,6 @@ function MyTicketsContent({ refreshSession, signOut }) {
     return aUpcoming ? aDate - bDate : bDate - aDate
   })
 
-  function formatDate(dateStr, event) {
-    return formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
-  }
-
-  function formatTime(dateStr, event) {
-    return formatEventTime(dateStr, event?.timezone)
-  }
-
   function getStatusBadge(ticket) {
     if (ticket.status === 'issued' && ticket.admission_allowed !== true) return <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{t('buyerAccount.myTicketsPage.entryPaused')}</span>
     switch (ticket.status) {
@@ -266,27 +256,15 @@ function MyTicketsContent({ refreshSession, signOut }) {
   }
 
   return (
-    <div className="tabular-nums">
+    <div className="public-listing-min-height bg-stone-50 tabular-nums">
       <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
-      {/* Buyer account header */}
-      <div className="bg-stone-50 border-b border-neutral-200 pt-8 pb-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
-          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">{t('buyerAccount.myTicketsPage.myTickets')}</h1>
-          <p className="text-neutral-600">{t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')}</p>
-        </div>
-      </div>
-
-      {/* Light content */}
-      <div className="bg-neutral-50 min-h-[40vh]">
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-3xl mx-auto px-4 py-8"
-        >
+      <BuyerTitleBand compact title={t('buyerAccount.myTicketsPage.myTickets')} description={t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')} />
+      <div className="bg-stone-50">
+        <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
           {recoveryNotice}
           <InstallAppHelp />
           <div className="mb-5 text-right"><Link to="/account/settings" className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">{t('buyerAccount.myTicketsPage.accountSettingsAndPrivacy')}</Link></div>
-          <div role="tablist" aria-label={t('buyerAccount.myTicketsPage.purchaseHistory')} className="mb-6 flex gap-2 border-b border-neutral-200">
+          <div role="tablist" aria-label={t('buyerAccount.myTicketsPage.purchaseHistory')} className="mb-6 grid w-56 max-w-full grid-cols-2 gap-1 rounded-xl border border-neutral-200 bg-neutral-100 p-1">
             {['tickets', 'orders'].map(value => <button key={value} type="button" role="tab" id={`history-${value}-tab`} aria-controls={`history-${value}-panel`} aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
               onKeyDown={event => {
@@ -298,7 +276,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
                 navigate({ pathname: location.pathname, search: next === 'orders' ? '?tab=orders' : '' })
                 requestAnimationFrame(() => document.getElementById(`history-${next}-tab`)?.focus())
               }}
-              onClick={() => navigate({ pathname: location.pathname, search: value === 'orders' ? '?tab=orders' : '' })} className={`min-h-11 border-b-2 px-4 font-semibold ${tab === value ? 'border-brand-600 text-brand-800' : 'border-transparent text-neutral-600'}`}>
+              onClick={() => navigate({ pathname: location.pathname, search: value === 'orders' ? '?tab=orders' : '' })} className={`min-h-11 min-w-0 rounded-lg px-2 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${tab === value ? 'bg-white text-brand-900' : 'text-neutral-600'}`}>
               {t(`buyerAccount.myTicketsPage.tabs.${value}`)}
             </button>)}
           </div>
@@ -313,7 +291,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
               <p className="mt-2 text-neutral-600">{t('buyerAccount.myTicketsPage.ordersEmptyHelp')}</p>
               <Link to="/orders/recover" className="mt-4 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.myTicketsPage.recoverAnOrderByEmail')}</Link>
             </div>}
-            {!purchaseLoading && purchases.map(purchase => <Link key={purchase.id} to={`/orders/${purchase.id}/confirmation`} className="card block p-5 transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
+            {!purchaseLoading && purchases.map(purchase => <Link key={purchase.id} to={`/orders/${purchase.id}/confirmation`} className="card block p-5 [overflow-wrap:anywhere] transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h2 className="text-lg font-semibold text-neutral-950">{purchase.event.title}</h2>
@@ -342,103 +320,27 @@ function MyTicketsContent({ refreshSession, signOut }) {
               <span className="text-sm text-neutral-600">{t('buyerAccount.myTicketsPage.pageOf', { page: purchaseMeta.current_page, total: purchaseMeta.total_pages })}</span>
               <button type="button" disabled={!purchaseMeta.next_page} onClick={() => loadPurchases(purchaseMeta.next_page)} className="btn-secondary disabled:opacity-50">{t('buyerAccount.myTicketsPage.next')}</button>
             </nav>}
-          </div> : error ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center" ><div role="alert"><p className="text-red-700">{error}</p><button type="button" onClick={fetchOrders} className="btn-secondary mt-4">{t('buyerAccount.myTicketsPage.tryAgain')}</button></div></div> : loading ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="flex min-h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div> : eventGroups.length === 0 ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="card p-8 text-center">
-            <Ticket className="mx-auto h-16 w-16 text-neutral-300" />
-            <h2 className="mt-4 text-xl font-semibold text-neutral-800">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourTickets') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noTicketsYet')}</h2>
-            <p className="mt-2 text-neutral-500">{t('buyerAccount.myTicketsPage.purchasesMadeWithAVerifiedEmailOnYour')}</p>
-            <Link to="/orders/recover" className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-600 underline">{t('buyerAccount.myTicketsPage.recoverAnOrderByEmail')}</Link>
-            <Link to="/events" className="mt-6 block btn-primary px-6 py-3">{t('buyerAccount.myTicketsPage.browseEvents')}</Link>
-          </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab"><StaggerContainer className="space-y-6">
-            {eventGroups.map(({ event, tickets }, index) => {
-              const eventDate = new Date(event.starts_at)
-              const isPast = eventDate < now
-
-              return (
-                <StaggerItem key={event.id}>
-                <motion.div
-                  initial={reducedMotion ? false : { opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="card overflow-hidden"
-                >
-                  <div className={`px-4 sm:px-5 py-4 border-b ${isPast ? 'bg-neutral-50' : 'bg-brand-50'}`}>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <TranslatedEventHeading event={event} />
-                        <p className="text-sm text-neutral-600 mt-0.5 flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5" />
-                          {formatDate(event.starts_at, event)}
-                          <Clock className="w-3.5 h-3.5 ml-1" />
-                          {formatTime(event.starts_at, event)}
-                        </p>
-                        {event.venue_name && (
-                          <p className="text-sm text-neutral-700 flex items-center gap-1.5 mt-0.5">
-                            <MapPin className="w-3.5 h-3.5" />
-                            {event.venue_name}
-                          </p>
-                        )}
-                      </div>
-                      {isPast && (
-                        <span className="text-xs font-medium text-neutral-500 bg-neutral-200 px-2 py-1 rounded-xl">{t('buyerAccount.myTicketsPage.past')}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="divide-y divide-neutral-100">
-                    {tickets.map(ticket => (
-                      <div key={ticket.id} className="px-4 sm:px-5 py-3 hover:bg-neutral-50 transition-colors">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between min-h-[28px]">
-                        <Link
-                          to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
-                          className="flex items-center space-x-3 flex-1 min-w-0"
-                        >
-                          <div className="flex-shrink-0">
-                            <Ticket className="h-5 w-5 text-neutral-400" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-neutral-900">{ticket.ticket_type.name}</p>
-                            {ticket.seat && <p className="text-xs font-semibold text-brand-700">{ticket.seat.display_label}</p>}
-                            {ticket.attendee_name && (
-                              <p className="text-xs text-neutral-700">{ticket.attendee_name}</p>
-                            )}
-                          </div>
-                        </Link>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          {getStatusBadge(ticket)}
-                          {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast && <button type="button" onClick={() => setTransferTarget({ ticket, event })} className="min-h-11 px-2 text-xs font-semibold text-brand-900 rounded-lg transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-brand-50">{t('buyerAccount.myTicketsPage.transfer')}</button>}
-                          <Link
-                            to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-brand-50 hover:text-brand-800"
-                            aria-label={`${t('buyerAccount.myTicketsPage.openTicketToDownload')} #${ticket.id}`}
-                            title={t('buyerAccount.myTicketsPage.openTicketToDownload')}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Download aria-hidden="true" className="h-4 w-4" />
-                          </Link>
-                          <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}`}
-                            aria-label={`${t('buyerAccount.myTicketsPage.tabs.tickets')}: ${ticket.ticket_type.name}, #${ticket.id}`}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-brand-50 hover:text-brand-800">
-                            <ChevronRight aria-hidden="true" className="h-4 w-4" />
-                          </Link>
-                        </div>
-                      </div>
-                      {ticket.admission_allowed !== true && ticket.admission_block_reason && <p className="mt-1 pl-8 text-xs text-amber-900">{ticket.admission_block_reason}</p>}
-                      {ticket.status === 'issued' && ticket.pending_transfer && (
-                        <div className="pl-8">
-                          <PendingTransfer transfer={ticket.pending_transfer} timeZone={event.timezone}
-                            onCancel={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
-                            onSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />
-                        </div>
-                      )}
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-                </StaggerItem>
-              )
+          </div> : error ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center" ><div role="alert"><p className="text-red-700">{error}</p><button type="button" onClick={fetchOrders} className="btn-secondary mt-4">{t('buyerAccount.myTicketsPage.tryAgain')}</button></div></div> : loading ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="flex min-h-32 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div> : eventGroups.length === 0 ? <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab">
+            <TicketStock stub={<div className="px-6 py-4 sm:px-8"><Link to="/events" className="btn-primary w-full sm:w-auto">{t('buyerAccount.myTicketsPage.browseEvents')}</Link></div>}>
+              <div className="px-6 py-6 sm:px-8">
+                <Ticket aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
+                <h2 className="font-display text-2xl font-bold text-neutral-950">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourTickets') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noTicketsYet')}</h2>
+                <p className="mt-3 text-neutral-600">{t('pass.buyer.differentEmail')}</p>
+                <Link to="/orders/recover" className="ticket-link inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-800 underline underline-offset-4">{t('pass.buyer.findTickets')}</Link>
+                <p className="mt-1 text-sm text-neutral-600">{t('pass.buyer.recoveryHelp')}</p>
+              </div>
+            </TicketStock>
+          </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="space-y-4">
+            {eventGroups.flatMap(({ event, tickets }) => {
+              const isPast = new Date(event.starts_at) < now
+              return tickets.map(ticket => <BuyerTicketPass key={ticket.id} event={event} ticket={ticket} isPast={isPast} status={getStatusBadge(ticket)}
+                canTransfer={ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast}
+                onTransfer={() => setTransferTarget({ ticket, event })}
+                onCancelTransfer={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
+                onTransferSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />)
             })}
-          </StaggerContainer></div>}
-        </motion.div>
+          </div>}
+        </div>
       </div>
       {transferTarget && (
         <TransferTicketDialog
@@ -449,14 +351,4 @@ function MyTicketsContent({ refreshSession, signOut }) {
       )}
     </div>
   )
-}
-
-// Each event has an independent original/translation toggle. Issued ticket
-// type names stay as printed on the ticket and on the organizer's door list.
-function TranslatedEventHeading({ event }) {
-  const content = useTranslatedContent(event)
-  return <>
-    <Link to={`/events/${event.slug}`} className="text-lg font-semibold text-neutral-900 hover:text-brand-600 transition-colors">{content.title}</Link>
-    <MachineTranslationNotice {...content.notice} />
-  </>
 }

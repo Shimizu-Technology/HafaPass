@@ -26,7 +26,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const isHeroPage = ['/', '/host'].includes(location.pathname)
+  const isHeroPage = ['/', '/host', '/events', '/discover', '/my-tickets', '/saved'].includes(location.pathname) || location.pathname.startsWith('/collections/')
   const isTicketPage = location.pathname.startsWith('/tickets/')
 
   useEffect(() => {
@@ -126,7 +126,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-16 flex-wrap items-center justify-between gap-y-2 py-2">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5 group">
+          <Link to="/" className="flex min-h-11 items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-brand-700 flex items-center justify-center">
               <HafaPassMark className="h-5 w-5 text-white" />
             </div>
@@ -141,7 +141,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                className={`inline-flex min-h-11 items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
                   isActive(link.to)
                     ? isDarkMode
                       ? 'text-white bg-white/15'
@@ -190,7 +190,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
-                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
+                className={`w-11 h-11 flex items-center justify-center rounded-lg transition-colors ${
                   isDarkMode
                     ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                     : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100/80'
@@ -211,7 +211,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
               </SignedIn>
             ) : (
               <>
-                <Link to="/sign-in" className={`text-sm font-medium transition-colors px-3 py-2 ${
+                <Link to="/sign-in" className={`inline-flex min-h-11 items-center text-sm font-medium transition-colors px-3 py-2 ${
                   isDarkMode ? 'text-neutral-300 hover:text-white' : 'text-neutral-500 hover:text-neutral-900'
                 }`}>
                   {t('nav.signIn')}

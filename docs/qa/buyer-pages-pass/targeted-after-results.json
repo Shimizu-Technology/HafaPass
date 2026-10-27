@@ -1,0 +1,291 @@
+[
+  {
+    "engine": "chromium",
+    "width": 375,
+    "name": "my-tickets-empty",
+    "contentWidth": 375,
+    "cls": 0.0006369967725496858,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.0006369967725496858,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 797,
+              "width": 375,
+              "height": 15,
+              "top": 797,
+              "right": 375,
+              "bottom": 812,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 375,
+    "name": "my-tickets-populated",
+    "contentWidth": 375,
+    "cls": 0.005528221990341916,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.005528221990341916,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 797,
+              "width": 375,
+              "height": 15,
+              "top": 797,
+              "right": 375,
+              "bottom": 812,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "name": "my-tickets-empty",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": true,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "name": "my-tickets-populated",
+    "contentWidth": 390,
+    "cls": 0.004443127962085308,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.004443127962085308,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 829,
+              "width": 390,
+              "height": 15,
+              "top": 829,
+              "right": 390,
+              "bottom": 844,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "name": "my-tickets-empty",
+    "contentWidth": 1280,
+    "cls": 0.000205078125,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.000205078125,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 785,
+              "width": 1280,
+              "height": 15,
+              "top": 785,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 799,
+              "width": 1280,
+              "height": 1,
+              "top": 799,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "name": "my-tickets-populated",
+    "contentWidth": 1280,
+    "cls": 0.0036474609374999994,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.0036474609374999994,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 785,
+              "width": 1280,
+              "height": 15,
+              "top": 785,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 375,
+    "name": "my-tickets-empty",
+    "contentWidth": 375,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 375,
+    "name": "my-tickets-populated",
+    "contentWidth": 375,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "my-tickets-empty",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "my-tickets-populated",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "my-tickets-empty",
+    "contentWidth": 1280,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "my-tickets-populated",
+    "contentWidth": 1280,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  }
+]

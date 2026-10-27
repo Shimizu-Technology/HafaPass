@@ -20,9 +20,9 @@ for (const width of [375, 1280]) {
     })
     for (const path of ['/', '/events', '/discover']) {
       await page.goto(path)
-      await expect(page.getByRole('heading', { name: path === '/' ? 'The first events go on sale soon.' : 'Events are coming soon' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
       const main = page.getByRole('main')
-      await expect(main.getByText(path === '/' ? 'Come back soon to find your next night out.' : 'No events are listed yet. Check back soon.')).toBeVisible()
+      await expect(main.getByText('Come back soon to find your next night out.')).toBeVisible()
       if (path === '/') {
         await expect(main.getByRole('heading', { level: 1, name: 'Your night out on Guam starts here.' })).toBeVisible()
         await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)
@@ -33,11 +33,9 @@ for (const width of [375, 1280]) {
         await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(0)
         await expect(main.getByRole('heading', { name: 'Coming up' })).toHaveCount(0)
       } else {
-        await expect(main.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
-        await main.getByRole('link', { name: 'Back to event guide' }).click()
-        await expect(main.getByRole('heading', { name: 'Your night out on Guam starts here.' })).toBeVisible()
-        await page.goto(path)
-        await expect(main.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+        await expect(main.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
+        await expect(main.getByRole('link', { name: 'Back to event guide' })).toHaveCount(0)
+        await expect(main.getByRole('heading', { level: 1, name: path === '/events' ? 'Events' : 'Discover', exact: true })).toBeVisible()
       }
       await expect(page.getByRole('main').getByRole('searchbox')).toHaveCount(0)
       await expect(page.getByRole('main').getByRole('combobox')).toHaveCount(0)
@@ -56,7 +54,7 @@ for (const width of [375, 1280]) {
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([])
       await page.getByRole('button', { name: 'Clear filters' }).click()
-      await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
       await expect(page).toHaveURL(/\/events$/)
     }
     hasEvents = true
@@ -66,14 +64,14 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Coming up' })).toBeVisible()
     await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toHaveCount(0)
     await page.goto('/events?search=nothing')
     await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()
     await page.getByRole('button', { name: 'Clear filters' }).click()
     await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
     await page.goto('/discover')
     await expect(page.getByRole('link', { name: 'Browse events', exact: true })).toBeVisible()
-    await expect(page.getByText('Events are coming soon')).toHaveCount(0)
+    await expect(page.getByText('The first events go on sale soon.')).toHaveCount(0)
   })
 }
 

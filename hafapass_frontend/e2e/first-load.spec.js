@@ -76,7 +76,7 @@ for (const width of [375, 1280]) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const footerTop = await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)
     finishCollections()
-    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
     // Read the settled layout after React commits the new utility classes.
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     expect(await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)).toBe(footerTop)

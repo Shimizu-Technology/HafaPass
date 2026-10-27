@@ -1144,19 +1144,19 @@
       "ticketLimitNotice": "Showing your most recent {{count}} tickets. More tickets are available.",
       "checkingForPurchasesMadeBeforeYouSignedIn": "Checking for purchases made before you signed in…",
       "retryGuestPurchaseRecovery": "Retry guest purchase recovery",
-      "myTickets": "My Tickets",
+      "myTickets": "My tickets",
       "accountSettingsAndPrivacy": "Account settings and privacy",
       "yourSessionExpired": "Your session expired",
       "signInAgainToSeeYourTickets": "Sign in again to see your tickets.",
       "signInAgain": "Sign in again",
       "tryAgain": "Try again",
-      "yourEventPassesAllInOnePlace": "Your event passes, all in one place",
+      "yourEventPassesAllInOnePlace": "Your tickets and orders, all in one place.",
       "lookingForYourTickets": "Looking for your tickets",
       "guestPurchasesNeedAnotherCheck": "Guest purchases need another check",
       "noTicketsYet": "No tickets yet",
       "purchasesMadeWithAVerifiedEmailOnYour": "Purchases made with a verified email on your account appear here after recovery.",
       "recoverAnOrderByEmail": "Recover an order by email",
-      "browseEvents": "Browse Events",
+      "browseEvents": "Browse events",
       "valid": "Valid",
       "used": "Used",
       "cancelled": "Cancelled",
@@ -1258,6 +1258,23 @@
     "host": {
       "madeForGuam": "Made for events on Guam.",
       "yourEvent": "Your event. Your people. We’ll help you get them in."
+    },
+    "buyer": {
+      "home": "Home",
+      "discover": "Discover",
+      "discoverDescription": "Find your next day or night out on Guam.",
+      "savedDescription": "Come back to the events you care about.",
+      "loadingSaved": "Loading saved events",
+      "saveHelp": "Tap Save on an event to keep it here.",
+      "followHelp": "Tap Follow in an event’s organizer section to keep them here.",
+      "reminderHelp": "Tap Remind me on an event to get an email before it starts.",
+      "differentEmail": "Bought tickets with a different email?",
+      "findTickets": "Find them here",
+      "recoveryHelp": "You’ll need your order reference and the email used at checkout.",
+      "openTicket": "Open ticket",
+      "collection": "Collection",
+      "collectionDescription": "A selection of events to explore on Guam.",
+      "loadingCollection": "Loading collection"
     }
   }
 }
