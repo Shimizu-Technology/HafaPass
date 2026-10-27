@@ -7,6 +7,9 @@ export function resolveRevision(env, gitRevision) {
 export function releaseMetadataPlugin(revision) {
   return {
     name: 'hafapass-release-metadata',
+    transformIndexHtml() {
+      return [{ tag: 'meta', attrs: { name: 'hafapass-revision', content: revision || '' }, injectTo: 'head' }]
+    },
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'release.json', source: JSON.stringify({ revision }) })
     },

@@ -19,8 +19,8 @@ function DataRouterDraftProtection({ children }) {
       setRegistryVersion(value => value + 1)
     }
   }, [])
-  const manager = useMemo(() => ({ register }), [register])
   const activeDraft = useCallback(pathname => [...registry.current.values()].find(entry => entry.pathname === pathname && entry.dirty && entry.isCurrent()), [])
+  const manager = useMemo(() => ({ register, hasUnsavedDraft: pathname => Boolean(activeDraft(pathname)) }), [register, activeDraft])
   const shouldBlock = useCallback(({ currentLocation, nextLocation }) => {
     // Hash changes do not abandon the mounted editor or its draft.
     if (currentLocation.pathname === nextLocation.pathname && currentLocation.search === nextLocation.search) return false

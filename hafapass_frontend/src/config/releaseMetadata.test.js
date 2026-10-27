@@ -22,4 +22,10 @@ describe('release source metadata', () => {
     releaseMetadataPlugin('a'.repeat(40)).generateBundle.call({ emitFile })
     expect(emitFile).toHaveBeenCalledWith({ type: 'asset', fileName: 'release.json', source: JSON.stringify({ revision: 'a'.repeat(40) }) })
   })
+
+  it('embeds the same revision in the shell so recovery can verify worker readiness', () => {
+    expect(releaseMetadataPlugin('a'.repeat(40)).transformIndexHtml()).toEqual([
+      { tag: 'meta', attrs: { name: 'hafapass-revision', content: 'a'.repeat(40) }, injectTo: 'head' },
+    ])
+  })
 })
