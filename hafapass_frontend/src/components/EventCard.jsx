@@ -1,6 +1,7 @@
 import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
+import EventDateTile from './EventDateTile'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
@@ -12,6 +13,7 @@ export default function EventCard({ event }) {
   const { t } = useTranslation()
   const location = useLocation()
   const content = useTranslatedContent(event)
+  const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host)
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
   const lowestTicket = event.ticket_types?.find(ticket => isTicketPurchasable(ticket) && ticketAllInCents(ticket) === lowestPrice)
   const priceLabel = lowestPrice === null ? ''
@@ -27,8 +29,8 @@ export default function EventCard({ event }) {
       className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}
-      <div className="aspect-[16/10] overflow-hidden bg-neutral-100 relative rounded-t-2xl">
-        {approvedImageUrl(event.cover_image_url, event.image_asset_host) ? (
+      <div className={hasArtwork ? 'aspect-[16/10] overflow-hidden bg-neutral-100 relative rounded-t-2xl' : 'relative px-5 pt-5'}>
+        {hasArtwork ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
@@ -37,12 +39,7 @@ export default function EventCard({ event }) {
             style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-16 h-16 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-              <path d="M13 5v2" /><path d="M13 17v2" /><path d="M13 11v2" />
-            </svg>
-          </div>
+          <EventDateTile event={event} />
         )}
         {/* Completed overlay */}
         {event.status === 'completed' && (

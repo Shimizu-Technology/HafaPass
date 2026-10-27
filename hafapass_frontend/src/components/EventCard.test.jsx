@@ -32,3 +32,28 @@ describe('event card availability and prices', () => {
     expect(screen.queryByText(/\$19.00|\$20.00/)).not.toBeInTheDocument()
   })
 })
+
+
+describe('event card artwork', () => {
+  const datedEvent = { ...event, starts_at: '2026-10-31T14:00:00Z', timezone: 'Pacific/Guam' }
+
+  it.each([undefined, 'https://unapproved.example/cover.jpg'])('uses the shared date tile without a blank artwork frame for %s', cover_image_url => {
+    const { container } = render(<MemoryRouter><EventCard event={{ ...datedEvent, cover_image_url }} /></MemoryRouter>)
+    const tile = screen.getByLabelText('Sunday, Nov 1, 2026')
+    expect(tile).toHaveAttribute('datetime', datedEvent.starts_at)
+    expect(tile).toHaveTextContent('Sun1Nov')
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('[class*="aspect-"]')).toBeNull()
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/events/guam-event')
+  })
+
+  it('keeps approved organizer artwork and its focal point', () => {
+    render(<MemoryRouter><EventCard event={{ ...datedEvent, image_asset_host: 'art.example.test',
+      cover_image_url: 'https://art.example.test/uploads/cover.jpg', page_customization: { focal_point: { x: 35, y: 65 } } }} /></MemoryRouter>)
+    const image = screen.getByRole('img', { name: event.title })
+    expect(image).toHaveAttribute('src', 'https://art.example.test/uploads/cover.jpg')
+    expect(image).toHaveStyle({ objectPosition: '35% 65%' })
+    expect(image.parentElement.className).toContain('aspect-[16/10]')
+    expect(screen.queryByLabelText('Sunday, Nov 1, 2026')).not.toBeInTheDocument()
+  })
+})
