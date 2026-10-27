@@ -13,8 +13,7 @@ import useEventCategories from '../hooks/useEventCategories'
 import useContentLanguage from '../hooks/useContentLanguage'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { categoryIcon } from '../utils/categoryIcons'
-
-const GUAM_VILLAGES = ['Agana Heights','Asan-Maina','Barrigada','Chalan Pago-Ordot','Dededo','Hagåtña','Humåtak','Inalåhan','Mangilao','Malesso’','Mongmong-Toto-Maite','Piti','Sånta Rita-Sumai','Sinajana','Talo’fo’fo','Tamuning-Tumon-Harmon','Yigo','Yona']
+import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
 
 function guamDate(offsetDays = 0) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -182,11 +181,7 @@ export default function EventsPage() {
             <div className="min-w-0">
              <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.when')}</label>
              <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4">
-             <option value="upcoming">{t('buyer.Events.allUpcoming')}</option>
-             <option value="today">{t('buyer.Events.today')}</option>
-             <option value="tonight">{t('buyer.Events.tonight')}</option>
-             <option value="weekend">{t('buyer.Events.thisWeekend')}</option>
-             <option value="week">{t('buyer.Events.next7Days')}</option>
+             {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
              </select>
             </div>
             <div className="min-w-0">

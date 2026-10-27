@@ -1,19 +1,14 @@
-import { approvedImageUrl } from '../utils/eventPageDesign'
-import { focalPosition } from '../utils/eventPageDesign'
-import BuyerEventText from '../components/BuyerEventText'
 import { useTranslation } from 'react-i18next'
-import useContentLanguage from '../hooks/useContentLanguage'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Calendar, MapPin, ArrowRight, Clock, Search } from 'lucide-react'
+import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
-import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice, ticketAllInCents, ticketServiceFeeCents, isTicketPurchasable } from '../utils/ticketPricing'
-import GuamPhoto from '../components/GuamPhoto'
-import EventDateTile from '../components/EventDateTile'
+import Ticket from '../components/Ticket'
+import EventCard from '../components/EventCard'
+import useContentLanguage from '../hooks/useContentLanguage'
+import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
 
 const categoriesFor = t => [
   { name: t('buyer.Home.Nightlife'), slug: 'nightlife' },
@@ -24,72 +19,17 @@ const categoriesFor = t => [
   { name: t('buyer.Home.ClassesWorkshops'), slug: 'workshop' },
 ]
 
-function priceLabel(ticketTypes, t) {
-  const cents = lowestPurchasablePrice(ticketTypes)
-  const price = formatTicketPrice(cents, t('events.free'))
-  return cents === 0 ? price : price ? `${t('events.from')} ${price}` : ''
-}
-
-function feeLabel(ticketTypes, t) {
-  const lowest = lowestPurchasablePrice(ticketTypes)
-  const ticket = ticketTypes?.find(item => isTicketPurchasable(item) && ticketAllInCents(item) === lowest)
-  const fee = ticket && ticketServiceFeeCents(ticket)
-  return fee > 0 ? t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(fee) }) : ''
-}
-
-// Images are absolutely positioned inside the sized frame so they never depend on
-// percentage heights resolving against an aspect-ratio box. With `backdrop`, a
-// blurred copy fills the frame behind the full poster, so portrait flyers in a
-// wide frame fill the card without cropping their dates or text.
-function EventArtwork({ event, className, priority = false, backdrop = false, onError }) {
-  const { t } = useTranslation()
-  const [failed, setFailed] = useState(false)
-  if (!approvedImageUrl(event.cover_image_url, event.image_asset_host) || failed) return <EventDateTile event={event} />
-  return (
-    <div className={`relative overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
-      {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
-        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
-      <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
-        onError={() => { setFailed(true); onError?.() }} className="absolute inset-0 h-full w-full object-contain" />
-    </div>
-  )
-}
-
-function FeaturedEvent({ event }) {
-  const { t } = useTranslation()
-  const [failed, setFailed] = useState(false)
-  const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && !failed
-  const featuredPrice = priceLabel(event.ticket_types, t)
-  return (
-    <article aria-label={t('buyer.Home.featuredEvent')} className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-      {hasArtwork && <EventArtwork event={event} priority backdrop onError={() => setFailed(true)} className="aspect-[16/9] w-full !rounded-none" />}
-      <div className="flex items-start gap-4 p-5 sm:p-6">
-        {!hasArtwork && <EventDateTile event={event} />}
-        <div className="min-w-0 flex-1">
-          <p className="mb-2 text-sm font-semibold text-brand-800">{t('buyer.Home.featuredEvent')}</p>
-          <BuyerEventText event={event} as="h2" className="break-words font-display text-2xl font-bold text-neutral-950" />
-          <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</span></p>
-          {event.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{event.venue_name}{event.venue_city ? `, ${event.venue_city}` : ''}</span></p>}
-          {featuredPrice && <p className="mt-3 text-sm font-semibold text-neutral-900">{featuredPrice}</p>}
-          {feeLabel(event.ticket_types, t) && <p className="text-xs text-content-muted">{feeLabel(event.ticket_types, t)}</p>}
-          <Link to={`/events/${event.slug || event.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.getTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
-        </div>
-      </div>
-    </article>
-  )
-}
-
 export default function HomePage() {
   const { t } = useTranslation()
   const contentLanguage = useContentLanguage()
-  const categories = categoriesFor(t)
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
+  const [date, setDate] = useState('upcoming')
+  const [village, setVillage] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
-
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -105,134 +45,80 @@ export default function HomePage() {
     return () => { active = false }
   }, [loadAttempt, contentLanguage])
 
-  const featuredEvent = useMemo(() => events
-    .filter(event => event.is_featured && new Date(event.starts_at) > new Date())
-    .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))[0] || null, [events])
-
-  const groupedEvents = (() => {
-    const grouped = {}
-    // Preserve the API's active-event eligibility and do not reorder its data in place.
-    ;[...events].sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at)).slice(0, 8).forEach(event => {
-      const day = formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })
-      if (!grouped[day]) grouped[day] = []
-      grouped[day].push(event)
-    })
-    return grouped
-  })()
-  const dayKeys = Object.keys(groupedEvents)
-  const showFeatured = Boolean(featuredEvent) && !loading && !loadError
-
+  // One browsing section: upcoming featured events lead, then date order.
+  const upcoming = useMemo(() => [...events].sort((a, b) => {
+    const featured = event => Boolean(event.is_featured && new Date(event.starts_at) > new Date())
+    return Number(featured(b)) - Number(featured(a)) || new Date(a.starts_at) - new Date(b.starts_at)
+  }).slice(0, 8), [events])
+  const inventoryEmpty = !loading && !loadError && events.length === 0
   const browse = event => {
     event.preventDefault()
-    const query = search.trim()
-    navigate(query ? `/events?${new URLSearchParams({ search: query })}` : '/events')
+    const params = new URLSearchParams()
+    if (search.trim()) params.set('search', search.trim())
+    if (date !== 'upcoming') params.set('date', date)
+    if (village) params.set('village', village)
+    navigate(`/events${params.size ? `?${params}` : ''}`)
   }
-
-  const inventoryEmpty = !loading && !loadError && events.length === 0
-
-  // Resolve inventory before choosing the hero. Swapping a landscape photo
-  // for a taller featured event after paint moved the whole desktop page.
-  if (loading) return (
-    <div className="min-h-screen bg-stone-50 text-content">
-      <SEO />
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center gap-4 px-4 text-content-muted">
-        <p role="status">{t('buyer.Home.loadingUpcomingEvents')}</p>
-        <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
-        <Link to="/host" className="btn-primary">{t('buyer.Home.startHosting2')}</Link>
-      </div>
-      <Footer />
-    </div>
-  )
-
+  const hostingStub = <div className="flex flex-wrap items-center justify-between gap-x-3 px-6 py-3 sm:px-8">
+    <span className="text-sm text-content-muted">{t('pass.home.hosting')}</span>
+    <Link to="/host" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.sellTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+  </div>
   return (
-    <div className="min-h-screen bg-stone-50 text-content">
+    <div className="min-h-dvh bg-brand-950 text-content">
       <SEO />
-      <section className="py-8 sm:py-12 lg:py-16">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-8">
-          <div className="max-w-2xl">
-            <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-5xl lg:text-[3.5rem]">{t('buyer.Home.findYourNextEventOnGuam')}</h1>
-            <p className="mt-4 max-w-lg text-base leading-relaxed text-content-muted">{t('buyer.Home.browseWhatsComingUpChooseYourTicketsAnd')}</p>
-            {!inventoryEmpty && <><form role="search" onSubmit={browse} className="mt-6">
-              <label htmlFor="home-event-search" className="mb-2 block text-sm font-medium text-neutral-800">{t('buyer.Home.eventOrVenue')}</label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative min-w-0 flex-1">
-                  <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" />
-                  <input id="home-event-search" name="search" type="search" value={search} onChange={event => setSearch(event.target.value)}
-                    placeholder={t('buyer.Home.searchEventsAndVenues')} className="input min-h-12 !pl-10" />
+      <section className="bg-brand-950 pb-16 pt-8 text-white sm:pb-20 sm:pt-12 lg:pb-28 lg:pt-20">
+        <div className="mx-auto grid max-w-6xl items-center gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-16 lg:px-8">
+          <div>
+            <h1 className="max-w-lg font-display text-[2.5rem] font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-6xl">{t('pass.home.title')}</h1>
+            <p className="mt-4 max-w-md text-base leading-relaxed text-brand-100 sm:text-lg">{t('pass.home.lede')}</p>
+          </div>
+          <Ticket className="hero-ticket text-content" stub={hostingStub}>
+            <div className="home-ticket-content px-6 py-6 sm:px-8 sm:py-7" aria-busy={loading}>
+              {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
+                <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
+                <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
+              </div> : loadError ? <div role="alert">
+                <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
+                <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
+                <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
+              </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
+                <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
+                <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
+                <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
+              </div> : <form role="search" onSubmit={browse}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-sm font-medium">{t('pass.home.when')}</label>
+                    <select id="home-when" className="input min-h-12 !px-3 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div>
+                  <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-sm font-medium">{t('pass.home.where')}</label>
+                    <select id="home-where" className="input min-h-12 !px-3 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select></div>
                 </div>
-                <button type="submit" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-action px-5 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.search')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
-              </div>
-            </form>
-            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1">
-              <Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.browseEvents')}<ArrowRight aria-hidden="true" className="ml-2 h-4 w-4" /></Link>
-              <Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-medium text-content-muted hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.startHosting')}</Link>
-            </div></>}
-          </div>
-
-          {!showFeatured && <GuamPhoto photo="market" priority />}
-          {showFeatured && <FeaturedEvent key={`${featuredEvent.id}:${featuredEvent.cover_image_url || ''}`} event={featuredEvent} />}
+                <label htmlFor="home-event-search" className="mb-2 mt-4 block text-sm font-medium">{t('buyer.Home.eventOrVenue')}</label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" /><input id="home-event-search" name="search" type="search" enterKeyHint="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('buyer.Home.searchEventsAndVenues')} className="input min-h-12 !pl-10 text-base" /></div>
+                  <button type="submit" className="btn-primary min-h-12 !px-5">{t('buyer.Home.search')}</button>
+                </div>
+                <p className="mt-3 text-xs text-content-muted">{t('pass.home.guamTime')}</p>
+              </form>}
+            </div>
+          </Ticket>
         </div>
       </section>
-
-      {inventoryEmpty ? <EmptyInventory embedded /> : <section aria-busy={loading} aria-labelledby="upcoming-heading" className="py-8 sm:py-12">
+      <div className="relative -mt-6 min-h-[32rem] rounded-t-[2rem] bg-stone-50 pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 id="upcoming-heading" className="font-display text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">{t('buyer.Home.nextUpOnGuam')}</h2>
-            <Link to="/events" className="inline-flex min-h-11 items-center gap-2 rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
-          </div>
-          {loading ? <p role="status" className="py-8 text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p> : loadError ? (
-            <div role="alert" className="rounded-xl border border-neutral-200 bg-white p-6">
-              <h3 className="text-xl font-semibold text-neutral-900">{t('buyer.Home.eventsCouldntLoad')}</h3>
-              <p className="mt-2 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
-              <button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary mt-4">{t('buyer.Home.retryEvents')}</button>
-            </div>
-          ) : dayKeys.length ? (
-            <div className="space-y-8">
-              {dayKeys.map(day => (
-                <section key={day} aria-label={t('buyer.Home.eventsOn', { value1: day })}>
-                  <h3 className="border-b border-neutral-200 pb-3 text-sm font-semibold text-brand-800">{day}</h3>
-                  <div className="divide-y divide-neutral-200">
-                    {groupedEvents[day].map(event => {
-                      const price = priceLabel(event.ticket_types, t)
-                      return (
-                        <Link key={event.id} to={`/events/${event.slug || event.id}`} className="group flex min-w-0 items-start gap-4 rounded-lg py-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
-                          <EventArtwork key={event.cover_image_url || event.id} event={event} className="h-20 w-20 shrink-0 sm:h-28 sm:w-40" />
-                          <div className="min-w-0 flex-1">
-                            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-muted"><span className="inline-flex items-center gap-1.5"><Clock aria-hidden="true" className="h-4 w-4" />{formatEventTime(event.starts_at, event.timezone)}</span>{event.venue_name && <span className="inline-flex min-w-0 items-start gap-1.5"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{event.venue_name}</span></span>}</p>
-                            <BuyerEventText event={event} linked description className="mt-2 break-words text-base font-semibold text-neutral-950 group-hover:text-brand-800 sm:text-xl" />
-                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">{price && <span className="font-semibold text-neutral-900">{price}<small className="block font-normal text-content-muted">{feeLabel(event.ticket_types, t)}</small></span>}<span className="inline-flex min-h-8 items-center gap-1 font-medium text-brand-800">{t('buyer.Home.viewEvent')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></span></div>
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-neutral-200 bg-white p-6 sm:p-8">
-              <h3 className="text-xl font-semibold text-neutral-950">{t('buyer.Home.noUpcomingEventsListed')}</h3>
-              <p className="mt-2 text-content-muted">{t('buyer.Home.checkBackForNewDatesOrStartSetting')}</p>
-            </div>
-          )}
+          {inventoryEmpty ? <section aria-labelledby="coming-soon-heading" className="py-2 sm:py-4"><h2 id="coming-soon-heading" className="font-display text-2xl font-bold">{t('preInventory.title')}</h2><p className="mt-3 text-content-muted">{t('pass.home.noEvents')}</p></section> : !loading && !loadError ? <>
+            <section aria-labelledby="upcoming-heading">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 id="upcoming-heading" className="font-display text-2xl font-bold sm:text-3xl">{t('pass.home.comingUp')}</h2><Link to="/events" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>
+              <ul className="event-track" aria-label={t('pass.home.comingUp')}>{upcoming.map(event => <li key={`${event.id}:${event.cover_image_url || ''}`} className="min-w-0"><EventCard event={event} /></li>)}</ul>
+            </section>
+            <section aria-labelledby="categories-heading" className="pt-9"><h2 id="categories-heading" className="mb-4 font-display text-xl font-bold">{t('buyer.Home.exploreByCategory')}</h2><div className="flex flex-wrap gap-2">{categoriesFor(t).map(({name,slug}) => <Link key={slug} to={`/events?category=${slug}`} className="ticket-chip inline-flex min-h-11 items-center rounded-full border border-stone-200 bg-white px-4 text-sm font-medium">{name}</Link>)}</div></section>
+          </> : null}
+          {!loading && <section className="mt-9">
+            <Ticket className="planning-ticket" topClassName="!bg-brand-800 text-white" stubClassName="!bg-brand-800 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-primary gap-2">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
+              <div className="px-6 py-6 sm:px-8"><h2 className="font-display text-2xl font-bold">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>
+            </Ticket>
+          </section>}
         </div>
-      </section>}
-
-      {!inventoryEmpty && <section aria-labelledby="categories-heading" className="bg-white py-8 sm:py-10">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <h2 id="categories-heading" className="mb-5 font-display text-2xl font-bold text-neutral-950">{t('buyer.Home.exploreByCategory')}</h2>
-          <div className="flex flex-wrap gap-2 sm:gap-3">
-            {categories.map(({ name, slug }) => <Link key={slug} to={`/events?category=${slug}`} className="inline-flex min-h-11 items-center rounded-full bg-stone-100 px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{name}</Link>)}
-          </div>
-        </div>
-      </section>}
-
-      <section className="py-10 sm:py-12">
-        <div className="mx-auto flex max-w-6xl flex-col items-start gap-5 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <div><h2 className="font-display text-2xl font-bold text-neutral-950">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-xl text-content-muted">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>
-          <Link to="/host" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-action px-5 py-3 font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
-        </div>
-      </section>
+      </div>
       <Footer />
     </div>
   )

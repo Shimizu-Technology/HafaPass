@@ -53,7 +53,7 @@ describe('event card artwork', () => {
     const image = screen.getByRole('img', { name: event.title })
     expect(image).toHaveAttribute('src', 'https://art.example.test/uploads/cover.jpg')
     expect(image).toHaveStyle({ objectPosition: '35% 65%' })
-    expect(image.parentElement.className).toContain('aspect-[16/10]')
+    expect(image.parentElement.className).toContain('h-44')
     expect(screen.queryByLabelText('Sunday, Nov 1, 2026')).not.toBeInTheDocument()
   })
 })

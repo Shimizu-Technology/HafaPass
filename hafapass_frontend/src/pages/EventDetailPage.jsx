@@ -360,7 +360,7 @@ function EventDetailContent() {
   }
 
   return (
-    <div className={eventAccentStyle ? 'event-customized' : undefined} style={eventAccentStyle}>
+    <div className={`public-listing-min-height${eventAccentStyle ? ' event-customized' : ''}`} style={eventAccentStyle}>
       <SEO
         title={event.title}
         description={advertisedDescription}

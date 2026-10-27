@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
@@ -51,17 +51,10 @@ it('points organizers to the host landing page with pricing', () => {
 })
 
 
-it('keeps every existing link and exposes photograph source, author, license and changes', async () => {
+it('keeps every existing navigation link and hides photo credits without credited photos', () => {
   render(<MemoryRouter><Footer /></MemoryRouter>)
   for (const path of ['/events', '/host', '/sign-in', '/orders/recover', '/policies/privacy', '/policies/buyer-terms', '/policies/refunds', '/policies/organizer-agreement', '/policies/accessibility', '/policies/cookies']) {
     expect(document.querySelector(`footer a[href="${path}"]`)).not.toBeNull()
   }
-  const summary = screen.getByText('Photo credits', { selector: 'summary' })
-  await import('@testing-library/user-event').then(({ default: userEvent }) => userEvent.setup().click(summary))
-  const credits = within(summary.parentElement)
-  expect(credits.getByText(/Resized and converted to WebP/)).toBeVisible()
-  expect(credits.getAllByRole('link')).toHaveLength(4)
-  expect(credits.getAllByRole('link', { name: 'CC BY 2.0' })).toHaveLength(1)
-  expect(credits.getByRole('link', { name: 'CC BY 3.0' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by/3.0/')
-  expect(credits.getByText(/Junpei Abe/)).toBeInTheDocument()
+  expect(screen.queryByText('Photo credits')).not.toBeInTheDocument()
 })

@@ -24,18 +24,18 @@ for (const width of [375, 1280]) {
       const main = page.getByRole('main')
       await expect(main.getByText('No events are listed yet. Check back soon.')).toBeVisible()
       if (path === '/') {
-        await expect(main.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeVisible()
+        await expect(main.getByRole('heading', { level: 1, name: 'Your night out on Guam starts here.' })).toBeVisible()
         await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)
-        await expect(main.getByRole('img', { name: /A food vendor grills at the Chamorro Village/ })).toBeVisible()
+        await expect(main.getByRole('img')).toHaveCount(0)
         await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
         await expect(main.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
         await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(0)
-        await expect(main.getByRole('heading', { name: 'Next Up on Guam' })).toHaveCount(0)
+        await expect(main.getByRole('heading', { name: 'Coming up' })).toHaveCount(0)
       } else {
         await expect(main.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
         await main.getByRole('link', { name: 'Back to event guide' }).click()
-        await expect(main.getByRole('heading', { name: 'Find your next event on Guam' })).toBeVisible()
+        await expect(main.getByRole('heading', { name: 'Your night out on Guam starts here.' })).toBeVisible()
         await page.goto(path)
         await expect(main.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
       }
@@ -61,10 +61,10 @@ for (const width of [375, 1280]) {
     }
     hasEvents = true
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Find your next event on Guam' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your night out on Guam starts here.' })).toBeVisible()
     await expect(page.getByRole('searchbox', { name: 'Event or venue' })).toBeVisible()
     await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Next Up on Guam' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Coming up' })).toBeVisible()
     await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toHaveCount(0)
     await page.goto('/events?search=nothing')

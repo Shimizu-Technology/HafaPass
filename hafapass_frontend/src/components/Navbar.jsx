@@ -26,7 +26,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const isHomepage = location.pathname === '/'
+  const isHeroPage = ['/', '/host'].includes(location.pathname)
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10)
@@ -69,11 +69,11 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const roleAlert = isSignedIn && currentRole?.status === 'failed'
 
   // Determine if navbar should be in "dark/transparent" mode
-  const isDarkMode = isHomepage && !scrolled
+  const isDarkMode = isHeroPage && !scrolled
 
   useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]')
-    if (theme) theme.content = isDarkMode ? '#020617' : '#ffffff'
+    if (theme) theme.content = isDarkMode ? '#032827' : '#ffffff'
   }, [isDarkMode])
 
   if (isWorkspacePath(location.pathname)) {
@@ -116,21 +116,21 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
     <header
       className={`app-nav sticky top-0 z-50 ${
         isDarkMode
-          ? 'bg-neutral-950 border-b border-white/10'
+          ? 'bg-brand-950 border-b border-transparent'
           : scrolled
             ? 'bg-white border-b border-neutral-200 shadow-sm'
             : 'bg-white border-b border-neutral-200'
       }`}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex min-h-16 flex-wrap items-center justify-between gap-y-2 py-2">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-brand-700 flex items-center justify-center">
               <HafaPassMark className="h-5 w-5 text-white" />
             </div>
             <span className={`text-xl font-bold tracking-tight transition-colors duration-300 ${isDarkMode ? 'text-white' : 'text-neutral-900'}`}>
-              Håfa<span className="text-brand-500">Pass</span>
+              Håfa<span className={isDarkMode ? 'text-brand-400' : 'text-brand-500'}>Pass</span>
             </span>
           </Link>
 
@@ -180,8 +180,8 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                     onBlur={() => { if (!searchQuery) setSearchOpen(false) }}
                     className={`w-56 pl-9 pr-3 py-2 text-sm rounded-lg border transition-[color,background-color,border-color,box-shadow] ${
                       isDarkMode
-                        ? 'border-white/20 bg-white/10 backdrop-blur-sm text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
-                        : 'border-neutral-200/80 bg-white/80 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
+                        ? 'border-white/20 bg-white/10  text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
+                        : 'border-neutral-200/80 bg-white/80  focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400'
                     }`}
                   />
                 </div>
@@ -254,8 +254,8 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
       {mobileMenuOpen && (
         <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label={t('nav.mobileNavigation')} className={`mobile-nav xl:hidden overflow-y-auto border-t ${
           isDarkMode
-            ? 'border-white/10 bg-neutral-950/95 backdrop-blur-2xl'
-            : 'border-neutral-200/50 bg-white/90 backdrop-blur-2xl'
+            ? 'border-white/10 bg-brand-950'
+            : 'border-neutral-200/50 bg-white/90 '
         }`}>
           <div className="px-4 py-3 space-y-1">
             {navLinks.map(link => {
