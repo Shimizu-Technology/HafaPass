@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { ArrowRight, Banknote, Check, CheckCircle2, ChevronDown, Mail, ScanLine, Users, WifiOff } from 'lucide-react'
-import GuamPhoto from '../components/GuamPhoto'
+import Ticket from '../components/Ticket'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { activeIntlLocale } from '../utils/locale'
@@ -116,38 +116,7 @@ function FeeCalculator({ pricing }) {
     : ''
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-card sm:p-7">
-      <h2 className="font-display text-xl font-bold text-neutral-950">{t('buyerDiscovery.host.feeCalculator')}</h2>
-      <p className="mt-1 text-sm text-content-muted">{t('buyerDiscovery.host.compareWhatYouPay')}</p>
-      <div className="mt-5 grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-        <div>
-          <label htmlFor={`${id}-price`} className="mb-1.5 block text-sm font-medium text-neutral-800">{t('buyerDiscovery.host.ticketPrice')}</label>
-          <div className="relative">
-            <span aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
-            <input id={`${id}-price`} type="text" inputMode="decimal" autoComplete="off" enterKeyHint="done" value={priceInput}
-              onChange={event => setPriceInput(event.target.value)} placeholder="25.00"
-              aria-invalid={priceError ? true : undefined} aria-describedby={priceError ? `${id}-price-error` : undefined}
-              className={`input !pl-8 text-base tabular-nums ${priceError ? 'input-error' : ''}`} />
-          </div>
-        </div>
-        <div>
-          <label htmlFor={`${id}-quantity`} className="mb-1.5 block text-sm font-medium text-neutral-800">{t('buyerDiscovery.host.tickets2')}</label>
-          <input id={`${id}-quantity`} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" enterKeyHint="done" value={quantityInput}
-            onChange={event => setQuantityInput(event.target.value)}
-            aria-invalid={quantityError ? true : undefined} aria-describedby={quantityError ? `${id}-quantity-error` : undefined}
-            className={`input text-base tabular-nums ${quantityError ? 'input-error' : ''}`} />
-        </div>
-      </div>
-      <div role="group" aria-label={t('buyerDiscovery.host.tryATicketPrice')} className="mt-3 flex flex-wrap gap-2">
-        {[10, 25, 59].map(price => <button key={price} type="button" aria-pressed={priceCents === price * 100}
-          onClick={() => setPriceInput(String(price))}
-          className="min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
-          {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
-        </button>)}
-      </div>
-      {priceError && <p id={`${id}-price-error`} className="mt-2 text-sm text-red-700">{priceError}</p>}
-      {quantityError && <p id={`${id}-quantity-error`} className="mt-2 text-sm text-red-700">{quantityError}</p>}
-
+    <Ticket className="hero-ticket text-content" stub={<div className="bg-stone-50 px-5 py-6 sm:px-7">
       <p role="status" className="sr-only">{summary}</p>
       <div className="mt-5">
         {result && result.subtotalCents === 0 && (
@@ -180,7 +149,41 @@ function FeeCalculator({ pricing }) {
           ? t('buyerDiscovery.host.cardProcessingIsIncludedInTheHåfaPass')
           : t('buyerDiscovery.host.cardProcessingIsDeductedFromYourProceeds')}
         {' '}{t('buyerDiscovery.host.yourDashboardShowsTheExactAmountsFor')}</p>
-    </div>
+    </div>}>
+      <div className="px-5 py-6 sm:px-7">
+      <h2 className="font-display text-xl font-bold text-neutral-950">{t('buyerDiscovery.host.feeCalculator')}</h2>
+      <p className="mt-1 text-sm text-content-muted">{t('buyerDiscovery.host.compareWhatYouPay')}</p>
+      <div className="mt-5 grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
+        <div>
+          <label htmlFor={`${id}-price`} className="mb-1.5 block text-sm font-medium text-neutral-800">{t('buyerDiscovery.host.ticketPrice')}</label>
+          <div className="relative">
+            <span aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
+            <input id={`${id}-price`} type="text" inputMode="decimal" autoComplete="off" enterKeyHint="done" value={priceInput}
+              onChange={event => setPriceInput(event.target.value)} placeholder="25.00"
+              aria-invalid={priceError ? true : undefined} aria-describedby={priceError ? `${id}-price-error` : undefined}
+              className={`input !pl-8 text-base tabular-nums ${priceError ? 'input-error' : ''}`} />
+          </div>
+        </div>
+        <div>
+          <label htmlFor={`${id}-quantity`} className="mb-1.5 block text-sm font-medium text-neutral-800">{t('buyerDiscovery.host.tickets2')}</label>
+          <input id={`${id}-quantity`} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" enterKeyHint="done" value={quantityInput}
+            onChange={event => setQuantityInput(event.target.value)}
+            aria-invalid={quantityError ? true : undefined} aria-describedby={quantityError ? `${id}-quantity-error` : undefined}
+            className={`input text-base tabular-nums ${quantityError ? 'input-error' : ''}`} />
+        </div>
+      </div>
+      <div role="group" aria-label={t('buyerDiscovery.host.tryATicketPrice')} className="mt-3 flex flex-wrap gap-2">
+        {[10, 25, 59].map(price => <button key={price} type="button" aria-pressed={priceCents === price * 100}
+          onClick={() => setPriceInput(String(price))}
+          className="min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
+          {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
+        </button>)}
+      </div>
+      {priceError && <p id={`${id}-price-error`} className="mt-2 text-sm text-red-700">{priceError}</p>}
+      {quantityError && <p id={`${id}-quantity-error`} className="mt-2 text-sm text-red-700">{quantityError}</p>}
+
+      </div>
+    </Ticket>
   )
 }
 
@@ -194,24 +197,24 @@ function PricingSection({ configState, targets }) {
   ]
 
   return (
-    <section id="pricing" aria-labelledby="pricing-heading" className="scroll-mt-20 pb-12 pt-10 sm:py-16 lg:py-20">
+    <section id="pricing" aria-labelledby="pricing-heading" className="scroll-mt-20 bg-brand-950 pb-16 pt-10 text-white sm:pb-20 sm:pt-14 lg:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-start gap-9 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12">
           <div>
-            <h1 id="pricing-heading" className="font-display text-4xl font-bold leading-[1.08] tracking-tight text-neutral-950 sm:text-5xl">{t('buyerDiscovery.host.hostYourEventWithHåfaPass')}</h1>
+            <h1 id="pricing-heading" className="font-display text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl">{t('buyerDiscovery.host.hostYourEventWithHåfaPass')}</h1>
             <div className="flow-root min-h-[14rem] sm:min-h-[11rem] lg:min-h-[15rem]">
               {configState.status === 'loading' && (
                 <div role="status" aria-label={t('buyerDiscovery.host.loadingPricing')} className="mt-6 h-24 w-full max-w-sm rounded-lg bg-neutral-100" />
               )}
               {pricing && <>
-                <p className="mt-6 font-display text-2xl font-bold text-brand-800 sm:text-3xl" data-testid="host-fee-summary">{describeFee(pricing, t)}</p>
+                <p className="mt-6 font-display text-2xl font-bold text-brand-300 sm:text-3xl" data-testid="host-fee-summary">{describeFee(pricing, t)}</p>
                 {pricing.processingIncluded === true && <>
-                  <p className="mt-2 text-lg font-semibold text-neutral-950">{t('buyerDiscovery.host.cardProcessingIncluded')}</p>
-                  <p className="mt-4 leading-relaxed text-content-muted">{t('buyerDiscovery.host.keepYourTicketPrice')}</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{t('buyerDiscovery.host.cardProcessingIncluded')}</p>
+                  <p className="mt-4 leading-relaxed text-brand-100">{t('buyerDiscovery.host.keepYourTicketPrice')}</p>
                 </>}
               </>}
               {configState.status !== 'loading' && !pricing && (
-                <div role="status" className="mt-6 rounded-xl bg-white p-4">
+                <div role="status" className="mt-6 rounded-xl bg-white p-4 text-content">
                   <p className="font-semibold text-neutral-900">{t('buyerDiscovery.host.currentRatesArenTAvailableRightNow')}</p>
                   <p className="mt-1 text-sm text-content-muted">{t('buyerDiscovery.host.paidTicketsCarryAPerTicketHåfaPass')}</p>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
@@ -222,13 +225,13 @@ function PricingSection({ configState, targets }) {
               )}
             </div>
             <ul className="mt-6 space-y-3">
-              {points.map(point => <li key={point} className="flex items-start gap-3 text-neutral-800">
-                <Check aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-brand-700" /><span>{point}</span>
+              {points.map(point => <li key={point} className="flex items-start gap-3 text-brand-100">
+                <Check aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-brand-300" /><span>{point}</span>
               </li>)}
             </ul>
-            <p className="mt-6 text-sm leading-relaxed text-content-muted">{t('buyerDiscovery.host.cancellationPromise')}</p>
-            <div className="mt-4 min-h-6">{pricing?.payoutScheduleText && <p className="text-sm leading-relaxed text-content-muted">{t('buyerDiscovery.host.payouts', { payoutScheduleText: pricing.payoutScheduleText })}</p>}</div>
-            <div className="mt-7"><CtaGroup targets={targets} /></div>
+            <p className="mt-6 text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.cancellationPromise')}</p>
+            <div className="mt-4 min-h-6">{pricing?.payoutScheduleText && <p className="text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.payouts', { payoutScheduleText: pricing.payoutScheduleText })}</p>}</div>
+            <div className="mt-7"><CtaGroup targets={targets} tone="dark" /></div>
           </div>
           <div className="min-w-0 lg:pt-1">
             {pricing ? <FeeCalculator pricing={pricing} /> : configState.status === 'loading'
@@ -265,7 +268,7 @@ function HostContent({ targets }) {
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
 
   return (
-    <div className="bg-stone-50 text-content">
+    <div className="public-intros bg-stone-50 text-content">
       <SEO
         title={t('buyerDiscovery.host.hostYourEvent')}
         description={t('buyerDiscovery.host.sellTicketsForYourGuamEventWith')}
@@ -275,7 +278,7 @@ function HostContent({ targets }) {
 
       <PricingSection configState={configState} targets={targets} />
 
-      <section aria-labelledby="publish-heading" className="bg-white py-12 sm:py-20">
+      <section aria-labelledby="publish-heading" className="relative -mt-6 rounded-t-[2rem] bg-white py-12 sm:rounded-t-[2.5rem] sm:py-20">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
           <div>
             <h2 id="publish-heading" className="font-display text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">{t('buyerDiscovery.host.publishYourself')}</h2>
@@ -309,13 +312,22 @@ function HostContent({ targets }) {
       </section>
 
       <section aria-labelledby="local-help-heading" className="bg-brand-50 py-12 sm:py-16">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 md:grid-cols-2 lg:gap-16 lg:px-8">
+        <div className={`mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 lg:gap-16 lg:px-8 ${support.email || support.tel ? 'md:grid-cols-2' : ''}`}>
           <div>
             <h2 id="local-help-heading" className="font-display text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">{t('buyerDiscovery.host.localHelp')}</h2>
             <p className="mt-5 text-lg leading-relaxed text-content-muted">{t('buyerDiscovery.host.localHelpBody')}</p>
             {support.email && <SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="btn-secondary mt-6 gap-2">{t('buyerDiscovery.host.firstEventHelp')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></SupportLink>}
           </div>
-          <GuamPhoto photo="bay" sizes="(min-width: 768px) 45vw, 100vw" />
+          {(support.email || support.tel) && <Ticket className="mx-auto w-full max-w-md" stub={<div className="px-7 py-5"><p className="text-sm text-content-muted">{t('buyerDiscovery.host.hostingOnHåfaPass')}</p></div>}>
+            <div className="px-7 py-8">
+              <h3 className="font-display text-2xl font-bold text-brand-950">{t('buyerDiscovery.host.contactSupport')}</h3>
+              <div className="mt-5 flex flex-col items-start gap-4">
+                {support.email && <SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="ticket-link inline-flex min-h-11 items-center break-all rounded text-lg font-semibold text-brand-800 underline underline-offset-4">{support.email}</SupportLink>}
+                {support.tel && <a href={support.tel} className="ticket-link inline-flex min-h-11 items-center rounded text-lg font-semibold text-brand-800 underline underline-offset-4">{support.phone}</a>}
+              </div>
+            </div>
+          </Ticket>}
+
         </div>
       </section>
 

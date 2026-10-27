@@ -1,0 +1,15 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: chromium home-empty 768 CLS 0.11431503295898438: [{"value":0.11431503295898438,"sources":[{"node":"<div class=\"relative -mt-6 rounded-t-[2rem] bg-stone-50 pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm","before":{"x":0,"y":685,"width":768,"height":339,"top":685,"right":768,"bottom":1024,"left":0},"after":{"x":0,"y":623,"width":768,"height":324,"top":623,"right":768,"bottom":947,"left":0}},{"node":"<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl","before":{"x":0,"y":0,"width":0,"height":0,"top":0,"right":0,"bottom":0,"left":0},"after":{"x":0,"y":947,"width":768,"height":77,"top":947,"right":768,"bottom":1024,"left":0}},{"before":{"x":24,"y":109,"width":512,"height":109,"top":109,"right":536,"bottom":218,"left":24},"after":{"x":24,"y":106,"width":512,"height":109,"top":106,"right":536,"bottom":215,"left":24}}]}]
+    at file:///Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/scripts/qa/pass-direction.mjs:45:12 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v22.22.3

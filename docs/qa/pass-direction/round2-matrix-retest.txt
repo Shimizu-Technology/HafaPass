@@ -1,0 +1,3 @@
+chromium: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed
+webkit: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed
+after QA: 60 page/dimension checks passed

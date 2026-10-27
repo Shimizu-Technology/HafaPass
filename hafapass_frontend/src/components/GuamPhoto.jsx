@@ -3,6 +3,7 @@ import { guamPhotos } from '../config/photoCredits'
 
 export default function GuamPhoto({ photo, priority = false, className = '', sizes = '(min-width: 1024px) 512px, (min-width: 640px) 90vw, 100vw' }) {
   const { t } = useTranslation()
+  if (!guamPhotos[photo]) return null
   const { file, width, height } = guamPhotos[photo]
   const base = `/images/guam/${file}`
   return (

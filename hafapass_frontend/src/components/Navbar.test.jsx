@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
@@ -35,6 +35,49 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     apiClient.defaults.adapter = vi.fn(config => Promise.resolve(response(config)))
   })
   afterEach(() => vi.unstubAllEnvs())
+
+  it('synchronizes the mounted header and browser theme across routes and scrolling', async () => {
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    const theme = document.createElement('meta')
+    theme.name = 'theme-color'
+    theme.content = '#ffffff'
+    document.head.append(theme)
+    function RouteControls() {
+      const navigate = useNavigate()
+      return <>{['/', '/host', '/events', '/tickets/guest-pass'].map(path =>
+        <button key={path} onClick={() => navigate(path)}>Go to {path}</button>)}</>
+    }
+    const user = userEvent.setup()
+    const assertTheme = async dark => {
+      await waitFor(() => {
+        expect(screen.getByRole('banner')).toHaveClass(dark ? 'bg-brand-950' : 'bg-white')
+        expect(theme).toHaveAttribute('content', dark ? '#032827' : '#ffffff')
+      })
+    }
+    const scroll = async y => {
+      await act(() => {
+        Object.defineProperty(window, 'scrollY', { configurable: true, value: y })
+        window.dispatchEvent(new Event('scroll'))
+      })
+    }
+    try {
+      render(<MemoryRouter initialEntries={['/events']}><Navbar /><RouteControls /></MemoryRouter>)
+      await assertTheme(false)
+      for (const path of ['/', '/host', '/tickets/guest-pass']) {
+        await user.click(screen.getByRole('button', { name: `Go to ${path}`, exact: true }))
+        await assertTheme(true)
+        await scroll(100)
+        await assertTheme(path.startsWith('/tickets/'))
+        await scroll(0)
+        await assertTheme(true)
+        await user.click(screen.getByRole('button', { name: 'Go to /events', exact: true }))
+        await assertTheme(false)
+      }
+    } finally {
+      theme.remove()
+      await scroll(0)
+    }
+  })
 
   it('waits for real bootstrap and asynchronous token retrieval before loading desktop and mobile admin navigation', async () => {
     let finishToken

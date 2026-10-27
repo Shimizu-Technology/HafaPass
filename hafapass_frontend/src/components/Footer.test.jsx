@@ -1,9 +1,11 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import { resetSupportContactForTests } from '../utils/supportContact'
 import Footer from './Footer'
+import { guamPhotos } from '../config/photoCredits'
+vi.mock('../config/photoCredits', () => ({ guamPhotos: {} }))
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 beforeEach(() => {
@@ -11,7 +13,10 @@ beforeEach(() => {
   resetSupportContactForTests()
   apiClient.get.mockRejectedValue(new Error('offline'))
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  for (const key of Object.keys(guamPhotos)) delete guamPhotos[key]
+})
 
 it('routes the footer contact to the configured receiving mailbox', () => {
   vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
@@ -51,17 +56,19 @@ it('points organizers to the host landing page with pricing', () => {
 })
 
 
-it('keeps every existing link and exposes photograph source, author, license and changes', async () => {
+it('keeps every existing navigation link and hides photo credits without credited photos', () => {
   render(<MemoryRouter><Footer /></MemoryRouter>)
   for (const path of ['/events', '/host', '/sign-in', '/orders/recover', '/policies/privacy', '/policies/buyer-terms', '/policies/refunds', '/policies/organizer-agreement', '/policies/accessibility', '/policies/cookies']) {
     expect(document.querySelector(`footer a[href="${path}"]`)).not.toBeNull()
   }
-  const summary = screen.getByText('Photo credits', { selector: 'summary' })
-  await import('@testing-library/user-event').then(({ default: userEvent }) => userEvent.setup().click(summary))
-  const credits = within(summary.parentElement)
-  expect(credits.getByText(/Resized and converted to WebP/)).toBeVisible()
-  expect(credits.getAllByRole('link')).toHaveLength(4)
-  expect(credits.getAllByRole('link', { name: 'CC BY 2.0' })).toHaveLength(1)
-  expect(credits.getByRole('link', { name: 'CC BY 3.0' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by/3.0/')
-  expect(credits.getByText(/Junpei Abe/)).toBeInTheDocument()
+  expect(screen.queryByText('Photo credits')).not.toBeInTheDocument()
+})
+
+it('shows source, author and license when a credited photo is configured', () => {
+  guamPhotos.qa = { file: 'qa-photo', title: 'QA photo source', author: 'QA photographer', license: 'QA photo license', sourceUrl: 'https://example.test/photo', licenseUrl: 'https://example.test/license' }
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByText('Photo credits', { selector: 'summary' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'QA photo source', hidden: true })).toHaveAttribute('href', guamPhotos.qa.sourceUrl)
+  expect(screen.getByRole('link', { name: 'QA photo license', hidden: true })).toHaveAttribute('href', guamPhotos.qa.licenseUrl)
+  expect(screen.getByText(/QA photographer/)).toBeInTheDocument()
 })

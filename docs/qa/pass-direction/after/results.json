@@ -1,0 +1,718 @@
+[
+  {
+    "engine": "chromium",
+    "name": "home-empty",
+    "width": 375,
+    "cls": 0.03374262903734621,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "home-populated",
+    "width": 375,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "host",
+    "width": 375,
+    "cls": 0.01847290640394089,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "events",
+    "width": 375,
+    "cls": 0.027062680482418888,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "event",
+    "width": 375,
+    "cls": 0.006938714843844792,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "ticket",
+    "width": 375,
+    "cls": 0.001819990778713388,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "home-empty",
+    "width": 390,
+    "cls": 0.060182460711424565,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "home-populated",
+    "width": 390,
+    "cls": 0.005693942184587048,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "host",
+    "width": 390,
+    "cls": 0.017772511848341232,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "events",
+    "width": 390,
+    "cls": 0.027236325813401803,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "event",
+    "width": 390,
+    "cls": 0.005748691628669616,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "ticket",
+    "width": 390,
+    "cls": 0.0016845982794636237,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "home-empty",
+    "width": 768,
+    "cls": 0.023923873901367188,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "home-populated",
+    "width": 768,
+    "cls": 0.0002454295754432678,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "host",
+    "width": 768,
+    "cls": 0.0146484375,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "events",
+    "width": 768,
+    "cls": 0.02155780792236328,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "event",
+    "width": 768,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "ticket",
+    "width": 768,
+    "cls": 0.0011444091796875,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "home-empty",
+    "width": 1280,
+    "cls": 0.024889141082763674,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "home-populated",
+    "width": 1280,
+    "cls": 0.0030489601135253903,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "host",
+    "width": 1280,
+    "cls": 0.01875,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "events",
+    "width": 1280,
+    "cls": 0.014420507812499999,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "event",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "ticket",
+    "width": 1280,
+    "cls": 0.001171875,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "home-empty",
+    "width": 1440,
+    "cls": 0.02382183159722222,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "home-populated",
+    "width": 1440,
+    "cls": 0.002217771026234568,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "chromium",
+    "name": "host",
+    "width": 1440,
+    "cls": 0.016666666666666666,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "events",
+    "width": 1440,
+    "cls": 0.011716203703703704,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "event",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "chromium",
+    "name": "ticket",
+    "width": 1440,
+    "cls": 0.0009259259259259259,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "home-empty",
+    "width": 375,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "home-populated",
+    "width": 375,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "host",
+    "width": 375,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "events",
+    "width": 375,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "event",
+    "width": 375,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "ticket",
+    "width": 375,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "home-empty",
+    "width": 390,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "home-populated",
+    "width": 390,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "host",
+    "width": 390,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "events",
+    "width": 390,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "event",
+    "width": 390,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "ticket",
+    "width": 390,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "home-empty",
+    "width": 768,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "home-populated",
+    "width": 768,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "host",
+    "width": 768,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "events",
+    "width": 768,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "event",
+    "width": 768,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "ticket",
+    "width": 768,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "home-empty",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "home-populated",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "host",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "events",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "event",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "ticket",
+    "width": 1280,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "home-empty",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "home-populated",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
+  },
+  {
+    "engine": "webkit",
+    "name": "host",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "events",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "event",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0
+  },
+  {
+    "engine": "webkit",
+    "name": "ticket",
+    "width": 1440,
+    "cls": 0,
+    "axe": 0
+  }
+]

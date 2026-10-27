@@ -1,0 +1,52 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend
+
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+ ❯ src/components/EventCard.test.jsx (7 tests | 2 failed) 103ms
+   ❯ event card artwork (3)
+     × uses the shared date tile without a blank artwork frame for undefined 14ms
+     × uses the shared date tile without a blank artwork frame for https://unapproved.example/cover.jpg 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/EventCard.test.jsx > event card artwork > uses the shared date tile without a blank artwork frame for undefined
+ FAIL  src/components/EventCard.test.jsx > event card artwork > uses the shared date tile without a blank artwork frame for https://unapproved.example/cover.jpg
+Error: expect(element).toHaveTextContent()
+
+Expected element to have text content:
+  Sun1Nov
+Received:
+  Sunday1November
+ ❯ src/components/EventCard.test.jsx:44:18
+     42|     const tile = screen.getByLabelText('Sunday, Nov 1, 2026')
+     43|     expect(tile).toHaveAttribute('datetime', datedEvent.starts_at)
+     44|     expect(tile).toHaveTextContent('Sun1Nov')
+       |                  ^
+     45|     expect(container.querySelector('img')).toBeNull()
+     46|     expect(container.querySelector('[class*="aspect-"]')).toBeNull()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 179 passed | 1 skipped (181)
+      Tests  2 failed | 1977 passed | 3 skipped (1982)
+   Start at  18:24:43
+   Duration  154.84s (tests 46%, environment 23%, import 21%, setup 8%, transform 1%)
+
+    Isolate  181 workers spawned · ~504ms startup each (spawn + environment, per file)
+             at least ~45.06s faster with isolate: false — reuses workers across files instead of one per file
+

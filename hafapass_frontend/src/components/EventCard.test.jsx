@@ -37,11 +37,11 @@ describe('event card availability and prices', () => {
 describe('event card artwork', () => {
   const datedEvent = { ...event, starts_at: '2026-10-31T14:00:00Z', timezone: 'Pacific/Guam' }
 
-  it.each([undefined, 'https://unapproved.example/cover.jpg'])('uses the shared date tile without a blank artwork frame for %s', cover_image_url => {
+  it.each([undefined, 'https://unapproved.example/cover.jpg'])('uses the date as artwork with no blank frame for %s', cover_image_url => {
     const { container } = render(<MemoryRouter><EventCard event={{ ...datedEvent, cover_image_url }} /></MemoryRouter>)
     const tile = screen.getByLabelText('Sunday, Nov 1, 2026')
     expect(tile).toHaveAttribute('datetime', datedEvent.starts_at)
-    expect(tile).toHaveTextContent('Sun1Nov')
+    expect(tile).toHaveTextContent('Sunday1November')
     expect(container.querySelector('img')).toBeNull()
     expect(container.querySelector('[class*="aspect-"]')).toBeNull()
     expect(screen.getByRole('link')).toHaveAttribute('href', '/events/guam-event')
@@ -53,7 +53,7 @@ describe('event card artwork', () => {
     const image = screen.getByRole('img', { name: event.title })
     expect(image).toHaveAttribute('src', 'https://art.example.test/uploads/cover.jpg')
     expect(image).toHaveStyle({ objectPosition: '35% 65%' })
-    expect(image.parentElement.className).toContain('aspect-[16/10]')
+    expect(image.parentElement.className).toContain('h-44')
     expect(screen.queryByLabelText('Sunday, Nov 1, 2026')).not.toBeInTheDocument()
   })
 })

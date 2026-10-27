@@ -2,6 +2,8 @@ import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
 import EventDateTile from './EventDateTile'
+import { useState } from 'react'
+import { TicketTop, TicketStub } from './Ticket'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
@@ -13,7 +15,8 @@ export default function EventCard({ event }) {
   const { t } = useTranslation()
   const location = useLocation()
   const content = useTranslatedContent(event)
-  const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host)
+  const [failedArtwork, setFailedArtwork] = useState(null)
+  const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && failedArtwork !== event.cover_image_url
   const lowestPrice = lowestPurchasablePrice(event.ticket_types)
   const lowestTicket = event.ticket_types?.find(ticket => isTicketPurchasable(ticket) && ticketAllInCents(ticket) === lowestPrice)
   const priceLabel = lowestPrice === null ? ''
@@ -24,48 +27,40 @@ export default function EventCard({ event }) {
 
   return (
     <Link
-      to={`/events/${event.slug}`}
+      to={`/events/${event.slug || event.id}`}
       state={{ browseFrom: `${location.pathname}${location.search}` }}
-      className="group flex flex-col card card-hover overflow-hidden h-full"
+      className="event-card group"
     >
+      <div className="ticket event-ticket">
+      <TicketTop>
       {/* Image */}
-      <div className={hasArtwork ? 'aspect-[16/10] overflow-hidden bg-neutral-100 relative rounded-t-2xl' : 'relative px-5 pt-5'}>
+      <div className={hasArtwork ? 'h-44 overflow-hidden bg-neutral-100 relative' : 'relative h-44 bg-brand-800'}>
         {hasArtwork ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
-            width="800" height="500"
+            width="800" height="500" loading="lazy"
+            onError={() => setFailedArtwork(event.cover_image_url)}
             className="w-full h-full object-cover"
             style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
-          <EventDateTile event={event} />
+          <EventDateTile event={event} artwork />
         )}
         {/* Completed overlay */}
         {event.status === 'completed' && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <span className="bg-neutral-900/80 text-white text-sm font-bold px-4 py-1.5 rounded-full backdrop-blur-sm">
+            <span className="bg-neutral-900/80 text-white text-sm font-bold px-4 py-1.5 rounded-full ">
               {t('events.pastEvent')}
             </span>
           </div>
         )}
 
-        {/* Price badge */}
-        {priceLabel && (
-          <div className="absolute top-3 right-3">
-            <span className={`inline-flex flex-col items-center px-3 py-1 rounded-full text-sm font-semibold tabular-nums border border-neutral-200 ${
-              lowestPrice === 0
-                ? 'bg-emerald-700 text-white'
-                : 'bg-white text-neutral-900'
-            }`}>
-              {priceLabel}
-              {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <span className="text-xs font-normal">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</span>}
-            </span>
-          </div>
-        )}
+
       </div>
 
-      <div className="p-5 flex flex-col flex-1">
+      </TicketTop>
+      <TicketStub className="p-5 flex flex-col">
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
           <span className="inline-block text-sm font-semibold text-brand-800 mb-2">
@@ -73,7 +68,7 @@ export default function EventCard({ event }) {
           </span>
         )}
 
-        <h3 className="text-lg font-semibold text-neutral-900 mb-3 group-hover:text-brand-600 transition-colors duration-200 line-clamp-2 min-h-[3.5rem]">
+        <h3 className="text-lg font-semibold text-neutral-900 mb-3 break-words line-clamp-2 min-h-[3.5rem]">
           {content.title}
         </h3>
         {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
@@ -81,7 +76,7 @@ export default function EventCard({ event }) {
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
-            <div className="flex items-center gap-2 text-sm text-neutral-600">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-content-muted">
               <Calendar className="w-3.5 h-3.5 text-neutral-500" />
               <span>{formatEventDate(event.starts_at, event.timezone)}</span>
               <Clock className="w-3.5 h-3.5 text-neutral-500 ml-1" />
@@ -89,12 +84,17 @@ export default function EventCard({ event }) {
             </div>
           )}
           {event.venue_name && (
-            <div className="flex items-center gap-2 text-sm text-neutral-600">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-content-muted">
               <MapPin className="w-3.5 h-3.5 text-neutral-500" />
               <span className="truncate">{event.venue_name}</span>
             </div>
           )}
         </div>
+
+        {priceLabel && <div className="mb-4 text-neutral-900">
+          <p className="text-base font-semibold tabular-nums">{priceLabel}</p>
+          {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <p className="mt-1 text-xs text-content-muted">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</p>}
+        </div>}
 
         {event.attendee_count > 0 && (
           <div className="mb-3">
@@ -120,11 +120,12 @@ export default function EventCard({ event }) {
               </>
             )}
           </div>
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-colors duration-150">
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-brand-800">
             {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </div>
+      </TicketStub>
       </div>
     </Link>
   )

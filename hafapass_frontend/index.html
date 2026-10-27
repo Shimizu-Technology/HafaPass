@@ -82,7 +82,7 @@
     <meta name="theme-color" content="#ffffff" />
     <script>
       // Match Navbar before React loads; Navbar keeps this in sync on scroll.
-      document.querySelector('meta[name="theme-color"]').content = window.location.pathname === '/' ? '#020617' : '#ffffff'
+      document.querySelector('meta[name="theme-color"]').content = ['/', '/host'].includes(window.location.pathname) ? '#032827' : '#ffffff'
     </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

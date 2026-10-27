@@ -1,3 +1,4 @@
+import { TicketTop, TicketStub } from '../components/Ticket'
 import { approvedImageUrl, focalPosition } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from '../components/MachineTranslationNotice'
@@ -328,7 +329,7 @@ function TicketContent({ authContext }) {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[60vh]">
+      <div className="flex justify-center items-center min-h-dvh bg-brand-950">
         <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
       </div>
     )
@@ -365,7 +366,7 @@ function TicketContent({ authContext }) {
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
+    <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
         initial={reducedMotion ? false : { opacity: 1, y: 8 }}
@@ -382,7 +383,8 @@ function TicketContent({ authContext }) {
           </div>
         )}
         {/* Main Ticket Card */}
-        <div className="bg-white rounded-2xl overflow-hidden shadow-2xl shadow-black/30">
+        <div className="ticket">
+          <TicketTop className="overflow-hidden">
           {/* Cover image banner */}
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="h-32 sm:h-36 overflow-hidden relative">
@@ -417,7 +419,7 @@ function TicketContent({ authContext }) {
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={220} />
             </div>
-            <p className="mt-2 text-xs text-content-muted font-mono break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
+            <p className="mt-2 text-xs text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
           </motion.div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
@@ -428,12 +430,8 @@ function TicketContent({ authContext }) {
             </div>
           )}
 
-          {/* Ticket-style divider */}
-          <div className="relative px-6">
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-8 bg-neutral-950 rounded-r-full" />
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-8 bg-neutral-950 rounded-l-full" />
-            <div className="border-t border-dashed border-neutral-200" />
-          </div>
+          </TicketTop>
+          <TicketStub>
 
           {/* Event Details */}
           <div className="px-4 sm:px-6 py-5 space-y-3">
@@ -530,6 +528,7 @@ function TicketContent({ authContext }) {
               {showCredential ? t('buyerAccount.ticketPage.presentThisQRCodeAtTheDoor') : t('buyerAccount.ticketPage.thisTicketHasNoActiveEntryCode')}
             </p>
           </div>
+          </TicketStub>
         </div>
 
         {/* Add to Home Screen */}

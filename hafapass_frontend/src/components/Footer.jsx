@@ -78,7 +78,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <details className="mb-5 max-w-3xl">
+        {Object.keys(guamPhotos).length > 0 && <details className="mb-5 max-w-3xl">
           <summary className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded text-sm font-medium text-content-inverse-muted underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
             {t('footer.photoCredits')}
           </summary>
@@ -90,7 +90,7 @@ export default function Footer() {
               <a href={photo.licenseUrl} target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{photo.license}</a>
             </li>)}
           </ul>
-        </details>
+        </details>}
 
         {/* Divider + Copyright */}
         <div className="border-t border-white/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">

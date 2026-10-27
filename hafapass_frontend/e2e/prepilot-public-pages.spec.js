@@ -12,7 +12,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await page.route('**/api/v1/events*', () => {}) // Deliberately leave inventory pending.
     await page.goto('/')
     await expect(page.getByRole('status').filter({ hasText: 'Loading upcoming events' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toHaveCount(0)
     await expect(page.locator('a.btn-secondary').filter({ hasText: 'Browse Events' })).toHaveAttribute('href', '/events')
     const footer = page.locator('footer')
     if (width < 768) {
@@ -25,7 +25,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
       await expect(footer.locator(`a[href="/policies/${policy}"]:visible`)).toBeVisible()
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-    const host = page.getByRole('link', { name: 'Start Hosting', exact: true })
+    const host = page.getByRole('link', { name: 'Sell tickets', exact: true })
     await host.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { level: 1, name: 'Host your event with HåfaPass' })).toBeVisible()
@@ -34,27 +34,20 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(page).toHaveURL(/\/policies\/privacy$/)
   })
 
-  test(`public photography, pricing and keyboard credits at ${width}px`, async ({ page }) => {
+  test(`public ticket, pricing and keyboard navigation at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
     await page.route('**/api/v1/config', route => json(route, config))
     await page.route('**/api/v1/events*', route => json(route, { events: [] }))
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Events are coming soon' })).toBeVisible()
-    const photo = page.getByRole('img', { name: /A food vendor grills at the Chamorro Village/ })
-    await expect(photo).toHaveAttribute('loading', 'eager')
-    await expect(photo).toHaveAttribute('width', '1280')
-    await expect.poll(() => photo.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true)
-    await expect(photo).toHaveAttribute('srcset', /480w.*800w.*1280w/)
-    const credits = page.locator('footer summary').filter({ hasText: 'Photo credits' })
-    await credits.focus()
-    await page.keyboard.press('Enter')
-    for (const link of await page.locator('footer a[href*="commons.wikimedia.org/wiki/File:"]').all()) {
-      await link.focus()
-      await expect(link).toBeFocused()
-      await expect(link).toHaveCSS('outline-style', 'solid')
-    }
+    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
+    await expect(page.locator('main img')).toHaveCount(0)
+    await expect(page.locator('footer summary').filter({ hasText: 'Photo credits' })).toHaveCount(0)
+    const hosting = page.getByRole('link', { name: 'Sell tickets', exact: true })
+    await hosting.focus()
+    await expect(hosting).toBeFocused()
+    await expect(hosting).toHaveCSS('outline-style', 'solid')
     await page.goto('/host')
     await expect(page.getByTestId('host-fee-summary')).toContainText('5% + $1.00 per paid ticket')
     const pick = page.getByRole('button', { name: '$59', exact: true })
@@ -99,14 +92,13 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     for (const populated of [false, true]) {
       events = populated ? [{ id: 1, slug: 'qa-music-night', title: 'QA music night', is_featured: true, starts_at: '2099-10-11T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] : []
       await page.goto('/')
-      await expect(page.getByRole('heading', { level: 2, name: populated ? 'QA music night' : 'Events are coming soon', exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: populated ? 'QA music night' : 'The first events go on sale soon.', exact: true })).toBeVisible()
       if (populated) {
-        const featured = page.getByRole('article', { name: 'Featured event' })
-        await expect(featured.locator('img')).toHaveCount(0)
-        await expect(featured.locator('[class*="aspect-"]')).toHaveCount(0)
-        await expect(featured.getByLabel('Sunday, Oct 11, 2099')).toContainText('11')
-        await expect(featured.getByText('Featured event', { exact: true })).toHaveCSS('text-transform', 'none')
-        await expect(page.locator('time[datetime="2099-10-11T08:00:00Z"]')).toHaveCount(2)
+        const card = page.getByRole('link', { name: /QA music night/ })
+        await expect(card.locator('img')).toHaveCount(0)
+        await expect(card.locator('[class*="aspect-"]')).toHaveCount(0)
+        await expect(card.getByLabel('Sunday, Oct 11, 2099')).toContainText('11')
+        await expect(page.locator('time[datetime="2099-10-11T08:00:00Z"]')).toHaveCount(1)
       }
       await page.evaluate(() => document.fonts.ready)
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))

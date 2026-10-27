@@ -1240,5 +1240,24 @@
       "alt": "Clear turquoise water and swimmers in Tumon Bay, seen from Matapang Beach Park on Guam.",
       "caption": "Tumon Bay from Matapang Beach Park, Guam."
     }
+  },
+  "pass": {
+    "home": {
+      "hosting": "Hosting an event?",
+      "sellTickets": "Sell tickets",
+      "title": "Your night out on Guam starts here.",
+      "lede": "Find what’s on, get your tickets, and walk right in.",
+      "firstEvents": "The first events go on sale soon.",
+      "checkBack": "Come back soon to find your next night out.",
+      "when": "When",
+      "where": "Where",
+      "guamTime": "All dates in Guam time.",
+      "noEvents": "No events are listed yet. Check back soon.",
+      "comingUp": "Coming up"
+    },
+    "host": {
+      "madeForGuam": "Made for events on Guam.",
+      "yourEvent": "Your event. Your people. We’ll help you get them in."
+    }
   }
 }
