@@ -28,6 +28,7 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
    inventory = populated ? events : []
    await page.goto(`${base}${path}`)
    await page.locator('h1').waitFor()
+   if (name === 'events') await page.locator('.event-card').first().waitFor()
    if (name === 'host') await page.getByLabel('Ticket price', {exact:true}).waitFor()
    if (name.startsWith('home')) await page.getByText(populated ? 'Guam Community Night' : 'No events are listed yet. Check back soon.',{exact:true}).first().waitFor()
    await page.evaluate(() => document.fonts.ready)

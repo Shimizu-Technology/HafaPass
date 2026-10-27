@@ -59,7 +59,7 @@ Each cell covers Home empty, Home populated, Host, events list, event detail, an
 | Chromium | Passed | Passed | Passed | Passed | Passed |
 | WebKit 27.2 | Passed | Passed | Passed | Passed | Passed |
 
-60 page/dimension checks. Chromium measures Layout Instability; WebKit does not expose that observer, so its zero values mean unsupported, not a measured zero. Exact results are in [after/results.json](after/results.json). Maximum measured Chromium CLS: **0.01875**, below 0.1; WebKit CLS measurement is unavailable.
+60 page/dimension checks. Chromium measures Layout Instability; WebKit does not expose that observer, so its zero values mean unsupported, not a measured zero. Exact results are in [after/results.json](after/results.json). Maximum measured Chromium CLS: **0.02724**, below 0.1; WebKit CLS measurement is unavailable.
 
 ## Design re-audit
 
@@ -81,7 +81,7 @@ Taste decisions: no decorative eyebrows, uppercase micro-labels, visible gradien
 
 ## Retest history
 
-Initial screenshots exposed squeezed mobile columns and loading CLS; fixed with native flex scrolling, reserved space and the sparse-event minimum height. The extra 200% text pass exposed navigation/local-help intrinsic sizing; fixed and rerun. Initial unit failures from removed photo/featured assertions and extracted copy were updated to preserve the new functional contract. One full run hit an unrelated asynchronous legacy scan-export unit failure; it passed on focused rerun; the complete suite was rerun without browser contention. No scanner code was changed. A later full browser run timed out in `marketplace-growth.spec.js:196` while waiting after filter clearing (151/152 passed); this test had passed in three earlier full runs and passed its focused rerun in 1.5s. The complete suite was then rerun with two workers; the final result is recorded below. That rerun reached its last three workspace scenarios, then navigation itself timed out: the owned Vite process was stuck near 100% CPU and did not exit on SIGTERM. The exact owned PID was stopped and Vite restarted under Node 22; a complete fresh-server run followed with unchanged assertions. [Timeout log](initial-browser-timeouts.txt).
+Initial screenshots exposed squeezed mobile columns and loading CLS; fixed with native flex scrolling, reserved space and the sparse-event minimum height. A final screenshot inspection caught Events captures before the debounced results settled; the runner now waits for a card, and all 60 checks were repeated. The five before-list images were recaptured from `883b8b81` in an isolated temporary baseline worktree; that worktree/branch and its server were removed afterward. The extra 200% text pass exposed navigation/local-help intrinsic sizing; fixed and rerun. Initial unit failures from removed photo/featured assertions and extracted copy were updated to preserve the new functional contract. One full run hit an unrelated asynchronous legacy scan-export unit failure; it passed on focused rerun; the complete suite was rerun without browser contention. No scanner code was changed. A later full browser run timed out in `marketplace-growth.spec.js:196` while waiting after filter clearing (151/152 passed); this test had passed in three earlier full runs and passed its focused rerun in 1.5s. The complete suite was then rerun with two workers; the final result is recorded below. That rerun reached its last three workspace scenarios, then navigation itself timed out: the owned Vite process was stuck near 100% CPU and did not exit on SIGTERM. The exact owned PID was stopped and Vite restarted under Node 22; a complete fresh-server run followed with unchanged assertions. [Timeout log](initial-browser-timeouts.txt).
 
 ## Final automated gates and review
 
@@ -91,7 +91,7 @@ Final source `3c5648a4290cc8f9b841648191fa3f738fa372a5`:
 - `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test`: 180 files passed, 1 existing skipped file; 1,978 tests passed, 3 existing skips.
 - `npm run build:no-translate`: passed.
 - `PLAYWRIGHT_PORT=5233 npx playwright test --workers=4`: **152 passed, 0 failed (1.2m)** against the fresh Node 22 Vite server. No retries and no timeout overrides. The known event-day case passed without its special rerun.
-- Matrix: **60 checks passed**, zero WCAG 2 A/AA Axe violations; Chromium max measured CLS **0.01875**. WebKit has no Layout Instability observer, as noted above.
+- Matrix: **60 checks passed**, zero WCAG 2 A/AA Axe violations; Chromium max measured CLS **0.02724**. WebKit has no Layout Instability observer, as noted above.
 - Real Rails guest journey, stress/max-price/200% text checks, and Impeccable/Taste/Emil re-audits completed as described above.
 
 [Gate output summaries](gates.txt). PR #164: CodeRabbit automatic review started. The first remote hygiene check rejected the QA scripts’ result-printing calls; these were changed to standard output and `scripts/check_hygiene.sh` passed locally. This changes only QA reporting, not the tested public source. Remote checks continue on the updated head. PR stays unmerged. Backend, fee/pricing/policy logic and `hafapass_api/config/policies.yml` have no diff.
