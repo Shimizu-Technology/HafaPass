@@ -133,6 +133,7 @@ jobs:
             hafapass_frontend/playwright-report
             hafapass_frontend/playwright-pwa-report
             hafapass_frontend/test-results
+            hafapass_frontend/test-results-pwa
           if-no-files-found: ignore
 
   hygiene:

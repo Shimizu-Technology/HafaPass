@@ -1,0 +1,53 @@
+
+> hafapass_frontend@0.0.0 test:e2e:pwa
+> playwright test --config playwright.pwa.config.js
+
+
+Running 2 tests using 1 worker
+
+(node:30849) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✘  1 [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives (11.1s)
+(node:30937) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  2 [chromium] › e2e-pwa/deploy.spec.js:270:1 › an unknown-revision production build still installs the offline shell (2.8s)
+
+
+  1) [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('HP-DEPLOY-TICKET', { exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByText('HP-DEPLOY-TICKET', { exact: true }) with timeout 5000ms
+      - waiting for getByText('HP-DEPLOY-TICKET', { exact: true })
+
+
+      125 |     await ticket.goto(`${origin}/tickets/synthetic-ticket`)
+      126 |     await installed(ticket)
+    > 127 |     await expect(ticket.getByText('HP-DEPLOY-TICKET', { exact: true })).toBeVisible()
+          |                                                                         ^
+      128 |     await ticket.evaluate(() => { window.originalTicketDocument = true })
+      129 |
+      130 |     const credential = 'synthetic-deploy-offline-ticket'
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-4aaf56e0/hafapass_frontend/e2e-pwa/deploy.spec.js:127:73
+
+    Error Context: test-results/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+  1 passed (15.3s)
