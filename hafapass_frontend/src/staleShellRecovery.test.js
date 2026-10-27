@@ -30,7 +30,14 @@ describe('stale shell recovery', () => {
   })
 
   afterEach(() => {
+    delete window.hafapassCanRecoverShell
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+  })
+
+  it('defers missing-chunk recovery when the mounted app has live work', () => {
+    window.hafapassCanRecoverShell = () => false
+    window.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))
+    expect(reload).not.toHaveBeenCalled()
   })
 
   it('reloads once when a release asset fails to load, not again within a minute', () => {

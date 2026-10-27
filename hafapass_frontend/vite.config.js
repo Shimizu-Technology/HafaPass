@@ -43,6 +43,8 @@ export default defineConfig(({ mode }) => {
       publicSitePlugin(env.VITE_PUBLIC_WEB_URL),
       VitePWA({
         registerType: 'autoUpdate',
+        // ReleaseUpdateCoordinator owns registration and the safe reload policy.
+        injectRegister: 'auto',
         // Use the existing manifest.json in public/ — don't generate a new one
         manifest: false,
         workbox: {

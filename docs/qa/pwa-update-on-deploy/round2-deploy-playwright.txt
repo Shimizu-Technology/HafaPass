@@ -1,0 +1,15 @@
+
+> hafapass_frontend@0.0.0 test:e2e:pwa
+> playwright test --config playwright.pwa.config.js
+
+
+Running 2 tests using 1 worker
+
+(node:93385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  1 e2e-pwa/deploy.spec.js:83:1 › two deploys refresh Home once, preserve selection and checkout, and keep scanner offline (18.6s)
+
+  ✓  2 e2e-pwa/deploy.spec.js:212:1 › an unknown-revision production build still installs the offline shell (4.1s)
+
+  2 passed (33.5s)
