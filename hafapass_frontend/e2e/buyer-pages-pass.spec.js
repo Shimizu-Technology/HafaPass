@@ -1,8 +1,57 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { prepare } from '../scripts/qa/buyer-pages-fixtures.mjs'
+import { prepare, tickets } from '../scripts/qa/buyer-pages-fixtures.mjs'
 
 for (const width of [375, 390, 1280]) {
+  test(`pending transfer confirmation escapes the mask and recovers at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await prepare(page)
+    let pending = true
+    let fail = true
+    const transfer = { id: 51, recipient_email: 'friend@example.test', expires_at: '2099-11-19T08:00:00Z' }
+    const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+    await page.route('**/api/v1/me/tickets?**', route => json(route, { tickets: [{ ...tickets[0], pending_transfer: pending ? transfer : null }], meta: {} }))
+    await page.route('**/api/v1/me/tickets/701/transfer', route => {
+      if (fail) { fail = false; return json(route, { error: 'Please try again.' }, 503) }
+      pending = false
+      return json(route, {})
+    })
+    await page.goto('/my-tickets')
+    const invoke = page.getByRole('button', { name: 'Cancel transfer', exact: true })
+    await invoke.click()
+    const dialog = page.getByRole('dialog', { name: 'Cancel this transfer?', exact: true })
+    await expect(dialog).toBeVisible()
+    expect(await dialog.evaluate(element => element.closest('.ticket-notch'))).toBeNull()
+    await expect(page.getByRole('main').getByRole('dialog')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: 'Keep transfer', exact: true })).toBeFocused()
+    await page.screenshot({ path: testInfo.outputPath('transfer-dialog.png'), fullPage: true })
+    const axe = await new AxeBuilder({ page }).analyze()
+    expect(axe.violations).toEqual([])
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Cancel transfer', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(dialog.getByRole('button', { name: 'Keep transfer', exact: true })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(invoke).toBeFocused()
+    await invoke.click()
+    await dialog.getByRole('button', { name: 'Cancel transfer', exact: true }).click()
+    await expect(dialog.getByRole('alert')).toHaveText('Please try again.')
+    await expect(dialog.getByRole('button', { name: 'Cancel transfer', exact: true })).toBeEnabled()
+    await dialog.getByRole('button', { name: 'Keep transfer', exact: true }).click()
+    await expect(invoke).toBeFocused()
+    await invoke.click()
+    await dialog.getByRole('button', { name: 'Cancel transfer', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByText('Transfer cancelled. Your ticket stays with you.', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel transfer', exact: true })).toHaveCount(0)
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
+    await page.reload()
+    await expect(page.getByRole('link', { name: 'Open ticket: General admission, #701', exact: true })).toBeVisible()
+    await expect(page.getByText('Transfer pending', { exact: true })).toHaveCount(0)
+  })
+
   test(`buyer account empty states lead to recovery and discovery at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 1280 ? 800 : 844 })
     await page.emulateMedia({ reducedMotion: 'reduce' })

@@ -24,7 +24,7 @@ export default function BuyerTicketPass({ event, ticket, isPast, status, canTran
       </div>
     </div>
     {ticket.admission_allowed !== true && ticket.admission_block_reason && <p className="mt-2 text-sm text-amber-900">{ticket.admission_block_reason}</p>}
-    {ticket.status === 'issued' && ticket.pending_transfer && <PendingTransfer transfer={ticket.pending_transfer} timeZone={event.timezone} onCancel={onCancelTransfer} onSettled={onTransferSettled} />}
+    {ticket.status === 'issued' && ticket.pending_transfer && <PendingTransfer portalDialog transfer={ticket.pending_transfer} timeZone={event.timezone} onCancel={onCancelTransfer} onSettled={onTransferSettled} />}
   </div>}>
     <div className="px-5 py-5 sm:px-6">
       <h2 className="font-display text-xl font-bold leading-snug text-neutral-950"><Link to={`/events/${event.slug}`} className="ticket-link inline-flex min-h-11 items-center rounded-lg">{content.title}</Link></h2>
