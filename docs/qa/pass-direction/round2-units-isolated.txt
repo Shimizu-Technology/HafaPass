@@ -1,0 +1,27 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend
+
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+
+ Test Files  180 passed | 1 skipped (181)
+      Tests  1984 passed | 3 skipped (1987)
+   Start at  18:33:12
+   Duration  127.25s (tests 50%, environment 21%, import 20%, setup 8%, transform 1%)
+
+    Isolate  181 workers spawned · ~384ms startup each (spawn + environment, per file)
+             at least ~34.36s faster with isolate: false — reuses workers across files instead of one per file
+

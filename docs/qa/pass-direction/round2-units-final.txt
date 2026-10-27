@@ -1,0 +1,64 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend
+
+ ❯ src/pages/dashboard/EditEventPage.drafts.test.jsx (13 tests | 2 failed) 19170ms
+   ❯ ticket changes alongside an unsaved event draft (4)
+     × preserves the draft and mounted editor during a pending create refresh 5035ms
+     × preserves the draft and mounted editor during a pending update refresh 5267ms
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pages/dashboard/EditEventPage.drafts.test.jsx > ticket changes alongside an unsaved event draft > preserves the draft and mounted editor during a pending create refresh
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/dashboard/EditEventPage.drafts.test.jsx:35:42
+     33|
+     34| describe('ticket changes alongside an unsaved event draft', () => {
+     35|   it.each(['create', 'update', 'delete'])('preserves the draft and mou…
+       |                                          ^
+     36|     const refresh = deferred()
+     37|     let eventLoads = 0
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/pages/dashboard/EditEventPage.drafts.test.jsx > ticket changes alongside an unsaved event draft > preserves the draft and mounted editor during a pending update refresh
+Error: expect(element).toHaveValue(Unsaved local title)
+
+Expected the element to have value:
+  Unsaved local title
+Received:
+  AddeUdn saadvmeids slioocnal title
+ ❯ src/pages/dashboard/EditEventPage.drafts.test.jsx:61:19
+     59|     await screen.findByText('Updating ticket list…')
+     60|     expect(screen.getByLabelText(/Event Title/)).toBe(title)
+     61|     expect(title).toHaveValue('Unsaved local title')
+       |                   ^
+     62|     await user.type(screen.getByLabelText('Description'), ' during ref…
+     63|     const ticketTypes = action === 'delete' ? [] : [{ ...ticket, name:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 179 passed | 1 skipped (181)
+      Tests  2 failed | 1982 passed | 3 skipped (1987)
+   Start at  18:29:04
+   Duration  221.18s (tests 57%, import 20%, environment 16%, setup 6%, transform 1%)
+
+    Isolate  181 workers spawned · ~519ms startup each (spawn + environment, per file)
+             at least ~46.44s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -2,6 +2,8 @@
 
 2026-10-27 · Agent executed · PR intentionally held for Leon’s screenshot review.
 
+**Round 2 is recorded at the end of this document and supersedes Round 1 for the affected public pages.**
+
 ## Product brief and acceptance
 
 HåfaPass helps people find Guam events, buy tickets as guests, and show a QR at the door. Organizers publish events, choose who bears fees, and run admission in a phone browser. This work makes the public site welcoming and recognizable through the ticket in the name and mark. Deep island teal, white ticket stock, coral actions, Space Grotesk and Plus Jakarta Sans remain the brand.
@@ -104,3 +106,52 @@ Only before screenshots retain the removed photos: Chamorro Village by Junpei Ab
 ## Cleanup
 
 Completed: owned Vite 5233, Rails 3063 and mockup server 5234 stopped; preview tab closed; Playwright contexts/workers closed. The throwaway DB was dropped and `pg_database` confirms zero databases named `hafapass_pass_dir`. Lifecycle session `01a17c2b-3385-77a3-818d-5d27974ab67a` reports no active owned resources. No runtime handoffs. Baseline databases/Redis/Docker/home services were left running. The held branch/worktree remain for Leon’s review.
+
+
+## Round 2 — lead design review
+
+Source: `d058ceebf9d6429b530d09600bab93f05b90943b`. Verified clean starting head `bd77d791231ca2e4690fe4b95c40b09f9386f736` on `codex/pass-direction`, in `/Users/leonshimizu/.t3/worktrees/HafaPass/t3-349a5a78`. `git fetch origin` left `origin/main` at `883b8b81`, already an ancestor; no rebase was needed. PR #164 targets `main` and remains held. This round inherits the sourced product brief and acceptance above. Scope is five public design corrections, executed by the agent with synthetic public fixtures. No backend, policy, fee calculation, or pricing logic changed.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Empty Home announced coming-soon inventory twice | The hero ticket owns the single announcement; the sheet contains the explanatory Planning an event band | Removes repeated copy while preserving the ticket hosting stub, hosting journey and policy links. Empty stock has natural padding without a minimum height. |
+| No-art cards had a small tile in pale mint artwork space | Full brand-800 date artwork with white weekday/day/month | The date fills the same 176px header as real art. Existing EventDateTile formatting preserves Guam midnight and year rollover; tabular numerals remain. White on brand-800 is 9.21:1 contrast (AA). |
+| Hero lede left “in.” alone | Balanced display headings and pretty-wrapped paragraphs on Home and Host | Wrap evidence at 375, 390 and 768 confirms Home’s last line has at least two words when wrapping. |
+| Display-ticket header was white and phone stock centered | Dark teal header throughout ticket scrolling; phone stock starts 24px below it | White QR stock, scan credentials and Wake Lock remain intact. Header theme switches are instant to preserve text contrast during navigation. |
+| Host help card repeated a slogan | Configured support email/phone, using useSupportContact and SupportLink | Values come from the existing config/override path; no hours or response promises added. With no valid email or callable phone, the card is omitted and the section uses one column. |
+
+Required affected-flow acceptance: R2-01 empty Home → one inventory announcement/no search → hosting/policies; R2-02 populated Home → date/art cards align → swipe/focus/open and preserve filters; R2-03 Host → calculator presets/free/invalid input/FAQ → configured email and telephone, with no invented contact when configuration is absent; R2-04 ticket → dark header/24px phone gap/white QR and existing Wake Lock; R2-05 Home/Host at 375/390/768 → balanced headings, no isolated last-word Home lede, no horizontal overflow. The existing full Playwright suite covers adjacent recovery, ticket access, guest checkout and saved state. Physical devices and signed-in Clerk journeys are not run in this round.
+
+### Round 2 evidence and retests
+
+The existing matrix runner now also checks the one-message empty contract, empty-stock top inset, computed text wrapping, white-on-brand date colors, equal art/date header heights, configured mailto/tel targets, missing-contact fallback, and phone ticket/header spacing. All matrix screenshots were refreshed, including Chromium and WebKit at 375, 390, 768, 1280 and 1440. Support values shown in screenshots are explicitly synthetic (`public-pages-qa@example.test`, `+1 (671) 555-0100`), not production contact claims.
+
+The collaborative preview opened, but two snapshot attempts returned `Preview automation snapshot timed out after 15000ms.` The tab was closed. Repository Playwright runners supplied the visual and interaction evidence; saved PNGs were inspected directly.
+
+Retained initial failures: [matrix](round2-matrix.txt) caught empty-settling CLS 0.114 at 768; the lower sheet now reserves 24rem while empty ticket stock remains compact. [First unit run](round2-units.txt) had two stale abbreviated-date assertions; updated to full weekday/month, and both date-tile variants now share rollover coverage. [First browser run](round2-playwright.txt) passed 151/152; ticket navigation caught transient header color contrast under the global reduced-motion transition. Header theme transitions were removed, then the complete browser gate was rerun.
+
+Taste scans seven changed public UI/CSS files at the same pinned revision as Round 1. Raw findings are retained, not called clean: 25 FAIL labels (16 hairlines, five shadows, four gradient matches), three WARN labels (two outlined boxes, one glass). These are existing form/calculator/status/navigation/QR dividers and shadows, shared workspace styles, and the explicitly required alpha notch masks. None is a newly added decoration in this round. Impeccable’s empty result and Taste’s findings do not substitute for the journey checks.
+
+
+Final browser results for the Round 2 source:
+
+- Full Playwright: **152 passed, zero failures**, 1.9m; known event-day test passed without a special rerun. [Output](round2-playwright-final.txt).
+- Matrix: **60 checks passed**, zero WCAG 2 A/AA Axe violations, maximum measured Chromium CLS **0.06018**. WebKit does not expose Layout Instability; its zero is unsupported measurement. [Results](after/results.json), [runner](round2-matrix-final.txt).
+- All five Round 2 affected-flow cases passed in the stated Chromium/WebKit environment. Existing ticket Wake Lock unit coverage is included in the full unit suite. Configured contact links and missing-contact behavior passed; no contact channel was fabricated.
+- Stress at 375px and 200% text passed, including very long/missing data and maximum calculator inputs. [Output](round2-stress.txt).
+- Lint and build passed. [Lint](round2-lint.txt), [build](round2-build.txt). Repository secret/debug hygiene passed. [Impeccable](round2-impeccable.json): `[]`; [Taste](round2-taste-lint.json): findings classified above.
+- A concurrent full unit rerun had two unchanged editor-draft timeout failures under browser load. [Output](round2-units-final.txt). After browsers and Vite stopped, the complete exact requested unit command passed alone: **180 files, 1,984 tests passed, one file/three tests skipped**, 127.25s. [Final unit output](round2-units-isolated.txt). No assertions or timeouts were relaxed.
+
+Refreshed screenshots (Chromium; prefix `webkit-` for the equivalent WebKit capture):
+
+| Page | 390px | 1280px | Wrap check 375px | Wrap check 768px |
+| --- | --- | --- | --- | --- |
+| Empty Home | [390](after/390-home-empty.png) | [1280](after/1280-home-empty.png) | [375](after/375-home-empty.png) | [768](after/768-home-empty.png) |
+| Populated Home | [390](after/390-home-populated.png) | [1280](after/1280-home-populated.png) | [375](after/375-home-populated.png) | [768](after/768-home-populated.png) |
+| Host | [390](after/390-host.png) | [1280](after/1280-host.png) | [375](after/375-host.png) | [768](after/768-host.png) |
+| Display ticket | [390](after/390-ticket.png) | [1280](after/1280-ticket.png) | [375](after/375-ticket.png) | [768](after/768-ticket.png) |
+
+Round 2 cleanup: owned Vite 5233 stopped after browser QA, preview tab closed, matrix/stress/Playwright browsers closed in their runners. No backend server or database was created. Read-only PostgreSQL inspection confirms no `hafapass_pass_dir` database exists. Baseline services were preserved. Lifecycle session: `01a17c73-eab0-7492-b145-58dbc5129473`.
+
+
+Round 2 release boundary: no merge or production deployment is authorized. The held worktree/branch remain available for Leon’s screenshot review. Lifecycle cleanup completed with no active owned resources and no runtime handoffs. Required remote gates are Backend/RSpec, Backend/quality and security, Frontend/test-build-security, Browser/service recovery, repository hygiene, release freeze contract, and CodeRabbit; latest-head remote status is reported separately after push. CodeRabbit review is not inferred from a success label or an old review.

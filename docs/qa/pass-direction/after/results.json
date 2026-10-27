@@ -3,15 +3,47 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 375,
-    "cls": 0,
-    "axe": 0
+    "cls": 0.03374262903734621,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
     "name": "home-populated",
     "width": 375,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
@@ -45,15 +77,47 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 390,
-    "cls": 0.013946889943610593,
-    "axe": 0
+    "cls": 0.060182460711424565,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
     "name": "home-populated",
     "width": 390,
     "cls": 0.005693942184587048,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk"
+      ],
+      [
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
@@ -87,15 +151,43 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 768,
-    "cls": 0.004847049713134766,
-    "axe": 0
+    "cls": 0.023923873901367188,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
     "name": "home-populated",
     "width": 768,
-    "cls": 0.000213623046875,
-    "axe": 0
+    "cls": 0.0002454295754432678,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
@@ -129,15 +221,43 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 1280,
-    "cls": 0.002727802276611328,
-    "axe": 0
+    "cls": 0.024889141082763674,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
     "name": "home-populated",
     "width": 1280,
-    "cls": 0.002727802276611328,
-    "axe": 0
+    "cls": 0.0030489601135253903,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
@@ -171,15 +291,43 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 1440,
-    "cls": 0.001915822723765432,
-    "axe": 0
+    "cls": 0.02382183159722222,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
     "name": "home-populated",
     "width": 1440,
-    "cls": 0.001915822723765432,
-    "axe": 0
+    "cls": 0.002217771026234568,
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "chromium",
@@ -214,14 +362,46 @@
     "name": "home-empty",
     "width": 375,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
     "name": "home-populated",
     "width": 375,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
@@ -256,14 +436,46 @@
     "name": "home-empty",
     "width": 390,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
     "name": "home-populated",
     "width": 390,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and"
+      ],
+      [
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
@@ -298,14 +510,42 @@
     "name": "home-empty",
     "width": 768,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
     "name": "home-populated",
     "width": 768,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
@@ -340,14 +580,42 @@
     "name": "home-empty",
     "width": 1280,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
     "name": "home-populated",
     "width": 1280,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
@@ -382,14 +650,42 @@
     "name": "home-empty",
     "width": 1440,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
     "name": "home-populated",
     "width": 1440,
     "cls": 0,
-    "axe": 0
+    "axe": 0,
+    "ledeLines": [
+      [
+        "Find",
+        "what’s",
+        "on,",
+        "get",
+        "your",
+        "tickets,",
+        "and",
+        "walk",
+        "right",
+        "in."
+      ]
+    ]
   },
   {
     "engine": "webkit",
