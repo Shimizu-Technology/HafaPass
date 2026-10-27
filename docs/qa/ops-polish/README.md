@@ -56,12 +56,18 @@ The collaborative browser failed twice with `Preview automation snapshot timed o
 
 ## Final gate results
 
+Source under test: `27922b3de5d7706fc72e206682188cd633f2fb40`; the follow-up commit only records QA/review status. Node 22.22.3 on Leon’s Mac.
+
 - Lint: passed (`npm run lint`).
-- Units: final single-worker run in progress, with the required three Vite environment variables empty. The earlier full run passed 2021 tests but failed two old scanner-copy expectations; the next concurrent run was stopped after an old refund-class assertion and two timing failures. The class assertion is updated. The final run uses `--maxWorkers=1 --testTimeout=15000` to avoid the concurrent browser load; assertion timeouts are unchanged.
+- Units: **2023 passed, 3 skipped**; **182 files passed, 1 skipped**. Command: `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test -- --maxWorkers=1 --testTimeout=15000`. The earlier full run passed 2021 tests but failed two old scanner-copy expectations; the next concurrent run was stopped after an old refund-class assertion and two timing failures. The assertions were corrected, and the final single-worker run avoided concurrent browser load; assertion timeouts were unchanged. Existing jsdom XHR warning output did not produce test failures.
 - Build: passed (`npm run build:no-translate`), including service worker generation.
 - Full Playwright: **162 passed, zero failures**, Chromium; no `event-day` retry needed. Includes the 10-case ops fixture file and the existing axe/keyboard suite.
 - Changed-screen axe: **zero violations** on Support initial/no-results/deliveries, scanner no-membership/assigned, payment/button fixture and shared admin dispute table at both viewports.
 - Impeccable 4.6.0 detect on all six changed production UI paths: passed, JSON `[]`.
-- Runtime QA resources: Vite 5237 and browser workers closed; collaborative tab closed. Final unit worker tree will be cleaned when it completes. Rails and a database were never started/created.
+- Runtime QA resources: Vite 5237, all browser workers, the collaborative tab and unit worker tree are cleaned. Final lifecycle status: no active owned resources. Rails and a database were never started/created. A read-only query of `pg_database` confirmed `hafapass_ops_polish_test` is absent; no database needed dropping.
+
+Static JSX inventory found 212 disabled/aria-disabled controls with explicit shared button classes across 75 production files, including 27 legacy opacity utilities. The shared state selector overrides those utilities; no forced `!bg-*`/`!text-*` overrides remain on those controls after moving the refund confirm to `btn-danger`. Dynamic class names are covered by the shared CSS and runtime fixture checks rather than this static count.
+
+CodeRabbit automatic review reached the OSS capacity limit (reported next capacity in about 41 minutes). One `@coderabbitai review` retry was requested in PR #171. At the review audit there were no review findings/threads; the success-labelled CodeRabbit status is a rate-limited skip, not a completed review. CodeRabbit is a required main-branch gate. The PR remains held, and further review handling belongs to the parent/continuing session once capacity is available.
 
 No live deployment or signed-in Clerk/physical-iPhone acceptance is claimed. PR must remain unmerged.
