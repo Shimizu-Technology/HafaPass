@@ -41,7 +41,7 @@ async function load({ clerkKey = 'pk_test_host_fixture' } = {}) {
   </Routes></MemoryRouter>)
 }
 
-const pricing = () => screen.getByRole('region', { name: 'Simple pricing. You only pay when you sell.' })
+const pricing = () => screen.getByRole('region', { name: 'Host your event with HåfaPass' })
 
 beforeEach(() => {
   apiClient.get.mockReset()
@@ -98,12 +98,42 @@ describe('host page pricing', () => {
     await screen.findByTestId('host-fee-summary')
     const section = pricing()
     expect(within(section).queryByText('Card processing included')).not.toBeInTheDocument()
-    expect(within(section).queryByText('You receive')).not.toBeInTheDocument()
+    expect(within(section).queryAllByText('You receive')).toHaveLength(0)
     expect(value('Buyer pays the fee', 'You receive before card processing')).toHaveTextContent('$25.00')
     expect(value('You absorb the fee', 'You receive before card processing')).toHaveTextContent('$22.75')
     expect(within(section).getByText(/Card processing is deducted from your proceeds at settlement/)).toBeInTheDocument()
     expect(within(section).getByRole('status')).toHaveTextContent('if you absorb the fee, you receive $22.75, before card processing.')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket\. Card processing is deducted/)).toBeInTheDocument()
+  })
+
+  it('uses keyboard price picks with the loaded rate and preserves typed prices and product caveats', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...platformConfig, service_fee_percent: '6.0', service_fee_flat_cents: 175 } })
+    await load()
+    await screen.findByTestId('host-fee-summary')
+    const picks = screen.getByRole('group', { name: 'Try a ticket price' })
+    expect(within(picks).getByRole('button', { name: '$25', pressed: true })).toBeInTheDocument()
+    expect(screen.queryByText('What it looks like for one ticket')).not.toBeInTheDocument()
+    const higher = within(picks).getByRole('button', { name: '$59', pressed: false })
+    higher.focus()
+    await user().keyboard('{Enter}')
+    expect(higher).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Ticket price')).toHaveValue('59')
+    expect(value('Buyer pays the fee', 'Buyer pays for 1 ticket')).toHaveTextContent('$64.29')
+    expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$53.71')
+    const lower = within(picks).getByRole('button', { name: '$10' })
+    lower.focus()
+    await user().keyboard(' ')
+    expect(lower).toHaveAttribute('aria-pressed', 'true')
+    expect(value('Buyer pays the fee', 'Buyer pays for 1 ticket')).toHaveTextContent('$12.35')
+    await setOrder('25.00', '1')
+    expect(within(picks).getByRole('button', { name: '$25', pressed: true })).toBeInTheDocument()
+    expect(value('Buyer pays the fee', 'Buyer pays for 1 ticket')).toHaveTextContent('$28.25')
+    await setOrder('12.50', '2')
+    expect(within(picks).getAllByRole('button', { pressed: false })).toHaveLength(3)
+    expect(value('Buyer pays the fee', 'Buyer pays for 2 tickets')).toHaveTextContent('$30.00')
+    expect(screen.getByText(/only available through a private preview link/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Each device must be prepared online/)).toHaveLength(2)
+    expect(screen.getAllByText(/automatically start eligible card refunds, including the service fee/)).toHaveLength(2)
   })
 
   it('shows payout timing only when the API provides it', async () => {

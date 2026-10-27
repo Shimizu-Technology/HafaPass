@@ -12,7 +12,8 @@ import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice, ticketAllInCents, ticketServiceFeeCents, isTicketPurchasable } from '../utils/ticketPricing'
-import { categoryIcon } from '../utils/categoryIcons'
+import GuamPhoto from '../components/GuamPhoto'
+import EventDateTile from '../components/EventDateTile'
 
 const categoriesFor = t => [
   { name: t('buyer.Home.Nightlife'), slug: 'nightlife' },
@@ -21,7 +22,7 @@ const categoriesFor = t => [
   { name: t('buyer.Home.Sports'), slug: 'sports' },
   { name: t('buyer.Home.FestivalsCulture'), slug: 'festival' },
   { name: t('buyer.Home.ClassesWorkshops'), slug: 'workshop' },
-].map(category => ({ ...category, icon: categoryIcon(category.slug) }))
+]
 
 function priceLabel(ticketTypes, t) {
   const cents = lowestPurchasablePrice(ticketTypes)
@@ -40,25 +41,41 @@ function feeLabel(ticketTypes, t) {
 // percentage heights resolving against an aspect-ratio box. With `backdrop`, a
 // blurred copy fills the frame behind the full poster, so portrait flyers in a
 // wide frame fill the card without cropping their dates or text.
-function EventArtwork({ event, className, priority = false, backdrop = false }) {
+function EventArtwork({ event, className, priority = false, backdrop = false, onError }) {
   const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
+  if (!approvedImageUrl(event.cover_image_url, event.image_asset_host) || failed) return <EventDateTile event={event} />
   return (
     <div className={`relative overflow-hidden rounded-lg bg-neutral-100 ${className}`}>
-      {approvedImageUrl(event.cover_image_url, event.image_asset_host) && !failed ? (
-        <>
-          {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
-            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
-          <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
-            onError={() => setFailed(true)} className="absolute inset-0 h-full w-full object-contain" />
-        </>
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-brand-700">
-          <Calendar aria-hidden="true" className="h-7 w-7" />
-          <span className="sr-only">{t('buyer.Home.eventArtworkUnavailable')}</span>
-        </div>
-      )}
+      {backdrop && <img src={event.cover_image_url} alt="" aria-hidden="true" style={{ objectPosition: focalPosition(event.page_customization) }} data-testid="artwork-backdrop"
+        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl" />}
+      <img src={event.cover_image_url} alt={t('buyer.Home.artworkFor', { value1: event.title })} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : undefined}
+        onError={() => { setFailed(true); onError?.() }} className="absolute inset-0 h-full w-full object-contain" />
     </div>
+  )
+}
+
+function FeaturedEvent({ event }) {
+  const { t } = useTranslation()
+  const [failed, setFailed] = useState(false)
+  const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && !failed
+  const featuredPrice = priceLabel(event.ticket_types, t)
+  return (
+    <article aria-label={t('buyer.Home.featuredEvent')} className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      {hasArtwork && <EventArtwork event={event} priority backdrop onError={() => setFailed(true)} className="aspect-[16/9] w-full !rounded-none" />}
+      <div className="flex items-start gap-4 p-5 sm:p-6">
+        {!hasArtwork && <EventDateTile event={event} />}
+        <div className="min-w-0 flex-1">
+          <p className="mb-2 text-sm font-semibold text-brand-800">{t('buyer.Home.featuredEvent')}</p>
+          <BuyerEventText event={event} as="h2" className="break-words font-display text-2xl font-bold text-neutral-950" />
+          <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</span></p>
+          {event.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{event.venue_name}{event.venue_city ? `, ${event.venue_city}` : ''}</span></p>}
+          {featuredPrice && <p className="mt-3 text-sm font-semibold text-neutral-900">{featuredPrice}</p>}
+          {feeLabel(event.ticket_types, t) && <p className="text-xs text-content-muted">{feeLabel(event.ticket_types, t)}</p>}
+          <Link to={`/events/${event.slug || event.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.getTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+        </div>
+      </div>
+    </article>
   )
 }
 
@@ -104,7 +121,6 @@ export default function HomePage() {
   })()
   const dayKeys = Object.keys(groupedEvents)
   const showFeatured = Boolean(featuredEvent) && !loading && !loadError
-  const featuredPrice = featuredEvent ? priceLabel(featuredEvent.ticket_types, t) : ''
 
   const browse = event => {
     event.preventDefault()
@@ -114,13 +130,26 @@ export default function HomePage() {
 
   const inventoryEmpty = !loading && !loadError && events.length === 0
 
+  // Resolve inventory before choosing the hero. Swapping a landscape photo
+  // for a taller featured event after paint moved the whole desktop page.
+  if (loading) return (
+    <div className="min-h-screen bg-stone-50 text-content">
+      <SEO />
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center gap-4 px-4 text-content-muted">
+        <p role="status">{t('buyer.Home.loadingUpcomingEvents')}</p>
+        <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
+        <Link to="/host" className="btn-primary">{t('buyer.Home.startHosting2')}</Link>
+      </div>
+      <Footer />
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-stone-50 text-content">
       <SEO />
-      <section className="border-b border-neutral-200 py-8 sm:py-12 lg:py-16">
-        <div className={`mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 ${showFeatured ? 'grid items-center gap-8 lg:grid-cols-2 lg:gap-12' : ''}`}>
+      <section className="py-8 sm:py-12 lg:py-16">
+        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-8">
           <div className="max-w-2xl">
-            <p className="mb-3 text-sm font-semibold text-brand-800">{t('buyer.Home.yourEventGuideOnGuam')}</p>
             <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-neutral-950 sm:text-5xl lg:text-[3.5rem]">{t('buyer.Home.findYourNextEventOnGuam')}</h1>
             <p className="mt-4 max-w-lg text-base leading-relaxed text-content-muted">{t('buyer.Home.browseWhatsComingUpChooseYourTicketsAnd')}</p>
             {!inventoryEmpty && <><form role="search" onSubmit={browse} className="mt-6">
@@ -140,20 +169,8 @@ export default function HomePage() {
             </div></>}
           </div>
 
-          {showFeatured && (
-            <article aria-label={t('buyer.Home.featuredEvent')} className="min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              <EventArtwork key={featuredEvent.cover_image_url || featuredEvent.id} event={featuredEvent} priority backdrop className="aspect-[16/9] w-full !rounded-none" />
-              <div className="p-5 sm:p-6">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-800">{t('buyer.Home.featuredEvent')}</p>
-                <BuyerEventText event={featuredEvent} as="h2" className="break-words font-display text-2xl font-bold text-neutral-950" />
-                <p className="mt-3 flex items-start gap-2 text-sm text-content-muted"><Calendar aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{formatEventDate(featuredEvent.starts_at, featuredEvent.timezone, { weekday: 'long' })} · {formatEventTime(featuredEvent.starts_at, featuredEvent.timezone)}</span></p>
-                {featuredEvent.venue_name && <p className="mt-2 flex items-start gap-2 text-sm text-content-muted"><MapPin aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span className="break-words">{featuredEvent.venue_name}{featuredEvent.venue_city ? `, ${featuredEvent.venue_city}` : ''}</span></p>}
-                {featuredPrice && <p className="mt-3 text-sm font-semibold text-neutral-900">{featuredPrice}</p>}
-                {feeLabel(featuredEvent.ticket_types, t) && <p className="text-xs text-content-muted">{feeLabel(featuredEvent.ticket_types, t)}</p>}
-                <Link to={`/events/${featuredEvent.slug || featuredEvent.id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Home.getTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
-              </div>
-            </article>
-          )}
+          {!showFeatured && <GuamPhoto photo="market" priority />}
+          {showFeatured && <FeaturedEvent key={`${featuredEvent.id}:${featuredEvent.cover_image_url || ''}`} event={featuredEvent} />}
         </div>
       </section>
 
@@ -201,11 +218,11 @@ export default function HomePage() {
         </div>
       </section>}
 
-      {!inventoryEmpty && <section aria-labelledby="categories-heading" className="border-y border-neutral-200 bg-white py-8 sm:py-12">
+      {!inventoryEmpty && <section aria-labelledby="categories-heading" className="bg-white py-8 sm:py-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <h2 id="categories-heading" className="mb-5 font-display text-2xl font-bold text-neutral-950">{t('buyer.Home.exploreByCategory')}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {categories.map(({ name, slug, icon: Icon }) => <Link key={slug} to={`/events?category=${slug}`} className="flex min-h-14 items-center gap-3 rounded-lg border border-neutral-200 px-4 py-3 text-sm font-medium text-neutral-800 hover:border-brand-600 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-brand-800" /><span>{name}</span><ArrowRight aria-hidden="true" className="ml-auto h-4 w-4 shrink-0" /></Link>)}
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            {categories.map(({ name, slug }) => <Link key={slug} to={`/events?category=${slug}`} className="inline-flex min-h-11 items-center rounded-full bg-stone-100 px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{name}</Link>)}
           </div>
         </div>
       </section>}

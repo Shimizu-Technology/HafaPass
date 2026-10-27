@@ -1,0 +1,110 @@
+[
+  {
+    "width": 375,
+    "slug": "privacy",
+    "heading": "Privacy Policy",
+    "status": "passed"
+  },
+  {
+    "width": 375,
+    "slug": "buyer-terms",
+    "heading": "Buyer Terms",
+    "status": "passed"
+  },
+  {
+    "width": 375,
+    "slug": "refunds",
+    "heading": "Refund & Cancellation Policy",
+    "status": "passed"
+  },
+  {
+    "width": 375,
+    "slug": "organizer-agreement",
+    "heading": "Organizer Agreement",
+    "status": "passed"
+  },
+  {
+    "width": 375,
+    "slug": "accessibility",
+    "heading": "Accessibility Statement",
+    "status": "passed"
+  },
+  {
+    "width": 375,
+    "slug": "cookies",
+    "heading": "Cookie Notice",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "privacy",
+    "heading": "Privacy Policy",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "buyer-terms",
+    "heading": "Buyer Terms",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "refunds",
+    "heading": "Refund & Cancellation Policy",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "organizer-agreement",
+    "heading": "Organizer Agreement",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "accessibility",
+    "heading": "Accessibility Statement",
+    "status": "passed"
+  },
+  {
+    "width": 768,
+    "slug": "cookies",
+    "heading": "Cookie Notice",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "privacy",
+    "heading": "Privacy Policy",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "buyer-terms",
+    "heading": "Buyer Terms",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "refunds",
+    "heading": "Refund & Cancellation Policy",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "organizer-agreement",
+    "heading": "Organizer Agreement",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "accessibility",
+    "heading": "Accessibility Statement",
+    "status": "passed"
+  },
+  {
+    "width": 1280,
+    "slug": "cookies",
+    "heading": "Cookie Notice",
+    "status": "passed"
+  }
+]

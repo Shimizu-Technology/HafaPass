@@ -25,7 +25,8 @@ for (const width of [375, 1280]) {
       await expect(main.getByText('No events are listed yet. Check back soon.')).toBeVisible()
       if (path === '/') {
         await expect(main.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeVisible()
-        await expect(main.getByText('Your event guide on Guam')).toBeVisible()
+        await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)
+        await expect(main.getByRole('img', { name: /A food vendor grills at the Chamorro Village/ })).toBeVisible()
         await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
         await expect(main.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
@@ -84,18 +85,18 @@ for (const width of [375, 768, 1280]) {
     await page.route('**/api/v1/events*', route => json(route, { events: [] }))
     await page.goto('/')
     const footer = page.locator('footer')
-    const disclosure = footer.locator('summary')
+    const disclosure = footer.locator('summary').filter({ hasText: 'Other policies' })
     for (const slug of ['privacy', 'buyer-terms', 'refunds']) {
       await expect(footer.locator(`a[href="/policies/${slug}"]:visible`)).toBeVisible()
     }
     if (width < 768) {
       await expect(disclosure).toBeVisible()
       expect((await disclosure.boundingBox()).height).toBeGreaterThanOrEqual(44)
-      await expect(footer.locator('details')).not.toHaveAttribute('open')
+      await expect(disclosure.locator('..')).not.toHaveAttribute('open')
       await expect(footer.locator('a[href="/policies/organizer-agreement"]:visible')).toHaveCount(0)
       await disclosure.focus()
       await page.keyboard.press('Enter')
-      await expect(footer.locator('details')).toHaveAttribute('open', '')
+      await expect(disclosure.locator('..')).toHaveAttribute('open', '')
     } else {
       await expect(disclosure).toBeHidden()
     }

@@ -1,0 +1,49 @@
+{
+  "executed_at": "2026-10-27T04:53:10.843440+00:00",
+  "branch": "codex/prepilot-public-pages",
+  "base": "c55601ada2423ff71ce362ba25a8560c18871d41",
+  "environment": "Local Vite :5233; Playwright Chromium; isolated route fixtures; no Rails or database",
+  "viewports": [
+    [
+      375,
+      812
+    ],
+    [
+      768,
+      1024
+    ],
+    [
+      1280,
+      800
+    ]
+  ],
+  "scenarios": {
+    "R3-01": "passed",
+    "R3-02": "passed",
+    "R3-03": "passed"
+  },
+  "lint": "passed",
+  "units": {
+    "files_passed": 180,
+    "files_skipped": 1,
+    "tests_passed": 1972,
+    "tests_skipped": 3,
+    "seconds": 266.03
+  },
+  "build_no_translate": "passed",
+  "playwright": {
+    "passed": 145,
+    "failed": 0,
+    "skipped": 0,
+    "duration": "3.3m",
+    "event_day_retry_needed": false
+  },
+  "impeccable": [],
+  "not_run": [
+    "physical phone",
+    "installed PWA",
+    "real Clerk",
+    "payments and sends",
+    "round-2 real API fixture capture"
+  ]
+}

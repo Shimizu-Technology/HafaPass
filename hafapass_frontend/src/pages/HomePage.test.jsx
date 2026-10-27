@@ -5,6 +5,9 @@ import { Link, MemoryRouter, Navigate, Route, Routes, useNavigate, useLocation }
 import HomePage from './HomePage'
 import apiClient from '../api/client'
 
+const content = vi.hoisted(() => ({ language: 'en' }))
+vi.mock('../hooks/useContentLanguage', () => ({ default: () => content.language }))
+
 const auth = vi.hoisted(() => ({ isLoaded: true, isSignedIn: false }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
@@ -41,15 +44,19 @@ function BrowseDestination() {
   return <p>Browse destination {location.pathname}{location.search}</p>
 }
 
-function mount() {
-  return render(<MemoryRouter initialEntries={['/']}><Routes>
+function homeTree() {
+  return <MemoryRouter initialEntries={['/']}><Routes>
     <Route path='/' element={<HomePage />} />
     <Route path='/events' element={<BrowseDestination />} />
     <Route path='/host' element={<h1>Host your event with HåfaPass</h1>} />
     <Route path='/dashboard' element={<ProtectedRoute><h1>Create your organizer profile</h1></ProtectedRoute>} />
     <Route path='/sign-in' element={<SignInPage />} />
     <Route path='/sign-up' element={<SignUpPage />} />
-  </Routes></MemoryRouter>)
+  </Routes></MemoryRouter>
+}
+
+function mount() {
+  return render(homeTree())
 }
 
 const entryLink = async entry => {
@@ -64,6 +71,7 @@ describe('hosting entry navigation', () => {
     vi.clearAllMocks()
     apiClient.get.mockReset()
     auth.isSignedIn = false
+    content.language = 'en'
     apiClient.get.mockResolvedValue({ data: { events: [] } })
   })
 
@@ -82,7 +90,8 @@ describe('hosting entry navigation', () => {
   it('keeps the product promise and planning action when inventory is empty', async () => {
     mount()
     await screen.findByRole('heading', { name: 'Events are coming soon' })
-    expect(screen.getByText('Your event guide on Guam')).toBeInTheDocument()
+    expect(screen.queryByText('Your event guide on Guam')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /A food vendor grills at the Chamorro Village/ })).toHaveAttribute('fetchpriority', 'high')
     expect(screen.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Planning an event?' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
@@ -110,6 +119,11 @@ describe('hosting entry navigation', () => {
     mount()
     expect(screen.getByRole('status')).toHaveTextContent('Loading upcoming events')
     expect(screen.getAllByRole('link', { name: 'Browse Events' })[0]).toHaveAttribute('href', '/events')
+    expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
+    const footer = screen.getByRole('contentinfo')
+    for (const policy of ['privacy', 'buyer-terms', 'refunds', 'organizer-agreement', 'accessibility', 'cookies']) {
+      expect(footer.querySelector(`a[href="/policies/${policy}"]`)).toBeInTheDocument()
+    }
     expect(screen.queryByText('No events are listed yet. Check back soon.')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /Events are coming soon/ })).not.toBeInTheDocument()
     await act(async () => finish({ data: { events: [] } }))
@@ -149,7 +163,7 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 1, title: 'Music', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const user = userEvent.setup()
-    await user.type(screen.getByRole('searchbox', { name: 'Event or venue' }), '  Music & food  ')
+    await user.type(await screen.findByRole('searchbox', { name: 'Event or venue' }), '  Music & food  ')
     await user.click(screen.getByRole('button', { name: 'Search' }))
     expect(await screen.findByText('Browse destination /events?search=Music+%26+food')).toBeInTheDocument()
   })
@@ -162,7 +176,8 @@ describe('hosting entry navigation', () => {
     expect(within(featured).getByRole('heading', { name: 'A real catalog event' })).toBeInTheDocument()
     expect(within(featured).getByRole('link', { name: 'Get Tickets' })).toHaveAttribute('href', '/events/no-art')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
-    expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()
+    expect(within(featured).getByLabelText('Tuesday, Oct 20, 2099')).toHaveAttribute('datetime', '2099-10-20T08:00:00Z')
+    expect(featured.querySelector('[class*="aspect-"]')).toBeNull()
     expect(screen.getByRole('link', { name: 'Food & Drink' })).toHaveAttribute('href', '/events?category=dining')
     expect(screen.getByRole('link', { name: 'Classes & Workshops' })).toHaveAttribute('href', '/events?category=workshop')
   })
@@ -196,9 +211,38 @@ describe('hosting entry navigation', () => {
     expect(within(featured).getByTestId('artwork-backdrop')).toHaveStyle({ objectPosition: '25% 75%' })
     fireEvent.error(image)
     expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
-    expect(within(featured).getByText('Event artwork unavailable')).toBeInTheDocument()
+    expect(within(featured).getByLabelText('Tuesday, Oct 20, 2099')).toHaveAttribute('datetime', '2099-10-20T08:00:00Z')
+    expect(featured.querySelector('[class*="aspect-"]')).toBeNull()
     expect(within(featured).getByRole('link', { name: 'Get Tickets' })).toHaveAttribute('href', '/events/poster')
     expect(screen.getAllByRole('img').every(item => item.getAttribute('src') === artwork)).toBe(true)
+  })
+
+  it('retries shared artwork for a different featured event after a language refetch', async () => {
+    const artwork = 'https://storage.invalid/uploads/shared-poster.png'
+    const first = { id: 61, title: 'First event', cover_image_url: artwork, image_asset_host: 'storage.invalid',
+      is_featured: true, starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }
+    let finish
+    apiClient.get.mockResolvedValueOnce({ data: { events: [first] } })
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const view = mount()
+    try {
+      const featured = await screen.findByRole('article', { name: 'Featured event' })
+      fireEvent.error(within(featured).getByRole('img', { name: 'Artwork for First event' }))
+      expect(within(featured).queryByRole('img')).not.toBeInTheDocument()
+      content.language = 'ja'
+      view.rerender(homeTree())
+      expect(apiClient.get).toHaveBeenCalledTimes(2)
+      // The loading branch also unmounts event-specific failed-image state.
+      expect(screen.queryByRole('article')).not.toBeInTheDocument()
+      await act(async () => finish({ data: { events: [{ ...first, id: 62, title: 'Second event', slug: 'second' }] } }))
+      const next = await screen.findByRole('article')
+      expect(within(next).getByRole('heading', { name: 'Second event' })).toBeInTheDocument()
+      expect(within(next).getByRole('img', { name: /Second event/ })).toHaveAttribute('src', artwork)
+      expect(next.querySelector('a')).toHaveAttribute('href', '/events/second')
+    } finally {
+      view.unmount()
+      content.language = 'en'
+    }
   })
 
   it('groups event-local dates and sorts the listing without mutating the API array', async () => {

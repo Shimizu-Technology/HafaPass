@@ -1,0 +1,23 @@
+[
+  {
+    "width": 375,
+    "height": 812,
+    "normalMotionFAQ": "passed",
+    "hostCTADestination": "passed",
+    "url": "/dashboard"
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "normalMotionFAQ": "passed",
+    "hostCTADestination": "passed",
+    "url": "/dashboard"
+  },
+  {
+    "width": 1280,
+    "height": 800,
+    "normalMotionFAQ": "passed",
+    "hostCTADestination": "passed",
+    "url": "/dashboard"
+  }
+]

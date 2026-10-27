@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import { guamPhotos } from '../config/photoCredits'
 import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -28,7 +29,7 @@ export default function Footer() {
 
           {/* Platform */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-2">{t('footer.platform')}</h3>
+            <h3 className="text-base font-semibold text-neutral-200 mb-2">{t('footer.platform')}</h3>
             <ul className="space-y-1">
               <li><Link to="/events" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.browseEvents')}</Link></li>
               <li><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.forOrganizers')}</Link></li>
@@ -38,7 +39,7 @@ export default function Footer() {
 
           {/* Help links lead to actual recovery and support, rather than generic social sites. */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-2">{t('footer.help')}</h3>
+            <h3 className="text-base font-semibold text-neutral-200 mb-2">{t('footer.help')}</h3>
             <ul className="space-y-1">
               <li><Link to="/orders/recover" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.findTickets')}</Link></li>
               <li><a href={support.mailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contactSupport')}</a></li>
@@ -47,7 +48,7 @@ export default function Footer() {
           </div>
           {/* Company */}
           <div className="col-span-2 lg:col-span-1">
-            <h3 className="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-2">{t('footer.company')}</h3>
+            <h3 className="text-base font-semibold text-neutral-200 mb-2">{t('footer.company')}</h3>
             <ul className="grid grid-cols-2 lg:block lg:space-y-1">
               <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.about')}</a></li>
               <li><a href={support.mailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contact')}</a></li>
@@ -76,6 +77,20 @@ export default function Footer() {
             </details>
           </div>
         </div>
+
+        <details className="mb-5 max-w-3xl">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded text-sm font-medium text-content-inverse-muted underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+            {t('footer.photoCredits')}
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed">{t('footer.photoChanges')}</p>
+          <ul className="mt-3 space-y-2 text-sm leading-relaxed">
+            {Object.values(guamPhotos).map(photo => <li key={photo.file} className="break-words">
+              <a href={photo.sourceUrl} target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{photo.title}</a>
+              {' '}{t('footer.photoCreditBy', { author: photo.author })}{' · '}
+              <a href={photo.licenseUrl} target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{photo.license}</a>
+            </li>)}
+          </ul>
+        </details>
 
         {/* Divider + Copyright */}
         <div className="border-t border-white/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">

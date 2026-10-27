@@ -1,0 +1,62 @@
+[
+  {
+    "width": 375,
+    "height": 812,
+    "hostCLS": 0.03684898929845422,
+    "homeCLS": 0.018472906403940885,
+    "policies": [
+      "privacy",
+      "buyer-terms",
+      "refunds",
+      "organizer-agreement",
+      "accessibility",
+      "cookies"
+    ],
+    "calculator": "passed",
+    "searchAndCategory": "passed",
+    "faq": "passed",
+    "support": "passed",
+    "credits": "passed",
+    "overflow": false
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "hostCLS": 0.029296875,
+    "homeCLS": 0.017578125,
+    "policies": [
+      "privacy",
+      "buyer-terms",
+      "refunds",
+      "organizer-agreement",
+      "accessibility",
+      "cookies"
+    ],
+    "calculator": "passed",
+    "searchAndCategory": "passed",
+    "faq": "passed",
+    "support": "passed",
+    "credits": "passed",
+    "overflow": false
+  },
+  {
+    "width": 1280,
+    "height": 800,
+    "hostCLS": 0.03046875,
+    "homeCLS": 0.01171875,
+    "policies": [
+      "privacy",
+      "buyer-terms",
+      "refunds",
+      "organizer-agreement",
+      "accessibility",
+      "cookies"
+    ],
+    "calculator": "passed",
+    "searchAndCategory": "passed",
+    "faq": "passed",
+    "support": "passed",
+    "credits": "passed",
+    "overflow": false
+  }
+]
