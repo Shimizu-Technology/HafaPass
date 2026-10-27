@@ -1,0 +1,333 @@
+{
+ "files": 12,
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/HostPage.jsx",
+   "line": 128,
+   "match": "divide-y",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/HostPage.jsx",
+   "line": 136,
+   "match": "divide-y",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/HostPage.jsx",
+   "line": 330,
+   "match": "divide-y",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/TicketPage.jsx",
+   "line": 401,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "src/pages/TicketPage.jsx",
+   "line": 419,
+   "match": "shadow-sm",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/TicketPage.jsx",
+   "line": 526,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 71,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "WARN",
+   "id": "glass",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 71,
+   "match": "backdrop-blur",
+   "message": "Backdrop blur. One sticky bar at most; glass cards are a tell."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 373,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 380,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 380,
+   "match": "border",
+   "message": "A 1px outlined box. Prefer a filled surface or no box."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 455,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventDetailPage.jsx",
+   "line": 576,
+   "match": "h-px",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "WARN",
+   "id": "h-screen",
+   "file": "src/pages/EventsPage.jsx",
+   "line": 116,
+   "match": "h-screen",
+   "message": "100vh jumps on mobile. Use 100svh / 100dvh."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/pages/EventsPage.jsx",
+   "line": 123,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/EventCard.jsx",
+   "line": 105,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 119,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "src/components/Navbar.jsx",
+   "line": 121,
+   "match": "shadow-sm",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 121,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 122,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 255,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 283,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 296,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 334,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 381,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Navbar.jsx",
+   "line": 393,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Footer.jsx",
+   "line": 58,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Footer.jsx",
+   "line": 96,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "src/components/Footer.jsx",
+   "line": 114,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "src/index.css",
+   "line": 60,
+   "match": "box-shadow:",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "WARN",
+   "id": "glass",
+   "file": "src/index.css",
+   "line": 108,
+   "match": "backdrop-blur",
+   "message": "Backdrop blur. One sticky bar at most; glass cards are a tell."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "src/index.css",
+   "line": 109,
+   "match": "box-shadow:",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "file": "src/index.css",
+   "line": 113,
+   "match": "border",
+   "message": "A 1px outlined box. Prefer a filled surface or no box."
+  },
+  {
+   "level": "WARN",
+   "id": "outlined-box",
+   "file": "src/index.css",
+   "line": 176,
+   "match": "border: 1px solid",
+   "message": "A 1px outlined box. Prefer a filled surface or no box."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "src/index.css",
+   "line": 177,
+   "match": "box-shadow:",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "file": "src/index.css",
+   "line": 186,
+   "match": "radial-gradient(",
+   "message": "Gradient fill. Use a flat colour or a real image (a neutral scrim over a photo is the one exception)."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "file": "src/index.css",
+   "line": 187,
+   "match": "radial-gradient(",
+   "message": "Gradient fill. Use a flat colour or a real image (a neutral scrim over a photo is the one exception)."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "file": "src/index.css",
+   "line": 188,
+   "match": "radial-gradient(",
+   "message": "Gradient fill. Use a flat colour or a real image (a neutral scrim over a photo is the one exception)."
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "file": "src/index.css",
+   "line": 189,
+   "match": "radial-gradient(",
+   "message": "Gradient fill. Use a flat colour or a real image (a neutral scrim over a photo is the one exception)."
+  },
+  {
+   "level": "WARN",
+   "id": "h-screen",
+   "file": "index.html",
+   "line": 7,
+   "match": "height: 100vh",
+   "message": "100vh jumps on mobile. Use 100svh / 100dvh."
+  },
+  {
+   "level": "WARN",
+   "id": "em-dash",
+   "file": "(all files)",
+   "line": 0,
+   "match": "5 em dashes",
+   "message": "Em-dash habit. Use a full stop or a comma; keep at most one or two on a page."
+  }
+ ]
+}

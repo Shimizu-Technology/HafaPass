@@ -1,0 +1,43 @@
+Units
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+
+ Test Files  180 passed | 1 skipped (181)
+      Tests  1978 passed | 3 skipped (1981)
+   Start at  17:32:07
+   Duration  126.57s (tests 50%, environment 21%, import 20%, setup 8%, transform 1%)
+
+    Isolate  181 workers spawned · ~392ms startup each (spawn + environment, per file)
+             at least ~35.10s faster with isolate: false — reuses workers across files instead of one per file
+
+
+Lint
+
+> hafapass_frontend@0.0.0 lint
+> eslint . --max-warnings 0
+
+
+Build
+dist/assets/esm-CuLdh3HG.js                                          435.47 kB │ gzip: 115.04 kB
+
+✓ built in 3.18s
+
+PWA v1.3.0
+mode      generateSW
+precache  176 entries (2817.47 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-080c8b91.js
+
+Full Playwright
+  ✓  151 [chromium] › e2e/wording-review.spec.js:18:3 › promo expiry uses Guam for a null zone and oversized discounts can recover at 1440px (1.7s)
+  ✓  152 [chromium] › e2e/wording-review.spec.js:54:3 › guest completion counts and interrupted creation use ticket wording at 1440px (1.3s)
+  ✓  140 [chromium] › e2e/verification-gate.spec.js:105:3 › private preview and verification request at 1280px (8.8s)
+
+  152 passed (1.2m)
+
+Chromium/WebKit matrix
+chromium: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed
+webkit: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed
+after QA: 60 page/dimension checks passed
+
