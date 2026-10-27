@@ -82,7 +82,8 @@ describe('hosting entry navigation', () => {
   it('keeps the product promise and planning action when inventory is empty', async () => {
     mount()
     await screen.findByRole('heading', { name: 'Events are coming soon' })
-    expect(screen.getByText('Your event guide on Guam')).toBeInTheDocument()
+    expect(screen.queryByText('Your event guide on Guam')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Orange clouds over Tumon Bay/ })).toHaveAttribute('fetchpriority', 'high')
     expect(screen.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Planning an event?' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
@@ -149,7 +150,7 @@ describe('hosting entry navigation', () => {
     apiClient.get.mockResolvedValue({ data: { events: [{ id: 1, title: 'Music', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] } })
     mount()
     const user = userEvent.setup()
-    await user.type(screen.getByRole('searchbox', { name: 'Event or venue' }), '  Music & food  ')
+    await user.type(await screen.findByRole('searchbox', { name: 'Event or venue' }), '  Music & food  ')
     await user.click(screen.getByRole('button', { name: 'Search' }))
     expect(await screen.findByText('Browse destination /events?search=Music+%26+food')).toBeInTheDocument()
   })

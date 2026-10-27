@@ -41,7 +41,7 @@ async function load({ clerkKey = 'pk_test_host_fixture' } = {}) {
   </Routes></MemoryRouter>)
 }
 
-const pricing = () => screen.getByRole('region', { name: 'Simple pricing. You only pay when you sell.' })
+const pricing = () => screen.getByRole('region', { name: 'Host your event with HåfaPass' })
 
 beforeEach(() => {
   apiClient.get.mockReset()
@@ -98,12 +98,28 @@ describe('host page pricing', () => {
     await screen.findByTestId('host-fee-summary')
     const section = pricing()
     expect(within(section).queryByText('Card processing included')).not.toBeInTheDocument()
-    expect(within(section).queryByText('You receive')).not.toBeInTheDocument()
+    expect(within(section).queryAllByText('You receive')).toHaveLength(0)
     expect(value('Buyer pays the fee', 'You receive before card processing')).toHaveTextContent('$25.00')
     expect(value('You absorb the fee', 'You receive before card processing')).toHaveTextContent('$22.75')
     expect(within(section).getByText(/Card processing is deducted from your proceeds at settlement/)).toBeInTheDocument()
     expect(within(section).getByRole('status')).toHaveTextContent('if you absorb the fee, you receive $22.75, before card processing.')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket\. Card processing is deducted/)).toBeInTheDocument()
+  })
+
+  it('computes both worked examples from the loaded rate and preserves verification and cancellation caveats', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...platformConfig, service_fee_percent: '6.0', service_fee_flat_cents: 175 } })
+    await load()
+    await screen.findByTestId('host-fee-summary')
+    const example = screen.getByRole('region', { name: '$59.00 ticket' })
+    expect(within(example).getByText('$64.29')).toBeInTheDocument()
+    expect(within(example).getByText('$59.00')).toBeInTheDocument()
+    expect(within(example).getByText('$53.71')).toBeInTheDocument()
+    const smaller = screen.getByRole('region', { name: '$25.00 ticket' })
+    expect(within(smaller).getByText('$28.25')).toBeInTheDocument()
+    expect(within(smaller).getByText('$21.75')).toBeInTheDocument()
+    expect(screen.getByText(/only available through a private preview link/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Each device must be prepared online/)).toHaveLength(2)
+    expect(screen.getAllByText(/automatically start eligible card refunds, including the service fee/)).toHaveLength(2)
   })
 
   it('shows payout timing only when the API provides it', async () => {

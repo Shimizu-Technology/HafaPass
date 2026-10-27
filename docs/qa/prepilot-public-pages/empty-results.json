@@ -1,0 +1,26 @@
+[
+  {
+    "width": 375,
+    "height": 812,
+    "cls": 0.022167487684729065,
+    "emptyInventory": "passed",
+    "hostingNavigation": "passed",
+    "overflow": false
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "cls": 0.017578125,
+    "emptyInventory": "passed",
+    "hostingNavigation": "passed",
+    "overflow": false
+  },
+  {
+    "width": 1280,
+    "height": 800,
+    "cls": 0.0140625,
+    "emptyInventory": "passed",
+    "hostingNavigation": "passed",
+    "overflow": false
+  }
+]
