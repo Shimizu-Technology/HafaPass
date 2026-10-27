@@ -8,6 +8,7 @@ class AuditSanitizer
   FREE_TEXT_KEY = /(?:note|reason|message|body|description|text|error)/i
   SEARCH_KEY = /\A(?:search|search_term|query|q)\z/i
   TIN_KEY = /\A(?:tin|ssn|taxpayer_id|tax_id|tax_information_tin)\z/i
+  UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
   MAX_TEXT_LENGTH = 500
 
   def self.call(value, key: nil, depth: 0)
@@ -37,11 +38,6 @@ class AuditSanitizer
   end
 
   def self.sanitize_text(value, key: nil)
-    # A generated UUID is an export identity, not pasted numeric PII. Keep it
-    # intact so streamed failures can be matched to their encrypted ticket.
-    if key.to_s == "export_request_id" && value.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i)
-      return value
-    end
     text = value.dup
     # Strip URL credentials, query strings and fragments in every snapshot,
     # including verification links nested in a verification diff.
@@ -55,10 +51,18 @@ class AuditSanitizer
     rescue URI::InvalidURIError
       REDACTED
     end
-    return REDACTED if key.to_s.match?(FREE_TEXT_KEY) && !BackupWithholding.safe_text?(text)
+    # UUID digit runs are identifiers, including in free text. Check the rest
+    # of the text for TINs without changing the withholding validator itself.
+    return REDACTED if key.to_s.match?(FREE_TEXT_KEY) && !BackupWithholding.safe_text?(text.gsub(UUID, "[uuid]"))
 
-    text = text.gsub(/(?<!\d)(?:\d{3}[-. ]\d{2}[-. ]\d{4}|\d{2}-\d{7}|\d{9})(?!\d)/, REDACTED)
-    text = text.gsub(/(?<!\d)(?:\d[ -]?){13,19}(?!\d)/, REDACTED)
+    # Split out complete UUIDs so numeric matches cannot start outside a UUID
+    # and consume part of it. Captured UUID spans occupy the odd positions.
+    text = text.split(/(#{UUID})/).map.with_index do |part, index|
+      next part if index.odd?
+
+      part.gsub(/(?<!\d)(?:\d{3}[-. ]\d{2}[-. ]\d{4}|\d{2}-\d{7}|\d{9})(?!\d)/, REDACTED)
+        .gsub(/(?<!\d)(?:\d[ -]?){13,19}(?!\d)/, REDACTED)
+    end.join
     text = text.gsub(/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]+|\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?/i, REDACTED)
     text = text.gsub(/\b(?:token|secret|password|api[_ -]?key)\s*[:=]\s*\S+/i, REDACTED)
     text.truncate(MAX_TEXT_LENGTH)

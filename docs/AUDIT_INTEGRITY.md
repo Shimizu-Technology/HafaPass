@@ -24,6 +24,22 @@ Agent executes the checks against isolated fixtures. Browser resizing covers web
 
 ## Database and deployment
 
+### UUID sanitization correction
+
+Before this correction, numeric PII patterns could partially redact UUIDs in
+sanitized audit fields, including scanner recovery `action_uuids`. Only generated
+v4 `export_request_id` values were exempt. Canonical UUID spans (any version or
+letter case) now survive numeric redaction in standalone and embedded text;
+sensitive keys, free-text TIN checks, credential redaction, URL stripping and
+length limits still apply. Historical damaged identifiers remain immutable;
+this fix does not reconstruct or rewrite them.
+
+On 2026-10-27 at 13:26 UTC, one read-only production query found **0 matching
+rows**, grouped by action, since 2026-10-21 00:00 Guam. It searched `metadata`,
+`before_data` and `after_data` JSON for remaining UUID-shaped hex/hyphen fragments
+adjacent to `[redacted]`. This fragment heuristic does not establish that every
+historical identifier is intact. No production data was changed.
+
 Migration `20261024100000` adds nullable event, source, outcome and retry identity columns. Historical source/outcome values remain unknown. It creates indexes concurrently and validates small enum constraints separately. Concurrent indexing scans the audit table and consumes IO; measure duration on production-sized data and check for invalid indexes after an interrupted migration before retrying. Adding columns and creating the trigger still briefly require table locks. Run migrations through the configured direct Postgres/Neon migration connection, not the transaction pooler.
 
 `hafapass_protect_audit_log()` and `audit_logs_append_only` block SQL updates and deletes. Only payload, IP and redaction-marker updates are accepted while `AuditLog.redact!` sets the transaction-local `hafapass.audit_redaction` flag. It restores the prior value before returning. Identity, action, time, tenant, event, actor, source, outcome and retry keys stay immutable even with that flag. A database owner can disable triggers; this protects normal application writes, not a malicious database administrator. Privacy anonymizes users while preserving their audit identity.
