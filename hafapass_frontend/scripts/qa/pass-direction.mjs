@@ -55,13 +55,16 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
   await when.selectOption('weekend'); await where.selectOption('Hagåtña')
   const search=page.getByRole('searchbox',{name:'Event or venue'})
   await search.fill('Music & food')
-  await when.focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab')
+  // WebKit on macOS uses Option-Tab for traversal that includes buttons/links.
+  const nextKey=engine==='webkit'?'Alt+Tab':'Tab'
+  const previousKey=engine==='webkit'?'Alt+Shift+Tab':'Shift+Tab'
+  await when.focus();await page.keyboard.press(previousKey);await page.keyboard.press(nextKey)
   const controls=[when,where,search,page.getByRole('button',{name:'Search',exact:true})]
   for (const [index,locator] of controls.entries()) {
    assert.ok((await locator.boundingBox()).height>=44,`${engine} ${await locator.getAttribute('id')} touch target`)
    assert.ok(await locator.evaluate(el=>el===document.activeElement&&el.matches(':focus-visible')),`${engine} keyboard focus`)
    assert.ok(await locator.evaluate(el=>getComputedStyle(el).boxShadow!=='none'||getComputedStyle(el).outlineStyle!=='none'))
-   if(index<controls.length-1) await page.keyboard.press('Tab')
+   if(index<controls.length-1) await page.keyboard.press(nextKey)
   }
   await page.screenshot({path:`${output}${engine}-390-controls-focus.png`,fullPage:true})
   await page.keyboard.press('Enter'); await page.waitForURL('**/events?**')

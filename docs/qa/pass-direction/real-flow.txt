@@ -1,1 +1,1 @@
-Real Rails fixture flow passed: Home search + village → one matching event → quantity → guest checkout; checkout survives reload. No order/payment submitted.
+Real Rails fixture flow passed: matching-title fixtures in Hagåtña and Yigo → Home search + village=Hagåtña → one matching event → quantity → guest checkout; checkout survives reload. No order/payment submitted.

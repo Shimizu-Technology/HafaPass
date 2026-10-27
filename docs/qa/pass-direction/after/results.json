@@ -45,7 +45,7 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 390,
-    "cls": 0.005693942184587048,
+    "cls": 0.013946889943610593,
     "axe": 0
   },
   {
@@ -87,7 +87,7 @@
     "engine": "chromium",
     "name": "home-empty",
     "width": 768,
-    "cls": 0.000213623046875,
+    "cls": 0.004847049713134766,
     "axe": 0
   },
   {

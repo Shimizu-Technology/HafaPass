@@ -10,7 +10,7 @@ Sources: Leon’s task and approved Direction A plus B’s cards (`/private/tmp/
 
 Acceptance: functional Home controls use the existing Events query contract; confirmed empty inventory has no marketplace controls; loading/outage remain distinct; all-in prices, fee math, policies, guest checkout and QR/Wake Lock stay intact. Shared notches/tear lines, responsive cards, visible keyboard focus, reduced motion, Axe and CLS <0.1 are required. Backend, pricing/policy utilities, workspace and admin UI are out of scope.
 
-Implementation source: `3c5648a4290cc8f9b841648191fa3f738fa372a5`. Subsequent evidence-only commits do not change the tested public source.
+Implementation source: `6aecd119d4cd8886420046bf8eec3aa33e0c0c8c`. Subsequent evidence-only commits do not change the tested public source.
 
 ## Environment and fixtures
 
@@ -18,7 +18,7 @@ Isolated T3 worktree on `codex/pass-direction`, branched after `git fetch` from 
 
 Node 22.22.3; Vite 5233; Rails 3063; API origin `http://localhost:3063/api/v1`. Fresh worktree dependencies installed. npm omitted the native Rolldown optional binding; its exact 1.2.14 package was fetched from the npm registry into this worktree’s node_modules. No dependency manifest/lockfile changes.
 
-Throwaway database `hafapass_pass_dir`: created and schema loaded, SQL identity confirmed before [fixtures.rb](fixtures.rb) ran, three synthetic public events. The real API returned them. The real browser journey is recorded in [real-flow.txt](real-flow.txt): search + village → one matching event → select quantity → guest checkout → reload; no purchase submitted.
+Throwaway database `hafapass_pass_dir`: created and schema loaded, SQL identity confirmed before [fixtures.rb](fixtures.rb) ran, four synthetic public events, including matching titles in Hagåtña and Yigo to prove the village exclusion. The real API returned them, and the real journey verifies both candidates before selecting Hagåtña. The real browser journey is recorded in [real-flow.txt](real-flow.txt): search + village → one matching event → select quantity → guest checkout → reload; no purchase submitted.
 
 Repeatable screenshot/Axe/motion/focus matrix uses intercepted synthetic public events/config and a guest display ticket. It includes paid/free, art/date tile, long titles and venue names. The art fixture uses HåfaPass’s own OG image. The QR is synthetic. No Clerk credentials or production data are captured. Signed-in Clerk QA and physical iPhone/iPad testing are unavailable. Browser emulation does not establish native keyboard, safe-area, installed-PWA or rubber-band behavior.
 
@@ -44,7 +44,7 @@ The last command expects the owned fixture DB/server above. Browser scripts clos
 | P06 Host help/FAQ | Keyboard opens FAQ → explanation visible; support CTA → configured mailto | Passed in both engines. CTAs, FAQ and local help retained. |
 | P07 List/event/checkout | Open list → event → choose ticket → guest checkout; filter return and estimate retained | Passed in full Playwright and real Rails journey. Sparse event pages now retain the reserved loading height, avoiding footer movement. |
 | P08 Display ticket | Synthetic guest access → QR and details → inspect white QR, shared seam, surround; existing Wake Lock tests | Passed in both engines. [390 ticket](after/390-ticket.png). Credential, download and Wake Lock behavior unchanged. |
-| P09 Focus | Tab/focus ticket selects/input/button and cards → fully visible ring, Enter works | Passed Chromium/WebKit. Control rings are inset from masks; card outline is on the unmasked outer link. [Controls](after/chromium-390-controls-focus.png). |
+| P09 Focus | Tab/focus ticket selects/input/button and cards → fully visible ring, Enter works | Passed Chromium/WebKit. Control rings are inset from masks; card outline is on the unmasked outer link. Real Tab navigation (Chromium) / Option-Tab full-control navigation (macOS WebKit) and ≥44px control targets are checked in both engines. [Controls](after/chromium-390-controls-focus.png). |
 | P10 Motion | Normal load → rise 12px + opacity, settle in 280ms with out-strong; reduced motion → opacity only, fully visible afterward | Passed in both engines via live browser animation keyframes/finished state. CSS supplies the motion; no animation script gates content. Existing scanner entrance removed. |
 | P11 Worst case | Long compound title + emoji, long/missing venue, one-word title, free/high prices, 1,000 tickets; 375px and 200% text → no document overflow | Passed. [Stress evidence](stress.txt), [Home](after/375-home-worst-case.png), [Host](after/375-host-worst-case.png). Physical phone coverage remains not run. |
 
@@ -75,6 +75,7 @@ Each cell covers Home empty, Home populated, Host, events list, event detail, an
 | Card headers differed with/without art; high price capsules overlapped the date | Equal headers, date-tile fallback and prices in the information stub | Seams align; artwork, dates and all-in prices stay readable. |
 | Mobile implicit grid squeezed cards | Native flex track, snap and desktop grid | Card width stays usable on phones. |
 | Pending inventory moved lower content | Reserved ticket/sheet footprint and delayed planning block | CLS stays below the required limit. |
+| Native WebKit selects collapsed to 26px | Styled native selects with a chevron and 50px measured height | The new ticket controls retain native keyboard behavior and usable touch targets. |
 | 200% text overflowed public navigation/local ticket | Wrapping public header and breakable ticket content | Large text stays within the page; workspace header remains untouched. |
 
 Taste decisions: no decorative eyebrows, uppercase micro-labels, visible gradients, or monospace remain in the changed design. The four gradient matches are the explicitly required CSS alpha masks; they cut notches and draw no colored gradient. The two glass warnings are an existing single sticky event-buy bar (the rule permits one sticky bar) and the shared `.glass` definition, unused by the changed pages and retained for workspace consumers. Public header/search blur was removed. Hairlines, quiet shadows and outlined fields are functional form/calculator/status/navigation/footer treatments, allowed by this task; the shared button/field classes remain intact. Event category text is useful metadata, not a decorative eyebrow. `h-screen` warnings concern the unchanged Events minimum-height and the HTML boot fallback immediately followed by `100dvh`. Existing SEO title em dashes are separators, not added prose habits.
@@ -85,16 +86,16 @@ Initial screenshots exposed squeezed mobile columns and loading CLS; fixed with 
 
 ## Final automated gates and review
 
-Final source `3c5648a4290cc8f9b841648191fa3f738fa372a5`:
+Final source `6aecd119d4cd8886420046bf8eec3aa33e0c0c8c`:
 
 - `npm run lint`: passed, zero warnings.
-- `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test`: 180 files passed, 1 existing skipped file; 1,978 tests passed, 3 existing skips.
+- `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test`: 180 files passed, 1 existing skipped file; 1,979 tests passed, 3 existing skips.
 - `npm run build:no-translate`: passed.
-- `PLAYWRIGHT_PORT=5233 npx playwright test --workers=4`: **152 passed, 0 failed (1.2m)** against the fresh Node 22 Vite server. No retries and no timeout overrides. The known event-day case passed without its special rerun.
+- `PLAYWRIGHT_PORT=5233 npx playwright test --workers=4`: **152 passed, 0 failed (1.6m)** against the fresh Node 22 Vite server. No retries and no timeout overrides. The known event-day case passed without its special rerun.
 - Matrix: **60 checks passed**, zero WCAG 2 A/AA Axe violations; Chromium max measured CLS **0.02724**. WebKit has no Layout Instability observer, as noted above.
-- Real Rails guest journey, stress/max-price/200% text checks, and Impeccable/Taste/Emil re-audits completed as described above.
+- Real Rails guest journey, stress/max-price/200% text checks, and Impeccable/Taste/Emil re-audits completed as described above. After the final date-field width and native-keyboard traversal refinement, Home/Footer units (17), all 60 matrix cells, lint and build were repeated successfully.
 
-[Gate output summaries](gates.txt). PR #164: CodeRabbit automatic review started. The first remote hygiene check rejected the QA scripts’ result-printing calls; these were changed to standard output and `scripts/check_hygiene.sh` passed locally. This changes only QA reporting, not the tested public source. Remote checks continue on the updated head. PR stays unmerged. Backend, fee/pricing/policy logic and `hafapass_api/config/policies.yml` have no diff.
+[Gate output summaries](gates.txt). PR #164: CodeRabbit posted five findings against `49dff2bb`, then rate-limited follow-up reviews (about 50 minutes at the notice). All five findings were addressed: settled Events readiness, village-filter discrimination, configured photo-credit coverage, pending policy-link coverage, and child-background clipping. WebKit select targets were also corrected from 26px to 50px. The first remote hygiene check rejected the QA scripts’ result-printing calls; these were changed to standard output and `scripts/check_hygiene.sh` passed locally. This changes only QA reporting, not the tested public source. The final fixes were validated locally; a single follow-up review is requested after pushing. CodeRabbit approval is not claimed. Remote checks continue on the updated head. PR stays unmerged. Backend, fee/pricing/policy logic and `hafapass_api/config/policies.yml` have no diff.
 
 ## Evidence credits
 
