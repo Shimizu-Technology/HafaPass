@@ -106,7 +106,7 @@
 
   .input {
     @apply w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-900
-           placeholder:text-neutral-400 transition-[border-color,box-shadow,background-color] duration-200
+           placeholder:text-content-muted transition-[border-color,box-shadow,background-color] duration-200
            focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
            hover:border-neutral-300;
   }
@@ -131,6 +131,13 @@
     transition-property: opacity, color, background-color, border-color, box-shadow !important;
     transition-duration: 150ms !important;
     scroll-behavior: auto !important;
+  }
+  /* State changes must restore readable controls in the same frame. */
+  .btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost {
+    transition-property: background-color, border-color, box-shadow !important;
+  }
+  input, select, textarea {
+    transition-property: border-color, box-shadow !important;
   }
   :is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost):active { transform: none; }
   .btn-primary:hover, .btn-secondary:hover, .card-hover:hover { transform: none; }

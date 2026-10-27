@@ -141,7 +141,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                                   ['Organizer', order.organizer_proceeds_cents],
                                 ].map(([label, value]) => (
                                   <div key={label} className="rounded-lg border border-neutral-200 bg-white p-2.5">
-                                    <p className="text-[10px] uppercase tracking-wide text-neutral-400">{label}</p>
+                                    <p className="text-[10px] uppercase tracking-wide text-content-muted">{label}</p>
                                     <p className="mt-1 font-semibold text-neutral-800">{money(value)}</p>
                                   </div>
                                 ))}
@@ -208,7 +208,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                                   }`}>{t.status}</span>
                                 </div>
                               ))}
-                              {order.tickets.length === 0 && <p className="text-xs text-neutral-400">No entitlements issued yet.</p>}
+                              {order.tickets.length === 0 && <p className="text-xs text-content-muted">No entitlements issued yet.</p>}
                             </div>
                             </div>
                           </div>
@@ -219,7 +219,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                 ))}
               </tbody>
             </table>
-            {orders.length === 0 && <p className="text-center py-8 text-neutral-400">No orders found.</p>}
+            {orders.length === 0 && <p className="text-center py-8 text-content-muted">No orders found.</p>}
           </div>
         )}
       </div>

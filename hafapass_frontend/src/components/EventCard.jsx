@@ -111,7 +111,7 @@ export default function EventCard({ event }) {
             {event.status === 'completed' ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />
-                <span className="text-xs font-medium text-neutral-400">{t('events.completed')}</span>
+                <span className="text-xs font-medium text-content-muted">{t('events.completed')}</span>
               </>
             ) : (
               <>

@@ -191,6 +191,46 @@ describe('screen wake lock for admission', () => {
     expect(request).toHaveBeenCalledTimes(2)
   })
 
+  it('retries an unexpected visible release once without a visibility change', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const first = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const second = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const request = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    await waitFor(() => expect(first.addEventListener).toHaveBeenCalled())
+    vi.useFakeTimers()
+    try {
+      act(() => first.addEventListener.mock.calls[0][1]())
+      await act(async () => vi.advanceTimersByTimeAsync(1000))
+      expect(request).toHaveBeenCalledTimes(2)
+      act(() => second.addEventListener.mock.calls[0][1]())
+      await act(async () => vi.advanceTimersByTimeAsync(5000))
+      expect(request).toHaveBeenCalledTimes(2)
+      view.unmount()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('cancels an unexpected-release retry when the QR unmounts', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const lock = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const request = vi.fn().mockResolvedValue(lock)
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    await waitFor(() => expect(lock.addEventListener).toHaveBeenCalled())
+    vi.useFakeTimers()
+    try {
+      act(() => lock.addEventListener.mock.calls[0][1]())
+      view.unmount()
+      await act(async () => vi.advanceTimersByTimeAsync(2000))
+      expect(request).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
   it('releases a pending lock that arrives after the QR unmounts', async () => {
     let resolve
     const request = vi.fn(() => new Promise(done => { resolve = done }))

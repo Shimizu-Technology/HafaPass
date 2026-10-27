@@ -223,3 +223,45 @@ for (const width of [375, 1280]) {
     await accessible(page)
   })
 }
+
+// A heading can be ready while the event list is still loading. Exercise the
+// actual busy -> enabled transition; every enabled frame must be fully opaque.
+for (const reducedMotion of ['reduce', 'no-preference']) {
+  test(`search restores contrast immediately after loading (${reducedMotion})`, async ({ page }) => {
+    await setup(page)
+    await page.emulateMedia({ reducedMotion })
+    let finishLoading
+    let requests = 0
+    await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => {
+      requests += 1
+      if (requests === 1) return json(route, { events: [organizerEvent], meta: {} })
+      finishLoading = () => json(route, { events: [organizerEvent], meta: {} })
+    })
+    await page.goto('/dashboard')
+    const search = page.getByRole('button', { name: 'Search events', exact: true })
+    await page.getByRole('searchbox', { name: 'Find an event', exact: true }).fill('Private')
+    await search.click()
+    await expect(search).toBeDisabled()
+    await expect(search).toHaveCSS('opacity', '0.5')
+    await expect.poll(() => Boolean(finishLoading)).toBe(true)
+    const frames = page.evaluate(async () => {
+      const button = document.querySelector('form[role="search"] button[type="submit"]')
+      const samples = []
+      for (let index = 0; index < 30; index += 1) {
+        await new Promise(requestAnimationFrame)
+        if (!button.disabled) {
+          const style = getComputedStyle(button)
+          samples.push({ opacity: style.opacity, color: style.color })
+        }
+      }
+      return samples
+    })
+    await finishLoading()
+    const samples = await frames
+    expect(samples.length).toBeGreaterThan(0)
+    for (const sample of samples) {
+      expect(sample.opacity).toBe('1')
+      expect(sample.color).toBe('rgb(51, 65, 85)')
+    }
+  })
+}

@@ -233,7 +233,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        <p className="text-sm text-neutral-500">Tickets Sold</p>
        <p className="text-2xl font-bold text-neutral-900">{stats.total_tickets_sold}</p>
        {totalTickets > 0 && (
-        <p className="text-xs text-neutral-400">of {totalTickets} total</p>
+        <p className="text-xs text-content-muted">of {totalTickets} total</p>
        )}
       </div>
      </div>
@@ -263,7 +263,7 @@ function EventAnalyticsPageSession({ id, identity }) {
       <div>
        <p className="text-sm text-neutral-500">Check-in Rate</p>
        <p className="text-2xl font-bold text-neutral-900">{checkInRate}%</p>
-       <p className="text-xs text-neutral-400">{stats.tickets_checked_in} checked in</p>
+       <p className="text-xs text-content-muted">{stats.tickets_checked_in} checked in</p>
       </div>
      </div>
     </div>
@@ -411,7 +411,7 @@ function EventAnalyticsPageSession({ id, identity }) {
           <span className="text-xs text-neutral-500 truncate mr-2">{order.buyer_email}</span>
           <span className="text-xs text-neutral-500 whitespace-nowrap">{order.ticket_count} ticket{order.ticket_count === 1 ? '' : 's'}</span>
          </div>
-         <p className="text-xs text-neutral-400 mt-1">{formatDate(order.created_at)}</p>
+         <p className="text-xs text-content-muted mt-1">{formatDate(order.created_at)}</p>
         </div>
        ))}
       </div>

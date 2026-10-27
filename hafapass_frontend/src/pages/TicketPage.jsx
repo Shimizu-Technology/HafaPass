@@ -22,6 +22,9 @@ function ScreenWakeLock() {
     let sentinel = null
     let pending = false
     let generation = 0
+    let retryTimer = null
+    let retries = 0
+    const clearRetry = () => { clearTimeout(retryTimer); retryTimer = null }
     const release = lock => { try { Promise.resolve(lock?.release()).catch(() => {}) } catch { /* Optional browser feature. */ } }
     const request = async () => {
       if (!active || pending || sentinel || document.visibilityState !== 'visible') return
@@ -32,7 +35,16 @@ function ScreenWakeLock() {
         if (!active || attempt !== generation || document.visibilityState !== 'visible') release(lock)
         else {
           sentinel = lock
-          lock.addEventListener?.('release', () => { if (sentinel === lock) sentinel = null }, { once: true })
+          lock.addEventListener?.('release', () => {
+            if (sentinel !== lock) return
+            sentinel = null
+            // Battery/browser policy can release a visible lock. Try once per
+            // visibility period, without fighting a persistent power policy.
+            if (active && document.visibilityState === 'visible' && retries < 1) {
+              retries += 1
+              retryTimer = setTimeout(() => { retryTimer = null; request() }, 1000)
+            }
+          }, { once: true })
         }
       } catch { /* Denied, unsupported, or low battery: the QR remains usable. */ }
       finally {
@@ -41,13 +53,15 @@ function ScreenWakeLock() {
       }
     }
     const visibilityChanged = () => {
-      if (document.visibilityState === 'visible') request()
-      else { generation += 1; release(sentinel); sentinel = null }
+      clearRetry()
+      if (document.visibilityState === 'visible') { retries = 0; request() }
+      else { generation += 1; const lock = sentinel; sentinel = null; release(lock) }
     }
     request()
     document.addEventListener('visibilitychange', visibilityChanged)
     return () => {
       active = false
+      clearRetry()
       generation += 1
       document.removeEventListener('visibilitychange', visibilityChanged)
       release(sentinel)

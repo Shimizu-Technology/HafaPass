@@ -241,7 +241,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
       )}
 
       {tiers.length === 0 && !showForm && !loadError && (
-        <p className="text-xs text-neutral-400">No pricing tiers. Base price will be used.</p>
+        <p className="text-xs text-content-muted">No pricing tiers. Base price will be used.</p>
       )}
 
       <div className="space-y-2">
@@ -277,7 +277,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
                     <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium">Active</span>
                   )}
                   {tier.tier_type === 'quantity_based' && (
-                    <span className="text-xs text-neutral-400">{tier.quantity_sold}/{tier.quantity_limit} sold</span>
+                    <span className="text-xs text-content-muted">{tier.quantity_sold}/{tier.quantity_limit} sold</span>
                   )}
                 </div>
                 <div className="flex items-center justify-end gap-1">
