@@ -15,9 +15,15 @@ export default function ReleaseUpdateCoordinator() {
   useEffect(() => { policy.current?.attempt() }, [location])
 
   useEffect(() => {
-    // Development has no revision or worker; production and preview share this.
+    // Development has no worker; production and preview share this.
     const currentRevision = validRevision(import.meta.env.VITE_SENTRY_RELEASE)
-    if (!import.meta.env.PROD || !currentRevision) return undefined
+    if (!import.meta.env.PROD) return undefined
+    if (!currentRevision) {
+      // Source archives still need the offline shell. Without revision identity,
+      // register normally but suppress unconditional update reloads.
+      registerSW({ immediate: true, onNeedReload: () => {} })
+      return undefined
+    }
     let disposed = false
     let checking = false
     let registration
@@ -41,18 +47,21 @@ export default function ReleaseUpdateCoordinator() {
     // once the app is mounted. Early boot failures still use its own throttle.
     window.hafapassCanRecoverShell = () => canReloadForRelease(getState())
 
-    async function fetchResource(url) {
+    async function fetchResource(url, read) {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 5000)
-      try { return await fetch(url, { cache: 'no-store', signal: controller.signal }) }
+      try {
+        const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+        return { ok: response.ok, body: response.ok ? await read(response) : null }
+      }
       finally { window.clearTimeout(timeout) }
     }
     async function readShell() {
       try {
         // This request intentionally goes through the current worker's precache.
-        const response = await fetchResource('/index.html')
-        if (!response.ok || disposed) return
-        const html = new DOMParser().parseFromString(await response.text(), 'text/html')
+        const { ok, body } = await fetchResource('/index.html', response => response.text())
+        if (!ok || disposed) return
+        const html = new DOMParser().parseFromString(body, 'text/html')
         if (!disposed) reloadPolicy.notice(html.querySelector('meta[name="hafapass-revision"]')?.content)
       } catch { /* Offline without a prepared shell: retry on reconnect. */ }
     }
@@ -61,9 +70,9 @@ export default function ReleaseUpdateCoordinator() {
       checking = true
       try {
         // release.json is deliberately outside the precache/runtime caches.
-        const response = await fetchResource('/release.json')
-        const revision = response.ok ? validRevision((await response.json()).revision) : null
-        if (revision && revision !== currentRevision) {
+        const { ok, body } = await fetchResource('/release.json', response => response.json())
+        const revision = ok ? validRevision(body.revision) : null
+        if (!disposed && revision && revision !== currentRevision) {
           await registration?.update()
         }
       } catch { /* Never disturb an offline event. */ }

@@ -11,7 +11,10 @@ export function canReloadForRelease({ pathname, hidden, navigated, unsaved, notF
   catch { return false }
   // These flows stay protected even when hidden or after another route change.
   // Include organizer/admin workspaces conservatively: they contain live work.
-  if (/^\/(checkout|payments?|orders|tickets|ticket-transfers|dashboard|admin|support|privacy|account|sign-in|sign-up|organization-invitations|platform-invitations)(\/|$)/.test(path)) return false
+  if (/^\/(checkout|payments?|orders|tickets|ticket-transfers|dashboard|admin|support|privacy|account|sign-in|sign-up|organization-invitations|platform-invitations|unsubscribe)(\/|$)/.test(path)) return false
+  // Event details own button-driven quantities, seat selections and hold requests.
+  // Defer throughout that task; leaving for a safe destination permits updates.
+  if (/^\/events\/[^/]+(\/|$)/.test(path)) return false
   const publicRoute = /^\/(?:events|host|discover|collections|about)?$/.test(path) || /^\/policies\/[^/]+$/.test(path)
   return Boolean(publicRoute || notFound || hidden || navigated)
 }

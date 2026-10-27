@@ -41,7 +41,7 @@ function signedManifest(tickets) {
 
 function build(revision, marker) {
   execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'e2e-pwa/vite.config.js', '--outDir', 'tmp/pwa-deploy'], {
-    env: { ...process.env, COMMIT_REF: revision, PWA_TEST_MARKER: marker,
+    env: { ...process.env, COMMIT_REF: revision, PWA_TEST_MARKER: marker, SENTRY_AUTH_TOKEN: '',
       VITE_CLERK_PUBLISHABLE_KEY: '', VITE_PUBLIC_WEB_URL: '', VITE_API_URL: '' },
     stdio: 'pipe', timeout: 90_000,
   })
@@ -77,23 +77,25 @@ async function prepare(page) {
   const event = { id: 42, slug: 'deploy-test', title: 'Synthetic deploy event', status: 'published', starts_at: '2099-10-11T08:00:00Z', timezone: 'Pacific/Guam', purchasable: true, fee_policy: 'organizer_absorbs', buyer_fee_percent: 0,
     ticket_types: [{ id: 1, name: 'General', price_cents: 1000, current_price_cents: 1000, quantity_remaining: 10, on_sale: true }] }
   await page.context().route('**/api/v1/events/deploy-test', route => json(route, event))
+  return event
 }
 
-test('two deploys refresh Home once, defer checkout and preserve a prepared offline scanner', async ({ browser }, testInfo) => {
+test('two deploys refresh Home once, preserve selection and checkout, and keep scanner offline', async ({ browser }, testInfo) => {
   let server
   const contexts = []
   try {
     build(A, 'A')
     server = await serve()
     const pages = []
-    for (const width of [1280, 390, 1280]) {
+    let event
+    for (const width of [1280, 390, 1280, 390]) {
       const context = await browser.newContext({ viewport: { width, height: 900 } })
       contexts.push(context)
       const page = await context.newPage()
-      await prepare(page)
+      event = await prepare(page)
       pages.push(page)
     }
-    const [home, checkout, scanner] = pages
+    const [home, checkout, scanner, selection] = pages
     await scanner.addInitScript(() => localStorage.setItem('hafapass_scanner_user_id', 'synthetic-operator'))
     await home.goto(origin)
     await installed(home)
@@ -104,6 +106,11 @@ test('two deploys refresh Home once, defer checkout and preserve a prepared offl
     await checkout.getByRole('button', { name: /Buy Tickets/ }).click()
     await checkout.getByLabel('Full Name').fill('Unsaved buyer')
     await checkout.evaluate(() => { window.originalCheckoutDocument = true })
+
+    await selection.goto(`${origin}/events/deploy-test`)
+    await installed(selection)
+    await selection.getByRole('button', { name: 'Increase quantity for General', exact: true }).click()
+    await selection.evaluate(() => { window.originalSelectionDocument = true })
 
     const credential = 'synthetic-deploy-offline-ticket'
     const manifest = signedManifest([{ ticket_id: 1, code: 'HP-DEPLOY', credential_hash: crypto.createHash('sha256').update(credential).digest('hex'), attendee_name: 'Synthetic Guest', ticket_type: 'General', state: 'valid' }])
@@ -126,25 +133,50 @@ test('two deploys refresh Home once, defer checkout and preserve a prepared offl
     await expect(home.locator('#deploy-marker')).toHaveText('Build B', { timeout: 20_000 })
     expect(await home.evaluate(revision => sessionStorage.getItem('hafapass_release_reload:' + revision), B)).toBe('1')
     await home.screenshot({ path: testInfo.outputPath('home-build-b.png'), fullPage: true })
-    for (const page of [checkout, scanner]) {
+    for (const page of [checkout, scanner, selection]) {
       await page.evaluate(async () => {
         const registration = await navigator.serviceWorker.getRegistration()
         const controlled = new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }))
         await registration.update()
         await controlled
       })
-      // Ensure the coordinator has inspected the now-active B shell.
+      // Verify B is controlling; allow update callbacks to settle before deferral assertions.
       await expect.poll(() => page.evaluate(async () => (await (await fetch('/index.html')).text()).includes('Build B'))).toBe(true)
     }
+    await checkout.waitForTimeout(2_000)
     await expect(checkout.locator('#deploy-marker')).toHaveText('Build A')
     await expect(checkout.getByLabel('Full Name')).toHaveValue('Unsaved buyer')
     expect(await checkout.evaluate(() => window.originalCheckoutDocument)).toBe(true)
     await checkout.screenshot({ path: testInfo.outputPath('checkout-preserved.png'), fullPage: true })
     // A hidden transaction must remain protected as well.
-    await checkout.evaluate(() => {
-      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
+    for (const page of [checkout, selection]) {
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+    }
+    // A forbidden reload is observable as Build B or a lost document/selection.
+    await selection.waitForTimeout(2_000)
+    await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
+    expect(await selection.evaluate(() => window.originalSelectionDocument)).toBe(true)
+    await selection.screenshot({ path: testInfo.outputPath('selection-preserved.png'), fullPage: true })
+    await selection.getByRole('button', { name: /Buy Tickets/ }).click()
+    await expect(selection.getByLabel('Full Name')).toBeVisible()
+    await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
+    // The same A document must also complete the task after B removed A assets.
+    let submitted
+    const order = { id: 99, reference: 'HP-DEPLOY', status: 'completed', buyer_name: 'Synthetic Buyer', buyer_email: 'buyer@example.invalid', guest_access_token: 'synthetic-order-access',
+      subtotal_cents: 1000, service_fee_cents: 0, discount_cents: 0, total_cents: 1000, refunded_cents: 0, event,
+      order_items: [{ id: 1, name: 'General', quantity: 1, subtotal_cents: 1000 }], tickets: [] }
+    await selection.route('**/api/v1/orders', route => { submitted = route.request().postDataJSON(); return json(route, order) })
+    await selection.route('**/api/v1/orders/99', route => json(route, order))
+    await selection.getByLabel('Full Name').fill('Synthetic Buyer')
+    await selection.getByLabel('Email Address').fill('buyer@example.invalid')
+    await selection.locator('input#termsAccepted:visible').check()
+    await selection.getByRole('button', { name: /Place Order/ }).click()
+    await expect(selection.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
+    expect(submitted.line_items).toEqual([{ ticket_type_id: 1, quantity: 1 }])
+    await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
     await expect(checkout.getByLabel('Full Name')).toHaveValue('Unsaved buyer')
     // Use the application's navigation, which discards the departed form.
     await checkout.getByRole('link', { name: /HåfaPass/ }).first().click()
@@ -168,9 +200,36 @@ test('two deploys refresh Home once, defer checkout and preserve a prepared offl
     await scanner.goto(`${origin}/offline.html`)
     await expect(scanner.getByRole('heading')).toContainText(/offline/i)
     await scanner.screenshot({ path: testInfo.outputPath('offline-html.png'), fullPage: true })
-    await testInfo.attach('deploy-evidence', { body: JSON.stringify({ buildA: A, buildB: B, home: 'B after one revisit', checkout: 'A draft retained until app navigation; B at destination', scanner: 'prepared on A, offline reload on B, admitted and persisted one pending scan', offlineHtml: 'served offline' }, null, 2), contentType: 'application/json' })
+    await testInfo.attach('deploy-evidence', { body: JSON.stringify({ buildA: A, buildB: B, home: 'B after one revisit', selection: 'A quantity retained while hidden through B activation; checkout and simulated order confirmation complete with the retained quantity', checkout: 'A draft retained until app navigation; B at destination', scanner: 'prepared on A, offline reload on B, admitted and persisted one pending scan', offlineHtml: 'served offline' }, null, 2), contentType: 'application/json' })
   } finally {
     await Promise.all(contexts.map(context => context.close()))
+    await stop(server)
+    rmSync('tmp/pwa-deploy', { recursive: true, force: true })
+  }
+})
+
+
+test('an unknown-revision production build still installs the offline shell', async ({ browser }) => {
+  let server
+  const context = await browser.newContext()
+  try {
+    // An invalid authoritative revision yields the same null metadata as a source
+    // archive without Git; it also overrides this test checkout's Git revision.
+    build('unknown', 'unknown')
+    server = await serve()
+    const page = await context.newPage()
+    await prepare(page)
+    await page.goto(origin)
+    await expect(page.locator('meta[name="hafapass-revision"]')).toHaveAttribute('content', '')
+    expect(await page.evaluate(async () => (await (await fetch('/release.json')).json()).revision)).toBeNull()
+    await installed(page)
+    await context.unrouteAll({ behavior: 'wait' })
+    await context.setOffline(true)
+    await page.goto(`${origin}/offline.html`)
+    await expect(page.getByRole('heading')).toContainText(/offline/i)
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('hafapass_release_reload:')))).toEqual([])
+  } finally {
+    await context.close()
     await stop(server)
     rmSync('tmp/pwa-deploy', { recursive: true, force: true })
   }

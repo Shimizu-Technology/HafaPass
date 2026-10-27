@@ -57,7 +57,7 @@ jobs:
         run: bundle exec rspec --format documentation --format RspecJunitFormatter --out tmp/rspec.xml
       - name: Upload RSpec results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: rspec-results
           path: hafapass_api/tmp/rspec.xml
@@ -126,11 +126,12 @@ jobs:
         run: npm run test:e2e:pwa
       - name: Upload browser report
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report
           path: |
             hafapass_frontend/playwright-report
+            hafapass_frontend/playwright-pwa-report
             hafapass_frontend/test-results
           if-no-files-found: ignore
 

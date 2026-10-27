@@ -38,6 +38,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
@@ -74,4 +75,35 @@ it('does not treat a same-page anchor as the next route navigation', async () =>
   expect(reload).not.toHaveBeenCalled()
   await act(async () => router.navigate('/events'))
   expect(reload).toHaveBeenCalledTimes(1)
+})
+
+it('registers the worker without release polling or reloads when revision metadata is unknown', async () => {
+  vi.stubEnv('VITE_SENTRY_RELEASE', '')
+  mount()
+  expect(registerSW).toHaveBeenCalledWith({ immediate: true, onNeedReload: expect.any(Function) })
+  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  fireEvent(window, new Event('online'))
+  expect(fetch).not.toHaveBeenCalled()
+  expect(reload).not.toHaveBeenCalled()
+})
+
+it.each(['/release.json', '/index.html'])('times out a stalled %s body and permits a subsequent check', async stalledUrl => {
+  vi.useFakeTimers()
+  let stalled = false
+  const normalFetch = fetch
+  fetch.mockImplementation(async (url, options) => {
+    if (url !== stalledUrl || stalled) return { ok: true, json: async () => ({ revision: A }), text: async () => `<meta name="hafapass-revision" content="${A}">` }
+    stalled = true
+    const read = () => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true }))
+    return { ok: true, json: read, text: read }
+  })
+  mount('/checkout/show')
+  await act(async () => {})
+  expect(stalled).toBe(true)
+  await act(async () => vi.advanceTimersByTimeAsync(5000))
+  const calls = normalFetch.mock.calls.length
+  await act(async () => window.dispatchEvent(new Event('online')))
+  expect(fetch.mock.calls.length).toBeGreaterThan(calls)
+  expect(fetch.mock.calls.filter(([url]) => url === stalledUrl)).toHaveLength(2)
+  expect(reload).not.toHaveBeenCalled()
 })

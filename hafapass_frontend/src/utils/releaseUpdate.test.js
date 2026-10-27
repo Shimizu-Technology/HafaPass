@@ -9,7 +9,7 @@ describe('release reload policy', () => {
   it.each(['/', '/events', '/HOST/', '/discover', '/collections', '/about', '/policies/refunds'])('reloads on a public safe route: %s', pathname => {
     expect(canReloadForRelease({ pathname })).toBe(true)
   })
-  it.each(['/checkout/test', '/%63heckout/test', '/orders/1/confirmation', '/orders/recover', '/payments/return', '/ticket-transfers/accept', '/tickets/secret', '/dashboard/scanner', '/dashboard/events/1/box-office'])('protects %s, even hidden or following navigation', pathname => {
+  it.each(['/checkout/test', '/%63heckout/test', '/orders/1/confirmation', '/orders/recover', '/payments/return', '/ticket-transfers/accept', '/tickets/secret', '/dashboard/scanner', '/dashboard/events/1/box-office', '/unsubscribe', '/unsubscribe/token', '/events/show', '/events/show/preview'])('protects %s, even hidden or following navigation', pathname => {
     expect(canReloadForRelease({ pathname, hidden: true, navigated: true, notFound: true })).toBe(false)
   })
   function fixture(pathname = '/') {
@@ -29,7 +29,7 @@ describe('release reload policy', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
   it('waits for a navigation after the update, rather than any earlier navigation', () => {
-    const { state, reload, policy } = fixture('/events/show')
+    const { state, reload, policy } = fixture('/nontransactional')
     state.navigationKey = 'earlier-navigation'
     policy.notice(B)
     policy.notice(B)
@@ -38,8 +38,18 @@ describe('release reload policy', () => {
     policy.attempt()
     expect(reload).toHaveBeenCalledTimes(1)
   })
+  it('keeps event selection protected through hidden state and query changes until departure', () => {
+    const { state, reload, policy } = fixture('/events/show')
+    policy.notice(B)
+    Object.assign(state, { hidden: true, navigationKey: 'changed-query' })
+    policy.attempt()
+    expect(reload).not.toHaveBeenCalled()
+    Object.assign(state, { pathname: '/', navigationKey: 'home' })
+    policy.attempt()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
   it('reloads a nontransactional hidden page and the rendered not-found page', () => {
-    expect(canReloadForRelease({ pathname: '/events/show', hidden: true })).toBe(true)
+    expect(canReloadForRelease({ pathname: '/nontransactional', hidden: true })).toBe(true)
     expect(canReloadForRelease({ pathname: '/unknown', notFound: true })).toBe(true)
   })
   it('never reloads an unsaved draft, even hidden on Home; leaving permits the update', () => {
