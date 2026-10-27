@@ -1,0 +1,8 @@
+chromium 390 events-populated: CLS 0.03127236412203057, axe 0
+chromium 390 my-tickets-empty: CLS 0, axe 0
+chromium 1280 events-populated: CLS 0.014531835937500001, axe 0
+chromium 1280 my-tickets-empty: CLS 0.000205078125, axe 0
+webkit 390 events-populated: CLS unavailable, axe 0
+webkit 390 my-tickets-empty: CLS unavailable, axe 0
+webkit 1280 events-populated: CLS unavailable, axe 0
+webkit 1280 my-tickets-empty: CLS unavailable, axe 0

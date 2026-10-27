@@ -1,0 +1,6 @@
+         datname          | datconnlimit 
+--------------------------+--------------
+ hafapass_api_development |           -1
+ hafapass_api_test        |           -1
+(2 rows)
+

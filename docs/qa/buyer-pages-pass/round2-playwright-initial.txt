@@ -1,0 +1,247 @@
+
+Running 176 tests using 1 worker
+
+  ✓    1 [chromium] › e2e/accessibility.spec.js:73:3 › buyer browse, event, ticket choice, checkout and policy at 375px (3.6s)
+  ✓    2 [chromium] › e2e/accessibility.spec.js:104:3 › organizer event editing and ticket types at 375px (2.4s)
+  ✓    3 [chromium] › e2e/accessibility.spec.js:73:3 › buyer browse, event, ticket choice, checkout and policy at 1440px (3.5s)
+  ✓    4 [chromium] › e2e/accessibility.spec.js:104:3 › organizer event editing and ticket types at 1440px (3.3s)
+  ✓    5 [chromium] › e2e/accessibility.spec.js:125:1 › sign-in fallback has a clear alert and keyboard-visible focus (856ms)
+  ✓    6 [chromium] › e2e/accessibility.spec.js:135:3 › order confirmation, receipt, refund request, transfer and ticket QR at 375px (1.9s)
+  ✓    7 [chromium] › e2e/accessibility.spec.js:135:3 › order confirmation, receipt, refund request, transfer and ticket QR at 1440px (2.3s)
+  ✓    8 [chromium] › e2e/accessibility.spec.js:190:3 › My Tickets, tab navigation and transfer at 375px (1.5s)
+  ✓    9 [chromium] › e2e/accessibility.spec.js:190:3 › My Tickets, tab navigation and transfer at 1440px (1.4s)
+  ✓   10 [chromium] › e2e/accessibility.spec.js:222:3 › organizer create event, attendee filters and export at 375px (3.8s)
+  ✓   11 [chromium] › e2e/accessibility.spec.js:222:3 › organizer create event, attendee filters and export at 1440px (3.5s)
+  ✓   12 [chromium] › e2e/accessibility.spec.js:274:3 › organizer box office sale and cancel refund dialog at 375px (3.4s)
+  ✓   13 [chromium] › e2e/accessibility.spec.js:274:3 › organizer box office sale and cancel refund dialog at 1440px (3.6s)
+  ✓   14 [chromium] › e2e/accessibility.spec.js:327:3 › scanner manual check-in at 375px (1.7s)
+  ✓   15 [chromium] › e2e/accessibility.spec.js:327:3 › scanner manual check-in at 1440px (1.9s)
+  ✓   16 [chromium] › e2e/activity-log.spec.js:45:3 › organizer activity filters, timeline, recovery and CSV at 375px (3.5s)
+  ✓   17 [chromium] › e2e/activity-log.spec.js:124:3 › admin exact filters, links, technical details and CSV at 375px (4.2s)
+  ✓   18 [chromium] › e2e/activity-log.spec.js:45:3 › organizer activity filters, timeline, recovery and CSV at 1280px (3.3s)
+  ✓   19 [chromium] › e2e/activity-log.spec.js:124:3 › admin exact filters, links, technical details and CSV at 1280px (4.5s)
+  ✓   20 [chromium] › e2e/activity-log.spec.js:201:1 › unassigned staff cannot request activity; assigned managers can use the explicit audience flag (1.4s)
+  ✓   21 [chromium] › e2e/activity-log.spec.js:222:3 › settings role comparison preserves invite draft and passes axe at 375px (2.0s)
+  ✓   22 [chromium] › e2e/activity-log.spec.js:222:3 › settings role comparison preserves invite draft and passes axe at 1280px (2.4s)
+  ✓   23 [chromium] › e2e/activity-log.spec.js:286:3 › event overview opens activity with its event filter at 375px (1.9s)
+  ✓   24 [chromium] › e2e/activity-log.spec.js:286:3 › event overview opens activity with its event filter at 1280px (1.9s)
+  ✓   25 [chromium] › e2e/assigned-seating.spec.js:6:1 › buyer selects an exact seat, holds it, and completes seat-specific checkout (1.6s)
+  ✓   26 [chromium] › e2e/audit-integrity.spec.js:8:3 › admin audit privacy wording, details and search work at 375px (1.4s)
+  ✓   27 [chromium] › e2e/audit-integrity.spec.js:8:3 › admin audit privacy wording, details and search work at 1280px (1.7s)
+  ✓   28 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 375px (1.4s)
+  ✓   29 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1024px (739ms)
+  ✓   30 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1280px (778ms)
+  ✓   31 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1440px (664ms)
+  ✓   32 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 320px (825ms)
+  ✓   33 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 390px (677ms)
+  ✓   34 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 1440px (670ms)
+  ✓   35 [chromium] › e2e/buyer-layout.spec.js:91:1 › buyer-pays prices are all-in from the first display through the checkout total (671ms)
+  ✓   36 [chromium] › e2e/buyer-layout.spec.js:114:1 › an event outage retries in place instead of pretending the event is missing (659ms)
+  ✓   37 [chromium] › e2e/buyer-layout.spec.js:133:1 › opening an event preserves filters without rewriting the event URL from an exiting listing (2.0s)
+  ✓   38 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px (1.7s)
+  ✓   39 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 375px (2.4s)
+  ✓   40 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 375px (1.1s)
+  ✓   41 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 375px (2.8s)
+  ✓   42 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px (2.0s)
+  ✓   43 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 390px (2.4s)
+  ✓   44 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 390px (1.1s)
+  ✓   45 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 390px (3.3s)
+  ✓   46 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px (2.0s)
+  ✓   47 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 1280px (2.7s)
+  ✓   48 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 1280px (1.3s)
+  ✓   49 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 1280px (3.5s)
+  ✓   50 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 390px (526ms)
+  ✓   51 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 1440px (728ms)
+  ✓   52 [chromium] › e2e/buyer-phone-access.spec.js:30:1 › the buyer controls an installation offer received before navigating to tickets (1.0s)
+  ✓   53 [chromium] › e2e/competitive-features.spec.js:5:1 › buyer completes an organizer-absorbed checkout with an add-on, registration answer, and waiver snapshot (1.3s)
+  ✓   54 [chromium] › e2e/draft-exit.spec.js:19:3 › shared navigation protects a dirty event draft at 390px (974ms)
+  ✓   55 [chromium] › e2e/draft-exit.spec.js:19:3 › shared navigation protects a dirty event draft at 1440px (959ms)
+  ✓   56 [chromium] › e2e/draft-exit.spec.js:47:1 › browser Back retains the editor until the user approves departure (1.1s)
+  ✓   57 [chromium] › e2e/draft-exit.spec.js:65:1 › reload requests native confirmation and dismissal retains the draft (5.7s)
+  ✓   58 [chromium] › e2e/empty-inventory.spec.js:8:3 › empty inventory leads to hosting and automatically restores browsing at 375px (15.4s)
+  ✓   59 [chromium] › e2e/empty-inventory.spec.js:8:3 › empty inventory leads to hosting and automatically restores browsing at 1280px (14.0s)
+  ✓   60 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 375px (1.7s)
+  ✓   61 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 768px (1.5s)
+  ✓   62 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 1280px (1.3s)
+  ✓   63 [chromium] › e2e/event-day-rehearsal.spec.js:8:1 › admin records complete Gate G physical event-day rehearsal evidence (7.8s)
+  ✓   64 [chromium] › e2e/event-day.spec.js:44:3 › scanner validates locally, records an offline scan, and reconnects with fragment none (4.1s)
+  ✓   65 [chromium] › e2e/event-day.spec.js:44:3 › scanner validates locally, records an offline scan, and reconnects with fragment #manual-ticket-entry (3.3s)
+  ✓   66 [chromium] › e2e/event-day.spec.js:118:1 › online scanner waits neutrally before accepted and refused acknowledgements (2.5s)
+  ✓   67 [chromium] › e2e/event-day.spec.js:154:3 › manager identifies same-name tickets and selects the correct Undo at 390px (1.5s)
+  ✓   68 [chromium] › e2e/event-day.spec.js:154:3 › manager identifies same-name tickets and selects the correct Undo at 1440px (1.7s)
+  ✓   69 [chromium] › e2e/event-day.spec.js:197:1 › box office exposes card sales only for a verified terminal and sends an idempotency key (973ms)
+  ✓   70 [chromium] › e2e/event-day.spec.js:229:3 › box office keeps card sales disabled for a restricted launch scope (848ms)
+  ✓   71 [chromium] › e2e/event-day.spec.js:229:3 › box office keeps card sales disabled for an unverified terminal (677ms)
+  ✓   72 [chromium] › e2e/event-draft-history.spec.js:4:3 › refused draft deletion recovers by archiving without a stale error at 390px (1.8s)
+  ✓   73 [chromium] › e2e/event-draft-history.spec.js:4:3 › refused draft deletion recovers by archiving without a stale error at 1440px (1.5s)
+  ✓   74 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 390px (955ms)
+  ✓   75 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 1440px (1.0s)
+  ✓   76 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 390px (1.5s)
+  ✓   77 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 1440px (1.3s)
+  ✓   78 [chromium] › e2e/event-editor-validation.spec.js:110:1 › new event capacity uses the validated number and retains draft recovery until creation succeeds (1.0s)
+  ✓   79 [chromium] › e2e/event-workspace.spec.js:19:3 › event workspace protects a dirty draft and keeps navigation reachable at 390px (1.2s)
+  ✓   80 [chromium] › e2e/event-workspace.spec.js:19:3 › event workspace protects a dirty draft and keeps navigation reachable at 1440px (1.1s)
+  ✓   81 [chromium] › e2e/event-workspace.spec.js:43:1 › phone event navigation supports Escape and restores focus without exposing forbidden tools (836ms)
+  ✓   82 [chromium] › e2e/event-workspace.spec.js:69:3 › ticket navigation scrolls and focuses the editor section without losing a draft at 320px (1.2s)
+  ✓   83 [chromium] › e2e/event-workspace.spec.js:69:3 › ticket navigation scrolls and focuses the editor section without losing a draft at 1440px (1.2s)
+  ✓   84 [chromium] › e2e/event-workspace.spec.js:102:3 › attendee sales filters and export stay usable at 390px (976ms)
+  ✓   85 [chromium] › e2e/event-workspace.spec.js:102:3 › attendee sales filters and export stay usable at 1440px (1.0s)
+  ✓   86 [chromium] › e2e/first-load.spec.js:5:1 › public browsing starts before health resolves and preserves the shell and draft on failure/recovery (978ms)
+  ✓   87 [chromium] › e2e/first-load.spec.js:31:3 › missing-event loading keeps CLS below 0.1 at 390px (718ms)
+  ✓   88 [chromium] › e2e/first-load.spec.js:31:3 › missing-event loading keeps CLS below 0.1 at 1280px (833ms)
+  ✓   89 [chromium] › e2e/first-load.spec.js:59:3 › discover loading keeps the footer stable through confirmed empty inventory at 375px (931ms)
+  ✓   90 [chromium] › e2e/first-load.spec.js:59:3 › discover loading keeps the footer stable through confirmed empty inventory at 1280px (1.0s)
+  ✓   91 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches / before the app mounts (143ms)
+  ✓   92 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /host before the app mounts (137ms)
+  ✘   93 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /events before the app mounts (5.1s)
+  ✘   94 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /discover before the app mounts (5.2s)
+  ✓   95 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /dashboard before the app mounts (384ms)
+  ✓   96 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: / (243ms)
+  ✓   97 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /host (166ms)
+  ✓   98 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /events (174ms)
+  ✓   99 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /discover (208ms)
+  ✓  100 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /collections/this-weekend (183ms)
+  ✓  101 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /my-tickets (194ms)
+  ✓  102 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /saved (196ms)
+  ✓  103 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /tickets/display-qa (207ms)
+  ✓  104 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /events/community-night (165ms)
+  ✓  105 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /dashboard (132ms)
+  ✓  106 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /admin/events (145ms)
+  ✓  107 [chromium] › e2e/header-startup-theme.spec.js:10:3 › startup header theme before React: /scan (135ms)
+  ✓  108 [chromium] › e2e/live-money-proof.spec.js:8:1 › admin requests a bounded hidden Gate H live-money authorization (1.8s)
+  ✓  109 [chromium] › e2e/live-pilot.spec.js:8:1 › admin monitors an active Gate I pilot and reports a mandatory-pause incident (2.0s)
+  ✓  110 [chromium] › e2e/manual-payout-approval.spec.js:24:3 › dashboard approval: keyboard, retry, masked values and saved outcome at 375 (2.8s)
+  ✓  111 [chromium] › e2e/manual-payout-approval.spec.js:65:3 › organization blocked review and required changes note at 375 (2.6s)
+  ✓  112 [chromium] › e2e/manual-payout-approval.spec.js:89:3 › organizer check-only selection persists at 375 (1.6s)
+  ✓  113 [chromium] › e2e/manual-payout-approval.spec.js:24:3 › dashboard approval: keyboard, retry, masked values and saved outcome at 1280 (2.7s)
+  ✓  114 [chromium] › e2e/manual-payout-approval.spec.js:65:3 › organization blocked review and required changes note at 1280 (2.9s)
+  ✓  115 [chromium] › e2e/manual-payout-approval.spec.js:89:3 › organizer check-only selection persists at 1280 (1.6s)
+  ✓  116 [chromium] › e2e/marketplace-growth.spec.js:20:1 › buyer discovers a governed collection and filters Guam inventory (1.6s)
+  ✓  117 [chromium] › e2e/marketplace-growth.spec.js:47:1 › free event discovery has accessible labels and readable selected controls (1.5s)
+  ✓  118 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 320px (2.8s)
+  ✓  119 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 390px (2.9s)
+  ✓  120 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 768px (2.5s)
+  ✓  121 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 1440px (2.6s)
+  ✓  122 [chromium] › e2e/marketplace-growth.spec.js:143:1 › a late previous filter response cannot replace the currently selected results (1.5s)
+  ✓  123 [chromium] › e2e/marketplace-growth.spec.js:173:1 › an unavailable event listing offers retry and preserves the chosen filters (1.3s)
+  ✓  124 [chromium] › e2e/marketplace-growth.spec.js:196:1 › empty discovery results can clear filters on a narrow phone (1.9s)
+  ✓  125 [chromium] › e2e/marketplace-growth.spec.js:216:1 › partner link records anonymous attribution and opens the intended event (724ms)
+  ✓  126 [chromium] › e2e/marketplace-growth.spec.js:235:3 › public event actions remain reachable before and after setting a reminder at 390px (1.3s)
+  ✓  127 [chromium] › e2e/marketplace-growth.spec.js:235:3 › public event actions remain reachable before and after setting a reminder at 1440px (1.1s)
+  ✓  128 [chromium] › e2e/marketplace-growth.spec.js:285:1 › reduced-motion event navigation retains B inventory through a late A response and checkout (1.2s)
+  ✓  129 [chromium] › e2e/organization-finance.spec.js:12:1 › owner can review team roles, choose check payouts, and create an invitation (1.0s)
+  ✓  130 [chromium] › e2e/organization-finance.spec.js:38:1 › finance dashboard separates ticket economics and immutable payout state (1.2s)
+  ✓  131 [chromium] › e2e/organizer-mutation-context.spec.js:18:1 › a received Alpha review can finish without replacing Beta or losing its editor draft (1.7s)
+  ✓  132 [chromium] › e2e/organizer-mutation-context.spec.js:50:1 › an old Alpha profile save does not close or reload a newly opened Beta editor (910ms)
+  ✓  133 [chromium] › e2e/organizer-mutation-context.spec.js:79:1 › returning through browser history keeps a delayed Alpha load out of the Beta event save (861ms)
+  ✓  134 [chromium] › e2e/pilot-closeout.spec.js:8:1 › admin approves the exact Gate J closeout and Guam expansion decision (1.6s)
+  ✓  135 [chromium] › e2e/pilot-readiness.spec.js:8:1 › admin records named Gate E ownership and complete event-bound evidence (2.2s)
+  ✓  136 [chromium] › e2e/pilot-validation.spec.js:8:1 › admin records complete Gate F device, accessibility, and load evidence (4.6s)
+  ✓  137 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 375px (1.2s)
+  ✓  138 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 375px (1.4s)
+  ✓  139 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 375px (1.9s)
+  ✓  140 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 768px (1.0s)
+  ✓  141 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 768px (1.3s)
+  ✓  142 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 768px (2.0s)
+  ✓  143 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 1280px (989ms)
+  ✓  144 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 1280px (1.4s)
+  ✓  145 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 1280px (2.1s)
+  ✓  146 [chromium] › e2e/provider-readiness.spec.js:8:1 › admin sees fail-closed provider state and submits a complete policy evidence snapshot (1.4s)
+  ✓  147 [chromium] › e2e/scanner-context.spec.js:21:1 › an earlier setup refusal cannot erase the current scanner or its accepted receipt (964ms)
+  ✓  148 [chromium] › e2e/service-availability.spec.js:3:1 › opens the public marketplace when backend services are available (475ms)
+  ✓  149 [chromium] › e2e/service-availability.spec.js:21:1 › keeps public browsing mounted with a recoverable outage banner when the background health check fails (528ms)
+  ✓  150 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation success after organization switch ends loading at 375px (616ms)
+  ✓  151 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation failure after organization switch ends loading at 375px (565ms)
+  ✓  152 [chromium] › e2e/team-review-recovery.spec.js:40:3 › authorized member reviews and recovers a failed campaign at 375px (739ms)
+  ✓  153 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation success after organization switch ends loading at 1280px (552ms)
+  ✓  154 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation failure after organization switch ends loading at 1280px (453ms)
+  ✓  155 [chromium] › e2e/team-review-recovery.spec.js:40:3 › authorized member reviews and recovers a failed campaign at 1280px (739ms)
+  ✓  156 [chromium] › e2e/ticket-context.spec.js:23:1 › browser pop navigation retains the newer ticket and QR when the old response arrives last (517ms)
+  ✓  157 [chromium] › e2e/ticket-context.spec.js:40:1 › suppresses the old Google Wallet redirect after route change and opens the current wallet (1.1s)
+  ✓  158 [chromium] › e2e/verification-gate.spec.js:56:3 › draft keeps its saved preview link at 375px (1.1s)
+  ✓  159 [chromium] › e2e/verification-gate.spec.js:68:3 › dashboard event chips match visibility reason at 375px (1.9s)
+  ✓  160 [chromium] › e2e/verification-gate.spec.js:105:3 › private preview and verification request at 375px (4.8s)
+  ✓  161 [chromium] › e2e/verification-gate.spec.js:200:3 › rejected request can be fixed using only the keyboard at 375px (942ms)
+  ✓  162 [chromium] › e2e/verification-gate.spec.js:56:3 › draft keeps its saved preview link at 1280px (1.0s)
+  ✓  163 [chromium] › e2e/verification-gate.spec.js:68:3 › dashboard event chips match visibility reason at 1280px (1.7s)
+  ✓  164 [chromium] › e2e/verification-gate.spec.js:105:3 › private preview and verification request at 1280px (5.9s)
+  ✓  165 [chromium] › e2e/verification-gate.spec.js:200:3 › rejected request can be fixed using only the keyboard at 1280px (1.0s)
+  ✓  166 [chromium] › e2e/verification-gate.spec.js:230:3 › search restores contrast immediately after loading (reduce) (1.3s)
+  ✓  167 [chromium] › e2e/verification-gate.spec.js:230:3 › search restores contrast immediately after loading (no-preference) (1.3s)
+  ✓  168 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 404 warning at 375px (656ms)
+  ✓  169 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 503 warning at 375px (653ms)
+  ✓  170 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 404 warning at 1280px (647ms)
+  ✓  171 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 503 warning at 1280px (676ms)
+  ✓  172 [chromium] › e2e/waitlist-unsubscribe.spec.js:3:1 › waitlist unsubscribe presents event and organizer choices (537ms)
+  ✓  173 [chromium] › e2e/wording-review.spec.js:18:3 › promo expiry uses Guam for a null zone and oversized discounts can recover at 390px (956ms)
+  ✓  174 [chromium] › e2e/wording-review.spec.js:54:3 › guest completion counts and interrupted creation use ticket wording at 390px (686ms)
+  ✓  175 [chromium] › e2e/wording-review.spec.js:18:3 › promo expiry uses Guam for a null zone and oversized discounts can recover at 1440px (999ms)
+  ✓  176 [chromium] › e2e/wording-review.spec.js:54:3 › guest completion counts and interrupted creation use ticket wording at 1440px (732ms)
+
+
+  1) [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /events before the app mounts 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('meta[name="theme-color"]')
+    Expected: "#ffffff"
+    Received: "#032827"
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveAttribute" locator('meta[name="theme-color"]') with timeout 5000ms
+      - waiting for locator('meta[name="theme-color"]')
+        14 × locator resolved to <meta content="#032827" name="theme-color"/>
+           - unexpected value "#032827"
+
+
+      89 |     await page.goto(path)
+      90 |     await expect(page.locator('.boot-splash')).toBeVisible()
+    > 91 |     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', color)
+         |                                                            ^
+      92 |   })
+      93 | }
+      94 |
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e/first-load.spec.js:91:60
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/first-load-cold-load-theme-13359-vents-before-the-app-mounts-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/first-load-cold-load-theme-13359-vents-before-the-app-mounts-chromium/error-context.md
+
+  2) [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /discover before the app mounts 
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('meta[name="theme-color"]')
+    Expected: "#ffffff"
+    Received: "#032827"
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveAttribute" locator('meta[name="theme-color"]') with timeout 5000ms
+      - waiting for locator('meta[name="theme-color"]')
+        14 × locator resolved to <meta content="#032827" name="theme-color"/>
+           - unexpected value "#032827"
+
+
+      89 |     await page.goto(path)
+      90 |     await expect(page.locator('.boot-splash')).toBeVisible()
+    > 91 |     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', color)
+         |                                                            ^
+      92 |   })
+      93 | }
+      94 |
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e/first-load.spec.js:91:60
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/first-load-cold-load-theme-a6cbd-cover-before-the-app-mounts-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/first-load-cold-load-theme-a6cbd-cover-before-the-app-mounts-chromium/error-context.md
+
+  2 failed
+    [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /events before the app mounts 
+    [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /discover before the app mounts 
+  174 passed (5.5m)

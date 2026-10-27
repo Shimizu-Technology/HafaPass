@@ -7,7 +7,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -17,7 +18,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -27,7 +29,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -37,7 +40,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -47,7 +51,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "chromium",
@@ -57,7 +62,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "chromium",
@@ -67,7 +73,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -77,7 +84,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "chromium",
@@ -87,7 +95,8 @@
     "label": "1,000 tickets",
     "available": 320,
     "content": 320,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "chromium",
@@ -97,7 +106,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -107,7 +117,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -117,7 +128,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -127,7 +139,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -137,7 +150,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -147,7 +161,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -157,7 +172,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -167,7 +183,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -177,7 +194,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "chromium",
@@ -187,7 +205,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "chromium",
@@ -197,7 +216,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -207,7 +227,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "chromium",
@@ -217,7 +238,8 @@
     "label": "1,000 tickets",
     "available": 375,
     "content": 375,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "chromium",
@@ -227,7 +249,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -237,7 +260,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -247,7 +271,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -257,7 +282,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -267,7 +293,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -277,7 +304,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -287,7 +315,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -297,7 +326,8 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -307,7 +337,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "chromium",
@@ -317,7 +348,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "chromium",
@@ -327,7 +359,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -337,7 +370,8 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "chromium",
@@ -347,7 +381,8 @@
     "label": "1,000 tickets",
     "available": 1280,
     "content": 1280,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "chromium",
@@ -357,7 +392,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -367,7 +403,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -377,7 +414,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "chromium",
@@ -387,7 +425,8 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -397,7 +436,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -407,7 +447,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -417,7 +458,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -427,7 +469,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -437,7 +480,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "webkit",
@@ -447,7 +491,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "webkit",
@@ -457,7 +502,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -467,7 +513,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "webkit",
@@ -477,7 +524,8 @@
     "label": "1,000 tickets",
     "available": 320,
     "content": 320,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "webkit",
@@ -487,7 +535,8 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -497,7 +546,8 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -507,7 +557,8 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -517,7 +568,8 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -527,7 +579,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -537,7 +590,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -547,7 +601,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -557,7 +612,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -567,7 +623,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "webkit",
@@ -577,7 +634,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "webkit",
@@ -587,7 +645,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -597,7 +656,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "webkit",
@@ -607,7 +667,8 @@
     "label": "1,000 tickets",
     "available": 375,
     "content": 375,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "webkit",
@@ -617,7 +678,8 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -627,7 +689,8 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -637,7 +700,8 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -647,7 +711,8 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -657,7 +722,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -667,7 +733,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -677,7 +744,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -687,7 +755,8 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -697,7 +766,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 2
+    "passes": 2,
+    "buyerPasses": 2
   },
   {
     "engine": "webkit",
@@ -707,7 +777,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 3
   },
   {
     "engine": "webkit",
@@ -717,7 +788,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -727,7 +799,8 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 1
   },
   {
     "engine": "webkit",
@@ -737,7 +810,8 @@
     "label": "1,000 tickets",
     "available": 1280,
     "content": 1280,
-    "passes": 1000
+    "passes": 1000,
+    "buyerPasses": 1000
   },
   {
     "engine": "webkit",
@@ -747,7 +821,8 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -757,7 +832,8 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 3
+    "passes": 3,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -767,7 +843,8 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0
+    "passes": 0,
+    "buyerPasses": 0
   },
   {
     "engine": "webkit",
@@ -777,6 +854,7 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 1
+    "passes": 1,
+    "buyerPasses": 0
   }
 ]

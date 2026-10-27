@@ -134,3 +134,42 @@ The simultaneous PWA rerun was 1/2: its deliberate `/timeout-never-visited` navi
 ## Final resource check
 
 Lifecycle cleanup completed: no active owned resources. No listeners remain on task ports 3066, 5236, 4173, 5238 or 5234. The invalid synthetic database row remains (`hafapass_buyer_pages_test`, `datconnlimit=-2`), with zero connections and zero active DROP statements. This unresolved data cleanup is in [HANDOFF.md](HANDOFF.md). The held worktree and branch are preserved for the lead. Backend/pricing/policies untouched. Final-head CI and CodeRabbit are pending, not awaited by this delegated child.
+
+
+## PR #170 follow-up — round 2 (2026-10-28)
+
+Agent-executed affected-flow QA. Started from clean `f297b9161d3b6262295c7609373dbf44992d7b6f` in the existing named worktree; fetched and rebased onto `origin/main` `81abf68c` (PR #169, backend spec only). The product brief and B01–B10 acceptance above remain applicable. This follow-up changes only guest/account recovery guidance, the startup header theme, and QA assertions. No backend or fee/pricing/policy/shared-button/workspace changes. The PR remains held for the lead; do not merge.
+
+Required affected acceptance:
+
+- R21: Empty Tickets and Orders explain guest reference + checkout email recovery and signing in to the purchasing account. Follow the explicitly labelled guest link to the reference/email form; Browse events still works. Chromium at 375/390/1280; synthetic empty account fixtures, no real Clerk or email delivery.
+- R22: At DOMContentLoaded, with external JavaScript modules blocked, the browser theme and startup header strip are teal for Home/Host/Events/Discover/Collections/My tickets/Saved/ticket display and white for event detail and workspace routes. Mounted Navbar retains its scroll behavior. One route predicate generates the inline script and drives Navbar.
+- R23: The populated Events screenshot requires an event card; the stress fixtures assert actual buyer-pass counts, excluding the empty ticket. Run the populated visual scene and all 78 stress combinations.
+
+The old `hafapass_buyer_pages_test` database was already absent at preflight. These checks use intercepted synthetic API fixtures and need no new database. Shared `hafapass_api_test` is borrowed and untouched. No real authentication, provider delivery or physical-device acceptance is claimed.
+
+
+Production changes are frozen at `77ceb8fb6b4a9f9153e69490f18a5b40d2442cee`; `b315bf42` only aligns two existing cold-load expectations with the corrected behavior. The final complete browser gate runs that combined source. The first follow-up run was 174/176 because `first-load.spec.js` still expected white on Events and Discover; its log is preserved in `round2-playwright-initial.txt`. The assertions now expect teal. The 12 new DOMContentLoaded tests already passed in that first run and also pass in the complete rerun.
+
+| Follow-up gate | Result and evidence |
+| --- | --- |
+| Lint | Passed, zero warnings (`round2-lint.txt`) |
+| Units with all three requested VITE variables empty | 2022 passed, 3 pre-existing skips, 182 files passed / 1 skipped; default worker config (`round2-units.txt`) |
+| `npm run build:no-translate` | Passed; generated shell contains the shared route predicate and no unresolved startup token (`round2-build.txt`) |
+| Full Chromium Playwright | **176/176 passed**, stock timeout config, one worker, zero retries or skips (`round2-playwright.txt`) |
+| Standalone PWA | **2/2 passed**, original timeout config (`round2-pwa.txt`) |
+| Targeted visual/axe | **8/8 passed**, Chromium + WebKit at 390/1280; populated Events and empty My tickets; zero AA axe violations, no overflow; max Chromium CLS 0.03127236412203057, WebKit CLS unavailable (`round2-visual-axe.txt`, `targeted-after-results.json`) |
+| Impeccable 4.6.0 | No findings over all 33 changed frontend/source/test/QA paths (`round2-impeccable.json`) |
+
+The organizer payout persistence and private-preview/verification cases passed with stock timeouts in both full follow-up runs. Their conditional clean `origin/main` comparison was **not needed and not run**. No wider timing allowance was used for these follow-up gates.
+
+R21 passed in Chromium at 375/390/1280: both empty tabs show the guest/account distinction; the guest link opens reference + email fields, and Browse events still opens Events. R22 passed: startup colors are captured at DOMContentLoaded with all external scripts replaced by empty modules, before Navbar exists; the shell header strip and theme meta agree on all 12 route cases. Mounted/scroll checks pass at all three widths. The broad accessibility journey suite also passes as part of the complete Chromium run.
+
+Refreshed, visually inspected empty My tickets screenshots: `after/390-my-tickets-empty.png`, `after/1280-my-tickets-empty.png`, `after/webkit-390-my-tickets-empty.png`, `after/webkit-1280-my-tickets-empty.png`. Existing unrelated screenshots retain their earlier source/evidence history.
+
+
+R23 passed: the populated Events scene required visible event cards in both engines at 390/1280. All **78 stress combinations passed**, including buyer-pass counts for every My tickets variant; Empty = 0, One = 1 and 1,000 tickets = 1,000 in both engines at 320px, 375px / 200% text, and 1280px (`round2-stress.txt`, `stress-results.json`). The empty-state stock is excluded from the buyer-pass count. All **12 WebKit buyer interaction scenarios passed** with stock timeouts (`round2-webkit.txt`), including recovery, keyboard tabs, saved state on reload, scroll theme, and transfer-dialog retry/cancellation. R21–R23 are accepted within the documented synthetic/browser limits. Real Clerk/email delivery and physical devices remain not run.
+
+Cleanup: task-owned Vite 5236 stopped; PWA fixture servers, test browsers and the T3 preview tab are closed. Lifecycle status has no active owned resources and no intentional runtime handoff (`round2-cleanup.txt`). No new database was created. TCP verification lists only borrowed `hafapass_api_development` and `hafapass_api_test`; `hafapass_buyer_pages_test` is absent (`round2-databases.txt`). Shared PostgreSQL and other sessions were left running.
+
+The two CodeRabbit findings are fixed in `77ceb8fb`: populated-scene readiness and buyer-pass count assertions. The implementation agent replies/resolves those threads with this push and requests `@coderabbitai review` once. Final-head hosted checks and fresh review coverage remain for the lead to inspect; neither the old green checks nor the earlier rate-limited status establish approval of this new head. The PR is held and must not be merged by this agent.

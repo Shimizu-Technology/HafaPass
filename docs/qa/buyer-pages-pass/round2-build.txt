@@ -1,0 +1,194 @@
+
+> hafapass_frontend@0.0.0 build:no-translate
+> vite build
+
+You are using Node.js 22.0.0. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 4233 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/release.json                                                      0.05 kB │ gzip:   0.07 kB
+dist/robots.txt                                                        0.06 kB │ gzip:   0.06 kB
+dist/index.html                                                        6.47 kB │ gzip:   2.64 kB
+dist/assets/space-grotesk-vietnamese-wght-normal-D0rl6rjA.woff2        6.71 kB
+dist/assets/plus-jakarta-sans-vietnamese-wght-normal-qRpaaN48.woff2    8.35 kB
+dist/assets/plus-jakarta-sans-vietnamese-wght-italic-CPBsCcxN.woff2    9.11 kB
+dist/assets/space-grotesk-latin-ext-wght-normal-D9tNdqV9.woff2        18.94 kB
+dist/assets/plus-jakarta-sans-latin-ext-wght-normal-DmpS2jIq.woff2    21.72 kB
+dist/assets/space-grotesk-latin-wght-normal-BhU9QXUp.woff2            22.28 kB
+dist/assets/plus-jakarta-sans-latin-ext-wght-italic-DJWiFoht.woff2    23.22 kB
+dist/assets/plus-jakarta-sans-latin-wght-normal-eXO_dkmS.woff2        27.34 kB
+dist/assets/plus-jakarta-sans-latin-wght-italic-DnD1KgkH.woff2        29.60 kB
+dist/assets/index-De5NlgLm.css                                       100.68 kB │ gzip:  21.29 kB
+dist/assets/minus-D7uNEci9.js                                          0.11 kB │ gzip:   0.13 kB
+dist/assets/chevron-up-DFFdTSMW.js                                     0.12 kB │ gzip:   0.14 kB
+dist/assets/chevron-left-DGMKtSKD.js                                   0.13 kB │ gzip:   0.14 kB
+dist/assets/chevron-right-CQR6dyN6.js                                  0.13 kB │ gzip:   0.14 kB
+dist/assets/circle-BTESJ2DN.js                                         0.13 kB │ gzip:   0.13 kB
+dist/assets/plus-CjsO4HSh.js                                           0.15 kB │ gzip:   0.15 kB
+dist/assets/arrow-left-Txb95eZM.js                                     0.16 kB │ gzip:   0.16 kB
+dist/assets/clock-3-CgDaxa-n.js                                        0.16 kB │ gzip:   0.16 kB
+dist/assets/download-5PK7rN39.js                                       0.17 kB │ gzip:   0.15 kB
+dist/assets/circle-check-Cf2RzV1C.js                                   0.17 kB │ gzip:   0.16 kB
+dist/assets/smartphone-BK94thw7.js                                     0.19 kB │ gzip:   0.18 kB
+dist/assets/circle-x-B6NbLcuE.js                                       0.20 kB │ gzip:   0.17 kB
+dist/assets/dollar-sign-C1WXwTWr.js                                    0.21 kB │ gzip:   0.19 kB
+dist/assets/download-BV-NOn8c.js                                       0.23 kB │ gzip:   0.19 kB
+dist/assets/copy-u-lW1uQA.js                                           0.23 kB │ gzip:   0.21 kB
+dist/assets/banknote-ib8uF70u.js                                       0.24 kB │ gzip:   0.20 kB
+dist/assets/circle-pause-DQK2VJ9R.js                                   0.24 kB │ gzip:   0.18 kB
+dist/assets/circle-alert-ClVMPTJl.js                                   0.25 kB │ gzip:   0.18 kB
+dist/assets/external-link-Cf4Hh8EP.js                                  0.25 kB │ gzip:   0.19 kB
+dist/assets/circle-play-BhW7B1Ro.js                                    0.25 kB │ gzip:   0.21 kB
+dist/assets/pencil-BwhVGxBF.js                                         0.27 kB │ gzip:   0.22 kB
+dist/assets/bell-BjOodVnn.js                                           0.29 kB │ gzip:   0.23 kB
+dist/assets/send-DvK9N7tf.js                                           0.29 kB │ gzip:   0.23 kB
+dist/assets/shopping-cart-faLB8w_B.js                                  0.29 kB │ gzip:   0.23 kB
+dist/assets/users-GTJ7i2mu.js                                          0.30 kB │ gzip:   0.22 kB
+dist/assets/user-plus-C0HICTst.js                                      0.31 kB │ gzip:   0.23 kB
+dist/assets/badge-check-DzoKCh6K.js                                    0.31 kB │ gzip:   0.21 kB
+dist/assets/shield-check-CedyStHu.js                                   0.32 kB │ gzip:   0.25 kB
+dist/assets/tag-BGV-cEVC.js                                            0.32 kB │ gzip:   0.24 kB
+dist/assets/trash-2-DLD9e3EK.js                                        0.32 kB │ gzip:   0.21 kB
+dist/assets/useLaunchCapabilities-XGdEoYVA.js                          0.33 kB │ gzip:   0.25 kB
+dist/assets/accessibility-BBK_1qXL.js                                  0.34 kB │ gzip:   0.24 kB
+dist/assets/landmark-DsOv6LLa.js                                       0.40 kB │ gzip:   0.26 kB
+dist/assets/clipboard-list-DYx3yM-0.js                                 0.41 kB │ gzip:   0.26 kB
+dist/assets/panel-left-open-BC0Ympjm.js                                0.41 kB │ gzip:   0.23 kB
+dist/assets/taxInformation-ohcKi9UM.js                                 0.46 kB │ gzip:   0.27 kB
+dist/assets/AdminSessionGate-D43ocsJE.js                               0.47 kB │ gzip:   0.33 kB
+dist/assets/BuyerTitleBand-BPsXkrmB.js                                 0.52 kB │ gzip:   0.34 kB
+dist/assets/adminLabels-DhhgD4Ml.js                                    0.52 kB │ gzip:   0.31 kB
+dist/assets/useOperationalListing-s1uhmtPu.js                          0.56 kB │ gzip:   0.38 kB
+dist/assets/TestPaymentBadge-CXn57WBu.js                               0.58 kB │ gzip:   0.38 kB
+dist/assets/usePlatformFeeTerms-DZsEKLqX.js                            0.59 kB │ gzip:   0.37 kB
+dist/assets/FormErrorSummary-C5ris8OQ.js                               0.64 kB │ gzip:   0.42 kB
+dist/assets/SignInPage-CRKN46yy.js                                     0.64 kB │ gzip:   0.39 kB
+dist/assets/SignUpPage-Cqc_t1Ib.js                                     0.64 kB │ gzip:   0.39 kB
+dist/assets/rolldown-runtime-XKyaHtl9.js                               0.72 kB │ gzip:   0.42 kB
+dist/assets/OperationalPagination-CU3ccQaB.js                          0.72 kB │ gzip:   0.42 kB
+dist/assets/useEventCategories-5342eOJS.js                             0.79 kB │ gzip:   0.43 kB
+dist/assets/SettingsNavigation-CopGnALo.js                             0.80 kB │ gzip:   0.40 kB
+dist/assets/react-SMiyOAmb.js                                          0.80 kB │ gzip:   0.50 kB
+dist/assets/eventToolFormat-D5OBBhnv.js                                0.83 kB │ gzip:   0.45 kB
+dist/assets/NoAccessNotice-CR-_Opl3.js                                 1.03 kB │ gzip:   0.59 kB
+dist/assets/MarketplacePagination-DU03FgLt.js                          1.05 kB │ gzip:   0.49 kB
+dist/assets/marketplaceAttribution-CX68GMYC.js                         1.11 kB │ gzip:   0.55 kB
+dist/assets/organizerChecklist-37NmNG9d.js                             1.13 kB │ gzip:   0.61 kB
+dist/assets/FeeTermsNote-CS80rwJY.js                                   1.14 kB │ gzip:   0.58 kB
+dist/assets/OperationalSearch-CrB2Wt1U.js                              1.15 kB │ gzip:   0.61 kB
+dist/assets/AdminAccessRecovery-D4nAp7gf.js                            1.20 kB │ gzip:   0.68 kB
+dist/assets/EventAccessNotice-C-pp-AvV.js                              1.22 kB │ gzip:   0.59 kB
+dist/assets/createLucideIcon-CH_6AqdJ.js                               1.23 kB │ gzip:   0.71 kB
+dist/assets/DistributionRedirectPage-ClX0lB5i.js                       1.32 kB │ gzip:   0.73 kB
+dist/assets/payoutLabels-CZWOgfER.js                                   1.51 kB │ gzip:   0.70 kB
+dist/assets/WorkspacePage-DeJBrabb.js                                  1.68 kB │ gzip:   0.76 kB
+dist/assets/ScrollReveal-CHEUvNfk.js                                   1.73 kB │ gzip:   0.82 kB
+dist/assets/useOrganizerContext-DeDj0iUY.js                            1.76 kB │ gzip:   0.83 kB
+dist/assets/feeTerms-D2hsNnUN.js                                       1.82 kB │ gzip:   0.85 kB
+dist/assets/PlatformInvitationAcceptPage-B-WiRGTM.js                   2.31 kB │ gzip:   1.06 kB
+dist/assets/useCapturedPlatformDialog-BBQDXmkW.js                      2.35 kB │ gzip:   1.16 kB
+dist/assets/usePlatformContext-C0qd3vZC.js                             2.49 kB │ gzip:   1.12 kB
+dist/assets/UnsubscribePage-DHzBm2mr.js                                2.69 kB │ gzip:   0.97 kB
+dist/assets/NotFound-DHuCeJzl.js                                       2.73 kB │ gzip:   1.11 kB
+dist/assets/CollectionsPage-D3o0s0ly.js                                2.91 kB │ gzip:   1.26 kB
+dist/assets/CollectionPage-D5CyAGPK.js                                 3.03 kB │ gzip:   1.21 kB
+dist/assets/uploads-Cp2vHJ8j.js                                        3.12 kB │ gzip:   1.49 kB
+dist/assets/adminOperations-Bve3QZAU.js                                3.28 kB │ gzip:   1.57 kB
+dist/assets/VenuePage-BxM1ya9W.js                                      3.37 kB │ gzip:   1.43 kB
+dist/assets/OrganizerPage-HAfMj1mG.js                                  3.45 kB │ gzip:   1.41 kB
+dist/assets/InvitationAcceptPage-CFITbbfr.js                           3.59 kB │ gzip:   1.58 kB
+dist/assets/PolicyPage-B5Rivrfw.js                                     3.63 kB │ gzip:   1.47 kB
+dist/assets/SavedPage-BoZ5lAzP.js                                      4.15 kB │ gzip:   1.45 kB
+dist/assets/AdminRefundReconciliationPage-ChSTHCzF.js                  4.31 kB │ gzip:   1.84 kB
+dist/assets/CoverImageUpload-C7XDW1B_.js                               4.73 kB │ gzip:   2.11 kB
+dist/assets/workbox-window.prod.es5-Bd17z0YL.js                        5.65 kB │ gzip:   2.20 kB
+dist/assets/ActivityPage-CGcwcB8N.js                                   5.66 kB │ gzip:   2.42 kB
+dist/assets/AdminDisputesPage-aVZMdJxj.js                              5.68 kB │ gzip:   2.11 kB
+dist/assets/PrivacyRequestsPage-kjHboaK6.js                            5.85 kB │ gzip:   2.22 kB
+dist/assets/VerificationNotice-D7bnbuHW.js                             6.18 kB │ gzip:   2.13 kB
+dist/assets/TransferTicketDialog-DfK5nWvI.js                           6.20 kB │ gzip:   1.90 kB
+dist/assets/zh-sVcoK22M.js                                             6.28 kB │ gzip:   3.42 kB
+dist/assets/zh-Hant-DyKQoApa.js                                        6.43 kB │ gzip:   3.45 kB
+dist/assets/AdminOperationsPage-2MAPcBUf.js                            7.34 kB │ gzip:   2.83 kB
+dist/assets/tl-BnTT2UD4.js                                             7.49 kB │ gzip:   3.21 kB
+dist/assets/ko-C3yKus7w.js                                             7.51 kB │ gzip:   3.54 kB
+dist/assets/AdminPrivacyPage-CJI-bl-E.js                               7.69 kB │ gzip:   2.47 kB
+dist/assets/AdminTaxReportsPage-1_u7M5_p.js                            7.72 kB │ gzip:   3.04 kB
+dist/assets/ja-Bn4i-dEc.js                                             8.18 kB │ gzip:   3.71 kB
+dist/assets/AdminOrganizationsPage-CeOO4Bhc.js                         8.19 kB │ gzip:   2.96 kB
+dist/assets/AdminLayout-CJz4eEKc.js                                    8.27 kB │ gzip:   3.01 kB
+dist/assets/AdminOrganizationPage-DPgEgluI.js                          8.66 kB │ gzip:   3.01 kB
+dist/assets/AdminAuditLogPage-2UsgI0Aw.js                              8.76 kB │ gzip:   3.03 kB
+dist/assets/roles-DulE0G-g.js                                          8.89 kB │ gzip:   2.54 kB
+dist/assets/RefundReconciliationQueue-CauOpc9o.js                      9.65 kB │ gzip:   3.13 kB
+dist/assets/PayoutAccountReview-zKoyCG52.js                            9.93 kB │ gzip:   3.62 kB
+dist/assets/CancellationRefundProgress-DWso7Z2q.js                    10.14 kB │ gzip:   3.26 kB
+dist/assets/SupportPage-B1bbG9bE.js                                   10.24 kB │ gzip:   3.07 kB
+dist/assets/MarketplaceAdminPage-DWOS1s_5.js                          11.49 kB │ gzip:   3.85 kB
+dist/assets/AdminOrdersPage-FExIEp42.js                               11.57 kB │ gzip:   3.44 kB
+dist/assets/AdminTaxControlsPage-WUPF67yY.js                          11.76 kB │ gzip:   3.77 kB
+dist/assets/activity-CUTAJrls.js                                      11.76 kB │ gzip:   4.08 kB
+dist/assets/ProviderReadinessPage-Be0_WcjE.js                         12.60 kB │ gzip:   4.15 kB
+dist/assets/EventStaffPage-Ha7TXjWh.js                                13.08 kB │ gzip:   4.39 kB
+dist/assets/payments-Cpgd1CO-.js                                      13.32 kB │ gzip:   5.02 kB
+dist/assets/EventWorkspace-DjqpAdeb.js                                13.53 kB │ gzip:   5.03 kB
+dist/assets/CreateEventPage-XYZyxTmn.js                               13.74 kB │ gzip:   4.08 kB
+dist/assets/EventsPage-B6uYh9tG.js                                    14.01 kB │ gzip:   4.83 kB
+dist/assets/GuestListPage-IXPakrMe.js                                 14.20 kB │ gzip:   4.42 kB
+dist/assets/PromoCodesPage-CJmkA2N5.js                                15.36 kB │ gzip:   4.80 kB
+dist/assets/PaymentReadinessReviewDialog-BhpIvL-s.js                  16.03 kB │ gzip:   4.63 kB
+dist/assets/PriceDisclosure-Bqz0niVG.js                               16.31 kB │ gzip:   5.56 kB
+dist/assets/BoxOfficePage-C62fEHFS.js                                 16.38 kB │ gzip:   5.25 kB
+dist/assets/WaitlistPage-DN0pqsQS.js                                  16.47 kB │ gzip:   5.12 kB
+dist/assets/SeatingManagementPage-DeJX2gLV.js                         16.95 kB │ gzip:   5.48 kB
+dist/assets/monitoring-CP4CioY1.js                                    17.01 kB │ gzip:   5.86 kB
+dist/assets/EventOverviewPage-BHbD45yi.js                             17.15 kB │ gzip:   5.21 kB
+dist/assets/TeamManager-D4PnuvbF.js                                   18.18 kB │ gzip:   5.69 kB
+dist/assets/RefundsPage-C7ldrC-d.js                                   19.94 kB │ gzip:   6.35 kB
+dist/assets/MyTicketsPage-BdUNRrKt.js                                 20.76 kB │ gzip:   5.62 kB
+dist/assets/FinancesPage-DDOeSHr_.js                                  22.21 kB │ gzip:   6.24 kB
+dist/assets/AdminDashboardPage-PtWIL5me.js                            22.54 kB │ gzip:   5.92 kB
+dist/assets/AdminUsersPage-uhc-jyeg.js                                23.80 kB │ gzip:   6.91 kB
+dist/assets/SeatSelector-D7I-A8Xh.js                                  24.06 kB │ gzip:   8.74 kB
+dist/assets/HostPage-B-fAew-y.js                                      24.80 kB │ gzip:   6.52 kB
+dist/assets/SettingsPage-B8NDRtdq.js                                  24.98 kB │ gzip:   7.44 kB
+dist/assets/SalesToolsPage-C5CZupnM.js                                25.14 kB │ gzip:   7.55 kB
+dist/assets/AttendeesPage-CTzv154o.js                                 28.55 kB │ gzip:   8.08 kB
+dist/assets/AdminSettingsPage-CG0as_Uy.js                             33.33 kB │ gzip:   9.68 kB
+dist/assets/EventAnalyticsPage-DF8DIshZ.js                            35.33 kB │ gzip:   9.93 kB
+dist/assets/DashboardPage-C1iKHSgm.js                                 35.98 kB │ gzip:  10.80 kB
+dist/assets/AdminPayoutsPage-NNsjmekD.js                              43.65 kB │ gzip:  10.36 kB
+dist/assets/client-C8YYKoh7.js                                        53.31 kB │ gzip:  20.02 kB
+dist/assets/ScannerPage-CAz0mjUQ.js                                   60.06 kB │ gzip:  18.04 kB
+dist/assets/translations-CiQLhp2-.js                                  65.72 kB │ gzip:  21.72 kB
+dist/assets/EditEventPage-Bs8HO1Tw.js                                 84.88 kB │ gzip:  20.90 kB
+dist/assets/purchaseFlow-DJQluXJp.js                                 123.44 kB │ gzip:  32.18 kB
+dist/assets/AdminEventsPage-BnAp5vrw.js                              173.76 kB │ gzip:  33.53 kB
+dist/assets/clerk-m0LX3-SM.js                                        230.20 kB │ gzip:  69.88 kB
+dist/assets/esm-CuLdh3HG.js                                          435.47 kB │ gzip: 115.04 kB
+dist/assets/index-BGD6mOjh.js                                        439.40 kB │ gzip: 137.66 kB
+
+✓ built in 2.28s
+
+PWA v1.3.0
+Building src/sw.js service worker ("es" format)...
+vite v8.3.4 building client environment for production...
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+transforming...
+✓ 95 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/sw.mjs  26.38 kB │ gzip: 8.58 kB
+
+✓ built in 21ms
+
+PWA v1.3.0
+mode      injectManifest
+format:   es
+precache  66 entries (1785.35 KiB)
+files generated
+  dist/sw.js

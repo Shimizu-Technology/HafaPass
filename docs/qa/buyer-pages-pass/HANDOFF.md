@@ -1,58 +1,56 @@
-# Handoff: buyer pages pass design
+# Handoff: buyer pages pass — PR #170 round 2
 
-**Updated:** 2026-10-27T22:49:34+00:00
-**Objective:** Carry the approved pass design through buyer discovery, My tickets and Saved in one held PR.
-**Status:** Held for the lead; browser/unit gates passed with the documented local timing allowance; strict standalone PWA passed 2/2. CodeRabbit and database cleanup remain pending.
+**Updated:** 2026-10-27T23:16:56.053652+00:00
+**Objective:** Correct round-2 review findings and return the held PR to the lead.
+**Status:** Implementation and local acceptance complete; final-head hosted checks and CodeRabbit review remain for the lead. **Do not merge.**
 
 ## Workspace
 
-- Repository: https://github.com/Shimizu-Technology/HafaPass
-- PR: https://github.com/Shimizu-Technology/HafaPass/pull/170
+- Repository / PR: https://github.com/Shimizu-Technology/HafaPass/pull/170
 - Worktree: `/Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c`
 - Branch: `codex/buyer-pages-pass`
-- Base: fetched `origin/main` `3882764da0fc6adfed9c209a4c3d705671709f9d`
-- Production source: `91d503eb903be509ae75b49a78bc2cc7e9668981`; later changes are evidence only. Read the actual PR head before continuing.
-- Final evidence commit is being prepared; all production code and QA configs are committed. Verify actual final head and clean status.
+- Base: fetched and cleanly rebased onto `origin/main` `81abf68c744aa0b3d053dbbf8f0ed66594a3b559` (#169, backend spec only).
+- Production fix: `77ceb8fb6b4a9f9153e69490f18a5b40d2442cee`.
+- Final test/source commit: `b315bf42e37bf9750145f6d573cc78e4e8bda39b`. Later commit contains QA evidence only; verify the actual local and remote head before continuing.
+- Original input verified clean at `f297b9161d3b6262295c7609373dbf44992d7b6f`.
 
-## Completed and decisions
+## Completed
 
-Short teal bands/light content; shared Home empty ticket on Events/Discover; collections; compact My tickets passes, segmented tabs, truthful recovery guidance; useful Saved instructions/cards/rows. Public header/theme follows scrolling. Confirmation only reserves loading space and removes capitalization. Filters/query/pagination/status/transfer/install/account behavior retained.
+1. Tickets and Orders empty states distinguish guest recovery (order reference + checkout email) from purchases owned by another signed-in account. Both link explicitly to “Recover a guest order.” Unit and browser assertions updated.
+2. `src/utils/headerTheme.js` supplies the shared route predicate to Navbar and Vite's generated inline startup script. The boot shell header strip and theme meta match before React runs; scroll behavior is preserved. Twelve DOMContentLoaded regressions block external scripts so Navbar cannot repair a wrong initial color. Existing Events/Discover cold-load expectations now assert teal.
+3. CodeRabbit r4395112704: the populated Events screenshot waits for the first event card.
+4. CodeRabbit r4395112715: stress QA counts buyer passes separately from empty stock and asserts all fixture counts, including 0 / 1 / 1,000.
 
-Shared edits: Navbar public routing/44px targets; Home empty-content extraction; opt-in PendingTransfer portal (only BuyerTicketPass uses it); English locale. Index CSS, workspace/admin/support/scanner, backend, pricing and policies untouched.
-
-Independent review found the masked transfer dialog; `9a08ecc3` fixes it. Round 2 found no material issues. English expiry de-duplication and an assertion followed in `58e76d5f`; hidden results H2 and heading-order coverage followed in `91d503eb`. No third cosmetic review round.
+No backend, policies, pricing/fees, shared index.css button classes, admin/scanner/workspace page changes. No merge or production deploy.
 
 ## Verification
 
-[QA ledger](README.md) includes raw logs. Reviewed units: 2022 passed, 3 pre-existing skips. Lint/build passed. Frozen-source standalone PWA: 2/2 with original timeouts. WebKit buyer interactions: 12/12. Visual matrix: 84/84, both engines at 375/390/1280; zero axe; max Chromium CLS .0369458128 (WebKit observer unavailable). 78 stress combinations and six Saved journeys passed. Real Rails search/filter → choose ticket → guest checkout/reload passed without an order. Real Clerk and physical devices not run.
+[QA ledger](README.md) and `round2-*` logs record scope, commands and history:
 
-Frozen-source full Chromium is 164/164 with 15s assertions/60s budgets, no retries/skips. Default-timeout failures in unchanged organizer flows remain documented. Frozen-source units are 2022 passed/3 skipped. Heading-order and portal regression pass in both engines. Preserve the raw history.
+- Lint/build passed; units: 2022 passed, 3 pre-existing skips (requested VITE variables empty).
+- Full Chromium: **176/176**, stock timeouts, one worker, zero retries/skips. First follow-up run 174/176 only because two existing assertions still expected white; corrected and complete rerun passed.
+- Organizer payout persistence and private-preview/verification cases passed in both full runs. Conditional clean-main comparison was not needed/not run.
+- Standalone PWA: **2/2** with original config.
+- WebKit buyer interactions: **12/12** at 375/390/1280.
+- Visual/axe: **8/8**, Chromium + WebKit, Events populated/My tickets empty, 390/1280; zero AA violations/overflow, max Chromium CLS 0.03127236412203057; WebKit CLS unavailable.
+- Stress: **78/78**, including 320px and 200% text, exact buyer-pass counts.
+- Impeccable 4.6.0: no findings over 33 changed source/test/QA paths.
+- Refreshed/inspected screenshots: `after/{390,1280}-my-tickets-empty.png` and `after/webkit-{390,1280}-my-tickets-empty.png`.
 
-## Remaining
+Synthetic intercepted APIs establish browser behavior, not live Clerk, email delivery or physical-device acceptance. These remain not run. T3 preview snapshot timed out twice; its owned tab was closed and repository Playwright harnesses supplied the browser evidence.
 
-1. Verify actual final PR head and required CI. The full local Chromium result is 164/164 with the documented timing allowance; stock-timeout runs remain non-green.
-2. CodeRabbit hit its OSS limit. Requested once at https://github.com/Shimizu-Technology/HafaPass/pull/170#issuecomment-6454711017. Its success-labelled status was skipped/rate-limited; required review remains incomplete. Handle eventual findings.
-3. Clean the owned invalid DB record when shared checkpoints recover.
-4. **The lead merges; this agent must not merge.**
+## Review and next action
 
-## Local resources
+The two CodeRabbit inline findings are fixed and will be replied to/resolved with this push. The implementation agent requests `@coderabbitai review` exactly once after pushing. Read the agent's final report and PR for the resulting head/check/review state. A rate-limited or skipped success-labelled status is not a clean review. As a delegated child, this agent does not watch hosted checks or the review queue.
 
-Rails 3066, Vite 5236, T3 QA tab and fixture contexts are stopped/closed. Final harnesses are stopped; lifecycle cleanup/status shows no active owned resources and all five task ports have no listeners. No running-resource handoff is authorized. Preserve held worktree/branch.
+1. Verify the actual final local/remote head, clean status and linked PR.
+2. Inspect final-head required checks and fresh CodeRabbit coverage; handle any material findings.
+3. The lead decides when to merge. This implementation agent must not merge.
 
-**Unresolved cleanup:** synthetic `hafapass_buyer_pages_test` remains with `datconnlimit=-2`. A verified drop waited >8 minutes on PostgreSQL `CheckpointStart`, then was cancelled; a bounded retry timed out. Zero task connections/drop processes remain. Shared Postgres is protected and was never restarted/stopped.
+## Local resources and databases
 
-## Start here
+All owned resources cleaned: Vite 5236, PWA fixture servers, Playwright contexts/browsers, T3 tab. Lifecycle session `01a17f99-ad1e-7e92-83da-1c698c8a66a0` has no active owned resources; no runtime handoff or unresolved ownership. See `round2-cleanup.txt`.
 
-Verify workspace/head and read the ledger. Query from maintenance DB:
+No database created in this round. The old invalid `hafapass_buyer_pages_test` record is **already absent**, confirmed over TCP at preflight and cleanup. Remaining HåfaPass databases are borrowed `hafapass_api_development` and `hafapass_api_test`, untouched. No shared PostgreSQL restart/stop or database drop was necessary. See `round2-databases.txt`.
 
-```sh
-psql postgres://localhost/postgres -c "SELECT datname, datconnlimit FROM pg_database WHERE datname = 'hafapass_buyer_pages_test'"
-```
-
-When checkpoints are healthy, remove only this name:
-
-```sh
-PGOPTIONS='-c statement_timeout=30000' dropdb -h localhost hafapass_buyer_pages_test
-```
-
-If still waiting, leave the protected service unchanged and coordinate with its owner. No private buyer data or credentials were used.
+Held worktree/branch preserved for the lead.
