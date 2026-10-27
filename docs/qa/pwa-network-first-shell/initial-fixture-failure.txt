@@ -15,7 +15,7 @@ Running 2 tests using 1 worker
   ✓  2 [chromium] › e2e-pwa/deploy.spec.js:270:1 › an unknown-revision production build still installs the offline shell (2.8s)
 
 
-  1) [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+  1) [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives
 
     Error: expect(locator).toBeVisible() failed
 
@@ -49,5 +49,5 @@ Running 2 tests using 1 worker
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
   1 failed
-    [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+    [chromium] › e2e-pwa/deploy.spec.js:89:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives
   1 passed (15.3s)

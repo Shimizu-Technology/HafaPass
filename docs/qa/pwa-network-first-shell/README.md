@@ -16,7 +16,7 @@ Navigation preload is enabled with Workbox's feature detection. Its responses by
 
 The precache follows the built dependency graph for the entry shell, scanner, box office, buyer transaction routes and not-found route. It includes their transitive imports, lazy dependencies, CSS, fonts, static images and `offline.html`. App-wide dynamic page/locale imports are excluded. Admin pages and non-English locale chunks remain network-loaded. English is in the main bundle.
 
-Same-checkout normal production builds: **166 → 66 files; 2,894,059 → 1,826,418 bytes uncompressed; 974,229 → 655,615 bytes gzip** (each resource independently gzipped). This saves 60% of install requests and 33% of compressed bytes. The task's live-production count of 179 is a different build/configuration, not this reproducible baseline.
+Same-checkout normal production builds: **166 → 66 files; 2,894,059 → 1,826,418 bytes uncompressed; 974,229 → 655,575 bytes gzip** (each resource independently gzipped). This saves 60% of install requests and 33% of compressed bytes. The task's live-production count of 179 is a different build/configuration, not this reproducible baseline.
 
 Buyer ticket JSON was not available after an offline reload before this change: the component fetches the API and private ticket caches are removed in `main.jsx`. The test preserves the rendered ticket across worker activation/disconnect, then verifies the existing offline reload/recovery behavior. No private API response caching or offline box-office sale capability is added.
 
@@ -36,7 +36,7 @@ Fixtures use synthetic buyers/operators, a signed synthetic scanner manifest, HT
 | N08 | Rendered buyer ticket survives disconnect; offline reload loads B's retained buyer chunk and shows existing API recovery state | passed: Chromium and WebKit |
 | N09 | Existing full Chromium affected-flow suite including event-day sync/reconnect and draft journeys | passed: 152/152, zero failures; no flaky rerun |
 
-Desktop and 390px browser coverage is agent-executed. The full deploy suite passed in Chromium (2/2, 25.3s) and WebKit (2/2, 33.9s); final unit/build gates are in progress. A physical iPhone and installed-iOS-PWA run are not available here; Leon owns those device checks.
+Desktop and 390px browser coverage is agent-executed. The full deploy suite passed in Chromium and WebKit (2/2 each). A physical iPhone and installed-iOS-PWA run are not available here; Leon owns those device checks.
 
 ## Initial failures
 
@@ -47,4 +47,20 @@ Desktop and 390px browser coverage is agent-executed. The full deploy suite pass
 
 The WebKit fixture initially failed because its worker-owned API fetches bypassed Playwright routing. API fixtures now use the real HTTP server for both engines. Both deploy tests pass without API request interception.
 
-Final unit/build gate results and tested commit are recorded below when complete. Lifecycle session `01a17dad-430b-71f0-8b78-e2173ce216f8` currently reports no active owned runtime resources.
+## Final engineering gates
+
+Implementation source: `b60910160743bb7fb45d2827ef654c906865767c`; the following commit records evidence only. macOS arm64, Node 22.22.3, Playwright 1.64.1. API/auth/payment fixtures are synthetic. The normal build retains the real production auth gate.
+
+- `npm run lint`: passed.
+- `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test`: 182 files passed, one skipped; 2,022 tests passed, three skipped; zero failures (115.09s).
+- `npm run build:no-translate`: passed; 66 precache entries, 1,783.61 KiB raw. [Exact manifest and before/after measurements](precache.json). Verified explicit worker activation/claim, network-first routing before precache, and retained scanner/box-office/buyer chunks.
+- `PLAYWRIGHT_PORT=5238 VITE_CLERK_PUBLISHABLE_KEY='' npx playwright test --workers=2`: 152 passed, zero failures (1.9m). No flaky rerun needed. [Output](browser.txt).
+- Production Chromium deploy suite: 2 passed, zero failures. [Output](pwa-chromium.txt).
+- `PWA_BROWSER=webkit npm run test:e2e:pwa`: 2 passed, zero failures (33.9s). Includes legacy upgrade, C's first response, fault/timeout fallback, protected checkout/ticket/scanner documents, offline journal persistence and standalone offline page. [Output](pwa-webkit.txt).
+- `scripts/check_hygiene.sh`, `ruby scripts/check_release_freeze.rb` and diff whitespace checks: passed; freeze inactive.
+
+N01–N09 are accepted within this browser/fixture scope. Real iPhone Safari/Chrome and installed-iOS-PWA acceptance remain not run. No production deployment or merge was performed.
+
+PR: [#168](https://github.com/Shimizu-Technology/HafaPass/pull/168). CodeRabbit is a required check and initially returned an OSS rate-limit message, with no review findings. One manual review request will be sent after this evidence push; required review remains pending, not clean.
+
+All task-owned Vite/fixture servers and test-browser processes were stopped. Lifecycle session `01a17dad-430b-71f0-8b78-e2173ce216f8` reports no active owned resources. No simulator, container or collaborative browser tab was started. No runtime handoff. Preserve the named branch/worktree and open PR for the parent; DO NOT MERGE.
