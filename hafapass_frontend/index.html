@@ -30,6 +30,7 @@
         var key = 'hafapass_stale_shell_reload_at'
         // Returns true only when a reload actually happens.
         function recover() {
+          if (window.hafapassCanRecoverShell && !window.hafapassCanRecoverShell()) return false
           try {
             var last = Number(window.sessionStorage.getItem(key))
             if (last && Date.now() - last < 60000) return false

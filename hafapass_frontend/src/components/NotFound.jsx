@@ -42,7 +42,7 @@ export default function NotFound({ kind = 'page', backTo }) {
   }
 
   return (
-    <section aria-labelledby="not-found-title" className="mx-auto flex max-w-xl flex-col items-center px-4 py-16 text-center sm:py-24">
+    <section data-release-safe="not-found" aria-labelledby="not-found-title" className="mx-auto flex max-w-xl flex-col items-center px-4 py-16 text-center sm:py-24">
       <SEO title={t('buyer.NotFound.notFound')} noIndex />
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
         <Compass aria-hidden="true" className="h-7 w-7" />

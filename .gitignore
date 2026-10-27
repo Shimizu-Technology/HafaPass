@@ -39,6 +39,7 @@ hafapass_frontend/.env.local
 hafapass_frontend/.env.*.local
 hafapass_frontend/coverage/
 hafapass_frontend/playwright-report/
+hafapass_frontend/playwright-pwa-report/
 hafapass_frontend/test-results/
 
 # Editor/IDE

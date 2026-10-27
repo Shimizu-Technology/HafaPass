@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { openDB } from 'idb'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
@@ -59,9 +59,9 @@ describe('verified original-account export of version-one journals', () => {
     render(<SavedJournalExports owner="clerk-original" eventId="" pendingCount={0} />)
     await userEvent.click(await screen.findByRole('button', { name: `Export saved scans for event ${first.event_id}` }))
     expect(screen.queryByRole('button', { name: `Export saved scans for event ${second.event_id}` })).not.toBeInTheDocument()
-    expect(download).toHaveBeenCalledWith(expect.objectContaining({ event_id: first.event_id, device_id: first.device_id,
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.objectContaining({ event_id: first.event_id, device_id: first.device_id,
       actions: [expect.objectContaining({ action_uuid: first.action_uuid, sequence: 7, occurred_at: first.occurred_at,
-        manifest_version: 4, ticket_id: 21, credential_hash: first.credential_hash, source: 'offline' })] }), expect.any(String))
+        manifest_version: 4, ticket_id: 21, credential_hash: first.credential_hash, source: 'offline' })] }), expect.any(String)))
     expect(await rawQueue()).toEqual([first, second].sort((a, b) => a.action_uuid.localeCompare(b.action_uuid)))
     expect(await loadAuthorizedScanner(first.event_id)).toBeNull()
     await expect(queueAdmission({ eventId: first.event_id, deviceId: first.device_id, ticket: { ticket_id: 21 } })).rejects.toThrow(/not registered/)

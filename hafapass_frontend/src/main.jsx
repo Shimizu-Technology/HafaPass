@@ -6,6 +6,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import DraftNavigationProvider from './components/DraftNavigationProvider'
+import ReleaseUpdateCoordinator from './components/ReleaseUpdateCoordinator'
 import { HelmetProvider } from 'react-helmet-async'
 import { MotionConfig } from 'framer-motion'
 import './index.css'
@@ -24,7 +25,7 @@ async function removeLegacyPrivateCaches() {
 
 removeLegacyPrivateCaches().finally(() => {
   const router = createBrowserRouter([{ path: '*', element: <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
-    <DraftNavigationProvider><ServiceCheck /></DraftNavigationProvider>
+    <DraftNavigationProvider><ReleaseUpdateCoordinator /><ServiceCheck /></DraftNavigationProvider>
   </Sentry.ErrorBoundary> }])
   createRoot(document.getElementById('root')).render(
     <StrictMode>

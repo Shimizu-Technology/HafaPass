@@ -1,0 +1,38 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend
+
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+
+ Test Files  182 passed | 1 skipped (183)
+      Tests  2022 passed | 3 skipped (2025)
+   Start at  22:55:02
+   Duration  179.34s (tests 55%, import 18%, environment 17%, setup 7%, transform 1%)
+
+    Isolate  183 workers spawned · ~412ms startup each (spawn + environment, per file)
+             at least ~37.32s faster with isolate: false — reuses workers across files instead of one per file
+
