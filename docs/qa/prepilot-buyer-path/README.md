@@ -158,3 +158,23 @@ Refreshed `after/{375,1024,1280,1440}-event-{cover,no-cover,long-title,sold-out,
 - Fixture walkthrough: **32/32 dimension results passed**, with keyboard seat selection/reservation and successful simulated waitlist responses; no persistent database writes.
 
 PR #162 remains held for the lead. Required CI and final-head CodeRabbit review are external gates; their final observed states are recorded in the handoff. The existing four round-2 CodeRabbit threads are resolved and acknowledged. A success-labelled skipped/rate-limited CodeRabbit check does not establish a completed review. No merge is authorized for this implementation agent.
+
+## Merge integration — executor round 3
+
+October 27, 2026. PR #163 merged as `6c335797a937f552e57592a3bcccb1b1d3aa36fa`. Production `/release.json` serves that exact revision and the entry bundle changed from `index-DB00_jOD.js` to `index-9q0nvAUr.js`. Signed-out Chromium verified Home's loaded Chamorro Village night-market photo, honest empty state, and expandable Photo credits; Host's `5% + $1.00 per paid ticket` and working $10/$25/$59 presets; and `/events` with its empty inventory. This check did not create production data.
+
+The buyer branch rebased cleanly onto that main commit. `git range-diff` confirms all five original commits retained their patches; there were no locale or shared-test conflicts. The combined English locale retains both the public-page/photo copy and the buyer service-fee labels. The sourced context and buyer invariants above remain applicable.
+
+Source commit `ba207ca01a97183f0a281dd0e7d5a03aa8d3045b` replaces EventCard's ticket SVG with the shared EventDateTile and removes the blank artwork frame when there is no approved cover. Approved artwork retains its frame and focal point. Three unit cases cover missing/rejected artwork and approved artwork. Existing shared tile tests cover Guam midnight and event timezones. Local tests/build/captures ran against the identical source tree before this commit; Vite's revision metadata was `3bc2093a`, so these are local acceptance artifacts rather than release evidence.
+
+The agent executed the affected list journey with synthetic API responses, Clerk disabled, and a no-cover event with $20 admission plus a $2 service fee. At 375×812 and 1280×812, the card displays the shared date tile and $22 all-in price, has no horizontal overflow, opens through keyboard Enter, and returns to the preserved `Guam` search. Both dimensions passed. Screenshots are local only: `/tmp/hafapass-round3-no-cover-events-375.png` and `/tmp/hafapass-round3-no-cover-events-1280.png`; results are `/tmp/hafapass-round3-list-results.json`.
+
+Integration gates on Node 22.22.3:
+
+- Lint: passed, zero warnings.
+- Full serial units: **1,981 passed, 3 skipped, zero failures**; 180 files passed and one skipped, 272.32 seconds. Requested auth/public-web/API variables plus support/locale overrides were cleared; `npm test -- --maxWorkers=1` was used. A jsdom XHR diagnostic was logged; Vitest exited 0.
+- `build:no-translate`: passed; no translation ran.
+- Full Playwright: **151 passed, zero failures** (2.0 minutes); no flaky-test rerun was needed.
+- Impeccable 4.6.0: `[]` across all changed UI source paths; no package or hooks installed in the repository.
+
+T3 Preview failed twice with `Preview automation snapshot timed out after 15000ms.`; the owned tab was closed and local Chromium supplied the evidence. Physical-device behavior and real Clerk authentication remain untested. All owned Chromium processes and Vite 5243 were cleaned; no database was created. PR #162 remains held for the lead's final CI/review decision. The executor requests CodeRabbit once after pushing and does not merge this PR.
