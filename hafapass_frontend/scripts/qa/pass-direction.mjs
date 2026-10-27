@@ -55,10 +55,13 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
   await when.selectOption('weekend'); await where.selectOption('Hagåtña')
   const search=page.getByRole('searchbox',{name:'Event or venue'})
   await search.fill('Music & food')
-  for (const locator of [when,where,search,page.getByRole('button',{name:'Search',exact:true})]) {
+  await when.focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab')
+  const controls=[when,where,search,page.getByRole('button',{name:'Search',exact:true})]
+  for (const [index,locator] of controls.entries()) {
    assert.ok((await locator.boundingBox()).height>=44,`${engine} ${await locator.getAttribute('id')} touch target`)
-   await locator.focus(); assert.ok(await locator.evaluate(el=>el===document.activeElement))
+   assert.ok(await locator.evaluate(el=>el===document.activeElement&&el.matches(':focus-visible')),`${engine} keyboard focus`)
    assert.ok(await locator.evaluate(el=>getComputedStyle(el).boxShadow!=='none'||getComputedStyle(el).outlineStyle!=='none'))
+   if(index<controls.length-1) await page.keyboard.press('Tab')
   }
   await page.screenshot({path:`${output}${engine}-390-controls-focus.png`,fullPage:true})
   await page.keyboard.press('Enter'); await page.waitForURL('**/events?**')

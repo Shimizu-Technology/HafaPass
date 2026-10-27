@@ -86,11 +86,11 @@ export default function HomePage() {
                 <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
                 <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
               </div> : <form role="search" onSubmit={browse}>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3">
                   <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-sm font-medium">{t('pass.home.when')}</label>
-                    <div className="relative"><select id="home-when" className="input min-h-12 appearance-none !pl-3 !pr-9 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
+                    <div className="relative"><select id="home-when" className="input min-h-12 appearance-none !pl-3 !pr-7 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
                   <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-sm font-medium">{t('pass.home.where')}</label>
-                    <div className="relative"><select id="home-where" className="input min-h-12 appearance-none !pl-3 !pr-9 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
+                    <div className="relative"><select id="home-where" className="input min-h-12 appearance-none !pl-3 !pr-7 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
                 </div>
                 <label htmlFor="home-event-search" className="mb-2 mt-4 block text-sm font-medium">{t('buyer.Home.eventOrVenue')}</label>
                 <div className="flex flex-col gap-3 sm:flex-row">
