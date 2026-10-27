@@ -12,9 +12,6 @@
   body {
     @apply bg-surface text-neutral-900;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(13,158,150,0.03), transparent),
-      radial-gradient(circle at 100% 100%, rgba(240,86,74,0.02), transparent);
   }
 
   ::selection {
@@ -95,8 +92,11 @@
   }
 
   .card-hover {
-    @apply hover:shadow-card-hover hover:border-neutral-300/60 hover:-translate-y-0.5
-           transition-[box-shadow,border-color,transform] duration-200 ease-out-strong;
+    @apply transition-[box-shadow,border-color,transform] duration-200 ease-out-strong;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .card-hover:hover { @apply shadow-card-hover border-neutral-300/60 -translate-y-0.5; }
   }
 
   .glass {
@@ -126,9 +126,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    /* Stop animated travel; retain brief visual feedback without movement. */
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+    transition-duration: 150ms !important;
     scroll-behavior: auto !important;
   }
   :is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost):active { transform: none; }

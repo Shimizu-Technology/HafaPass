@@ -47,7 +47,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
   }
 
   return (
-    <div>
+    <div className="tabular-nums">
       <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
       <div className="space-y-3">
         {ticketTypes.map(tt => {
@@ -66,8 +66,8 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
             : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
 
           return (
-            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`card p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
+              <div className="flex flex-col gap-3">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium text-neutral-900 break-words max-w-full">{content.name}</h3>
@@ -127,7 +127,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                 </div>
 
                 {!soldOut && (
-                  <div className="flex shrink-0 items-center gap-2 self-end sm:ml-4">
+                  <div className="flex shrink-0 items-center gap-2 self-end">
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}

@@ -552,7 +552,7 @@ function CheckoutContent({ buyerId }) {
   const isSimulate = paymentMode === 'simulate'
 
   return (
-    <div className="bg-neutral-50 min-h-screen">
+    <div className="bg-stone-50 min-h-screen tabular-nums">
       <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
@@ -561,7 +561,7 @@ function CheckoutContent({ buyerId }) {
           {t('checkout.backToEvent')}
         </Link>
 
-        <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 tracking-tight mb-2">{t('checkout.title')}</h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-neutral-900 tracking-tight mb-2">{t('checkout.title')}</h1>
         <PaymentModeBanner mode={paymentMode} />
 
         {/* Progress */}
@@ -588,7 +588,7 @@ function CheckoutContent({ buyerId }) {
             </div>
           )}
           <div className="min-w-0">
-            <BuyerEventText event={event} as="p" className="font-semibold text-neutral-900 truncate" />
+            <BuyerEventText event={event} as="p" className="font-semibold text-neutral-950 break-words" />
             <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatTime(event.starts_at)}
@@ -604,23 +604,23 @@ function CheckoutContent({ buyerId }) {
         </div>
 
         {/* Order Summary */}
-        <div className="card p-5 sm:p-6 mb-6">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
           <h2 className="text-base font-semibold text-neutral-900 mb-4">{t('checkout.orderSummary')}</h2>
           <div className="space-y-3 mb-4">
             {orderLines.map(line => (
-              <div key={line.id || line.ticket_type_id} className="flex justify-between items-center">
-                <div>
+              <div key={line.id || line.ticket_type_id} className="flex justify-between gap-4 items-center">
+                <div className="min-w-0 flex-1 break-words">
                   <BuyerTicketTypeText ticketType={selectedTicketType(event, line.ticket_type_id) || line} />
-                  <span className="text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
+                  <span className="inline-block whitespace-nowrap text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
-                <span className="text-right text-neutral-900 font-semibold text-sm">{formatPrice(line.lineTotal + line.feeCents)}
+                <span className="max-w-[45%] shrink-0 text-right text-neutral-900 font-semibold text-sm">{formatPrice(line.lineTotal + line.feeCents)}
                   {line.feeCents > 0 && <span className="block text-xs font-normal text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: formatMoneyCents(line.feeCents) })}</span>}
                 </span>
               </div>
             ))}
             {selectedSeats.length > 0 && (
               <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{t('buyer.Checkout.assignedSeats')}</p>
+                <p className="text-sm font-semibold text-neutral-500">{t('buyer.Checkout.assignedSeats')}</p>
                 <ul className="mt-1 space-y-1 text-sm text-neutral-700">
                   {selectedSeats.map(seat => <li key={seat.id}>{seat.display_label}</li>)}
                 </ul>
@@ -634,10 +634,10 @@ function CheckoutContent({ buyerId }) {
             </div>
           )}
           <hr className="border-neutral-100 my-4" />
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-neutral-500">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
+          <div className="space-y-3 rounded-xl bg-stone-50 p-4 text-sm">
+            <div className="flex justify-between"><span className="text-neutral-700">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
             <div className="flex justify-between gap-4">
-              <span className="text-neutral-500">
+              <span className="text-neutral-700">
                 {t('checkout.serviceFee')}
                 {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
@@ -652,7 +652,7 @@ function CheckoutContent({ buyerId }) {
             )}
           </div>
           <hr className="border-neutral-100 my-4" />
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between gap-4 items-center">
             <span className="font-bold text-lg text-neutral-900">{t('checkout.total')}</span>
             <span className="font-bold text-lg text-neutral-900">{formatPrice(displayedTotal)}</span>
           </div>
@@ -698,7 +698,7 @@ function CheckoutContent({ buyerId }) {
 
         {/* Step 1: Info */}
         {step === 'info' && (
-          <div className="card p-5 sm:p-6 mb-6">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
             <h2 className="text-base font-semibold text-neutral-900 mb-4">{t('checkout.yourInformation')}</h2>
             {submitError && (
               <div role="alert" className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
@@ -827,7 +827,7 @@ function CheckoutContent({ buyerId }) {
 
         {/* Step 2: Payment */}
         {step === 'payment' && clientSecret && stripePublishableKey && (
-          <div className="card p-5 sm:p-6 mb-6">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <h2 className="text-base font-semibold text-neutral-900">{t('buyer.Checkout.payment')}</h2>
               <button disabled={submitting} onClick={async () => {

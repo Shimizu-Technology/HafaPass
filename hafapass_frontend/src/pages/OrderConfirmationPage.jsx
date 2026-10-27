@@ -423,14 +423,14 @@ function OrderConfirmationContent() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-stone-50 tabular-nums">
       <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
           <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>
             {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="h-8 w-8 text-emerald-700" />}
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-950">
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950">
             {awaitingPayment ? t('buyerAccount.orderConfirmationPage.yourPaymentIsNotComplete') : isProcessing ? t('buyerAccount.orderConfirmationPage.paymentIsProcessing') : order.status === 'refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasRefunded') : order.status === 'partially_refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasPartiallyRefunded') : order.status === 'cancelled' ? t('buyerAccount.orderConfirmationPage.orderCancelled') : order.status === 'expired' ? t('buyerAccount.orderConfirmationPage.reservationExpired') : t('buyerAccount.orderConfirmationPage.yourOrderIsConfirmed')}
           </h1>
           <p className="mt-2 break-words text-neutral-600">{t('buyerAccount.orderConfirmationPage.order2', { reference: order.reference, email: order.buyer_email })}</p>
@@ -569,22 +569,23 @@ function OrderConfirmationContent() {
         </section>
 
 
-        <section className="card mb-6 overflow-hidden">
+        <section className="rounded-2xl border border-neutral-200 bg-white mb-6 overflow-hidden">
           <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="min-h-11 px-2 text-xs font-semibold uppercase tracking-wider text-brand-700">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
+            <p className="min-h-11 px-2 text-sm font-semibold text-brand-700">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
             <h2 className="mt-1 text-xl font-bold text-neutral-950">{eventContent.title}</h2>
             <MachineTranslationNotice {...eventContent.notice} />
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
             <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
             <SellerLine seller={order.seller} className="mt-2" />
           </div>
-          <div className="space-y-2 p-5 text-sm sm:p-6">
+          <div className="space-y-3 p-5 text-sm sm:p-6">
             {order.order_items.map(item => (
               <div key={item.id} className="flex justify-between gap-4"><span>{item.name || item.item_name} × {item.quantity}</span><span>{formatPrice(item.subtotal_cents)}</span></div>
             ))}
-            <div className="flex justify-between gap-4 border-t border-neutral-100 pt-3 text-neutral-600"><span>{t('buyerAccount.orderConfirmationPage.serviceFee')}{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">{t('buyerAccount.orderConfirmationPage.includesCardProcessing')}</span>}</span><span>{formatMoneyCents(order.service_fee_cents || 0)}</span></div>
+            <div className="flex justify-between gap-4 border-t border-neutral-200 pt-3 text-neutral-700"><span>{t('checkout.subtotal')}</span><span>{formatPrice(order.subtotal_cents)}</span></div>
+            <div className="flex justify-between gap-4 text-neutral-700"><span>{t('buyerAccount.orderConfirmationPage.serviceFee')}{order.processing_fee_bearer === 'platform' && order.service_fee_cents > 0 && <span className="block text-xs text-neutral-500">{t('buyerAccount.orderConfirmationPage.includesCardProcessing')}</span>}</span><span>{formatMoneyCents(order.service_fee_cents || 0)}</span></div>
             {order.discount_cents > 0 && <div className="flex justify-between text-emerald-700"><span>{t('buyerAccount.orderConfirmationPage.discount')}</span><span>−{formatPrice(order.discount_cents)}</span></div>}
-            <div className="flex justify-between pt-1 text-lg font-bold text-neutral-950"><span>{t('buyerAccount.orderConfirmationPage.total')}</span><span>{formatPrice(order.total_cents)}</span></div>
+            <div className="flex justify-between gap-4 border-t border-neutral-200 pt-4 text-lg font-bold text-neutral-950"><span>{t('buyerAccount.orderConfirmationPage.total')}</span><span>{formatPrice(order.total_cents)}</span></div>
             {order.refunded_cents > 0 && <div className="flex justify-between text-sm font-medium text-red-700"><span>{t('buyerAccount.orderConfirmationPage.refunded')}</span><span>−{formatPrice(order.refunded_cents)}</span></div>}
             {order.payment_method && <p className="border-t border-neutral-100 pt-3 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.paymentMethod')}: {order.payment_method.card_brand && order.payment_method.last4 ? t('buyerAccount.orderConfirmationPage.cardEnding', { brand: order.payment_method.card_brand, last4: order.payment_method.last4 }) : t(`buyerAccount.orderConfirmationPage.paymentTypes.${order.payment_method.type}`, { defaultValue: t('buyerAccount.orderConfirmationPage.paymentTypes.other') })}</p>}
             {order.seller?.seller_name && (

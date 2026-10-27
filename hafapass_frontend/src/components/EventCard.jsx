@@ -27,13 +27,13 @@ export default function EventCard({ event }) {
       className="group flex flex-col card card-hover overflow-hidden h-full"
     >
       {/* Image */}
-      <div className="aspect-[16/10] overflow-hidden bg-gradient-to-br from-brand-100 to-brand-200 relative rounded-t-2xl">
+      <div className="aspect-[16/10] overflow-hidden bg-neutral-100 relative rounded-t-2xl">
         {approvedImageUrl(event.cover_image_url, event.image_asset_host) ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
             width="800" height="500"
-            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+            className="w-full h-full object-cover"
             style={{ objectPosition: focalPosition(event.page_customization) }}
           />
         ) : (
@@ -52,19 +52,17 @@ export default function EventCard({ event }) {
             </span>
           </div>
         )}
-        {/* Gradient overlay for depth */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
         {/* Price badge */}
         {priceLabel && (
           <div className="absolute top-3 right-3">
-            <span className={`inline-flex flex-col items-center px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md ${
+            <span className={`inline-flex flex-col items-center px-3 py-1 rounded-full text-sm font-semibold tabular-nums border border-neutral-200 ${
               lowestPrice === 0
                 ? 'bg-emerald-700 text-white'
-                : 'bg-white/90 text-neutral-900'
+                : 'bg-white text-neutral-900'
             }`}>
               {priceLabel}
-              {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <span className="text-[10px] font-normal">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</span>}
+              {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <span className="text-xs font-normal">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</span>}
             </span>
           </div>
         )}
@@ -73,7 +71,7 @@ export default function EventCard({ event }) {
       <div className="p-5 flex flex-col flex-1">
         {/* Category badge */}
         {event.category && event.category !== 'other' && (
-          <span className="inline-block text-xs font-semibold text-brand-700 uppercase tracking-wider mb-2">
+          <span className="inline-block text-sm font-semibold text-brand-800 mb-2">
             {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
           </span>
         )}
@@ -125,7 +123,7 @@ export default function EventCard({ event }) {
               </>
             )}
           </div>
-          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-[color,transform] duration-200 ease-out-strong group-hover:translate-x-0.5">
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-neutral-600 group-hover:text-brand-700 transition-colors duration-150">
             {t('common.view')}
             <ArrowRight className="w-3.5 h-3.5" />
           </span>

@@ -373,61 +373,48 @@ function EventDetailContent() {
       {event.private_preview && <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-4 text-center text-sm font-semibold text-amber-950">
         {t('organizerVerification.previewBanner')}
       </div>}
-      {/* Hero Section — full-width cover image with dark overlay */}
-      <div className={`relative w-full overflow-hidden bg-neutral-950 ${coverImage ? 'min-h-[340px] sm:min-h-[400px]' : 'min-h-[260px]'}`}>
-        {coverImage ? (
-          <img
-            src={coverImage}
-            alt={event.title}
-            width="1600" height="900"
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ objectPosition: focalPosition(design) }}
-          />
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-brand-900 to-neutral-950" />
-        )}
-        {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/60 to-neutral-950/30" />
+      {/* Organizer artwork stays unobstructed; event information lives on a light surface. */}
+      <section className="border-b border-neutral-200 bg-stone-50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8 sm:pb-10">
+          {/* Back link */}
+          <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
+            <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
 
-        {/* Content overlaid on hero */}
-        <div className="relative flex min-h-[inherit] flex-col justify-end pt-16 sm:pt-24">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 sm:pb-10 w-full">
-            {/* Back link */}
-            <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-neutral-200 transition-colors hover:text-white">
-              <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
+          {event.category && event.category !== 'other' && (
+            <span className="block text-sm font-semibold text-brand-800 mb-2">
+              {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
+            </span>
+          )}
+          <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-tight tracking-tight text-neutral-950 mb-3 break-words">{content.title}</h1>
+          {content.notice && <MachineTranslationNotice {...content.notice} className="mb-3" />}
 
-            {event.category && event.category !== 'other' && (
-              <span className="block text-xs font-medium text-brand-400 uppercase tracking-wider mb-2">
-                {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
-              </span>
+          {/* Date & Venue on hero */}
+          <div className="flex flex-wrap items-center gap-4 text-neutral-600 text-base">
+            {event.starts_at && (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Calendar className="w-4 h-4 text-brand-800" />
+                <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
+                <span className="text-neutral-500">·</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
+              </div>
             )}
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-3 break-words">{content.title}</h1>
-            {content.notice && <MachineTranslationNotice {...content.notice} tone="dark" className="mb-3" />}
-
-            {/* Date & Venue on hero */}
-            <div className="flex flex-wrap items-center gap-4 text-neutral-200 text-sm">
-              {event.starts_at && (
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Calendar className="w-4 h-4 text-brand-400" />
-                  <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
-                  <span className="text-neutral-500">·</span>
-                  <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
-                </div>
-              )}
-              {event.venue_name && (
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <MapPin className="w-4 h-4 text-brand-400" />
-                  <span>{event.venue_name}</span>
-                </div>
-              )}
-            </div>
-            {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
+            {event.venue_name && (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <MapPin className="w-4 h-4 text-brand-800" />
+                <span>{event.venue_name}</span>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+          {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11">{t('buyer.EventDetail.chooseTickets')}</a>}
 
-      {/* Gradient transition */}
-      <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
+          {coverImage && (
+            <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
+              <img src={coverImage} alt={event.title} width="1600" height="900"
+                className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Light content area */}
       <div className="bg-white">
@@ -549,7 +536,7 @@ function EventDetailContent() {
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}{event.private_preview ? <span className="text-lg font-bold text-neutral-900">{event.organizer.business_name}</span> : <Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>}{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div>{!event.private_preview && <button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button>}</div></div></FadeUp>}
+              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-sm font-semibold text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}{event.private_preview ? <span className="text-lg font-bold text-neutral-900">{event.organizer.business_name}</span> : <Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>}{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div>{!event.private_preview && <button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button>}</div></div></FadeUp>}
 
               <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
 
