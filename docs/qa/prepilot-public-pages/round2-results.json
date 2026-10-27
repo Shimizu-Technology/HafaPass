@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-27T03:51:07.138Z",
+  "fixture": "hafapass_prepilot_b (4 owned events)",
+  "results": [
+    {
+      "width": 375,
+      "height": 812,
+      "homeEmptyCLS": 0.02225916062025286,
+      "hostCLS": 0.04064039408866996,
+      "R01": "passed",
+      "R03": "passed",
+      "R04": "passed",
+      "homePopulatedCLS": 0.02225916062025286,
+      "R02": "passed"
+    },
+    {
+      "width": 768,
+      "height": 1024,
+      "homeEmptyCLS": 0.017606407403945923,
+      "hostCLS": 0.029296875,
+      "R01": "passed",
+      "R03": "passed",
+      "R04": "passed",
+      "homePopulatedCLS": 0.014676719903945923,
+      "R02": "passed"
+    },
+    {
+      "width": 1280,
+      "height": 800,
+      "homeEmptyCLS": 0.011736126708984374,
+      "hostCLS": 0.0328125,
+      "R01": "passed",
+      "R03": "passed",
+      "R04": "passed",
+      "homePopulatedCLS": 0.011736126708984374,
+      "R02": "passed"
+    }
+  ],
+  "normalMotionFAQ": "passed",
+  "applicationSource": "f4467cede7ef71b6aa1d882a019603339d98fd08",
+  "automatedGates": {
+    "lint": "passed",
+    "unit": {
+      "passed": 1971,
+      "skipped": 3,
+      "filesPassed": 180,
+      "filesSkipped": 1,
+      "seconds": 215.69
+    },
+    "build:no-translate": "passed",
+    "build:credentials-cleared": "passed",
+    "playwright": {
+      "passed": 142,
+      "failed": 0,
+      "skipped": 0,
+      "eventDayRetryNeeded": false
+    },
+    "impeccable": [],
+    "localeJSON": "passed",
+    "scopeDiff": "passed"
+  }
+}

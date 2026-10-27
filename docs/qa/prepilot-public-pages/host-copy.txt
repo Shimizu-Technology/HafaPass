@@ -22,45 +22,29 @@ Compare with what you pay now. Try your ticket price and number of tickets.
 Ticket price
 $
 Tickets
+$10
+$25
+$59
 
-Buyer pays $27.25, you receive $25.00; if you absorb the fee, you receive $22.75.
+Buyer pays $54.50, you receive $50.00; if you absorb the fee, you receive $45.50.
 
 Buyer pays the fee
-Buyer pays for 1 ticket
-$27.25
+Buyer pays for 2 tickets
+$54.50
 HåfaPass fee
-$2.25
+$4.50
 You receive
-$25.00
+$50.00
 You absorb the fee
-Buyer pays for 1 ticket
-$25.00
+Buyer pays for 2 tickets
+$50.00
 HåfaPass fee
-$2.25
+$4.50
 You receive
-$22.75
+$45.50
 
 Estimate for one order, before promo codes and refunds. Card processing is included in the HåfaPass fee. Your dashboard shows the exact amounts for every sale.
 
-What it looks like for one ticket
-
-When the buyer pays the service fee, you receive the full ticket price. Here’s what changes if you absorb it.
-
-$25.00 ticket
-Buyer pays, including the fee
-$27.25
-You receive
-$25.00
-You receive if you absorb the fee
-$22.75
-$59.00 ticket
-Buyer pays, including the fee
-$62.95
-You receive
-$59.00
-You receive if you absorb the fee
-$55.05
-Chamorro Village night market, Hagåtña. Photo from 2011.
 Your event, ready when you are
 
 Create and publish your event yourself. We verify your organizer account once before your events go public and ticket sales open.
@@ -112,19 +96,13 @@ Talk to us about your event
 Tumon Bay from Matapang Beach Park, Guam.
 Questions organizers ask
 How much does HåfaPass cost?
-HåfaPass charges 5% + $1.00 per paid ticket, with card processing included. There are no setup or monthly fees, and free tickets are free.
 Who pays the fee, me or my buyers?
-You decide for each event. Buyers can pay the fee at checkout, you can absorb it so buyers pay exactly your ticket price, or you can split it. You can change it in your event’s sales settings.
 Can I host a free event?
-Yes. Free tickets have no HåfaPass fee, and you still get the guest list, door scanner, waitlist and attendee export.
 When do I get paid?
-Payouts are sent within 3 business days after your event. Your dashboard shows a settlement statement for each event with sales, fees and refunds, so you can see exactly what you’re owed. Payouts are made by check from Shimizu Technology LLC’s business account unless a different payout method is approved and recorded for you.
 How do refunds work?
-If an event is cancelled, we automatically start eligible card refunds, including the service fee. You set the refund rules for your event and handle refund requests from your dashboard. Refunds go back to the buyer’s original payment method and come out of your event’s sales. See the Refund & Cancellation Policy.
 Does my door staff need an app?
 No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back. Each device must be prepared online before the event.
 How do I get help?
-Email the HåfaPass team at any point, from setting up your first event to closing out after it. Contact support.
 
 Something else?
 Ask us
