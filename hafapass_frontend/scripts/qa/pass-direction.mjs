@@ -92,7 +92,7 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
   await page.locator('.hero-ticket').evaluate(el=>{window.qaHeroFrames=el.getAnimations().flatMap(a=>a.effect.getKeyframes());return Promise.all(el.getAnimations().map(a=>a.finished))})
   assert.ok(await page.evaluate(()=>window.qaHeroFrames.some(k=>k.transform?.includes('12px'))))
   await page.screenshot({path:`${output}${engine}-390-motion-settled.png`,fullPage:true})
-  console.log(`${engine}: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed`)
+  process.stdout.write(`${engine}: search filters, keyboard focus/navigation, calculator presets/free/validation, FAQ, support and motion passed` + '\n')
  }
  if (engine === 'chromium' && phase === 'before') {
   await page.goto('http://127.0.0.1:5234/hafapass-home-directions.html')
@@ -102,4 +102,4 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
  } finally { await browser.close() }
 }
 await fs.writeFile(`${output}results.json`, JSON.stringify(report,null,2))
-console.log(`${phase} QA: ${report.length} page/dimension checks passed`)
+process.stdout.write(`${phase} QA: ${report.length} page/dimension checks passed` + '\n')

@@ -94,7 +94,7 @@ Final source `3c5648a4290cc8f9b841648191fa3f738fa372a5`:
 - Matrix: **60 checks passed**, zero WCAG 2 A/AA Axe violations; Chromium max measured CLS **0.01875**. WebKit has no Layout Instability observer, as noted above.
 - Real Rails guest journey, stress/max-price/200% text checks, and Impeccable/Taste/Emil re-audits completed as described above.
 
-[Gate output summaries](gates.txt). CodeRabbit/remote checks are pending PR creation. PR stays unmerged. Backend, fee/pricing/policy logic and `hafapass_api/config/policies.yml` have no diff.
+[Gate output summaries](gates.txt). PR #164: CodeRabbit automatic review started. The first remote hygiene check rejected the QA scripts’ result-printing calls; these were changed to standard output and `scripts/check_hygiene.sh` passed locally. This changes only QA reporting, not the tested public source. Remote checks continue on the updated head. PR stays unmerged. Backend, fee/pricing/policy logic and `hafapass_api/config/policies.yml` have no diff.
 
 ## Evidence credits
 

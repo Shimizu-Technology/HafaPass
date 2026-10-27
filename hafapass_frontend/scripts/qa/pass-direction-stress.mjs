@@ -13,5 +13,5 @@ try{
   await page.screenshot({path:new URL(`../../../docs/qa/pass-direction/after/375-${path==='/'?'home':'host'}-worst-case.png`,import.meta.url).pathname,fullPage:true})
   await page.addStyleTag({content:'html {font-size:200%}'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),path+' 200% text overflow')
  }
- console.log('Stress passed at 375px and 200% text: long compound title, emoji, long/missing venue, one-word title, free and high prices, 1000 tickets. No document overflow.')
+ process.stdout.write('Stress passed at 375px and 200% text: long compound title, emoji, long/missing venue, one-word title, free and high prices, 1000 tickets. No document overflow.' + '\n')
 }finally{await browser.close()}

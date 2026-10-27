@@ -21,5 +21,5 @@ try {
  await page.waitForURL('**/checkout/guam-community-night')
  await page.getByLabel('Full Name').waitFor()
  await page.reload();await page.getByLabel('Full Name').waitFor()
- console.log('Real Rails fixture flow passed: Home search + village → one matching event → quantity → guest checkout; checkout survives reload. No order/payment submitted.')
+ process.stdout.write('Real Rails fixture flow passed: Home search + village → one matching event → quantity → guest checkout; checkout survives reload. No order/payment submitted.' + '\n')
 } finally {await browser.close()}
