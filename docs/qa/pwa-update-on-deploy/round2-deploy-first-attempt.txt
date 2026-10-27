@@ -1,0 +1,53 @@
+
+> hafapass_frontend@0.0.0 test:e2e:pwa
+> playwright test --config playwright.pwa.config.js
+
+
+Running 2 tests using 1 worker
+
+(node:25483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✘  1 e2e-pwa/deploy.spec.js:82:1 › two deploys refresh Home once, preserve selection and checkout, and keep scanner offline (22.9s)
+(node:25677) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  2 e2e-pwa/deploy.spec.js:196:1 › an unknown-revision production build still installs the offline shell (4.2s)
+
+
+  1) e2e-pwa/deploy.spec.js:82:1 › two deploys refresh Home once, preserve selection and checkout, and keep scanner offline 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByLabel('Full Name')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByLabel('Full Name') with timeout 5000ms
+      - waiting for getByLabel('Full Name')
+
+
+      160 |     await selection.screenshot({ path: testInfo.outputPath('selection-preserved.png'), fullPage: true })
+      161 |     await selection.getByRole('button', { name: /Buy Tickets/ }).click()
+    > 162 |     await expect(selection.getByLabel('Full Name')).toBeVisible()
+          |                                                     ^
+      163 |     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
+      164 |     await expect(checkout.getByLabel('Full Name')).toHaveValue('Unsaved buyer')
+      165 |     // Use the application's navigation, which discards the departed form.
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-f331e23c/hafapass_frontend/e2e-pwa/deploy.spec.js:162:53
+
+    Error Context: test-results/deploy-two-deploys-refresh-bbc66-ut-and-keep-scanner-offline/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/deploy-two-deploys-refresh-bbc66-ut-and-keep-scanner-offline/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/deploy-two-deploys-refresh-bbc66-ut-and-keep-scanner-offline/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e-pwa/deploy.spec.js:82:1 › two deploys refresh Home once, preserve selection and checkout, and keep scanner offline 
+  1 passed (28.5s)

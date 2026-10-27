@@ -11,7 +11,8 @@ Network-first was considered and not selected: keeping the prepared shell preser
 | Location/state | Behavior |
 | --- | --- |
 | `/`, `/events`, `/host`, `/discover`, `/collections`, `/about`, `/policies/*`, rendered public not-found | Reload automatically when the new worker's shell is available, unless input is unsaved |
-| Public detail and other nontransactional pages | Reload when hidden or on the next navigation after the update |
+| Event details and preview (quantity/seat selection and seat holds), unsubscribe | Defer even when hidden; reload after leaving for a safe route |
+| Other nontransactional pages | Reload when hidden or on the next navigation after the update |
 | Checkout, payments, orders/confirmation/recovery, ticket access/transfer | Defer even when hidden; reload after leaving for a safe route |
 | Organizer, scanner, box office, admin/support, account/privacy, auth/invitation flows | Defer even when hidden; reload after leaving for a safe route |
 | Registered unsaved draft or edited input/select/textarea/contenteditable | Defer; the existing draft navigation dialog still controls departure |
@@ -69,3 +70,49 @@ Implementation `0ce141df7e5df3cef292d0e83a28e8451a65797e`; macOS arm64, Node 22.
 P01–P06 are accepted within the stated Chromium/API-simulation coverage. Real iPhone/installed-PWA coverage remains not run. No production deployment was attempted.
 
 Task-owned preview/Vite servers, test-browser processes and collaborative preview tab were stopped/closed. No Rails server, simulator or container was started. No runtime resource is handed off; the branch and worktree remain for the lead's PR review and merge.
+
+## Review round 2 (2026-10-27)
+
+Inherited the sourced orientation above and refreshed `App.jsx`, `EventDetailPage.jsx`, `SeatSelector.jsx`, `UnsubscribePage.jsx`, coordinator, worker configuration, and PR review against clean head `bd6435c9`. Fetch confirmed `origin/main` remains `66e4f6a0`; no rebase is needed. Scope remains frontend deploy recovery and test/CI diagnostics. No production auth, backend, pricing, fee or policy logic changes are planned.
+
+Agent-executed affected-flow acceptance adds:
+
+- P07 (required): select a ticket quantity on A at 390px, activate B and hide the page; retain the A document and quantity, and complete a simulated order using that selection. Event-detail and preview routes remain protected throughout selection/seat-hold work; safe departure still permits an update.
+- P08 (required): build with null revision metadata, load a fresh browser context, verify worker control, disconnect transport and open `offline.html`. Register the offline shell while disabling revision-based reloads. An invalid authoritative build revision forces the same null-metadata path as an archive without Git.
+- P09 (required, unit): stalled JSON and HTML response bodies abort after five seconds; a subsequent reconnect can check again.
+- P10 (required, unit): unsubscribe routes remain protected even when hidden, navigated or marked not-found.
+
+Rerun P01–P06 and all requested engineering gates. Fixtures remain isolated and simulated; physical iPhone/installed-PWA coverage remains not run. Execution results follow below.
+
+
+The first round-2 PWA run passed P08 but failed the new selection-to-checkout continuation: B's worker had removed A's precache, so A's lazy CheckoutPage/feeTerms URLs returned 404. The protected document correctly did not reload, but could not continue. [Failure output](round2-deploy-first-attempt.txt). The build now groups the buyer transaction pages into one lazy chunk, loading checkout, confirmation and ticket dependencies before selection begins. This retains the current task's modules in the document without retaining old worker caches indefinitely. Home does not preload the transaction chunk; opening a buyer transaction loads more code together (123.38 kB, 32.18 kB gzip in the verified build). The deploy test now completes a simulated order and verifies the retained line item after B activation.
+
+### Finding dispositions
+
+All eight findings are valid; none was dismissed as incorrect.
+
+- `r4388759091` — Major / data integrity: protect event detail/preview before the generic hidden/navigation allowances. The regression test also required loading the buyer transaction pages through one lazy module to preserve continuation after worker cache cleanup.
+- `r4388759103` — Major / availability: register the worker even with null revision metadata, suppress unconditional reloads, and disable revision polling in that case. Verified with a real production build and offline page.
+- `r4388759070` — Minor / stability: keep JSON/text body consumption inside the five-second abort window; unit tests verify recovery from both stalled bodies.
+- `r4388759083` — Minor / functional: protect unsubscribe root/token routes from hidden/navigation reloads.
+- `r4388759007` — Minor / fixture security: clear the inherited Sentry upload token in every fixture build.
+- `r4388759044` — Trivial / test reliability: wait two seconds for deferred callbacks before negative assertions, both after activation and after hiding.
+- `r4388759058` — Trivial / diagnostics: generate a separate PWA HTML report, upload it on CI failure and ignore generated report JavaScript in Git/ESLint.
+- Review summary `.github/workflows/ci.yml:129` — Major / CI supply chain (review marked unverified): pin both upload-artifact references to upstream v7 commit `cf430e030ddbb5b0abf93d22962f4752f3646cd9`, verified through the GitHub tag API. Other action dependencies are outside this finding's scope.
+
+### Round-2 final local gate
+
+Implementation commit: `54cae6baee1bafb0517180b9a073e43e40fd7b7a`. macOS arm64, Node 22.22.3, Chromium. The evidence-only commit follows. These runs use the same implementation source; PWA fixture revisions deliberately override the commit to exercise A, B and null identities.
+
+- Lint: passed. [Output](round2-lint.txt).
+- Required blank-env `npm test`: 182 files passed, one skipped; 2,022 tests passed, three skipped, zero failures (179.34s). [Output](round2-units.txt).
+- `npm run build:no-translate`: passed; 166 precache entries. Transaction module is lazy, 123.38 kB / 32.18 kB gzip; generated Home HTML has no transaction preload. `skipWaiting` and `clientsClaim` remain enabled. [Output](round2-build.txt).
+- `PLAYWRIGHT_PORT=5234 npx playwright test --workers=2`: 152 passed, zero failures (1.9m). No flaky rerun needed. This was rerun after the transaction module change. [Output](round2-browser.txt).
+- Hygiene, inactive release-freeze contract, CI YAML parsing and diff whitespace checks: passed.
+- Impeccable advisory on App and coordinator: `[]`. [Output](round2-impeccable.json).
+- Final committed-source `npm run test:e2e:pwa`: 2 passed, zero failures (33.5s). [Output](round2-deploy-playwright.txt). P01–P04 and P07–P08 passed: Home reached B automatically; the hidden 390px selection retained A and completed a simulated order with exactly one selected ticket; the separate checkout retained its typed buyer until safe departure; the prepared scanner admitted offline and retained one pending scan after another offline reload; offline.html worked, including the null-revision build.
+- P05 and P09–P10 passed in the full unit gate; P06 passed in the full Chromium gate. All required P01–P10 cases are accepted within the stated simulated-API/Chromium scope.
+
+Round-2 visible evidence: [Home B](round2-home-build-b.png), [selection retained on A](round2-selection-preserved.png), [checkout retained](round2-checkout-preserved.png), [offline scan persisted](round2-offline-scanner.png), [offline page](round2-offline-html.png). Real iPhone Safari and installed-PWA coverage remain not run; no production deployment was attempted.
+
+All task-owned Vite/preview/test-browser processes were cleaned after each phase. Lifecycle session `01a17d61-2b08-7543-b0ec-1a02b7e79813` reports no active owned resources. No Rails server, simulator, container or collaborative preview tab was started. No runtime handoff. Preserve the branch/worktree for the lead; DO NOT MERGE from this implementation task.
