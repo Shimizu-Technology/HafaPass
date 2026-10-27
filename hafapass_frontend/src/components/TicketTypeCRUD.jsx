@@ -283,7 +283,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                         <p className="text-xs text-neutral-500">{tt.quantity_sold ?? 0}/{tt.quantity_available ?? '∞'} sold</p>
                         {tt.door_allocation != null && <p className="text-xs text-brand-700">Door: {tt.door_sold_quantity ?? 0}/{tt.door_allocation}</p>}
                         {(tt.sales_start_at || tt.sales_end_at) && (
-                          <p className="text-xs text-neutral-400">
+                          <p className="text-xs text-content-muted">
                             {tt.sales_start_at ? `From ${formatEventDateTime(tt.sales_start_at, eventTimezone)}` : 'On sale now'}
                             {tt.sales_end_at ? ` to ${formatEventDateTime(tt.sales_end_at, eventTimezone)}` : ''}
                           </p>

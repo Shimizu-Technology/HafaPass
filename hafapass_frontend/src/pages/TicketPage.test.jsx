@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import TicketPage from './TicketPage'
@@ -113,7 +113,7 @@ it('keeps admission and expandable device instructions immediately usable with r
     await userEvent.click(instructions)
     expect(screen.getByText('Android Instructions:')).toBeVisible()
     expect(instructions).toHaveAttribute('aria-expanded', 'true')
-    expect(document.querySelector('.animate-pulse')).toHaveClass('motion-reduce:animate-none')
+    expect(document.querySelector('.animate-pulse')).toBeNull()
     await userEvent.click(instructions)
     expect(instructions).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('Entry QR')).toBeVisible()
@@ -155,4 +155,109 @@ it('shares a ticket link with an explicit non-transfer note', async () => {
   expect(share).toHaveBeenCalledWith(expect.objectContaining({ text: 'Ticket link for QA ticket. Sharing this link does not transfer the ticket.', url: window.location.href }))
   expect(screen.getByText('Sharing this link does not transfer the ticket.')).toBeInTheDocument()
   delete navigator.share
+})
+
+describe('screen wake lock for admission', () => {
+  const original = Object.getOwnPropertyDescriptor(navigator, 'wakeLock')
+  function mockWakeLock(request) {
+    Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request } })
+  }
+  afterEach(() => {
+    if (original) Object.defineProperty(navigator, 'wakeLock', original)
+    else delete navigator.wakeLock
+    vi.restoreAllMocks()
+  })
+
+  it('holds the screen while the QR is shown, releases on hide, and reacquires on return', async () => {
+    let visibility = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    const first = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const second = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const request = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    await waitFor(() => expect(request).toHaveBeenCalledWith('screen'))
+    visibility = 'hidden'
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(first.release).toHaveBeenCalledTimes(1)
+    visibility = 'visible'
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    view.unmount()
+    expect(second.release).toHaveBeenCalledTimes(1)
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries an unexpected visible release once without a visibility change', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const first = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const second = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const request = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    await waitFor(() => expect(first.addEventListener).toHaveBeenCalled())
+    vi.useFakeTimers()
+    try {
+      act(() => first.addEventListener.mock.calls[0][1]())
+      await act(async () => vi.advanceTimersByTimeAsync(1000))
+      expect(request).toHaveBeenCalledTimes(2)
+      act(() => second.addEventListener.mock.calls[0][1]())
+      await act(async () => vi.advanceTimersByTimeAsync(5000))
+      expect(request).toHaveBeenCalledTimes(2)
+      view.unmount()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('cancels an unexpected-release retry when the QR unmounts', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const lock = { release: vi.fn().mockResolvedValue(), addEventListener: vi.fn() }
+    const request = vi.fn().mockResolvedValue(lock)
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    await waitFor(() => expect(lock.addEventListener).toHaveBeenCalled())
+    vi.useFakeTimers()
+    try {
+      act(() => lock.addEventListener.mock.calls[0][1]())
+      view.unmount()
+      await act(async () => vi.advanceTimersByTimeAsync(2000))
+      expect(request).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('releases a pending lock that arrives after the QR unmounts', async () => {
+    let resolve
+    const request = vi.fn(() => new Promise(done => { resolve = done }))
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    const view = showTicket()
+    await screen.findByText('Entry QR')
+    view.unmount()
+    const lock = { release: vi.fn().mockResolvedValue() }
+    await act(async () => resolve(lock))
+    expect(lock.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not request a lock when the entry credential is hidden', async () => {
+    const request = vi.fn()
+    mockWakeLock(request)
+    api.get.mockReset().mockResolvedValue({ data: { ...usableTicket, admission_allowed: false, scan_credential: null } })
+    showTicket()
+    await screen.findByText('Entry code unavailable')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('silently tolerates a denied lock and leaves the QR usable', async () => {
+    mockWakeLock(vi.fn().mockRejectedValue(new Error('Battery saver')))
+    api.get.mockReset().mockResolvedValue({ data: usableTicket })
+    showTicket()
+    expect(await screen.findByText('Entry QR')).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

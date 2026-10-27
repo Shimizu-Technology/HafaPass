@@ -13,6 +13,64 @@ import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
 
+// Mounted only with an authorized, scannable QR. A late request must never
+// retain a lock after navigation or after the document becomes hidden.
+function ScreenWakeLock() {
+  useEffect(() => {
+    if (!navigator.wakeLock?.request) return undefined
+    let active = true
+    let sentinel = null
+    let pending = false
+    let generation = 0
+    let retryTimer = null
+    let retries = 0
+    const clearRetry = () => { clearTimeout(retryTimer); retryTimer = null }
+    const release = lock => { try { Promise.resolve(lock?.release()).catch(() => {}) } catch { /* Optional browser feature. */ } }
+    const request = async () => {
+      if (!active || pending || sentinel || document.visibilityState !== 'visible') return
+      const attempt = generation
+      pending = true
+      try {
+        const lock = await navigator.wakeLock.request('screen')
+        if (!active || attempt !== generation || document.visibilityState !== 'visible') release(lock)
+        else {
+          sentinel = lock
+          lock.addEventListener?.('release', () => {
+            if (sentinel !== lock) return
+            sentinel = null
+            // Battery/browser policy can release a visible lock. Try once per
+            // visibility period, without fighting a persistent power policy.
+            if (active && document.visibilityState === 'visible' && retries < 1) {
+              retries += 1
+              retryTimer = setTimeout(() => { retryTimer = null; request() }, 1000)
+            }
+          }, { once: true })
+        }
+      } catch { /* Denied, unsupported, or low battery: the QR remains usable. */ }
+      finally {
+        pending = false
+        if (active && attempt !== generation) request()
+      }
+    }
+    const visibilityChanged = () => {
+      clearRetry()
+      if (document.visibilityState === 'visible') { retries = 0; request() }
+      else { generation += 1; const lock = sentinel; sentinel = null; release(lock) }
+    }
+    request()
+    document.addEventListener('visibilitychange', visibilityChanged)
+    return () => {
+      active = false
+      clearRetry()
+      generation += 1
+      document.removeEventListener('visibilitychange', visibilityChanged)
+      release(sentinel)
+      sentinel = null
+    }
+  }, [])
+  return null
+}
+
 function AddToHomeScreenInstructions() {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -307,12 +365,12 @@ function TicketContent({ authContext }) {
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
+    <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-3 sm:px-4 py-8">
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
         initial={reducedMotion ? false : { opacity: 1, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0, 0, 0.2, 1] }}
+        transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.23, 1, 0.32, 1] }}
       >
         {['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -334,14 +392,13 @@ function TicketContent({ authContext }) {
                 className="w-full h-full object-cover"
                 style={{ objectPosition: focalPosition(event.page_customization) }}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
             </div>
           )}
 
           {/* Status Badge */}
           <div className={`px-4 py-2.5 ${status.bg} ${status.border} border-b text-center`}>
             <span className={`inline-flex items-center gap-2 text-sm font-semibold ${status.text}`}>
-              <span className={`w-2 h-2 rounded-full ${status.dot} ${ticket.status === 'issued' && !accessPaused ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
+              <span className={`w-2 h-2 rounded-full ${status.dot}`} />
               {status.label}
             </span>
             {ticket.status === 'checked_in' && ticket.checked_in_at && (
@@ -356,10 +413,11 @@ function TicketContent({ authContext }) {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0 }}
           >
+            <ScreenWakeLock />
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={220} />
             </div>
-            <p className="mt-2 text-[10px] sm:text-xs text-content-muted font-mono break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
+            <p className="mt-2 text-xs text-content-muted font-mono break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
           </motion.div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />

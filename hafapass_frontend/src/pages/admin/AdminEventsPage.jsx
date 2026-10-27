@@ -246,7 +246,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                 ))}
               </tbody>
             </table>
-            {events.length === 0 && <p className="text-center py-8 text-neutral-400">No events found.</p>}
+            {events.length === 0 && <p className="text-center py-8 text-content-muted">No events found.</p>}
           </div>
         )}
       </div>

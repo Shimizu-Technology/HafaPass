@@ -127,7 +127,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
           <p className="text-sm text-neutral-600 font-medium">
             {uploading ? 'Uploading...' : 'Drop an image here, or click to browse'}
           </p>
-          <p className="text-xs text-neutral-400 mt-1">JPG, PNG, or WebP · Max 5MB</p>
+          <p className="text-xs text-content-muted mt-1">JPG, PNG, or WebP · Max 5MB</p>
         </div>
       )}
 

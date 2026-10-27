@@ -9,7 +9,6 @@ import { useAuth, useClerk } from '@clerk/clerk-react'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
-import NoiseOverlay from '../components/ui/NoiseOverlay'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatMoneyCents } from '../utils/money'
 import { signInDestination } from '../utils/authDestination'
@@ -267,17 +266,15 @@ function MyTicketsContent({ refreshSession, signOut }) {
   }
 
   return (
-    <div>
+    <div className="tabular-nums">
       <SEO title={t('buyerAccount.myTicketsPage.myTickets')} />
-      {/* Dark header */}
-      <div className="bg-neutral-950 pt-8 pb-12 relative">
-        <NoiseOverlay />
+      {/* Buyer account header */}
+      <div className="bg-stone-50 border-b border-neutral-200 pt-8 pb-10">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative z-[2]">
-          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white mb-2">{t('buyerAccount.myTicketsPage.myTickets')}</h1>
-          <p className="text-neutral-400">{t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')}</p>
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">{t('buyerAccount.myTicketsPage.myTickets')}</h1>
+          <p className="text-neutral-600">{t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')}</p>
         </div>
       </div>
-      <div className="h-px bg-gradient-to-r from-transparent via-brand-500/20 to-transparent" />
 
       {/* Light content */}
       <div className="bg-neutral-50 min-h-[40vh]">

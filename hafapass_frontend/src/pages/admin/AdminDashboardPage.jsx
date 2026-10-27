@@ -226,7 +226,7 @@ function AdminDashboardSession({ identity }) {
               </Link>
             ))}
             {data.recent_events.length === 0 && (
-              <p className="p-4 text-sm text-neutral-400">No events yet.</p>
+              <p className="p-4 text-sm text-content-muted">No events yet.</p>
             )}
           </div>
         </div>
@@ -257,7 +257,7 @@ function AdminDashboardSession({ identity }) {
               </div>
             ))}
             {data.recent_orders.length === 0 && (
-              <p className="p-4 text-sm text-neutral-400">No orders yet.</p>
+              <p className="p-4 text-sm text-content-muted">No orders yet.</p>
             )}
           </div>
         </div>

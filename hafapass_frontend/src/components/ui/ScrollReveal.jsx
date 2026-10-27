@@ -1,7 +1,7 @@
 import { motion, useInView, useReducedMotion } from 'framer-motion';
 import { useRef } from 'react';
 
-const ease = [0, 0, 0.2, 1];
+const ease = [0.23, 1, 0.32, 1];
 
 export const FadeUp = ({ children, delay = 0, className = '' }) => {
   const ref = useRef(null);
