@@ -75,6 +75,8 @@ describe('support record lookup', () => {
     await screen.findByText('#4')
     for (const id of [1, 2, 3]) expect(within(screen.getByText(new RegExp(`^#${id}(?: ·|$)`)).closest('tr')).queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Retry delivery' })).toHaveLength(1)
+    expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Message', 'Recipient', 'State', 'Attempts', 'Action'])
+    for (const header of screen.getAllByRole('columnheader')) expect(header).toHaveAttribute('scope', 'col')
     expect(within(screen.getByText('#4').closest('tr')).getByRole('button', { name: 'Retry delivery' })).toBeEnabled()
   })
 

@@ -43,8 +43,8 @@ function AdminDisputesSession({ identity, resourcePath }) {
             </div>
               : <table className={foldTable}>
                 <thead><tr className="border-b border-neutral-100 text-left text-content-muted">
-                  <th className="px-3 py-3 font-medium">Opened</th><th className="px-3 py-3 font-medium">Order</th><th className="px-3 py-3 font-medium">Event and organizer</th>
-                  <th className="px-3 py-3 text-right font-medium">Amount</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 font-medium">Reason</th>
+                  <th scope="col" className="px-3 py-3 font-medium">Opened</th><th scope="col" className="px-3 py-3 font-medium">Order</th><th scope="col" className="px-3 py-3 font-medium">Event and organizer</th>
+                  <th scope="col" className="px-3 py-3 text-right font-medium">Amount</th><th scope="col" className="px-3 py-3 font-medium">Status</th><th scope="col" className="px-3 py-3 font-medium">Reason</th>
                 </tr></thead>
                 <tbody>
                   {disputes.map(dispute => (

@@ -75,6 +75,9 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     await expect(retries.nth(0)).toBeEnabled()
     if (before) await expect(retries.nth(1)).toBeDisabled()
     else await expect(page.getByRole('row').filter({ hasText: 'guest@example.invalid' }).getByRole('button')).toHaveCount(0)
+    if (!before) {
+      for (const name of ['Message', 'Recipient', 'State', 'Attempts', 'Action']) await expect(page.getByRole('columnheader', { name, exact: true })).toHaveAttribute('scope', 'col')
+    }
     await shot(page, 'support-deliveries', width)
     await check(page)
     if (!before) {
@@ -168,6 +171,27 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     await page.getByRole('button', { name: 'Check in ticket', exact: true }).click()
     await expect(page.getByText('Admitted offline', { exact: true })).toBeVisible()
     await expect(page.getByTestId('scanner-pending-count')).toHaveText('1')
+    if (!before) {
+      await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { error: 'Organization membership required' }, 403))
+      // Reconnect and reload with the journal saved on this same browser/account.
+      await context.setOffline(false)
+      await page.reload()
+      await expect(page.getByText('Scanning is for an organizer’s team and door staff.')).toBeVisible()
+      await expect(page.getByText(/Saved scans still need reconciliation/)).toBeVisible()
+      await expect(page.getByLabel('Ticket QR code')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Start camera' })).toHaveCount(0)
+      const downloadPromise = page.waitForEvent('download')
+      await page.getByRole('button', { name: 'Export saved scans for event 42' }).click()
+      const download = await downloadPromise
+      const { readFile } = await import('node:fs/promises')
+      const journal = JSON.parse(await readFile(await download.path(), 'utf8'))
+      expect(journal).toMatchObject({ schema: 'hafapass-admission-journal-v1', event_id: 42, device_id: 8, actions: [{ kind: 'admit', ticket_id: 7, sequence: 1 }] })
+      await expect(page.getByText(/Journal exported. Original scans remain/)).toBeVisible()
+      const savedCount = await page.evaluate(async () => (await import('/src/utils/admissionStore.js')).queuedActions(42, 8).then(rows => rows.length))
+      expect(savedCount).toBe(1)
+      await shot(page, 'scanner-refused-saved-scans', width)
+      await check(page)
+    }
   })
 }
 
@@ -225,6 +249,7 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     await page.goto('/admin/disputes')
     await expect(page.getByRole('link', { name: 'Order #42' })).toBeVisible()
     await check(page)
+    for (const name of ['Opened', 'Order', 'Event and organizer', 'Amount', 'Status', 'Reason']) await expect(page.getByRole('columnheader', { name, exact: true })).toHaveAttribute('scope', 'col')
     if (width >= 768) {
       const heading = page.getByRole('columnheader', { name: 'Opened', exact: true })
       expect(await heading.evaluate(node => getComputedStyle(node).textTransform)).toBe('none')
@@ -236,5 +261,38 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     await page.getByRole('link', { name: 'Order #42' }).focus()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/admin\/orders\?search=%2342$/)
+  })
+}
+
+for (const [width, height] of [[375, 812], [1280, 800]]) {
+  test(`all payout and refund tables retain column headers at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await prepare(page)
+    const meta = { current_page: 1, total_pages: 1, total_count: 1 }
+    const event = { id: 42, organization_id: 1, title: 'Synthetic community event', status: 'published', timezone: 'Pacific/Guam', permissions: { refund: true, view_finance: true } }
+    const organization = { id: 1, name: 'Synthetic organization' }
+    await page.route('**/api/v1/admin/payouts?**', route => json(route, { payouts: [{ id: 12, status: 'paid', amount_cents: 4200, currency: 'usd', provider: 'manual', provider_payout_id: 'synthetic-transfer', created_at: '2026-10-01T00:00:00Z', organization, event, settlement: { version: 2 }, allowed_outcomes: [] }], meta, status_counts: { paid: 1 } }))
+    await page.route('**/api/v1/admin/balance_adjustments?**', route => json(route, { balance_adjustments: [{ id: 13, status: 'posted', kind: 'credit', amount_cents: 1000, currency: 'usd', created_at: '2026-10-01T00:00:00Z', organization, event, reason: 'Synthetic ledger correction' }], meta }))
+    const item = { id: 14, type: 'refund', status: 'failed', order_id: 42, order_reference: 'HP-SYNTHETIC', buyer_name: 'Synthetic Guest', buyer_email: 'guest@example.invalid', event_id: 42, event_title: event.title, organization_name: organization.name, amount_cents: 1000, reason: 'Synthetic provider failure', age_seconds: 3600, next_action: 'Review this refund', available_actions: [] }
+    await page.route('**/api/v1/admin/refund_reconciliation?**', route => json(route, { items: [item], meta }))
+    await page.route('**/api/v1/organizer/refund_reconciliation?**', route => json(route, { items: [item], meta }))
+    await page.route('**/api/v1/organizer/events/42', route => json(route, event))
+    await page.route('**/api/v1/organizer/events/42/orders?**', route => json(route, { orders: [], meta: { ...meta, total_count: 0 } }))
+    const refundHeaders = ['Order and buyer', 'Event and organizer', 'Buyer balance', 'Issue', 'Age', 'Next step', 'Actions']
+    for (const [url, headers, name] of [
+      ['/admin/payouts', ['Payout', 'Organization and event', 'Amount', 'Status', 'Transfer and evidence', 'Actions'], 'payouts-table'],
+      ['/admin/payouts?view=adjustments', ['Posted', 'For', 'Type', 'Amount', 'Reason', 'Actions'], 'adjustments-table'],
+      ['/admin/refund_reconciliation', refundHeaders, 'admin-refund-table'],
+      ['/dashboard/events/42/refunds', refundHeaders, 'organizer-refund-table'],
+    ]) {
+      await page.goto(url)
+      const table = page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: headers[0], exact: true }) })
+      await expect(table).toHaveCount(1)
+      for (const header of headers) await expect(table.getByRole('columnheader', { name: header, exact: true })).toHaveAttribute('scope', 'col')
+      await expect(table.getByRole('row')).toHaveCount(2)
+      await expect(table.getByRole('cell')).toHaveCount(headers.length)
+      await check(page)
+      await shot(page, name, width)
+    }
   })
 }

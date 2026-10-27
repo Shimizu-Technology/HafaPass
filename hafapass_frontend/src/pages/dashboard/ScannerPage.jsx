@@ -1339,6 +1339,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         <p className="mt-1">Ask the event’s organizer to add you as door staff. If they send an invitation, accept it using this account.</p>
         <Link to="/dashboard" className="mt-2 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open organizer workspace</Link>
       </section>
+      <SavedJournalExports owner={currentScannerOwner()} pendingCount={pendingCount} eventId={eventId} recovery />
       <p className="flex items-center gap-2 text-sm font-semibold text-neutral-700">{online ? <ShieldCheck aria-hidden="true" className="h-4 w-4" /> : <CloudOff aria-hidden="true" className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
     </div>
   )
