@@ -188,8 +188,8 @@
   mask: radial-gradient(circle var(--notch-radius, 13px) at 0 var(--notch-position), transparent 97%, #000) left / 51% 100% no-repeat,
         radial-gradient(circle var(--notch-radius, 13px) at 100% var(--notch-position), transparent 97%, #000) right / 51% 100% no-repeat;
 }
-.ticket-top { --notch-position: 100%; position: relative; border-radius: 1.25rem 1.25rem 0 0; background: white; }
-.ticket-stub { --notch-position: 0%; border-radius: 0 0 1.25rem 1.25rem; background: white; }
+.ticket-top { --notch-position: 100%; position: relative; overflow: hidden; border-radius: 1.25rem 1.25rem 0 0; background: white; }
+.ticket-stub { --notch-position: 0%; overflow: hidden; border-radius: 0 0 1.25rem 1.25rem; background: white; }
 .ticket-tear { position: absolute; inset: auto calc(var(--notch-radius, 13px) + 4px) 0; border-top: 2px dashed theme('colors.neutral.300'); }
 .home-ticket-content { min-height: 328px; display: grid; align-content: center; }
 .hero-ticket { animation: ticket-arrive 280ms cubic-bezier(0.23, 1, 0.32, 1); }

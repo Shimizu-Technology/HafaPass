@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import { resetSupportContactForTests } from '../utils/supportContact'
 import Footer from './Footer'
+import { guamPhotos } from '../config/photoCredits'
+vi.mock('../config/photoCredits', () => ({ guamPhotos: {} }))
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 beforeEach(() => {
@@ -11,7 +13,10 @@ beforeEach(() => {
   resetSupportContactForTests()
   apiClient.get.mockRejectedValue(new Error('offline'))
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  for (const key of Object.keys(guamPhotos)) delete guamPhotos[key]
+})
 
 it('routes the footer contact to the configured receiving mailbox', () => {
   vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
@@ -57,4 +62,13 @@ it('keeps every existing navigation link and hides photo credits without credite
     expect(document.querySelector(`footer a[href="${path}"]`)).not.toBeNull()
   }
   expect(screen.queryByText('Photo credits')).not.toBeInTheDocument()
+})
+
+it('shows source, author and license when a credited photo is configured', () => {
+  guamPhotos.qa = { file: 'qa-photo', title: 'QA photo source', author: 'QA photographer', license: 'QA photo license', sourceUrl: 'https://example.test/photo', licenseUrl: 'https://example.test/license' }
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByText('Photo credits', { selector: 'summary' })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'QA photo source', hidden: true })).toHaveAttribute('href', guamPhotos.qa.sourceUrl)
+  expect(screen.getByRole('link', { name: 'QA photo license', hidden: true })).toHaveAttribute('href', guamPhotos.qa.licenseUrl)
+  expect(screen.getByText(/QA photographer/)).toBeInTheDocument()
 })

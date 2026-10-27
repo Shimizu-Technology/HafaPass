@@ -28,7 +28,10 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
    inventory = populated ? events : []
    await page.goto(`${base}${path}`)
    await page.locator('h1').waitFor()
-   if (name === 'events') await page.locator('.event-card').first().waitFor()
+   if (name === 'events') {
+    await page.waitForFunction(count=>document.querySelectorAll('.event-card').length===count,inventory.length)
+    await page.locator('main [role="status"][aria-label]').waitFor({state:'detached'})
+   }
    if (name === 'host') await page.getByLabel('Ticket price', {exact:true}).waitFor()
    if (name.startsWith('home')) await page.getByText(populated ? 'Guam Community Night' : 'No events are listed yet. Check back soon.',{exact:true}).first().waitFor()
    await page.evaluate(() => document.fonts.ready)
@@ -53,6 +56,7 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
   const search=page.getByRole('searchbox',{name:'Event or venue'})
   await search.fill('Music & food')
   for (const locator of [when,where,search,page.getByRole('button',{name:'Search',exact:true})]) {
+   assert.ok((await locator.boundingBox()).height>=44,`${engine} ${await locator.getAttribute('id')} touch target`)
    await locator.focus(); assert.ok(await locator.evaluate(el=>el===document.activeElement))
    assert.ok(await locator.evaluate(el=>getComputedStyle(el).boxShadow!=='none'||getComputedStyle(el).outlineStyle!=='none'))
   }

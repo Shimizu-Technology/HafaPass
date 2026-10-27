@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
+import { ArrowRight, ChevronDown, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
@@ -88,9 +88,9 @@ export default function HomePage() {
               </div> : <form role="search" onSubmit={browse}>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-sm font-medium">{t('pass.home.when')}</label>
-                    <select id="home-when" className="input min-h-12 !px-3 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div>
+                    <div className="relative"><select id="home-when" className="input min-h-12 appearance-none !pl-3 !pr-9 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
                   <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-sm font-medium">{t('pass.home.where')}</label>
-                    <select id="home-where" className="input min-h-12 !px-3 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select></div>
+                    <div className="relative"><select id="home-where" className="input min-h-12 appearance-none !pl-3 !pr-9 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
                 </div>
                 <label htmlFor="home-event-search" className="mb-2 mt-4 block text-sm font-medium">{t('buyer.Home.eventOrVenue')}</label>
                 <div className="flex flex-col gap-3 sm:flex-row">

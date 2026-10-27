@@ -37,6 +37,8 @@ describe('the public ticket', () => {
   expect(screen.getByText('Loading upcoming events…')).toBeInTheDocument()
   expect(screen.getAllByRole('link',{name:'Browse Events'})[0]).toHaveAttribute('href','/events')
   const ticket=container.querySelector('.hero-ticket')
+  const footer=screen.getByRole('contentinfo')
+  for(const policy of ['privacy','buyer-terms','refunds','organizer-agreement','accessibility','cookies']) expect(footer.querySelector(`a[href="/policies/${policy}"]`)).toBeInTheDocument()
   expect(screen.getByRole('link',{name:'Sell tickets'})).toHaveAttribute('href','/host')
   await act(async()=>finish({data:{events:[]}}))
   expect(container.querySelector('.hero-ticket')).toBe(ticket)
