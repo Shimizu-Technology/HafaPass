@@ -783,11 +783,6 @@
       "compareWhatYouPay": "Compare with what you pay now. Try your ticket price and number of tickets.",
       "keepYourTicketPrice": "When buyers pay the service fee, you keep 100% of your ticket price. Card processing comes out of our fee.",
       "cancellationPromise": "If an event is cancelled, we automatically start eligible card refunds, including the service fee.",
-      "twoTicketExamples": "What it looks like for one ticket",
-      "examplesIntro": "When the buyer pays the service fee, you receive the full ticket price. Here’s what changes if you absorb it.",
-      "ticketExample": "{{price}} ticket",
-      "exampleBuyerPays": "Buyer pays, including the fee",
-      "exampleAbsorb": "You receive if you absorb the fee",
       "publishYourself": "Your event, ready when you are",
       "publishIntro": "Create and publish your event yourself. We verify your organizer account once before your events go public and ticket sales open.",
       "oneTimeVerification": "One verification for your organizer account",
@@ -796,7 +791,7 @@
       "localHelpBody": "HåfaPass is run by Shimizu Technology on Guam. Want a hand with your first event? We’ll set it up with you.",
       "firstEventHelp": "Talk to us about your event",
       "payoutMethod": "Payouts are made by check from Shimizu Technology LLC’s business account unless a different payout method is approved and recorded for you.",
-      "examplesBeforeProcessing": "One ticket, with the buyer paying or you absorbing the service fee. Organizer proceeds shown here are before card processing."
+      "tryATicketPrice": "Try a ticket price"
     },
     "organizer": {
       "thisOrganizerCouldnTLoadPleaseTry": "This organizer couldn’t load. Please try again.",
@@ -1237,13 +1232,9 @@
     }
   },
   "publicPhotos": {
-    "sunset": {
-      "alt": "Orange clouds over Tumon Bay at sunset, with the Guam coastline in silhouette.",
-      "caption": "Evening over Tumon Bay, Guam."
-    },
     "market": {
       "alt": "A food vendor grills at the Chamorro Village night market in Hagåtña, with people walking between stalls.",
-      "caption": "Chamorro Village night market, Hagåtña. Photo from 2011."
+      "caption": "Chamorro Village night market, Hagåtña."
     },
     "bay": {
       "alt": "Clear turquoise water and swimmers in Tumon Bay, seen from Matapang Beach Park on Guam.",

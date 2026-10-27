@@ -26,7 +26,7 @@ for (const width of [375, 1280]) {
       if (path === '/') {
         await expect(main.getByRole('heading', { level: 1, name: 'Find your next event on Guam' })).toBeVisible()
         await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)
-        await expect(main.getByRole('img', { name: /Orange clouds over Tumon Bay/ })).toBeVisible()
+        await expect(main.getByRole('img', { name: /A food vendor grills at the Chamorro Village/ })).toBeVisible()
         await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
         await expect(main.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)

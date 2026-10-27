@@ -138,6 +138,13 @@ function FeeCalculator({ pricing }) {
             className={`input text-base tabular-nums ${quantityError ? 'input-error' : ''}`} />
         </div>
       </div>
+      <div role="group" aria-label={t('buyerDiscovery.host.tryATicketPrice')} className="mt-3 flex flex-wrap gap-2">
+        {[10, 25, 59].map(price => <button key={price} type="button" aria-pressed={priceCents === price * 100}
+          onClick={() => setPriceInput(String(price))}
+          className="min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
+          {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
+        </button>)}
+      </div>
       {priceError && <p id={`${id}-price-error`} className="mt-2 text-sm text-red-700">{priceError}</p>}
       {quantityError && <p id={`${id}-quantity-error`} className="mt-2 text-sm text-red-700">{quantityError}</p>}
 
@@ -173,30 +180,6 @@ function FeeCalculator({ pricing }) {
           ? t('buyerDiscovery.host.cardProcessingIsIncludedInTheHåfaPass')
           : t('buyerDiscovery.host.cardProcessingIsDeductedFromYourProceeds')}
         {' '}{t('buyerDiscovery.host.yourDashboardShowsTheExactAmountsFor')}</p>
-    </div>
-  )
-}
-
-function WorkedExamples({ pricing }) {
-  const { t } = useTranslation()
-  const receiveLabel = pricing.processingIncluded === true ? t('buyerDiscovery.host.youReceive') : t('buyerDiscovery.host.youReceiveBeforeCardProcessing')
-  return (
-    <div className="mt-10 rounded-2xl bg-brand-50 p-5 sm:p-7">
-      <h2 className="font-display text-xl font-bold text-neutral-950">{t('buyerDiscovery.host.twoTicketExamples')}</h2>
-      <p className="mt-2 text-sm text-content-muted">{t(pricing.processingIncluded === true ? 'buyerDiscovery.host.examplesIntro' : 'buyerDiscovery.host.examplesBeforeProcessing')}</p>
-      <div className="mt-6 grid gap-7 sm:grid-cols-2 sm:gap-10">
-        {[2500, 5900].map(priceCents => {
-          const result = calculateHostPayout({ priceCents, quantity: 1, pricing })
-          return <section key={priceCents} aria-label={t('buyerDiscovery.host.ticketExample', { price: formatMoneyCents(priceCents) })}>
-            <h3 className="font-display text-2xl font-bold text-brand-900">{t('buyerDiscovery.host.ticketExample', { price: formatMoneyCents(priceCents) })}</h3>
-            <dl className="mt-3">
-              <ResultRow label={t('buyerDiscovery.host.exampleBuyerPays')} value={formatMoneyCents(result.buyerPays.buyerTotalCents)} />
-              <ResultRow label={receiveLabel} value={formatMoneyCents(result.buyerPays.organizerReceivesCents)} strong />
-              <ResultRow label={t('buyerDiscovery.host.exampleAbsorb')} value={formatMoneyCents(result.organizerAbsorbs.organizerReceivesCents)} />
-            </dl>
-          </section>
-        })}
-      </div>
     </div>
   )
 }
@@ -252,7 +235,6 @@ function PricingSection({ configState, targets }) {
               ? <div aria-hidden="true" className="h-[32rem] rounded-2xl bg-white" /> : null}
           </div>
         </div>
-        {pricing && <WorkedExamples pricing={pricing} />}
       </div>
     </section>
   )
@@ -294,8 +276,7 @@ function HostContent({ targets }) {
       <PricingSection configState={configState} targets={targets} />
 
       <section aria-labelledby="publish-heading" className="bg-white py-12 sm:py-20">
-        <div className="mx-auto grid max-w-6xl items-center gap-9 px-4 sm:px-6 lg:grid-cols-2 lg:gap-16 lg:px-8">
-          <GuamPhoto photo="market" />
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
           <div>
             <h2 id="publish-heading" className="font-display text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">{t('buyerDiscovery.host.publishYourself')}</h2>
             <p className="mt-5 text-lg leading-relaxed text-content-muted">{t('buyerDiscovery.host.publishIntro')}</p>
