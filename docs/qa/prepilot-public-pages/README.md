@@ -63,3 +63,30 @@ Each photo has 480, 800 and 1280 px variants. Largest files: sunset 39 KB, marke
 ## Scope held
 
 Policy source/text and fee/pricing logic are untouched. Payout schedule interpolation and the existing FAQ timing are unchanged; the policy's check-payout method is stated without shortening its schedule. Competitors, endorsements, sales claims and customer imagery are omitted. `EventDetailPage`, `EventCard`, `CheckoutPage`, `TicketPage`, Navbar, the index.css motion block and ScrollReveal are untouched. Existing footer links and the approved mobile policy disclosure layout remain.
+
+
+## Final gates and review handoff
+
+Tested application source: `2a2253cf9955ed7187a47aae8a2277bac95bdc5b`. Subsequent changes are evidence/handoff documentation only.
+
+- `npm run lint`: passed.
+- `VITE_CLERK_PUBLISHABLE_KEY='' VITE_PUBLIC_WEB_URL='' VITE_API_URL='' npm test -- --maxWorkers=1`: 179 files passed, 1 existing skipped; 1,966 tests passed, 3 existing skipped (251.50 s). The sequential final run passed after the parallel timing issue and loading-state test updates.
+- `npm run build:no-translate`: passed.
+- `GT_API_KEY='' GT_PROJECT_ID='' npm run build`: passed; translator explicitly reported that credentials were absent and committed locale files were used. No paid translation.
+- `PLAYWRIGHT_PORT=5232 npm run test:e2e -- --workers=1`: all 142 passed (3.2 min), including six new responsive photography/keyboard/CLS cases and existing empty-inventory/footer-policy coverage.
+- Impeccable 4.6.0 advisory: `[]` (committed JSON). All locale files parsed; `git diff --check` passed; excluded-source/pricing/policy diffs empty.
+
+PR: https://github.com/Shimizu-Technology/HafaPass/pull/163 (linked to the T3 thread). **Do not merge.** Main was fetched again and remained `c55601ad` before submission. GitHub CI and Netlify preview were started by the PR; their final remote state must be rechecked by the parent.
+
+CodeRabbit did not review the code. Its required check is a gate: the bot returned “Review limit reached” at 2026-10-27 03:30:42 UTC, with the next included review available in 57 minutes. Evidence: https://github.com/Shimizu-Technology/HafaPass/pull/163#issuecomment-6433041331. Earliest stated retry is approximately 04:27:42 UTC / 14:27:42 Guam time. No material findings or review threads exist to address yet. No skipped/success-labelled check is represented as completed review. The implementation sub-agent does not watch or poll the PR; the parent should request `@coderabbitai review` after capacity resets, inspect the final-head coverage, fix material findings (about two substantive rounds), reply/resolve with evidence, and continue to hold the PR.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Empty desktop hero without a visual | Captioned Guam sunset | Gives the public page a real local setting without inventing events |
+| Repeated feature/card sections | Price/calculator, worked examples, publishing story, door preview and local-help photo | Lets organizers understand cost and operation in order |
+| Uppercase footer group labels | Readable sentence-case labels plus credits disclosure | Preserves the approved links and layout while improving legibility/attribution |
+
+Runtime cleanup is recorded below after exact resource teardown. Keep the held branch/worktree for review; no resource is intentionally handed off.
+
+
+Cleanup completed: lifecycle session `01a17b50-889d-7c23-850e-918895b32315` reports no active owned resources. Exact owned Rails PID 29578 (3062), Vite PID 33236 (5232), Chromium PID 37645 and its browser-server parent were stopped. The task-created T3 preview tab was closed and released. The throwaway `hafapass_prepilot_b` database was dropped and its absence verified. Shared PostgreSQL/Redis, Docker containers, LM services, other agents' listeners and the baseline simulator were left available. No resource handoffs or unresolved ownership remain. Branch/worktree are retained for the held PR.
