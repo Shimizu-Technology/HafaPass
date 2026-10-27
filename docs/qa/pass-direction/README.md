@@ -61,7 +61,7 @@ Each cell covers Home empty, Home populated, Host, events list, event detail, an
 | Chromium | Passed | Passed | Passed | Passed | Passed |
 | WebKit 27.2 | Passed | Passed | Passed | Passed | Passed |
 
-60 page/dimension checks. Chromium measures Layout Instability; WebKit does not expose that observer, so its zero values mean unsupported, not a measured zero. Exact results are in [after/results.json](after/results.json). Maximum measured Chromium CLS: **0.02724**, below 0.1; WebKit CLS measurement is unavailable.
+60 page/dimension checks. Chromium measures Layout Instability; WebKit does not expose that observer, so its zero values mean unsupported, not a measured zero. Exact Round 1 results are in [round1-results.json](round1-results.json). Maximum measured Chromium CLS: **0.02724**, below 0.1; WebKit CLS measurement is unavailable.
 
 ## Design re-audit
 
