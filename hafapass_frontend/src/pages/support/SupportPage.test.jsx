@@ -63,6 +63,21 @@ describe('support record lookup', () => {
     expect(await screen.findByText('The original message was queued for another delivery attempt.')).toBeVisible()
   })
 
+  it('offers retry only for failed messages not yet accepted by the provider', async () => {
+    const delivery = { template: 'ticket_email', recipient: 'guest@example.invalid', attempts: 1 }
+    apiClient.get.mockResolvedValue({ data: { deliveries: [
+      { ...delivery, id: 1, status: 'delivered', provider_id: 'accepted' },
+      { ...delivery, id: 2, status: 'queued', provider_id: null },
+      { ...delivery, id: 3, status: 'failed', provider_id: 'accepted' },
+      { ...delivery, id: 4, status: 'failed', provider_id: null },
+    ] } })
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    await screen.findByText('#4')
+    for (const id of [1, 2, 3]) expect(within(screen.getByText(new RegExp(`^#${id}(?: ·|$)`)).closest('tr')).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Retry delivery' })).toHaveLength(1)
+    expect(within(screen.getByText('#4').closest('tr')).getByRole('button', { name: 'Retry delivery' })).toBeEnabled()
+  })
+
   it('offers a way back to the admin panel only to an admin of the current account', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
     uninstallAuth = setAuthTokenGetter(async () => 'token', { userId: 'admin-a', sessionId: 'session-a', ready: true })

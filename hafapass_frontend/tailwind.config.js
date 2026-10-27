@@ -4,6 +4,9 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Shared semantic variants must retain their complete component rules even
+  // when a variant has no literal consumer in the current source scan.
+  safelist: ['btn-primary', 'btn-teal', 'btn-danger', 'btn-secondary', 'btn-ghost'],
   theme: {
     extend: {
       colors: {

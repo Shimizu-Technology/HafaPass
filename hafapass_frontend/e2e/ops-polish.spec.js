@@ -31,9 +31,14 @@ async function check(page) {
 async function neutral(button) {
   if (before) return
   await expect(button).toBeDisabled()
-  const styles = await button.evaluate(node => { const s = getComputedStyle(node); return { opacity: s.opacity, background: s.backgroundColor, color: s.color, transition: s.transitionProperty, transform: s.transform } })
+  const styles = await button.evaluate(node => { const s = getComputedStyle(node); return { opacity: s.opacity, background: s.backgroundColor, color: s.color, transition: s.transitionProperty, transform: s.transform, minHeight: parseFloat(s.minHeight), height: node.getBoundingClientRect().height, paddingTop: parseFloat(s.paddingTop), paddingLeft: parseFloat(s.paddingLeft), radius: parseFloat(s.borderRadius) } })
   expect(styles).toMatchObject({ opacity: '1', background: 'rgb(226, 232, 240)', color: 'rgb(71, 85, 105)', transform: 'none' })
   expect(styles.transition).not.toContain('opacity')
+  expect(styles.minHeight).toBeGreaterThanOrEqual(44)
+  expect(styles.height).toBeGreaterThanOrEqual(44)
+  expect(styles.paddingTop).toBeGreaterThan(0)
+  expect(styles.paddingLeft).toBeGreaterThan(0)
+  expect(styles.radius).toBeGreaterThan(0)
 }
 
 for (const [width, height] of [[375, 812], [1280, 800]]) {
@@ -66,9 +71,10 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     rows = deliveries
     await page.reload()
     const retries = page.getByRole('button', { name: 'Retry delivery', exact: true })
-    await expect(retries).toHaveCount(2)
+    await expect(retries).toHaveCount(before ? 2 : 1)
     await expect(retries.nth(0)).toBeEnabled()
-    await expect(retries.nth(1)).toBeDisabled()
+    if (before) await expect(retries.nth(1)).toBeDisabled()
+    else await expect(page.getByRole('row').filter({ hasText: 'guest@example.invalid' }).getByRole('button')).toHaveCount(0)
     await shot(page, 'support-deliveries', width)
     await check(page)
     if (!before) {
@@ -92,7 +98,15 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     await page.goto('/dashboard/scanner')
     await expect(page.getByText(before ? 'Organization membership required' : 'Scanning is for an organizer’s team and door staff.')).toBeVisible()
     if (!before) { await expect(page.getByRole('alert')).toHaveCount(0); await expect(page.getByRole('link', { name: 'Open organizer workspace' })).toHaveAttribute('href', '/dashboard') }
-    await expect(page.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    if (before) await expect(page.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+    else {
+      await expect(page.getByText('Online', { exact: true })).toBeVisible()
+      await expect(page.getByRole('main').getByRole('button')).toHaveCount(0)
+      await expect(page.getByRole('textbox')).toHaveCount(0)
+      await expect(page.getByLabel('Event to scan')).toHaveCount(0)
+      await expect(page.getByRole('navigation', { name: 'Check-in tools' })).toHaveCount(0)
+      await expect(page.getByText('Device not ready', { exact: true })).toHaveCount(0)
+    }
     await shot(page, 'scanner-no-membership', width)
     await check(page)
     if (!before) {
@@ -100,6 +114,7 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
       await page.reload()
       await expect(page.getByText('No events are assigned to this account.')).toBeVisible()
       await expect(page.getByRole('alert')).toHaveCount(0)
+      await expect(page.getByRole('main').getByRole('button')).toHaveCount(0)
       await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { error: 'Scanner access withdrawn' }, 403))
       await page.reload()
       await expect(page.getByRole('alert')).toContainText('Scanner access withdrawn')
@@ -120,12 +135,32 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
     const manifest = { payload, digest, signature: crypto.sign('sha256', digest, { key: privateKey, padding: crypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: 32 }).toString('base64url'), algorithm: 'PS256', key_id: crypto.createHash('sha256').update(der).digest('hex'), public_key_spki: der.toString('base64') }
     const device = { id: 8, identifier: 'ops-qa', effective: true, last_sequence: 0, authorization_expires_at: payload.expires_at }
     await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route, { events: [event] }))
-    await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
+    let preparationBlocked = !before
+    await page.route('**/api/v1/organizer/events/42/scanner_devices', route => preparationBlocked
+      ? json(route, { error: 'Synthetic setup unavailable' }, 503) : json(route, device, 201))
     await page.route('**/api/v1/organizer/events/42/scanner_devices/8/manifest', route => json(route, manifest))
     await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
     await page.goto('/dashboard/scanner?event=42')
+    if (!before) {
+      await expect(page.getByRole('alert')).toContainText('Synthetic setup unavailable')
+      await expect(page.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+      await expect(page.getByLabel('Ticket QR code', { exact: true })).toBeVisible()
+      await expect(page.getByRole('navigation', { name: 'Check-in tools' })).toBeVisible()
+      await expect(page.getByText('Connect and choose an assigned event to prepare this device for scanning.')).toBeVisible()
+      await expect(page.getByText(/If this phone is lost/)).not.toBeVisible()
+      await expect(page.locator('body')).not.toContainText('Clerk')
+      await shot(page, 'scanner-authorized-unprepared', width)
+      await check(page)
+      await page.getByText('Device details', { exact: true }).click()
+      await expect(page.getByText(/If this phone is lost/)).toBeVisible()
+      await page.getByText('Device details', { exact: true }).click()
+      preparationBlocked = false
+      await page.getByRole('button', { name: 'Verify scanner access' }).click()
+    }
     await expect(page.getByRole('button', { name: 'Start camera' })).toBeEnabled()
+    if (!before) await expect(page.getByRole('heading', { name: 'Device ready', exact: true })).toBeVisible()
     await shot(page, 'scanner-assigned', width)
+    await shot(page, 'scanner-ready', width)
     await check(page)
     await context.setOffline(true)
     await expect(page.getByText('Offline mode', { exact: true })).toBeVisible()
@@ -168,6 +203,17 @@ for (const [width, height] of [[375, 812], [1280, 800]]) {
       await page.mouse.up()
     }
     await check(page)
+    if (!before) {
+      for (const [variant, background] of [['primary', 'rgb(201, 54, 46)'], ['teal', 'rgb(11, 101, 99)'], ['danger', 'rgb(185, 28, 28)']]) {
+        const button = page.getByRole('button', { name: `${variant} submit`, exact: true })
+        // Also catch a pruned enabled variant rule: a neutral disabled override
+        // alone can mask a missing base/color class.
+        await button.evaluate(node => { node.disabled = false })
+        await page.mouse.move(0, 0)
+        await expect(button).toHaveCSS('background-color', background)
+        await expect(button).toHaveCSS('min-height', '44px')
+      }
+    }
   })
 }
 

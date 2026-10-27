@@ -242,8 +242,8 @@ describe('complete operational discovery', () => {
       expect(await loadAuthorizedScanner(1)).not.toBeNull()
     } else {
       await screen.findByText('Scanning is for an organizer’s team and door staff.')
-      expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
-      expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
+      expect(screen.queryByLabelText('Ticket QR code')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Start camera' })).not.toBeInTheDocument()
       expect(await loadAuthorizedScanner(1)).toBeNull()
     }
     expect(await queuedActions(1, 91)).toHaveLength(1)

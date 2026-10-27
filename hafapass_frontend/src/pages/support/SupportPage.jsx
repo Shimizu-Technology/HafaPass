@@ -201,7 +201,7 @@ function SupportSession({ identity, resourcePath }) {
                     <td data-label="Recipient" className={foldCell}><span>{delivery.recipient}</span></td>
                     <td data-label="State" className={foldCell}><div><span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${badge[delivery.status] || badge.queued}`}>{delivery.status}</span>{delivery.last_error && <p className="mt-1 max-w-xs text-xs text-red-700"><AlertTriangle aria-hidden="true" className="mr-1 inline h-3 w-3" />{delivery.last_error}</p>}</div></td>
                     <td data-label="Attempts" className={foldCell}><span>{delivery.attempts}</span></td>
-                    <td data-label="Action" className={foldCell}><button disabled={Boolean(busyAction) || delivery.status !== 'failed' || Boolean(delivery.provider_id)} onClick={() => replay(delivery)} className="min-h-11 text-left text-sm font-medium text-brand-700 disabled:cursor-not-allowed disabled:text-neutral-600">Retry delivery</button></td>
+                    <td data-label="Action" className={foldCell}>{delivery.status === 'failed' && !delivery.provider_id ? <button disabled={Boolean(busyAction)} onClick={() => replay(delivery)} className="min-h-11 text-left text-sm font-medium text-brand-700 disabled:cursor-not-allowed disabled:text-neutral-600">Retry delivery</button> : <span className="text-sm text-neutral-600">—</span>}</td>
                   </tr>
                 ))}
               </tbody>
