@@ -27,6 +27,11 @@
   button, a, [role="button"] { touch-action: manipulation; }
   button { user-select: none; }
   input, select, textarea { scroll-margin-block: 7rem 4rem; }
+  /* Custom fields need readable hints too, even without the .input class. */
+  input::placeholder, textarea::placeholder {
+    @apply text-content-muted;
+    opacity: 1;
+  }
   /* Keep Safari from zooming the form while preserving pinch-to-zoom. */
   @media (pointer: coarse) {
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {

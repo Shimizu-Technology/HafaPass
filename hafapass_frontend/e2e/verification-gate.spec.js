@@ -263,5 +263,13 @@ for (const reducedMotion of ['reduce', 'no-preference']) {
       expect(sample.opacity).toBe('1')
       expect(sample.color).toBe('rgb(51, 65, 85)')
     }
+    // Admin search uses a custom field rather than the shared .input class.
+    await page.route('**/api/v1/admin/events?**', route => json(route, { events: [], meta: {} }))
+    await page.goto('/admin/events')
+    const field = page.getByPlaceholder('Search events...')
+    await expect(field).toBeVisible()
+    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(71, 85, 105)')
+    await field.focus()
+    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(71, 85, 105)')
   })
 }
