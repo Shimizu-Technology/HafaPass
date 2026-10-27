@@ -1,0 +1,157 @@
+{
+ "files": 21,
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 120,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 122,
+   "match": "shadow-sm",
+   "message": "Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 122,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 123,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 256,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 284,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 297,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 335,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 382,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/components/Navbar.jsx",
+   "line": 394,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/MyTicketsPage.jsx",
+   "line": 310,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "WARN",
+   "id": "h-screen",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 34,
+   "match": "h-screen",
+   "message": "100vh jumps on mobile. Use 100svh / 100dvh."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 493,
+   "match": "divide-y",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 573,
+   "match": "border-b",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 585,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 588,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 590,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 592,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "file": "hafapass_frontend/src/pages/OrderConfirmationPage.jsx",
+   "line": 599,
+   "match": "border-t",
+   "message": "Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields."
+  }
+ ]
+}

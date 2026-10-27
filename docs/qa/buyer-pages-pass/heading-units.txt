@@ -1,0 +1,16 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run src/pages/EventsPage.test.jsx src/pages/BuyerDiscoveryTranslations.test.jsx src/pages/BuyerTruthfulLists.test.jsx --maxWorkers=1
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend
+
+
+ Test Files  3 passed (3)
+      Tests  41 passed (41)
+   Start at  08:34:00
+   Duration  28.66s (tests 47%, import 20%, environment 20%, setup 9%, transform 4%)
+
+    Isolate  3 workers spawned · ~2.08s startup each (spawn + environment, per file)
+             at least ~4.17s faster with isolate: false — reuses workers across files instead of one per file
+

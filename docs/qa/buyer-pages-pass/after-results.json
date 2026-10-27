@@ -73,7 +73,7 @@
     "width": 375,
     "name": "events-populated",
     "contentWidth": 375,
-    "cls": 0.030608459317139465,
+    "cls": 0.031407508068625786,
     "clsAvailable": true,
     "shifts": [
       {
@@ -105,26 +105,26 @@
         ]
       },
       {
-        "value": 0.012135552913198575,
+        "value": 0.012934601664684901,
         "sources": [
           {
             "node": "<div class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6\"><div><a class=\"event-card group\" href=\"/events/community-night\" data-discover=\"true\"><div clas",
             "before": {
               "x": 16,
-              "y": 569,
+              "y": 553,
               "width": 343,
-              "height": 243,
-              "top": 569,
+              "height": 259,
+              "top": 553,
               "right": 359,
               "bottom": 812,
               "left": 16
             },
             "after": {
               "x": 16,
-              "y": 605,
+              "y": 589,
               "width": 343,
-              "height": 207,
-              "top": 605,
+              "height": 223,
+              "top": 589,
               "right": 359,
               "bottom": 812,
               "left": 16
@@ -236,7 +236,7 @@
     "width": 375,
     "name": "collection",
     "contentWidth": 375,
-    "cls": 0.018635674245917156,
+    "cls": 0.01847290640394089,
     "clsAvailable": true,
     "shifts": [
       {
@@ -266,55 +266,6 @@
             }
           }
         ]
-      },
-      {
-        "value": 0.0001627678419762673,
-        "sources": [
-          {
-            "before": {
-              "x": 142.59375,
-              "y": 268,
-              "width": 89.8125,
-              "height": 92,
-              "top": 268,
-              "right": 232.40625,
-              "bottom": 360,
-              "left": 142.59375
-            },
-            "after": {
-              "x": 144.65625,
-              "y": 265,
-              "width": 85.6875,
-              "height": 92,
-              "top": 265,
-              "right": 230.34375,
-              "bottom": 357,
-              "left": 144.65625
-            }
-          },
-          {
-            "before": {
-              "x": 142.59375,
-              "y": 759,
-              "width": 89.8125,
-              "height": 53,
-              "top": 759,
-              "right": 232.40625,
-              "bottom": 812,
-              "left": 142.59375
-            },
-            "after": {
-              "x": 144.65625,
-              "y": 756,
-              "width": 85.6875,
-              "height": 56,
-              "top": 756,
-              "right": 230.34375,
-              "bottom": 812,
-              "left": 144.65625
-            }
-          }
-        ]
       }
     ],
     "header": "rgb(3, 40, 39)",
@@ -326,38 +277,9 @@
     "width": 375,
     "name": "my-tickets-empty",
     "contentWidth": 375,
-    "cls": 0.0006369967725496858,
+    "cls": 0,
     "clsAvailable": true,
-    "shifts": [
-      {
-        "value": 0.0006369967725496858,
-        "sources": [
-          {
-            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
-            "before": {
-              "x": 0,
-              "y": 797,
-              "width": 375,
-              "height": 15,
-              "top": 797,
-              "right": 375,
-              "bottom": 812,
-              "left": 0
-            },
-            "after": {
-              "x": 0,
-              "y": 0,
-              "width": 0,
-              "height": 0,
-              "top": 0,
-              "right": 0,
-              "bottom": 0,
-              "left": 0
-            }
-          }
-        ]
-      }
-    ],
+    "shifts": [],
     "header": "rgb(3, 40, 39)",
     "theme": "#032827",
     "violations": []
@@ -367,11 +289,11 @@
     "width": 375,
     "name": "my-tickets-populated",
     "contentWidth": 375,
-    "cls": 0.004777475794122644,
+    "cls": 0.004572726831517387,
     "clsAvailable": true,
     "shifts": [
       {
-        "value": 0.004777475794122644,
+        "value": 0.004572726831517387,
         "sources": [
           {
             "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
@@ -694,7 +616,7 @@
     "width": 390,
     "name": "events-populated",
     "contentWidth": 390,
-    "cls": 0.03053010420320229,
+    "cls": 0.03127236412203057,
     "clsAvailable": true,
     "shifts": [
       {
@@ -726,26 +648,26 @@
         ]
       },
       {
-        "value": 0.01275759235486106,
+        "value": 0.01349985227368934,
         "sources": [
           {
             "node": "<div class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6\"><div><a class=\"event-card group\" href=\"/events/community-night\" data-discover=\"true\"><div clas",
             "before": {
               "x": 16,
-              "y": 569,
+              "y": 553,
               "width": 358,
-              "height": 275,
-              "top": 569,
+              "height": 291,
+              "top": 553,
               "right": 374,
               "bottom": 844,
               "left": 16
             },
             "after": {
               "x": 16,
-              "y": 605,
+              "y": 589,
               "width": 358,
-              "height": 239,
-              "top": 605,
+              "height": 255,
+              "top": 589,
               "right": 374,
               "bottom": 844,
               "left": 16
@@ -857,11 +779,11 @@
     "width": 390,
     "name": "collection",
     "contentWidth": 390,
-    "cls": 0.017456649670941803,
+    "cls": 0.017304128734408824,
     "clsAvailable": true,
     "shifts": [
       {
-        "value": 0.017456649670941803,
+        "value": 0.017119730015049076,
         "sources": [
           {
             "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
@@ -884,6 +806,55 @@
               "right": 0,
               "bottom": 0,
               "left": 0
+            }
+          }
+        ]
+      },
+      {
+        "value": 0.000184398719359749,
+        "sources": [
+          {
+            "before": {
+              "x": 150.09375,
+              "y": 252,
+              "width": 89.8125,
+              "height": 92,
+              "top": 252,
+              "right": 239.90625,
+              "bottom": 344,
+              "left": 150.09375
+            },
+            "after": {
+              "x": 152.15625,
+              "y": 249,
+              "width": 85.6875,
+              "height": 92,
+              "top": 249,
+              "right": 237.84375,
+              "bottom": 341,
+              "left": 152.15625
+            }
+          },
+          {
+            "before": {
+              "x": 150.09375,
+              "y": 743,
+              "width": 89.8125,
+              "height": 92,
+              "top": 743,
+              "right": 239.90625,
+              "bottom": 835,
+              "left": 150.09375
+            },
+            "after": {
+              "x": 152.15625,
+              "y": 740,
+              "width": 85.6875,
+              "height": 92,
+              "top": 740,
+              "right": 237.84375,
+              "bottom": 832,
+              "left": 152.15625
             }
           }
         ]
@@ -910,11 +881,11 @@
     "width": 390,
     "name": "my-tickets-populated",
     "contentWidth": 390,
-    "cls": 0.003748231171806563,
+    "cls": 0.0035587138653669055,
     "clsAvailable": true,
     "shifts": [
       {
-        "value": 0.003748231171806563,
+        "value": 0.0035587138653669055,
         "sources": [
           {
             "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
@@ -1453,11 +1424,11 @@
     "width": 1280,
     "name": "my-tickets-populated",
     "contentWidth": 1280,
-    "cls": 0.0031640625,
+    "cls": 0.0036474609374999994,
     "clsAvailable": true,
     "shifts": [
       {
-        "value": 0.0031640625,
+        "value": 0.0036474609374999994,
         "sources": [
           {
             "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",

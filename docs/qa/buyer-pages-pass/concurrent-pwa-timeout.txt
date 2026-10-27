@@ -1,0 +1,42 @@
+
+Running 2 tests using 1 worker
+
+(node:85298) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✘  1 [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives (56.9s)
+(node:97472) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  2 [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell (14.0s)
+
+
+  1) [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+
+    TimeoutError: page.goto: Timeout 15000ms exceeded.
+    Call log:
+      - navigating to "http://127.0.0.1:5234/timeout-never-visited", waiting until "load"
+
+
+      238 |     // though NetworkFirst has no runtime response cached at this URL.
+      239 |     const started = Date.now()
+    > 240 |     const timeoutResponse = await home.goto(`${origin}/timeout-never-visited`)
+          |                                        ^
+      241 |     expect(await timeoutResponse.text()).toContain('Build B')
+      242 |     expect(Date.now() - started).toBeGreaterThanOrEqual(2500)
+      243 |     expect(Date.now() - started).toBeLessThan(9000)
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e-pwa/deploy.spec.js:240:40
+
+    Error Context: test-results-pwa/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results-pwa/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results-pwa/deploy-legacy-A-upgrades-t-90790-ected-offline-work-survives-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives 
+  1 passed (2.1m)
