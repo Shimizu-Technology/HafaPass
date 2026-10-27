@@ -912,6 +912,7 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     ensure
       resume_writer << true if resume_writer&.empty?
       [writer, rollback].compact.each { |thread| thread.kill if thread.alive? }
+      [writer, rollback].compact.each(&:join)
       restore_retention_schema_for_test
     end
   end
@@ -926,6 +927,26 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     rollback_results = Queue.new
     admission_started = Queue.new
     admission_results = Queue.new
+    admission_ready = Queue.new
+    begin_admission = Queue.new
+    admission = inventory_worker(:admit, admission_results) do
+      # Reproduce a pooled connection with a SELECT tickets.* plan from before
+      # the DDL. Restoring the column moves it after retention_anonymized_at.
+      Ticket.find(ticket.id)
+      admission_ready << true
+      begin_admission.pop
+      # Invalidate this connection's old row layout before entering the
+      # transaction. Its next SELECT must prepare only after the DDL lock lifts;
+      # Rails cannot recover a stale prepared plan inside an open transaction.
+      ActiveRecord::Base.connection.clear_cache!
+      admission_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
+      Ticket.transaction do
+        current = Ticket.find(ticket.id)
+        current.check_in!
+        current.reverse_check_in!
+      end
+    end
+    Timeout.timeout(5) { admission_ready.pop }
     migration = RetainAdmittedInventoryAfterFinancialReversal.new
     migration.define_singleton_method(:drop_table) do |name|
       # Pause after the real evidence queries, immediately before the real DDL.
@@ -938,20 +959,15 @@ RSpec.describe "Commerce concurrency", :non_transactional do
       # directions stay inside this same transaction; no write may enter the gap.
       ActiveRecord::Base.transaction do
         migration.down
-        dropped = !ActiveRecord::Base.connection.column_exists?(:tickets, :first_admitted_at)
+        connection = ActiveRecord::Base.connection
+        dropped = !connection.column_exists?(:tickets, :first_admitted_at) &&
+          !connection.table_exists?(:ticket_inventory_retentions)
         migration.up
         dropped
       end
     end
     Timeout.timeout(5) { checks_finished.pop }
-    admission = inventory_worker(:admit, admission_results) do
-      admission_started << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()")
-      Ticket.transaction do
-        current = Ticket.find(ticket.id)
-        current.check_in!
-        current.reverse_check_in!
-      end
-    end
+    begin_admission << true
     pid = Timeout.timeout(5) { admission_started.pop }
     wait_for_database_lock_or_result(pid, admission_results)
     waiting = ActiveRecord::Base.connection.select_value("SELECT cardinality(pg_blocking_pids(#{Integer(pid)}))").positive?
@@ -964,11 +980,16 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     expect(waiting).to be(true), "admission_result=#{admission_result.class}; writer must not commit between zero checks and DROP"
     expect(rollback_result).to be(true)
     expect(admission_result).not_to be_a(StandardError)
+    expect(ActiveRecord::Base.connection.column_exists?(:tickets, :first_admitted_at)).to be(true)
+    expect(ActiveRecord::Base.connection.table_exists?(:ticket_inventory_retentions)).to be(true)
     expect(ticket.reload.first_admitted_at).to be_present
     expect(ticket.checked_in_at).to be_nil
+    expect(ticket).to be_issued
   ensure
+    begin_admission << true if begin_admission&.empty?
     resume_rollback << true if resume_rollback&.empty?
     [rollback, admission].compact.each { |thread| thread.kill if thread.alive? }
+    [rollback, admission].compact.each(&:join)
     restore_retention_schema_for_test
   end
 
@@ -976,6 +997,10 @@ RSpec.describe "Commerce concurrency", :non_transactional do
     connection = ActiveRecord::Base.connection
     RetainAdmittedInventoryAfterFinancialReversal.new.up unless connection.column_exists?(:tickets, :first_admitted_at)
     connection.schema_cache.clear!
+    # DDL invalidates plans on other pooled connections too. All inventory
+    # workers have finished before this helper runs; do not leak stale plans
+    # into the next example (or its in-transaction queries).
+    ActiveRecord::Base.connection_pool.connections.each(&:clear_cache!)
     Ticket.reset_column_information
     TicketInventoryRetention.reset_column_information
   end
