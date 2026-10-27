@@ -1220,7 +1220,7 @@
       "cancelThisTransfer": "Cancel this transfer?",
       "keepTransfer": "Keep transfer",
       "cancelling": "Cancelling…",
-      "expires": "Expires {{date}} Guam time",
+      "expires": "Expires {{date}}",
       "cancelMessage": "The link sent to <recipient>{{email}}</recipient> stops working and the ticket stays with you. You can send a new transfer afterward.",
       "sentToRecipient": "sent to <recipient>{{email}}</recipient>"
     },

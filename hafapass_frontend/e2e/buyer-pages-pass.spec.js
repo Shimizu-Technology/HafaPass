@@ -19,6 +19,7 @@ for (const width of [375, 390, 1280]) {
     })
     await page.goto('/my-tickets')
     const invoke = page.getByRole('button', { name: 'Cancel transfer', exact: true })
+    await expect(page.getByText('Transfer pending', { exact: true }).locator('..')).not.toContainText('Guam time Guam time')
     await invoke.click()
     const dialog = page.getByRole('dialog', { name: 'Cancel this transfer?', exact: true })
     await expect(dialog).toBeVisible()
