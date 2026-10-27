@@ -242,7 +242,9 @@ for (const reducedMotion of ['reduce', 'no-preference']) {
     await page.getByRole('searchbox', { name: 'Find an event', exact: true }).fill('Private')
     await search.click()
     await expect(search).toBeDisabled()
-    await expect(search).toHaveCSS('opacity', '0.5')
+    await expect(search).toHaveCSS('opacity', '1')
+    await expect(search).toHaveCSS('background-color', 'rgb(226, 232, 240)')
+    await expect(search).toHaveCSS('color', 'rgb(71, 85, 105)')
     await expect.poll(() => Boolean(finishLoading)).toBe(true)
     const frames = page.evaluate(async () => {
       const button = document.querySelector('form[role="search"] button[type="submit"]')

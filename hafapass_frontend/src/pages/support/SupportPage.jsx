@@ -5,6 +5,7 @@ import apiClient from '../../api/client'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import { useAccountRole } from '../../utils/workspace'
+import { foldCell, foldRow, foldTable } from '../admin/adminOperations'
 
 const badge = {
   delivered: 'bg-emerald-100 text-emerald-800',
@@ -150,8 +151,9 @@ function SupportSession({ identity, resourcePath }) {
         {message && <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900" role="status">{message}</div>}
         {searched && !loading && !results.orders.length && !results.tickets.length && !results.events.length && <p className="mt-4 text-sm text-neutral-600" role="status">No matching records. Try an order reference, email, or event title.</p>}
 
-        <section className="mt-8">
-          <h2 className="text-lg font-semibold text-neutral-900">Order results</h2>
+        {searched && <section className="mt-8" aria-labelledby="support-order-results">
+          <h2 id="support-order-results" className="text-lg font-semibold text-neutral-900">Order results</h2>
+          {!results.orders.length && <p className="mt-3 text-sm text-neutral-600" role="status">No orders match this search.</p>}
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {results.orders.map(order => (
               <article key={order.id} className="rounded-xl border border-neutral-200 bg-white p-4">
@@ -161,7 +163,7 @@ function SupportSession({ identity, resourcePath }) {
               </article>
             ))}
           </div>
-        </section>
+        </section>}
 
         {results.tickets.length > 0 && <section className="mt-8" aria-labelledby="support-ticket-results">
           <h2 id="support-ticket-results" className="text-lg font-semibold text-neutral-900">Ticket results</h2>
@@ -188,16 +190,23 @@ function SupportSession({ identity, resourcePath }) {
           {deliveryLoading && <p className="mt-3 text-sm text-neutral-600" role="status">Loading deliveries…</p>}
           {deliveryError && <div className="mt-3 text-sm text-red-700" role="alert">{deliveryError} <button className="min-h-11 font-semibold underline" onClick={loadDeliveries}>Retry</button></div>}
           {!deliveryLoading && !deliveryError && !deliveries.length && <p className="mt-3 text-sm text-neutral-600">No recent message deliveries.</p>}
-          <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-xs uppercase text-neutral-500"><tr><th className="px-4 py-3">Message</th><th className="px-4 py-3">Recipient</th><th className="px-4 py-3">State</th><th className="px-4 py-3">Attempts</th><th className="px-4 py-3">Action</th></tr></thead>
+          {!deliveryLoading && !deliveryError && deliveries.length > 0 && <div className="mt-3 rounded-xl border border-neutral-200 bg-white">
+            <table className={`${foldTable} text-left`}>
+              <caption className="sr-only">Recent message deliveries</caption>
+              <thead className="border-b border-neutral-200 bg-neutral-50 text-neutral-600"><tr>{['Message', 'Recipient', 'State', 'Attempts', 'Action'].map(label => <th key={label} scope="col" className="px-3 py-3">{label}</th>)}</tr></thead>
               <tbody className="divide-y divide-neutral-100">
                 {deliveries.map(delivery => (
-                  <tr key={delivery.id}><td className="px-4 py-3"><p className="font-medium text-neutral-900">{delivery.template.replaceAll('_', ' ')}</p><p className="text-xs text-neutral-500">#{delivery.id}{delivery.provider_id ? ` · ${delivery.provider_id}` : ''}</p></td><td className="px-4 py-3">{delivery.recipient}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${badge[delivery.status] || badge.queued}`}>{delivery.status}</span>{delivery.last_error && <p className="mt-1 max-w-xs text-xs text-red-700"><AlertTriangle className="mr-1 inline h-3 w-3" />{delivery.last_error}</p>}</td><td className="px-4 py-3">{delivery.attempts}</td><td className="px-4 py-3"><button disabled={Boolean(busyAction) || delivery.status !== 'failed' || Boolean(delivery.provider_id)} onClick={() => replay(delivery)} className="text-sm font-medium text-brand-700 disabled:text-neutral-300">Retry delivery</button></td></tr>
+                  <tr key={delivery.id} className={foldRow}>
+                    <td data-label="Message" className={foldCell}><div><p className="font-medium text-neutral-900">{delivery.template.replaceAll('_', ' ')}</p><p className="text-xs text-neutral-600">#{delivery.id}{delivery.provider_id ? ` · ${delivery.provider_id}` : ''}</p></div></td>
+                    <td data-label="Recipient" className={foldCell}><span>{delivery.recipient}</span></td>
+                    <td data-label="State" className={foldCell}><div><span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${badge[delivery.status] || badge.queued}`}>{delivery.status}</span>{delivery.last_error && <p className="mt-1 max-w-xs text-xs text-red-700"><AlertTriangle aria-hidden="true" className="mr-1 inline h-3 w-3" />{delivery.last_error}</p>}</div></td>
+                    <td data-label="Attempts" className={foldCell}><span>{delivery.attempts}</span></td>
+                    <td data-label="Action" className={foldCell}><button disabled={Boolean(busyAction) || delivery.status !== 'failed' || Boolean(delivery.provider_id)} onClick={() => replay(delivery)} className="min-h-11 text-left text-sm font-medium text-brand-700 disabled:cursor-not-allowed disabled:text-neutral-600">Retry delivery</button></td>
+                  </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </section>
     </WorkspacePage>
   )

@@ -241,7 +241,7 @@ describe('complete operational discovery', () => {
       expect(screen.getByLabelText('Ticket QR code')).toBeEnabled()
       expect(await loadAuthorizedScanner(1)).not.toBeNull()
     } else {
-      await screen.findByText('Organization membership required')
+      await screen.findByText('Scanning is for an organizer’s team and door staff.')
       expect(screen.getByLabelText('Ticket QR code')).toBeDisabled()
       expect(screen.getByRole('button', { name: 'Start camera' })).toBeDisabled()
       expect(await loadAuthorizedScanner(1)).toBeNull()

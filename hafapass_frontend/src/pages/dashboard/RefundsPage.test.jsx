@@ -193,7 +193,7 @@ describe('refund labels', () => {
     for (const trigger of triggers) expect(trigger.className).not.toMatch(/red|danger/)
     await user.click(triggers[1])
     const confirm = screen.getByRole('button', { name: 'Refund $105.00' })
-    expect(confirm.className).toMatch(/action-danger/)
+    expect(confirm).toHaveClass('btn-danger')
     await user.selectOptions(screen.getByLabelText('Type'), 'partial')
     expect(screen.getByRole('button', { name: 'Process Refund' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Process Refund' })).toHaveAccessibleDescription('Enter the amount to refund.')

@@ -38,6 +38,20 @@ describe('support record lookup', () => {
     expect(await screen.findByText("The order's ticket email was queued.")).toBeVisible()
   })
 
+  it('shows order results only after a successful search, including empty order matches', async () => {
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.includes('/search')
+      ? { orders: [], tickets: [], events: [{ id: 1, title: 'Matched event', organization_name: 'Organizer', status: 'draft' }] }
+      : { deliveries: [] } }))
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    await screen.findByText('No recent message deliveries.')
+    expect(screen.queryByRole('heading', { name: 'Order results' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Order, ticket, attendee, or event lookup'), 'event')
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
+    expect(await screen.findByText('No orders match this search.')).toBeVisible()
+    expect(screen.getByText('Matched event')).toBeVisible()
+  })
+
   it('enables Retry delivery for an unsent failed message and reports queueing', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [{ id: 42, template: 'order_confirmation', recipient: 'buyer@example.invalid', status: 'failed', provider_id: null, attempts: 1 }] } })
     apiClient.post.mockResolvedValue({ data: {} })

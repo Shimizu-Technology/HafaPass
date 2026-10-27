@@ -86,7 +86,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       <button
         type="submit"
         disabled={!stripe || !elements || submitting || statusUnknown}
-        className="w-full min-h-11 bg-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed text-content-inverse font-bold py-4 px-6 rounded-xl text-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
+        className="btn-primary w-full py-4 text-lg font-bold"
       >
         {submitting ? (
           <span className="flex items-center justify-center gap-2">
