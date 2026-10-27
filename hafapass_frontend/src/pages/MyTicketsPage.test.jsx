@@ -57,7 +57,9 @@ describe('MyTicketsPage guest recovery', () => {
     renderPage()
     expect(await screen.findByText('Guest purchases need another check')).toBeInTheDocument()
     expect(screen.queryByText('No tickets yet')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Find them here' })).toHaveAttribute('href', '/orders/recover')
+    expect(screen.getByText('Guest checkout? Use your order reference and checkout email.')).toBeInTheDocument()
+    expect(screen.getByText('Bought while signed in to another account? Sign in to that account to see your tickets.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Recover a guest order' })).toHaveAttribute('href', '/orders/recover')
   })
 
   it('keeps known tickets when the post-recovery refresh fails', async () => {
@@ -135,6 +137,9 @@ describe('MyTicketsPage orders tab', () => {
     expect(await screen.findByText('Loading orders…')).toBeInTheDocument()
     finishOrders({ data: { orders: [], meta: { current_page: 1, total_pages: 1 } } })
     expect(await screen.findByText('No orders yet')).toBeInTheDocument()
+    expect(screen.getByText('Guest checkout? Use your order reference and checkout email.')).toBeInTheDocument()
+    expect(screen.getByText('Bought while signed in to another account? Sign in to that account to see your tickets.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Recover a guest order' })).toHaveAttribute('href', '/orders/recover')
     apiClient.get.mockImplementation(url => url === '/me/orders' ? Promise.reject(new Error('offline')) : Promise.resolve({ data: { tickets: [] } }))
     await userEvent.click(screen.getByRole('tab', { name: 'Tickets' }))
     await userEvent.click(screen.getByRole('tab', { name: 'Orders' }))

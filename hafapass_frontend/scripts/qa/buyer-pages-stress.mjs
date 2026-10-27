@@ -60,8 +60,9 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
             if (path === '/my-tickets') await page.waitForFunction(() => document.querySelector('.ticket') && !document.querySelector('main p.sr-only')?.textContent?.includes('Checking'))
             if (path === '/saved') await page.getByRole('heading', { name: 'Reminders', exact: true }).waitFor()
             await page.evaluate(() => document.fonts.ready)
-            const size = await page.evaluate(() => ({ available: innerWidth, content: document.documentElement.scrollWidth, passes: document.querySelectorAll('main .ticket').length }))
+            const size = await page.evaluate(() => ({ available: innerWidth, content: document.documentElement.scrollWidth, passes: document.querySelectorAll('main .ticket').length, buyerPasses: document.querySelectorAll('main .ticket:has(a[href^="/tickets/"])').length }))
             assert.ok(size.content <= size.available, `${engine} ${width}/${zoom} ${path} ${label}: overflow ${JSON.stringify(size)}`)
+            if (path === '/my-tickets') assert.equal(size.buyerPasses, value.empty ? 0 : value.tickets.length, `${engine} ${width}/${zoom} ${label}: buyer ticket count`)
             const file = `${engine}-${width}-${zoom}x-${path.slice(1)}-${label.toLowerCase().replaceAll(' ', '-')}.png`
             if (label === 'Worst case' || label === 'Demo') await page.screenshot({ path: `${root}after/${file}`, fullPage: true })
             results.push({ engine, width, zoom, path, label, ...size })

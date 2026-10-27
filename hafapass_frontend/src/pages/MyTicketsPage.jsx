@@ -289,7 +289,9 @@ function MyTicketsContent({ refreshSession, signOut }) {
             {!purchaseLoading && !purchaseError && purchases.length === 0 && <div className="card p-8 text-center">
               <h2 className="text-xl font-semibold">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourOrders') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noOrdersYet')}</h2>
               <p className="mt-2 text-neutral-600">{t('buyerAccount.myTicketsPage.ordersEmptyHelp')}</p>
-              <Link to="/orders/recover" className="mt-4 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyerAccount.myTicketsPage.recoverAnOrderByEmail')}</Link>
+              <p className="mt-2 text-neutral-600">{t('pass.buyer.guestCheckoutHelp')}</p>
+              <p className="mt-2 text-sm text-neutral-600">{t('pass.buyer.accountTicketsHelp')}</p>
+              <Link to="/orders/recover" className="mt-4 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('pass.buyer.findTickets')}</Link>
             </div>}
             {!purchaseLoading && purchases.map(purchase => <Link key={purchase.id} to={`/orders/${purchase.id}/confirmation`} className="card block p-5 [overflow-wrap:anywhere] transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -325,9 +327,9 @@ function MyTicketsContent({ refreshSession, signOut }) {
               <div className="px-6 py-6 sm:px-8">
                 <Ticket aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
                 <h2 className="font-display text-2xl font-bold text-neutral-950">{recovering ? t('buyerAccount.myTicketsPage.lookingForYourTickets') : recoveryError ? t('buyerAccount.myTicketsPage.guestPurchasesNeedAnotherCheck') : t('buyerAccount.myTicketsPage.noTicketsYet')}</h2>
-                <p className="mt-3 text-neutral-600">{t('pass.buyer.differentEmail')}</p>
+                <p className="mt-3 text-neutral-600">{t('pass.buyer.guestCheckoutHelp')}</p>
                 <Link to="/orders/recover" className="ticket-link inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-800 underline underline-offset-4">{t('pass.buyer.findTickets')}</Link>
-                <p className="mt-1 text-sm text-neutral-600">{t('pass.buyer.recoveryHelp')}</p>
+                <p className="mt-1 text-sm text-neutral-600">{t('pass.buyer.accountTicketsHelp')}</p>
               </div>
             </TicketStock>
           </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="space-y-4">

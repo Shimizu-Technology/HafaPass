@@ -5,6 +5,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { offlinePrecache } from './config/pwaPrecache.js'
 import { execFileSync } from 'node:child_process'
 import { releaseMetadataPlugin, resolveRevision } from './config/releaseMetadata.js'
+import { headerThemePlugin } from './config/headerTheme.js'
 import { publicSitePlugin } from './config/publicSite.js'
 
 let gitRevision = null
@@ -40,6 +41,7 @@ export default defineConfig(({ mode }) => {
     define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
     plugins: [
       react(),
+      headerThemePlugin(),
       releaseMetadataPlugin(applicationRevision),
       publicSitePlugin(env.VITE_PUBLIC_WEB_URL),
       precache.plugin,

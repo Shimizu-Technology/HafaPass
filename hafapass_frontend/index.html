@@ -5,6 +5,7 @@
     <style>
       html, body { margin: 0; min-height: 100%; background: #f8fafb; color: #0f172a; }
       .boot-splash { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; }
+      .boot-splash::before { content: ""; position: absolute; inset: 0 0 auto; height: 65px; background: var(--startup-header-color, #ffffff); }
       .boot-splash span { color: #0e7c7b; font: 700 2rem/1.2 system-ui, sans-serif; letter-spacing: -0.04em; }
     </style>
     <script>
@@ -83,7 +84,7 @@
     <meta name="theme-color" content="#ffffff" />
     <script>
       // Match Navbar before React loads; Navbar keeps this in sync on scroll.
-      document.querySelector('meta[name="theme-color"]').content = ['/', '/host'].includes(window.location.pathname) ? '#032827' : '#ffffff'
+      %HEADER_THEME_SCRIPT%
     </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

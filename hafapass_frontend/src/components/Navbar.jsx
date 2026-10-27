@@ -1,3 +1,4 @@
+import { isDarkHeaderPath } from '../utils/headerTheme'
 import HafaPassMark from './HafaPassMark'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -26,8 +27,6 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const isHeroPage = ['/', '/host', '/events', '/discover', '/my-tickets', '/saved'].includes(location.pathname) || location.pathname.startsWith('/collections/')
-  const isTicketPage = location.pathname.startsWith('/tickets/')
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10)
@@ -70,7 +69,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const roleAlert = isSignedIn && currentRole?.status === 'failed'
 
   // Determine if navbar should be in "dark/transparent" mode
-  const isDarkMode = isTicketPage || (isHeroPage && !scrolled)
+  const isDarkMode = isDarkHeaderPath(location.pathname, scrolled)
 
   useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]')

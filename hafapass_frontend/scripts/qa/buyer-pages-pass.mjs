@@ -36,6 +36,7 @@ for (const [engine, type] of [['chromium', chromium], ...(phase === 'after' && p
           }
           await page.locator('main h1').waitFor()
           if (name.startsWith('events')) await page.waitForFunction(() => !document.querySelector('[aria-label="Loading events"]'))
+          if (name === 'events-populated') await page.locator('.event-card').first().waitFor()
           if (name.includes('my-tickets')) await page.getByRole('tablist').waitFor()
           if (name.startsWith('saved')) await page.getByRole('heading', { name: /Reminders/ }).waitFor()
           if (name === 'checkout') await page.getByLabel('Full Name').waitFor()
