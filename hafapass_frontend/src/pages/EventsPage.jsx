@@ -139,6 +139,7 @@ export default function EventsPage() {
       {/* Light content area */}
       <div className="bg-stone-50 min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <h2 className="sr-only">{t('pass.buyer.eventResults')}</h2>
           {/* Responsive discovery filters */}
           <div className="flex flex-col gap-4 mb-8">
            <div className="hidden sm:flex sm:flex-wrap gap-2">

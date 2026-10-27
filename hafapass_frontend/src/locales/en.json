@@ -1274,7 +1274,8 @@
       "openTicket": "Open ticket",
       "collection": "Collection",
       "collectionDescription": "A selection of events to explore on Guam.",
-      "loadingCollection": "Loading collection"
+      "loadingCollection": "Loading collection",
+      "eventResults": "Event results"
     }
   }
 }

@@ -34,6 +34,7 @@ export default function CollectionPage() {
     <SEO title={data.seo_title || data.title} description={data.seo_description || data.description} />
     <BuyerTitleBand title={data.title} description={data.description} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+    <h2 className="sr-only">{t('pass.buyer.eventResults')}</h2>
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{data.events.map(event => <EventCard key={event.id} event={event} />)}</div>
     {!data.events.length && <div className="mt-5 text-neutral-600"><p>{data.meta?.total_count > 0 ? t('buyerDiscovery.collections.emptyPage') : t('buyerDiscovery.collection.empty')}</p>{data.meta?.total_count > 0 && <button type="button" onClick={() => setSearchParams({})} className="ticket-link mt-3 mr-4 inline-flex min-h-11 items-center rounded-lg px-2 text-brand-800 underline">{t('buyerDiscovery.collections.firstPage')}</button>}<Link to="/events" className="ticket-link mt-3 inline-flex min-h-11 items-center rounded-lg px-2 text-brand-800 underline">{t('buyerDiscovery.collections.browseEvents')}</Link></div>}
     <MarketplacePagination meta={data.meta} page={page} onPage={next => setSearchParams(next > 1 ? { page: next } : {})} />
