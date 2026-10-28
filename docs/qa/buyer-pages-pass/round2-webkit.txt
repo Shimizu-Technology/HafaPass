@@ -1,0 +1,17 @@
+
+Running 12 tests using 1 worker
+
+  ✓   1 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px (2.5s)
+  ✓   2 [webkit] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 375px (3.2s)
+  ✓   3 [webkit] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 375px (1.6s)
+  ✓   4 [webkit] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 375px (3.7s)
+  ✓   5 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px (2.6s)
+  ✓   6 [webkit] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 390px (3.5s)
+  ✓   7 [webkit] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 390px (1.6s)
+  ✓   8 [webkit] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 390px (3.6s)
+  ✓   9 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px (2.0s)
+  ✓  10 [webkit] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 1280px (2.4s)
+  ✓  11 [webkit] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 1280px (1.3s)
+  ✓  12 [webkit] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 1280px (3.1s)
+
+  12 passed (32.0s)

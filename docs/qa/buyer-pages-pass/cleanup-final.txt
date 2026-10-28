@@ -1,0 +1,6 @@
+Lifecycle session 01a17f51-cf9a-78c1-ad6f-29abc67ffc72: cleanup executed, status no active owned resources.
+No LISTEN sockets: 3066, 5236, 4173, 5238, 5234.
+PostgreSQL identity: hafapass_buyer_pages_test|-2
+Task DB connections: 0
+Active matching DROP DATABASE statements: 0
+Invalid synthetic DB record remains pending shared checkpoint recovery. Protected Postgres unchanged.

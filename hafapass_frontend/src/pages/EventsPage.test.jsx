@@ -63,8 +63,8 @@ describe('event guide filters and recovery', () => {
   it('offers hosting and hides filters for an unfiltered empty marketplace', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [], meta: { total_count: 0, total_pages: 1 } } })
     mount('/events')
-    await screen.findByRole('heading', { name: 'Events are coming soon' })
-    expect(screen.getByRole('link', { name: 'List your event' })).toHaveAttribute('href', '/host')
+    await screen.findByRole('heading', { name: 'The first events go on sale soon.' })
+    expect(screen.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
@@ -79,10 +79,10 @@ describe('event guide filters and recovery', () => {
     await screen.findByRole('heading', { name: 'No matching events' })
     expect(screen.getByRole('textbox', { name: 'Search events and venues' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Category' })).toBeInTheDocument()
-    expect(screen.queryByText('Events are coming soon')).not.toBeInTheDocument()
+    expect(screen.queryByText('The first events go on sale soon.')).not.toBeInTheDocument()
     expect(apiClient.get).toHaveBeenCalledTimes(1)
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
-    await screen.findByRole('heading', { name: 'Events are coming soon' })
+    await screen.findByRole('heading', { name: 'The first events go on sale soon.' })
     expect(screen.getByLabelText('Browse URL')).toHaveTextContent(/^$/)
   })
 

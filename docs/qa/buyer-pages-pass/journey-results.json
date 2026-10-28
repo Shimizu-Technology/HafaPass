@@ -1,0 +1,44 @@
+[
+  {
+    "engine": "chromium",
+    "width": 375,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  },
+  {
+    "engine": "webkit",
+    "width": 375,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "case": "Save, follow, remind → Saved reload → event link; outage → retry preserves saved outcomes",
+    "status": "passed",
+    "boundary": "API fixtures, no Clerk authentication or email delivery"
+  }
+]

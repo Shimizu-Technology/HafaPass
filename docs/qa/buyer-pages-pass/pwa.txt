@@ -1,0 +1,11 @@
+
+Running 2 tests using 1 worker
+
+(node:58419) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  1 [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives (53.3s)
+
+  ✓  2 [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell (57.4s)
+
+  2 passed (1.9m)

@@ -408,11 +408,11 @@ function OrderConfirmationContent() {
     }
   }
 
-  if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (loading) return <div className="public-listing-min-height flex items-center justify-center bg-stone-50"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   if (error || !order) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-16">
+      <div className="public-listing-min-height mx-auto max-w-lg px-4 py-16">
         <div className="card p-8 text-center">
           <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-500" />
           <p className="mb-5 text-neutral-700">{error}</p>
@@ -423,7 +423,7 @@ function OrderConfirmationContent() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 tabular-nums">
+    <div className="public-listing-min-height bg-stone-50 tabular-nums">
       <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
@@ -504,7 +504,7 @@ function OrderConfirmationContent() {
                   <div className="min-w-0 flex-1">
                     <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
-                    <p className="text-xs capitalize text-neutral-600">{ticket.attendee_name || t('buyerAccount.orderConfirmationPage.newHolder')} · {t(`buyerAccount.orderConfirmationPage.ticketStatus.${ticket.status}`, { defaultValue: ticket.status.replace('_', ' ') })}</p>
+                    <p className="text-xs text-neutral-600">{ticket.attendee_name || t('buyerAccount.orderConfirmationPage.newHolder')} · {t(`buyerAccount.orderConfirmationPage.ticketStatus.${ticket.status}`, { defaultValue: ticket.status.replace('_', ' ') })}</p>
                     {ticket.admission_block_reason && <p className="mt-1 text-sm text-amber-800">{ticket.admission_block_reason}</p>}
                     {ticket.status === 'issued' && ticket.pending_transfer && <PendingTransfer transfer={ticket.pending_transfer} timeZone={event.timezone}
                       onCancel={() => apiClient.delete(`/orders/${id}/tickets/${ticket.id}/transfer`, { headers: orderHeaders() })}

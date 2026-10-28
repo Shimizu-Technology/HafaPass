@@ -1,0 +1,726 @@
+[WebServer] (node:29236) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 161 tests using 1 worker
+
+(node:29263) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 8:02:30 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:31 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:31 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:31 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:31 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:32 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:33 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:34 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+  ✓    1 [chromium] › e2e/accessibility.spec.js:73:3 › buyer browse, event, ticket choice, checkout and policy at 375px (3.9s)
+[WebServer] 8:02:34 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    2 [chromium] › e2e/accessibility.spec.js:104:3 › organizer event editing and ticket types at 375px (2.4s)
+[WebServer] 8:02:36 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:02:39 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:40 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+  ✓    3 [chromium] › e2e/accessibility.spec.js:73:3 › buyer browse, event, ticket choice, checkout and policy at 1440px (3.7s)
+[WebServer] 8:02:40 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    4 [chromium] › e2e/accessibility.spec.js:104:3 › organizer event editing and ticket types at 1440px (3.6s)
+[WebServer] 8:02:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    5 [chromium] › e2e/accessibility.spec.js:125:1 › sign-in fallback has a clear alert and keyboard-visible focus (851ms)
+[WebServer] 8:02:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    6 [chromium] › e2e/accessibility.spec.js:135:3 › order confirmation, receipt, refund request, transfer and ticket QR at 375px (2.3s)
+[WebServer] 8:02:47 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    7 [chromium] › e2e/accessibility.spec.js:135:3 › order confirmation, receipt, refund request, transfer and ticket QR at 1440px (2.2s)
+[WebServer] 8:02:49 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    8 [chromium] › e2e/accessibility.spec.js:190:3 › My Tickets, tab navigation and transfer at 375px (1.4s)
+[WebServer] 8:02:50 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓    9 [chromium] › e2e/accessibility.spec.js:190:3 › My Tickets, tab navigation and transfer at 1440px (1.4s)
+[WebServer] 8:02:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   10 [chromium] › e2e/accessibility.spec.js:222:3 › organizer create event, attendee filters and export at 375px (2.9s)
+[WebServer] 8:02:55 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:56 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   11 [chromium] › e2e/accessibility.spec.js:222:3 › organizer create event, attendee filters and export at 1440px (3.2s)
+[WebServer] 8:02:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:02:59 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   12 [chromium] › e2e/accessibility.spec.js:274:3 › organizer box office sale and cancel refund dialog at 375px (3.1s)
+[WebServer] 8:03:01 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:02 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   13 [chromium] › e2e/accessibility.spec.js:274:3 › organizer box office sale and cancel refund dialog at 1440px (3.5s)
+[WebServer] 8:03:05 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   14 [chromium] › e2e/accessibility.spec.js:327:3 › scanner manual check-in at 375px (1.5s)
+[WebServer] 8:03:06 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   15 [chromium] › e2e/accessibility.spec.js:327:3 › scanner manual check-in at 1440px (1.5s)
+[WebServer] 8:03:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:10 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   16 [chromium] › e2e/activity-log.spec.js:45:3 › organizer activity filters, timeline, recovery and CSV at 375px (3.2s)
+[WebServer] 8:03:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:14 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   17 [chromium] › e2e/activity-log.spec.js:124:3 › admin exact filters, links, technical details and CSV at 375px (4.1s)
+[WebServer] 8:03:15 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:17 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   18 [chromium] › e2e/activity-log.spec.js:45:3 › organizer activity filters, timeline, recovery and CSV at 1280px (3.3s)
+[WebServer] 8:03:18 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:21 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   19 [chromium] › e2e/activity-log.spec.js:124:3 › admin exact filters, links, technical details and CSV at 1280px (4.0s)
+[WebServer] 8:03:22 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   20 [chromium] › e2e/activity-log.spec.js:201:1 › unassigned staff cannot request activity; assigned managers can use the explicit audience flag (1.1s)
+[WebServer] 8:03:23 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   21 [chromium] › e2e/activity-log.spec.js:222:3 › settings role comparison preserves invite draft and passes axe at 375px (1.6s)
+[WebServer] 8:03:25 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   22 [chromium] › e2e/activity-log.spec.js:222:3 › settings role comparison preserves invite draft and passes axe at 1280px (1.7s)
+[WebServer] 8:03:27 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   23 [chromium] › e2e/activity-log.spec.js:286:3 › event overview opens activity with its event filter at 375px (1.2s)
+[WebServer] 8:03:28 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   24 [chromium] › e2e/activity-log.spec.js:286:3 › event overview opens activity with its event filter at 1280px (1.2s)
+[WebServer] 8:03:29 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:29 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:29 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:29 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+  ✓   25 [chromium] › e2e/assigned-seating.spec.js:6:1 › buyer selects an exact seat, holds it, and completes seat-specific checkout (1.2s)
+  ✓   26 [chromium] › e2e/audit-integrity.spec.js:8:3 › admin audit privacy wording, details and search work at 375px (1.1s)
+  ✓   27 [chromium] › e2e/audit-integrity.spec.js:8:3 › admin audit privacy wording, details and search work at 1280px (1.1s)
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:33 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   28 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 375px (1.2s)
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   29 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1024px (582ms)
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:34 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   30 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1280px (505ms)
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   31 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1440px (549ms)
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:35 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   32 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 320px (637ms)
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:36 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   33 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 390px (667ms)
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:37 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   34 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 1440px (682ms)
+  ✓   35 [chromium] › e2e/buyer-layout.spec.js:91:1 › buyer-pays prices are all-in from the first display through the checkout total (759ms)
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:38 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   36 [chromium] › e2e/buyer-layout.spec.js:114:1 › an event outage retries in place instead of pretending the event is missing (651ms)
+[WebServer] 8:03:39 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:39 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:39 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:39 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 10
+  ✓   37 [chromium] › e2e/buyer-layout.spec.js:133:1 › opening an event preserves filters without rewriting the event URL from an exiting listing (1.1s)
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:40 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:41 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   38 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › buyer account empty states lead to recovery and discovery at 375px (1.8s)
+[WebServer] 8:03:42 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:42 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   39 [chromium] › e2e/buyer-pages-pass.spec.js:30:3 › compact passes preserve ticket, account and tab controls at 375px (908ms)
+[WebServer] 8:03:43 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:43 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:43 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   40 [chromium] › e2e/buyer-pages-pass.spec.js:61:3 › title band header and browser color follow scrolling at 375px (1.6s)
+[WebServer] 8:03:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:45 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:45 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   41 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › buyer account empty states lead to recovery and discovery at 390px (1.7s)
+[WebServer] 8:03:46 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:46 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   42 [chromium] › e2e/buyer-pages-pass.spec.js:30:3 › compact passes preserve ticket, account and tab controls at 390px (879ms)
+[WebServer] 8:03:47 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:47 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:48 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:48 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:48 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   43 [chromium] › e2e/buyer-pages-pass.spec.js:61:3 › title band header and browser color follow scrolling at 390px (1.9s)
+[WebServer] 8:03:49 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:49 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:50 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   44 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › buyer account empty states lead to recovery and discovery at 1280px (2.2s)
+[WebServer] 8:03:51 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   45 [chromium] › e2e/buyer-pages-pass.spec.js:30:3 › compact passes preserve ticket, account and tab controls at 1280px (1.1s)
+[WebServer] 8:03:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:03:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   46 [chromium] › e2e/buyer-pages-pass.spec.js:61:3 › title band header and browser color follow scrolling at 1280px (1.8s)
+  ✓   47 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 390px (443ms)
+  ✓   48 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 1440px (439ms)
+  ✓   49 [chromium] › e2e/buyer-phone-access.spec.js:30:1 › the buyer controls an installation offer received before navigating to tickets (722ms)
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+[WebServer] 8:03:56 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 7
+  ✓   50 [chromium] › e2e/competitive-features.spec.js:5:1 › buyer completes an organizer-absorbed checkout with an add-on, registration answer, and waiver snapshot (828ms)
+  ✓   51 [chromium] › e2e/draft-exit.spec.js:19:3 › shared navigation protects a dirty event draft at 390px (812ms)
+  ✓   52 [chromium] › e2e/draft-exit.spec.js:19:3 › shared navigation protects a dirty event draft at 1440px (750ms)
+  ✓   53 [chromium] › e2e/draft-exit.spec.js:47:1 › browser Back retains the editor until the user approves departure (827ms)
+  ✓   54 [chromium] › e2e/draft-exit.spec.js:65:1 › reload requests native confirmation and dismissal retains the draft (5.5s)
+[WebServer] 8:04:04 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:05 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:06 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:06 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:09 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:10 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:10 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   55 [chromium] › e2e/empty-inventory.spec.js:8:3 › empty inventory leads to hosting and automatically restores browsing at 375px (7.0s)
+[WebServer] 8:04:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:12 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:13 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:14 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:15 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:17 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:18 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:18 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:19 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   56 [chromium] › e2e/empty-inventory.spec.js:8:3 › empty inventory leads to hosting and automatically restores browsing at 1280px (8.1s)
+  ✓   57 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 375px (528ms)
+  ✓   58 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 768px (576ms)
+  ✓   59 [chromium] › e2e/empty-inventory.spec.js:79:3 › footer keeps buyer policies visible and all policies reachable at 1280px (496ms)
+  ✓   60 [chromium] › e2e/event-day-rehearsal.spec.js:8:1 › admin records complete Gate G physical event-day rehearsal evidence (4.2s)
+  ✓   61 [chromium] › e2e/event-day.spec.js:44:3 › scanner validates locally, records an offline scan, and reconnects with fragment none (1.7s)
+  ✓   62 [chromium] › e2e/event-day.spec.js:44:3 › scanner validates locally, records an offline scan, and reconnects with fragment #manual-ticket-entry (1.6s)
+  ✓   63 [chromium] › e2e/event-day.spec.js:118:1 › online scanner waits neutrally before accepted and refused acknowledgements (781ms)
+  ✓   64 [chromium] › e2e/event-day.spec.js:154:3 › manager identifies same-name tickets and selects the correct Undo at 390px (647ms)
+  ✓   65 [chromium] › e2e/event-day.spec.js:154:3 › manager identifies same-name tickets and selects the correct Undo at 1440px (672ms)
+  ✓   66 [chromium] › e2e/event-day.spec.js:197:1 › box office exposes card sales only for a verified terminal and sends an idempotency key (558ms)
+  ✓   67 [chromium] › e2e/event-day.spec.js:229:3 › box office keeps card sales disabled for a restricted launch scope (528ms)
+  ✓   68 [chromium] › e2e/event-day.spec.js:229:3 › box office keeps card sales disabled for an unverified terminal (510ms)
+  ✓   69 [chromium] › e2e/event-draft-history.spec.js:4:3 › refused draft deletion recovers by archiving without a stale error at 390px (918ms)
+  ✓   70 [chromium] › e2e/event-draft-history.spec.js:4:3 › refused draft deletion recovers by archiving without a stale error at 1440px (854ms)
+  ✓   71 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 390px (649ms)
+  ✓   72 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 1440px (826ms)
+  ✓   73 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 390px (990ms)
+  ✓   74 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 1440px (949ms)
+  ✓   75 [chromium] › e2e/event-editor-validation.spec.js:110:1 › new event capacity uses the validated number and retains draft recovery until creation succeeds (682ms)
+  ✓   76 [chromium] › e2e/event-workspace.spec.js:19:3 › event workspace protects a dirty draft and keeps navigation reachable at 390px (848ms)
+  ✓   77 [chromium] › e2e/event-workspace.spec.js:19:3 › event workspace protects a dirty draft and keeps navigation reachable at 1440px (954ms)
+  ✓   78 [chromium] › e2e/event-workspace.spec.js:43:1 › phone event navigation supports Escape and restores focus without exposing forbidden tools (544ms)
+  ✓   79 [chromium] › e2e/event-workspace.spec.js:69:3 › ticket navigation scrolls and focuses the editor section without losing a draft at 320px (806ms)
+  ✓   80 [chromium] › e2e/event-workspace.spec.js:69:3 › ticket navigation scrolls and focuses the editor section without losing a draft at 1440px (731ms)
+  ✓   81 [chromium] › e2e/event-workspace.spec.js:102:3 › attendee sales filters and export stay usable at 390px (693ms)
+  ✓   82 [chromium] › e2e/event-workspace.spec.js:102:3 › attendee sales filters and export stay usable at 1440px (718ms)
+  ✓   83 [chromium] › e2e/first-load.spec.js:5:1 › public browsing starts before health resolves and preserves the shell and draft on failure/recovery (592ms)
+  ✓   84 [chromium] › e2e/first-load.spec.js:31:3 › missing-event loading keeps CLS below 0.1 at 390px (419ms)
+  ✓   85 [chromium] › e2e/first-load.spec.js:31:3 › missing-event loading keeps CLS below 0.1 at 1280px (465ms)
+[WebServer] 8:04:45 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   86 [chromium] › e2e/first-load.spec.js:59:3 › discover loading keeps the footer stable through confirmed empty inventory at 375px (484ms)
+[WebServer] 8:04:46 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   87 [chromium] › e2e/first-load.spec.js:59:3 › discover loading keeps the footer stable through confirmed empty inventory at 1280px (503ms)
+  ✓   88 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches / before the app mounts (128ms)
+  ✓   89 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /host before the app mounts (113ms)
+  ✓   90 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /events before the app mounts (108ms)
+  ✓   91 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /discover before the app mounts (120ms)
+  ✓   92 [chromium] › e2e/first-load.spec.js:87:3 › cold-load theme color matches /dashboard before the app mounts (121ms)
+  ✓   93 [chromium] › e2e/live-money-proof.spec.js:8:1 › admin requests a bounded hidden Gate H live-money authorization (1.2s)
+  ✓   94 [chromium] › e2e/live-pilot.spec.js:8:1 › admin monitors an active Gate I pilot and reports a mandatory-pause incident (1.6s)
+[WebServer] 8:04:50 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   95 [chromium] › e2e/manual-payout-approval.spec.js:24:3 › dashboard approval: keyboard, retry, masked values and saved outcome at 375 (2.7s)
+[WebServer] 8:04:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:54 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   96 [chromium] › e2e/manual-payout-approval.spec.js:65:3 › organization blocked review and required changes note at 375 (2.2s)
+[WebServer] 8:04:55 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:55 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   97 [chromium] › e2e/manual-payout-approval.spec.js:89:3 › organizer check-only selection persists at 375 (1.3s)
+[WebServer] 8:04:56 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   98 [chromium] › e2e/manual-payout-approval.spec.js:24:3 › dashboard approval: keyboard, retry, masked values and saved outcome at 1280 (2.2s)
+[WebServer] 8:04:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:04:59 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   99 [chromium] › e2e/manual-payout-approval.spec.js:65:3 › organization blocked review and required changes note at 1280 (2.1s)
+[WebServer] 8:05:00 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:01 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  100 [chromium] › e2e/manual-payout-approval.spec.js:89:3 › organizer check-only selection persists at 1280 (1.3s)
+[WebServer] 8:05:02 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:02 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:02 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:02 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  101 [chromium] › e2e/marketplace-growth.spec.js:20:1 › buyer discovers a governed collection and filters Guam inventory (1.1s)
+[WebServer] 8:05:03 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  102 [chromium] › e2e/marketplace-growth.spec.js:47:1 › free event discovery has accessible labels and readable selected controls (1.2s)
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:04 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:05 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  103 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 320px (2.3s)
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:06 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:07 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:08 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  104 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 390px (2.2s)
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:09 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:10 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:10 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:10 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:10 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  105 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 768px (1.9s)
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:11 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:12 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:12 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:12 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:12 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  106 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 1440px (1.8s)
+[WebServer] 8:05:13 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:13 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:13 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:13 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  107 [chromium] › e2e/marketplace-growth.spec.js:143:1 › a late previous filter response cannot replace the currently selected results (1.1s)
+[WebServer] 8:05:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  108 [chromium] › e2e/marketplace-growth.spec.js:173:1 › an unavailable event listing offers retry and preserves the chosen filters (1.1s)
+[WebServer] 8:05:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  109 [chromium] › e2e/marketplace-growth.spec.js:196:1 › empty discovery results can clear filters on a narrow phone (1.4s)
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  110 [chromium] › e2e/marketplace-growth.spec.js:216:1 › partner link records anonymous attribution and opens the intended event (531ms)
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  111 [chromium] › e2e/marketplace-growth.spec.js:235:3 › public event actions remain reachable before and after setting a reminder at 390px (670ms)
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+[WebServer] 8:05:17 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 3
+  ✓  112 [chromium] › e2e/marketplace-growth.spec.js:235:3 › public event actions remain reachable before and after setting a reminder at 1440px (704ms)
+[WebServer] 8:05:18 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:18 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+  ✓  113 [chromium] › e2e/marketplace-growth.spec.js:285:1 › reduced-motion event navigation retains B inventory through a late A response and checkout (822ms)
+  ✓  114 [chromium] › e2e/organization-finance.spec.js:12:1 › owner can review team roles, choose check payouts, and create an invitation (588ms)
+  ✓  115 [chromium] › e2e/organization-finance.spec.js:38:1 › finance dashboard separates ticket economics and immutable payout state (773ms)
+  ✓  116 [chromium] › e2e/organizer-mutation-context.spec.js:18:1 › a received Alpha review can finish without replacing Beta or losing its editor draft (1.6s)
+[WebServer] 8:05:22 AM [vite] (client) [console.error] Warning: Encountered two children with the same key, `1`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+[WebServer]     at div
+[WebServer]     at WorkspacePage (http://127.0.0.1:4173/src/components/WorkspacePage.jsx:6:33)
+[WebServer]     at DashboardSession (http://127.0.0.1:4173/src/pages/dashboard/DashboardPage.jsx:631:29)
+[WebServer]     at DashboardPage (http://127.0.0.1:4173/src/pages/dashboard/DashboardPage.jsx:1509:19)
+[WebServer]     at ProtectedRoute (http://127.0.0.1:4173/src/components/ProtectedRoute.jsx:49:42)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at Suspense
+[WebServer]     at main
+[WebServer]     at div
+[WebServer]     at Layout (http://127.0.0.1:4173/src/components/Layout.jsx:15:16)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at Routes (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4886:19)
+[WebServer]     at App (http://127.0.0.1:4173/src/App.jsx:136:2)
+[WebServer]     at ConnectedApp (http://127.0.0.1:4173/src/ServiceCheck.jsx:90:25)
+[WebServer]     at ClerkProviderWrapper (http://127.0.0.1:4173/src/components/ClerkProviderWrapper.jsx:148:48)
+[WebServer]     at ServiceCheck (http://127.0.0.1:4173/src/ServiceCheck.jsx:136:43)
+[WebServer]     at DataRouterDraftProtection (http://127.0.0.1:4173/src/components/DraftNavigationProvider.jsx:8:38)
+[WebServer]     at DraftNavigationProvider (http://127.0.0.1:4173/src/components/DraftNavigationProvider.jsx:140:51)
+[WebServer]     at ErrorBoundary (http://127.0.0.1:4173/node_modules/.vite/deps/@sentry_react.js?v=ba511dc0:31204:3)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at RenderErrorBoundary (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4135:3)
+[WebServer]     at DataRoutes2 (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4772:24)
+[WebServer]     at Router (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4838:29)
+[WebServer]     at RouterProvider (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4581:27)
+[WebServer]     at RouterProvider2
+[WebServer]     at _HelmetProvider (http://127.0.0.1:4173/node_modules/.vite/deps/react-helmet-async.js?v=ba511dc0:494:3)
+[WebServer]     at MotionConfig (http://127.0.0.1:4173/node_modules/.vite/deps/framer-motion.js?v=ba511dc0:11675:25)
+[WebServer] 8:05:22 AM [vite] (client) [console.error] Warning: Encountered two children with the same key, `2`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+[WebServer]     at div
+[WebServer]     at WorkspacePage (http://127.0.0.1:4173/src/components/WorkspacePage.jsx:6:33)
+[WebServer]     at DashboardSession (http://127.0.0.1:4173/src/pages/dashboard/DashboardPage.jsx:631:29)
+[WebServer]     at DashboardPage (http://127.0.0.1:4173/src/pages/dashboard/DashboardPage.jsx:1509:19)
+[WebServer]     at ProtectedRoute (http://127.0.0.1:4173/src/components/ProtectedRoute.jsx:49:42)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at Suspense
+[WebServer]     at main
+[WebServer]     at div
+[WebServer]     at Layout (http://127.0.0.1:4173/src/components/Layout.jsx:15:16)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at Routes (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4886:19)
+[WebServer]     at App (http://127.0.0.1:4173/src/App.jsx:136:2)
+[WebServer]     at ConnectedApp (http://127.0.0.1:4173/src/ServiceCheck.jsx:90:25)
+[WebServer]     at ClerkProviderWrapper (http://127.0.0.1:4173/src/components/ClerkProviderWrapper.jsx:148:48)
+[WebServer]     at ServiceCheck (http://127.0.0.1:4173/src/ServiceCheck.jsx:136:43)
+[WebServer]     at DataRouterDraftProtection (http://127.0.0.1:4173/src/components/DraftNavigationProvider.jsx:8:38)
+[WebServer]     at DraftNavigationProvider (http://127.0.0.1:4173/src/components/DraftNavigationProvider.jsx:140:51)
+[WebServer]     at ErrorBoundary (http://127.0.0.1:4173/node_modules/.vite/deps/@sentry_react.js?v=ba511dc0:31204:3)
+[WebServer]     at RenderedRoute (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4204:26)
+[WebServer]     at RenderErrorBoundary (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4135:3)
+[WebServer]     at DataRoutes2 (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4772:24)
+[WebServer]     at Router (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4838:29)
+[WebServer]     at RouterProvider (http://127.0.0.1:4173/node_modules/.vite/deps/react-router-dom.js?v=ba511dc0:4581:27)
+[WebServer]     at RouterProvider2
+[WebServer]     at _HelmetProvider (http://127.0.0.1:4173/node_modules/.vite/deps/react-helmet-async.js?v=ba511dc0:494:3)
+[WebServer]     at MotionConfig (http://127.0.0.1:4173/node_modules/.vite/deps/framer-motion.js?v=ba511dc0:11675:25)
+  ✓  117 [chromium] › e2e/organizer-mutation-context.spec.js:50:1 › an old Alpha profile save does not close or reload a newly opened Beta editor (704ms)
+  ✓  118 [chromium] › e2e/organizer-mutation-context.spec.js:79:1 › returning through browser history keeps a delayed Alpha load out of the Beta event save (721ms)
+  ✓  119 [chromium] › e2e/pilot-closeout.spec.js:8:1 › admin approves the exact Gate J closeout and Guam expansion decision (1.5s)
+  ✓  120 [chromium] › e2e/pilot-readiness.spec.js:8:1 › admin records named Gate E ownership and complete event-bound evidence (2.1s)
+  ✓  121 [chromium] › e2e/pilot-validation.spec.js:8:1 › admin records complete Gate F device, accessibility, and load evidence (3.7s)
+  ✓  122 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 375px (916ms)
+[WebServer] 8:05:31 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:31 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  123 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 375px (1.1s)
+[WebServer] 8:05:32 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:33 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:33 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  124 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 375px (1.7s)
+  ✓  125 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 768px (824ms)
+[WebServer] 8:05:35 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:35 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  126 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 768px (1.2s)
+[WebServer] 8:05:36 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:37 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:37 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  127 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 768px (1.8s)
+  ✓  128 [chromium] › e2e/prepilot-public-pages.spec.js:8:3 › pending inventory preserves hosting and policy navigation at 1280px (1.1s)
+[WebServer] 8:05:39 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:39 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  129 [chromium] › e2e/prepilot-public-pages.spec.js:37:3 › public ticket, pricing and keyboard navigation at 1280px (1.3s)
+[WebServer] 8:05:40 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:41 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:41 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  130 [chromium] › e2e/prepilot-public-pages.spec.js:73:3 › delayed inventory and pricing keep layout stable at 1280px (1.8s)
+  ✓  131 [chromium] › e2e/provider-readiness.spec.js:8:1 › admin sees fail-closed provider state and submits a complete policy evidence snapshot (1.3s)
+  ✓  132 [chromium] › e2e/scanner-context.spec.js:21:1 › an earlier setup refusal cannot erase the current scanner or its accepted receipt (1.4s)
+  ✓  133 [chromium] › e2e/service-availability.spec.js:3:1 › opens the public marketplace when backend services are available (497ms)
+  ✓  134 [chromium] › e2e/service-availability.spec.js:21:1 › keeps public browsing mounted with a recoverable outage banner when the background health check fails (594ms)
+  ✓  135 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation success after organization switch ends loading at 375px (434ms)
+  ✓  136 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation failure after organization switch ends loading at 375px (453ms)
+  ✓  137 [chromium] › e2e/team-review-recovery.spec.js:40:3 › authorized member reviews and recovers a failed campaign at 375px (759ms)
+  ✓  138 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation success after organization switch ends loading at 1280px (545ms)
+  ✓  139 [chromium] › e2e/team-review-recovery.spec.js:16:5 › invitation failure after organization switch ends loading at 1280px (574ms)
+  ✓  140 [chromium] › e2e/team-review-recovery.spec.js:40:3 › authorized member reviews and recovers a failed campaign at 1280px (820ms)
+[WebServer] 8:05:50 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+  ✓  141 [chromium] › e2e/ticket-context.spec.js:23:1 › browser pop navigation retains the newer ticket and QR when the old response arrives last (543ms)
+[WebServer] 8:05:51 AM [vite] (client) [console.warn] You are trying to use a blocker on a POP navigation to a location that was not created by @remix-run/router. This will fail silently in production. This can happen if you are navigating outside the router via `window.history.pushState`/`window.location.hash` instead of using router navigation APIs.  This can also happen if you are using createHashRouter and the user manually changes the URL.
+  ✓  142 [chromium] › e2e/ticket-context.spec.js:40:1 › suppresses the old Google Wallet redirect after route change and opens the current wallet (1.3s)
+[WebServer] 8:05:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  143 [chromium] › e2e/verification-gate.spec.js:56:3 › draft keeps its saved preview link at 375px (1.1s)
+[WebServer] 8:05:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:53 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:54 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:54 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:54 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  144 [chromium] › e2e/verification-gate.spec.js:68:3 › dashboard event chips match visibility reason at 375px (1.7s)
+[WebServer] 8:05:54 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:55 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:56 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:57 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:58 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:05:59 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  145 [chromium] › e2e/verification-gate.spec.js:105:3 › private preview and verification request at 375px (5.2s)
+[WebServer] 8:06:00 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  146 [chromium] › e2e/verification-gate.spec.js:200:3 › rejected request can be fixed using only the keyboard at 375px (1.1s)
+[WebServer] 8:06:01 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  147 [chromium] › e2e/verification-gate.spec.js:56:3 › draft keeps its saved preview link at 1280px (1.1s)
+[WebServer] 8:06:02 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:02 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:02 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:03 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:03 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:03 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  148 [chromium] › e2e/verification-gate.spec.js:68:3 › dashboard event chips match visibility reason at 1280px (1.7s)
+[WebServer] 8:06:04 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:05 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:06 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:07 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:09 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  149 [chromium] › e2e/verification-gate.spec.js:105:3 › private preview and verification request at 1280px (6.2s)
+[WebServer] 8:06:10 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  150 [chromium] › e2e/verification-gate.spec.js:200:3 › rejected request can be fixed using only the keyboard at 1280px (1.1s)
+[WebServer] 8:06:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:06:12 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  151 [chromium] › e2e/verification-gate.spec.js:230:3 › search restores contrast immediately after loading (reduce) (1.4s)
+  ✓  152 [chromium] › e2e/verification-gate.spec.js:230:3 › search restores contrast immediately after loading (no-preference) (1.4s)
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+  ✓  153 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 404 warning at 375px (686ms)
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:14 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+  ✓  154 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 503 warning at 375px (684ms)
+[WebServer] 8:06:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:15 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+  ✓  155 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 404 warning at 1280px (732ms)
+[WebServer] 8:06:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+[WebServer] 8:06:16 AM [vite] (client) [console.warn] ticketAllInCents: no all_in_price_cents on a paid ticket; showing the base price 9
+  ✓  156 [chromium] › e2e/waitlist-status.spec.js:24:5 › saved waitlist lookup keeps a valid entry beside a 503 warning at 1280px (675ms)
+  ✓  157 [chromium] › e2e/waitlist-unsubscribe.spec.js:3:1 › waitlist unsubscribe presents event and organizer choices (560ms)
+  ✓  158 [chromium] › e2e/wording-review.spec.js:18:3 › promo expiry uses Guam for a null zone and oversized discounts can recover at 390px (1.1s)
+  ✓  159 [chromium] › e2e/wording-review.spec.js:54:3 › guest completion counts and interrupted creation use ticket wording at 390px (788ms)
+  ✓  160 [chromium] › e2e/wording-review.spec.js:18:3 › promo expiry uses Guam for a null zone and oversized discounts can recover at 1440px (1.1s)
+  ✓  161 [chromium] › e2e/wording-review.spec.js:54:3 › guest completion counts and interrupted creation use ticket wording at 1440px (764ms)
+
+  161 passed (3.9m)

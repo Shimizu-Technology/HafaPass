@@ -7,6 +7,7 @@ import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
+import BuyerTitleBand from '../components/BuyerTitleBand'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
@@ -107,26 +108,16 @@ export default function EventsPage() {
 
   if (!onListingRoute) return null
 
-  if (!loading && !loadError && inventoryEmpty) return <div className="min-h-[28rem] bg-stone-50">
-    <SEO title={t('buyer.Events.browseEvents')} description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')} url={`${PUBLIC_WEB_URL}/events`} />
-    <EmptyInventory headingAs="h1" />
-  </div>
-
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="public-listing-min-height bg-stone-50">
       <SEO
         title={t('buyer.Events.browseEvents')}
         description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')}
         url={`${PUBLIC_WEB_URL}/events`}
       />
-      {/* Event guide header */}
-      <div className="border-b border-neutral-200 bg-stone-50 py-8 sm:py-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div>
-            <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950 mb-2">{t('buyer.Events.events')}</h1>
-            <p className="text-content-muted text-base">{t('buyer.Events.discoverWhatsHappeningOnGuam')}</p>
-          </div><Link to="/host" className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">{t('buyer.Events.forEventOrganizers')}</Link></div>
-
+      <BuyerTitleBand title={t('buyer.Events.events')} description={t('buyer.Events.discoverWhatsHappeningOnGuam')} />
+      {!loading && !loadError && inventoryEmpty ? <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><EmptyInventory className="max-w-2xl" /></div> : <>
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
           {/* Search bar */}
           <div className="max-w-2xl">
             <label htmlFor="browse-event-search" className="mb-2 block text-sm font-medium text-neutral-800">{t('buyer.Events.searchEventsAndVenues')}</label>
@@ -143,12 +134,12 @@ export default function EventsPage() {
               />
             </div>
           </div>
-        </div>
       </div>
 
       {/* Light content area */}
       <div className="bg-stone-50 min-h-[50vh]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <h2 className="sr-only">{t('pass.buyer.eventResults')}</h2>
           {/* Responsive discovery filters */}
           <div className="flex flex-col gap-4 mb-8">
            <div className="hidden sm:flex sm:flex-wrap gap-2">
@@ -234,7 +225,7 @@ export default function EventsPage() {
                   <Link
                     to="/"
                     className="inline-flex min-h-11 items-center rounded text-content-muted hover:text-brand-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
-                  >{t('buyer.Events.backToEventGuide')}</Link>
+                  >{t('pass.buyer.home')}</Link>
                 </div>
               )}
 
@@ -259,6 +250,7 @@ export default function EventsPage() {
           )}
         </div>
       </div>
+      </>}
     </div>
   )
 }

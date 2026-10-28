@@ -1,0 +1,161 @@
+[WebServer] (node:16220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:16365) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 8:12:59 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✘   1 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px (10.6s)
+(node:16506) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 8:13:08 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:09 AM [vite] (client) [console.warn] @http://127.0.0.1:5238/node_modules/.vite/deps/@stripe_stripe-js.js:55:19
+[WebServer] 8:13:09 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:10 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   2 [webkit] › e2e/buyer-pages-pass.spec.js:56:3 › buyer account empty states lead to recovery and discovery at 375px (3.7s)
+[WebServer] 8:13:11 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:12 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   3 [webkit] › e2e/buyer-pages-pass.spec.js:80:3 › compact passes preserve ticket, account and tab controls at 375px (1.8s)
+[WebServer] 8:13:13 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:14 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:14 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:15 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:15 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   4 [webkit] › e2e/buyer-pages-pass.spec.js:111:3 › title band header and browser color follow scrolling at 375px (3.1s)
+[WebServer] 8:13:16 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✘   5 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px (6.8s)
+(node:16914) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 8:13:26 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:27 AM [vite] (client) [console.warn] @http://127.0.0.1:5238/node_modules/.vite/deps/@stripe_stripe-js.js:55:19
+[WebServer] 8:13:27 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:28 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   6 [webkit] › e2e/buyer-pages-pass.spec.js:56:3 › buyer account empty states lead to recovery and discovery at 390px (4.2s)
+[WebServer] 8:13:30 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:30 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   7 [webkit] › e2e/buyer-pages-pass.spec.js:80:3 › compact passes preserve ticket, account and tab controls at 390px (1.9s)
+[WebServer] 8:13:32 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:32 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:33 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:33 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:34 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓   8 [webkit] › e2e/buyer-pages-pass.spec.js:111:3 › title band header and browser color follow scrolling at 390px (3.1s)
+[WebServer] 8:13:35 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✘   9 [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px (7.0s)
+(node:17425) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 8:13:44 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:45 AM [vite] (client) [console.warn] @http://127.0.0.1:5238/node_modules/.vite/deps/@stripe_stripe-js.js:55:19
+[WebServer] 8:13:45 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:46 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  10 [webkit] › e2e/buyer-pages-pass.spec.js:56:3 › buyer account empty states lead to recovery and discovery at 1280px (3.8s)
+[WebServer] 8:13:48 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:48 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  11 [webkit] › e2e/buyer-pages-pass.spec.js:80:3 › compact passes preserve ticket, account and tab controls at 1280px (1.9s)
+[WebServer] 8:13:49 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:50 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:51 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:51 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+[WebServer] 8:13:52 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
+  ✓  12 [webkit] › e2e/buyer-pages-pass.spec.js:111:3 › title band header and browser color follow scrolling at 1280px (3.3s)
+
+
+  1) [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  getByRole('button', { name: 'Cancel transfer', exact: true })
+    Expected: focused
+    Received: inactive
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeFocused" getByRole('button', { name: 'Cancel transfer', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: 'Cancel transfer', exact: true })
+        14 × locator resolved to <button type="button" class="mt-1 min-h-11 rounded-lg px-2 text-xs font-semibold text-red-700 transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-red-50">Cancel transfer</button>
+           - unexpected value "inactive"
+
+
+      36 |     await page.keyboard.press('Escape')
+      37 |     await expect(dialog).toHaveCount(0)
+    > 38 |     await expect(invoke).toBeFocused()
+         |                          ^
+      39 |     await invoke.click()
+      40 |     await dialog.getByRole('button', { name: 'Cancel transfer', exact: true }).click()
+      41 |     await expect(dialog.getByRole('alert')).toHaveText('Please try again.')
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e/buyer-pages-pass.spec.js:38:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-d2901--mask-and-recovers-at-375px-webkit/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-d2901--mask-and-recovers-at-375px-webkit/error-context.md
+
+  2) [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  getByRole('button', { name: 'Cancel transfer', exact: true })
+    Expected: focused
+    Received: inactive
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeFocused" getByRole('button', { name: 'Cancel transfer', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: 'Cancel transfer', exact: true })
+        14 × locator resolved to <button type="button" class="mt-1 min-h-11 rounded-lg px-2 text-xs font-semibold text-red-700 transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-red-50">Cancel transfer</button>
+           - unexpected value "inactive"
+
+
+      36 |     await page.keyboard.press('Escape')
+      37 |     await expect(dialog).toHaveCount(0)
+    > 38 |     await expect(invoke).toBeFocused()
+         |                          ^
+      39 |     await invoke.click()
+      40 |     await dialog.getByRole('button', { name: 'Cancel transfer', exact: true }).click()
+      41 |     await expect(dialog.getByRole('alert')).toHaveText('Please try again.')
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e/buyer-pages-pass.spec.js:38:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-904f9--mask-and-recovers-at-390px-webkit/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-904f9--mask-and-recovers-at-390px-webkit/error-context.md
+
+  3) [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px 
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  getByRole('button', { name: 'Cancel transfer', exact: true })
+    Expected: focused
+    Received: inactive
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeFocused" getByRole('button', { name: 'Cancel transfer', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: 'Cancel transfer', exact: true })
+        14 × locator resolved to <button type="button" class="mt-1 min-h-11 rounded-lg px-2 text-xs font-semibold text-red-700 transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-red-50">Cancel transfer</button>
+           - unexpected value "inactive"
+
+
+      36 |     await page.keyboard.press('Escape')
+      37 |     await expect(dialog).toHaveCount(0)
+    > 38 |     await expect(invoke).toBeFocused()
+         |                          ^
+      39 |     await invoke.click()
+      40 |     await dialog.getByRole('button', { name: 'Cancel transfer', exact: true }).click()
+      41 |     await expect(dialog.getByRole('alert')).toHaveText('Please try again.')
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-1ff03b0c/hafapass_frontend/e2e/buyer-pages-pass.spec.js:38:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-19606-mask-and-recovers-at-1280px-webkit/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/hafapass-buyer-pages-webkit-results/buyer-pages-pass-pending-t-19606-mask-and-recovers-at-1280px-webkit/error-context.md
+
+  3 failed
+    [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px 
+    [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px 
+    [webkit] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px 
+  9 passed (1.0m)

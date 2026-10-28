@@ -1,0 +1,241 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "name": "events-populated",
+    "contentWidth": 390,
+    "cls": 0.03127236412203057,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.017772511848341232,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 829,
+              "width": 390,
+              "height": 15,
+              "top": 829,
+              "right": 390,
+              "bottom": 844,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      },
+      {
+        "value": 0.01349985227368934,
+        "sources": [
+          {
+            "node": "<div class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6\"><div><a class=\"event-card group\" href=\"/events/community-night\" data-discover=\"true\"><div clas",
+            "before": {
+              "x": 16,
+              "y": 553,
+              "width": 358,
+              "height": 291,
+              "top": 553,
+              "right": 374,
+              "bottom": 844,
+              "left": 16
+            },
+            "after": {
+              "x": 16,
+              "y": 589,
+              "width": 358,
+              "height": 255,
+              "top": 589,
+              "right": 374,
+              "bottom": 844,
+              "left": 16
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "name": "my-tickets-empty",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": true,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "name": "events-populated",
+    "contentWidth": 1280,
+    "cls": 0.014531835937500001,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.007031249999999999,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 785,
+              "width": 1280,
+              "height": 15,
+              "top": 785,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ]
+      },
+      {
+        "value": 0.007500585937500001,
+        "sources": [
+          {
+            "node": "<div class=\"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6\"><div><a class=\"event-card group\" href=\"/events/community-night\" data-discover=\"true\"><div clas",
+            "before": {
+              "x": 96,
+              "y": 549,
+              "width": 1088,
+              "height": 251,
+              "top": 549,
+              "right": 1184,
+              "bottom": 800,
+              "left": 96
+            },
+            "after": {
+              "x": 96,
+              "y": 585,
+              "width": 1088,
+              "height": 215,
+              "top": 585,
+              "right": 1184,
+              "bottom": 800,
+              "left": 96
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "name": "my-tickets-empty",
+    "contentWidth": 1280,
+    "cls": 0.000205078125,
+    "clsAvailable": true,
+    "shifts": [
+      {
+        "value": 0.000205078125,
+        "sources": [
+          {
+            "node": "<footer class=\"bg-brand-950 text-content-inverse-muted py-8 sm:py-12 relative\"><div class=\"max-w-6xl mx-auto px-6 lg:px-8 relative z-[2]\"><div class=\"grid grid-",
+            "before": {
+              "x": 0,
+              "y": 785,
+              "width": 1280,
+              "height": 15,
+              "top": 785,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            },
+            "after": {
+              "x": 0,
+              "y": 799,
+              "width": 1280,
+              "height": 1,
+              "top": 799,
+              "right": 1280,
+              "bottom": 800,
+              "left": 0
+            }
+          }
+        ]
+      }
+    ],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "events-populated",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "my-tickets-empty",
+    "contentWidth": 390,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "events-populated",
+    "contentWidth": 1280,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "my-tickets-empty",
+    "contentWidth": 1280,
+    "cls": 0,
+    "clsAvailable": false,
+    "shifts": [],
+    "header": "rgb(3, 40, 39)",
+    "theme": "#032827",
+    "violations": []
+  }
+]

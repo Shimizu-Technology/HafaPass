@@ -1,0 +1,4 @@
+CLEANED process 33238: terminated
+Session: 01a17f99-ad1e-7e92-83da-1c698c8a66a0
+Project: /Users/leonshimizu/Desktop/ShimizuTechnology/HafaPass
+Active owned resources: none

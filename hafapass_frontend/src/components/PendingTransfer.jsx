@@ -1,12 +1,13 @@
 import { Trans, useTranslation } from 'react-i18next'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import Dialog from './Dialog'
 import { formatEventDateTime } from '../utils/eventTime'
 
 // A sent-but-unaccepted transfer on the holder's ticket, with a confirmed
 // cancel. `onCancel` performs the request; `onSettled` refreshes the list
 // whether the cancel succeeded or the transfer had already ended.
-export default function PendingTransfer({ transfer, onCancel, onSettled }) {
+export default function PendingTransfer({ transfer, onCancel, onSettled, portalDialog = false }) {
   const { t } = useTranslation()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -35,6 +36,18 @@ export default function PendingTransfer({ transfer, onCancel, onSettled }) {
     }
   }
 
+  // Masked ticket stock clips fixed descendants. Opt in at that caller so
+  // confirmation can cover the viewport without changing other page layouts.
+  const confirmation = <Dialog labelledBy={`cancel-transfer-${transfer.id}`} onClose={() => setConfirming(false)} busy={busy} className="max-w-md">
+      <h2 id={`cancel-transfer-${transfer.id}`} className="text-lg font-semibold text-neutral-900">{t('buyerAccount.pendingTransfer.cancelThisTransfer')}</h2>
+      <p className="mt-2 text-sm text-neutral-600"><Trans t={t} i18nKey="buyerAccount.pendingTransfer.cancelMessage" values={{ email: transfer.recipient_email }} components={{ recipient: <strong className="break-all text-neutral-900" /> }} /></p>
+      {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" className="btn-secondary min-h-11 px-5" onClick={() => setConfirming(false)} disabled={busy}>{t('buyerAccount.pendingTransfer.keepTransfer')}</button>
+        <button type="button" className="btn-danger min-h-11 px-5" onClick={cancel} disabled={busy}>{busy ? t('buyerAccount.pendingTransfer.cancelling') : t('buyerAccount.pendingTransfer.cancelTransfer')}</button>
+      </div>
+    </Dialog>
+
   return <div className="mt-1">
     <p className="text-xs text-amber-800">
       <span className="font-semibold">{t('buyerAccount.pendingTransfer.transferPending')}</span>
@@ -43,14 +56,6 @@ export default function PendingTransfer({ transfer, onCancel, onSettled }) {
     </p>
     <button type="button" onClick={() => { setError(null); setConfirming(true) }}
       className="mt-1 min-h-11 rounded-lg px-2 text-xs font-semibold text-red-700 transition-[background-color,transform] duration-150 ease-out-strong active:scale-[0.97] hover:bg-red-50">{t('buyerAccount.pendingTransfer.cancelTransfer')}</button>
-    {confirming && <Dialog labelledBy={`cancel-transfer-${transfer.id}`} onClose={() => setConfirming(false)} busy={busy} className="max-w-md">
-      <h2 id={`cancel-transfer-${transfer.id}`} className="text-lg font-semibold text-neutral-900">{t('buyerAccount.pendingTransfer.cancelThisTransfer')}</h2>
-      <p className="mt-2 text-sm text-neutral-600"><Trans t={t} i18nKey="buyerAccount.pendingTransfer.cancelMessage" values={{ email: transfer.recipient_email }} components={{ recipient: <strong className="break-all text-neutral-900" /> }} /></p>
-      {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button type="button" className="btn-secondary min-h-11 px-5" onClick={() => setConfirming(false)} disabled={busy}>{t('buyerAccount.pendingTransfer.keepTransfer')}</button>
-        <button type="button" className="btn-danger min-h-11 px-5" onClick={cancel} disabled={busy}>{busy ? t('buyerAccount.pendingTransfer.cancelling') : t('buyerAccount.pendingTransfer.cancelTransfer')}</button>
-      </div>
-    </Dialog>}
+    {confirming && (portalDialog ? createPortal(confirmation, document.body) : confirmation)}
   </div>
 }

@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+
+  ✓  1 [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives (22.6s)
+
+  ✓  2 [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell (3.8s)
+
+  2 passed (27.1s)

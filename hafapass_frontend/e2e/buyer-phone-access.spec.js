@@ -13,7 +13,7 @@ for (const width of [390, 1440]) {
   test(`phone installation guidance is keyboard accessible without losing the buyer page at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/my-tickets')
-    await expect(page.getByRole('heading', { name: 'My Tickets', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
     const help = page.getByText('Add HåfaPass to your phone', { exact: true })
     await help.focus()
     await page.keyboard.press('Enter')
@@ -42,7 +42,7 @@ test('the buyer controls an installation offer received before navigating to tic
     window.dispatchEvent(offer)
   })
   await page.getByRole('link', { name: 'My tickets', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'My Tickets', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My tickets', exact: true })).toBeVisible()
   await page.getByText('Add HåfaPass to your phone', { exact: true }).click()
   const install = page.getByRole('button', { name: 'Install HåfaPass', exact: true })
   await expect(install).toBeVisible()
