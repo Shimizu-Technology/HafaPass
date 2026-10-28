@@ -1319,6 +1319,30 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const expiresAt = Math.min(Date.parse(device?.authorization_expires_at || ''), Date.parse(manifest?.payload.expires_at || ''))
   const eventTimezone = manifest?.payload.event?.timezone || selectedEvent?.timezone || 'Pacific/Guam'
   const expiryLabel = Number.isFinite(expiresAt) ? formatEventDateTime(expiresAt, eventTimezone) : null
+  // Only this exact API refusal describes missing team membership. Other
+  // authorization failures remain errors, and still use the refusal path above.
+  const membershipRequired = error === 'Organization membership required'
+  const noAssignedEvents = !eventListLoading && !setupBusy && !error && !eventListError && !events.length && !eventId
+
+  // This is presentation only: the refusal pipeline above still withdraws and
+  // quarantines access. An event selection or verified offline grant must not be
+  // hidden just because the current search page has no matching assignments.
+  const noScanAuthority = !ready && !events.length && !resolvedEvent
+    && (membershipRequired || (noAssignedEvents && !listing.q && !offlineOnly))
+
+  if (noScanAuthority) return (
+    <div className={`mx-auto w-full min-w-0 ${WORKSPACE_WIDTHS.standard} space-y-4 px-4 py-4 sm:px-6 sm:py-8 lg:px-8`}>
+      <h1 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl">Check-in</h1>
+      <section role="status" className="max-w-2xl rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
+        <h2 className="font-semibold text-neutral-900">{membershipRequired ? 'Join the event’s door team' : 'No events are assigned to this account.'}</h2>
+        <p className="mt-1">Scanning is for an organizer’s team and door staff.</p>
+        <p className="mt-1">Ask the event’s organizer to add you as door staff. If they send an invitation, accept it using this account.</p>
+        <Link to="/dashboard" className="mt-2 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open organizer workspace</Link>
+      </section>
+      <SavedJournalExports owner={currentScannerOwner()} pendingCount={pendingCount} eventId={eventId} recovery />
+      <p className="flex items-center gap-2 text-sm font-semibold text-neutral-700">{online ? <ShieldCheck aria-hidden="true" className="h-4 w-4" /> : <CloudOff aria-hidden="true" className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
+    </div>
+  )
 
   // The DOM follows the phone order: event, door status, camera, door totals,
   // then the remaining tools. From the sm breakpoint explicit grid placement
@@ -1357,12 +1381,22 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
       <div className="flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block">
         {pendingCount > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.</p>}
-        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.</p>}
+        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">{ready ? 'Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.' : 'Connect to prepare this device before scanning. Offline check-in needs saved event access and a verified ticket list.'}</p>}
         {ready && <section aria-label="Ticket list readiness" className="rounded-xl border border-neutral-200 bg-white p-3 sm:mb-5 sm:p-4">
           <p className="font-semibold text-neutral-950">Ticket list ready · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>
           <p className="mt-1 text-sm text-neutral-700">{expiryLabel ? `Access expires ${expiryLabel} · ${eventTimezone}` : 'Reconnect to verify the access expiry.'}</p>
         </section>}
-        {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:mb-5"><p>{error}</p>{!ready && eventId && online && <button type="button" disabled={setupBusy} onClick={() => configureEvent(eventId)} className="mt-2 min-h-11 font-semibold underline">Verify scanner access</button>}</div>}
+        {membershipRequired && <section role="status" className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700 sm:mb-5">
+          <h2 className="font-semibold text-neutral-900">Join the event’s door team</h2>
+          <p className="mt-1">Scanning is for an organizer’s team and door staff.</p>
+          <p className="mt-1">Ask the event’s organizer to add you as door staff. If they send an invitation, accept it using this account.</p>
+          <Link to="/dashboard" className="mt-2 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">Open organizer workspace</Link>
+        </section>}
+        {noAssignedEvents && <section role="status" className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-700 sm:mb-5">
+          <h2 className="font-semibold text-neutral-900">No events are assigned to this account.</h2>
+          <p className="mt-1">Ask the event’s organizer to assign you to the event as door staff. If you searched for an event, try clearing the search below.</p>
+        </section>}
+        {error && !membershipRequired && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:mb-5"><p>{error}</p>{!ready && eventId && online && <button type="button" disabled={setupBusy} onClick={() => configureEvent(eventId)} className="mt-2 min-h-11 font-semibold underline">Verify scanner access</button>}</div>}
         {setupBusy && <div role="status" className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm sm:mb-5"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
       </div>
 
@@ -1376,8 +1410,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           <div className="relative aspect-[4/3]">
             <video ref={videoRef} className={`h-full w-full object-cover ${scanning ? '' : 'hidden'}`} playsInline muted />
             {!scanning && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-200">
-                <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">Point the camera at the ticket QR code</p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center text-neutral-200">
+                <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">{ready ? 'Point the camera at the ticket QR code' : setupBusy ? 'Preparing this scanner…' : 'Choose an assigned event and prepare this device to enable the camera.'}</p>
               </div>
             )}
             {scanning && <div className="pointer-events-none absolute inset-0 m-auto h-52 w-52 rounded-3xl border-4 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />}
@@ -1452,17 +1486,18 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
       <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7">
         <div className="flex items-start gap-3"><Smartphone aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-brand-800" /><div className="min-w-0 break-words">
-          <h2 className="font-semibold text-neutral-950">{device?.name || 'Device not ready'}</h2>
-          <p className="mt-2 text-sm text-neutral-700">{OFFLINE_SCANNER_ACCESS_NOTE} Offline access lasts at most 24 hours and ends sooner when the event or your access ends.</p>
+          <h2 className="font-semibold text-neutral-950">{device?.name || (ready ? 'Device ready' : 'Device not ready')}</h2>
+          <p className="mt-2 text-sm text-neutral-700">{ready ? 'This device is ready to scan. Sync saved scans while connected.' : 'Connect and choose an assigned event to prepare this device for scanning.'}</p>
           <p className="mt-1 text-sm text-neutral-700">{selectedEvent?.title}</p>
-          {!ready && pendingCount > 0 && <p className="mt-3 text-sm text-amber-950">Saved scans are retained. Ordinary expiry can be renewed online by the original authorized staff account. Explicit revocation needs a manager to review an exported journal; do not reset or clear site data.</p>}
+          {!ready && pendingCount > 0 && <p className="mt-3 text-sm text-amber-950">Saved scans are safe on this device. Connect with the same staff account to sync them. Ask the door manager for help before resetting.</p>}
           {!ready && recoveryDevice && pendingCount > 0 && <button disabled={!online || syncing || setupBusy} onClick={() => syncQueue({ selectedDevice: recoveryDevice })} className="btn-secondary mt-3 text-sm">Sync saved scans</button>}
         </div></div>
-        <SavedJournalExports owner={currentScannerOwner()} pendingCount={pendingCount} eventId={eventId} />
-        <p className="mt-3 text-sm text-neutral-700">Revoking a device ID retires that scanner registration. For a lost phone or stolen login, also revoke the staff session in Clerk and remove every applicable organization membership or event assignment. A person who still has scan authority can register another device ID.</p>
-        {dashboard?.permissions?.can_recover && <JournalRecovery key={eventId} eventId={eventId} onRecovered={counts => setDashboard(current => current ? { ...current, counts } : current)} />}
         <details className="mt-3 border-t border-neutral-200 pt-1">
           <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-neutral-700">Device details</summary>
+          <p className="text-sm text-neutral-700">{OFFLINE_SCANNER_ACCESS_NOTE} Offline access lasts at most 24 hours and ends sooner when the event or your access ends.</p>
+          <p className="mt-2 text-sm text-neutral-700">If this phone is lost or the account is compromised, ask an organizer to revoke its scanner registration, sign out its staff sessions, and remove its event and team access. Revoking a device alone does not prevent someone with scan access from registering another device.</p>
+          <SavedJournalExports owner={currentScannerOwner()} pendingCount={pendingCount} eventId={eventId} />
+          {dashboard?.permissions?.can_recover && <JournalRecovery key={eventId} eventId={eventId} onRecovered={counts => setDashboard(current => current ? { ...current, counts } : current)} />}
           {manifest && <p className="text-sm text-neutral-700">Saved ticket list · version {manifest.payload.version} · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>}
           <p className="mt-2 text-sm text-neutral-700">Signing out removes saved access and attendee details. Sync before signing out; unconfirmed scans need the original staff account to recover online.</p>
           <p className="mt-2 text-sm text-neutral-700">Only reset after saved scans are confirmed. Resetting replaces this device’s trusted ticket-list access.</p>

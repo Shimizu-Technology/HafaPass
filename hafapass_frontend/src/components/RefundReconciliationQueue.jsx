@@ -127,9 +127,9 @@ export default function RefundReconciliationQueue({ items, admin = false, canRec
     <div className="card overflow-hidden" aria-busy={busy || acting}>
       <table className={foldTable}>
         <thead><tr className="border-b border-neutral-100 text-left text-content-muted">
-          <th className="px-3 py-3 font-medium">Order and buyer</th><th className="px-3 py-3 font-medium">Event and organizer</th>
-          <th className="px-3 py-3 font-medium">Buyer balance</th><th className="px-3 py-3 font-medium">Issue</th><th className="px-3 py-3 font-medium">Age</th>
-          <th className="px-3 py-3 font-medium">Next step</th><th className="px-3 py-3 font-medium">Actions</th>
+          <th scope="col" className="px-3 py-3 font-medium">Order and buyer</th><th scope="col" className="px-3 py-3 font-medium">Event and organizer</th>
+          <th scope="col" className="px-3 py-3 font-medium">Buyer balance</th><th scope="col" className="px-3 py-3 font-medium">Issue</th><th scope="col" className="px-3 py-3 font-medium">Age</th>
+          <th scope="col" className="px-3 py-3 font-medium">Next step</th><th scope="col" className="px-3 py-3 font-medium">Actions</th>
         </tr></thead>
         <tbody>{items.map(item => <tr key={`${item.type}:${item.id}`} className={foldRow}>
           <td data-label="Order" className={foldCell}><span className="min-w-0"><strong className="block text-neutral-900">{item.order_reference || `Order #${item.order_id}`}</strong><span className="block [overflow-wrap:anywhere] text-content-muted">{item.buyer_name || item.buyer_email || 'Buyer details unavailable'}</span>{item.buyer_name && item.buyer_email && <span className="block [overflow-wrap:anywhere] text-content-muted">{item.buyer_email}</span>}</span></td>

@@ -483,9 +483,9 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
         : { title: 'No payouts yet.', body: 'Payouts appear here after an organizer requests one from a finalized settlement.' })}>
         <table className={foldTable}>
           <thead><tr className="border-b border-neutral-100 text-left text-content-muted">
-            <th className="px-3 py-3 font-medium">Payout</th><th className="px-3 py-3 font-medium">Organization and event</th>
-            <th className="px-3 py-3 text-right font-medium">Amount</th><th className="px-3 py-3 font-medium">Status</th>
-            <th className="px-3 py-3 font-medium">Transfer and evidence</th><th className="px-3 py-3 font-medium"><span className="sr-only">Actions</span></th>
+            <th scope="col" className="px-3 py-3 font-medium">Payout</th><th scope="col" className="px-3 py-3 font-medium">Organization and event</th>
+            <th scope="col" className="px-3 py-3 text-right font-medium">Amount</th><th scope="col" className="px-3 py-3 font-medium">Status</th>
+            <th scope="col" className="px-3 py-3 font-medium">Transfer and evidence</th><th scope="col" className="px-3 py-3 font-medium"><span className="sr-only">Actions</span></th>
           </tr></thead>
           <tbody>
             {payouts.map(payout => (
@@ -545,8 +545,8 @@ function AdjustmentsList({ identity, resourcePath, filters, setFilter, context, 
       <ListState list={list} empty={list.data && !adjustments.length && { title: 'No balance adjustments.', body: 'Credits, debits and reserves posted by administrators appear here.' }}>
         <table className={foldTable}>
           <thead><tr className="border-b border-neutral-100 text-left text-content-muted">
-            <th className="px-3 py-3 font-medium">Posted</th><th className="px-3 py-3 font-medium">For</th><th className="px-3 py-3 font-medium">Type</th>
-            <th className="px-3 py-3 text-right font-medium">Amount</th><th className="px-3 py-3 font-medium">Reason</th><th className="px-3 py-3 font-medium"><span className="sr-only">Actions</span></th>
+            <th scope="col" className="px-3 py-3 font-medium">Posted</th><th scope="col" className="px-3 py-3 font-medium">For</th><th scope="col" className="px-3 py-3 font-medium">Type</th>
+            <th scope="col" className="px-3 py-3 text-right font-medium">Amount</th><th scope="col" className="px-3 py-3 font-medium">Reason</th><th scope="col" className="px-3 py-3 font-medium"><span className="sr-only">Actions</span></th>
           </tr></thead>
           <tbody>
             {adjustments.map(adjustment => (

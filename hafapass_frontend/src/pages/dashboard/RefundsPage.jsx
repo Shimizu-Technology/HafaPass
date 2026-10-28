@@ -392,7 +392,7 @@ function RefundsPageSession({ eventId, identity }) {
             className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
           </div>
           <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || Boolean(partialAmountError(order))} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
-           className="btn-primary text-sm !py-2.5 !bg-action-danger hover:!bg-action-danger-hover gap-1 disabled:opacity-50">
+           className="btn-danger text-sm !py-2.5 gap-1">
            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
            {pendingRequest?.financeReview || (pendingRequest && order.external_refund_verification_required === true) ? 'Check saved refund status' : pendingRequest ? pendingRequest.payload.cash_return ? 'Retry saved cash return record' : 'Retry saved refund' : isCashOrder(order) ? 'Record cash already returned' : refundConfirmLabel(order, refundForm)}
           </button>
