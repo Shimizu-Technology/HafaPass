@@ -56,7 +56,10 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
             for (const key of Object.keys(state)) delete state[key]
             Object.assign(state, value)
             await page.goto(`http://localhost:5236${path}`)
-            if (path === '/events') await page.waitForFunction(() => !document.querySelector('[aria-label="Loading events"]'))
+            if (path === '/events') {
+              await page.waitForFunction(() => !document.querySelector('[aria-label="Loading events"]'))
+              await page.locator(label === 'Empty' ? '.home-ticket-empty' : '.event-card').first().waitFor()
+            }
             if (path === '/my-tickets') await page.waitForFunction(() => document.querySelector('.ticket') && !document.querySelector('main p.sr-only')?.textContent?.includes('Checking'))
             if (path === '/saved') await page.getByRole('heading', { name: 'Reminders', exact: true }).waitFor()
             await page.evaluate(() => document.fonts.ready)

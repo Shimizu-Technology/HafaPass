@@ -7,7 +7,7 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -29,7 +29,7 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -150,7 +150,7 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -161,7 +161,7 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -293,7 +293,7 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -304,7 +304,7 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -315,7 +315,7 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -436,7 +436,7 @@
     "label": "Demo",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -447,7 +447,7 @@
     "label": "Worst case",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -458,7 +458,7 @@
     "label": "Empty",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -469,7 +469,7 @@
     "label": "One",
     "available": 320,
     "content": 320,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -579,7 +579,7 @@
     "label": "Demo",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -590,7 +590,7 @@
     "label": "Worst case",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -601,7 +601,7 @@
     "label": "Empty",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -612,7 +612,7 @@
     "label": "One",
     "available": 375,
     "content": 375,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -722,7 +722,7 @@
     "label": "Demo",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -733,7 +733,7 @@
     "label": "Worst case",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 3,
     "buyerPasses": 0
   },
   {
@@ -744,7 +744,7 @@
     "label": "Empty",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
@@ -755,7 +755,7 @@
     "label": "One",
     "available": 1280,
     "content": 1280,
-    "passes": 0,
+    "passes": 1,
     "buyerPasses": 0
   },
   {
