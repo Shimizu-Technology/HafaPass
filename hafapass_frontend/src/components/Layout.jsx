@@ -21,6 +21,7 @@ export default function Layout() {
   const operational = /^\/(dashboard|admin|support|checkout|orders|tickets|sign-in|sign-up)(?:\/|$)/.test(location.pathname)
   const isHomePage = location.pathname === '/'
   const workspace = isWorkspacePath(location.pathname)
+  const checkout = /^\/checkout(?:\/|$)/.test(location.pathname)
 
   useEffect(() => {
     if (previousPath.current === location.pathname) return undefined
@@ -81,8 +82,8 @@ export default function Layout() {
         }
         </Suspense>
       </main>
-      {/* HomePage renders its own footer; workspace pages keep a slim one. */}
-      {workspace ? <WorkspaceFooter /> : !isHomePage && <Footer />}
+      {/* HomePage owns its footer; checkout keeps focus on its in-flow legal/support links. */}
+      {!checkout && (workspace ? <WorkspaceFooter /> : !isHomePage && <Footer />)}
     </div>
   )
 }

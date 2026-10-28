@@ -16,7 +16,7 @@ export default function FeeTermsNote({ feeTerms, feePolicy, buyerFeePercent, cla
   return (
     <div className={`rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700 ${className}`} data-testid="fee-terms-note">
       <p>{organizerFeeExplanation(feeTerms.terms, feePolicy, buyerFeePercent)}</p>
-      {payoutScheduleText && <p className="mt-1 text-neutral-500">Payout timing: {payoutScheduleText.replace(/[.\s]+$/, '')}.</p>}
+      {payoutScheduleText && <p className="mt-1 text-neutral-500">Payouts by check {payoutScheduleText.replace(/[.\s]+$/, '')}.</p>}
       <p className="mt-1 text-xs text-neutral-500">Changes apply to new orders. Existing orders keep the terms they were placed with.</p>
     </div>
   )

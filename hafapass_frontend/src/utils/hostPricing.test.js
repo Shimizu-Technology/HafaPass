@@ -8,8 +8,8 @@ const launch = { basisPoints: 500, flatCents: 100 }
 
 describe('parseHostPricing', () => {
   it('reads the Rails decimal string and optional launch fields', () => {
-    expect(parseHostPricing({ service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: ' within 3 business days after your event ' }))
-      .toEqual({ basisPoints: 500, flatCents: 100, processingIncluded: true, payoutScheduleText: 'within 3 business days after your event' })
+    expect(parseHostPricing({ service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: ' within 3 to 5 business days after your event ' }))
+      .toEqual({ basisPoints: 500, flatCents: 100, processingIncluded: true, payoutScheduleText: 'within 3 to 5 business days after your event' })
   })
 
   it('leaves absent optional fields unknown instead of assuming them', () => {

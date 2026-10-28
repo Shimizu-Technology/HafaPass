@@ -10,7 +10,7 @@ for (const width of [390, 1440]) {
       const path = new URL(route.request().url()).pathname
       let body = {}
       if (path.endsWith('/health')) body = { status: 'ok' }
-      else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+      else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
       else if (path.endsWith('/event_categories')) body = { categories: [] }
       else if (path.endsWith('/organizer/organizations')) body = [{ id: 1, name: 'Synthetic marketer organization' }]
       else if (path.endsWith('/organizer/events/601')) {
@@ -52,7 +52,7 @@ for (const width of [390, 1440]) {
       const path = new URL(route.request().url()).pathname
       let body = {}
       if (path.endsWith('/health')) body = { status: 'ok' }
-      else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+      else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
       else if (path.endsWith('/event_categories')) body = { categories: [] }
       else if (path.endsWith('/organizer/organizations')) body = [{ id: 1, name: 'Synthetic organizer' }]
       else if (path.endsWith('/organizer/events/602')) {
@@ -114,7 +114,7 @@ test('new event capacity uses the validated number and retains draft recovery un
     const path = new URL(route.request().url()).pathname
     let body = {}
     if (path.endsWith('/health')) body = { status: 'ok' }
-    else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+    else if (path.endsWith('/config')) body = { launch_capabilities: {}, service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
     else if (path.endsWith('/event_categories')) body = { categories: [] }
     else if (path.endsWith('/organizer/organization')) body = { id: 1, permissions: { manage_events: true } }
     else if (path.endsWith('/organizer/organizations')) body = [{ id: 1, name: 'Synthetic organizer' }]

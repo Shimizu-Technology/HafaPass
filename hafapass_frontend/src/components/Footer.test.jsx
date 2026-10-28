@@ -21,7 +21,7 @@ afterEach(() => {
 it('routes the footer contact to the configured receiving mailbox', () => {
   vi.stubEnv('VITE_SUPPORT_EMAIL', 'operator@example.test')
   render(<MemoryRouter><Footer /></MemoryRouter>)
-  expect(screen.getByRole('link', { name: "Contact" })).toHaveAttribute('href', 'mailto:operator@example.test?subject=H%C3%A5faPass%20Support')
+  expect(screen.getByRole('link', { name: "Contact support" })).toHaveAttribute('href', 'mailto:operator@example.test?subject=H%C3%A5faPass%20Support')
 })
 
 it('offers ticket recovery and support instead of unrelated social homepages', () => {
@@ -71,4 +71,11 @@ it('shows source, author and license when a credited photo is configured', () =>
   expect(screen.getByRole('link', { name: 'QA photo source', hidden: true })).toHaveAttribute('href', guamPhotos.qa.sourceUrl)
   expect(screen.getByRole('link', { name: 'QA photo license', hidden: true })).toHaveAttribute('href', guamPhotos.qa.licenseUrl)
   expect(screen.getByText(/QA photographer/)).toBeInTheDocument()
+})
+
+it('identifies the company destination and avoids a duplicate contact entry', () => {
+  render(<MemoryRouter><Footer /></MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'Shimizu Technology (opens in a new tab)' })).toHaveAttribute('href', 'https://shimizu-technology.com')
+  expect(screen.getAllByRole('link', { name: 'Contact support' })).toHaveLength(1)
+  expect(screen.queryByRole('link', { name: 'Contact', exact: true })).not.toBeInTheDocument()
 })

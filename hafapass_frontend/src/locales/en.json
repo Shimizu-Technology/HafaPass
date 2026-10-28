@@ -104,7 +104,9 @@
     "accountAccessFailed": "Account access couldn’t load.",
     "retryAccountAccess": "Retry account access",
     "discover": "Discover",
-    "saved": "Saved"
+    "saved": "Saved",
+    "signUp": "Sign up",
+    "findMyTickets": "Find my tickets"
   },
   "home": {
     "hero": "Your Pass to Every Event on Guam",
@@ -272,8 +274,6 @@
     "forOrganizers": "For Organizers",
     "signIn": "Sign In",
     "company": "Company",
-    "about": "About",
-    "contact": "Contact",
     "privacy": "Privacy Policy",
     "connect": "Connect",
     "copyright": "Shimizu Technology. All rights reserved.",
@@ -284,7 +284,9 @@
     "callSupport": "Call {{phone}}",
     "photoCredits": "Photo credits",
     "photoChanges": "Photographs of Guam, not HåfaPass events. Resized and converted to WebP.",
-    "photoCreditBy": "by {{author}}"
+    "photoCreditBy": "by {{author}}",
+    "companyName": "Shimizu Technology",
+    "opensNewTab": " (opens in a new tab)"
   },
   "categories": {
     "all": "All Events",
@@ -404,7 +406,8 @@
       "next": "Next",
       "pageOf": "Page {{page}} of {{total}}",
       "eventCount_one": "{{count}} event",
-      "eventCount_other": "{{count}} events"
+      "eventCount_other": "{{count}} events",
+      "filters": "Filters"
     },
     "Home": {
       "artworkFor": "Artwork for {{value1}}",
@@ -731,7 +734,7 @@
       "noSetupOrMonthlyFees": "No setup or monthly fees",
       "cardProcessingIncluded": "Card processing included",
       "chooseWhetherBuyersPayTheFeeOr": "Let buyers pay the fee, absorb it, or split it",
-      "payouts": "Payouts {{payoutScheduleText}}",
+      "payouts": "Payouts by check {{payoutScheduleText}}",
       "pricing": "Pricing",
       "simplePricingYouOnlyPayWhenYou": "Simple pricing. You only pay when you sell.",
       "loadingPricing": "Loading pricing",
@@ -742,7 +745,7 @@
       "emailUs": "Email us",
       "håfapassChargesThereAreNoSetupOr": "HåfaPass charges {{value1}}{{value2}}.{{value3}} There are no setup or monthly fees, and free tickets are free.",
       "paidTicketsCarryAPerTicketHåfaPass2": "Paid tickets carry a per-ticket HåfaPass fee. There are no setup or monthly fees, and free tickets are free. Buyers always see the full total before they pay.",
-      "payoutsAreSentYourDashboardShowsA": "Payouts are sent {{payoutScheduleText}}. Your dashboard shows a settlement statement for each event with sales, fees and refunds, so you can see exactly what you’re owed.",
+      "payoutsAreSentYourDashboardShowsA": "Payouts are sent by check {{payoutScheduleText}}. Your dashboard shows a settlement statement for each event with sales, fees and refunds, so you can see exactly what you’re owed.",
       "afterYourEventYourDashboardShowsA": "After your event, your dashboard shows a settlement statement with sales, fees and refunds. Your payout is based on that statement, and you can follow its status from the dashboard.",
       "howMuchDoesHåfaPassCost": "How much does HåfaPass cost?",
       "whoPaysTheFeeMeOrMy": "Who pays the fee, me or my buyers?",
@@ -868,11 +871,13 @@
     },
     "signIn": {
       "signIn": "Sign In",
-      "signInIsTemporarilyUnavailablePleaseTry": "Sign-in is temporarily unavailable. Please try again later."
+      "signInIsTemporarilyUnavailablePleaseTry": "Sign-in is temporarily unavailable. Please try again later.",
+      "documentTitle": "Sign in"
     },
     "signUp": {
       "signUp": "Sign Up",
-      "accountRegistrationIsTemporarilyUnavailablePleaseTry": "Account registration is temporarily unavailable. Please try again later."
+      "accountRegistrationIsTemporarilyUnavailablePleaseTry": "Account registration is temporarily unavailable. Please try again later.",
+      "documentTitle": "Create account"
     },
     "policy": {
       "policyUnavailable": "Policy unavailable",

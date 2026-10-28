@@ -1,3 +1,4 @@
+vi.mock('../components/SEO', () => ({ default: () => null }))
 import 'fake-indexeddb/auto'
 import { StrictMode } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'

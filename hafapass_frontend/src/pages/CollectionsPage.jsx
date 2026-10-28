@@ -35,7 +35,7 @@ export default function CollectionsPage() {
     <SEO title={t('buyerDiscovery.collections.discoverGuam')} description={t('buyerDiscovery.collections.curatedEventsForTonightThisWeekendFamilies')} />
     <BuyerTitleBand title={t('pass.buyer.discover')} description={t('pass.buyer.discoverDescription')} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-    {!error && collections && inventoryEmpty ? <EmptyInventory className="max-w-2xl" /> : <>
+    {!error && collections && inventoryEmpty ? <EmptyInventory className="mx-auto max-w-2xl" /> : <>
     {error ? <div className="text-center"><p role="alert">{t('buyerDiscovery.collections.loadError')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.collections.tryAgain')}</button></div> : !collections ? <Loader2 className="mx-auto my-16 h-8 w-8 animate-spin text-brand-500" /> : collections.length === 0 ?
       <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center"><p className="text-sm text-neutral-500">{t('buyerDiscovery.collections.empty')}</p><Link className="btn-primary mt-5 inline-flex" to="/events">{t('buyerDiscovery.collections.browseEvents')}</Link></div> :
       <div className="space-y-14">{collections.map(collection => <section key={collection.id} aria-labelledby={`collection-${collection.id}`}>

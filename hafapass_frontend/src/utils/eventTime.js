@@ -25,8 +25,8 @@ export function formatEventDate(value, timeZone = DEFAULT_EVENT_TIME_ZONE, optio
 function formatZoned(value, timeZone, options) {
   const date = validDate(value)
   if (!date) return ''
-  const { locale = activeIntlLocale(), ...formatOptions } = options
-  return new Intl.DateTimeFormat(locale, { ...formatOptions, timeZone, timeZoneName: 'short' })
+  const { locale = activeIntlLocale(), includeZone = true, ...formatOptions } = options
+  return new Intl.DateTimeFormat(locale, { ...formatOptions, timeZone, ...(includeZone ? { timeZoneName: 'short' } : {}) })
     .formatToParts(date)
     .map(part => part.type === 'timeZoneName' && timeZone === DEFAULT_EVENT_TIME_ZONE ? 'Guam time' : part.value)
     .join('').replaceAll('\u202f', ' ')
@@ -52,7 +52,12 @@ export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_Z
   if (!startTime || !validDate(end)) return startTime
   const sameLocalDay = formatEventDate(start, timeZone) === formatEventDate(end, timeZone)
   const endLabel = sameLocalDay ? formatEventTime(end, timeZone) : formatEventDateTime(end, timeZone)
-  return `${startTime} – ${endLabel}`
+  const zone = value => new Intl.DateTimeFormat(activeIntlLocale(), { timeZone, timeZoneName: 'short' })
+    .formatToParts(validDate(value)).find(part => part.type === 'timeZoneName')?.value
+  // A daylight-saving transition can change the zone label within one event.
+  // Keep both labels in that case; otherwise name the zone once at the end.
+  const startLabel = zone(start) === zone(end) ? formatEventTime(start, timeZone, { includeZone: false }) : startTime
+  return `${startLabel} – ${endLabel}`
 }
 
 export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {

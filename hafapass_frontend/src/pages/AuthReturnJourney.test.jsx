@@ -1,3 +1,4 @@
+vi.mock('../components/SEO', () => ({ default: () => null }))
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, Link, useNavigate, useLocation } from 'react-router-dom'

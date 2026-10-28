@@ -14,6 +14,12 @@
     },
     "search": {
       "context": "HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. 'Event' means a listed gathering or activity, including concerts, festivals, classes, sports and community events."
+    },
+    "signUp": {
+      "context": "Create a HåfaPass account. Buying tickets as a guest does not require an account."
+    },
+    "findMyTickets": {
+      "context": "Recover guest ticket orders using the order reference and email. No account required."
     }
   },
   "home": {
@@ -191,6 +197,12 @@
     },
     "forOrganizers": {
       "context": "The organizer is the person or business hosting the event and selling its tickets."
+    },
+    "companyName": {
+      "context": "External company website. Keep Shimizu Technology as written."
+    },
+    "opensNewTab": {
+      "context": "Screen-reader description for an external website opening in a new browser tab."
     }
   },
   "categories": {
@@ -504,6 +516,9 @@
       },
       "eventCount_other": {
         "context": "Buyer-facing Events interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "filters": {
+        "context": "Button to show or hide Category, When, Price and Village filters on mobile. Followed by the number of active filters."
       }
     },
     "Home": {

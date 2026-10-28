@@ -96,7 +96,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
     { to: '/discover', label: t('nav.discover'), icon: Compass },
     // Signed-in accounts reach organizer tools through Dashboard once they
     // belong to an organization; everyone else gets the setup path.
-    ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }] : []),
+    ...(!isSignedIn ? [{ to: '/host', label: t('nav.hostEvent'), icon: CalendarPlus }, { to: '/orders/recover', label: t('nav.findMyTickets'), icon: Ticket }] : []),
     ...(isSignedIn ? [
       { to: '/my-tickets', label: t('nav.myTickets'), icon: Ticket },
       { to: '/saved', label: t('nav.saved'), icon: Heart },
@@ -109,6 +109,9 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
     ] : []),
   ]
 
+  // Organizer/admin accounts keep the wider breakpoint for their full link set.
+  const desktopDisplay = isSignedIn ? 'hidden xl:flex' : 'hidden lg:flex'
+  const mobileDisplay = isSignedIn ? 'xl:hidden' : 'lg:hidden'
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/')
 
 
@@ -135,7 +138,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           </Link>
 
           {/* Desktop Nav */}
-          <nav aria-label={t('nav.primaryNavigation')} className="hidden xl:flex items-center gap-1">
+          <nav aria-label={t('nav.primaryNavigation')} className={`${desktopDisplay} items-center gap-1`}>
             {navLinks.map(link => (
               <Link
                 key={link.to}
@@ -156,7 +159,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           </nav>
 
           {/* Search */}
-          <div className="hidden xl:flex items-center">
+          <div className={`${desktopDisplay} relative h-11 w-11 shrink-0 items-center`}>
             {searchOpen ? (
               <form
                 onSubmit={(e) => {
@@ -167,7 +170,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                     setSearchOpen(false)
                   }
                 }}
-                className="flex items-center gap-2"
+                className={`absolute right-0 top-full z-10 rounded-xl border p-2 shadow-sm ${isDarkMode ? 'border-white/20 bg-brand-950' : 'border-neutral-200 bg-white'}`}
               >
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -202,7 +205,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
           </div>
 
           {/* Right side */}
-          <div className="hidden xl:flex items-center gap-3">
+          <div className={`${desktopDisplay} items-center gap-3`}>
             <LanguageSwitcher isDarkMode={isDarkMode} />
             {clerkEnabled && isSignedIn ? (
               <SignedIn>
@@ -216,19 +219,19 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                   {t('nav.signIn')}
                 </Link>
                 <Link to="/sign-up" className="btn-primary text-sm !py-2.5 !px-5">
-                  {t('nav.getStarted')}
+                  {t('nav.signUp')}
                 </Link>
               </>
             )}
           </div>
 
           {/* Mobile menu button */}
-          <div className="flex items-center gap-1 xl:hidden">
+          <div className={`flex items-center gap-1 ${mobileDisplay}`}>
           <LanguageSwitcher isDarkMode={isDarkMode} />
           <button
             ref={menuTrigger}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className={`xl:hidden w-11 h-11 flex items-center justify-center rounded-xl transition-colors ${
+            className={`${mobileDisplay} w-11 h-11 flex items-center justify-center rounded-xl transition-colors ${
               isDarkMode
                 ? 'text-neutral-300 hover:text-white hover:bg-white/10'
                 : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100/80'
@@ -252,7 +255,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label={t('nav.mobileNavigation')} className={`mobile-nav xl:hidden overflow-y-auto border-t ${
+        <nav onKeyDown={event => { if (event.key === 'Escape') { setMobileMenuOpen(false); menuTrigger.current?.focus() } }} id="primary-mobile-navigation" aria-label={t('nav.mobileNavigation')} className={`mobile-nav ${mobileDisplay} overflow-y-auto border-t ${
           isDarkMode
             ? 'border-white/10 bg-brand-950'
             : 'border-neutral-200/50 bg-white/90 '
@@ -287,7 +290,7 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
                   {t('nav.signIn')}
                 </Link>
                 <Link to="/sign-up" className="block btn-primary text-center text-sm">
-                  {t('nav.getStarted')}
+                  {t('nav.signUp')}
                 </Link>
               </div>
             )}

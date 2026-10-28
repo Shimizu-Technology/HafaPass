@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { HelmetProvider } from 'react-helmet-async'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 
@@ -15,11 +16,15 @@ beforeAll(async () => {
   ;({ default: SignUpPage } = await import('./SignUpPage'))
 })
 afterAll(() => vi.unstubAllEnvs())
-it('keeps sign-in unavailable guidance usable without mounting Clerk hooks', () => {
-  render(<MemoryRouter><SignInPage /></MemoryRouter>)
+it('keeps sign-in unavailable guidance usable without mounting Clerk hooks', async () => {
+  render(<HelmetProvider><MemoryRouter><SignInPage /></MemoryRouter></HelmetProvider>)
+  await waitFor(() => expect(document.title).toBe('Sign in | HåfaPass'))
+  expect(document.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow, noarchive')
   expect(screen.getByText('Sign-in is temporarily unavailable. Please try again later.')).toBeInTheDocument()
 })
-it('keeps sign-up unavailable guidance usable without mounting Clerk hooks', () => {
-  render(<MemoryRouter><SignUpPage /></MemoryRouter>)
+it('keeps sign-up unavailable guidance usable without mounting Clerk hooks', async () => {
+  render(<HelmetProvider><MemoryRouter><SignUpPage /></MemoryRouter></HelmetProvider>)
+  await waitFor(() => expect(document.title).toBe('Create account | HåfaPass'))
+  expect(document.querySelector('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow, noarchive')
   expect(screen.getByText('Account registration is temporarily unavailable. Please try again later.')).toBeInTheDocument()
 })

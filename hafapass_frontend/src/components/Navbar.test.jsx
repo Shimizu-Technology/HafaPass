@@ -44,7 +44,7 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     document.head.append(theme)
     function RouteControls() {
       const navigate = useNavigate()
-      return <>{['/', '/host', '/events', '/discover', '/collections/weekend', '/my-tickets', '/saved', '/about', '/tickets/guest-pass'].map(path =>
+      return <>{['/', '/host', '/events', '/discover', '/collections/weekend', '/my-tickets', '/saved', '/sign-in', '/sign-up', '/sign-in/factor-one', '/about', '/tickets/guest-pass'].map(path =>
         <button key={path} onClick={() => navigate(path)}>Go to {path}</button>)}</>
     }
     const user = userEvent.setup()
@@ -63,11 +63,11 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     try {
       render(<MemoryRouter initialEntries={['/events']}><Navbar /><RouteControls /></MemoryRouter>)
       await assertTheme(true)
-      for (const path of ['/', '/host', '/events', '/discover', '/collections/weekend', '/my-tickets', '/saved', '/tickets/guest-pass']) {
+      for (const path of ['/', '/host', '/events', '/discover', '/collections/weekend', '/my-tickets', '/saved', '/sign-in', '/sign-up', '/sign-in/factor-one', '/tickets/guest-pass']) {
         await user.click(screen.getByRole('button', { name: `Go to ${path}`, exact: true }))
         await assertTheme(true)
         await scroll(100)
-        await assertTheme(path.startsWith('/tickets/'))
+        await assertTheme(path.startsWith('/tickets/') || path.startsWith('/sign-'))
         await scroll(0)
         await assertTheme(true)
         await user.click(screen.getByRole('button', { name: 'Go to /about', exact: true }))

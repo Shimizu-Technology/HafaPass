@@ -8,7 +8,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
@@ -80,7 +80,7 @@ export default function EventCard({ event }) {
               <Calendar className="w-3.5 h-3.5 text-neutral-500" />
               <span>{formatEventDate(event.starts_at, event.timezone)}</span>
               <Clock className="w-3.5 h-3.5 text-neutral-500 ml-1" />
-              <span>{formatEventTime(event.starts_at, event.timezone)}</span>
+              <span>{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
             </div>
           )}
           {event.venue_name && (

@@ -6,7 +6,7 @@ import FeePolicyPanel from './FeePolicyPanel'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), put: vi.fn() } }))
 
-const config = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
+const config = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
 const request = { config: { organizationId: '1' }, current: () => true, release: vi.fn() }
 
 function mount(props = {}) {

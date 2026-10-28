@@ -11,7 +11,7 @@ class SiteSetting < ApplicationRecord
   BACKUP_WITHHOLDING_MODES = %w[block withhold].freeze
   DEFAULT_SERVICE_FEE_PERCENT = 5.0
   DEFAULT_SERVICE_FEE_FLAT_CENTS = 100
-  DEFAULT_PAYOUT_SCHEDULE_TEXT = "within 3 business days after your event"
+  DEFAULT_PAYOUT_SCHEDULE_TEXT = "within 3 to 5 business days after your event"
   MAX_SERVICE_FEE_PERCENT = 25
   MAX_SERVICE_FEE_FLAT_CENTS = 1_000
   MAX_PAYOUT_SCHEDULE_TEXT_LENGTH = 200

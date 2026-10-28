@@ -11,7 +11,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 const settings = {
   payment_mode: 'test', platform_name: 'HåfaPass', platform_email: 'help@example.com', platform_phone: '',
   service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform',
-  payout_schedule_text: 'within 3 business days after your event',
+  payout_schedule_text: 'within 3 to 5 business days after your event',
   fee_notice_days: 30,
   policy_register_approved: true,
   stripe_test_configured: true, stripe_live_configured: true, stripe_live_approved: false,

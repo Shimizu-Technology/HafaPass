@@ -56,7 +56,7 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
       <div className="flex items-center gap-3"><WalletCards aria-hidden="true" className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">How you get paid</h2></div>
-      <p className="mt-2 text-sm text-neutral-700">HåfaPass collects ticket money for you and pays you after each event settles{schedule ? `, ${schedule}` : ''}. HåfaPass currently pays by check.</p>
+      <p className="mt-2 text-sm text-neutral-700">HåfaPass collects ticket money for you. Payouts by check {schedule ? schedule.replace(/[.\s]+$/, '') : 'after each event settles'}.</p>
 
       <fieldset className="mt-5" disabled={busy}>
         <legend className="sr-only">Payout method</legend>

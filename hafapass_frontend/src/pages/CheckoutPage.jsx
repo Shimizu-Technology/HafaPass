@@ -13,7 +13,7 @@ import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
 import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 import { parseFeeTerms } from '../utils/feeTerms'
@@ -309,7 +309,6 @@ function CheckoutContent({ buyerId }) {
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
-  const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   // Promo code validation
   const handlePromoValidate = async () => {
@@ -591,7 +590,7 @@ function CheckoutContent({ buyerId }) {
             <BuyerEventText event={event} as="p" className="font-semibold text-neutral-950 break-words" />
             <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
-              {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatTime(event.starts_at)}
+              {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}
             </p>
             {event.venue_name && (
               <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
@@ -614,7 +613,6 @@ function CheckoutContent({ buyerId }) {
                   <span className="inline-block whitespace-nowrap text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
                 <span className="max-w-[45%] shrink-0 text-right text-neutral-900 font-semibold text-sm">{formatPrice(line.lineTotal + line.feeCents)}
-                  {line.feeCents > 0 && <span className="block text-xs font-normal text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: formatMoneyCents(line.feeCents) })}</span>}
                 </span>
               </div>
             ))}

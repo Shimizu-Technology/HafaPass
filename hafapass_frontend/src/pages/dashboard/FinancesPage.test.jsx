@@ -8,7 +8,7 @@ import FinancesPage from './FinancesPage'
 import DashboardSummary from './DashboardSummary'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
-vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' } }) }))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 
 const summary = {
@@ -69,7 +69,7 @@ describe('FinancesPage', () => {
     mount()
     expect(await screen.findByText('$94.49', { selector: 'p' })).toBeInTheDocument()
     expect(screen.getByText('$46.32 can be requested now from finalized statements.')).toBeInTheDocument()
-    expect(screen.getByText('Payout timing: within 3 business days after your event.')).toBeInTheDocument()
+    expect(screen.getByText('Payouts by check within 3 to 5 business days after your event.')).toBeInTheDocument()
     expect(screen.getByText('Sales, fees and payouts across every GuamTime Events event.')).toBeInTheDocument()
     const breakdown = screen.getByRole('region', { name: 'How the total adds up' })
     expect(within(breakdown).getByText('Card processing you paid').closest('div')).toHaveTextContent('−$5.51')

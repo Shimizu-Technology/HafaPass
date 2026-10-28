@@ -149,7 +149,7 @@ RSpec.describe "Admin settings", type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("service_fee_percent" => "5.0", "service_fee_flat_cents" => 100,
-        "processing_fee_bearer" => "platform", "payout_schedule_text" => "within 3 business days after your event")
+        "processing_fee_bearer" => "platform", "payout_schedule_text" => "within 3 to 5 business days after your event")
       expect(response.parsed_body.fetch("pending_fee_change").fetch("new_terms")).to include(
         "service_fee_percent" => "4.5", "service_fee_flat_cents" => 75,
         "processing_fee_bearer" => "organizer", "payout_schedule_text" => "within 5 business days")
@@ -184,7 +184,7 @@ RSpec.describe "Admin settings", type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body.fetch("error")).not_to be_empty
         expect(SiteSetting.instance.reload).to have_attributes(service_fee_percent: 5.0, service_fee_flat_cents: 100,
-          processing_fee_bearer: "platform", payout_schedule_text: "within 3 business days after your event")
+          processing_fee_bearer: "platform", payout_schedule_text: "within 3 to 5 business days after your event")
         expect(FeeChange).not_to exist
         expect(AuditLog.where(action: "site_settings.fee_terms_scheduled")).to be_empty
       end
