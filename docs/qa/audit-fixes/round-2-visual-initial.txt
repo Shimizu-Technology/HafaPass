@@ -1,0 +1,19 @@
+webkit 320 home: passed
+webkit 320 events-populated: passed
+webkit 320 filters-open: passed
+webkit 320 checkout: passed
+webkit 320 discover-populated: passed
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+locator.selectOption: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByLabel('Status', { exact: true })[22m
+
+    at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/scripts/qa/audit-fixes-round-2.mjs:36:62 {
+  log: [ "  - waiting for getByLabel('Status', { exact: true })" ],
+  name: 'TimeoutError'
+}
+
+Node.js v22.22.3

@@ -87,3 +87,60 @@ Reproduce the config check from repo root with `NETLIFY_CONFIG_MODULE` pointing 
 The task's T3 preview tab was closed/released; every fixture browser context closes in `finally`. Rails 3071 stopped and PostgreSQL `hafapass_audit_fixes_test` was deleted (verified zero matching databases). Vite 5241 was stopped through the lifecycle helper. `resource-cleanup.txt` records final status; no intentional runtime handoffs. Shared Postgres/Redis, Docker services, model services and baseline browser/app resources were left unchanged. The isolated branch/worktree remain for lead review and merge.
 
 No production release was performed. After review/CI, the lead merges the held PR, verifies Netlify headers/assets (including private preview no-referrer), deploys Render manually as needed, updates the existing production payout setting, and re-approves the policy register. A fresh default does not mutate an existing SiteSetting. Live Clerk auth and physical-device behavior still require operator verification. The existing header-search bug remains a separate task.
+
+## Round 2 — lead review fixes
+
+2026-10-29 · Agent-executed affected-flow QA. Starting worktree was clean at remote `fbd4ec4ba1f6eb746b3dd504790e73c455440dac`; base remains `main`. This round refreshes the app brief above using the current source and the lead's required findings. Brain Dump `work/shimizu-tech/future-builds.md` §13 still describes Guam event setup, ticket purchase/reservation and QR check-in. No backend changes, deployment or merge are authorized in this child.
+
+Required acceptance: card date/time icons stay with their text at 320/390/1024/1280, including three-column grids; buyer selects retain labels, ≥44px height, 16px type, border/padding/chevron and keyboard focus in Chromium/WebKit; Events filters and admin filters survive reload; organizer select edits survive draft reload; checkout retains fee/legal content and reachable configured email/phone help, keeps “Guam time” together and fits at 320px. Fixtures reuse the isolated no-Clerk development shell and intercepted APIs. Authentication, physical iOS hardware, real payments and provider delivery remain not_run.
+
+| Case | Starting fixture → action → required outcome | Round-2 result |
+| --- | --- | --- |
+| R2-01 Cards | Three published synthetic events → Home/Events/Discover at 320/390/1024/1280 → separate date/time rows, aligned icons, no overflow; three-up at 1024/1280 | passed |
+| R2-02 Buyer selects | Home + Events → disclose/filter/focus/reload → consistent styled controls, selected labels fit, query state retained | passed |
+| R2-03 Workspace selects | Synthetic admin refund queue + organizer create-event form → select/reload → status filter and age-restriction draft retained | passed |
+| R2-04 Checkout | Synthetic event → quantity → checkout → configured support links, zone together, fee once, legal links retained, no marketing footer/overflow | passed |
+
+Application and QA source frozen in `1c30f3626a7cd881aeb5dc0643ffe8c81f5bae66`; the production build's `dist/release.json` identifies that revision. Final ledger and image evidence will be a descendant. Final local gates passed; hosted CI and review of the new head remain lead gates. Round-1 history above is retained; its screenshots for changed scenes are superseded by the round-2 matrix.
+
+
+Round-2 implementation:
+
+1. `scripts/qa/audit-fixes-contracts.mjs` and `scripts/qa/audit-netlify.mjs` use `console.info`; tracked-file hygiene and freeze checks pass. The round-1 hygiene claim was stale once the QA scripts were tracked at `fbd4ec4b`; `round-2-hygiene.txt` supersedes it.
+2. `src/components/EventCard.jsx` gives calendar/date and clock/range separate flex rows. Icons cannot shrink or wrap away from their text; long venue names also retain their map pin. Browser assertions check first-line alignment and the three-column grid.
+3. `src/index.css` styles single-value `select.input` controls with `appearance: none`, a background SVG chevron, ≥44px height, 16px type and reserved chevron padding; existing borders, radius and focus ring remain. Multiple/size listboxes retain their existing treatment. Home removes duplicate chevrons and stacks the controls below `sm`; Events stacks filters below 400px so selected text fits. Discover has no selects; its cards receive the metadata fix. The shared rule also covers checkout registration and order-exchange selects. Custom admin controls outside `.input` are unchanged.
+4. `src/pages/CheckoutPage.jsx` renders quiet configured email/phone help outside the checkout state branches, including unavailable/recovery/loading views. It uses the same `useSupportContact`/`mailto()`/`tel` data as Footer. Support remains `shimizutechnology@gmail.com`; the phone comes from config. `src/utils/eventTime.js` keeps the non-breaking space only in buyer time ranges, preserving standalone/operations timestamp strings. No fee math, payment behavior, policy templates or backend files changed.
+5. CodeRabbit's `fbd4ec4b` review requested four changes. Hygiene and checkout support overlap the lead's findings. `audit-netlify.mjs` now checks all three favicon mappings' `from`, `to`, status and uniqueness in **both** resolved configurations. `formatPayoutSchedule` in `utils/feeTerms.js` is shared by FeeTermsNote, FinancesPage and PayoutMethodSection; it preserves existing terminal punctuation, adds a period when needed and omits punctuation-only schedules. Nine new cases include question marks, ellipses and empty values. Display formatting does not change stored settings or approved policy text. All four findings are accepted; there are no false-positive replies.
+
+Retest history: the first unit run returned 2024 passed / 4 failed / 3 skipped after the overly broad non-breaking-space change affected a scanner text matcher and raw formatter expectations. The final implementation confines the space to `formatEventTimeRange`; the fresh frozen-source run supersedes that run. Initial admin fixture checks used an exact implicit-label locator that included option text; accessible combobox-name locators now pass. Initial marketplace tests assumed the two mobile selects shared a row; the tests now verify stacked alignment below 400px and retain their original text-fit, requested-filter and reload checks. Intermediate unit/matrix runs were stopped or superseded when the published review and final long-venue fix changed source; those partial runs do not establish acceptance.
+
+The T3 preview opened, then snapshots failed twice with `Preview automation snapshot timed out after 15000ms.` Its task-owned tab was closed and released. The requested Playwright harness supplies the browser evidence. No live Clerk credentials or production records were used.
+
+
+Final visual matrix: **56/56 scenes passed**, with zero axe A/AA violations and zero document overflow. Both engines × 320/390/1024/1280 cover Home, Events populated, Events filters open, Checkout, Discover populated, admin refund filters and organizer create-event selects. Measurements, focus-ring checks, label fit, date/time/location alignment, checkout zone rectangles and workspace reload outcomes are in `round-2-{chromium,webkit}-results.json`. Screenshots replace the 24 existing `after/{chromium,webkit}-{390,1024,1280}-{home,events-populated,filters-open,checkout}.png` files and add 32 scenes for 320px, populated Discover and workspace forms. Representative full WebKit and Chromium images were inspected, including 320px filters/Home/checkout, 390px checkout/workspace forms and the 1024/1280 three-up grid. Other round-1 screenshots remain historical evidence.
+
+The 56 images establish layout and isolated interactions in browser engines; WebKit desktop emulation is not physical iOS Safari testing. The admin and organizer shots use the existing no-key dev shell plus intercepted synthetic APIs. No production filter, event, payout or customer record is changed.
+
+
+Local final-source gates completed so far: ESLint (zero warnings), production build (69 precache entries), repository hygiene, inactive release-freeze contract, both Netlify config/header/favicon passes and Impeccable 4.6.0 (`[]`). The review-focused unit run passed 82/82; it includes scanner timestamp compatibility, finance rendering and the formatter edge cases. The completed frontend/browser counts are recorded below. Backend checks were not rerun because this round changes no backend files; round-1 backend evidence above remains historical.
+
+
+| Final check at source `1c30f362` | Result / evidence |
+| --- | --- |
+| Frontend lint | passed, zero warnings; `round-2-lint-final.txt` |
+| Frontend full units | **2037 passed, 3 pre-existing skips**; 182 files passed / 1 skipped; `round-2-unit-final.txt` |
+| Production build | passed; release revision `1c30f3626a7cd881aeb5dc0643ffe8c81f5bae66`, 69 precache entries; `round-2-build-final.txt` |
+| Full Chromium Playwright | **202/202 passed**, one worker, stock timeouts, no retries/skips; `round-2-playwright-final.txt` |
+| Affected Chromium specs | **57/57 passed** at final source; audit-fixes, marketplace-growth, buyer-layout, buyer-pages-pass, buyer-phone-access and event-editor-validation; `round-2-affected-final.txt` |
+| WebKit affected interactions | **14/14 passed**, including admin filter/organizer draft reload and checkout configuration failure; `round-2-webkit-final.txt` |
+| Requested scanner rerun | **2/2 passed** in one rerun of both parameterized scanner/offline cases containing the assertion at `event-day.spec.js:80`; `round-2-event-day-rerun.txt`. No flake occurred in the full run. |
+| Browser visual matrix | **56/56 passed**, zero axe violations/overflow; `round-2-{chromium,webkit}-results.json`, `round-2-visual-final.txt` |
+| Hygiene / freeze | passed / inactive; `round-2-hygiene.txt`, `round-2-freeze.txt` |
+| Netlify config / favicon contracts | both passes passed; `round-2-netlify.txt`, `netlify-config.json` |
+| Impeccable 4.6.0 | `[]`, no findings across all changed UI paths; `round-2-impeccable-final.json` |
+
+Required round-2 affected-flow acceptance: **4/4 cases passed** in the documented synthetic/browser boundaries. Live Clerk authentication, physical phone input/installed-app behavior, real payments/provider delivery and production setting/policy updates remain not_run. The pre-existing mounted Events header-search issue remains outside this round's scope.
+
+CodeRabbit reviewed `fbd4ec4b` and requested four actionable changes; all four are addressed by this round. Final-head incremental review will be requested once after push; it is **pending**, not reviewed clean. No merge or deployment is performed. The lead must inspect hosted checks and final-head review before merging. Existing production payout timing and policy approval still need the lead's planned update.
+
+Resource disposition: all task-owned Vite and browser runner resources were stopped or exited after verification; fixture contexts/browsers close in `finally`. The T3 tab was closed and released. `round-2-resource-cleanup.txt` records the final lifecycle state. No runtime handoff; borrowed/shared/protected services and data were left unchanged. Keep the named branch/worktree for the lead.

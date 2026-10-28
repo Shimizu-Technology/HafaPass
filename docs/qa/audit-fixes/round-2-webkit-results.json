@@ -1,0 +1,1294 @@
+[
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "home",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 1221.3519287109375,
+          "timeY": 1247.3519287109375,
+          "calendarY": 1223.171875,
+          "clockY": 1249.171875,
+          "pinY": 1295.171875,
+          "venueY": 1293.3519287109375,
+          "left": 16,
+          "right": 257.90625
+        },
+        {
+          "dateY": 1221.3519287109375,
+          "timeY": 1247.3519287109375,
+          "calendarY": 1223.171875,
+          "clockY": 1249.171875,
+          "pinY": 1295.171875,
+          "venueY": 1293.3519287109375,
+          "left": 273.90625,
+          "right": 515.8125
+        },
+        {
+          "dateY": 1221.3519287109375,
+          "timeY": 1247.3519287109375,
+          "calendarY": 1223.171875,
+          "clockY": 1249.171875,
+          "venueY": null,
+          "left": 531.8125,
+          "right": 773.71875
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 152.35199737548828,
+          "height": 50,
+          "width": 240,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 131.4720001220703,
+          "height": 50,
+          "width": 240,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "events-populated",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 712.1800537109375,
+          "timeY": 738.1800537109375,
+          "calendarY": 714,
+          "clockY": 740,
+          "pinY": 766,
+          "venueY": 764.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1229.1800537109375,
+          "timeY": 1255.1800537109375,
+          "calendarY": 1231,
+          "clockY": 1257,
+          "pinY": 1283,
+          "venueY": 1281.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1726.1800537109375,
+          "timeY": 1752.1800537109375,
+          "calendarY": 1728,
+          "clockY": 1754,
+          "venueY": null,
+          "left": 16,
+          "right": 304
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "filters-open",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 712.1800537109375,
+          "timeY": 738.1800537109375,
+          "calendarY": 714,
+          "clockY": 740,
+          "pinY": 766,
+          "venueY": 764.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1229.1800537109375,
+          "timeY": 1255.1800537109375,
+          "calendarY": 1231,
+          "clockY": 1257,
+          "pinY": 1283,
+          "venueY": 1281.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1726.1800537109375,
+          "timeY": 1752.1800537109375,
+          "calendarY": 1728,
+          "clockY": 1754,
+          "venueY": null,
+          "left": 16,
+          "right": 304
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 125.7439956665039,
+          "height": 44,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 148.35199737548828,
+          "height": 44,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.91999816894531,
+          "height": 44,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 135.4720001220703,
+          "height": 44,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "checkout",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "zone": [
+        {
+          "x": 53,
+          "y": 391.6956787109375,
+          "right": 125.57600402832031
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "discover-populated",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 662.1800537109375,
+          "timeY": 688.1800537109375,
+          "calendarY": 664,
+          "clockY": 690,
+          "pinY": 716,
+          "venueY": 714.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1179.1800537109375,
+          "timeY": 1205.1800537109375,
+          "calendarY": 1181,
+          "clockY": 1207,
+          "pinY": 1233,
+          "venueY": 1231.1800537109375,
+          "left": 16,
+          "right": 304
+        },
+        {
+          "dateY": 1676.1800537109375,
+          "timeY": 1702.1800537109375,
+          "calendarY": 1678,
+          "clockY": 1704,
+          "venueY": null,
+          "left": 16,
+          "right": 304
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "admin-selects",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 164.3679962158203,
+          "height": 50,
+          "width": 254,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.227) 0px 0px 0px 0px, rgba(13, 158, 150, 0.047) 0px 0px 0px 0.457347px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.02000045776367,
+          "height": 50,
+          "width": 254,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.035) 0px 0px 0px 0px, rgba(13, 158, 150, 0.008) 0px 0px 0px 0.068625px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "name": "dashboard-selects",
+    "contentWidth": 320,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 102.67200088500977,
+          "height": 50,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.184) 0px 0px 0px 0px, rgba(13, 158, 150, 0.035) 0px 0px 0px 0.368548px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 117.16799926757812,
+          "height": 50,
+          "width": 288,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "home",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 1178.9613037109375,
+          "timeY": 1204.9613037109375,
+          "calendarY": 1180.78125,
+          "clockY": 1206.78125,
+          "pinY": 1232.78125,
+          "venueY": 1230.9613037109375,
+          "left": 16,
+          "right": 316.71875
+        },
+        {
+          "dateY": 1178.9613037109375,
+          "timeY": 1204.9613037109375,
+          "calendarY": 1180.78125,
+          "clockY": 1206.78125,
+          "pinY": 1232.78125,
+          "venueY": 1230.9613037109375,
+          "left": 332.71875,
+          "right": 633.4375
+        },
+        {
+          "dateY": 1178.9613037109375,
+          "timeY": 1204.9613037109375,
+          "calendarY": 1180.78125,
+          "clockY": 1206.78125,
+          "venueY": null,
+          "left": 649.4375,
+          "right": 950.15625
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 152.35199737548828,
+          "height": 50,
+          "width": 310,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.00076px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 131.4720001220703,
+          "height": 50,
+          "width": 310,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "events-populated",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 712.1800537109375,
+          "timeY": 738.1800537109375,
+          "calendarY": 714,
+          "clockY": 740,
+          "pinY": 766,
+          "venueY": 764.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1229.1800537109375,
+          "timeY": 1255.1800537109375,
+          "calendarY": 1231,
+          "clockY": 1257,
+          "pinY": 1283,
+          "venueY": 1281.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1726.1800537109375,
+          "timeY": 1752.1800537109375,
+          "calendarY": 1728,
+          "clockY": 1754,
+          "venueY": null,
+          "left": 16,
+          "right": 374
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "filters-open",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 712.1800537109375,
+          "timeY": 738.1800537109375,
+          "calendarY": 714,
+          "clockY": 740,
+          "pinY": 766,
+          "venueY": 764.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1229.1800537109375,
+          "timeY": 1255.1800537109375,
+          "calendarY": 1231,
+          "clockY": 1257,
+          "pinY": 1283,
+          "venueY": 1281.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1726.1800537109375,
+          "timeY": 1752.1800537109375,
+          "calendarY": 1728,
+          "clockY": 1754,
+          "venueY": null,
+          "left": 16,
+          "right": 374
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 125.7439956665039,
+          "height": 44,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 148.35199737548828,
+          "height": 44,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.91999816894531,
+          "height": 44,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 135.4720001220703,
+          "height": 44,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "checkout",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "zone": [
+        {
+          "x": 53,
+          "y": 371.6956787109375,
+          "right": 125.57600402832031
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "discover-populated",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 580.1800537109375,
+          "timeY": 606.1800537109375,
+          "calendarY": 582,
+          "clockY": 608,
+          "pinY": 634,
+          "venueY": 632.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1097.1800537109375,
+          "timeY": 1123.1800537109375,
+          "calendarY": 1099,
+          "clockY": 1125,
+          "pinY": 1151,
+          "venueY": 1149.1800537109375,
+          "left": 16,
+          "right": 374
+        },
+        {
+          "dateY": 1594.1800537109375,
+          "timeY": 1620.1800537109375,
+          "calendarY": 1596,
+          "clockY": 1622,
+          "venueY": null,
+          "left": 16,
+          "right": 374
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "admin-selects",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 164.3679962158203,
+          "height": 50,
+          "width": 324,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.063) 0px 0px 0px 0px, rgba(13, 158, 150, 0.01) 0px 0px 0px 0.125053px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.02000045776367,
+          "height": 50,
+          "width": 324,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "name": "dashboard-selects",
+    "contentWidth": 390,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 102.67200088500977,
+          "height": 50,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.698) 0px 0px 0px 0px, rgba(13, 158, 150, 0.14) 0px 0px 0px 1.397757px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 117.16799926757812,
+          "height": 50,
+          "width": 358,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "home",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "pinY": 1034,
+          "venueY": 1032.1800537109375,
+          "left": 32,
+          "right": 341.328125
+        },
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "pinY": 1034,
+          "venueY": 1032.1800537109375,
+          "left": 357.328125,
+          "right": 666.65625
+        },
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "venueY": null,
+          "left": 682.65625,
+          "right": 991.984375
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 152.35199737548828,
+          "height": 50,
+          "width": 216.1875,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.063) 0px 0px 0px 0px, rgba(13, 158, 150, 0.01) 0px 0px 0px 0.125053px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 131.4720001220703,
+          "height": 50,
+          "width": 196.53125,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.024) 0px 0px 0px 0px, rgba(13, 158, 150, 0.004) 0px 0px 0px 0.04435px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "events-populated",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 32,
+          "right": 336
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 360,
+          "right": 664
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "venueY": null,
+          "left": 688,
+          "right": 992
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "filters-open",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 32,
+          "right": 336
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 360,
+          "right": 664
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "venueY": null,
+          "left": 688,
+          "right": 992
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 156.35199737548828,
+          "height": 44,
+          "width": 192,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 127.91999816894531,
+          "height": 44,
+          "width": 160,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 135.4720001220703,
+          "height": 44,
+          "width": 584,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "checkout",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "zone": [
+        {
+          "x": 472,
+          "y": 335.6875,
+          "right": 545.328125
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "discover-populated",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "pinY": 670,
+          "venueY": 668.1800537109375,
+          "left": 32,
+          "right": 336
+        },
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "pinY": 670,
+          "venueY": 668.1800537109375,
+          "left": 360,
+          "right": 664
+        },
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "venueY": null,
+          "left": 688,
+          "right": 992
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "admin-selects",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 164.3679962158203,
+          "height": 50,
+          "width": 317,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.035) 0px 0px 0px 0px, rgba(13, 158, 150, 0.008) 0px 0px 0px 0.068625px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.02000045776367,
+          "height": 50,
+          "width": 317,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "name": "dashboard-selects",
+    "contentWidth": 1024,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 102.67200088500977,
+          "height": 50,
+          "width": 344,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.28) 0px 0px 0px 0px, rgba(13, 158, 150, 0.055) 0px 0px 0px 0.556107px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 117.16799926757812,
+          "height": 50,
+          "width": 344,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "home",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "pinY": 1034,
+          "venueY": 1032.1800537109375,
+          "left": 96,
+          "right": 448
+        },
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "pinY": 1034,
+          "venueY": 1032.1800537109375,
+          "left": 464,
+          "right": 816
+        },
+        {
+          "dateY": 980.1800537109375,
+          "timeY": 1006.1800537109375,
+          "calendarY": 982,
+          "clockY": 1008,
+          "venueY": null,
+          "left": 832,
+          "right": 1184
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 152.35199737548828,
+          "height": 50,
+          "width": 252.75,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 131.4720001220703,
+          "height": 50,
+          "width": 229.796875,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "events-populated",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 96,
+          "right": 442.65625
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 466.65625,
+          "right": 813.328125
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "venueY": null,
+          "left": 837.328125,
+          "right": 1184
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "filters-open",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 96,
+          "right": 442.65625
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "pinY": 932,
+          "venueY": 930.1800537109375,
+          "left": 466.65625,
+          "right": 813.328125
+        },
+        {
+          "dateY": 878.1800537109375,
+          "timeY": 904.1800537109375,
+          "calendarY": 880,
+          "clockY": 906,
+          "venueY": null,
+          "left": 837.328125,
+          "right": 1184
+        }
+      ],
+      "selects": [
+        {
+          "selectedWidth": 156.35199737548828,
+          "height": 44,
+          "width": 192,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 127.91999816894531,
+          "height": 44,
+          "width": 160,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 135.4720001220703,
+          "height": 44,
+          "width": 712,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "checkout",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "zone": [
+        {
+          "x": 600,
+          "y": 335.6875,
+          "right": 673.328125
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "discover-populated",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "cards": [
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "pinY": 670,
+          "venueY": 668.1800537109375,
+          "left": 96,
+          "right": 442.65625
+        },
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "pinY": 670,
+          "venueY": 668.1800537109375,
+          "left": 466.65625,
+          "right": 813.328125
+        },
+        {
+          "dateY": 616.1800537109375,
+          "timeY": 642.1800537109375,
+          "calendarY": 618,
+          "clockY": 644,
+          "venueY": null,
+          "left": 837.328125,
+          "right": 1184
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "admin-selects",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 164.3679962158203,
+          "height": 50,
+          "width": 250,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0) 0px 0px 0px 0px, rgba(13, 158, 150, 0) 0px 0px 0px 0.000188px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 119.02000045776367,
+          "height": 50,
+          "width": 250,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "name": "dashboard-selects",
+    "contentWidth": 1280,
+    "violations": [],
+    "metrics": {
+      "selects": [
+        {
+          "selectedWidth": 102.67200088500977,
+          "height": 50,
+          "width": 344,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(255, 255, 255, 0.21) 0px 0px 0px 0px, rgba(13, 158, 150, 0.043) 0px 0px 0px 0.426541px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        },
+        {
+          "selectedWidth": 117.16799926757812,
+          "height": 50,
+          "width": 344,
+          "appearance": "none",
+          "fontSize": "16px",
+          "border": "1px",
+          "radius": "12px",
+          "paddingRight": "40px",
+          "backgroundImage": "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23545a5d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E\")",
+          "focus": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+        }
+      ]
+    },
+    "result": "passed"
+  }
+]

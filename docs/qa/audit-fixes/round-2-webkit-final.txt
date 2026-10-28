@@ -1,0 +1,21 @@
+
+Running 14 tests using 1 worker
+
+(node:87876) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [webkit] › e2e/audit-fixes.spec.js:5:1 › guest header offers ticket recovery and optional account creation at 1024 (2.7s)
+  ✓   2 [webkit] › e2e/audit-fixes.spec.js:22:1 › mobile filters disclose, count, persist through reload and clear (2.9s)
+  ✓   3 [webkit] › e2e/audit-fixes.spec.js:46:1 › mobile guest links support recovery and keyboard menu close (1.2s)
+  ✓   4 [webkit] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 320px (2.1s)
+  ✓   5 [webkit] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 390px (2.2s)
+  ✓   6 [webkit] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 1024px (2.1s)
+  ✓   7 [webkit] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 1280px (2.1s)
+  ✓   8 [webkit] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 320px (1.6s)
+  ✓   9 [webkit] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 390px (3.1s)
+  ✓  10 [webkit] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 1024px (4.2s)
+  ✓  11 [webkit] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 1280px (1.3s)
+  ✓  12 [webkit] › e2e/audit-fixes.spec.js:87:3 › shared selects preserve admin filters and organizer drafts at 390px (2.5s)
+  ✓  13 [webkit] › e2e/audit-fixes.spec.js:87:3 › shared selects preserve admin filters and organizer drafts at 1280px (2.5s)
+  ✓  14 [webkit] › e2e/audit-fixes.spec.js:108:1 › checkout configuration failure keeps cached support reachable at 390px (2.8s)
+
+  14 passed (35.3s)

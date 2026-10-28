@@ -1,0 +1,4 @@
+CLEANED process 22014: terminated
+Session: 01a184dd-6155-7052-af93-91e0c7dce048
+Project: /Users/leonshimizu/Desktop/ShimizuTechnology/HafaPass
+Active owned resources: none
