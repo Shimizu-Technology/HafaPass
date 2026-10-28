@@ -14,7 +14,7 @@ for (const [engine,type] of [['chromium',chromium],['webkit',webkit]]) {
     const page=await context.newPage()
     page.setDefaultTimeout(15000)
     page.setDefaultNavigationTimeout(30000)
-    page.on('pageerror', error=>console.log('pageerror',error.message))
+    page.on('pageerror', error=>console.info('pageerror',error.message))
     await prepare(page)
     await page.route('**/node_modules/.vite/deps/@clerk_clerk-react.js*', async route=>{
      const url=route.request().url()
@@ -76,7 +76,7 @@ for (const [engine,type] of [['chromium',chromium],['webkit',webkit]]) {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
     await page.screenshot({path:`${root}after/${engine}-${width}-${scene}-contract.png`,fullPage:true})
     results.push({engine,width,scene,result:'passed',boundary:'synthetic SDK component, real application modules/styles; not live Clerk'})
-    console.log(engine,width,scene,'passed')
+    console.info(engine,width,scene,'passed')
    } finally {await context.close()}
   }
  } finally {await browser.close();await fs.writeFile(root+'contract-results.json',JSON.stringify(results,null,2)+'\n')}

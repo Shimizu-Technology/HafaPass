@@ -20,6 +20,7 @@ import { parseFeeTerms } from '../utils/feeTerms'
 import { SellerLine } from '../components/PriceDisclosure'
 import { estimateCheckoutLine } from '../utils/checkoutEstimate'
 import PaidCheckoutGate from '../components/PaidCheckoutGate'
+import { useSupportContact } from '../utils/supportContact'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -46,6 +47,7 @@ function AuthenticatedCheckout() {
 }
 
 function CheckoutContent({ buyerId }) {
+  const support = useSupportContact()
   const { slug } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -904,6 +906,12 @@ function CheckoutContent({ buyerId }) {
             </div>
           </div>
         )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 text-sm text-content-muted">
+          <span>{t('checkout.needHelp')}</span>
+          <a href={support.mailto()} className="inline-flex min-h-11 items-center rounded font-medium text-brand-800 underline underline-offset-4">{t('footer.contactSupport')}</a>
+          {support.tel && <a href={support.tel} className="inline-flex min-h-11 items-center rounded text-brand-800 underline underline-offset-4">{support.phone}</a>}
+        </div>
 
       </div>
     </div>

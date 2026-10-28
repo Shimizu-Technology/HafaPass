@@ -160,6 +160,9 @@
     },
     "editInfo": {
       "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Cancel checkout and edit details"
+    },
+    "needHelp": {
+      "context": "Quiet help prompt at the bottom of ticket checkout, followed by the configured support email and optional phone links."
     }
   },
   "tickets": {

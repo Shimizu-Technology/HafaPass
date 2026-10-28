@@ -28,4 +28,4 @@ for (const baseRelDir of [true,false]) {
 }
 assert.deepEqual(results[0].headers,results[1].headers)
 await fs.writeFile('docs/qa/audit-fixes/netlify-config.json',JSON.stringify(results,null,2)+'\n')
-console.log('Both Netlify passes: matching headers; preview-specific no-referrer retained; favicon redirects resolved.')
+console.info('Both Netlify passes: matching headers; preview-specific no-referrer retained; favicon redirects resolved.')

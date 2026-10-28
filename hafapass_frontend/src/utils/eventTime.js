@@ -48,7 +48,7 @@ export function formatPlatformDateTime(value) {
 }
 
 export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_ZONE) {
-  const startTime = formatEventTime(start, timeZone)
+  const startTime = formatEventTime(start, timeZone).replace('Guam time', 'Guam\u00a0time')
   if (!startTime || !validDate(end)) return startTime
   const sameLocalDay = formatEventDate(start, timeZone) === formatEventDate(end, timeZone)
   const endLabel = sameLocalDay ? formatEventTime(end, timeZone) : formatEventDateTime(end, timeZone)
@@ -57,7 +57,7 @@ export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_Z
   // A daylight-saving transition can change the zone label within one event.
   // Keep both labels in that case; otherwise name the zone once at the end.
   const startLabel = zone(start) === zone(end) ? formatEventTime(start, timeZone, { includeZone: false }) : startTime
-  return `${startLabel} – ${endLabel}`
+  return `${startLabel} – ${endLabel}`.replaceAll('Guam time', 'Guam\u00a0time')
 }
 
 export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {

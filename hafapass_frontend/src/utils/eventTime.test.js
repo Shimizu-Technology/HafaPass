@@ -23,32 +23,32 @@ describe('event time formatting', () => {
 
   it('keeps a same-day event range compact in its Guam venue timezone', () => {
     expect(formatEventTimeRange('2026-10-11T09:00:00Z', '2026-10-11T12:00:00Z', 'Pacific/Guam'))
-      .toBe('7:00 PM – 10:00 PM Guam time')
+      .toBe('7:00 PM – 10:00 PM Guam\u00a0time')
   })
 
   it('shows the end date after Guam midnight even when both instants have the same UTC date', () => {
     expect(formatEventTimeRange('2026-10-11T13:14:00Z', '2026-10-11T17:14:00Z', 'Pacific/Guam'))
-      .toBe('11:14 PM – Oct 12, 2026, 3:14 AM Guam time')
+      .toBe('11:14 PM – Oct 12, 2026, 3:14 AM Guam\u00a0time')
   })
 
   it('omits an extra date when different UTC days fall on the same Guam local day', () => {
     expect(formatEventTimeRange('2026-10-11T23:00:00Z', '2026-10-12T01:00:00Z', 'Pacific/Guam'))
-      .toBe('9:00 AM – 11:00 AM Guam time')
+      .toBe('9:00 AM – 11:00 AM Guam\u00a0time')
   })
 
   it('includes the correct year when an event continues into the next local year', () => {
     expect(formatEventTimeRange('2026-12-31T13:00:00Z', '2026-12-31T15:00:00Z', 'Pacific/Guam'))
-      .toBe('11:00 PM – Jan 1, 2027, 1:00 AM Guam time')
+      .toBe('11:00 PM – Jan 1, 2027, 1:00 AM Guam\u00a0time')
   })
 
   it('keeps AM/PM clarity across noon and both zones across a DST transition', () => {
-    expect(formatEventTimeRange('2026-10-11T01:00:00Z', '2026-10-11T03:00:00Z')).toBe('11:00 AM – 1:00 PM Guam time')
+    expect(formatEventTimeRange('2026-10-11T01:00:00Z', '2026-10-11T03:00:00Z')).toBe('11:00 AM – 1:00 PM Guam\u00a0time')
     expect(formatEventTimeRange('2026-11-01T05:30:00Z', '2026-11-01T06:30:00Z', 'America/New_York')).toBe('1:30 AM EDT – 1:30 AM EST')
   })
 
   it('keeps the start time for an event without an end and avoids an invalid-date label', () => {
-    expect(formatEventTimeRange(guamSevenPm, null, 'Pacific/Guam')).toBe('7:00 PM Guam time')
-    expect(formatEventTimeRange(guamSevenPm, 'invalid', 'Pacific/Guam')).toBe('7:00 PM Guam time')
+    expect(formatEventTimeRange(guamSevenPm, null, 'Pacific/Guam')).toBe('7:00 PM Guam\u00a0time')
+    expect(formatEventTimeRange(guamSevenPm, 'invalid', 'Pacific/Guam')).toBe('7:00 PM Guam\u00a0time')
   })
 })
 

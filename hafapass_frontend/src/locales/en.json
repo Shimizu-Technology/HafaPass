@@ -211,7 +211,8 @@
     "editInfo": "Cancel checkout and edit details",
     "termsNotice": "By completing this purchase you agree to the HåfaPass terms of service.",
     "getFreeTickets": "Get free tickets",
-    "cancelAndEditExplanation": "This cancels your current order and releases your ticket hold. Availability and prices may change when you start again."
+    "cancelAndEditExplanation": "This cancels your current order and releases your ticket hold. Availability and prices may change when you start again.",
+    "needHelp": "Need help?"
   },
   "tickets": {
     "myTickets": "My Tickets",
