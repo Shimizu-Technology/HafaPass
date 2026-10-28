@@ -37,6 +37,7 @@ export async function verifyCardRows(page) {
   const cards = await page.locator('.event-card').evaluateAll(elements => elements.map(card => {
     const calendar = card.querySelector('.lucide-calendar')
     const clock = card.querySelector('.lucide-clock')
+    const pin = card.querySelector('.lucide-map-pin')
     const firstTextBox = icon => {
       const range = document.createRange()
       range.selectNodeContents(icon.nextElementSibling)
@@ -44,12 +45,13 @@ export async function verifyCardRows(page) {
     }
     const date = firstTextBox(calendar), time = firstTextBox(clock)
     const box = card.getBoundingClientRect()
-    return { dateY: date.y, timeY: time.y, calendarY: calendar.getBoundingClientRect().y, clockY: clock.getBoundingClientRect().y, left: box.left, right: box.right }
+    return { dateY: date.y, timeY: time.y, calendarY: calendar.getBoundingClientRect().y, clockY: clock.getBoundingClientRect().y, pinY: pin?.getBoundingClientRect().y, venueY: pin ? firstTextBox(pin).y : null, left: box.left, right: box.right }
   }))
   for (const card of cards) {
     assert.ok(card.timeY > card.dateY, 'date and time have distinct rows')
     assert.ok(Math.abs(card.calendarY - card.dateY) <= 5, 'calendar stays with date')
     assert.ok(Math.abs(card.clockY - card.timeY) <= 5, 'clock stays with first time line')
+    if (card.venueY !== null) assert.ok(Math.abs(card.pinY - card.venueY) <= 5, 'pin stays with long venue name')
   }
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page fits viewport')
   return cards

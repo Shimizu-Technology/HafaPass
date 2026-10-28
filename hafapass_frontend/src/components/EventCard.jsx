@@ -88,9 +88,9 @@ export default function EventCard({ event }) {
             </>
           )}
           {event.venue_name && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-content-muted">
-              <MapPin className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="truncate">{event.venue_name}</span>
+            <div className="flex items-start gap-2 text-sm text-content-muted">
+              <MapPin aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-500" />
+              <span className="min-w-0 truncate">{event.venue_name}</span>
             </div>
           )}
         </div>
