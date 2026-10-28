@@ -1,0 +1,10 @@
+
+Running 3 tests using 1 worker
+
+(node:60636) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [webkit] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 (2.9s)
+  ✓  2 [webkit] › e2e/audit-fixes.spec.js:21:1 › mobile filters disclose, count, persist through reload and clear (2.6s)
+  ✓  3 [webkit] › e2e/audit-fixes.spec.js:45:1 › mobile guest links support recovery and keyboard menu close (996ms)
+
+  3 passed (8.6s)

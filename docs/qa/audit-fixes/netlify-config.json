@@ -1,0 +1,168 @@
+[
+  {
+    "previewEffective": {
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()",
+      "X-Robots-Tag": "noindex, nofollow"
+    },
+    "publicEffective": {
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()"
+    },
+    "baseRelDir": true,
+    "configPath": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/netlify.toml",
+    "build": {
+      "edge_functions": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/netlify/edge-functions",
+      "environment": {},
+      "publish": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/dist",
+      "publishOrigin": "config",
+      "processing": {
+        "css": {},
+        "html": {},
+        "images": {},
+        "js": {}
+      },
+      "services": {},
+      "command": "npm run build",
+      "commandOrigin": "config",
+      "base": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend"
+    },
+    "headers": [
+      {
+        "for": "/*",
+        "values": {
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "strict-origin-when-cross-origin",
+          "X-Frame-Options": "DENY",
+          "Content-Security-Policy": "frame-ancestors 'none'",
+          "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()"
+        }
+      },
+      {
+        "for": "/events/*/preview",
+        "values": {
+          "X-Robots-Tag": "noindex, nofollow",
+          "Referrer-Policy": "no-referrer"
+        }
+      }
+    ],
+    "redirects": [
+      {
+        "from": "/favicon.svg",
+        "query": {},
+        "to": "/favicon.svg",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      },
+      {
+        "from": "/favicon.ico",
+        "query": {},
+        "to": "/favicon.ico",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      },
+      {
+        "from": "/favicon.png",
+        "query": {},
+        "to": "/favicon.png",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      }
+    ]
+  },
+  {
+    "previewEffective": {
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()",
+      "X-Robots-Tag": "noindex, nofollow"
+    },
+    "publicEffective": {
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()"
+    },
+    "baseRelDir": false,
+    "configPath": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/netlify.toml",
+    "build": {
+      "environment": {},
+      "publish": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/dist",
+      "publishOrigin": "config",
+      "processing": {
+        "css": {},
+        "html": {},
+        "images": {},
+        "js": {}
+      },
+      "services": {},
+      "base": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend",
+      "command": "npm run build",
+      "edge_functions": "/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/netlify/edge-functions",
+      "commandOrigin": "config"
+    },
+    "headers": [
+      {
+        "for": "/*",
+        "values": {
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "strict-origin-when-cross-origin",
+          "X-Frame-Options": "DENY",
+          "Content-Security-Policy": "frame-ancestors 'none'",
+          "Permissions-Policy": "camera=(self), payment=(self \"https://js.stripe.com\"), microphone=(), geolocation=()"
+        }
+      },
+      {
+        "for": "/events/*/preview",
+        "values": {
+          "X-Robots-Tag": "noindex, nofollow",
+          "Referrer-Policy": "no-referrer"
+        }
+      }
+    ],
+    "redirects": [
+      {
+        "from": "/favicon.svg",
+        "query": {},
+        "to": "/favicon.svg",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      },
+      {
+        "from": "/favicon.ico",
+        "query": {},
+        "to": "/favicon.ico",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      },
+      {
+        "from": "/favicon.png",
+        "query": {},
+        "to": "/favicon.png",
+        "status": 200,
+        "force": false,
+        "conditions": {},
+        "headers": {}
+      }
+    ]
+  }
+]

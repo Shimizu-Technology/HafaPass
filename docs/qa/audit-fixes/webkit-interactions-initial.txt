@@ -1,0 +1,44 @@
+
+Running 3 tests using 1 worker
+
+(node:59061) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [webkit] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 (7.9s)
+(node:59353) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [webkit] › e2e/audit-fixes.spec.js:21:1 › mobile filters disclose, count, persist through reload and clear (4.1s)
+  ✓  3 [webkit] › e2e/audit-fixes.spec.js:45:1 › mobile guest links support recovery and keyboard menu close (1.3s)
+
+
+  1) [webkit] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('heading', { name: 'Find your tickets', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('heading', { name: 'Find your tickets', exact: true }) with timeout 5000ms
+      - waiting for getByRole('heading', { name: 'Find your tickets', exact: true })
+
+
+      16 |   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
+      17 |   await nav.getByRole('link', { name: 'Find my tickets' }).click()
+    > 18 |   await expect(page.getByRole('heading', { name: 'Find your tickets', exact: true })).toBeVisible()
+         |                                                                                       ^
+      19 | })
+      20 |
+      21 | test('mobile filters disclose, count, persist through reload and clear', async ({ page }) => {
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/e2e/audit-fixes.spec.js:18:87
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/audit-fixes-guest-header-o-4ff2f-al-account-creation-at-1024-webkit/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/audit-fixes-guest-header-o-4ff2f-al-account-creation-at-1024-webkit/error-context.md
+
+  1 failed
+    [webkit] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 
+  2 passed (20.9s)

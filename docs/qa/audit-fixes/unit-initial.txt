@@ -1,0 +1,288 @@
+
+> hafapass_frontend@0.0.0 test
+> vitest run --maxWorkers=1
+
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend
+
+Error: AggregateError
+    at Object.dispatchError (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js:62:19)
+    at Request.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js:655:18)
+    at Request.emit (node:events:531:35)
+    at ClientRequest.<anonymous> (/Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/node_modules/jsdom/lib/jsdom/living/helpers/http-request.js:127:14)
+    at ClientRequest.emit (node:events:519:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at Socket.socketErrorListener (node:_http_client:575:5)
+    at Socket.emit (node:events:519:28)
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3) undefined
+ ❯ src/pages/AuthUnavailable.test.jsx (2 tests | 2 failed) 2042ms
+   × keeps sign-in unavailable guidance usable without mounting Clerk hooks 1026ms
+   × keeps sign-up unavailable guidance usable without mounting Clerk hooks 1009ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pages/AuthUnavailable.test.jsx > keeps sign-in unavailable guidance usable without mounting Clerk hooks
+AssertionError: expected 'buyerDiscovery.signIn.documentTitle |…' to be 'Sign in | HåfaPass' // Object.is equality
+
+Ignored nodes: comments, script, style
+[36m<html[39m
+  [33mlang[39m=[32m"en"[39m
+[36m>[39m
+  [36m<head>[39m
+    [36m<title>[39m
+      [0mbuyerDiscovery.signIn.documentTitle | HåfaPass[0m
+    [36m</title>[39m
+    [36m<link[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mhref[39m=[32m"http://localhost:3000"[39m
+      [33mrel[39m=[32m"canonical"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"noindex, nofollow, noarchive"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"robots"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"buyerDiscovery.signIn.documentTitle"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:title"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000/og-default.jpg"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"1200"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image:width"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"630"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image:height"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:url"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"website"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:type"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"HåfaPass"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:site_name"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"summary_large_image"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:card"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"buyerDiscovery.signIn.documentTitle"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:title"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000/og-default.jpg"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:image"[39m
+    [36m/>[39m
+  [36m</head>[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"min-h-[calc(100dvh-4rem)] flex items-center justify-center bg-neutral-50 px-4 py-8"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"text-center p-8 bg-white rounded-xl shadow-sm max-w-md"[39m
+        [36m>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-bold text-neutral-800 mb-2"[39m
+          [36m>[39m
+            [0mSign In[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-neutral-600"[39m
+            [33mrole[39m=[32m"alert"[39m
+          [36m>[39m
+            [0mSign-in is temporarily unavailable. Please try again later.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+
+Expected: "Sign in | HåfaPass"
+Received: "buyerDiscovery.signIn.documentTitle | HåfaPass"
+
+ ❯ src/pages/AuthUnavailable.test.jsx:21:46
+     19| it('keeps sign-in unavailable guidance usable without mounting Clerk h…
+     20|   render(<HelmetProvider><MemoryRouter><SignInPage /></MemoryRouter></…
+     21|   await waitFor(() => expect(document.title).toBe('Sign in | HåfaPass'…
+       |                                              ^
+     22|   expect(document.querySelector('meta[name="robots"]')).toHaveAttribut…
+     23|   expect(screen.getByText('Sign-in is temporarily unavailable. Please …
+ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
+ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/pages/AuthUnavailable.test.jsx > keeps sign-up unavailable guidance usable without mounting Clerk hooks
+AssertionError: expected 'buyerDiscovery.signUp.documentTitle |…' to be 'Create account | HåfaPass' // Object.is equality
+
+Ignored nodes: comments, script, style
+[36m<html[39m
+  [33mlang[39m=[32m"en"[39m
+[36m>[39m
+  [36m<head>[39m
+    [36m<title>[39m
+      [0mbuyerDiscovery.signUp.documentTitle | HåfaPass[0m
+    [36m</title>[39m
+    [36m<link[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mhref[39m=[32m"http://localhost:3000"[39m
+      [33mrel[39m=[32m"canonical"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"noindex, nofollow, noarchive"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"robots"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"buyerDiscovery.signUp.documentTitle"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:title"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000/og-default.jpg"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"1200"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image:width"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"630"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:image:height"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:url"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"website"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:type"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"HåfaPass"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mproperty[39m=[32m"og:site_name"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"summary_large_image"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:card"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"buyerDiscovery.signUp.documentTitle"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:title"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"Discover events on Guam, buy tickets, and check in with your phone."[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:description"[39m
+    [36m/>[39m
+    [36m<meta[39m
+      [33mcontent[39m=[32m"http://localhost:3000/og-default.jpg"[39m
+      [33mdata-rh[39m=[32m"true"[39m
+      [33mname[39m=[32m"twitter:image"[39m
+    [36m/>[39m
+  [36m</head>[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"min-h-[calc(100dvh-4rem)] flex items-center justify-center bg-neutral-50 px-4 py-8"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"text-center p-8 bg-white rounded-xl shadow-sm max-w-md"[39m
+        [36m>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-2xl font-bold text-neutral-800 mb-2"[39m
+          [36m>[39m
+            [0mSign Up[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-neutral-500"[39m
+          [36m>[39m
+            [0mAccount registration is temporarily unavailable. Please try again later.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+
+Expected: "Create account | HåfaPass"
+Received: "buyerDiscovery.signUp.documentTitle | HåfaPass"
+
+ ❯ src/pages/AuthUnavailable.test.jsx:27:46
+     25| it('keeps sign-up unavailable guidance usable without mounting Clerk h…
+     26|   render(<HelmetProvider><MemoryRouter><SignUpPage /></MemoryRouter></…
+     27|   await waitFor(() => expect(document.title).toBe('Create account | Hå…
+       |                                              ^
+     28|   expect(document.querySelector('meta[name="robots"]')).toHaveAttribut…
+     29|   expect(screen.getByText('Account registration is temporarily unavail…
+ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
+ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
+ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 181 passed | 1 skipped (183)
+      Tests  2 failed | 2026 passed | 3 skipped (2031)
+   Start at  09:04:26
+   Duration  324.93s (tests 49%, import 21%, environment 20%, setup 7%, transform 2%)
+
+    Isolate  183 workers spawned · ~466ms startup each (spawn + environment, per file)
+             at least ~84.83s faster with isolate: false — reuses workers across files instead of one per file
+

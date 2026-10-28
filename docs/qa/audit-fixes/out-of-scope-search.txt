@@ -1,0 +1,44 @@
+
+Running 3 tests using 1 worker
+
+(node:3466) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 (6.5s)
+(node:3826) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [chromium] › e2e/audit-fixes.spec.js:22:1 › mobile filters disclose, count, persist through reload and clear (1.7s)
+  ✓  3 [chromium] › e2e/audit-fixes.spec.js:46:1 › mobile guest links support recovery and keyboard menu close (676ms)
+
+
+  1) [chromium] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 
+
+    Error: expect(page).toHaveURL(expected) failed
+
+    Expected pattern: /\/events\?search=music/
+    Received string:  "http://127.0.0.1:5241/events"
+    Timeout: 5000ms
+
+    Call log:
+      - Expect "toHaveURL" with timeout 5000ms
+        14 × locator resolved to <html lang="en">…</html>
+           - unexpected value "http://127.0.0.1:5241/events"
+
+
+      15 |   await page.getByPlaceholder('Search events...').fill('music')
+      16 |   await page.getByPlaceholder('Search events...').press('Enter')
+    > 17 |   await expect(page).toHaveURL(/\/events\?search=music/)
+         |                      ^
+      18 |   await nav.getByRole('link', { name: 'Find my tickets' }).click()
+      19 |   await expect(page.getByRole('heading', { name: 'Find your tickets', exact: true })).toBeVisible()
+      20 | })
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/e2e/audit-fixes.spec.js:17:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/audit-fixes-guest-header-o-4ff2f-al-account-creation-at-1024-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/audit-fixes-guest-header-o-4ff2f-al-account-creation-at-1024-chromium/error-context.md
+
+  1 failed
+    [chromium] › e2e/audit-fixes.spec.js:4:1 › guest header offers ticket recovery and optional account creation at 1024 
+  2 passed (32.4s)
