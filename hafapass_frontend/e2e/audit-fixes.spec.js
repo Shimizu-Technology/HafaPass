@@ -15,7 +15,7 @@ test('guest header offers ticket recovery and optional account creation at 1024'
   await page.getByPlaceholder('Search events...').fill('music')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
   await nav.getByRole('link', { name: 'Find my tickets' }).click()
-  await expect(page.getByRole('heading', { name: 'Find your tickets', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Find your order', exact: true })).toBeVisible()
 })
 
 test('mobile filters disclose, count, persist through reload and clear', async ({ page }) => {

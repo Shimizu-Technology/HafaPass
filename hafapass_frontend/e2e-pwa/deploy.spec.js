@@ -310,7 +310,7 @@ test('an unknown-revision production build still installs the offline shell', as
     await installed(page)
     await context.setOffline(true)
     // Direct favicon navigations must reach precached images, never the shell.
-    for (const [path, type] of [['/favicon.svg', 'image/svg+xml'], ['/favicon.png', 'image/png'], ['/favicon.ico', 'application/octet-stream']]) {
+    for (const [path, type] of [['/favicon.svg', 'image/svg+xml'], ['/favicon.png', 'image/png'], ['/favicon.ico', 'image/x-icon']]) {
       const response = await page.goto(origin + path)
       expect(response.status()).toBe(200)
       expect(response.headers()['content-type']).toContain(type)
