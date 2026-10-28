@@ -24,7 +24,10 @@ import { useSupportContact } from '../utils/supportContact'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />
+  return <div className="min-h-screen bg-stone-50">
+    {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
+    <CheckoutSupport />
+  </div>
 }
 
 function selectedTicketType(event, ticketTypeId) {
@@ -42,12 +45,11 @@ function AuthenticatedCheckout() {
   const { isLoaded, userId } = useAuth()
   // ClerkProviderWrapper binds local recovery state after this identity settles.
   // Its public children can otherwise mount while Clerk is still hydrating.
-  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">{t('buyer.Checkout.preparingYourAccount')}</div>
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid place-items-center py-20" role="status">{t('buyer.Checkout.preparingYourAccount')}</div>
   return <CheckoutContent key={userId || 'guest'} buyerId={userId || null} />
 }
 
 function CheckoutContent({ buyerId }) {
-  const support = useSupportContact()
   const { slug } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -463,7 +465,7 @@ function CheckoutContent({ buyerId }) {
   }
 
   if (configError) return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
+    <div className="flex items-center justify-center bg-neutral-50 px-4 py-16">
       <div className="text-center">
         <p className="text-red-600 mb-4">{configError}</p>
         <button type="button" onClick={retryConfig} className="btn-primary">{t('buyer.Checkout.retry')}</button>
@@ -553,7 +555,7 @@ function CheckoutContent({ buyerId }) {
   const isSimulate = paymentMode === 'simulate'
 
   return (
-    <div className="bg-stone-50 min-h-screen tabular-nums">
+    <div className="bg-stone-50 tabular-nums">
       <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
@@ -907,13 +909,18 @@ function CheckoutContent({ buyerId }) {
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 text-sm text-content-muted">
-          <span>{t('checkout.needHelp')}</span>
-          <a href={support.mailto()} className="inline-flex min-h-11 items-center rounded font-medium text-brand-800 underline underline-offset-4">{t('footer.contactSupport')}</a>
-          {support.tel && <a href={support.tel} className="inline-flex min-h-11 items-center rounded text-brand-800 underline underline-offset-4">{support.phone}</a>}
-        </div>
-
       </div>
     </div>
   )
+}
+
+
+function CheckoutSupport() {
+  const { t } = useTranslation()
+  const support = useSupportContact()
+  return <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-x-3 px-4 pb-8 text-sm text-content-muted">
+    <span>{t('checkout.needHelp')}</span>
+    <a href={support.mailto()} className="inline-flex min-h-11 items-center rounded font-medium text-brand-800 underline underline-offset-4">{t('footer.contactSupport')}</a>
+    {support.tel && <a href={support.tel} className="inline-flex min-h-11 items-center rounded text-brand-800 underline underline-offset-4">{support.phone}</a>}
+  </div>
 }

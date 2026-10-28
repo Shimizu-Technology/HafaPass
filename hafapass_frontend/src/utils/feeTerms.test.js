@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { feeExample, feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents, quoteBuyerFeeCents } from './feeTerms'
+import { formatPayoutSchedule, feeExample, feeRateLabel, organizerFeeExplanation, parseFeeTerms, platformFeeCents, quoteBuyerFeeCents } from './feeTerms'
 import parity from './__fixtures__/serviceFeeParity.json'
 
 const allIn = { service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
@@ -44,5 +44,20 @@ describe('fee terms', () => {
     expect(organizerFeeExplanation(platform, 'split_fees', 40)).toContain('Buyers pay 40% of the service fee (5% + $1.00 per paid ticket) and you cover the rest.')
     expect(organizerFeeExplanation(organizer, 'buyer_pays', 100)).toBe('Buyers pay a service fee of 5% + $1.00 per paid ticket. Card processing costs are deducted from your proceeds. Free tickets have no fee.')
     expect(organizerFeeExplanation(organizer, 'organizer_absorbs', 0)).not.toContain('HåfaPass covers')
+  })
+})
+
+
+describe('payout schedule display punctuation', () => {
+  it.each([
+    [' within 7 days ', 'within 7 days.'],
+    ['within 7 days.', 'within 7 days.'],
+    ['within 7 days?', 'within 7 days?'],
+    ['after settlement!', 'after settlement!'],
+    ['after settlement...', 'after settlement...'],
+    ['after settlement…', 'after settlement…'],
+    ['...', ''], ['  ', ''], [null, ''],
+  ])('formats %j without duplicate punctuation', (input, output) => {
+    expect(formatPayoutSchedule(input)).toBe(output)
   })
 })

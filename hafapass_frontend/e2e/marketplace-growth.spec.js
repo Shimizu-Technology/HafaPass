@@ -86,8 +86,13 @@ for (const width of [320, 390, 768, 1440]) {
       await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveCount(0)
       const date = await page.getByLabel('When', { exact: true }).boundingBox()
       const price = await page.getByLabel('Price', { exact: true }).boundingBox()
-      expect(date.y).toBe(price.y)
-      expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      if (width < 400) {
+        expect(price.y).toBeGreaterThanOrEqual(date.y + date.height)
+        expect(price.x).toBe(date.x)
+      } else {
+        expect(date.y).toBe(price.y)
+        expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      }
     } else {
       await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
       await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveAttribute('aria-pressed', 'true')

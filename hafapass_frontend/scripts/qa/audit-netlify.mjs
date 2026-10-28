@@ -24,6 +24,12 @@ for (const baseRelDir of [true,false]) {
  assert.equal(previewEffective['Referrer-Policy'] || previewEffective['referrer-policy'],'no-referrer')
  assert.equal(publicEffective['Referrer-Policy'] || publicEffective['referrer-policy'],'strict-origin-when-cross-origin')
  assert.equal(previewEffective['X-Frame-Options'] || previewEffective['x-frame-options'],'DENY')
+ for (const path of ['/favicon.svg','/favicon.ico','/favicon.png']) {
+  const matches=result.config.redirects.filter(redirect=>redirect.from===path)
+  assert.equal(matches.length,1,`${baseRelDir}: exactly one ${path} mapping`)
+  const {from,to,status}=matches[0]
+  assert.deepEqual({from,to,status},{from:path,to:path,status:200})
+ }
  results.push({previewEffective,publicEffective,baseRelDir,configPath:result.configPath,build,headers,redirects:result.config.redirects?.filter(r=>r.from.includes('favicon'))})
 }
 assert.deepEqual(results[0].headers,results[1].headers)

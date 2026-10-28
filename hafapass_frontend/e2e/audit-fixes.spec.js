@@ -103,3 +103,18 @@ for (const width of [390, 1280]) {
     await expect(page.getByLabel('Age Restriction', { exact: true })).toHaveValue('eighteen_plus')
   })
 }
+
+
+test('checkout configuration failure keeps cached support reachable at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await prepareRound2(page)
+  await page.goto('/events/community-night')
+  await expect(page.locator('footer').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
+  await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
+  await page.route('**/api/v1/config', route => route.fulfill({ status: 503, json: { error: 'Synthetic config outage' } }))
+  await page.getByRole('button', { name: /Buy Tickets/ }).click()
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
+  await expect(page.locator('main').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
+  await expect(page.locator('main').getByRole('link', { name: '(671) 483-0219', exact: true })).toHaveAttribute('href', 'tel:6714830219')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+})
