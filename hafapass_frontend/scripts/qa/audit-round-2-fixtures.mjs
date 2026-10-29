@@ -58,7 +58,7 @@ export async function verifyCardRows(page) {
 }
 
 export async function openCheckout(page) {
-  await page.goto('http://localhost:5241/events/community-night')
+  await page.goto('/events/community-night')
   await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
   await page.getByRole('button', { name: /Buy Tickets/ }).click()
   await page.getByLabel('Full Name').waitFor()
