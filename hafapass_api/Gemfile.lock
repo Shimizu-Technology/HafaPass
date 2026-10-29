@@ -80,29 +80,25 @@ GEM
       public_suffix (>= 2.0.2, < 8.0)
     afm (1.0.0)
     ast (2.4.3)
-    async (2.34.0)
+    async (2.46.0)
       console (~> 1.29)
       fiber-annotation
-      io-event (~> 1.11)
-      metrics (~> 0.12)
-      traces (~> 0.18)
-    async-http (0.92.1)
-      async (>= 2.10.2)
-      async-pool (~> 0.11)
-      io-endpoint (~> 0.14)
-      io-stream (~> 0.6)
-      metrics (~> 0.12)
-      protocol-http (~> 0.49)
-      protocol-http1 (~> 0.30)
-      protocol-http2 (~> 0.22)
+      io-event (~> 1.21)
+    async-http (0.105.0)
+      async (>= 2.35.1)
+      async-pool (~> 0.12)
+      io-endpoint (~> 0.18)
+      io-stream (~> 0.14)
+      protocol-http (~> 0.72)
+      protocol-http1 (~> 0.41)
+      protocol-http2 (~> 0.28)
       protocol-url (~> 0.2)
-      traces (~> 0.10)
-    async-pool (0.11.0)
+    async-pool (0.12.0)
       async (>= 2.0)
-    aws-eventstream (1.4.0)
-    aws-partitions (1.1296.0)
-    aws-sdk-core (3.257.0)
-      aws-eventstream (~> 1, >= 1.3.0)
+    aws-eventstream (1.4.1)
+    aws-partitions (1.1298.0)
+    aws-sdk-core (3.260.0)
+      aws-eventstream (~> 1, >= 1.4.1)
       aws-partitions (~> 1, >= 1.992.0)
       aws-sigv4 (~> 1.9)
       base64
@@ -110,11 +106,11 @@ GEM
       jmespath (~> 1, >= 1.6.1)
       logger
       rexml (~> 3.4, >= 3.4.2)
-    aws-sdk-kms (1.132.0)
-      aws-sdk-core (~> 3, >= 3.256.0)
+    aws-sdk-kms (1.135.0)
+      aws-sdk-core (~> 3, >= 3.260.0)
       aws-sigv4 (~> 1.5)
-    aws-sdk-s3 (1.233.2)
-      aws-sdk-core (~> 3, >= 3.256.0)
+    aws-sdk-s3 (1.235.0)
+      aws-sdk-core (~> 3, >= 3.258.0)
       aws-sdk-kms (~> 1)
       aws-sigv4 (~> 1.5)
     aws-sigv4 (1.12.1)
@@ -132,7 +128,7 @@ GEM
     chunky_png (1.4.0)
     concurrent-ruby (1.3.8)
     connection_pool (3.0.2)
-    console (1.34.2)
+    console (1.38.0)
       fiber-annotation
       fiber-local (~> 1.1)
       json
@@ -151,7 +147,7 @@ GEM
       dotenv (= 3.2.0)
       railties (>= 6.1)
     drb (2.2.3)
-    erb (6.0.6)
+    erb (6.0.7)
     erubi (1.13.1)
     et-orbi (1.4.2)
       tzinfo
@@ -177,17 +173,19 @@ GEM
       multi_xml (>= 0.5.2)
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
-    io-console (0.8.2)
-    io-endpoint (0.15.2)
-    io-event (1.14.0)
-    io-stream (0.11.0)
+    io-console (0.9.4)
+    io-endpoint (0.19.0)
+      openssl (>= 3.3.0)
+    io-event (1.22.3)
+    io-stream (0.14.0)
+      openssl (>= 3.3)
     irb (1.18.0)
       pp (>= 0.6.0)
       prism (>= 1.3.0)
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
     jmespath (1.6.2)
-    json (2.21.2)
+    json (3.1.0)
     jwt (3.3.0)
       base64
     language_server-protocol (3.17.0.6)
@@ -210,7 +208,6 @@ GEM
       net-smtp
     marcel (1.2.1)
     matrix (0.4.3)
-    metrics (0.15.0)
     mini_mime (1.1.5)
     minitest (6.0.6)
       drb (~> 2.0)
@@ -236,7 +233,11 @@ GEM
       racc (~> 1.4)
     nokogiri (1.19.4-x86_64-linux-gnu)
       racc (~> 1.4)
-    pagy (9.4.0)
+    openssl (4.0.2)
+    pagy (43.8.1)
+      json
+      uri
+      yaml
     parallel (2.1.0)
     parser (3.3.12.0)
       ast (~> 2.4.1)
@@ -259,22 +260,22 @@ GEM
       ttfunk (~> 1.8)
     prawn-table (0.2.2)
       prawn (>= 1.3.0, < 3.0.0)
-    prettyprint (0.2.0)
+    prettyprint (0.2.1)
     prism (1.9.0)
     protocol-hpack (1.5.1)
-    protocol-http (0.55.0)
-    protocol-http1 (0.35.2)
-      protocol-http (~> 0.22)
-    protocol-http2 (0.23.0)
+    protocol-http (0.72.1)
+    protocol-http1 (0.41.1)
+      protocol-http (~> 0.68)
+    protocol-http2 (0.29.2)
       protocol-hpack (~> 1.4)
-      protocol-http (~> 0.47)
-    protocol-url (0.4.0)
+      protocol-http (~> 0.62)
+    protocol-url (0.19.0)
     public_suffix (7.0.5)
     puma (8.0.2)
       nio4r (~> 2.0)
     raabro (1.5.0)
     racc (1.8.1)
-    rack (3.2.6)
+    rack (3.2.7)
     rack-attack (6.8.0)
       rack (>= 1.0, < 4)
     rack-cors (3.0.0)
@@ -283,7 +284,7 @@ GEM
     rack-session (2.1.2)
       base64 (>= 0.1.0)
       rack (>= 3.0.0)
-    rack-test (2.2.0)
+    rack-test (2.3.0)
       rack (>= 1.3)
     rackup (2.3.1)
       rack (>= 3)
@@ -319,11 +320,11 @@ GEM
       zeitwerk (~> 2.6)
     rainbow (3.1.1)
     rake (13.4.2)
-    rbs (4.0.3)
+    rbs (4.2.0)
       logger
       prism (>= 1.6.0)
       tsort
-    rdoc (8.0.0)
+    rdoc (8.1.0)
       erb
       prism (>= 1.6.0)
       rbs (>= 4.0.0)
@@ -333,11 +334,11 @@ GEM
     redis-client (0.30.1)
       connection_pool
     regexp_parser (2.12.0)
-    reline (0.6.3)
+    reline (0.7.0)
       io-console (~> 0.5)
     request_store (1.7.0)
       rack (>= 1.4)
-    resend (1.17.0)
+    resend (1.18.0)
       base64
       httparty (>= 0.22.0)
     rexml (3.4.4)
@@ -362,8 +363,8 @@ GEM
       rspec-mocks (>= 3.13.0, < 5.0.0)
       rspec-support (>= 3.13.0, < 5.0.0)
     rspec-support (3.13.7)
-    rspec_junit_formatter (0.6.0)
-      rspec-core (>= 2, < 4, != 2.12.0)
+    rspec_junit_formatter (0.8.0)
+      rspec-core (>= 3.13, < 4)
     rubocop (1.91.0)
       json (>= 2.3)
       language_server-protocol (~> 3.17.0.2)
@@ -395,12 +396,13 @@ GEM
     ruby-progressbar (1.13.0)
     rubyzip (3.7.0)
     securerandom (0.4.1)
-    sentry-rails (5.28.1)
-      railties (>= 5.0)
-      sentry-ruby (~> 5.28.1)
-    sentry-ruby (5.28.1)
+    sentry-rails (7.1.0)
+      railties (>= 5.2.0)
+      sentry-ruby (~> 7.1.0)
+    sentry-ruby (7.1.0)
       bigdecimal
       concurrent-ruby (~> 1.0, >= 1.0.2)
+      logger
     sidekiq (8.1.7)
       connection_pool (>= 3.0.0)
       json (>= 2.16.0)
@@ -419,7 +421,6 @@ GEM
       logger
     thor (1.5.0)
     timeout (0.6.1)
-    traces (0.18.2)
     tsort (0.2.0)
     ttfunk (1.8.0)
       bigdecimal (~> 3.1)
@@ -428,9 +429,9 @@ GEM
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)
     unicode-emoji (4.2.0)
-    uri (1.1.1)
+    uri (1.1.2)
     useragent (0.16.11)
-    webmock (3.26.1)
+    webmock (3.34.0)
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
       hashdiff (>= 0.4.0, < 2.0.0)
@@ -438,7 +439,8 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
-    zeitwerk (2.8.2)
+    yaml (0.4.0)
+    zeitwerk (2.8.3)
 
 PLATFORMS
   aarch64-linux
@@ -447,7 +449,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
-  async-http (~> 0.92.0)
+  async-http (~> 0.105.0)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -455,10 +457,10 @@ DEPENDENCIES
   debug
   dotenv-rails
   factory_bot_rails
-  json (>= 2.21.2, < 3)
+  json (>= 2.21.2, < 4)
   jwt
   lograge
-  pagy (~> 9.0)
+  pagy (~> 43.8)
   pdf-reader (~> 2.16)
   pg (~> 1.7)
   prawn (~> 2.5)
@@ -474,8 +476,8 @@ DEPENDENCIES
   rspec_junit_formatter
   rubocop-rails-omakase
   rubyzip
-  sentry-rails (~> 5.0)
-  sentry-ruby (~> 5.0)
+  sentry-rails (~> 7.1)
+  sentry-ruby (~> 7.1)
   sidekiq (~> 8.1)
   solid_queue (= 1.7.0)
   stripe
