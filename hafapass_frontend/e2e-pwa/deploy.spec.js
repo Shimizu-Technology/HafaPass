@@ -309,6 +309,12 @@ test('an unknown-revision production build still installs the offline shell', as
     expect(await page.evaluate(async () => (await (await fetch('/release.json')).json()).revision)).toBeNull()
     await installed(page)
     await context.setOffline(true)
+    // Direct favicon navigations must reach precached images, never the shell.
+    for (const [path, type] of [['/favicon.svg', 'image/svg+xml'], ['/favicon.png', 'image/png'], ['/favicon.ico', 'image/x-icon']]) {
+      const response = await page.goto(origin + path)
+      expect(response.status()).toBe(200)
+      expect(response.headers()['content-type']).toContain(type)
+    }
     await page.goto(`${origin}/offline.html`)
     await expect(page.getByRole('heading')).toContainText(/offline/i)
     expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('hafapass_release_reload:')))).toEqual([])

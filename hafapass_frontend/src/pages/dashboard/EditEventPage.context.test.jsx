@@ -7,7 +7,7 @@ import EditEventPage from './EditEventPage'
 
 const uploads = vi.hoisted(() => new Map())
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
-vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' } }) }))
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ eventId, onUploaded }) => { uploads.set(String(eventId), onUploaded); return <p>Cover image control</p> } }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ onRefresh, ticketTypes }) => <div><button type="button" onClick={onRefresh}>Refresh saved inventory</button>{ticketTypes.map(ticket => <p key={ticket.id}>{ticket.name}</p>)}</div> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))

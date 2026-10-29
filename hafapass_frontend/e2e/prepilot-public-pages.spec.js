@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const json = (route, data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
-const config = { payment_mode: 'live', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event', support_email: 'public-pages-qa@example.test' }
+const config = { payment_mode: 'live', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event', support_email: 'public-pages-qa@example.test' }
 
 for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
   test(`pending inventory preserves hosting and policy navigation at ${width}px`, async ({ page }) => {

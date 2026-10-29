@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ExternalLink } from 'lucide-react'
 import { guamPhotos } from '../config/photoCredits'
 import HafaPassMark from './HafaPassMark'
 import { Link } from 'react-router-dom'
@@ -49,9 +49,8 @@ export default function Footer() {
           {/* Company */}
           <div className="col-span-2 lg:col-span-1">
             <h3 className="text-base font-semibold text-neutral-200 mb-2">{t('footer.company')}</h3>
-            <ul className="grid grid-cols-2 lg:block lg:space-y-1">
-              <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.about')}</a></li>
-              <li><a href={support.mailto()} className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.contact')}</a></li>
+            <ul className="space-y-1">
+              <li><a href="https://shimizu-technology.com" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded text-sm text-content-inverse-muted hover:text-content-inverse transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{t('footer.companyName')}<ExternalLink aria-hidden="true" className="ml-1.5 h-3.5 w-3.5 shrink-0" /><span className="sr-only">{t('footer.opensNewTab')}</span></a></li>
             </ul>
           </div>
 

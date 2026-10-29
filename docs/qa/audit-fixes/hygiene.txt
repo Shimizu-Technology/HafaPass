@@ -1,0 +1,4 @@
+hafapass_frontend/scripts/qa/audit-fixes-contracts.mjs:17:    page.on('pageerror', error=>console.log('pageerror',error.message))
+hafapass_frontend/scripts/qa/audit-fixes-contracts.mjs:79:    console.log(engine,width,scene,'passed')
+hafapass_frontend/scripts/qa/audit-netlify.mjs:31:console.log('Both Netlify passes: matching headers; preview-specific no-referrer retained; favicon redirects resolved.')
+Debug statement found in a tracked application file.

@@ -1,0 +1,115 @@
+
+Running 56 tests using 1 worker
+
+(node:68244) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/audit-fixes.spec.js:5:1 › guest header offers ticket recovery and optional account creation at 1024 (926ms)
+  ✓   2 [chromium] › e2e/audit-fixes.spec.js:22:1 › mobile filters disclose, count, persist through reload and clear (1.7s)
+  ✓   3 [chromium] › e2e/audit-fixes.spec.js:46:1 › mobile guest links support recovery and keyboard menu close (697ms)
+  ✓   4 [chromium] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 320px (1.3s)
+  ✓   5 [chromium] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 390px (1.4s)
+  ✓   6 [chromium] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 1024px (1.6s)
+  ✓   7 [chromium] › e2e/audit-fixes.spec.js:63:3 › cards and buyer selects stay readable at 1280px (1.3s)
+  ✓   8 [chromium] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 320px (914ms)
+  ✓   9 [chromium] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 390px (769ms)
+  ✓  10 [chromium] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 1024px (955ms)
+  ✓  11 [chromium] › e2e/audit-fixes.spec.js:78:3 › checkout keeps help reachable and its zone together at 1280px (1.6s)
+  ✓  12 [chromium] › e2e/audit-fixes.spec.js:87:3 › shared selects preserve admin filters and organizer drafts at 390px (2.0s)
+  ✓  13 [chromium] › e2e/audit-fixes.spec.js:87:3 › shared selects preserve admin filters and organizer drafts at 1280px (3.0s)
+  ✓  14 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 375px (1.7s)
+  ✓  15 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1024px (1.5s)
+  ✓  16 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1280px (1.6s)
+  ✓  17 [chromium] › e2e/buyer-layout.spec.js:25:3 › event artwork keeps purchasing reachable at 1440px (2.3s)
+  ✓  18 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 320px (4.4s)
+  ✓  19 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 390px (2.0s)
+  ✓  20 [chromium] › e2e/buyer-layout.spec.js:64:3 › buyer can select the current ticket and keep its displayed estimate on checkout at 1440px (2.0s)
+  ✓  21 [chromium] › e2e/buyer-layout.spec.js:91:1 › buyer-pays prices are all-in from the first display through the checkout total (1.8s)
+  ✓  22 [chromium] › e2e/buyer-layout.spec.js:114:1 › an event outage retries in place instead of pretending the event is missing (2.0s)
+  ✓  23 [chromium] › e2e/buyer-layout.spec.js:133:1 › opening an event preserves filters without rewriting the event URL from an exiting listing (2.9s)
+  ✓  24 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 375px (4.1s)
+  ✓  25 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 375px (5.3s)
+  ✓  26 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 375px (3.6s)
+  ✓  27 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 375px (7.2s)
+  ✓  28 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 390px (3.8s)
+  ✓  29 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 390px (5.1s)
+  ✓  30 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 390px (2.4s)
+  ✓  31 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 390px (6.3s)
+  ✓  32 [chromium] › e2e/buyer-pages-pass.spec.js:6:3 › pending transfer confirmation escapes the mask and recovers at 1280px (2.7s)
+  ✓  33 [chromium] › e2e/buyer-pages-pass.spec.js:59:3 › buyer account empty states lead to recovery and discovery at 1280px (2.9s)
+  ✓  34 [chromium] › e2e/buyer-pages-pass.spec.js:88:3 › compact passes preserve ticket, account and tab controls at 1280px (1.7s)
+  ✓  35 [chromium] › e2e/buyer-pages-pass.spec.js:119:3 › title band header and browser color follow scrolling at 1280px (15.6s)
+  ✓  36 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 390px (776ms)
+  ✓  37 [chromium] › e2e/buyer-phone-access.spec.js:13:3 › phone installation guidance is keyboard accessible without losing the buyer page at 1440px (699ms)
+  ✓  38 [chromium] › e2e/buyer-phone-access.spec.js:30:1 › the buyer controls an installation offer received before navigating to tickets (984ms)
+  ✓  39 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 390px (1.1s)
+  ✓  40 [chromium] › e2e/event-editor-validation.spec.js:4:3 › content-only marketer can recover from a blank title at 1440px (1.1s)
+  ✓  41 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 390px (1.3s)
+  ✓  42 [chromium] › e2e/event-editor-validation.spec.js:44:3 › canonical city/capacity saves recover publication readiness at 1440px (1.5s)
+  ✓  43 [chromium] › e2e/event-editor-validation.spec.js:110:1 › new event capacity uses the validated number and retains draft recovery until creation succeeds (1.1s)
+  ✓  44 [chromium] › e2e/marketplace-growth.spec.js:20:1 › buyer discovers a governed collection and filters Guam inventory (1.6s)
+  ✓  45 [chromium] › e2e/marketplace-growth.spec.js:47:1 › free event discovery has accessible labels and readable selected controls (1.5s)
+  ✘  46 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 320px (1.3s)
+(node:84323) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  47 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 390px (1.2s)
+(node:84350) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  48 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 768px (4.0s)
+  ✓  49 [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 1440px (3.2s)
+  ✓  50 [chromium] › e2e/marketplace-growth.spec.js:148:1 › a late previous filter response cannot replace the currently selected results (1.7s)
+  ✓  51 [chromium] › e2e/marketplace-growth.spec.js:178:1 › an unavailable event listing offers retry and preserves the chosen filters (1.2s)
+  ✓  52 [chromium] › e2e/marketplace-growth.spec.js:201:1 › empty discovery results can clear filters on a narrow phone (1.7s)
+  ✓  53 [chromium] › e2e/marketplace-growth.spec.js:221:1 › partner link records anonymous attribution and opens the intended event (668ms)
+  ✓  54 [chromium] › e2e/marketplace-growth.spec.js:240:3 › public event actions remain reachable before and after setting a reminder at 390px (1.1s)
+  ✓  55 [chromium] › e2e/marketplace-growth.spec.js:240:3 › public event actions remain reachable before and after setting a reminder at 1440px (950ms)
+  ✓  56 [chromium] › e2e/marketplace-growth.spec.js:290:1 › reduced-motion event navigation retains B inventory through a late A response and checkout (1.1s)
+
+
+  1) [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 320px 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 620
+    Received: 544
+
+      87 |       const date = await page.getByLabel('When', { exact: true }).boundingBox()
+      88 |       const price = await page.getByLabel('Price', { exact: true }).boundingBox()
+    > 89 |       expect(date.y).toBe(price.y)
+         |                      ^
+      90 |       expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      91 |     } else {
+      92 |       await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/e2e/marketplace-growth.spec.js:89:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/marketplace-growth-discove-6c712-ction-after-reload-at-320px-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/marketplace-growth-discove-6c712-ction-after-reload-at-320px-chromium/error-context.md
+
+  2) [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 390px 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 600
+    Received: 524
+
+      87 |       const date = await page.getByLabel('When', { exact: true }).boundingBox()
+      88 |       const price = await page.getByLabel('Price', { exact: true }).boundingBox()
+    > 89 |       expect(date.y).toBe(price.y)
+         |                      ^
+      90 |       expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      91 |     } else {
+      92 |       await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/e2e/marketplace-growth.spec.js:89:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/marketplace-growth-discove-e6072-ction-after-reload-at-390px-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/marketplace-growth-discove-e6072-ction-after-reload-at-390px-chromium/error-context.md
+
+  2 failed
+    [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 320px 
+    [chromium] › e2e/marketplace-growth.spec.js:64:3 › discovery filters remain readable and retain selection after reload at 390px 
+  54 passed (2.3m)

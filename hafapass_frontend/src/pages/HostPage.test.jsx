@@ -24,8 +24,8 @@ vi.mock('@clerk/clerk-react', () => ({
 
 // The fee fields the API sends today; the bearer and payout fields are optional.
 const feeOnlyConfig = { service_fee_percent: '5.0', service_fee_flat_cents: 100 }
-const platformConfig = { ...feeOnlyConfig, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 business days after your event' }
-const organizerConfig = { ...feeOnlyConfig, processing_fee_bearer: 'organizer', payout_schedule_text: 'within 3 business days after your event' }
+const platformConfig = { ...feeOnlyConfig, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event' }
+const organizerConfig = { ...feeOnlyConfig, processing_fee_bearer: 'organizer', payout_schedule_text: 'within 3 to 5 business days after your event' }
 
 async function load({ clerkKey = 'pk_test_host_fixture' } = {}) {
   vi.resetModules()
@@ -69,7 +69,7 @@ describe('host page pricing', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
-    expect(within(section).getByText('Payouts within 3 business days after your event')).toBeInTheDocument()
+    expect(within(section).getByText('Payouts by check within 3 to 5 business days after your event')).toBeInTheDocument()
     expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
     expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
@@ -86,7 +86,7 @@ describe('host page pricing', () => {
     expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$6.00')
     expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$74.00')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket, with card processing included/)).toBeInTheDocument()
-    expect(screen.getByText(/Payouts are sent within 3 business days after your event/)).toBeInTheDocument()
+    expect(screen.getByText(/Payouts are sent by check within 3 to 5 business days after your event/)).toBeInTheDocument()
   })
 
   it.each([

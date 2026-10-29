@@ -1,0 +1,170 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1024,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1024,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1024,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1024,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "chromium",
+    "width": 1280,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1024,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "scene": "sign-in",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "scene": "sign-up",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "scene": "admin-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  },
+  {
+    "engine": "webkit",
+    "width": 1280,
+    "scene": "organizer-nav",
+    "result": "passed",
+    "boundary": "synthetic SDK component, real application modules/styles; not live Clerk"
+  }
+]

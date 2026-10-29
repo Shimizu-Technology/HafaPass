@@ -13,17 +13,21 @@ import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
 import SEO from '../components/SEO'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
 import { CheckoutAttemptConflict, checkoutBuyerIdentity, checkoutBuyerMatches, checkoutAttemptCurrent, activeCheckoutBuyerBound, recordCheckoutOutcome, checkoutDefinitelyRejected, clearActiveCheckout, clearCheckoutAttempt, getCheckoutAttempt, prepareCheckoutAttempt, getActiveCheckout, orderAccessHeaders, saveActiveCheckout } from '../utils/orderAccess'
 import { anonymousId, currentAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 import { parseFeeTerms } from '../utils/feeTerms'
 import { SellerLine } from '../components/PriceDisclosure'
 import { estimateCheckoutLine } from '../utils/checkoutEstimate'
 import PaidCheckoutGate from '../components/PaidCheckoutGate'
+import { useSupportContact } from '../utils/supportContact'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />
+  return <div className="min-h-screen bg-stone-50">
+    {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
+    <CheckoutSupport />
+  </div>
 }
 
 function selectedTicketType(event, ticketTypeId) {
@@ -41,7 +45,7 @@ function AuthenticatedCheckout() {
   const { isLoaded, userId } = useAuth()
   // ClerkProviderWrapper binds local recovery state after this identity settles.
   // Its public children can otherwise mount while Clerk is still hydrating.
-  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid min-h-screen place-items-center" role="status">{t('buyer.Checkout.preparingYourAccount')}</div>
+  if (!isLoaded || checkoutBuyerIdentity() !== (userId || null)) return <div className="grid place-items-center py-20" role="status">{t('buyer.Checkout.preparingYourAccount')}</div>
   return <CheckoutContent key={userId || 'guest'} buyerId={userId || null} />
 }
 
@@ -309,7 +313,6 @@ function CheckoutContent({ buyerId }) {
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
-  const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
 
   // Promo code validation
   const handlePromoValidate = async () => {
@@ -462,7 +465,7 @@ function CheckoutContent({ buyerId }) {
   }
 
   if (configError) return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
+    <div className="flex items-center justify-center bg-neutral-50 px-4 py-16">
       <div className="text-center">
         <p className="text-red-600 mb-4">{configError}</p>
         <button type="button" onClick={retryConfig} className="btn-primary">{t('buyer.Checkout.retry')}</button>
@@ -552,7 +555,7 @@ function CheckoutContent({ buyerId }) {
   const isSimulate = paymentMode === 'simulate'
 
   return (
-    <div className="bg-stone-50 min-h-screen tabular-nums">
+    <div className="bg-stone-50 tabular-nums">
       <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
@@ -591,7 +594,7 @@ function CheckoutContent({ buyerId }) {
             <BuyerEventText event={event} as="p" className="font-semibold text-neutral-950 break-words" />
             <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
-              {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatTime(event.starts_at)}
+              {event.starts_at && formatDate(event.starts_at)} · {event.starts_at && formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}
             </p>
             {event.venue_name && (
               <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
@@ -614,7 +617,6 @@ function CheckoutContent({ buyerId }) {
                   <span className="inline-block whitespace-nowrap text-neutral-600 ml-2 text-sm">&times; {line.quantity}</span>
                 </div>
                 <span className="max-w-[45%] shrink-0 text-right text-neutral-900 font-semibold text-sm">{formatPrice(line.lineTotal + line.feeCents)}
-                  {line.feeCents > 0 && <span className="block text-xs font-normal text-neutral-500">{t('buyer.SeatSelector.feeIncluded', { fee: formatMoneyCents(line.feeCents) })}</span>}
                 </span>
               </div>
             ))}
@@ -910,4 +912,15 @@ function CheckoutContent({ buyerId }) {
       </div>
     </div>
   )
+}
+
+
+function CheckoutSupport() {
+  const { t } = useTranslation()
+  const support = useSupportContact()
+  return <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-x-3 px-4 pb-8 text-sm text-content-muted">
+    <span>{t('checkout.needHelp')}</span>
+    <a href={support.mailto()} className="inline-flex min-h-11 items-center rounded font-medium text-brand-800 underline underline-offset-4">{t('footer.contactSupport')}</a>
+    {support.tel && <a href={support.tel} className="inline-flex min-h-11 items-center rounded text-brand-800 underline underline-offset-4">{support.phone}</a>}
+  </div>
 }

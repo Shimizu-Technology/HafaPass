@@ -1,0 +1,4 @@
+CLEANED process 60251: terminated
+Session: 01a184ba-b1db-7112-aa1c-f77b6baf563c
+Project: /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70
+Active owned resources: none

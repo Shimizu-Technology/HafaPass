@@ -58,7 +58,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     render(view())
     await screen.findByRole('heading', { name: a.title })
     expect(screen.getByText('Sunday, October 11, 2026')).toBeInTheDocument()
-    expect(screen.getByText('11:14 PM Guam time – Oct 12, 2026, 3:14 AM Guam time')).toBeInTheDocument()
+    expect(screen.getByText('11:14 PM – Oct 12, 2026, 3:14 AM Guam time')).toBeInTheDocument()
     const calendar = screen.getByRole('link', { name: /Add to Calendar/ })
     expect(new URL(calendar.href).searchParams.get('dates')).toBe('20261011T131400Z/20261011T171400Z')
     const user = userEvent.setup()

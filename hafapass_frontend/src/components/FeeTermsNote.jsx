@@ -1,4 +1,4 @@
-import { organizerFeeExplanation } from '../utils/feeTerms'
+import { formatPayoutSchedule, organizerFeeExplanation } from '../utils/feeTerms'
 
 // Organizer-facing explanation of the current fee policy, card-processing
 // bearer and payout timing. Terms apply to new orders; existing orders keep
@@ -12,11 +12,11 @@ export default function FeeTermsNote({ feeTerms, feePolicy, buyerFeePercent, cla
       <button type="button" onClick={feeTerms.retry} className="btn-secondary min-h-11 px-4 py-2 text-sm">Retry fee terms</button>
     </div>
   )
-  const { payoutScheduleText } = feeTerms.terms
+  const payoutScheduleText = formatPayoutSchedule(feeTerms.terms.payoutScheduleText)
   return (
     <div className={`rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700 ${className}`} data-testid="fee-terms-note">
       <p>{organizerFeeExplanation(feeTerms.terms, feePolicy, buyerFeePercent)}</p>
-      {payoutScheduleText && <p className="mt-1 text-neutral-500">Payout timing: {payoutScheduleText.replace(/[.\s]+$/, '')}.</p>}
+      {payoutScheduleText && <p className="mt-1 text-neutral-500">Payouts by check {payoutScheduleText}</p>}
       <p className="mt-1 text-xs text-neutral-500">Changes apply to new orders. Existing orders keep the terms they were placed with.</p>
     </div>
   )

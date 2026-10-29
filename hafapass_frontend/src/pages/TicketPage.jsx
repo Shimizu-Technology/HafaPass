@@ -10,7 +10,7 @@ import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smar
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
 
@@ -438,7 +438,7 @@ function TicketContent({ authContext }) {
             <div>
               <h1 className="font-display text-lg font-bold text-neutral-900">{eventContent.title}</h1>
               <MachineTranslationNotice {...eventContent.notice} />
-              <p className="text-sm text-action font-semibold font-sans">{ticket_type.name}</p>
+              <p className="text-sm text-brand-800 font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">{t('buyerAccount.ticketPage.obstructedView')}{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
@@ -449,8 +449,7 @@ function TicketContent({ authContext }) {
                 <div>
                   <p className="text-sm text-neutral-700 font-sans">{formatDate(event.starts_at)}</p>
                   <p className="text-xs text-neutral-500 font-sans">
-                    {formatTime(event.starts_at)}
-                    {event.ends_at && ` \u2013 ${formatTime(event.ends_at)}`}
+                    {formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}
                   </p>
                 </div>
               </div>

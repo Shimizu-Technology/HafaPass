@@ -13,7 +13,7 @@ import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
 
@@ -574,7 +574,7 @@ function OrderConfirmationContent() {
             <p className="min-h-11 px-2 text-sm font-semibold text-brand-700">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
             <h2 className="mt-1 text-xl font-bold text-neutral-950">{eventContent.title}</h2>
             <MachineTranslationNotice {...eventContent.notice} />
-            <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTime(event.starts_at, event.timezone)}</p>
+            <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</p>
             <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
             <SellerLine seller={order.seller} className="mt-2" />
           </div>

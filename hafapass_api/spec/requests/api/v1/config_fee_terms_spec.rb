@@ -8,7 +8,7 @@ RSpec.describe "Public fee terms", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("service_fee_percent" => "5.0", "service_fee_flat_cents" => 100,
-      "processing_fee_bearer" => "platform", "payout_schedule_text" => "within 3 business days after your event")
+      "processing_fee_bearer" => "platform", "payout_schedule_text" => "within 3 to 5 business days after your event")
   end
 
   it "reflects admin-edited terms" do

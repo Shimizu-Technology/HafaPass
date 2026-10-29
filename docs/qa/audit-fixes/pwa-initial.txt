@@ -1,0 +1,40 @@
+
+Running 2 tests using 1 worker
+
+(node:41702) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  1 [chromium] › e2e-pwa/deploy.spec.js:108:1 › legacy A upgrades to B, B fetches C on first navigation, and protected/offline work survives (32.8s)
+
+  ✘  2 [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell (3.9s)
+
+
+  1) [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell 
+
+    Error: page.goto: Download is starting
+    Call log:
+      - navigating to "http://127.0.0.1:5234/favicon.ico", waiting until "load"
+
+
+      312 |     // Direct favicon navigations must reach precached images, never the shell.
+      313 |     for (const [path, type] of [['/favicon.svg', 'image/svg+xml'], ['/favicon.png', 'image/png'], ['/favicon.ico', 'application/octet-stream']]) {
+    > 314 |       const response = await page.goto(origin + path)
+          |                                   ^
+      315 |       expect(response.status()).toBe(200)
+      316 |       expect(response.headers()['content-type']).toContain(type)
+      317 |     }
+        at /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend/e2e-pwa/deploy.spec.js:314:35
+
+    Error Context: test-results-pwa/deploy-an-unknown-revision-f12b8--installs-the-offline-shell-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results-pwa/deploy-an-unknown-revision-f12b8--installs-the-offline-shell-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results-pwa/deploy-an-unknown-revision-f12b8--installs-the-offline-shell-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e-pwa/deploy.spec.js:296:1 › an unknown-revision production build still installs the offline shell 
+  1 passed (48.3s)

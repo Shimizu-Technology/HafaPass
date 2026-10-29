@@ -20,7 +20,7 @@ registerRoute(
   ({ request, url }) => request.mode === 'navigate'
     && url.origin === self.location.origin
     && !/^\/api/.test(url.pathname)
-    && !/^\/(?:robots\.txt|sitemap\.xml)$/.test(url.pathname)
+    && !/^\/(?:robots\.txt|sitemap\.xml|favicon\.(?:svg|ico|png))$/.test(url.pathname)
     && !/^\/assets\//.test(url.pathname),
   new NetworkFirst({
     cacheName: 'hafapass-navigation',

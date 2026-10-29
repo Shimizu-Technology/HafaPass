@@ -31,3 +31,8 @@ it('leaves the home page to render its own footer', () => {
   mount('/')
   expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
 })
+
+it('omits marketing navigation during checkout', () => {
+  mount('/checkout/community-night')
+  expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+})

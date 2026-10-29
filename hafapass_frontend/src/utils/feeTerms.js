@@ -68,3 +68,11 @@ export function organizerFeeExplanation(terms, feePolicy, buyerFeePercent) {
   }
   return [...sentences, 'Free tickets have no fee.'].filter(Boolean).join(' ')
 }
+
+
+// Display-only punctuation: never change the saved or policy-approved schedule.
+export function formatPayoutSchedule(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!/[\p{L}\p{N}]/u.test(text)) return ''
+  return /[.!?…。！？]$/u.test(text) ? text : `${text}.`
+}

@@ -77,15 +77,22 @@ for (const width of [320, 390, 768, 1440]) {
     await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
     await page.evaluate(() => document.fonts.ready)
     if (width < 640) {
+      await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
+      const collapsedTop = await page.getByRole('link', { name: /Family Night Market/ }).evaluate(card => card.getBoundingClientRect().top + window.scrollY)
+      expect(collapsedTop).toBeLessThan(height - 44)
+      await page.getByRole('button', { name: 'Filters', exact: true }).click()
       await expect(page.getByLabel('Category', { exact: true })).toBeVisible()
       await expect(page.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(11)
       await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveCount(0)
-      const top = await page.getByRole('link', { name: /Family Night Market/ }).evaluate(card => card.getBoundingClientRect().top + window.scrollY)
-      expect(top).toBeLessThan(height - 44)
       const date = await page.getByLabel('When', { exact: true }).boundingBox()
       const price = await page.getByLabel('Price', { exact: true }).boundingBox()
-      expect(date.y).toBe(price.y)
-      expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      if (width < 400) {
+        expect(price.y).toBeGreaterThanOrEqual(date.y + date.height)
+        expect(price.x).toBe(date.x)
+      } else {
+        expect(date.y).toBe(price.y)
+        expect(date.x + date.width).toBeLessThanOrEqual(price.x)
+      }
     } else {
       await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
       await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveAttribute('aria-pressed', 'true')
@@ -121,7 +128,10 @@ for (const width of [320, 390, 768, 1440]) {
     await expect(page).toHaveURL(/village=Tamuning-Tumon-Harmon/)
     await checkFilterText()
     await page.reload()
-    if (width < 640) await expect(page.getByLabel('Category', { exact: true })).toHaveValue('fundraiser')
+    if (width < 640) {
+      await page.getByRole('button', { name: 'Filters (4)', exact: true }).click()
+      await expect(page.getByLabel('Category', { exact: true })).toHaveValue('fundraiser')
+    }
     else await expect(page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByLabel('When', { exact: true })).toHaveValue('weekend')
     await expect(page.getByLabel('Price', { exact: true })).toHaveValue('under_25')

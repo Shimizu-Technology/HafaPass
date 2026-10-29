@@ -1,3 +1,4 @@
+import { formatPayoutSchedule } from '../../utils/feeTerms'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Circle, Clock, Download, Loader2, RotateCcw, WalletCards, XCircle } from 'lucide-react'
@@ -219,7 +220,7 @@ function FinancesSession({ identity }) {
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
             {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} has been requested for payout. Payment hasn't been confirmed yet.</li>}
             {totals.held_cents > 0 && <li>{money(totals.held_cents)} is on hold — event cancelled, refunds in progress.</li>}
-            {payoutTiming && <li>Payout timing: {payoutTiming}.</li>}
+            {formatPayoutSchedule(payoutTiming) && <li>Payouts by check {formatPayoutSchedule(payoutTiming)}</li>}
           </ul>
           {breakdown.negative_balance_cents > 0 && (
             <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

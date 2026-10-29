@@ -1,0 +1,12 @@
+
+ RUN  v5.0.4 /Users/leonshimizu/.t3/worktrees/HafaPass/t3-427f2a70/hafapass_frontend
+
+
+ Test Files  4 passed (4)
+      Tests  82 passed (82)
+   Start at  09:45:04
+   Duration  8.29s (tests 70%, environment 14%, import 9%, setup 5%, transform 2%)
+
+    Isolate  4 workers spawned · ~382ms startup each (spawn + environment, per file)
+             at least ~1.15s faster with isolate: false — reuses workers across files instead of one per file
+

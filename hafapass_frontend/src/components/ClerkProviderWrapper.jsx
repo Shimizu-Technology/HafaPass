@@ -2,7 +2,7 @@ import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react'
 import { Sentry } from '../monitoring'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { setAuthTokenGetter } from '../api/client'
-import { clerkAppearance } from '../config/clerkAppearance'
+import { clerkAppearance, clerkLocalization } from '../config/clerkAppearance'
 import { clearAllAdmissionData } from '../utils/admissionStore'
 import { clearUploadRecovery } from '../utils/uploadRecovery'
 import { bindOrderAccessOwner } from '../utils/orderAccess'
@@ -108,7 +108,7 @@ export default function ClerkProviderWrapper({ children, loadingFallback, loadin
   }
 
   return (
-    <ClerkProvider publishableKey={clerkPubKey} afterSignOutUrl="/" appearance={clerkAppearance}>
+    <ClerkProvider publishableKey={clerkPubKey} afterSignOutUrl="/" appearance={clerkAppearance} localization={clerkLocalization}>
       <AuthTokenSync loadingFallback={loadingFallback} loadingFallbackOwner={loadingFallbackOwner}>{children}</AuthTokenSync>
     </ClerkProvider>
   )

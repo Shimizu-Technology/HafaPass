@@ -1,0 +1,1 @@
+Both Netlify passes: matching headers; preview-specific no-referrer retained; favicon redirects resolved.

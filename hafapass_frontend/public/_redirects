@@ -2,6 +2,9 @@
 # production) only works there, so the old Netlify address forwards to it.
 https://hafapass.netlify.app/*    https://hafapass.shimizu-technology.com/:splat    301!
 /robots.txt    /robots.txt    200
+/favicon.svg    /favicon.svg    200
+/favicon.ico    /favicon.ico    200
+/favicon.png    /favicon.png    200
 # A missing hashed asset must 404, not fall through to the app shell: HTML
 # served as a script leaves a page cached before a deploy blank.
 /assets/*    /404.html   404

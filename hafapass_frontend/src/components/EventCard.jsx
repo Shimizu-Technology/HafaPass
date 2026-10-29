@@ -8,7 +8,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
-import { formatEventDate, formatEventTime } from '../utils/eventTime'
+import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
 import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
@@ -76,17 +76,21 @@ export default function EventCard({ event }) {
 
         <div className="space-y-1.5 mb-4 flex-1">
           {event.starts_at && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-content-muted">
-              <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-              <span>{formatEventDate(event.starts_at, event.timezone)}</span>
-              <Clock className="w-3.5 h-3.5 text-neutral-500 ml-1" />
-              <span>{formatEventTime(event.starts_at, event.timezone)}</span>
-            </div>
+            <>
+              <div className="flex items-start gap-2 text-sm text-content-muted">
+                <Calendar aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                <span className="min-w-0">{formatEventDate(event.starts_at, event.timezone)}</span>
+              </div>
+              <div className="flex items-start gap-2 text-sm text-content-muted">
+                <Clock aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                <span className="min-w-0">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
+              </div>
+            </>
           )}
           {event.venue_name && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-content-muted">
-              <MapPin className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="truncate">{event.venue_name}</span>
+            <div className="flex items-start gap-2 text-sm text-content-muted">
+              <MapPin aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-500" />
+              <span className="min-w-0 truncate">{event.venue_name}</span>
             </div>
           )}
         </div>

@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve, extname } from 'node:path'
 
 const root = resolve('tmp/pwa-deploy')
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.xml': 'application/xml', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png' }
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.xml': 'application/xml', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
 let frozenWorker
 let apiFixtures = {}
 process.on('message', message => {

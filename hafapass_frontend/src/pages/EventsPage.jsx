@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useMatch } from 'react-router-dom'
-import { Search, CalendarPlus, Ticket } from 'lucide-react'
+import { Search, CalendarPlus, Ticket, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
@@ -40,6 +40,8 @@ export default function EventsPage() {
   const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
   const [price, setPrice] = useState(searchParams.get('price') || 'all')
   const [village, setVillage] = useState(searchParams.get('village') || '')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = [activeCategory !== 'all', dateRange !== 'upcoming', price !== 'all', Boolean(village)].filter(Boolean).length
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories().map(category => ({ ...category, label: t(`buyer.categories.${category.value}`, { defaultValue: category.label }) }))
   const reducedMotion = useReducedMotion()
@@ -116,7 +118,7 @@ export default function EventsPage() {
         url={`${PUBLIC_WEB_URL}/events`}
       />
       <BuyerTitleBand title={t('buyer.Events.events')} description={t('buyer.Events.discoverWhatsHappeningOnGuam')} />
-      {!loading && !loadError && inventoryEmpty ? <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><EmptyInventory className="max-w-2xl" /></div> : <>
+      {!loading && !loadError && inventoryEmpty ? <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><EmptyInventory className="mx-auto max-w-2xl" /></div> : <>
       <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
           {/* Search bar */}
           <div className="max-w-2xl">
@@ -161,25 +163,30 @@ export default function EventsPage() {
               </button>
             )})}
            </div>
-           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]">
-            <div className="col-span-2 min-w-0 sm:hidden">
+           <button type="button" aria-expanded={filtersOpen} aria-controls="event-filters" onClick={() => setFiltersOpen(open => !open)} className="btn-secondary min-h-11 self-start gap-2 sm:hidden">
+            <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+            {t('buyer.Events.filters')}{activeFilterCount > 0 && <span>({activeFilterCount})</span>}
+            <ChevronDown aria-hidden="true" className={`h-4 w-4 ${filtersOpen ? 'rotate-180' : ''}`} />
+           </button>
+           <div id="event-filters" className={`${filtersOpen ? 'grid' : 'hidden'} grid-cols-1 min-[400px]:grid-cols-2 gap-2 sm:grid sm:gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]`}>
+            <div className="col-span-full min-w-0 sm:hidden">
              <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.category')}</label>
-             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !px-3">
+             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !pl-3">
               <option value="all">{t('buyer.Events.allEvents')}</option>
               {categories.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
              </select>
             </div>
             <div className="min-w-0">
              <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.when')}</label>
-             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4">
+             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !pl-2 sm:!pl-4">
              {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
              </select>
             </div>
             <div className="min-w-0">
              <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.price')}</label>
-             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !px-2 sm:!px-4"><option value="all">{t('buyer.Events.anyPrice')}</option><option value="free">{t('buyer.Events.free')}</option><option value="under_25">{t('buyer.Events.under25')}</option><option value="under_50">{t('buyer.Events.under50')}</option></select>
+             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !pl-2 sm:!pl-4"><option value="all">{t('buyer.Events.anyPrice')}</option><option value="free">{t('buyer.Events.free')}</option><option value="under_25">{t('buyer.Events.under25')}</option><option value="under_50">{t('buyer.Events.under50')}</option></select>
             </div>
-            <div className="min-w-0 col-span-2 lg:col-span-1">
+            <div className="min-w-0 col-span-full lg:col-span-1">
              <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.village')}</label>
              <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
             </div>

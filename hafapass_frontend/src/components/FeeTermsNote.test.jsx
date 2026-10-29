@@ -15,6 +15,6 @@ describe('FeeTermsNote', () => {
   it('shows the organizer bearer copy and trims a trailing period from payout timing', () => {
     render(<FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.' } }} feePolicy="buyer_pays" />)
     expect(screen.getByText(/Card processing costs are deducted from your proceeds\./)).toBeInTheDocument()
-    expect(screen.getByText('Payout timing: within 7 days.')).toBeInTheDocument()
+    expect(screen.getByText('Payouts by check within 7 days.')).toBeInTheDocument()
   })
 })

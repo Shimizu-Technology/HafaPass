@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, ChevronDown, Search } from 'lucide-react'
+import { ArrowRight, Search } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
@@ -79,11 +79,11 @@ export default function HomePage() {
                 <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
                 <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
               </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center"><EmptyInventory embedded /></div> : <form role="search" onSubmit={browse}>
-                <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
                   <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-sm font-medium">{t('pass.home.when')}</label>
-                    <div className="relative"><select id="home-when" className="input min-h-12 appearance-none !pl-3 !pr-7 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
+                    <div className="relative"><select id="home-when" className="input min-h-12 !pl-3 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div></div>
                   <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-sm font-medium">{t('pass.home.where')}</label>
-                    <div className="relative"><select id="home-where" className="input min-h-12 appearance-none !pl-3 !pr-7 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select><ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" /></div></div>
+                    <div className="relative"><select id="home-where" className="input min-h-12 !pl-3 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select></div></div>
                 </div>
                 <label htmlFor="home-event-search" className="mb-2 mt-4 block text-sm font-medium">{t('buyer.Home.eventOrVenue')}</label>
                 <div className="flex flex-col gap-3 sm:flex-row">

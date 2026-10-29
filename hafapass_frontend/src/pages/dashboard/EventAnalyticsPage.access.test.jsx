@@ -7,7 +7,7 @@ import EventAnalyticsPage from './EventAnalyticsPage'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
-vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 business days after your event' } }) }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' } }) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const rights = { view_finance: true, view_attendees: true, manage_finance: true, payout: true }
 const event = { id: 37, organization_id: 1, title: 'Authorized event', status: 'completed', timezone: 'Pacific/Guam', permissions: rights }
@@ -45,7 +45,7 @@ it('explains that HåfaPass covers card processing and shows payout timing', asy
     : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
   mount()
   expect(await screen.findByText(/which includes card processing\. You receive the full ticket price\./)).toBeInTheDocument()
-  expect(screen.getByText('Payout timing: within 3 business days after your event.')).toBeInTheDocument()
+  expect(screen.getByText('Payouts by check within 3 to 5 business days after your event.')).toBeInTheDocument()
   expect(screen.getByText('HåfaPass covered $1.85')).toBeInTheDocument()
   expect(screen.getByText('Processing costs to you').nextSibling).toHaveTextContent('$0.00')
 })
