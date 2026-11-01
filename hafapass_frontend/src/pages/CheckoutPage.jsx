@@ -589,7 +589,7 @@ function CheckoutContent({ buyerId }) {
         <div className="card p-4 mb-6 flex items-center gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
+              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="80" height="80" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">

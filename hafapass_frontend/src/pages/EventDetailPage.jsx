@@ -412,7 +412,7 @@ function EventDetailContent() {
 
               {coverImage && (
                 <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
-                  <img src={coverImage} alt={event.title} width="1600" height="900"
+                  <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
                     className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
                 </div>
               )}

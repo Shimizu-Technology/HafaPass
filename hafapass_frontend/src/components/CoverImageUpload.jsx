@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
 import { isTimeoutError } from '../api/errors'
+import { downscaleImage } from '../utils/imageDownscale'
 import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 import { approvedImageUrl } from '../utils/eventPageDesign'
 
@@ -35,8 +36,10 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
-  const handleFile = async (file) => {
-    if (!file || disabled || uploading) return
+  // A retry sends the exact bytes prepared the first time, so upload recovery
+  // can match the earlier attempt.
+  const handleFile = async (selected, prepared = false) => {
+    if (!selected || disabled || uploading) return
     const startedEvent = eventId
     const startedGeneration = generation.current
     const startedScope = uploadScope(eventId)
@@ -44,19 +47,24 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     setError(null)
     setRetryFile(null)
 
-    if (!ACCEPTED_TYPES.includes(file.type)) {
+    if (!ACCEPTED_TYPES.includes(selected.type)) {
       setError('Please upload a JPG, PNG, or WebP image.')
-      return
-    }
-    if (file.size > MAX_SIZE) {
-      setError('Image must be under 5MB.')
       return
     }
 
     // Show local preview immediately
-    const localUrl = URL.createObjectURL(file)
+    const localUrl = URL.createObjectURL(selected)
     setPreview(localUrl)
     setUploading(true)
+    // Large phone photos are resized first, so they also fit the 5MB limit.
+    const file = prepared ? selected : await downscaleImage(selected)
+    if (!current()) return
+    if (file.size > MAX_SIZE) {
+      setError('Image must be under 5MB.')
+      setPreview(null)
+      setUploading(false)
+      return
+    }
 
     try {
       const finalUrl = await uploadImage(file, eventId, current)
@@ -141,7 +149,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       />
 
       {error && <p role="alert" className="mt-1 text-sm text-red-600">{error}</p>}
-      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile)}>Retry image upload</button>}
+      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile, true)}>Retry image upload</button>}
     </div>
   )
 }
