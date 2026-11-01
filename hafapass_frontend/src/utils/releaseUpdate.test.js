@@ -8,6 +8,7 @@ beforeEach(() => sessionStorage.clear())
 describe('release reload policy', () => {
   it.each(['/', '/events', '/HOST/', '/discover', '/collections', '/about', '/policies/refunds'])('never reloads a visible public page, only once hidden or left: %s', pathname => {
     expect(canReloadForRelease({ pathname })).toBe(false)
+    expect(canReloadForRelease({ pathname, fresh: true })).toBe(true)
     expect(canReloadForRelease({ pathname, hidden: true })).toBe(true)
     expect(canReloadForRelease({ pathname, navigated: true })).toBe(true)
   })
@@ -55,6 +56,11 @@ describe('release reload policy', () => {
     expect(canRecoverShell({ pathname: '/checkout/show' })).toBe(false)
     expect(canRecoverShell({ pathname: '/events/show', hidden: true })).toBe(false)
     expect(canRecoverShell({ pathname: '/', unsaved: true })).toBe(false)
+  })
+  it('lets only a just-loaded public page update while visible', () => {
+    expect(canReloadForRelease({ pathname: '/nontransactional', fresh: true })).toBe(false)
+    expect(canReloadForRelease({ pathname: '/checkout/show', fresh: true })).toBe(false)
+    expect(canReloadForRelease({ pathname: '/', fresh: true, unsaved: true })).toBe(false)
   })
   it('reloads a nontransactional hidden page and the rendered not-found page', () => {
     expect(canReloadForRelease({ pathname: '/nontransactional', hidden: true })).toBe(true)

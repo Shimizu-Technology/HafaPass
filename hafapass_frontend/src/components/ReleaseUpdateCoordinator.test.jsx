@@ -26,6 +26,8 @@ function mount(path = '/') {
   return router
 }
 beforeEach(() => {
+  // Most cases model a page that has been open for a while.
+  vi.spyOn(performance, 'now').mockReturnValue(60_000)
   vi.stubEnv('PROD', true)
   vi.stubEnv('VITE_SENTRY_RELEASE', A)
   shellRevision = A
@@ -37,6 +39,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async url => ({ ok: true, json: async () => ({ revision: B }), text: async () => url === '/index.html' ? `<meta name="hafapass-revision" content="${shellRevision}">` : '' })))
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -59,6 +62,14 @@ it('waits for the new worker shell, then updates a visible Home page only once i
   await act(async () => registerSW.mock.calls[0][0].onNeedReload())
   expect(reload).not.toHaveBeenCalled()
   await act(async () => setHidden(true))
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+it('updates a just-loaded Home page served from an older cached shell', async () => {
+  performance.now.mockReturnValue(2_000)
+  mount()
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
+  shellRevision = B
+  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
   expect(reload).toHaveBeenCalledTimes(1)
 })
 it('does not reload a page that already runs the latest release while the old worker shell is installed', async () => {

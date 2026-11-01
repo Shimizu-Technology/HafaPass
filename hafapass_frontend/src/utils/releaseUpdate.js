@@ -17,12 +17,16 @@ function protectedPath(pathname) {
   return { blocked: false, path }
 }
 
-// Applying a new release: never reload a page someone is looking at. Wait until
-// it is hidden or the person moves on. A rendered not-found page may be a route
+// Applying a new release: never reload a page someone is reading. Wait until it
+// is hidden or the person moves on. A public page that has only just loaded
+// (a stale cached shell served on this very load) may update straight away,
+// before anyone has started reading. A rendered not-found page may be a route
 // this release adds.
-export function canReloadForRelease({ pathname, hidden, navigated, unsaved, notFound }) {
-  if (unsaved || protectedPath(pathname).blocked) return false
-  return Boolean(notFound || hidden || navigated)
+export function canReloadForRelease({ pathname, hidden, navigated, unsaved, notFound, fresh }) {
+  if (unsaved) return false
+  const { blocked, path } = protectedPath(pathname)
+  if (blocked) return false
+  return Boolean(notFound || hidden || navigated || (fresh && isPublicRoute(path)))
 }
 
 // Recovering a broken shell (a missing script after a deploy) on a visible
@@ -31,8 +35,11 @@ export function canRecoverShell({ pathname, hidden, navigated, unsaved, notFound
   if (unsaved) return false
   const { blocked, path } = protectedPath(pathname)
   if (blocked) return false
-  const publicRoute = /^\/(?:events|host|discover|collections|about)?$/.test(path) || /^\/policies\/[^/]+$/.test(path)
-  return Boolean(publicRoute || notFound || hidden || navigated)
+  return Boolean(isPublicRoute(path) || notFound || hidden || navigated)
+}
+
+function isPublicRoute(path) {
+  return /^\/(?:events|host|discover|collections|about)?$/.test(path) || /^\/policies\/[^/]+$/.test(path)
 }
 
 // The caller supplies a revision from the shell the controlling worker serves,

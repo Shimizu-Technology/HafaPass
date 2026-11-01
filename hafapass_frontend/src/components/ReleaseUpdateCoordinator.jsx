@@ -4,6 +4,10 @@ import { registerSW } from 'virtual:pwa-register'
 import { DraftProtectionContext } from '../hooks/useDraftProtection'
 import { canRecoverShell, createReleaseReloadPolicy, trackUnsavedInputs, validRevision } from '../utils/releaseUpdate'
 
+// A page this young was just served (possibly from a stale cached shell); an
+// update can apply before anyone starts reading it.
+const FRESH_LOAD_MS = 10_000
+
 export default function ReleaseUpdateCoordinator() {
   const location = useLocation()
   const drafts = useContext(DraftProtectionContext)
@@ -35,6 +39,8 @@ export default function ReleaseUpdateCoordinator() {
       navigationKey: JSON.stringify([route.current.pathname, route.current.search]),
       unsaved: Boolean(drafts?.hasUnsavedDraft(route.current.pathname)) || inputs.hasUnsaved(),
       notFound: Boolean(document.querySelector('[data-release-safe="not-found"]')),
+      // Time since this document started loading.
+      fresh: performance.now() < FRESH_LOAD_MS,
     })
     const reloadPolicy = createReleaseReloadPolicy({
       currentRevision,
