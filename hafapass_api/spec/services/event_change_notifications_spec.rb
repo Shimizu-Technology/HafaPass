@@ -32,8 +32,10 @@ RSpec.describe "Event change notices" do
   end
 
   it "shows the old and new start in Guam time with the escaped organizer reason and a specific subject" do
-    change = change!(reason: "Typhoon <b>warning</b>",
-      after: snapshot(starts_at: Time.utc(2030, 11, 21, 9, 0).iso8601))
+    before = snapshot
+    event.update!(starts_at: Time.utc(2030, 11, 21, 9, 0), ends_at: Time.utc(2030, 11, 21, 13, 0))
+    change = change!(reason: "Typhoon <b>warning</b>", before: before,
+      after: before.merge(starts_at: Time.utc(2030, 11, 21, 9, 0).iso8601))
 
     EmailService.send_event_change_notifications_async(change)
     payload = payload_for(deliveries_for(change).sole)
@@ -43,7 +45,7 @@ RSpec.describe "Event change notices" do
     expect(html).to include("Was: November 20, 2030 at 7:00 PM Guam time", "Now: November 21, 2030 at 7:00 PM Guam time")
     expect(html).to include("Message from the organizer: Typhoon &lt;b&gt;warning&lt;/b&gt;")
     expect(html).not_to include("<b>warning</b>")
-    expect(html).to include("request a refund before November 20, 2030 at 7:00 PM Guam time")
+    expect(html).to include("request a refund before November 21, 2030 at 7:00 PM Guam time")
   end
 
   it "describes a venue change without a refund offer" do
@@ -139,5 +141,78 @@ RSpec.describe "Event change notices" do
     html = payload_for(holder_delivery).fetch("html")
     expect(html).to include("/my-tickets", "Now: November 21, 2030 at 7:00 PM Guam time")
     expect(html).not_to include("guest_token", "request a refund", "Review order")
+  end
+
+  describe "net change across a burst of edits" do
+    let(:seven_pm) { Time.utc(2030, 11, 20, 9, 0) }
+
+    before { allow(EmailService).to receive(:send_delivery_payload).and_return({ simulated: true }) }
+
+    # Applies each start time to the event in turn, recording a change for
+    # each edit the way the organizer endpoint does.
+    def edit_starts!(*times, from: 6.minutes.ago, step: 2.minutes)
+      times.each_with_index.map do |time, index|
+        before = snapshot
+        event.update!(starts_at: time, doors_open_at: time - 30.minutes, ends_at: time + 4.hours)
+        change!(reason: "Edit #{index + 1}", before: before, after: snapshot, at: from + (step * index))
+      end
+    end
+
+    def deliver_all!(changes)
+      changes.each { |change| EmailService.send_event_change_notifications_async(change) }
+      changes.flat_map { |change| deliveries_for(change) }.each { |delivery| MessageDeliveryJob.perform_now(delivery.id) }
+    end
+
+    it "sends nothing and offers no refund when a start time is moved and put back" do
+      changes = edit_starts!(seven_pm - 12.hours, seven_pm)
+
+      deliver_all!(changes)
+
+      expect(changes.flat_map { |change| deliveries_for(change) }.map { |delivery| delivery.reload.status }).to all(eq("cancelled"))
+      expect(EmailService).not_to have_received(:send_delivery_payload)
+      changes.each do |change|
+        expect(EventChangeRefundEligibility.call(order: order, change: change)).to have_attributes(
+          eligible?: false, reason: "change_not_refundable")
+      end
+    end
+
+    it "still offers a refund after a postponement even when the start returns to the original" do
+      event.update!(status: :postponed)
+      postponed = change!(type: "postponed", before: snapshot(status: "published"), after: snapshot, at: 3.days.ago)
+      event.update!(status: :published)
+
+      expect(EventChangeRefundEligibility.call(order: order, change: postponed)).to be_eligible
+    end
+
+    it "sends one notice from the first start to the last and offers a refund" do
+      changes = edit_starts!(seven_pm + 1.hour, seven_pm + 2.hours)
+
+      deliver_all!(changes)
+
+      sent = changes.flat_map { |change| deliveries_for(change) }.select { |delivery| delivery.reload.sent? }
+      expect(sent.length).to eq(1)
+      html = sent.sole.outbound_payload.fetch("html")
+      expect(html).to include("Was: November 20, 2030 at 7:00 PM Guam time", "Now: November 20, 2030 at 9:00 PM Guam time")
+      expect(html).not_to include("8:00 PM")
+      expect(html).to include("request a refund before November 20, 2030 at 9:00 PM Guam time")
+      expect(EventChangeRefundEligibility.call(order: order, change: changes.last)).to be_eligible
+    end
+
+    it "compares an order placed partway through a burst with the event as it was bought" do
+      first, = edit_starts!(seven_pm + 1.hour, from: 8.minutes.ago)
+      mid = create(:order, event: event, buyer_email: "mid@example.test", created_at: 7.minutes.ago)
+      create(:ticket, order: mid, event: event, ticket_type: ticket_type)
+      back = edit_starts!(seven_pm, from: 6.minutes.ago).sole
+
+      deliver_all!([first, back])
+
+      mid_delivery = deliveries_for(back).find { |delivery| delivery.order_id == mid.id }
+      expect(mid_delivery.reload).to be_sent
+      expect(mid_delivery.outbound_payload.fetch("html")).to include(
+        "Was: November 20, 2030 at 8:00 PM Guam time", "Now: November 20, 2030 at 7:00 PM Guam time")
+      expect(deliveries_for(back).find { |delivery| delivery.order_id == order.id }.reload).to be_cancelled
+      expect(EventChangeRefundEligibility.call(order: mid, change: back)).to be_eligible
+      expect(EventChangeRefundEligibility.call(order: order, change: back)).not_to be_eligible
+    end
   end
 end

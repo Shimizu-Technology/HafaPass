@@ -36,7 +36,8 @@ RSpec.describe MessageDeliveryJob do
     complaint = create(:message_delivery, order: delivery.order, event: delivery.order.event,
       recipient: delivery.recipient.upcase, template: "waitlist_notification", status: :complained)
     expect(complaint).to be_complained
-    change = delivery.order.event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current)
+    change = delivery.order.event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current,
+      before_data: { starts_at: 2.days.from_now.iso8601 }, after_data: { starts_at: 3.days.from_now.iso8601 })
     allow(EmailService).to receive(:prepare_delivery_payload).and_return({ "subject" => "Update", "html" => "Update" })
     allow(EmailService).to receive(:send_delivery_payload).and_return({ simulated: true })
 

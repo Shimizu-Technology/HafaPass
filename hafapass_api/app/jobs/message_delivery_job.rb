@@ -52,6 +52,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "A newer event change notice replaces this one")
         next :done
       end
+      if reversed_event_change?(delivery)
+        delivery.update!(status: :cancelled, last_error: "The event change was reversed before this notice was sent")
+        next :done
+      end
       if obsolete_waitlist?(delivery)
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
         next :done
@@ -334,11 +338,24 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   # Never withdraw a notice once a provider attempt may have happened.
-  def superseded_event_change?(delivery)
-    return false unless delivery.template == "event_change" && delivery.attempts.zero? &&
+  def unattempted_event_change?(delivery)
+    delivery.template == "event_change" && delivery.attempts.zero? &&
       delivery.outbound_payload.blank? && delivery.provider_attempted_at.nil?
+  end
+
+  def superseded_event_change?(delivery)
+    return false unless unattempted_event_change?(delivery)
 
     EventChange.find_by(id: delivery.metadata["event_change_id"])&.superseded_notice? || false
+  end
+
+  # A burst of edits that leaves this recipient's event as it was (for
+  # example a start moved and put back) has nothing to tell them.
+  def reversed_event_change?(delivery)
+    return false unless unattempted_event_change?(delivery)
+
+    change = EventChange.find_by(id: delivery.metadata["event_change_id"])
+    change.present? && !change.notice_needed?(delivery.order)
   end
 
   def mark_reminder_sent!(delivery)

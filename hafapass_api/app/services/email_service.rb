@@ -1032,11 +1032,12 @@ class EmailService
     end
 
     # One notice describes the newest change and any earlier ones it replaced:
-    # before comes from the oldest change in the burst, after from the newest.
+    # before comes from the oldest change in the burst (or, for an order placed
+    # partway through, the event as it was bought), after from the newest.
     def build_event_change_html(change, order, holder:)
       event = change.event
       title = event_title(event)
-      burst = change.notice_burst
+      burst = change.notice_burst_for(order)
       before = burst.first.before_data.to_h.stringify_keys
       after = change.after_data.to_h.stringify_keys
       rows = event_change_rows(before, after, event.timezone)
@@ -1070,30 +1071,18 @@ class EmailService
     end
 
     def event_change_rows(before, after, zone)
-      rows = %w[starts_at doors_open_at ends_at].filter_map do |key|
-        next unless before.key?(key) && after.key?(key)
-
-        was = parse_change_time(before[key])
-        now = parse_change_time(after[key])
-        next if was == now
-
+      changed = EventChange.changed_snapshot_keys(before, after)
+      rows = (EventChange::NOTICE_TIME_KEYS & changed).map do |key|
         { key: key, label: t("event_change.labels.#{key}"),
-          was: format_local_datetime(was, zone) || t("event_change.not_set"),
-          now: format_local_datetime(now, zone) || t("event_change.not_set") }
+          was: format_local_datetime(parse_change_time(before[key]), zone) || t("event_change.not_set"),
+          now: format_local_datetime(parse_change_time(after[key]), zone) || t("event_change.not_set") }
       end
-      venue = ->(data) { [data["venue_name"], data["venue_address"], data["venue_city"]].map { |part| part.to_s.strip }.compact_blank.join(", ") }
-      if venue_parts(before, after).uniq.length > 1
+      venue = ->(data) { EventChange::NOTICE_VENUE_KEYS.map { |key| data[key].to_s.strip }.compact_blank.join(", ") }
+      if changed.include?("venue")
         rows << { key: "venue", label: t("event_change.labels.venue"),
           was: venue.call(before).presence || t("event_change.not_set"), now: venue.call(after).presence || t("event_change.not_set") }
       end
       rows
-    end
-
-    # Compare only the venue fields both snapshots recorded (older snapshots
-    # have no village).
-    def venue_parts(before, after)
-      keys = %w[venue_name venue_address venue_city].select { |key| before.key?(key) && after.key?(key) }
-      [before, after].map { |data| keys.map { |key| data[key].to_s.strip } }
     end
 
     def parse_change_time(value)

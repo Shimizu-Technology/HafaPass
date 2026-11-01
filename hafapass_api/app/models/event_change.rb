@@ -25,6 +25,28 @@ class EventChange < ApplicationRecord
 
   attr_readonly :event_id, :actor_user_id, :change_type, :reason, :before_data, :after_data, :occurred_at
 
+  NOTICE_TIME_KEYS = %w[starts_at doors_open_at ends_at].freeze
+  NOTICE_VENUE_KEYS = %w[venue_name venue_address venue_city].freeze
+
+  # What a buyer-facing snapshot comparison shows: moved times, a different
+  # venue (only fields both snapshots recorded; older ones have no village)
+  # and a status change.
+  def self.changed_snapshot_keys(before, after)
+    before = before.to_h.stringify_keys
+    after = after.to_h.stringify_keys
+    shared = ->(keys) { keys.select { |key| before.key?(key) && after.key?(key) } }
+    keys = shared.call(NOTICE_TIME_KEYS).reject { |key| parse_snapshot_time(before[key]) == parse_snapshot_time(after[key]) }
+    keys << "venue" if shared.call(NOTICE_VENUE_KEYS).any? { |key| before[key].to_s.strip != after[key].to_s.strip }
+    keys << "status" if shared.call(%w[status]).any? { |key| before[key].to_s != after[key].to_s }
+    keys
+  end
+
+  def self.parse_snapshot_time(value)
+    Time.zone.parse(value.to_s) if value.present?
+  rescue ArgumentError
+    value
+  end
+
   def superseded_notice?
     return false if change_type == "cancelled"
 
@@ -43,6 +65,28 @@ class EventChange < ApplicationRecord
       burst << previous
     end
     burst.reverse
+  end
+
+  # The changes one recipient's notice describes: the burst, less any change
+  # made before their order was placed (they bought the event as it was then).
+  def notice_burst_for(order)
+    burst = notice_burst
+    return burst unless order&.created_at
+
+    burst.select { |item| item.occurred_at > order.created_at }.presence || [self]
+  end
+
+  # The state the notice compares with the current one.
+  def notice_before_data(order = nil)
+    notice_burst_for(order).first.before_data.to_h.stringify_keys
+  end
+
+  # A burst that nets to nothing for this recipient (a start time moved and
+  # put back, say) sends no notice. Cancellations always do.
+  def notice_needed?(order = nil)
+    return true if change_type == "cancelled"
+
+    self.class.changed_snapshot_keys(notice_before_data(order), after_data).any?
   end
 
   private
