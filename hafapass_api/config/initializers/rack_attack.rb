@@ -60,7 +60,7 @@ class Rack::Attack
   # Provider webhooks arrive from a small pool of provider addresses, and a
   # rejected delivery is retried later, so they never share the visitor budget.
   provider_webhook = lambda do |req|
-    req.path.to_s.downcase.match?(%r{\A/webhooks/(?:stripe|resend)(?:\.[a-z0-9]+)?/*\z})
+    req.post? && req.path.to_s.downcase.match?(%r{\A/webhooks/(?:stripe|resend)(?:\.[a-z0-9]+)?/*\z})
   end
   # A buyer's ticket page is opened at the door by a whole crowd on one venue
   # Wi-Fi or carrier NAT address, so it is limited per ticket instead.
@@ -84,7 +84,7 @@ class Rack::Attack
     Digest::SHA256.hexdigest(req.path) if ticket_view.call(req)
   end
 
-  throttle("ticket-view/ip", limit: 1200, period: 1.minute) do |req|
+  throttle("ticket-view/ip", limit: 600, period: 1.minute) do |req|
     req.ip if ticket_view.call(req)
   end
 

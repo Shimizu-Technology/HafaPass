@@ -52,7 +52,20 @@ RSpec.describe "Provider webhook and ticket page throttles", type: :request do
     visitor_budget.times { get "/api/v1/tickets/HP-THROTTLE-0/download" }
     get "/api/v1/tickets/HP-THROTTLE-0/download"
     expect(response).to have_http_status(:too_many_requests)
-    expect(Rack::Attack.throttles.fetch("ticket-view/ip").limit).to eq(1200)
+  end
+
+  it "caps ticket page views from one address at 600 a minute across tickets" do
+    expect(Rack::Attack.throttles.fetch("ticket-view/ip").limit).to eq(600)
+    600.times { |index| get "/api/v1/tickets/HP-THROTTLE-IP-#{index}" }
+    expect(response).not_to have_http_status(:too_many_requests)
+    get "/api/v1/tickets/HP-THROTTLE-IP-next"
+    expect(response).to have_http_status(:too_many_requests)
+  end
+
+  it "only exempts webhook deliveries (POST) from the visitor budget" do
+    visitor_budget.times { get "/webhooks/stripe" }
+    get "/webhooks/stripe"
+    expect(response).to have_http_status(:too_many_requests)
   end
 
   it "logs which header supplied the throttle address once per process, without the address" do
