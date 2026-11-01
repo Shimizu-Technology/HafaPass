@@ -146,6 +146,7 @@ RSpec.describe "API container image contract" do
 
   it "builds from one Ruby base and runs the Render command as an unprivileged user" do
     expect(dockerfile.scan(/^FROM ruby:/).size).to eq(1)
+    expect(dockerfile).to match(/^FROM ruby:#{Regexp.escape(Rails.root.join(".ruby-version").read.strip)}-slim AS base$/)
     service = YAML.safe_load(Rails.root.join("../render.yaml").read).fetch("services").sole
     expect(JSON.parse(runtime_stage[/^CMD (.+)$/, 1]).join(" ")).to eq(service.fetch("dockerCommand"))
     expect(runtime_stage).to match(/^USER 1000:1000$/)

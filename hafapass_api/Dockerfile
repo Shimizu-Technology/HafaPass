@@ -1,5 +1,6 @@
-# Shared settings for the build and runtime stages. The Ruby version lives
-# only on this line.
+# Shared settings for the build and runtime stages. The Ruby version appears
+# only on this line and must match .ruby-version (checked by
+# spec/services/render_deployment_contract_spec.rb).
 FROM ruby:3.3.13-slim AS base
 
 WORKDIR /app
