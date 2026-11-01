@@ -73,7 +73,7 @@ for (const width of [375, 390, 1280]) {
     await expect(page.getByLabel('Order reference')).toBeVisible()
     await expect(page.getByLabel('Email address')).toBeVisible()
     await page.goto('/my-tickets')
-    await page.getByRole('link', { name: 'Browse events', exact: true }).click()
+    await page.locator('main').getByRole('link', { name: 'Browse events', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Events', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
     await page.goto('/saved')
@@ -81,7 +81,7 @@ for (const width of [375, 390, 1280]) {
     for (const instruction of ['Tap Save on an event to keep it here.', 'Tap Follow in an event’s organizer section to keep them here.', 'Tap Remind me on an event to get an email before it starts.']) await expect(page.getByText(instruction, { exact: true })).toBeVisible()
     const axe = await new AxeBuilder({ page }).analyze()
     expect(axe.violations).toEqual([])
-    await page.getByRole('link', { name: 'Browse events', exact: true }).click()
+    await page.locator('main').getByRole('link', { name: 'Browse events', exact: true }).click()
     await expect(page).toHaveURL(/\/events$/)
   })
 

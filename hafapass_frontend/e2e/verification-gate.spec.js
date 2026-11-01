@@ -270,8 +270,8 @@ for (const reducedMotion of ['reduce', 'no-preference']) {
     await page.goto('/admin/events')
     const field = page.getByPlaceholder('Search events...')
     await expect(field).toBeVisible()
-    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(71, 85, 105)')
+    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(100, 116, 139)')
     await field.focus()
-    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(71, 85, 105)')
+    expect(await field.evaluate(node => getComputedStyle(node, '::placeholder').color)).toBe('rgb(100, 116, 139)')
   })
 }
