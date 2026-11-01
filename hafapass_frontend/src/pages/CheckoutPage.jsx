@@ -556,7 +556,7 @@ function CheckoutContent({ buyerId }) {
 
   return (
     <div className="bg-stone-50 tabular-nums">
-      <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
+      <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
         <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">

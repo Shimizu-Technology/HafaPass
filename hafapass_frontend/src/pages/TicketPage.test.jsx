@@ -10,6 +10,7 @@ const motionPreference = vi.hoisted(() => ({ reduced: false }))
 vi.mock('framer-motion', async original => ({ ...await original(), useReducedMotion: () => motionPreference.reduced }))
 
 vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
+vi.mock('../components/SEO', () => ({ default: () => null }))
 
 describe('ticket download recovery', () => {
   beforeEach(() => { vi.clearAllMocks(); motionPreference.reduced = false; window.sessionStorage.clear() })

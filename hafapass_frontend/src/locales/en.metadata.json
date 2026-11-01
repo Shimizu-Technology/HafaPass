@@ -1457,5 +1457,31 @@
     "previewTicketsDisabled": {
       "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Tickets aren't available in this private preview."
     }
+  },
+  "pageTitles": {
+    "dashboard": {
+      "context": "Browser tab title for the organizer workspace home on HåfaPass, an event-ticketing platform for Guam."
+    },
+    "boxOffice": {
+      "context": "Browser tab title for the door sales tool where organizers sell tickets in person."
+    },
+    "scanner": {
+      "context": "Browser tab title for the tool door staff use to scan ticket QR codes at the entrance."
+    },
+    "admin": {
+      "context": "Browser tab title for the HåfaPass platform administrator console."
+    },
+    "order": {
+      "context": "Browser tab title for a buyer's ticket order on HåfaPass."
+    },
+    "ticket": {
+      "context": "Browser tab title for a buyer's event ticket with its entry QR code."
+    },
+    "ticketTransfer": {
+      "context": "Browser tab title for accepting a ticket that another attendee gave to you."
+    },
+    "invitation": {
+      "context": "Browser tab title for accepting an invitation to join an organizer team on HåfaPass."
+    }
   }
 }

@@ -25,7 +25,7 @@ export default function SavedPage() {
     return () => { active = false }
   }, [attempt])
   return <div className="public-listing-min-height bg-stone-50">
-    <SEO title={t('buyerDiscovery.saved.savedEvents')} description={t('buyerDiscovery.saved.yourHåfaPassFavoritesFollowedOrganizersAndEvent')} />
+    <SEO title={t('buyerDiscovery.saved.savedEvents')} description={t('buyerDiscovery.saved.yourHåfaPassFavoritesFollowedOrganizersAndEvent')} noIndex />
     <BuyerTitleBand title={t('buyerDiscovery.saved.saved')} description={t('pass.buyer.savedDescription')} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
       {error ? <div className="rounded-2xl border border-neutral-200 bg-white p-6"><p role="alert">{t('buyerDiscovery.saved.loadError')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.saved.tryAgain')}</button></div>

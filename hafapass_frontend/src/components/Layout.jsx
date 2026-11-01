@@ -6,7 +6,9 @@ import Navbar from './Navbar'
 import Footer, { WorkspaceFooter } from './Footer'
 import EnvironmentBanner from './EnvironmentBanner'
 import RouteLoading from './RouteLoading'
+import SEO from './SEO'
 import { isWorkspacePath } from '../utils/workspace'
+import { routeTitleKey } from '../utils/routeTitle'
 
 export default function Layout() {
   const { t } = useTranslation()
@@ -22,6 +24,7 @@ export default function Layout() {
   const isHomePage = location.pathname === '/'
   const workspace = isWorkspacePath(location.pathname)
   const checkout = /^\/checkout(?:\/|$)/.test(location.pathname)
+  const defaultTitleKey = routeTitleKey(location.pathname)
 
   useEffect(() => {
     if (previousPath.current === location.pathname) return undefined
@@ -66,6 +69,9 @@ export default function Layout() {
     <div className="app-shell flex flex-col">
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</div>
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:text-neutral-950">{t('buyer.layout.skip')}</a>
+      {/* Workspace and account routes always replace the previous page's title
+          and stay out of indexes; a page's own <SEO> renders later and wins. */}
+      {defaultTitleKey && <SEO title={t(defaultTitleKey)} noIndex />}
       <EnvironmentBanner />
       <Navbar />
       <main ref={main} id="main-content" tabIndex={-1} className="flex-1">

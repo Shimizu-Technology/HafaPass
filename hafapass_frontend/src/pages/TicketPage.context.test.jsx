@@ -14,6 +14,7 @@ vi.mock('@clerk/clerk-react', () => ({
 vi.mock('../components/Navbar', () => ({ default: () => null }))
 vi.mock('../components/Footer', () => ({ default: () => null }))
 vi.mock('../components/EnvironmentBanner', () => ({ default: () => null }))
+vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/QRCode', () => ({ default: ({ value }) => <div role="img" aria-label="Entry QR" data-credential={value} /> }))
 vi.mock('../monitoring', () => ({ Sentry: { setUser: vi.fn(), captureException: vi.fn() } }))
 

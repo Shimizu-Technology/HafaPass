@@ -29,7 +29,7 @@ export default function OrderRecoveryPage() {
 
   return (
     <div className="min-h-[70vh] bg-neutral-50 px-4 py-12">
-      <SEO title={t('buyerAccount.orderRecoveryPage.findYourOrder')} />
+      <SEO title={t('buyerAccount.orderRecoveryPage.findYourOrder')} noIndex />
       <div className="mx-auto max-w-md">
         <div className="mb-6 text-center">
           <Search className="mx-auto mb-3 h-9 w-9 text-brand-600" />

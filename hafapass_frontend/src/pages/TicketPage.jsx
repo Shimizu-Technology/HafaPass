@@ -10,6 +10,7 @@ import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smar
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
+import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
@@ -367,6 +368,7 @@ function TicketContent({ authContext }) {
 
   return (
     <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+      <SEO title={t('pageTitles.ticket')} noIndex />
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
         initial={reducedMotion ? false : { opacity: 1, y: 8 }}
