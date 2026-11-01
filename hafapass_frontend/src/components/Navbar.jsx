@@ -47,25 +47,29 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   useEffect(() => {
     const path = location.pathname
-    // Layout resets scroll after this effect runs, and lazy pages render their
-    // band later: measure on the next frame, and treat changes shortly after a
-    // route change as part of that change (an instant swap, never a fade).
-    const routeStarted = performance.now()
+    // Measure on the next frame: Layout resets scroll after this effect, and
+    // that reset is part of the route change (an instant swap). Later scroll
+    // events on the same path are the reader's and fade.
     let frame = 0
     const measure = () => {
       frame = 0
       setScrollTheme(previous => {
         const past = pastDarkBand(header.current)
         if (previous.path === path && previous.past === past) return previous
-        return { path, past, fade: previous.path === path && performance.now() - routeStarted > 500 }
+        return { path, past, fade: previous.path === path }
       })
     }
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure) }
     schedule()
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
+    // Content can resize the band while the reader is still (e.g. Home's ticket
+    // settling after events load).
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null
+    resize?.observe(document.body)
     return () => {
       window.cancelAnimationFrame(frame)
+      resize?.disconnect()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
     }

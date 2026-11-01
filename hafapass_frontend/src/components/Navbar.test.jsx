@@ -101,12 +101,9 @@ describe('account-bound navbar with the real API authentication interceptor', ()
         await new Promise(resolve => requestAnimationFrame(resolve))
       })
     }
-    // Scroll-driven fades only start 500ms after a route change.
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
     try {
       render(<MemoryRouter initialEntries={['/']}><Navbar /><RouteControls /></MemoryRouter>)
       await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
-      clock.mockReturnValue(1000)
       const banner = screen.getByRole('banner')
       expect(banner).toHaveClass('bg-brand-950')
       expect(banner).not.toHaveClass('app-nav-fade')
@@ -130,7 +127,6 @@ describe('account-bound navbar with the real API authentication interceptor', ()
       await waitFor(() => expect(screen.getByRole('banner')).toHaveClass('bg-white'))
       expect(screen.getByRole('banner')).not.toHaveClass('app-nav-fade')
     } finally {
-      clock.mockRestore()
       band.remove()
       sheet.remove()
       await scroll(0)

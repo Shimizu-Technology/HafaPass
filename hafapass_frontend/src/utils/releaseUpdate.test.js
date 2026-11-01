@@ -132,6 +132,16 @@ describe('release reload policy', () => {
     policy.notice(B, null, { activated: true })
     expect(reload).toHaveBeenCalledTimes(1)
   })
+  it('drops a waiting update once a newer release is published', () => {
+    const { state, reload, policy } = fixture()
+    policy.notice(B, B)
+    policy.notice(B, 'c'.repeat(40))
+    state.hidden = true
+    policy.attempt()
+    expect(reload).not.toHaveBeenCalled()
+    policy.notice('c'.repeat(40), 'c'.repeat(40))
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
   it('never lets activation override a known latest release', () => {
     const { state, reload, policy } = fixture('/', B)
     state.hidden = true

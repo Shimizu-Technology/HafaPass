@@ -56,6 +56,8 @@ export function createReleaseReloadPolicy({ currentRevision, storage, reload, ge
     notice(shellRevision, latestRevision, { activated = false } = {}) {
       const candidate = validRevision(shellRevision)
       const latest = validRevision(latestRevision)
+      // A newer published release supersedes an update still waiting to apply.
+      if (latest && pending && pending !== latest) pending = null
       // Without a readable latest release, only a worker that just activated
       // (whose shell is new by definition) can establish an update.
       const current = latest ? candidate === latest : activated

@@ -67,8 +67,10 @@ export default function ReleaseUpdateCoordinator() {
       const { ok, body } = await fetchResource('/release.json', response => response.json())
       return ok ? validRevision(body.revision) : null
     }
-    // `activated`: a worker just took control. Its shell is new by definition,
-    // so it counts as an update even when release.json can't be read.
+    // `activated`: a new worker has just taken control of this page
+    // (controllerchange). Its shell is new by definition, so it counts as an
+    // update even when release.json can't be read. Workbox's own activation
+    // callback doesn't guarantee control yet, so it doesn't pass this.
     async function readShell(latest, { activated = false } = {}) {
       try {
         // This request intentionally goes through the current worker's precache.
@@ -96,7 +98,7 @@ export default function ReleaseUpdateCoordinator() {
     registerSW({
       immediate: true,
       // Suppress the virtual module's unconditional autoUpdate reload.
-      onNeedReload: () => readShell(undefined, { activated: true }),
+      onNeedReload: () => readShell(),
       onRegisteredSW: (_url, value) => { registration = value; if (!disposed) void check() },
     })
     const onVisibility = () => { reloadPolicy.attempt(); if (!document.hidden) void check() }

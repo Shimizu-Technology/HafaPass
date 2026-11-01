@@ -84,6 +84,8 @@ it('does not reload a page that already runs the latest release while the old wo
   expect(Object.keys(sessionStorage).filter(key => key.startsWith('hafapass_release_reload:'))).toEqual([])
 })
 it('updates after a worker activates even when release.json cannot be read', async () => {
+  const serviceWorker = new EventTarget()
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: serviceWorker })
   fetch.mockImplementation(async url => url === '/release.json'
     ? { ok: false, json: async () => ({}) }
     : { ok: true, text: async () => `<meta name="hafapass-revision" content="${shellRevision}">` })
@@ -92,8 +94,12 @@ it('updates after a worker activates even when release.json cannot be read', asy
   shellRevision = B
   await act(async () => setHidden(true))
   expect(reload).not.toHaveBeenCalled()
+  // Workbox's activation callback alone doesn't prove the new worker controls the page.
   await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  expect(reload).not.toHaveBeenCalled()
+  await act(async () => serviceWorker.dispatchEvent(new Event('controllerchange')))
   expect(reload).toHaveBeenCalledTimes(1)
+  delete navigator.serviceWorker
 })
 it('keeps checkout mounted after activation and reloads once on safe navigation', async () => {
   const router = mount('/checkout/show')
