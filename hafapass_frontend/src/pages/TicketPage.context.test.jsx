@@ -29,6 +29,8 @@ const deferred = () => {
   return { promise, resolve }
 }
 
+// Revoke immediately so tests can assert cleanup without waiting.
+vi.mock('../utils/download', () => ({ revokeObjectUrlLater: url => URL.revokeObjectURL(url) }))
 let Page, Layout, Wrapper, api, access, createUrl, revokeUrl, click
 function view(next = '/tickets/display-b?order=2') {
   return <MemoryRouter initialEntries={['/tickets/display-a?order=1']}><Wrapper>

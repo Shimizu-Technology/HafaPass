@@ -381,11 +381,16 @@ describe('attendee list totals and export', () => {
     mount(AttendeesPage, 'attendees')
     await screen.findAllByText('Attendee 37')
     await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const timers = vi.spyOn(window, 'setTimeout')
     await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }))
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
     const call = apiClient.post.mock.calls.find(([url]) => url === '/organizer/events/37/sales_exports')
     expect(call[2]).toMatchObject({ responseType: 'blob', organizationId: '1', authContext: { userId: 'actor-a' } })
     expect(createObjectURL).toHaveBeenCalledWith(blob)
+    // The blob URL is released after a delay so Safari can finish the download.
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    const revokeLater = timers.mock.calls.find(([, delay]) => delay === 30_000)
+    revokeLater[0]()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:attendees')
   })
 

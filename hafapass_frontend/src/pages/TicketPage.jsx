@@ -16,6 +16,7 @@ import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../ut
 import { SellerLine } from '../components/PriceDisclosure'
 import useScreenWakeLock from '../hooks/useScreenWakeLock'
 import { visibleWallets } from '../utils/walletPlatform'
+import { revokeObjectUrlLater } from '../utils/download'
 
 // Mounted only with an authorized, scannable QR, so the lock follows the QR.
 function ScreenWakeLock() {
@@ -226,7 +227,7 @@ function TicketContent({ authContext }) {
         : t('buyerAccount.ticketPage.weCouldnTDownloadThePDFYourTicket'))
     } finally {
       downloadLink?.remove()
-      if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
+      if (downloadUrl) revokeObjectUrlLater(downloadUrl)
       if (current()) setDownloading(false)
     }
   }
@@ -262,7 +263,9 @@ function TicketContent({ authContext }) {
         const link = document.createElement('a')
         link.href = walletUrl
         link.download = `hafapass-ticket-${ticket.id}.pkpass`
+        document.body.appendChild(link)
         link.click()
+        link.remove()
       } else {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/google`, {
           params: { response: 'json' }, headers: orderAccessHeaders(orderId, access.current.token), authContext,
@@ -273,7 +276,7 @@ function TicketContent({ authContext }) {
     } catch (err) {
       if (current()) setWalletError(err.response?.data?.error || t('buyerAccount.ticketPage.walletIsUnavailable', { wallet: kind === 'apple' ? 'Apple' : 'Google' }))
     } finally {
-      if (walletUrl) window.URL.revokeObjectURL(walletUrl)
+      if (walletUrl) revokeObjectUrlLater(walletUrl)
       if (current()) setWalletLoading(null)
     }
   }
