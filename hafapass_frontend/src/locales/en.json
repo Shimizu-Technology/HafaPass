@@ -635,7 +635,8 @@
       "theIssueHasBeenRecordedWhenMonitoringIs": "We couldn't display this page. Try again, or reload HåfaPass.",
       "tryAgain": "Try again",
       "reloadHafaPass": "Reload HåfaPass",
-      "developmentDetails": "Development details"
+      "developmentDetails": "Development details",
+      "goHome": "Go to the home page"
     },
     "service": {
       "checking": "Checking HåfaPass services…",

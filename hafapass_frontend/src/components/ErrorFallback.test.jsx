@@ -15,4 +15,14 @@ describe('ErrorFallback', () => {
 
     expect(resetError).toHaveBeenCalledOnce()
   })
+
+  it('shows the branded ticket with reload and a plain link home', () => {
+    const { container } = render(<ErrorFallback error={new Error('test failure')} resetError={vi.fn()} />)
+    expect(screen.getByRole('main')).toHaveClass('bg-brand-950')
+    expect(container.querySelector('.ticket-top')).toContainElement(screen.getByRole('heading'))
+    expect(screen.getByRole('button', { name: /try again/i })).toHaveClass('btn-primary')
+    expect(screen.getByRole('button', { name: 'Reload HåfaPass' })).toHaveClass('btn-secondary')
+    expect(screen.getByRole('link', { name: 'Go to the home page' })).toHaveAttribute('href', '/')
+    expect(container.innerHTML).not.toMatch(/blur|backdrop/)
+  })
 })

@@ -1,38 +1,42 @@
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react'
+import { RefreshCw, RotateCcw } from 'lucide-react'
+import Ticket from './Ticket'
+import HafaPassMark from './HafaPassMark'
 
+// Rendered by the root error boundary, so it avoids router links and any
+// data: the actions are a retry, a full reload and a plain link home.
 export default function ErrorFallback({ error, resetError }) {
   const { t } = useTranslation()
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-neutral-950 px-6 py-16 text-neutral-100">
-      <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden="true">
-        <div className="absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="absolute -right-24 bottom-1/4 h-72 w-72 rounded-full bg-accent-500/15 blur-3xl" />
-      </div>
-
-      <section className="relative w-full max-w-lg rounded-[2rem] border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10" aria-labelledby="application-error-title">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-accent-300/20 bg-accent-400/10 text-accent-300">
-          <AlertTriangle className="h-6 w-6" aria-hidden="true" />
-        </div>
-
-        <p className="mt-7 text-xs font-bold uppercase tracking-[0.24em] text-brand-300">{t('buyer.ErrorFallback.hafapassRecovery')}</p>
-        <h1 id="application-error-title" className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">{t('buyer.ErrorFallback.somethingInterruptedThisPage')}</h1>
-        <p className="mt-4 max-w-md text-base leading-7 text-neutral-300">{t('buyer.ErrorFallback.theIssueHasBeenRecordedWhenMonitoringIs')}</p>
-
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={resetError} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-400 px-5 py-3 font-semibold text-neutral-950 transition-colors hover:bg-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950">
+    <main className="flex min-h-dvh items-center justify-center bg-brand-950 px-4 py-12 sm:px-6">
+      <Ticket
+        className="w-full max-w-md"
+        topClassName="px-6 pb-7 pt-6 sm:px-8 sm:pt-8"
+        stubClassName="px-6 pb-6 pt-7 sm:px-8 sm:pb-8"
+        stub={<div className="grid gap-3">
+          <button type="button" onClick={resetError} className="btn-primary w-full gap-2">
             <RotateCcw className="h-4 w-4" aria-hidden="true" />{t('buyer.ErrorFallback.tryAgain')}</button>
-          <button type="button" onClick={() => window.location.reload()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-3 font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950">
+          <button type="button" onClick={() => window.location.reload()} className="btn-secondary w-full gap-2">
             <RefreshCw className="h-4 w-4" aria-hidden="true" />{t('buyer.ErrorFallback.reloadHafaPass')}</button>
-        </div>
+          <a href="/" className="inline-flex min-h-11 items-center justify-center font-semibold text-brand-700 underline underline-offset-4">{t('buyer.ErrorFallback.goHome')}</a>
+        </div>}
+      >
+        <section aria-labelledby="application-error-title">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700"><HafaPassMark className="h-5 w-5 text-white" /></span>
+            <p className="text-sm font-semibold text-brand-700">{t('buyer.ErrorFallback.hafapassRecovery')}</p>
+          </div>
+          <h1 id="application-error-title" className="mt-5 font-display text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">{t('buyer.ErrorFallback.somethingInterruptedThisPage')}</h1>
+          <p className="mt-3 text-base leading-relaxed text-content-muted">{t('buyer.ErrorFallback.theIssueHasBeenRecordedWhenMonitoringIs')}</p>
 
-        {import.meta.env.DEV && error?.message && (
-          <details className="mt-7 rounded-xl border border-white/10 bg-black/20 p-4 text-left">
-            <summary className="cursor-pointer text-sm font-semibold text-neutral-300">{t('buyer.ErrorFallback.developmentDetails')}</summary>
-            <pre className="mt-3 overflow-auto whitespace-pre-wrap text-xs leading-5 text-accent-200">{error.message}</pre>
-          </details>
-        )}
-      </section>
+          {import.meta.env.DEV && error?.message && (
+            <details className="mt-5 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-left">
+              <summary className="cursor-pointer text-sm font-semibold text-neutral-700">{t('buyer.ErrorFallback.developmentDetails')}</summary>
+              <pre className="mt-3 overflow-auto whitespace-pre-wrap text-xs leading-5 text-neutral-800">{error.message}</pre>
+            </details>
+          )}
+        </section>
+      </Ticket>
     </main>
   )
 }

@@ -1130,6 +1130,9 @@
       },
       "developmentDetails": {
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "goHome": {
+        "context": "Link on the HåfaPass error screen that opens the home page with a fresh load."
       }
     },
     "service": {
