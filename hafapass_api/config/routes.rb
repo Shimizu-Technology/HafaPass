@@ -440,7 +440,10 @@ Rails.application.routes.draw do
         get "search", to: "search#index"
         resources :message_deliveries, only: [:index] do
           member { post :resend }
-          collection { post "orders/:order_id/fulfill", to: "message_deliveries#fulfill" }
+          collection do
+            post "orders/:order_id/fulfill", to: "message_deliveries#fulfill"
+            post :bulk_resend
+          end
         end
         resources :notes, only: [:index, :create]
       end

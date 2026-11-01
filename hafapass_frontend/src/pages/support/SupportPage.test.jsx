@@ -80,6 +80,44 @@ describe('support record lookup', () => {
     expect(within(screen.getByText('#4').closest('tr')).getByRole('button', { name: 'Retry delivery' })).toBeEnabled()
   })
 
+  it('resends failed messages in bulk only after confirmation and reports what was skipped', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    apiClient.post.mockResolvedValue({ data: { queued: 3, matched: 6, capped: true, skipped: { provider_accepted: 1, suppressed_recipient: 2 } } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await screen.findByText('No recent message deliveries.')
+    const button = screen.getByRole('button', { name: 'Resend failed messages' })
+
+    await user.click(button)
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('the last 24 hours'))
+    expect(apiClient.post).not.toHaveBeenCalled()
+
+    await user.selectOptions(screen.getByLabelText('Failed in'), 'any time')
+    await user.click(button)
+    expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('any time'))
+    expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/bulk_resend', { status: 'failed' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(await screen.findByText('Queued 3 messages for another delivery attempt. Skipped 3: 1 already accepted by the email provider, 2 to an address that bounced or complained. More failed messages remain. Run it again to queue the next batch.')).toBeVisible()
+    confirm.mockRestore()
+  })
+
+  it('limits a bulk resend to the chosen failure window', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    apiClient.post.mockResolvedValue({ data: { queued: 1, matched: 1, capped: false, skipped: {} } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await screen.findByText('No recent message deliveries.')
+    const before = Date.now()
+    await user.click(screen.getByRole('button', { name: 'Resend failed messages' }))
+    const params = apiClient.post.mock.calls[0][1]
+    expect(params.status).toBe('failed')
+    expect(Date.parse(params.failed_after)).toBeGreaterThanOrEqual(before - 24 * 3_600_000 - 1000)
+    expect(Date.parse(params.failed_after)).toBeLessThanOrEqual(Date.now() - 24 * 3_600_000 + 1000)
+    expect(await screen.findByText('Queued 1 message for another delivery attempt.')).toBeVisible()
+    confirm.mockRestore()
+  })
+
   it('offers a way back to the admin panel only to an admin of the current account', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
     uninstallAuth = setAuthTokenGetter(async () => 'token', { userId: 'admin-a', sessionId: 'session-a', ready: true })

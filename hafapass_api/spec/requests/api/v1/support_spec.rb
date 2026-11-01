@@ -48,6 +48,74 @@ RSpec.describe "Api::V1::Support", type: :request do
     expect(AuditLog.where(actor_user: support_user, action: "message_delivery.replayed", auditable: delivery)).to exist
   end
 
+  describe "bulk re-send" do
+    def bulk_resend(user: support_user, **params)
+      post "/api/v1/support/message_deliveries/bulk_resend", params: params, headers: auth_headers(user), as: :json
+    end
+
+    def failed_delivery(**attributes)
+      create(:message_delivery, order: order, event: order.event, status: :failed, failed_at: 1.hour.ago, **attributes)
+    end
+
+    it "queues retryable failed deliveries, skips unsafe ones by reason, and audits each replay" do
+      queued = failed_delivery
+      failed_delivery(provider_id: "re_accepted")
+      failed_delivery(provider: "resend", attempts: 1, provider_outcome_unknown: true, provider_attempted_at: 2.days.ago)
+      create(:message_delivery, order: order, recipient: "bounced@example.com", status: :bounced)
+      failed_delivery(recipient: "bounced@example.com")
+      create(:message_delivery, order: order, status: :sent)
+
+      expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).with(queued.id).exactly(:once)
+
+      expect(response).to have_http_status(:accepted)
+      expect(response.parsed_body).to eq("queued" => 1, "matched" => 4, "capped" => false,
+        "skipped" => { "provider_accepted" => 1, "replay_window_expired" => 1, "suppressed_recipient" => 1 })
+      audit = AuditLog.find_by!(action: "message_delivery.replayed", auditable: queued)
+      expect(audit).to have_attributes(actor_user_id: support_user.id)
+      expect(audit.metadata).to include("bulk" => true)
+      expect(AuditLog.where(action: "message_delivery.replayed").count).to eq(1)
+    end
+
+    it "filters by failure window and event" do
+      in_window = failed_delivery(failed_at: 3.hours.ago)
+      failed_delivery(failed_at: 30.hours.ago)
+      failed_delivery(failed_at: 10.minutes.ago)
+      other_event = create(:message_delivery, status: :failed, failed_at: 3.hours.ago)
+
+      expect do
+        bulk_resend(status: "failed", event_id: order.event_id, failed_after: 1.day.ago.iso8601, failed_before: 1.hour.ago.iso8601)
+      end.to have_enqueued_job(MessageDeliveryJob).exactly(:once).with(in_window.id)
+      expect(response.parsed_body).to include("queued" => 1, "matched" => 1)
+
+      expect { bulk_resend(status: "failed", event_id: other_event.event_id) }
+        .to have_enqueued_job(MessageDeliveryJob).exactly(:once).with(other_event.id)
+    end
+
+    it "caps one request, oldest failure first, and says more remain" do
+      stub_const("Api::V1::Support::MessageDeliveriesController::BULK_RESEND_LIMIT", 2)
+      oldest = failed_delivery(failed_at: 3.hours.ago)
+      older = failed_delivery(failed_at: 2.hours.ago)
+      failed_delivery(failed_at: 1.hour.ago)
+
+      expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:twice)
+      expect(response.parsed_body).to include("queued" => 2, "matched" => 3, "capped" => true)
+      expect(AuditLog.where(action: "message_delivery.replayed").pluck(:auditable_id)).to contain_exactly(oldest.id, older.id)
+    end
+
+    it "requires the failed status filter and valid times, and is limited to support staff" do
+      failed_delivery
+      expect { bulk_resend }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect { bulk_resend(status: "bounced") }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect { bulk_resend(status: "failed", failed_after: "yesterday", failed_before: "soon") }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("failed_after")
+      expect { bulk_resend(status: "failed", user: attendee) }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   [:support, :admin].each do |role|
     it "keeps frozen email wire bytes and digest out of #{role} delivery responses" do
       payload = { "to" => "buyer@synthetic.invalid", "html" => "<a href='https://synthetic.invalid/?guest_token=private-fixture-link'>Order</a>" }
