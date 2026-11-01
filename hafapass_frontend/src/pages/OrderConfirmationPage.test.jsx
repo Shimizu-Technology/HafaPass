@@ -337,6 +337,16 @@ describe('buyer refund outcomes and terminal retries', () => {
     expect(screen.queryByRole('button', { name: 'Refund', exact: true })).not.toBeInTheDocument()
   })
 
+  it('keeps offering a refund after a postponed event resumes', async () => {
+    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: 'published' },
+      latest_event_change: { id: 4, change_type: 'postponed', response_available: true, refund_eligible: true,
+        refund_deadline_at: '2030-01-02T08:00:00Z' } })
+    mount()
+    expect(await screen.findByRole('button', { name: 'Request refund' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Keep my tickets' })).toBeInTheDocument()
+    expect(screen.getByText('You can request a refund until Jan 2, 2030, 6:00 PM Guam time.')).toBeInTheDocument()
+  })
+
   it('shows a change without choices to a buyer who ordered after it', async () => {
     mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: 'postponed' },
       latest_event_change: { id: 4, change_type: 'postponed', reason: 'Storm warning', response_available: false, refund_eligible: false } })

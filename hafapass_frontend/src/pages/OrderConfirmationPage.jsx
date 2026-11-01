@@ -248,11 +248,17 @@ function OrderConfirmationContent() {
             : usableTickets
               ? t('buyerAccount.orderConfirmationPage.yourTicketsAreReadyYouCanRequestA')
               : t('buyerAccount.orderConfirmationPage.youCanViewYourOrderAndTicketStatuses')
-  const currentChangeTypes = event?.status === 'cancelled' ? ['cancelled']
-    : event?.status === 'postponed' ? ['postponed', 'rescheduled', 'venue_changed']
-      : ['published', 'rescheduled'].includes(event?.status) ? ['rescheduled', 'venue_changed'] : []
-  const change = currentChangeTypes.includes(order?.latest_event_change?.change_type)
-    ? order.latest_event_change : null
+  // A cancelled event shows only its cancellation. A live or postponed event
+  // shows its latest change, and the API's refund_eligible and
+  // response_available decide the choices. Once a postponed event resumes,
+  // its postponement matters only while it still offers (or has) a refund.
+  const latestChange = order?.latest_event_change
+  const resumedPostponement = latestChange?.change_type === 'postponed' && event?.status !== 'postponed'
+  const change = latestChange && (event?.status === 'cancelled'
+    ? latestChange.change_type === 'cancelled'
+    : ['published', 'postponed', 'rescheduled'].includes(event?.status) && latestChange.change_type !== 'cancelled' &&
+      (!resumedPostponement || latestChange.refund_eligible === true || latestChange.response === 'refund_requested'))
+    ? latestChange : null
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
@@ -262,9 +268,7 @@ function OrderConfirmationContent() {
   // it without a choice to make.
   const changeRefundOffered = change?.refund_eligible === true
   const canRespondToChange = change && change.response_available !== false &&
-    (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) &&
-    ['cancelled', 'postponed', 'rescheduled', 'venue_changed'].includes(change.change_type) &&
-    (event?.status !== 'cancelled' || change.change_type === 'cancelled')
+    (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt))
   const showChangeRefund = canRespondToChange && (changeRefundOffered || refundNeedsStatusCheck(eventRefundAttempt))
   const showKeepTickets = canRespondToChange && !change.response && change.change_type !== 'cancelled'
   const ticketRefundOpen = event?.status === 'cancelled' || (event?.status === 'postponed' && changeRefundOffered)
