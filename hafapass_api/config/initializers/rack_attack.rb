@@ -133,8 +133,10 @@ class Rack::Attack
 
   # ─── Order Creation Throttles ─────────────────────────────────────────────
 
-  # Throttle order creation by IP (10 orders per minute)
-  throttle("orders/ip", limit: 10, period: 1.minute) do |req|
+  # Throttle order creation by IP (30 orders per minute). Checkout itself caps
+  # live holds and free tickets per IP digest and allows one live unpaid order
+  # per buyer, so this ceiling can stay above carrier-NAT and venue Wi-Fi peaks.
+  throttle("orders/ip", limit: 30, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/orders" && req.post?
   end
 
@@ -146,7 +148,8 @@ class Rack::Attack
         raw = req.body.read
         req.body.rewind
         body = JSON.parse(raw)
-        body["buyer_email"]&.downcase
+        email = body["buyer_email"] if body.is_a?(Hash)
+        email.strip.downcase.presence if email.is_a?(String)
       rescue JSON::ParserError, IOError
         nil
       end
@@ -206,13 +209,6 @@ class Rack::Attack
 
   throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
-  end
-
-  # ─── Check-in Throttles ───────────────────────────────────────────────────
-
-  # Throttle check-in attempts (60 per minute per IP - for scanning)
-  throttle("checkin/ip", limit: 60, period: 1.minute) do |req|
-    req.ip if req.path.start_with?("/api/v1/check_in") && req.post?
   end
 
   # ─── Wallet Throttles ─────────────────────────────────────────────────────

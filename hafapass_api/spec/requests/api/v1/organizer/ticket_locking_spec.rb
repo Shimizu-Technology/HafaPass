@@ -22,7 +22,6 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
     @buyer_headers = auth_headers(@buyer)
     allow(ClerkIdentity).to receive(:verified_email_addresses).with(@buyer.clerk_id, require_available: true).and_return([@buyer.email])
     @recipient_headers = auth_headers(@recipient)
-    @direct_headers = auth_headers(@event.organizer_profile.user)
     @type = create(:ticket_type, event: @event, quantity_sold: 1, quantity_available: 10)
     @order = create(:order, event: @event, user: @buyer, buyer_email: @buyer.email)
     @ticket = create(:ticket, event: @event, order: @order, ticket_type: @type)
@@ -33,7 +32,7 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
   after { clean_data }
 
   %i[sync recover].each do |operation|
-    %i[rotate create accept direct cancel expire free_cancel guest lifecycle seat].each do |mutation|
+    %i[rotate create accept cancel expire free_cancel guest lifecycle seat].each do |mutation|
       it "finishes #{operation} versus #{mutation} at the real audit boundary without a lock cycle" do
         transfer = nil
         token = nil
@@ -58,7 +57,7 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
         old_display = @ticket.display_credential
         old_scan = @ticket.scan_credential
         audit_action = { rotate: "ticket.scan_credential_rotated", create: "ticket_transfer.created",
-          accept: "ticket.scan_credential_rotated", direct: "ticket.checked_in", cancel: "ticket_transfer.cancelled",
+          accept: "ticket.scan_credential_rotated", cancel: "ticket_transfer.cancelled",
           expire: "ticket_transfer.expired", free_cancel: "ticket.cancelled", guest: "guest_purchase.recovered",
           lifecycle: "order.cancelled", seat: "ticket.scan_credential_rotated" }.fetch(mutation)
         audit_ready, release_audit = Queue.new, Queue.new
@@ -81,8 +80,6 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
               params: { recipient_email: @recipient.email }, headers: @buyer_headers
           when :accept
             client.post "/api/v1/me/ticket_transfers/accept", params: { token: token }, headers: @recipient_headers
-          when :direct
-            client.post "/api/v1/check_in/#{old_scan}", headers: @direct_headers
           when :cancel
             client.delete "/api/v1/me/tickets/#{@ticket.id}/transfer", headers: @buyer_headers
           when :expire
@@ -119,7 +116,6 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
         expect(results.fetch(:admission).first).to eq(200)
         expected = case mutation
         when :rotate, :accept, :free_cancel, :seat then ["rejected", "credential_revoked"]
-        when :direct then ["conflict", "already_admitted"]
         else ["accepted", "admitted"]
         end
         expect(results.fetch(:admission).last.fetch("results")).to match([include(
@@ -295,39 +291,6 @@ RSpec.describe "Ticket mutation and admission lock ordering", type: :request, we
       workers&.each { |thread| thread.kill if thread.alive? }
       workers&.each(&:join)
     end
-  end
-
-  it "rechecks a resolved direct check-in credential after a real buyer rotation commits" do
-    old_scan = @ticket.scan_credential
-    resolved, release = Queue.new, Queue.new
-    outcomes, connections = Queue.new, Queue.new
-    allow(TicketCredential).to receive(:find_scan).and_wrap_original do |original, *args|
-      result = original.call(*args)
-      if Thread.current[:ticket_worker] == :direct
-        resolved << true
-        Timeout.timeout(8) { release.pop }
-      end
-      result
-    end
-    workers = [worker(:direct, outcomes, connections) do
-      client = ActionDispatch::Integration::Session.new(Rails.application)
-      client.post "/api/v1/check_in/#{old_scan}", headers: @direct_headers
-      [client.response.status, client.response.parsed_body]
-    end]
-    Timeout.timeout(8) { resolved.pop }
-    post "/api/v1/orders/#{@order.id}/tickets/#{@ticket.id}/rotate_scan", headers: @buyer_headers
-    expect(response).to have_http_status(:ok)
-    release << true
-    Timeout.timeout(12) { workers.each(&:join) }
-    result = outcomes.pop.last
-    expect(result).to match([422, include("error" => "Ticket credential has been replaced")])
-    expect(@ticket.reload).to be_issued
-    expect(@ticket.first_admitted_at).to be_nil
-    expect(AuditLog.where(auditable: @ticket, action: "ticket.checked_in")).to be_empty
-    expect(AuditWriteFailure.count).to eq(0), AuditWriteFailure.pluck(:action, :failure_class).inspect
-  ensure
-    workers&.each { |thread| thread.kill if thread.alive? }
-    workers&.each(&:join)
   end
 
   %i[same different].each do |recipient|

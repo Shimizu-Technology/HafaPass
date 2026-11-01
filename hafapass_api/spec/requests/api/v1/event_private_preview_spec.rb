@@ -232,8 +232,23 @@ RSpec.describe "Private event previews", type: :request do
     expect(response.parsed_body.fetch("tickets").sole.dig("pending_transfer", "recipient_email")).to eq("friend@example.com")
     delete "/api/v1/me/tickets/#{ticket.id}/transfer", headers: auth_headers(buyer)
     expect(response).to have_http_status(:ok)
-    post "/api/v1/check_in/#{ticket.scan_credential}", headers: headers
+    # Door scanning uses the event-scoped scanner. Production would require the
+    # manifest signing key; this example is about suspension, not key custody.
+    allow(Rails.env).to receive(:production?).and_return(false)
+    post "/api/v1/organizer/events/#{event.id}/scanner_devices", params: { identifier: "suspended-door", name: "Door" },
+      headers: headers
+    expect(response).to have_http_status(:created)
+    device_path = "/api/v1/organizer/events/#{event.id}/scanner_devices/#{response.parsed_body.fetch('id')}"
+    get "#{device_path}/manifest", headers: headers
     expect(response).to have_http_status(:ok)
+    manifest = response.parsed_body.fetch("payload")
+    entry = manifest.fetch("tickets").find { |candidate| candidate["ticket_id"] == ticket.id }
+    post "#{device_path}/sync", params: { actions: [{ action_uuid: "suspended-door-scan", kind: "admit", source: "offline",
+      sequence: 1, manifest_version: manifest.fetch("version"), occurred_at: Time.current.iso8601(6),
+      ticket_id: ticket.id, credential_hash: entry.fetch("credential_hash") }] }, headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")
+    expect(ticket.reload).to be_checked_in
   end
 
   it "audits and notifies owners of admin verification decisions" do

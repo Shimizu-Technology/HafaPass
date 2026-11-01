@@ -78,7 +78,6 @@ Rails.application.routes.draw do
       end
 
       # Ticket check-in
-      post "check_in/:credential", to: "check_ins#create", as: :check_in
 
       # Authenticated user endpoints
       namespace :me do
