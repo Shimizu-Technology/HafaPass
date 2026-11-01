@@ -36,6 +36,16 @@ RSpec.describe "Privacy requests and holds", type: :request do
     expect(PrivacyRequest.last.verified?).to be(false)
   end
 
+  it "answers a guest promptly with a retryable error when the code email times out" do
+    guest = create(:order)
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now).and_raise(Net::ReadTimeout)
+    post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+      guest_token: GuestOrderAccess.issue!(guest) }
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.headers["Retry-After"]).to eq("60")
+    expect(response.parsed_body).to include("retryable" => true, "error" => /couldn't send your code/)
+  end
+
   it "requires admin verification before execution and audits the purge setting" do
     privacy_request = PrivacyRequest.create!(kind: "access", user: buyer, requester_email: buyer.email)
     post "/api/v1/admin/privacy_requests/#{privacy_request.id}/execute", headers: auth_headers(admin)

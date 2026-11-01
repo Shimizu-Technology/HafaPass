@@ -37,6 +37,14 @@ RSpec.describe MessageDeliveryJob, :webmock do
     end
   end
 
+  it "bounds every provider HTTP phase so a stalled Resend can't hold the job thread" do
+    allow(http).to receive(:request).and_return(provider_response(200, '{"id":"sdk_message"}'))
+
+    described_class.new.perform(delivery.id)
+
+    expect(HTTParty::ConnectionAdapter).to have_received(:call).with(anything, hash_including(timeout: 10))
+  end
+
   it "sends an already frozen legacy payload without injecting application tags or changing its idempotency identity" do
     legacy = { "from" => "sender@example.invalid", "to" => delivery.recipient,
       "subject" => "Legacy frozen request", "html" => "Synthetic", "tags" => [{ "name" => "category", "value" => "order_recovery" }] }

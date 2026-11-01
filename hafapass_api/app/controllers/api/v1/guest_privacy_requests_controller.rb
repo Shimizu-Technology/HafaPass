@@ -17,6 +17,11 @@ class Api::V1::GuestPrivacyRequestsController < ApplicationController
     AuditLogger.record!(action: "privacy_request.submitted", auditable: item,
       metadata: { kind: kind, guest: true }, request: request)
     render json: item.as_json(only: [:id, :kind, :status, :created_at]), status: :created
+  rescue Timeout::Error
+    # The delivery is already marked failed; the buyer can simply ask again.
+    response.set_header("Retry-After", "60")
+    render json: { error: "We couldn't send your code right now. Try again in a minute.", retryable: true },
+      status: :service_unavailable
   end
 
   def verify
