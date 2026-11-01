@@ -32,9 +32,155 @@
     X-Frame-Options = "DENY"
     Content-Security-Policy = "frame-ancestors 'none'"
     Permissions-Policy = 'camera=(self), payment=(self "https://js.stripe.com"), microphone=(), geolocation=()'
+    # Report-only: violations show in the browser console and block nothing.
+    # Tighten (and enforce) once a release shows no unexpected reports.
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com https://*.js.stripe.com https://clerk.hafapass.shimizu-technology.com https://*.clerk.accounts.dev https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com https://hafapass-staging-assets-20261010-01a11d81.s3.ap-southeast-2.amazonaws.com https://*.stripe.com; font-src 'self' data:; connect-src 'self' https://hafapass-api.onrender.com https://api.stripe.com https://clerk.hafapass.shimizu-technology.com https://*.clerk.accounts.dev https://*.sentry.io; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://challenges.cloudflare.com https://www.youtube-nocookie.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 [[headers]]
   for = "/events/*/preview"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+# Vite fingerprints every file under /assets, so a URL never changes content.
+# Stripe Elements loads the brand font files into its js.stripe.com iframe.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "https://js.stripe.com"
+
+# Personal, account and staff pages: keep them out of search results and never
+# send their URLs (which can carry ticket credentials or tokens) as a referrer.
+# Each path is listed exactly; a section root and its subpaths are separate.
+[[headers]]
+  for = "/tickets/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/orders/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/checkout/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/ticket-transfers/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/unsubscribe/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/my-tickets"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/saved"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/admin"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/support"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/support/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/privacy"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/privacy/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/account/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/organization-invitations/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/platform-invitations/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/sign-in"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/sign-in/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/sign-up"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/sign-up/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/dashboard"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/dashboard/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
     Referrer-Policy = "no-referrer"
