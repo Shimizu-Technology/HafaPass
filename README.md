@@ -71,7 +71,7 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 
 ### Prerequisites
 
-- Ruby 3.3.4 and Rails 8+
+- Ruby 3.3.13 and Rails 8+
 - Node.js 20.19+
 - PostgreSQL
 - Redis (for background jobs - optional in development)

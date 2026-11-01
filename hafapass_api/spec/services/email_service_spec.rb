@@ -197,7 +197,8 @@ RSpec.describe EmailService do
 
     expect(receipt).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass",
       "Event seller: #{ERB::Util.html_escape(seller)}", "operated by ", "Shimizu Technology", "Service fee:", "Total paid:")
-    expect(receipt).not_to match(/tax/i)
+    # Check visible copy only: random guest tokens in link URLs can spell "tax".
+    expect(receipt.gsub(/(?:href|src)="[^"]*"/, "")).not_to match(/tax/i)
     expect(ticket_html).to include("Sold by #{ERB::Util.html_escape(seller)} · Tickets by HåfaPass")
   end
 
