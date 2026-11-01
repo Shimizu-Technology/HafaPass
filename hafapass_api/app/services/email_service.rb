@@ -606,7 +606,13 @@ class EmailService
 
       refund = order.refunds.succeeded.find(delivery.metadata.fetch("refund_id"))
       html, subject = in_locale(order.locale) do
-        key = event.cancelled? && refund.provider == "stripe" ? "refund.cancelled_subject" : "refund.subject"
+        key = if refund.reason == Commerce::LateCaptureRefund::REASON
+          "refund.late_capture_subject"
+        elsif event.cancelled? && refund.provider == "stripe"
+          "refund.cancelled_subject"
+        else
+          "refund.subject"
+        end
         [build_refund_notification_html(order, event, refund: refund),
           safe_subject(t(key, event: event_title(event), amount: money(refund.amount_cents)))]
       end
@@ -1146,23 +1152,35 @@ class EmailService
       else
         t("refund.partial", amount: money(amount_cents))
       end
-      reason = if refund.reason.present?
+      late_capture = refund.reason == Commerce::LateCaptureRefund::REASON
+      reason = if refund.reason.present? && !late_capture
         "<p style=\"color: #6b7280; margin: 0 0 12px;\"><strong>#{ht('refund.reason')}</strong> #{h(refund.reason)}</p>"
       else
         ""
       end
 
-      cancellation = event.cancelled? && refund.provider == "stripe"
+      cancellation = event.cancelled? && refund.provider == "stripe" && !late_capture
       returned_key = case refund.provider
       when "stripe" then "refund.returned"
       when "door_cash" then "refund.returned_cash"
       else "refund.returned_door_card"
       end
-      heading = cancellation ? t("refund.cancelled_heading") : t("refund.heading")
+      heading = if late_capture
+        t("refund.late_capture_heading")
+      else
+        cancellation ? t("refund.cancelled_heading") : t("refund.heading")
+      end
+      body = if late_capture
+        ht("refund.late_capture_body", event: event_title(event), amount: money(amount_cents))
+      elsif cancellation
+        ht("refund.cancelled_body", event: event_title(event), amount: money(amount_cents))
+      else
+        ht("refund.body", event: event_title(event))
+      end
       email_wrapper(heading) do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
-          <p style="color: #6b7280; margin: 0 0 28px;">#{cancellation ? ht('refund.cancelled_body', event: event_title(event), amount: money(amount_cents)) : ht('refund.body', event: event_title(event))}</p>
+          <p style="color: #6b7280; margin: 0 0 28px;">#{body}</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin-bottom: 28px;">
             <p style="color: #166534; font-weight: 600; margin: 0 0 8px;">#{h(amount_str)}</p>

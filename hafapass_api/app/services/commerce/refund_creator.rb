@@ -589,7 +589,15 @@ module Commerce
       return unless refund.payment.refunded? && refund.order.completed_at.nil? && refund.order.tickets.empty?
 
       ReconciliationException.open.where(order: refund.order, payment: refund.payment,
-        code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).find_each(&:resolve!)
+        code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).find_each do |issue|
+        issue.resolve!
+        AuditLogger.record!(action: "reconciliation_exception.resolved", auditable: issue, actor: requested_by,
+          organization: refund.order.event.organization, event: refund.order.event, outcome: "succeeded",
+          deduplication_key: "reconciliation_exception:#{issue.id}:resolved",
+          after_data: { status: "resolved" },
+          metadata: { code: issue.code, order_id: refund.order_id, payment_id: refund.payment_id, refund_id: refund.id,
+            note: "Late capture repaid in full by refund #{refund.id}" })
+      end
     end
 
     def release_fully_refunded_inventory!(refund)

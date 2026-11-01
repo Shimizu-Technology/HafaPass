@@ -200,6 +200,14 @@ class AuditActions
         "refund.created" => "Requested a refund."
       }
 
+    # Payment reconciliation and fraud review are platform finance work.
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.resolved" => "Resolved a payment reconciliation exception.",
+        "order.fraud_refund_requested" => "Requested a fraud refund after a Stripe early fraud warning."
+      }
+
     define registry, area: "refunds", audience: %w[org_owner org_finance],
       tenant: true, event_required: true,
       snapshots: %w[status amount_cents], metadata: %w[operation retry_refund_id amount_cents order_id refund_id provider_status], actions: {

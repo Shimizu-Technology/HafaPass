@@ -196,6 +196,110 @@ RSpec.describe "Commerce order lifecycle" do
     expect(ticket_type.reload.quantity_sold).to eq(0)
   end
 
+  describe "expiring a hold whose payment already succeeded" do
+    include ActiveJob::TestHelper
+
+    def lapsed_test_mode_order(quantity: 1)
+      SiteSetting.instance.update!(payment_mode: "test")
+      allow(StripeService).to receive(:card_only_intent?).and_return(true)
+      result = create_pending_order(quantity: quantity)
+      expect(result.payment.provider_environment).to eq("test")
+      result.order.update_columns(expires_at: 1.minute.ago)
+      result.order.inventory_holds.update_all(expires_at: 1.minute.ago)
+      result
+    end
+
+    def stub_intent(result, status:, amount: result.payment.amount_cents)
+      allow(StripeService).to receive(:retrieve_payment_intent).with(result.payment).and_return(
+        OpenStruct.new(id: result.payment.provider_payment_id, status: status, amount_received: amount,
+          currency: "usd", livemode: false))
+      allow(StripeService).to receive(:cancel_payment_intent).and_return(OpenStruct.new(status: "canceled"))
+    end
+
+    it "fulfils the order normally when its inventory is still free, without cancelling the payment" do
+      result = lapsed_test_mode_order(quantity: 2)
+      stub_intent(result, status: "succeeded")
+
+      expect(Commerce::OrderLifecycle.expire!(result.order)).to be(false)
+
+      expect(result.order.reload).to be_completed
+      expect(result.payment.reload).to be_succeeded
+      expect(result.order.tickets.where(status: :issued).count).to eq(2)
+      expect(ticket_type.reload.quantity_sold).to eq(2)
+      expect(result.order.inventory_holds).to all(be_consumed)
+      expect(StripeService).not_to have_received(:cancel_payment_intent)
+      expect(ReconciliationException.where(order: result.order)).to be_empty
+      expect(AuditLog.find_by!(auditable: result.order, action: "order.completed").metadata).to include("late_completion" => true)
+      expect(EmailService).to have_received(:send_order_confirmation_async).with(result.order)
+    end
+
+    it "releases the order and queues an automatic refund when the inventory was resold" do
+      result = lapsed_test_mode_order(quantity: 2)
+      ticket_type.update_columns(quantity_sold: 9)
+      stub_intent(result, status: "succeeded")
+
+      expect do
+        expect(Commerce::OrderLifecycle.expire!(result.order)).to be(true)
+      end.to have_enqueued_job(LateCaptureRefundJob).with(result.payment.id)
+
+      expect(result.order.reload).to be_expired
+      expect(result.payment.reload).to be_succeeded
+      expect(result.order.tickets).to be_empty
+      expect(ticket_type.reload.quantity_sold).to eq(9)
+      expect(StripeService).not_to have_received(:cancel_payment_intent)
+      expect(ReconciliationException.find_by!(order: result.order).code).to eq("late_payment_success_after_hold_expiry")
+    end
+
+    it "does not use the event capacity a later buyer now holds" do
+      result = lapsed_test_mode_order(quantity: 2)
+      event.update!(max_capacity: 3)
+      later = create_pending_order(quantity: 2)
+      expect(later.order.inventory_holds.current.sum(:quantity)).to eq(2)
+      stub_intent(result, status: "succeeded")
+
+      Commerce::OrderLifecycle.expire!(result.order)
+
+      expect(result.order.reload).to be_expired
+      expect(ReconciliationException.find_by!(order: result.order).code).to eq("late_payment_success_after_hold_expiry")
+    end
+
+    it "expires and cancels as before when the payment has not succeeded or cannot be checked" do
+      result = lapsed_test_mode_order
+      stub_intent(result, status: "requires_payment_method")
+      expect(Commerce::OrderLifecycle.expire!(result.order)).to be(true)
+      expect(result.order.reload).to be_expired
+      expect(StripeService).to have_received(:cancel_payment_intent).once
+
+      other = lapsed_test_mode_order
+      allow(StripeService).to receive(:retrieve_payment_intent).with(other.payment).and_raise(Stripe::APIConnectionError, "down")
+      expect(Commerce::OrderLifecycle.expire!(other.order)).to be(true)
+      expect(other.order.reload).to be_expired
+      expect(StripeService).to have_received(:cancel_payment_intent).twice
+    end
+
+    it "never fulfils a mismatched provider amount" do
+      result = lapsed_test_mode_order
+      stub_intent(result, status: "succeeded", amount: result.payment.amount_cents - 1)
+
+      Commerce::OrderLifecycle.expire!(result.order)
+
+      expect(result.order.reload.tickets).to be_empty
+      expect(ReconciliationException.where(order: result.order).pluck(:code)).to include("payment_amount_mismatch")
+    end
+
+    it "queues the automatic refund when a webhook reports success after the order was released" do
+      result = create_pending_order
+      allow(StripeService).to receive(:cancel_payment_intent).and_return(OpenStruct.new(status: "canceled"))
+      Commerce::OrderLifecycle.cancel!(result.order)
+
+      expect do
+        Commerce::OrderLifecycle.complete!(result.order, payment: result.payment,
+          provider_amount_cents: result.payment.amount_cents, provider_currency: "usd")
+      end.to have_enqueued_job(LateCaptureRefundJob).with(result.payment.id)
+      expect(ReconciliationException.find_by!(order: result.order).code).to eq("late_payment_success_after_inventory_release")
+    end
+  end
+
   it "enforces event capacity across ticket types using active holds" do
     event.update!(max_capacity: 1)
     other_type = create(:ticket_type, event: event, quantity_available: 10, max_per_order: 10)

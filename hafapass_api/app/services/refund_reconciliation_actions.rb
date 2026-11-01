@@ -78,6 +78,9 @@ class RefundReconciliationActions
     if @type == "request"
       return execute_buyer_request!
     end
+    if @type == "exception"
+      return refund_late_capture!
+    end
     if @type == "cancellation"
       return retry_cancellation_item!
     end
@@ -131,6 +134,18 @@ class RefundReconciliationActions
     EventCancellationRefundJob.perform_later(item.event_cancellation_refund_run_id)
     audit!("refund_reconciliation.cancellation_retry", item, { order_id: order.id })
     item
+  end
+
+  def refund_late_capture!
+    unless Commerce::LateCaptureRefund::CODES.include?(@record.code) && @record.open? && @record.payment
+      raise ActionError, "Only an open late-capture exception can be refunded here"
+    end
+
+    result = Commerce::LateCaptureRefund.call(payment: @record.payment, requested_by: @actor)
+    audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
+    result
+  rescue Commerce::LateCaptureRefund::NotApplicable => e
+    raise ActionError, e.message
   end
 
   def execute_buyer_request!

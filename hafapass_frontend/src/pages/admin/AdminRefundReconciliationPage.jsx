@@ -13,6 +13,7 @@ const statuses = [
   ['', 'All unresolved'], ['pending', 'Pending'], ['failed', 'Failed'], ['cancelled', 'Cancelled'], ['needs_manual', 'Needs a manual return'],
   ['waiting_on_pending_refund', 'Waiting on Stripe'], ['waiting_on_dispute', 'Waiting on a dispute'],
   ['request_unexecuted', 'Buyer request not yet refunded'], ['dispute_open', 'Open dispute'],
+  ['late_capture', 'Paid after the hold was released'],
 ]
 
 function AdminRefundReconciliationSession({ identity, resourcePath }) {

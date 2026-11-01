@@ -210,6 +210,39 @@ RSpec.describe "Refund reconciliation", type: :request do
       .failure_code).to eq("provider_result_unknown")
   end
 
+  it "lists an unrepaid late capture as an owed buyer balance and refunds it once from the queue" do
+    order = create(:order, event: event, status: :expired, completed_at: nil, subtotal_cents: 5000, service_fee_cents: 250,
+      total_cents: 5250)
+    ticket_type = create(:ticket_type, event: event)
+    create(:order_item, order: order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 5000,
+      subtotal_cents: 5000, fee_cents: 250, organizer_proceeds_cents: 5000)
+    payment = payment_for(order)
+    issue = create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_hold_expiry")
+    create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_inventory_release")
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(
+      id: "re_late_queue", status: "succeeded", amount: 5250, currency: "usd"))
+
+    get "/api/v1/admin/refund_reconciliation", params: { status: "late_capture" }, headers: auth_headers(admin)
+    entry = response.parsed_body.fetch("items").sole
+    expect(entry).to include("type" => "exception", "id" => issue.id, "status" => "late_capture", "amount_cents" => 5250,
+      "buyer_amount_cents" => 5250, "next_action" => "Refund the buyer's late card payment")
+    expect(RefundReconciliationQueue.outstanding_for_event?(event)).to be(true)
+
+    post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok), response.body
+    expect(order.refunds.succeeded.sole).to have_attributes(amount_cents: 5250, reason: "late_capture_refund",
+      idempotency_key: "late-capture:payment:#{payment.id}")
+    expect(ReconciliationException.where(order: order, code: Commerce::LateCaptureRefund::CODES).pluck(:status)).to eq(%w[resolved resolved])
+    expect(AuditLog.where(action: "refund_reconciliation.retry", auditable: issue)).to exist
+    expect(AuditLog.where(action: "reconciliation_exception.resolved").count).to eq(2)
+
+    get "/api/v1/admin/refund_reconciliation", params: { status: "late_capture" }, headers: auth_headers(admin)
+    expect(response.parsed_body.fetch("items")).to be_empty
+    post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(StripeService).to have_received(:refund_payment).once
+  end
+
   it "executes an unfulfilled buyer request once through RefundCreator" do
     order = create(:order, event: event, created_at: 2.days.ago)
     ticket_type = create(:ticket_type, event: event)
