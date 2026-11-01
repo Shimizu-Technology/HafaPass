@@ -8,6 +8,28 @@ module Settlements
       new(**).call
     end
 
+    # Money that is still moving or unverified for the event, as an
+    # instruction ("Resolve ...") the caller completes with its own action, or
+    # nil. Shared with EventLifecycle#archive_blocker: an archived event
+    # cannot be finalized again, so it must not be archived while any of
+    # these is open.
+    def self.open_money_blocker(event)
+      return "Finish cancellation refunds" if EventCancellationRefunds.unresolved?(event)
+      if event.orders.joins(:refunds).merge(Refund.pending).exists? || event.orders.joins(:disputes).merge(Dispute.open).exists?
+        return "Resolve pending refunds and open disputes"
+      end
+
+      # The event-day closeout contract requires an empty reconciliation
+      # queue, even when an item would not prevent a buyer refund attempt.
+      if event.orders.joins(:reconciliation_exceptions).merge(ReconciliationException.open).exists? ||
+          ReconciliationException.open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
+        return "Resolve open reconciliation exceptions"
+      end
+      return "Verify actual Stripe processing fees" if StripeProcessingFees.missing_count(event.orders.select(:id)).positive?
+
+      nil
+    end
+
     def initialize(event:, actor:, request: nil)
       @event = event
       @actor = actor
@@ -23,23 +45,10 @@ module Settlements
         unless event.completed? || event.cancelled?
           raise FinalizationError, "Only completed or cancelled events can be finalized"
         end
-        if EventCancellationRefunds.unresolved?(event)
-          raise FinalizationError, "Finish cancellation refunds before finalizing this event"
-        end
-        if event.orders.joins(:refunds).merge(Refund.pending).exists? || event.orders.joins(:disputes).merge(Dispute.open).exists?
-          raise FinalizationError, "Resolve pending refunds and open disputes before finalizing"
+        if (blocker = self.class.open_money_blocker(event))
+          raise FinalizationError, "#{blocker} before finalizing this event"
         end
 
-        # The event-day closeout contract requires an empty reconciliation
-        # queue, even when an item would not prevent a buyer refund attempt.
-        if event.orders.joins(:reconciliation_exceptions).merge(ReconciliationException.open).exists? ||
-            ReconciliationException.open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
-          raise FinalizationError, "Resolve open reconciliation exceptions before finalizing"
-        end
-
-        if StripeProcessingFees.missing_count(event.orders.select(:id)).positive?
-          raise FinalizationError, "Verify actual Stripe processing fees before finalizing"
-        end
         result = Calculator.call(event)
         source_digest = result.attributes[:source_digest]
         settlement = event.settlements.find_by(source_digest: result.attributes[:source_digest])

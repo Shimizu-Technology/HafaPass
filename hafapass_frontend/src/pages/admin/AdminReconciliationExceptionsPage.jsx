@@ -60,6 +60,7 @@ function ExceptionDialog({ id, beginRequest, onClose, onChanged }) {
   const [loadError, setLoadError] = useState('')
   const [note, setNote] = useState('')
   const [confirmRefund, setConfirmRefund] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -84,6 +85,7 @@ function ExceptionDialog({ id, beginRequest, onClose, onChanged }) {
       if (!request.current()) return
       setIssue(response.data.reconciliation_exception)
       setConfirmRefund(false)
+      setConfirmed(false)
       setNote('')
       onChanged(message(response.data))
     } catch (failure) {
@@ -92,10 +94,16 @@ function ExceptionDialog({ id, beginRequest, onClose, onChanged }) {
     } finally { request.release(); setBusy(false) }
   }
 
+  // Codes that could hide unrecorded money need an explicit confirmation and
+  // a longer evidence note; the server enforces the same rule.
+  const confirmation = issue?.resolve_confirmation
   const resolve = submitEvent => {
     submitEvent.preventDefault()
-    if (!note.trim()) { setError('Add a note explaining how this was reconciled.'); return }
-    act('resolve', { note: note.trim() }, () => `Exception #${id} resolved.`)
+    const text = note.trim()
+    if (!text) { setError('Add a note explaining how this was reconciled.'); return }
+    if (confirmation && !confirmed) { setError('Tick the confirmation to resolve without moving money.'); return }
+    if (confirmation && text.length < confirmation.evidence_note_minimum) { setError(`Describe the evidence you checked (at least ${confirmation.evidence_note_minimum} characters).`); return }
+    act('resolve', confirmation ? { note: text, [confirmation.flag]: true } : { note: text }, () => `Exception #${id} resolved.`)
   }
 
   const actions = issue?.actions || []
@@ -139,13 +147,18 @@ function ExceptionDialog({ id, beginRequest, onClose, onChanged }) {
           </div>}
           {actions.includes('fraud_refund') && <Link to={orderLink(issue.order)} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline underline-offset-2">Open the order to cancel tickets and refund as fraud</Link>}
           {actions.includes('verify_external_refund') && <Link to={`/admin/refund_reconciliation?event_id=${issue.event.id}`} className="inline-flex min-h-11 items-center font-semibold text-brand-700 underline underline-offset-2">Verify the Stripe refund in Refund issues</Link>}
+          {issue.resolve_blocked_reason && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"><span className="font-semibold">Cannot resolve with a note yet. </span>{issue.resolve_blocked_reason}</p>}
           {actions.includes('resolve') && <form noValidate onSubmit={resolve} className="border-t border-neutral-200 pt-4">
             <label className="block font-medium text-neutral-900">
-              Resolution note <span className="text-red-700">*</span>
+              {confirmation ? 'Evidence note' : 'Resolution note'} <span className="text-red-700">*</span>
               <textarea rows={3} value={note} maxLength={2000} onChange={changeEvent => setNote(changeEvent.target.value)} className="input mt-1" />
             </label>
-            <p className="mt-1 text-xs text-content-muted">Say what you checked and what you changed. Resolving only closes this record; it does not move money.{issue.late_capture_owed_cents > 0 ? ' The buyer is still owed this payment; refund them first unless it was returned outside HåfaPass.' : ''}</p>
-            <button type="submit" disabled={busy} className="btn-secondary mt-3">{busy ? 'Saving…' : 'Resolve with note'}</button>
+            <p className="mt-1 text-xs text-content-muted">{confirmation ? `Use the action above when money needs to be recorded or refunded. Resolve here only if it does not, and say what you checked in Stripe (at least ${confirmation.evidence_note_minimum} characters).` : 'Say what you checked and what you changed.'} Resolving only closes this record; it does not move money.{issue.late_capture_owed_cents > 0 ? ' The buyer is still owed this payment; refund them first unless it was returned outside HåfaPass.' : ''}</p>
+            {confirmation && <label className="mt-3 flex min-h-11 items-start gap-2 text-neutral-900">
+              <input type="checkbox" checked={confirmed} onChange={changeEvent => setConfirmed(changeEvent.target.checked)} className="mt-1 h-4 w-4" />
+              <span>{confirmation.label}</span>
+            </label>}
+            <button type="submit" disabled={busy} className="btn-secondary mt-3">{busy ? 'Saving…' : confirmation ? 'Resolve without moving money' : 'Resolve with note'}</button>
           </form>}
         </div>}
     <div className="mt-6 flex justify-end"><button type="button" disabled={busy} onClick={onClose} className="btn-secondary">Close</button></div>
@@ -167,7 +180,7 @@ function AdminReconciliationExceptionsSession({ identity, resourcePath }) {
   const filtered = filters.code || filters.organization_id || filters.q
 
   return <AdminLayout>
-    <p className="mb-4 max-w-3xl text-sm text-content-muted">Payment records HåfaPass could not match automatically. Review each one against Stripe, use the action offered where there is a safe one, and resolve it with a note. Resolving closes the record; it never moves money by itself.</p>
+    <p className="mb-4 max-w-3xl text-sm text-content-muted">Payment records HåfaPass could not match automatically. Review each one against Stripe, use the action offered where there is a safe one, and resolve it with a note. Resolving closes the record; it never moves money by itself, so it is unavailable while a late capture still owes the buyer, and needs an explicit confirmation for fraud warnings and unverified refunds.</p>
     {notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
     <PayoutBlocks blocks={list.data?.payout_blocks} activeOrganization={filters.organization_id} onShow={id => setFilter({ organization_id: String(id), status: 'open', page: '' })} />
     <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter exceptions by status">

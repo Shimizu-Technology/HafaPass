@@ -333,6 +333,8 @@ entries are described above and defined in the registry's audience variants.
 | `promoter.updated` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Updated a promoter. |
 | `reconciliation_exception.buyer_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested a refund of a card payment that arrived after its order was released. |
 | `reconciliation_exception.manually_resolved` | yes | refunds | A | no | no | — | — | Resolved a payment reconciliation exception with a review note. |
+| `reconciliation_exception.resolved_without_ledger_change` | yes | refunds | A | no | no | — | — | Resolved a payment reconciliation exception after verifying no refund or payment record needed to change. |
+| `reconciliation_exception.reviewed_no_action` | yes | refunds | A | no | no | — | — | Resolved a Stripe early fraud warning without refunding the order. |
 | `refund.buyer_requested` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Requested a refund through buyer self-service. |
 | `refund.created` | historical | refunds | O/F | yes | yes | `status`, `amount_cents` | `order_id`, `amount_cents`, `event_title`, `order_reference`, `currency` | Requested a refund. |
 | `reconciliation_exception.resolved` | yes | refunds | A | yes | yes | — | — | Resolved a payment reconciliation exception. |

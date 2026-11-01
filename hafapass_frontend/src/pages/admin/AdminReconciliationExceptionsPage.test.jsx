@@ -14,10 +14,12 @@ const lateCapture = {
   expected_amount_cents: null, actual_amount_cents: null, webhook_event_id: null, late_capture_owed_cents: 5350,
   order: { id: 42, reference: 'HP-42', buyer_name: 'Ana Cruz', buyer_email: 'ana@example.com', status: 'cancelled', total_cents: 5350, currency: 'usd' },
   payment: { id: 7, provider: 'stripe', provider_environment: 'live', provider_payment_id: 'pi_late', amount_cents: 5350, currency: 'usd', status: 'succeeded' },
-  event: { id: 4, title: 'Night Market', status: 'completed' }, organization: org, blocks_payouts: true, actions: ['refund_buyer', 'resolve'],
+  event: { id: 4, title: 'Night Market', status: 'completed' }, organization: org, blocks_payouts: true, actions: ['refund_buyer'],
+  resolve_blocked_reason: 'The buyer is still owed $53.50. Use Refund buyer; the exception resolves when the refund succeeds.', resolve_confirmation: null,
 }
-const fraud = { ...lateCapture, id: 12, code: 'early_fraud_warning', late_capture_owed_cents: undefined, actions: ['fraud_refund', 'resolve'] }
-const orphan = { ...lateCapture, id: 13, code: 'payment_not_found', late_capture_owed_cents: undefined, order: null, payment: null, event: null, organization: null, blocks_payouts: false, actions: ['resolve'] }
+const fraud = { ...lateCapture, id: 12, code: 'early_fraud_warning', late_capture_owed_cents: undefined, actions: ['fraud_refund', 'resolve'], resolve_blocked_reason: null,
+  resolve_confirmation: { flag: 'reviewed_no_action', label: 'I reviewed the order and decided not to refund it.', evidence_note_minimum: 20 } }
+const orphan = { ...lateCapture, id: 13, code: 'payment_not_found', late_capture_owed_cents: undefined, order: null, payment: null, event: null, organization: null, blocks_payouts: false, actions: ['resolve'], resolve_blocked_reason: null, resolve_confirmation: null }
 const listing = (rows = [lateCapture, fraud, orphan]) => ({ data: {
   reconciliation_exceptions: rows, meta: { page: 1, total_pages: 1, total_count: rows.length },
   status_counts: { open: 3, resolved: 5 },
@@ -67,6 +69,8 @@ describe('AdminReconciliationExceptionsPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Review exception #11' }))
     const dialog = await screen.findByRole('dialog', { name: 'Exception #11' })
     expect(await within(dialog).findByText(/automatic refund normally finishes within minutes/)).toBeInTheDocument()
+    expect(dialog).toHaveTextContent('Cannot resolve with a note yet. The buyer is still owed $53.50.')
+    expect(within(dialog).queryByRole('textbox', { name: /note/ })).not.toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Refund buyer' }))
     expect(apiClient.post).not.toHaveBeenCalled()
     expect(dialog).toHaveTextContent("Refund $53.50 to the buyer's card?")
@@ -76,21 +80,30 @@ describe('AdminReconciliationExceptionsPage', () => {
     expect(within(dialog).queryByRole('button', { name: 'Refund buyer' })).not.toBeInTheDocument()
   })
 
-  it('links a fraud warning to the order fraud refund and requires a note to resolve', async () => {
-    apiClient.post.mockResolvedValue({ data: { reconciliation_exception: { ...fraud, status: 'resolved', actions: [], details: {}, history: [{ id: 1, action: 'reconciliation_exception.manually_resolved', occurred_at: '2026-11-02T00:00:00Z', source: 'admin', actor: { email: 'leon@example.com' }, note: 'Issuer confirmed legitimate.' }] } } })
+  it('links a fraud warning to the order fraud refund and requires a confirmation and evidence note to resolve', async () => {
+    apiClient.post.mockResolvedValue({ data: { reconciliation_exception: { ...fraud, status: 'resolved', actions: [], resolve_confirmation: undefined, details: {}, history: [{ id: 1, action: 'reconciliation_exception.reviewed_no_action', occurred_at: '2026-11-02T00:00:00Z', source: 'admin', actor: { email: 'leon@example.com' }, note: 'Issuer confirmed the purchase is legitimate.' }] } } })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Review exception #12' }))
     const dialog = await screen.findByRole('dialog', { name: 'Exception #12' })
     expect(await within(dialog).findByRole('link', { name: 'Open the order to cancel tickets and refund as fraud' })).toHaveAttribute('href', '/admin/orders?search=%2342')
     expect(within(dialog).getByText('issfr_1')).toBeInTheDocument()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve with note' }))
+    const submit = within(dialog).getByRole('button', { name: 'Resolve without moving money' })
+    await userEvent.click(submit)
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Add a note')
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /Evidence note/ }), 'Looks fine.')
+    await userEvent.click(submit)
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Tick the confirmation')
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'I reviewed the order and decided not to refund it.' }))
+    await userEvent.click(submit)
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('at least 20 characters')
     expect(apiClient.post).not.toHaveBeenCalled()
-    await userEvent.type(within(dialog).getByRole('textbox', { name: /Resolution note/ }), 'Issuer confirmed legitimate.')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve with note' }))
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/reconciliation_exceptions/12/resolve', { note: 'Issuer confirmed legitimate.' }, expect.anything()))
+    await userEvent.clear(within(dialog).getByRole('textbox', { name: /Evidence note/ }))
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /Evidence note/ }), 'Issuer confirmed the purchase is legitimate.')
+    await userEvent.click(submit)
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/reconciliation_exceptions/12/resolve',
+      { note: 'Issuer confirmed the purchase is legitimate.', reviewed_no_action: true }, expect.anything()))
     expect(await screen.findByText('Exception #12 resolved.')).toBeInTheDocument()
-    expect(within(dialog).getByText('Issuer confirmed legitimate.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Issuer confirmed the purchase is legitimate.')).toBeInTheDocument()
   })
 
   it('shows the server refusal without closing the dialog', async () => {

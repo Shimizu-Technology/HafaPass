@@ -24,6 +24,8 @@ class EventLifecycle
 
   # Payouts that still reserve or may move money for the event.
   OPEN_PAYOUT_STATUSES = %i[pending processing held].freeze
+  # Matches the admin unarchive dialog's field limit.
+  UNARCHIVE_REASON_LIMIT = 1000
 
   def self.call(...)
     new(...).call
@@ -100,6 +102,9 @@ class EventLifecycle
     if %i[postpone cancel unarchive].include?(action) && reason.blank?
       raise TransitionError, "A reason is required to #{action} this event"
     end
+    if action == :unarchive && reason.length > UNARCHIVE_REASON_LIMIT
+      raise TransitionError, "Keep the reason under #{UNARCHIVE_REASON_LIMIT} characters"
+    end
 
     if action == :complete && (event.ends_at.blank? || event.ends_at > at)
       raise TransitionError, "An event cannot be completed before it ends"
@@ -113,8 +118,13 @@ class EventLifecycle
   # Archived events cannot be finalized (Settlements::Finalizer accepts only
   # completed or cancelled events), so archiving early would strand the
   # organizer's money. A sold event may be archived only when its latest
-  # finalized statement still matches the ledger and nothing is left to pay.
+  # finalized statement still matches the ledger and nothing is left to pay,
+  # and no money is still moving (the same checks the Finalizer applies).
   def archive_blocker
+    if (in_flight = Settlements::Finalizer.open_money_blocker(event))
+      return "#{in_flight} before archiving this event. Archived events cannot be finalized or paid out."
+    end
+
     settlement = event.settlements.status_finalized.order(version: :desc).first
     unless settlement
       return "Finalize this event's statement before archiving it. Archived events cannot be finalized or paid out."

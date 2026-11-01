@@ -7,17 +7,26 @@
 #
 # Events without an end time are left for the organizer: EventLifecycle never
 # completes an event whose end is unknown.
+#
+# Admin -> Maintenance runs it synchronously with the administrator as actor
+# (Api::V1::Admin::MaintenanceController), with the same grace period and
+# per-event isolation.
 class CompletePastEventsJob < ApplicationJob
   queue_as :default
 
   GRACE_PERIOD = 6.hours
   REASON = "Completed automatically 6 hours after the event ended."
 
-  def perform(now: Time.current)
+  def perform(now: Time.current, actor: nil)
     completed = 0
-    Event.published.where(ends_at: ..(now - GRACE_PERIOD)).order(:ends_at, :id).find_each do |event|
-      AuditContext.set(source: "system") do
-        EventLifecycle.call(event: event, action: :complete, actor: nil, reason: REASON, at: now)
+    # find_each batches by primary key; an explicit order would be ignored.
+    Event.published.where(ends_at: ..(now - GRACE_PERIOD)).find_each do |event|
+      if actor
+        EventLifecycle.call(event: event, action: :complete, actor: actor, reason: REASON, at: now)
+      else
+        AuditContext.set(source: "system") do
+          EventLifecycle.call(event: event, action: :complete, actor: nil, reason: REASON, at: now)
+        end
       end
       completed += 1
     rescue EventLifecycle::TransitionError => e

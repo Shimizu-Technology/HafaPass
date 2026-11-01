@@ -144,6 +144,28 @@ RSpec.describe EventLifecycle do
       expect(AuditLog.where(action: "event.archived", auditable: ended).count).to eq(1)
     end
 
+    it "refuses while a refund is pending or a dispute is open, even with a current paid statement" do
+      Settlements::Finalizer.call(event: ended, actor: actor)
+      order = create(:order, event: ended)
+      refund = create(:refund, order: order, status: :pending, succeeded_at: nil)
+
+      expect { archive! }.to raise_error(described_class::TransitionError, /Resolve pending refunds and open disputes before archiving/)
+      expect(ended.reload).to be_completed
+
+      refund.update_columns(status: Refund.statuses[:failed])
+      Dispute.create!(order: order, provider: "stripe", provider_dispute_id: "dp_archive", amount_cents: 100,
+        currency: "usd", opened_at: Time.current)
+      expect { archive! }.to raise_error(described_class::TransitionError, /Resolve pending refunds and open disputes before archiving/)
+      expect(ended.reload).to be_completed
+    end
+
+    it "refuses while a reconciliation exception on its orders is open" do
+      Settlements::Finalizer.call(event: ended, actor: actor)
+      create(:reconciliation_exception, order: create(:order, event: ended), code: "payment_amount_mismatch")
+
+      expect { archive! }.to raise_error(described_class::TransitionError, /Resolve open reconciliation exceptions before archiving/)
+    end
+
     it "lets an administrator restore an archived event to its previous status with a reason" do
       Settlements::Finalizer.call(event: ended, actor: actor)
       archive!

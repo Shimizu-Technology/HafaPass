@@ -23,13 +23,18 @@ RSpec.describe "Admin event unarchive", type: :request do
     expect(audit.after_data).to eq("status" => "completed")
   end
 
-  it "requires an administrator and a reason" do
+  it "requires an administrator and a reason of at most 1000 characters" do
     post "/api/v1/admin/events/#{event.id}/unarchive", params: { reason: "x" }, headers: auth_headers(profile.user), as: :json
     expect(response).to have_http_status(:forbidden)
 
     post "/api/v1/admin/events/#{event.id}/unarchive", params: { reason: " " }, headers: auth_headers(admin), as: :json
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body["error"]).to include("reason is required")
+    expect(event.reload).to be_archived
+
+    post "/api/v1/admin/events/#{event.id}/unarchive", params: { reason: "x" * 1001 }, headers: auth_headers(admin), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("under 1000 characters")
     expect(event.reload).to be_archived
   end
 end

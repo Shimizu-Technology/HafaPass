@@ -405,7 +405,10 @@ class AuditActions
     define registry, area: "refunds", audience: %w[admin_only],
       tenant: false, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {
-        "reconciliation_exception.manually_resolved" => "Resolved a payment reconciliation exception with a review note."
+        "reconciliation_exception.manually_resolved" => "Resolved a payment reconciliation exception with a review note.",
+        "reconciliation_exception.resolved_without_ledger_change" =>
+          "Resolved a payment reconciliation exception after verifying no refund or payment record needed to change.",
+        "reconciliation_exception.reviewed_no_action" => "Resolved a Stripe early fraud warning without refunding the order."
       }
 
     define registry, area: "refunds", audience: %w[admin_only],

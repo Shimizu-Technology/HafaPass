@@ -51,7 +51,8 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(body["reconciliation_exceptions"].map { |row| row["id"] }).to contain_exactly(mismatch.id, via_payment.id, unlinked.id)
       row = body["reconciliation_exceptions"].find { |entry| entry["id"] == mismatch.id }
       expect(row).to include("code" => "payment_amount_mismatch", "status" => "open", "blocks_payouts" => true,
-        "expected_amount_cents" => 5350, "actual_amount_cents" => 5300, "actions" => ["resolve"])
+        "expected_amount_cents" => 5350, "actual_amount_cents" => 5300, "actions" => ["resolve"],
+        "resolve_blocked_reason" => nil, "resolve_confirmation" => nil)
       expect(row["organization"]).to eq("id" => organization.id, "name" => organization.name)
       expect(row["event"]).to include("id" => event.id, "title" => "Closing Night")
       expect(row).not_to have_key("details")
@@ -132,6 +133,51 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(AuditLog.where(action: "reconciliation_exception.manually_resolved").count).to eq(1)
     end
 
+    it "requires a verified-no-ledger-change confirmation and evidence note for an external Stripe refund" do
+      order = record_sale!(event)
+      issue = create(:reconciliation_exception, order: order, payment: order.payments.sole, code: "refund_operation_not_found")
+
+      get "#{base}/#{issue.id}", headers: headers
+      detail = response.parsed_body["reconciliation_exception"]
+      expect(detail["actions"]).to eq(%w[verify_external_refund resolve])
+      expect(detail["resolve_confirmation"]).to include("flag" => "verified_no_ledger_change", "evidence_note_minimum" => 20)
+
+      post "#{base}/#{issue.id}/resolve", params: { note: "Looked at it in Stripe, all fine." }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("confirmation_required" => "verified_no_ledger_change")
+      expect(response.parsed_body["error"]).to include("recording a refund")
+
+      post "#{base}/#{issue.id}/resolve", params: { note: "ok", verified_no_ledger_change: true }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("at least 20 characters")
+      expect(issue.reload).to be_open
+
+      note = "Stripe re_123 is a duplicate webhook of refund #42 already on the order."
+      post "#{base}/#{issue.id}/resolve", params: { note: note, verified_no_ledger_change: true }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(issue.reload).to be_resolved
+      expect(AuditLog.where(action: "reconciliation_exception.manually_resolved", auditable: issue)).to be_empty
+      audit = AuditLog.find_by!(action: "reconciliation_exception.resolved_without_ledger_change", auditable: issue)
+      expect(audit).to have_attributes(actor_user_id: admin.id, organization_id: organization.id)
+      expect(audit.metadata).to include("note" => note, "verified_no_ledger_change" => true, "code" => "refund_operation_not_found")
+    end
+
+    it "requires a reviewed-no-action confirmation to resolve an early fraud warning without the fraud refund" do
+      order = record_sale!(event)
+      issue = create(:reconciliation_exception, order: order, payment: order.payments.sole, code: "early_fraud_warning")
+      note = "Buyer confirmed the purchase by phone; issuer warning withdrawn."
+
+      post "#{base}/#{issue.id}/resolve", params: { note: note, verified_no_ledger_change: true }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("confirmation_required" => "reviewed_no_action")
+      expect(issue.reload).to be_open
+
+      post "#{base}/#{issue.id}/resolve", params: { note: note, reviewed_no_action: "true" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(AuditLog.find_by!(action: "reconciliation_exception.reviewed_no_action", auditable: issue).metadata)
+        .to include("note" => note, "reviewed_no_action" => true)
+    end
+
     it "resolves an exception with no order or organization" do
       issue = create(:reconciliation_exception, code: "payment_not_found")
 
@@ -177,7 +223,8 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
 
       get base, params: { code: issue.code }, headers: headers
       row = response.parsed_body["reconciliation_exceptions"].sole
-      expect(row).to include("actions" => %w[refund_buyer resolve], "late_capture_owed_cents" => payment.amount_cents)
+      expect(row).to include("actions" => %w[refund_buyer], "late_capture_owed_cents" => payment.amount_cents)
+      expect(row["resolve_blocked_reason"]).to include("still owed $#{format('%.2f', payment.amount_cents / 100.0)}", "Refund buyer")
 
       post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
 
@@ -185,13 +232,86 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(refunds).to eq([{ intent_id: payment.provider_payment_id, amount_cents: payment.amount_cents,
         idempotency_key: "late-capture:payment:#{payment.id}" }])
       expect(issue.reload).to be_resolved
-      expect(AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue))
-        .to have_attributes(actor_user_id: admin.id)
+      refund = Refund.find(response.parsed_body.dig("refund", "id"))
+      audit = AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue)
+      expect(audit).to have_attributes(actor_user_id: admin.id, outcome: "succeeded")
+      expect(audit.metadata).to include("refund_id" => refund.id, "refund_status" => "succeeded", "amount_cents" => payment.amount_cents)
+      expect(audit.id).to be > AuditLog.where(action: "refund.succeeded", auditable: refund).maximum(:id).to_i
       expect(response.parsed_body.dig("reconciliation_exception", "actions")).to eq([])
 
       post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
       expect(refunds.size).to eq(1)
+    end
+
+    it "refuses a note-only resolution while the buyer is still owed, even with a confirmation flag" do
+      order, payment = late_capture
+      issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
+
+      [{ note: "Buyer said it is fine." }, { note: "Checked Stripe, nothing to change here.", verified_no_ledger_change: true }].each do |params|
+        post "#{base}/#{issue.id}/resolve", params: params, headers: headers, as: :json
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to include("still owed", "Refund buyer")
+      end
+      expect(issue.reload).to be_open
+      expect(AuditLog.where(auditable: issue)).to be_empty
+
+      # After the automatic refund fails, the guidance points to Retry refund
+      # and Refund buyer stays unavailable.
+      create(:refund, order: order, payment: payment, status: :failed, succeeded_at: nil, provider_refund_id: nil,
+        amount_cents: payment.amount_cents, idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment))
+      get "#{base}/#{issue.id}", headers: headers
+      detail = response.parsed_body["reconciliation_exception"]
+      expect(detail["actions"]).to eq([])
+      expect(detail["resolve_blocked_reason"]).to include("Retry refund")
+      post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(refunds).to be_empty
+    end
+
+    it "refuses Refund buyer when nothing is owed or a refund is already pending, and resolves once returned" do
+      order, payment = late_capture
+      issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
+      pending = create(:refund, order: order, payment: payment, status: :pending, succeeded_at: nil, provider_refund_id: nil,
+        amount_cents: payment.amount_cents, idempotency_key: "external-pending")
+
+      post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("still pending")
+      post "#{base}/#{issue.id}/resolve", params: { note: "Waiting is too slow." }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("still pending")
+
+      pending.update_columns(status: Refund.statuses[:succeeded], succeeded_at: Time.current, provider_refund_id: "re_outside")
+      post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]).to include("Nothing is owed")
+      expect(refunds).to be_empty
+      expect(AuditLog.where(action: "reconciliation_exception.buyer_refund_requested")).to be_empty
+
+      get "#{base}/#{issue.id}", headers: headers
+      expect(response.parsed_body["reconciliation_exception"]).to include("actions" => ["resolve"], "late_capture_owed_cents" => 0)
+      post "#{base}/#{issue.id}/resolve", params: { note: "Refunded in the Stripe Dashboard as re_outside." }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(issue.reload).to be_resolved
+    end
+
+    it "audits a failed Refund buyer attempt after the provider call, with the failed refund" do
+      order, payment = late_capture
+      issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
+      allow(StripeService).to receive(:refund_payment)
+        .and_raise(Stripe::InvalidRequestError.new("Charge already refunded", "charge"))
+
+      post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(issue.reload).to be_open
+      refund = order.refunds.find_by!(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment))
+      expect(refund).to be_failed
+      audit = AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue)
+      expect(audit).to have_attributes(outcome: "failed", actor_user_id: admin.id)
+      expect(audit.metadata).to include("refund_id" => refund.id, "refund_status" => "failed",
+        "error_class" => "Commerce::RefundCreator::RefundError")
     end
 
     it "refuses other codes and points to the existing actions for fraud warnings and external refunds" do

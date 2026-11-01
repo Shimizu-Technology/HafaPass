@@ -10,7 +10,7 @@ const FEE_PENDING = 'The actual Stripe processing fee is not verified yet. The f
 const CODES = {
   late_payment_success_after_inventory_release: { label: 'Paid after the order was released', guidance: LATE_CAPTURE },
   late_payment_success_after_hold_expiry: { label: 'Paid after the hold expired', guidance: LATE_CAPTURE },
-  early_fraud_warning: { label: 'Stripe early fraud warning', guidance: 'The card issuer reported likely fraud. Review the order. If you agree, open it in Orders and use Cancel tickets and refund as fraud. If you decide not to refund, resolve with the reason.' },
+  early_fraud_warning: { label: 'Stripe early fraud warning', guidance: 'The card issuer reported likely fraud. Review the order. If you agree, open it in Orders and use Cancel tickets and refund as fraud. If you decide not to refund, confirm that you reviewed it and resolve with the reason.' },
   payment_amount_mismatch: { label: 'Charged amount differs from the order', guidance: 'Compare the Stripe charge with the order total. Correct or refund the difference before resolving.' },
   payment_currency_mismatch: { label: 'Charged currency differs from the order', guidance: 'Compare the Stripe charge currency with the order before resolving.' },
   payment_context_mismatch: { label: 'Payment details differ from checkout', guidance: 'The Stripe payment does not match the checkout it was created for. Compare both records before resolving.' },

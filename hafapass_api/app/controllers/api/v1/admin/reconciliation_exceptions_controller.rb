@@ -14,6 +14,30 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   DETAIL_VALUE_LIMIT = 300
   INCLUDES = [{ order: { event: :organization } }, { payment: [:refunds, { order: { event: :organization } }] }].freeze
 
+  # Codes where a note alone could close a record while money is still
+  # unaccounted for. Each needs an explicit confirmation flag (sent as
+  # `<flag>: true`) and an evidence note, audited as its own action.
+  #
+  # verified_no_ledger_change: external Stripe refunds normally go through
+  # Refund issues -> Verify (Commerce::ExternalRefundRecovery), which records
+  # the refund. Resolving instead says nothing needed recording.
+  # reviewed_no_action: an early fraud warning normally gets the fraud refund
+  # (Admin -> Orders); resolving instead records the decision not to refund.
+  CONFIRMATIONS = {
+    "verified_no_ledger_change" => {
+      audit_action: "reconciliation_exception.resolved_without_ledger_change",
+      label: "I checked Stripe and no HåfaPass refund or payment record needs to change."
+    },
+    "reviewed_no_action" => {
+      audit_action: "reconciliation_exception.reviewed_no_action",
+      label: "I reviewed the order and decided not to refund it."
+    }
+  }.freeze
+  CONFIRMATION_BY_CODE = (Commerce::ExternalRefundRecovery::RECOVERABLE_CODES.index_with { "verified_no_ledger_change" })
+    .merge("card_present_result_unknown" => "verified_no_ledger_change",
+      Commerce::EarlyFraudWarningRefund::CODE => "reviewed_no_action").freeze
+  EVIDENCE_NOTE_MINIMUM = 20
+
   before_action -> { response.headers["Cache-Control"] = "no-store" }
   before_action :set_issue, only: [:show, :resolve, :refund_buyer]
 
@@ -50,7 +74,10 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   end
 
   # POST /api/v1/admin/reconciliation_exceptions/:id/resolve
-  # Body: note (required). Records the review note in the audit log.
+  # Body: note (required); for codes in CONFIRMATION_BY_CODE also the
+  # confirmation flag (e.g. verified_no_ledger_change: true). Records the
+  # review note in the audit log. Refused while a late capture still owes the
+  # buyer money: that is returned by Refund buyer, which resolves it.
   def resolve
     note = params[:note].to_s.strip
     return render json: { error: "Add a note explaining how this was reconciled." }, status: :unprocessable_content if note.blank?
@@ -65,42 +92,63 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
           reconciliation_exception: issue_json(@issue, detail: true) }, status: :conflict
       end
 
+      rule = resolution_rule(@issue)
+      if rule[:blocked]
+        return render json: { error: rule[:blocked], reconciliation_exception: issue_json(@issue, detail: true) },
+          status: :unprocessable_content
+      end
+      flag = rule[:confirmation]
+      if flag && !confirmed?(flag)
+        return render json: { error: "Confirm \"#{CONFIRMATIONS.dig(flag, :label)}\" to resolve this without " \
+          "#{flag == 'reviewed_no_action' ? 'the fraud refund' : 'recording a refund'}.", confirmation_required: flag },
+          status: :unprocessable_content
+      end
+      if flag && note.length < EVIDENCE_NOTE_MINIMUM
+        return render json: { error: "Describe the evidence you checked (at least #{EVIDENCE_NOTE_MINIMUM} characters)." },
+          status: :unprocessable_content
+      end
+
+      action = flag ? CONFIRMATIONS.dig(flag, :audit_action) : "reconciliation_exception.manually_resolved"
+      metadata = { code: @issue.code, order_id: issue_order&.id, payment_id: @issue.payment_id, note: note }
+      metadata[flag] = true if flag
       @issue.resolve!
-      AuditLogger.record!(action: "reconciliation_exception.manually_resolved", auditable: @issue,
+      AuditLogger.record!(action: action, auditable: @issue,
         actor: @current_user, organization: issue_event&.organization, event: issue_event,
-        before_data: { status: "open" }, after_data: { status: "resolved" },
-        metadata: { code: @issue.code, order_id: issue_order&.id, payment_id: @issue.payment_id, note: note },
-        request: request, deduplication_key: "reconciliation_exception:#{@issue.id}:manually_resolved")
+        before_data: { status: "open" }, after_data: { status: "resolved" }, metadata: metadata,
+        request: request, deduplication_key: "reconciliation_exception:#{@issue.id}:#{action.split('.').last}")
     end
     render json: { reconciliation_exception: issue_json(@issue.reload, detail: true) }
   end
 
   # POST /api/v1/admin/reconciliation_exceptions/:id/refund_buyer
   # Late captures only: refunds the payment through Commerce::LateCaptureRefund
-  # (the same idempotency key as the automatic LateCaptureRefundJob).
+  # (the same idempotency key as the automatic LateCaptureRefundJob). The
+  # audit entry is written after the provider call, with its outcome.
   def refund_buyer
     unless late_capture_refundable?(@issue)
       return render json: { error: "Only an open late-capture exception on a Stripe test or live payment can be refunded here." },
         status: :unprocessable_content
     end
-    earlier = @issue.payment.order.refunds.find_by(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(@issue.payment))
-    if earlier&.failed? || earlier&.cancelled?
-      return render json: { error: "The automatic refund failed. Use Retry refund on its row in Refund issues." },
-        status: :unprocessable_content
+    if (problem = late_capture_refund_blocker(@issue))
+      return render json: { error: problem }, status: :unprocessable_content
     end
 
-    AuditLogger.record!(action: "reconciliation_exception.buyer_refund_requested", auditable: @issue,
-      actor: @current_user, organization: issue_event.organization, event: issue_event,
-      metadata: { code: @issue.code, order_id: issue_order.id, payment_id: @issue.payment_id,
-        amount_cents: late_capture_owed_cents(@issue) }, request: request)
-    refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user)
+    amount_cents = late_capture_owed_cents(@issue)
+    refund = nil
+    begin
+      refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user)
+    rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::RefundCreator::RefundError,
+      StripeService::PaymentError, Stripe::StripeError => e
+      @issue.payment.refunds.reset # the service may have recorded a failed refund
+      record_buyer_refund!(amount_cents: amount_cents, refund: late_capture_refund(@issue), error: e)
+      return render json: { error: e.message }, status: :unprocessable_content
+    end
+
+    record_buyer_refund!(amount_cents: amount_cents, refund: refund)
     render json: {
       refund: { id: refund.id, status: refund.status, amount_cents: refund.amount_cents, currency: refund.currency },
       reconciliation_exception: issue_json(@issue.reload, detail: true)
     }, status: :created
-  rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::RefundCreator::RefundError,
-    StripeService::PaymentError, Stripe::StripeError => e
-    render json: { error: e.message }, status: :unprocessable_content
   end
 
   private
@@ -160,14 +208,77 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
     [issue.payment.amount_cents - returned, 0].max
   end
 
+  # Uses the preloaded payment refunds (reloaded by lock! in #resolve).
+  def late_capture_refund(issue)
+    key = Commerce::LateCaptureRefund.idempotency_key(issue.payment)
+    issue.payment.refunds.find { |refund| refund.idempotency_key == key }
+  end
+
+  # Why Refund buyer cannot run now, or nil.
+  def late_capture_refund_blocker(issue)
+    earlier = late_capture_refund(issue)
+    if earlier&.failed? || earlier&.cancelled?
+      return "The automatic refund failed. Use Retry refund on its row in Refund issues."
+    end
+    return "A refund for this payment is already #{earlier.status}." if earlier&.pending? || earlier&.succeeded?
+    return "A refund for this payment is still pending. Wait for it to finish." if issue.payment.refunds.any?(&:pending?)
+    return "Nothing is owed to the buyer for this payment." unless late_capture_owed_cents(issue).positive?
+
+    nil
+  end
+
+  def record_buyer_refund!(amount_cents:, refund:, error: nil)
+    # The refund record is the source of truth; an error with no refund, or a
+    # failed one, is a failure, and a pending refund after an error is unknown.
+    outcome = if refund.nil? || refund.failed? || refund.cancelled? then "failed"
+    elsif refund.succeeded? then "succeeded"
+    elsif error || refund.failure_code == "provider_result_unknown" then "unknown"
+    else "requested"
+    end
+    metadata = { code: @issue.code, order_id: issue_order.id, payment_id: @issue.payment_id, amount_cents: amount_cents,
+      refund_id: refund&.id, refund_status: refund&.status }
+    metadata.merge!(error_class: error.class.name, error: error.message.to_s.first(DETAIL_VALUE_LIMIT)) if error
+    AuditLogger.record!(action: "reconciliation_exception.buyer_refund_requested", auditable: @issue,
+      actor: @current_user, organization: issue_event.organization, event: issue_event, outcome: outcome,
+      metadata: metadata, request: request)
+  end
+
+  # What a note-only resolution needs: {} (allowed), { confirmation: flag }
+  # (allowed with that flag and an evidence note) or { blocked: message }.
+  def resolution_rule(issue)
+    if Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment
+      if issue.payment.refunds.any?(&:pending?)
+        return { blocked: "A refund for this payment is still pending. It resolves this exception when it succeeds." }
+      end
+      return {} unless late_capture_owed_cents(issue).positive?
+      # Payments HåfaPass cannot refund itself (simulated or legacy) can only
+      # have been returned outside HåfaPass.
+      return { confirmation: "verified_no_ledger_change" } unless late_capture_refundable?(issue)
+
+      owed = late_capture_owed_cents(issue)
+      earlier = late_capture_refund(issue)
+      next_step = earlier&.failed? || earlier&.cancelled? ? "The automatic refund failed: use Retry refund on its row in Refund issues." :
+        "Use Refund buyer; the exception resolves when the refund succeeds."
+      return { blocked: "The buyer is still owed #{format('$%<dollars>d.%<cents>02d', dollars: owed / 100, cents: owed % 100)}. #{next_step}" }
+    end
+
+    flag = CONFIRMATION_BY_CODE[issue.code]
+    flag ? { confirmation: flag } : {}
+  end
+
+  def confirmed?(flag)
+    [true, "true"].include?(params[flag])
+  end
+
   def available_actions(issue, order)
     return [] unless issue.open?
 
     actions = []
-    actions << "refund_buyer" if late_capture_refundable?(issue) && late_capture_owed_cents(issue).positive?
+    actions << "refund_buyer" if late_capture_refundable?(issue) && late_capture_refund_blocker(issue).nil?
     actions << "fraud_refund" if issue.code == Commerce::EarlyFraudWarningRefund::CODE && order
     actions << "verify_external_refund" if Commerce::ExternalRefundRecovery::RECOVERABLE_CODES.include?(issue.code) && order
-    actions << "resolve"
+    actions << "resolve" unless resolution_rule(issue)[:blocked]
+    actions
   end
 
   def issue_json(issue, detail: false)
@@ -191,6 +302,12 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
       blocks_payouts: issue.open? && event.present?,
       actions: available_actions(issue, order)
     }
+    if issue.open?
+      rule = resolution_rule(issue)
+      json[:resolve_blocked_reason] = rule[:blocked]
+      json[:resolve_confirmation] = rule[:confirmation] &&
+        { flag: rule[:confirmation], label: CONFIRMATIONS.dig(rule[:confirmation], :label), evidence_note_minimum: EVIDENCE_NOTE_MINIMUM }
+    end
     json[:late_capture_owed_cents] = late_capture_owed_cents(issue) if payment && Commerce::LateCaptureRefund::CODES.include?(issue.code)
     return json unless detail
 
