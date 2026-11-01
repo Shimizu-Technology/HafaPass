@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation, useOutlet } from 'react-router-dom'
-import { motion, useReducedMotion } from 'framer-motion'
 import Navbar from './Navbar'
 import Footer, { WorkspaceFooter } from './Footer'
 import EnvironmentBanner from './EnvironmentBanner'
@@ -9,6 +8,7 @@ import RouteLoading from './RouteLoading'
 import SEO from './SEO'
 import { isWorkspacePath } from '../utils/workspace'
 import { routeTitleKey } from '../utils/routeTitle'
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 
 export default function Layout() {
   const { t } = useTranslation()
@@ -19,7 +19,10 @@ export default function Layout() {
   const previousPath = useRef(location.pathname)
   const [announcement, setAnnouncement] = useState('')
   const outlet = useOutlet()
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = usePrefersReducedMotion()
+  // Fade pages in only after the first in-app navigation, never on first load.
+  const navigated = useRef(false)
+  if (previousPath.current !== location.pathname) navigated.current = true
   const operational = /^\/(dashboard|admin|support|checkout|orders|tickets|sign-in|sign-up)(?:\/|$)/.test(location.pathname)
   const isHomePage = location.pathname === '/'
   const workspace = isWorkspacePath(location.pathname)
@@ -77,14 +80,9 @@ export default function Layout() {
       <main ref={main} id="main-content" tabIndex={-1} className="flex-1">
         <Suspense fallback={<RouteLoading />}>
         {operational || reducedMotion ? outlet :
-          <motion.div
-            key={location.pathname}
-            initial={previousPath.current === location.pathname ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-          >
+          <div key={location.pathname} className={navigated.current ? 'route-fade' : undefined}>
             {outlet}
-          </motion.div>
+          </div>
         }
         </Suspense>
       </main>

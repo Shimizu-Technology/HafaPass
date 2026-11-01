@@ -249,3 +249,7 @@
   .event-card { transition: none; }
   .event-card:active { transform: none; }
 }
+
+/* Public route changes fade the new page in. Reduced motion turns the
+   animation off with every other animation above. */
+.route-fade { animation: ticket-fade 150ms ease-out; }

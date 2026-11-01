@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next'
-import { motion, useReducedMotion } from 'framer-motion'
 
 const AVATAR_COLORS = [
   'bg-teal-700', 'bg-accent-700', 'bg-amber-700', 'bg-indigo-700',
@@ -24,7 +23,6 @@ function getColor(name) {
 
 export default function WhosGoing({ attendeeCount, attendeesPreview, showAttendees }) {
   const { t } = useTranslation()
-  const reducedMotion = useReducedMotion()
   if (!showAttendees || !attendeeCount || attendeeCount === 0) return null
 
   const maxShow = 8
@@ -37,26 +35,20 @@ export default function WhosGoing({ attendeeCount, attendeesPreview, showAttende
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex max-w-full -space-x-2">
           {shown.map((name, i) => (
-            <motion.div
+            <div
               key={`${name}-${i}`}
-              initial={false}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: reducedMotion ? 0 : 0.3, delay: reducedMotion ? 0 : i * 0.06 }}
               className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white text-sm font-bold border-2 border-white ${getColor(name)}`}
               title={name}
             >
               {getInitial(name)}
-            </motion.div>
+            </div>
           ))}
           {remaining > 0 && (
-            <motion.div
-              initial={false}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: reducedMotion ? 0 : 0.3, delay: reducedMotion ? 0 : shown.length * 0.06 }}
+            <div
               className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-neutral-200 text-neutral-600 text-xs font-bold border-2 border-white"
             >
               +{remaining}
-            </motion.div>
+            </div>
           )}
         </div>
         <p className="text-sm text-neutral-600 font-medium break-words">

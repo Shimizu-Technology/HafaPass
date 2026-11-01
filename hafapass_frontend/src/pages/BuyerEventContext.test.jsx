@@ -11,6 +11,8 @@ import { getActiveCheckout, getCheckoutAttempt } from '../utils/orderAccess'
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ isLoaded: true, userId: null }) }))
 vi.mock('framer-motion', async original => ({ ...(await original()), useReducedMotion: () => true }))
+// Layout reads the setting directly; keep the real layout in reduced motion too.
+window.matchMedia = query => ({ matches: query.includes('reduce'), addEventListener() {}, removeEventListener() {} })
 vi.mock('../components/Navbar', () => ({ default: () => null }))
 vi.mock('../components/Footer', () => ({ default: () => null }))
 vi.mock('../components/EnvironmentBanner', () => ({ default: () => null }))

@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HelmetProvider } from 'react-helmet-async'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import Layout from './Layout'
 
@@ -61,4 +61,13 @@ it('lets public pages own their title, canonical URL and indexing', () => {
   mount('/events')
   expect(robots()).toBeNull()
   expect(document.head.querySelector('link[rel="canonical"]')).not.toBeInTheDocument()
+})
+
+it('fades public pages in with CSS after a navigation, but not on first load', async () => {
+  mount('/events', <><h1>Page</h1><Link to="/discover">Discover</Link></>)
+  const firstPage = screen.getByRole('heading', { name: 'Page' }).parentElement
+  expect(firstPage).not.toHaveClass('route-fade')
+  fireEvent.click(screen.getByRole('link', { name: 'Discover' }))
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Page' }).parentElement).toHaveClass('route-fade'))
+  expect(screen.getByRole('heading', { name: 'Page' }).parentElement).not.toBe(firstPage)
 })
