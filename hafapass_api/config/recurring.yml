@@ -32,6 +32,9 @@ default: &default
   refund_reconciliation:
     class: RefundReconciliationJob
     schedule: every day at 02:00 UTC
+  operational_alerts:
+    class: OperationalAlertJob
+    schedule: every 5 minutes
 
 production:
   <<: *default
