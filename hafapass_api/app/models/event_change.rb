@@ -7,7 +7,9 @@ class EventChange < ApplicationRecord
   belongs_to :actor_user, class_name: "User", optional: true
   has_many :event_change_responses, dependent: :restrict_with_error
 
-  TYPES = %w[postponed rescheduled cancelled].freeze
+  # venue_changed notifies buyers without a self-serve refund; the policy
+  # asks them to contact HåfaPass about other material changes.
+  TYPES = %w[postponed rescheduled cancelled venue_changed].freeze
 
   scope :buyer_visible, -> { where(change_type: TYPES) }
 

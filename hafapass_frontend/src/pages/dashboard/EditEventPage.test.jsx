@@ -200,6 +200,22 @@ describe('published event content and schedule edits', () => {
     expect(payload).not.toHaveProperty('doors_open_at')
   })
 
+  it('requires a reason for a venue change on a live event and sends it with the venue', async () => {
+    const user = userEvent.setup()
+    mount()
+    const venue = await screen.findByLabelText(/Venue Name/)
+    await user.clear(venue)
+    await user.type(venue, 'New Hall')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByRole('link', { name: 'Explain the venue change for ticket holders' })
+    expect(apiClient.put).not.toHaveBeenCalled()
+    expect(screen.getByText('Ticket holders will see this explanation in an email about the change.')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/Reason for venue change/), 'The original hall flooded')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await screen.findByText('Event updated successfully.')
+    expect(apiClient.put.mock.calls[0][1]).toMatchObject({ venue_name: 'New Hall', change_reason: 'The original hall flooded' })
+  })
+
   it('explicitly clears an optional time with a schedule-change reason', async () => {
     const user = userEvent.setup()
     mount()

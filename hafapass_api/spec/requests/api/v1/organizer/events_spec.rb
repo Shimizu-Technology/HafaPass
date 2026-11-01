@@ -380,6 +380,42 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(EmailService).to have_received(:send_event_change_notifications_async).with(change)
     end
 
+    it "requires a reason for a venue change and records a venue_changed notice" do
+      event.update!(status: :published, published_at: Time.current, venue_name: "Old Hall",
+        venue_address: "1 Old Road", venue_city: "Hagåtña")
+      allow(EmailService).to receive(:send_event_change_notifications_async)
+
+      put "/api/v1/organizer/events/#{event.id}", params: { venue_name: "New Hall", venue_address: "2 New Road" },
+        headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("reason is required")
+      expect(event.reload.venue_name).to eq("Old Hall")
+
+      put "/api/v1/organizer/events/#{event.id}", params: { venue_name: "New Hall", venue_address: "2 New Road",
+        venue_city: "Hagåtña", change_reason: "The old hall flooded" }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      change = event.reload.event_changes.sole
+      expect(change).to have_attributes(change_type: "venue_changed", reason: "The old hall flooded")
+      expect(change.before_data).to include("venue_name" => "Old Hall", "venue_address" => "1 Old Road")
+      expect(change.after_data).to include("venue_name" => "New Hall", "venue_address" => "2 New Road")
+      expect(EmailService).to have_received(:send_event_change_notifications_async).with(change)
+    end
+
+    it "does not treat resubmitted venue details or draft venue edits as buyer-visible changes" do
+      event.update!(status: :published, published_at: Time.current, venue_name: "Hall", venue_address: nil, venue_city: "Hagåtña")
+
+      put "/api/v1/organizer/events/#{event.id}", params: { title: "Renamed", venue_name: " Hall ", venue_address: "",
+        venue_city: "Hagåtña" }, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(event.reload.event_changes).to be_empty
+
+      draft = create(:event, organizer_profile: organizer_profile, venue_name: "Draft Hall")
+      put "/api/v1/organizer/events/#{draft.id}", params: { venue_name: "Another Hall" }, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(draft.reload.event_changes).to be_empty
+    end
+
     it "journals every buyer notification inside the reschedule transaction" do
       event.update!(status: :published, published_at: Time.current)
       orders = [create(:order, event: event), create(:order, event: event, buyer_email: "second@example.invalid")]
