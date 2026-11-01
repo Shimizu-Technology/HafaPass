@@ -135,6 +135,9 @@ class OrganizationFinanceSummary
       status: event.status,
       starts_at: event.starts_at,
       timezone: event.timezone,
+      # Ended but still published: the statement cannot be finalized until the
+      # event is completed (CompletePastEventsJob does it 6 hours after the end).
+      awaiting_completion: event.published? && event.ends_at.present? && event.ends_at <= Time.current,
       gross_cents: preview[:gross_cents],
       discount_cents: preview[:discount_cents],
       refund_cents: preview[:refund_cents],

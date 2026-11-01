@@ -97,6 +97,15 @@ describe('FinancesPage', () => {
     expect(within(history).getByText('$100.00')).toBeInTheDocument()
   })
 
+  it('prompts to mark an ended event completed before its statement can be finalized', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...summary, events: [{ ...summary.events[1], awaiting_completion: true }] } })
+    mount()
+    const table = (await screen.findAllByRole('table')).find(element => within(element).queryByText('Next Show'))
+    expect(within(table).getByText('Mark completed to finalize')).toBeInTheDocument()
+    expect(within(table).queryByText('Not finalized')).not.toBeInTheDocument()
+    expect(screen.getByText(/marks it completed about 6 hours after its end time/)).toBeInTheDocument()
+  })
+
   it('downloads exports through the API with the organization context', async () => {
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Orders CSV' }))

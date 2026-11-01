@@ -652,7 +652,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
 
   create_table "event_state_changes", force: :cascade do |t|
     t.string "action", null: false
-    t.bigint "actor_user_id", null: false
+    t.bigint "actor_user_id"
     t.datetime "created_at", null: false
     t.bigint "event_id", null: false
     t.string "from_status", null: false

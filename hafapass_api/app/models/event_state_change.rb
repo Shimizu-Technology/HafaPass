@@ -2,7 +2,8 @@
 
 class EventStateChange < ApplicationRecord
   belongs_to :event
-  belongs_to :actor_user, class_name: "User"
+  # Nil only for scheduled system transitions (CompletePastEventsJob).
+  belongs_to :actor_user, class_name: "User", optional: true
 
   validates :action, :from_status, :to_status, :occurred_at, presence: true
 

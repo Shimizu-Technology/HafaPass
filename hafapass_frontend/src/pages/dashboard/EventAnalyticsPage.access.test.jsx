@@ -132,3 +132,27 @@ it('offers one clearly labelled link to the attendee list', async () => {
   expect(screen.queryByRole('button', { name: /View All/ })).not.toBeInTheDocument()
   expect(privateReads().some(([url]) => url.endsWith('/attendees'))).toBe(false)
 })
+
+it('prompts to mark an ended event completed before its statement can be finalized', async () => {
+  const ended = { ...event, status: 'published', ends_at: '2020-01-01T10:00:00Z', permissions: { ...rights, manage_events: true } }
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/stats') ? stats : url.endsWith('/finance') ? finance : ended }))
+  mount()
+  const prompt = await screen.findByTestId('mark-completed-prompt')
+  expect(prompt).toHaveTextContent('Mark completed to finalize')
+  expect(prompt).toHaveTextContent('about 6 hours after the end time')
+  expect(screen.getByRole('link', { name: 'mark it completed now under Event actions' })).toHaveAttribute('href', '/dashboard/events/37/edit')
+  expect(screen.queryByRole('button', { name: /Finalize/ })).not.toBeInTheDocument()
+})
+
+it('does not prompt for completion before the event ends or after it is completed', async () => {
+  const upcoming = { ...event, status: 'published', ends_at: '2099-01-01T10:00:00Z' }
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/stats') ? stats : url.endsWith('/finance') ? finance : upcoming }))
+  const view = mount()
+  expect(await screen.findByRole('heading', { name: 'Settlement and payout' })).toBeInTheDocument()
+  expect(screen.queryByTestId('mark-completed-prompt')).not.toBeInTheDocument()
+  view.unmount()
+  apiClient.get.mockImplementation(url => Promise.resolve({ data: fixture(url) }))
+  mount()
+  expect(await screen.findByRole('button', { name: 'Finalize current version' })).toBeInTheDocument()
+  expect(screen.queryByTestId('mark-completed-prompt')).not.toBeInTheDocument()
+})
