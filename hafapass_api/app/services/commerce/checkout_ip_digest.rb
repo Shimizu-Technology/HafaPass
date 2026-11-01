@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 module Commerce
-  # A keyed digest of the buyer's IP address for per-network checkout caps.
-  # Orders store only this digest, never the address itself.
+  # A keyed digest of the buyer's network (ClientIp.bucket: the IPv4 address
+  # or the IPv6 /64) for per-network checkout caps. Orders store only this
+  # digest, never the address itself.
   module CheckoutIpDigest
     def self.call(ip)
       return if ip.blank?

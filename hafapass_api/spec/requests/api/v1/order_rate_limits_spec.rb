@@ -6,10 +6,19 @@ RSpec.describe "Order creation rate-limit contract", type: :request do
   # Drive the installed middleware/config; the stub app avoids real checkouts.
   let(:app) { Rack::Attack.new(->(_env) { [201, {}, []] }) }
 
-  def place_order(email:, ip: "203.0.113.90")
-    env = Rack::MockRequest.env_for("/api/v1/orders", method: "POST", "REMOTE_ADDR" => ip,
-      "CONTENT_TYPE" => "application/json", input: { buyer_email: email }.to_json)
+  def place_order(email:, ip: "203.0.113.90", headers: {})
+    env = Rack::MockRequest.env_for("/api/v1/orders", { method: "POST", "REMOTE_ADDR" => ip,
+      "CONTENT_TYPE" => "application/json", input: { buyer_email: email }.to_json }.merge(headers))
     app.call(env).first
+  end
+
+  it "throttles by the Cloudflare client address, not the shared edge address" do
+    edge = "172.70.1.1"
+    30.times do |index|
+      expect(place_order(email: "cf-#{index}@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.40" })).to eq(201)
+    end
+    expect(place_order(email: "cf-31@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.40" })).to eq(429)
+    expect(place_order(email: "cf-32@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.41" })).to eq(201)
   end
 
   it "allows 30 orders a minute from one shared network address, then throttles" do
