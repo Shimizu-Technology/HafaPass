@@ -69,6 +69,8 @@ export default {
           'danger-hover': '#991b1b',
         },
         focus: '#087e7a',
+        // Focus indicator on brand-950 surfaces (see .surface-dark in index.css).
+        'focus-on-dark': '#53f5df',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans Variable"', 'system-ui', '-apple-system', 'sans-serif'],

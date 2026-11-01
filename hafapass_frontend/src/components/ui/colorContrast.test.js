@@ -27,4 +27,9 @@ describe('semantic accessible color pairs', () => {
   it('keeps the focus indicator distinct from white', () => {
     expect(ratio(colors.focus, colors.surface.raised)).toBeGreaterThanOrEqual(3)
   })
+  it('keeps the dark-surface focus indicator distinct from brand-950', () => {
+    expect(ratio(colors['focus-on-dark'], colors.brand[950])).toBeGreaterThanOrEqual(3)
+    // Aqua is unreadable on white, so light surfaces inside dark ones switch back.
+    expect(ratio(colors['focus-on-dark'], colors.surface.raised)).toBeLessThan(3)
+  })
 })
