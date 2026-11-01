@@ -13,7 +13,7 @@ const shell = (path = '/admin/events') => render(<MemoryRouter initialEntries={[
 beforeEach(() => { window.localStorage.clear(); vi.clearAllMocks() })
 
 describe('admin workspace navigation', () => {
-  it.each(['/admin', '/admin/events/42', '/admin/users', '/admin/orders', '/admin/marketplace', '/admin/payouts', '/admin/disputes', '/admin/refund_reconciliation', '/admin/settings', '/admin/provider-readiness', '/admin/audit-log', '/support'])('marks exactly the current destination at %s', path => {
+  it.each(['/admin', '/admin/events/42', '/admin/users', '/admin/orders', '/admin/marketplace', '/admin/payouts', '/admin/disputes', '/admin/refund_reconciliation', '/admin/reconciliation_exceptions', '/admin/settings', '/admin/provider-readiness', '/admin/audit-log', '/support'])('marks exactly the current destination at %s', path => {
     shell(path)
     const links = within(screen.getByRole('navigation', { name: 'Admin sidebar' })).getAllByRole('link')
     const current = links.filter(link => link.getAttribute('aria-current') === 'page')

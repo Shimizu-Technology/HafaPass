@@ -399,6 +399,21 @@ class AuditActions
         "site_settings.fee_change_acknowledged" => "Acknowledged an upcoming fee change."
       }
 
+    # Admin reconciliation review (Admin -> Reconciliation). Some exceptions
+    # (payment_not_found and similar) have no order, so a manual resolution
+    # does not require an organization; when one exists the logger infers it.
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: false, event_required: false,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.manually_resolved" => "Resolved a payment reconciliation exception with a review note."
+      }
+
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.buyer_refund_requested" => "Requested a refund of a card payment that arrived after its order was released."
+      }
+
     define registry, area: "fees", audience: %w[admin_only],
       tenant: true, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {

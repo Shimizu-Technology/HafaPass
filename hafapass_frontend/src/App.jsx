@@ -65,6 +65,7 @@ const GuestPrivacyRequestsPage = lazy(() => import('./pages/PrivacyRequestsPage'
 const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'))
 const AdminDisputesPage = lazy(() => import('./pages/admin/AdminDisputesPage'))
 const AdminRefundReconciliationPage = lazy(() => import('./pages/admin/AdminRefundReconciliationPage'))
+const AdminReconciliationExceptionsPage = lazy(() => import('./pages/admin/AdminReconciliationExceptionsPage'))
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'))
 const AdminTaxReportsPage = lazy(() => import('./pages/admin/AdminTaxReportsPage'))
 const AdminTaxControlsPage = lazy(() => import('./pages/admin/AdminTaxControlsPage'))
@@ -136,6 +137,7 @@ function App() {
           <Route path="/admin/payouts" element={<AdminRoute><AdminPayoutsPage /></AdminRoute>} />
           <Route path="/admin/disputes" element={<AdminRoute><AdminDisputesPage /></AdminRoute>} />
           <Route path="/admin/refund_reconciliation" element={<AdminRoute><AdminRefundReconciliationPage /></AdminRoute>} />
+          <Route path="/admin/reconciliation_exceptions" element={<AdminRoute><AdminReconciliationExceptionsPage /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
           <Route path="/admin/operations" element={<AdminRoute><AdminOperationsPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />

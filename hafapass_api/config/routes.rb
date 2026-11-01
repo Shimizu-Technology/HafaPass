@@ -425,6 +425,12 @@ Rails.application.routes.draw do
           post :release_hold, on: :member
         end
         resources :disputes, only: [:index]
+        resources :reconciliation_exceptions, only: [:index, :show] do
+          member do
+            post :resolve
+            post :refund_buyer
+          end
+        end
         resources :audit_logs, only: [:index]
         resources :activity_log_exports, only: [:create, :show] do
           get :download, on: :member
