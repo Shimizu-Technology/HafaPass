@@ -3,7 +3,16 @@ require "json"
 require "base64"
 
 class ClerkAuthenticator
+  # A fresh key set is refetched hourly. When Clerk is unreachable the last
+  # good set keeps verifying sessions for up to a day, and the failure itself
+  # is remembered briefly so every request doesn't wait on a dead endpoint.
   JWKS_CACHE_TTL = 1.hour
+  JWKS_STALE_TTL = 24.hours
+  JWKS_FAILURE_TTL = 30.seconds
+  # A token signed by a key we haven't seen (Clerk rotated) may refetch early,
+  # but no more than this often, so forged kids can't hammer Clerk.
+  UNKNOWN_KID_REFETCH_INTERVAL = 5.minutes
+  JWKS_MUTEX = Mutex.new
 
   class << self
     def verify(token)
@@ -11,11 +20,10 @@ class ClerkAuthenticator
 
       return nil unless configured?
 
-      jwks = fetch_jwks
-      return nil if jwks.nil?
+      keys = signing_keys(token_kid(token))
+      return nil if keys.empty?
 
-      # Try each key until one works (Clerk may rotate keys)
-      jwks["keys"].each do |jwk_data|
+      keys.each do |jwk_data|
         begin
           jwk = JWT::JWK.new(jwk_data)
           options = { algorithms: ["RS256"], verify_iss: true, iss: issuer,
@@ -92,23 +100,67 @@ class ClerkAuthenticator
       nil
     end
 
-    def fetch_jwks
-      if cached_jwks_valid?
-        @cached_jwks
-      else
-        response = fetch_jwks_from_clerk
-        return nil unless response
+    def token_kid(token)
+      header = JWT::EncodedToken.new(token).header
+      header["kid"].presence if header.is_a?(Hash)
+    rescue StandardError
+      nil # A malformed token fails signature verification below.
+    end
 
-        @cached_jwks = response
-        @cached_url = jwks_url
-        @cached_at = Time.current
-        @cached_jwks
+    # Tokens name their signing key; Clerk always sets kid. A token without
+    # one may still be tried against every published key.
+    def signing_keys(kid)
+      jwks = fetch_jwks
+      return [] if jwks.nil?
+
+      keys = matching_keys(jwks, kid)
+      return keys if keys.any? || kid.nil?
+
+      matching_keys(fetch_jwks(unknown_kid: true), kid)
+    end
+
+    def matching_keys(jwks, kid)
+      keys = Array(jwks&.dig("keys")).select { |key| key.is_a?(Hash) }
+      kid.nil? ? keys : keys.select { |key| key["kid"] == kid }
+    end
+
+    def fetch_jwks(unknown_kid: false)
+      JWKS_MUTEX.synchronize do
+        url = jwks_url
+        reset_jwks_cache! unless @jwks_url == url
+        now = Time.current
+
+        if unknown_kid
+          return usable_jwks(now) if @jwks_kid_refetched_at && now - @jwks_kid_refetched_at < UNKNOWN_KID_REFETCH_INTERVAL
+        elsif @jwks && now - @jwks_fetched_at < JWKS_CACHE_TTL
+          return @jwks
+        end
+        return usable_jwks(now) if @jwks_failed_at && now - @jwks_failed_at < JWKS_FAILURE_TTL
+
+        @jwks_kid_refetched_at = now if unknown_kid
+        response = fetch_jwks_from_clerk
+        if response.is_a?(Hash) && response["keys"].is_a?(Array)
+          @jwks, @jwks_url, @jwks_fetched_at, @jwks_failed_at = response, url, now, nil
+        else
+          @jwks_url = url
+          @jwks_failed_at = now
+          Rails.logger.warn("ClerkAuthenticator serving cached JWKS after a failed fetch") if usable_jwks(now)
+        end
+        usable_jwks(now)
       end
     end
 
-    def cached_jwks_valid?
-      @cached_url == jwks_url && @cached_jwks.present? && @cached_at.present? && (Time.current - @cached_at) < JWKS_CACHE_TTL
+    def usable_jwks(now)
+      @jwks if @jwks && now - @jwks_fetched_at < JWKS_STALE_TTL
     end
+
+    public
+
+    def reset_jwks_cache!
+      @jwks = @jwks_url = @jwks_fetched_at = @jwks_failed_at = @jwks_kid_refetched_at = nil
+    end
+
+    private
 
     def fetch_jwks_from_clerk
       uri = URI.parse(jwks_url)
