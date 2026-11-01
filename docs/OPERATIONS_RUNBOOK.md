@@ -224,3 +224,15 @@ Signed offline admissions, device reconciliation, emergency door lists, door inv
 Communications, support, provider outage, incident, weather, refund, rollback, backup/restore, alert, accessibility, and device/browser pilot procedures are in [Pilot Readiness and Incident Runbook](PILOT_READINESS_RUNBOOK.md). The operative policies and later professional-review items are tracked in [Policy and Professional Review Register](POLICY_REVIEW_REGISTER.md). Other pending external payment and provider evidence remains a release gate, not an engineering test failure to waive.
 
 Durable email attempts bind their payload and idempotency key to a nonsecret fingerprint of the effective Resend credential, endpoint, and provider configuration revision. Reconcile uncertain sends before changing those settings. Changed contexts and legacy attempted rows with no saved context fail closed; approving a new provider configuration does not authorize replaying old uncertain sends.
+
+## Checkout network caps and client IP
+
+Public checkout limits how many tickets one network can hold or take free per event. Guam carrier NAT and venue Wi-Fi put many real buyers behind one address, so both caps start loose or off and every denial is logged for tuning.
+
+- **Client address.** `ClientIp` reads `CF-Connecting-IP`, then `True-Client-IP`, then Rails `remote_ip`, ignoring malformed values. Rack::Attack IP throttles and the checkout caps both use it. IPv6 clients are grouped by their /64 prefix. Orders store only an HMAC of the network (`orders.checkout_ip_digest`), never the address.
+- **`HAFAPASS_MAX_HELD_TICKETS_PER_IP`** (default `60`): the most tickets one network may hold in live, unexpired checkouts for one event. Expired or released holds do not count. Set `0` to turn it off.
+- **`HAFAPASS_MAX_FREE_TICKETS_PER_IP`** (default `0`, off): when set to a positive number, the most free tickets one network may receive for one event in a rolling one-hour window.
+- **Tuning.** A denial writes a `checkout_network_cap_denied` warning log line with the cap name, limit, current count, requested quantity, event ID and a digest prefix. Sentry gets a "Checkout network cap denied a buyer" warning at most once per cap and event every 10 minutes per process. Review those before lowering a cap. Invalid or negative values fall back to the default. Changing either variable needs a redeploy or restart.
+- One buyer (email, or signed-in account) may have only one live unpaid checkout per event, whatever the network.
+
+Hold expiry (`ExpireInventoryHoldsJob`, every minute) checks Stripe before releasing an order with a payment, with a 5-second limit per check. After 45 seconds of work in one run it leaves the remaining orders for the next run and logs `order_expiry_budget_exhausted`. Holds stop counting against inventory when they expire whether or not the job has reached them yet.

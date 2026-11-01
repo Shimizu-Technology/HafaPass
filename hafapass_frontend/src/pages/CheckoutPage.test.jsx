@@ -201,7 +201,7 @@ describe('checkout navigation', () => {
     expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }], expected_total_cents: 0 })
   })
 
-  it('sends the typed promo code rather than its record ID', async () => {
+  it('sends the typed promo code with its record ID for the server to cross-check', async () => {
     const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
       ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725, service_fee_cents: 225 }] }
     apiClient.get.mockImplementation(url => url === '/config'
@@ -224,8 +224,7 @@ describe('checkout navigation', () => {
     await user.click(screen.getByRole('button', { name: /Place Order/ }))
     expect(await screen.findByText('Stop here')).toBeInTheDocument()
     const orderPayload = apiClient.post.mock.calls.find(([url]) => url === '/orders')[1]
-    expect(orderPayload).toMatchObject({ promo_code: 'ISLAND' })
-    expect(orderPayload).not.toHaveProperty('promo_code_id')
+    expect(orderPayload).toMatchObject({ promo_code: 'ISLAND', promo_code_id: 41 })
     const validation = apiClient.post.mock.calls.find(([url]) => url === '/promo_codes/validate')[1]
     expect(validation).toMatchObject({ event_id: 38, code: 'ISLAND', subtotal_cents: 2500 })
     expect(validation.total_cents).toBe(orderPayload.expected_total_cents + 250)

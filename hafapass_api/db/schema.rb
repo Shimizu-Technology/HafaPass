@@ -2533,7 +2533,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.integer "door_allocation"
     t.bigint "event_id", null: false
     t.integer "max_per_buyer"
-    t.integer "max_per_order", default: 10, null: false
+    t.integer "max_per_order", default: 10
     t.string "name", null: false
     t.integer "price_cents"
     t.integer "quantity_available"

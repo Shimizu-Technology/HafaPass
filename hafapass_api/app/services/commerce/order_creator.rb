@@ -18,8 +18,15 @@ module Commerce
     NETWORK_HOLD_LIMIT = "Too many tickets are being held from your network right now. Try again in a few minutes."
     NETWORK_FREE_LIMIT = "Your network has reached the free ticket limit for this event. " \
       "Contact the organizer if you need more tickets."
-    DEFAULT_MAX_HELD_TICKETS_PER_IP = 40
-    DEFAULT_MAX_FREE_TICKETS_PER_IP = 20
+    # Guam carrier NAT and venue Wi-Fi put many buyers behind one address, so
+    # the per-network caps start loose (held) or off (free) and log every
+    # denial for tuning. See docs/OPERATIONS_RUNBOOK.md.
+    DEFAULT_MAX_HELD_TICKETS_PER_IP = 60
+    DEFAULT_MAX_FREE_TICKETS_PER_IP = 0
+    FREE_TICKET_WINDOW = 1.hour
+    CAP_ALERT_INTERVAL = 10.minutes
+    @cap_alerts = {}
+    @cap_alert_mutex = Mutex.new
     class CheckoutError < StandardError; end
     class PriceChanged < CheckoutError; end
     class RefreshRequired < PriceChanged; end
@@ -29,6 +36,21 @@ module Commerce
 
     def self.call(**)
       new(**).call
+    end
+
+    def self.cap_alert_due?(key, now: Time.current)
+      @cap_alert_mutex.synchronize do
+        last = @cap_alerts[key]
+        next false if last && last > now - CAP_ALERT_INTERVAL
+
+        @cap_alerts.delete_if { |_entry, at| at <= now - CAP_ALERT_INTERVAL } if @cap_alerts.size > 500
+        @cap_alerts[key] = now
+        true
+      end
+    end
+
+    def self.reset_cap_alerts!
+      @cap_alert_mutex.synchronize { @cap_alerts.clear }
     end
 
     def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil, promo_code: nil,
@@ -73,7 +95,8 @@ module Commerce
       @checkout_lease_token = checkout_lease_token
       @expected_total_cents = expected_total_cents
       @client_quote_required = client_quote_required
-      # Public buyer checkout only: staff, guest-list and cash sales are trusted.
+      # Public buyer checkout only (one live checkout per buyer, per-network
+      # caps, blank max_per_order = 10): staff, guest-list and cash sales are trusted.
       @checkout_ip_digest = checkout_ip_digest
       @enforce_buyer_limits = enforce_buyer_limits
       @cash_sale_key = cash_sale_key
@@ -142,7 +165,10 @@ module Commerce
         requires_payment = totals[:total_cents].positive? &&
           (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
         validate_production_payment!(totals, requires_payment)
-        raise CheckoutError, MINIMUM_CHARGE_MESSAGE if requires_payment && totals[:total_cents] < MINIMUM_CHARGE_CENTS
+        # Stripe's minimum only; cash and card-present terminals have none.
+        if requires_payment && stripe_payment? && totals[:total_cents] < MINIMUM_CHARGE_CENTS
+          raise CheckoutError, MINIMUM_CHARGE_MESSAGE
+        end
         validate_live_money_proof_scope!(totals)
         enforce_buyer_checkout_limits!(selections, totals) if @enforce_buyer_limits
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
@@ -282,6 +308,16 @@ module Commerce
       end
     end
 
+    def stripe_payment?
+      payment_provider.blank? || payment_provider == "stripe"
+    end
+
+    # A blank limit means 10 for public checkout. Staff sales (box office,
+    # guest list, cash) keep a blank limit as unlimited.
+    def max_per_order_for(ticket_type)
+      ticket_type.max_per_order || (@enforce_buyer_limits ? TicketType::DEFAULT_MAX_PER_ORDER : nil)
+    end
+
     def validate_production_payment!(totals, requires_payment)
       return unless Rails.env.production? && totals[:total_cents].positive?
       return if !requires_payment && source == "box_office" && payment_method == "door_cash"
@@ -289,7 +325,7 @@ module Commerce
       unless requires_payment
         raise CheckoutError, "A recorded payment is required for paid tickets"
       end
-      stripe = payment_provider.blank? || payment_provider == "stripe"
+      stripe = stripe_payment?
       if stripe && SiteSetting.instance.simulate_mode?
         raise CheckoutError, "Paid tickets are not on sale yet: HåfaPass has not turned on payments"
       end
@@ -401,8 +437,9 @@ module Commerce
         if quantity > available
           raise CheckoutError, "Only #{available} tickets available for #{ticket_type.name}"
         end
-        if ticket_type.max_per_order && quantity > ticket_type.max_per_order
-          raise CheckoutError, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"
+        max_per_order = max_per_order_for(ticket_type)
+        if max_per_order && quantity > max_per_order
+          raise CheckoutError, "Maximum #{max_per_order} tickets per order for #{ticket_type.name}"
         end
         enforce_door_allocation!(ticket_type, quantity, reserved_seat_quantity: reserved_seat_quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
@@ -538,24 +575,46 @@ module Commerce
       requested = selections.sum { |selection| selection[:quantity] }
       held_cap = per_ip_cap("HAFAPASS_MAX_HELD_TICKETS_PER_IP", DEFAULT_MAX_HELD_TICKETS_PER_IP)
       if held_cap
+        # Live holds only: an expired or released hold no longer counts.
         held = InventoryHold.current.joins(:order)
           .where(event_id: event.id, orders: { checkout_ip_digest: @checkout_ip_digest }).sum(:quantity)
-        raise CheckoutError, NETWORK_HOLD_LIMIT if held + requested > held_cap
+        if held + requested > held_cap
+          report_cap_denial!("held_tickets_per_ip", cap: held_cap, counted: held, requested: requested)
+          raise CheckoutError, NETWORK_HOLD_LIMIT
+        end
       end
       free_cap = per_ip_cap("HAFAPASS_MAX_FREE_TICKETS_PER_IP", DEFAULT_MAX_FREE_TICKETS_PER_IP)
       return unless free_cap && totals[:total_cents].zero?
 
-      issued = Ticket.joins(:order).where(event_id: event.id, status: [:issued, :checked_in],
-        orders: { checkout_ip_digest: @checkout_ip_digest, total_cents: 0 }).count
-      raise CheckoutError, NETWORK_FREE_LIMIT if issued + requested > free_cap
+      issued = Ticket.joins(:order).where(event_id: event.id, status: [:issued, :checked_in])
+        .where("tickets.created_at > ?", FREE_TICKET_WINDOW.ago)
+        .where(orders: { checkout_ip_digest: @checkout_ip_digest, total_cents: 0 }).count
+      return unless issued + requested > free_cap
+
+      report_cap_denial!("free_tickets_per_ip", cap: free_cap, counted: issued, requested: requested)
+      raise CheckoutError, NETWORK_FREE_LIMIT
     end
 
     # A positive integer sets the cap; 0 turns it off. Anything else keeps the default.
     def per_ip_cap(name, default)
       value = Integer(ENV.fetch(name, default.to_s), exception: false)
-      return default if value.nil? || value.negative?
+      value = default if value.nil? || value.negative?
 
       value.positive? ? value : nil
+    end
+
+    # Every denial is logged; Sentry hears about each cap and event at most
+    # once per CAP_ALERT_INTERVAL per process, so a busy venue cannot flood it.
+    def report_cap_denial!(cap_name, cap:, counted:, requested:)
+      details = { event: "checkout_network_cap_denied", cap: cap_name, limit: cap, counted: counted,
+        requested: requested, event_id: event.id, network_digest_prefix: @checkout_ip_digest.to_s.first(12) }
+      Rails.logger.warn(details.to_json)
+      return unless self.class.cap_alert_due?([cap_name, event.id])
+
+      Sentry.capture_message("Checkout network cap denied a buyer", level: :warning,
+        fingerprint: ["checkout-network-cap", cap_name], extra: details.except(:event))
+    rescue StandardError => e
+      Rails.logger.error({ event: "checkout_network_cap_report_failed", error_class: e.class.name }.to_json)
     end
 
     def enforce_pricing_tier_capacity!(tier, requested_quantity, offer: nil, reserved_seat_quantity: 0)

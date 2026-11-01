@@ -19,22 +19,23 @@ class TicketType < ApplicationRecord
   has_many :event_seats, dependent: :restrict_with_error
   has_many :seat_holds, through: :event_seats
 
-  # Every ticket type caps one order. A blank limit falls back to the default
-  # rather than "unlimited", so one checkout cannot hold a whole ticket type.
+  # A blank per-order limit means this many for public online checkout; staff
+  # sales (box office, guest list) treat blank as unlimited. See OrderCreator.
   DEFAULT_MAX_PER_ORDER = 10
-
-  before_validation { self.max_per_order = DEFAULT_MAX_PER_ORDER if max_per_order.blank? }
+  MINIMUM_CARD_TOTAL_MESSAGE = "Ticket price must leave the buyer paying at least $0.50 per ticket including fees " \
+    "(the smallest card payment). Set it to $0.00 for a free ticket, raise the price, or have buyers pay the fees."
 
   validates :name, presence: true
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validates :quantity_available, presence: true, numericality: { greater_than: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
-  validates :max_per_order, numericality: { only_integer: true, greater_than: 0 }
+  validates :max_per_order, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :door_allocation, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validate :sold_quantity_within_capacity
   validate :door_allocation_within_capacity
   validate :chronological_sales_window
+  validate :buyer_total_meets_card_minimum, if: -> { will_save_change_to_price_cents? }
 
   delegate :machine_translation_eligible?, to: :event
 
@@ -167,6 +168,15 @@ class TicketType < ApplicationRecord
     return if committed <= quantity_available
 
     errors.add(:quantity_available, "cannot be less than sold and actively held inventory")
+  end
+
+  # A 1–49¢ ticket whose fees the organizer absorbs costs the buyer under
+  # Stripe's 50¢ minimum, so online checkout could never take the payment.
+  def buyer_total_meets_card_minimum
+    return unless event && price_cents.is_a?(Integer) && price_cents.between?(1, Commerce::OrderCreator::MINIMUM_CHARGE_CENTS - 1)
+    return if Commerce::ServiceFee.for_event(event, price_cents).all_in_price_cents >= Commerce::OrderCreator::MINIMUM_CHARGE_CENTS
+
+    errors.add(:base, MINIMUM_CARD_TOTAL_MESSAGE)
   end
 
   def door_allocation_within_capacity
