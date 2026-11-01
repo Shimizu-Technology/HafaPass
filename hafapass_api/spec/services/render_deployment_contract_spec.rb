@@ -139,3 +139,18 @@ RSpec.describe "Initial single-service deployment contract" do
     expect(env.pluck("key")).to eq(env.pluck("key").uniq)
   end
 end
+
+RSpec.describe "API container image contract" do
+  let(:dockerfile) { Rails.root.join("Dockerfile").read }
+  let(:runtime_stage) { dockerfile.split(/^FROM /).last }
+
+  it "builds from one Ruby base and runs the Render command as an unprivileged user" do
+    expect(dockerfile.scan(/^FROM ruby:/).size).to eq(1)
+    service = YAML.safe_load(Rails.root.join("../render.yaml").read).fetch("services").sole
+    expect(JSON.parse(runtime_stage[/^CMD (.+)$/, 1]).join(" ")).to eq(service.fetch("dockerCommand"))
+    expect(runtime_stage).to match(/^USER 1000:1000$/)
+    expect(runtime_stage).not_to match(/build-essential|libpq-dev/)
+    expect(runtime_stage).to include("mkdir -p tmp/pids tmp/cache log storage", "chown -R rails:rails tmp log storage")
+    expect(Rails.root.join("bin/release-migrate")).to be_executable
+  end
+end
