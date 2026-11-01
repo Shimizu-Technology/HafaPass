@@ -48,6 +48,32 @@ RSpec.describe "Admin early fraud warning refunds", type: :request do
     expect(StripeService).to have_received(:refund_payment).once
   end
 
+  it "returns an error, not 201, for a failed attempt and for every replay of it, and keeps the warning open" do
+    allow(StripeService).to receive(:refund_payment).and_raise(Stripe::InvalidRequestError.new("charge disputed", nil))
+
+    post path, params: { reconciliation_exception_id: warning.id, note: "Issuer says stolen card" }, headers: auth_headers(admin), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(order.refunds.sole).to be_failed
+
+    post path, params: { reconciliation_exception_id: warning.id, note: "Try again" }, headers: auth_headers(admin), as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to eq(Commerce::EarlyFraudWarningRefund::FAILED_MESSAGE)
+    expect(order.refunds.count).to eq(1)
+    expect(warning.reload).to be_open
+    expect(tickets.map { |ticket| ticket.reload.status }).to eq(%w[issued issued])
+  end
+
+  it "reports a refund Stripe returns as failed as an error" do
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(id: "re_fraud_failed", status: "failed",
+      amount: 10_500, currency: "usd", failure_reason: "expired_or_canceled_card"))
+
+    post path, params: { reconciliation_exception_id: warning.id, note: "Issuer says stolen card" }, headers: auth_headers(admin), as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to eq(Commerce::EarlyFraudWarningRefund::FAILED_MESSAGE)
+    expect(warning.reload).to be_open
+  end
+
   it "requires an administrator, a note and an early fraud warning on this order" do
     post path, params: { reconciliation_exception_id: warning.id, note: "x" }, headers: auth_headers(create(:user)), as: :json
     expect(response).to have_http_status(:forbidden)

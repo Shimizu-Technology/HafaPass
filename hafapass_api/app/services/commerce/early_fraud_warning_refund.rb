@@ -13,6 +13,7 @@ module Commerce
 
     CODE = "early_fraud_warning"
     REASON = "fraudulent"
+    FAILED_MESSAGE = "The fraud refund failed. Retry it from the refund reconciliation queue; this warning stays open."
 
     def self.call(**)
       new(**).call
@@ -42,7 +43,10 @@ module Commerce
         metadata: { reconciliation_exception_id: @issue.id, payment_id: @issue.payment_id, note: @note })
       refund = RefundCreator.call(order: order, payment: @issue.payment, reason: REASON, requested_by: @actor,
         idempotency_key: key)
-      resolve!(refund) if (refund.succeeded? || refund.pending?) && @issue.reload.open?
+      # A replay returns the earlier attempt as is; a failed one stays failed.
+      raise Error, FAILED_MESSAGE if refund.failed? || refund.cancelled?
+
+      resolve!(refund) if @issue.reload.open?
       refund
     rescue RefundCreator::RefundError => e
       raise Error, e.message

@@ -325,6 +325,7 @@ entries are described above and defined in the registry's audience variants.
 | `privacy_request.verified` | yes | privacy | A | no | no | — | — | Verified a privacy request. |
 | `promo_code.created` | yes | promotions | O/M | yes | yes | `event_id`, `discount_type`, `discount_value`, `max_uses`, `active`, `starts_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Created a promo code. |
 | `promo_code.deleted` | yes | promotions | O/M | yes | yes | `event_id`, `discount_type`, `discount_value`, `max_uses`, `active`, `starts_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Deleted a promo code. |
+| `promo_code.over_redeemed` | yes | promotions | A | yes | yes | — | — | Completed a late-paid order one promo use over its limit. |
 | `promo_code.updated` | yes | promotions | O/M | yes | yes | `event_id`, `discount_type`, `discount_value`, `max_uses`, `active`, `starts_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title`, `subject_label` | Updated a promo code. |
 | `promoter.created` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Created a promoter. |
 | `promoter.deleted` | yes | promotions | O/M | yes | yes | `event_id`, `commission_bps`, `active` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Deleted a promoter. |

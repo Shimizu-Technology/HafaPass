@@ -29,6 +29,12 @@ function FraudRefundDialog({ order, warning, onClose, onRefunded }) {
     setError('')
     try {
       const response = await apiClient.post(`/admin/orders/${order.id}/fraud_refund`, { reconciliation_exception_id: warning.id, note: note.trim() })
+      // Never report a failed refund as sent, whatever the status code.
+      if (['failed', 'cancelled'].includes(response.data?.refund?.status)) {
+        setError('The fraud refund failed. Retry it from the refund reconciliation queue; this warning stays open.')
+        setBusy(false)
+        return
+      }
       onRefunded(response.data)
     } catch (failure) {
       setError(errorMessage(failure, 'The fraud refund could not be completed. Check the order before trying again.'))

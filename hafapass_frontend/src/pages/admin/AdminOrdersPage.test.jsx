@@ -90,6 +90,29 @@ describe('AdminOrdersPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('keeps the dialog open and shows the failure when the fraud refund failed', async () => {
+    const original = await apiClient.get()
+    const flagged = { ...original.data.orders[0], status: 'completed', total_cents: 4700, refund_cents: 0,
+      reconciliation_exceptions: [{ id: 7, code: 'early_fraud_warning', status: 'open', fraud_type: 'made_with_stolen_card' }] }
+    apiClient.get.mockResolvedValue({ data: { ...original.data, orders: [flagged] } })
+    apiClient.post.mockReset()
+    apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { error: 'The fraud refund failed. Retry it from the refund reconciliation queue; this warning stays open.' } } })
+      .mockResolvedValueOnce({ data: { refund: { id: 3, status: 'failed' }, order: flagged } })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Order 42 details' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel tickets and refund as fraud' }))
+    const dialog = within(screen.getByRole('dialog'))
+    await user.type(dialog.getByLabelText('Note for the audit log'), 'Issuer confirmed stolen card')
+    await user.click(dialog.getByRole('button', { name: 'Cancel tickets and refund' }))
+    expect(await dialog.findByRole('alert')).toHaveTextContent('The fraud refund failed')
+    await user.click(dialog.getByRole('button', { name: 'Cancel tickets and refund' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
+    expect(dialog.getByRole('alert')).toHaveTextContent('The fraud refund failed')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText(/fraud refund sent/)).not.toBeInTheDocument()
+  })
+
   it('marks orders paid in Stripe test mode', async () => {
     const original = (await apiClient.get.getMockImplementation()?.()) || (await apiClient.get())
     apiClient.get.mockResolvedValue({ data: { ...original.data, orders: original.data.orders.map(order => ({ ...order, test_payment: true })) } })

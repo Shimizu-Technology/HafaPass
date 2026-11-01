@@ -1944,6 +1944,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id"
     t.datetime "retention_anonymized_at"
+    t.index "((details ->> 'warning_id'::text))", name: "index_reconciliation_exceptions_on_early_fraud_warning_id", unique: true, where: "(((code)::text = 'early_fraud_warning'::text) AND (details ? 'warning_id'::text))"
     t.index ["order_id"], name: "index_reconciliation_exceptions_on_order_id"
     t.index ["payment_id"], name: "index_reconciliation_exceptions_on_payment_id"
     t.index ["retention_anonymized_at"], name: "index_reconciliation_exceptions_on_retention_anonymized_at"

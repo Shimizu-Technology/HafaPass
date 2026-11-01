@@ -199,10 +199,10 @@ RSpec.describe "Commerce order lifecycle" do
   describe "expiring a hold whose payment already succeeded" do
     include ActiveJob::TestHelper
 
-    def lapsed_test_mode_order(quantity: 1)
+    def lapsed_test_mode_order(quantity: 1, promo_code: nil)
       SiteSetting.instance.update!(payment_mode: "test")
       allow(StripeService).to receive(:card_only_intent?).and_return(true)
-      result = create_pending_order(quantity: quantity)
+      result = create_pending_order(quantity: quantity, promo_code: promo_code)
       expect(result.payment.provider_environment).to eq("test")
       result.order.update_columns(expires_at: 1.minute.ago)
       result.order.inventory_holds.update_all(expires_at: 1.minute.ago)
@@ -285,6 +285,35 @@ RSpec.describe "Commerce order lifecycle" do
 
       expect(result.order.reload.tickets).to be_empty
       expect(ReconciliationException.where(order: result.order).pluck(:code)).to include("payment_amount_mismatch")
+    end
+
+    it "completes a late payment whose promo code has since run out, with an audit note and no refund" do
+      promo = create(:promo_code, event: event, code: "LASTONE", max_uses: 1, discount_type: "fixed", discount_value: 500)
+      result = lapsed_test_mode_order(promo_code: "LASTONE")
+      other = create(:order, event: event)
+      PromoRedemption.create!(promo_code: promo, order: other, discount_cents: 500, status: :finalized, finalized_at: Time.current)
+      stub_intent(result, status: "succeeded")
+
+      expect { Commerce::OrderLifecycle.expire!(result.order) }.not_to have_enqueued_job(LateCaptureRefundJob)
+
+      expect(result.order.reload).to be_completed
+      expect(result.order.discount_cents).to eq(500)
+      expect(result.order.promo_redemption).to be_finalized
+      expect(promo.reload.current_uses).to eq(1)
+      audit = AuditLog.find_by!(auditable: promo, action: "promo_code.over_redeemed")
+      expect(audit.metadata).to include("order_id" => result.order.id, "max_uses" => 1, "uses_before" => 1)
+      expect(result.order.refunds).to be_empty
+    end
+
+    it "records no over-redemption when the late payment's promo use is still available" do
+      create(:promo_code, event: event, code: "PLENTY", max_uses: 5, discount_type: "fixed", discount_value: 500)
+      result = lapsed_test_mode_order(promo_code: "PLENTY")
+      stub_intent(result, status: "succeeded")
+
+      Commerce::OrderLifecycle.expire!(result.order)
+
+      expect(result.order.reload).to be_completed
+      expect(AuditLog.where(action: "promo_code.over_redeemed")).to be_empty
     end
 
     it "queues the automatic refund when a webhook reports success after the order was released" do

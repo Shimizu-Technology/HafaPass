@@ -8,6 +8,9 @@ module Commerce
     # Stripe may prune POST identities after 24 hours. Leave a margin and
     # never create a second operation merely because reconciliation found none.
     PROVIDER_REPLAY_WINDOW = 23.hours
+    # Recorded for the same payment when expiry tried to cancel a PaymentIntent
+    # that had already succeeded. Settled by the late-capture refund.
+    LATE_CAPTURE_COMPANION_CODES = %w[provider_payment_cancel_failed].freeze
 
     def self.call(**)
       new(**).call
@@ -246,8 +249,14 @@ module Commerce
     end
 
     def ensure_financial_review_resolved!
-      ignored_codes = refundable_late_capture? ? %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry] : []
-      return unless RefundSafety.finance_review_required?(order, except_codes: ignored_codes)
+      late_payment = late_capture_payment
+      ignored_codes = late_payment ? LateCaptureRefund::CODES : []
+      # The expiry job's cancel of this same PaymentIntent fails when the
+      # buyer's payment has just succeeded; that failure is the late capture
+      # itself, not a separate money question, so it must not block repaying it.
+      payment_codes = late_payment ? { late_payment.id => LATE_CAPTURE_COMPANION_CODES } : {}
+      return unless RefundSafety.finance_review_required?(order, except_codes: ignored_codes,
+        except_payment_codes: payment_codes)
 
       raise RefundError, "Refund needs finance review; contact support before submitting another request"
     end
@@ -255,18 +264,23 @@ module Commerce
     # A verified late capture is money owed back, never a new fulfillment.
     # Require the released, unfulfilled reservation and the exact captured sum.
     def refundable_late_capture?
-      return false unless order.cancelled? || order.expired? || order.partially_refunded?
-      return false if order.completed_at.present? || order.tickets.exists?
-      return false if order.inventory_holds.where.not(status: [:released, :expired]).exists? ||
+      late_capture_payment.present?
+    end
+
+    def late_capture_payment
+      return unless order.cancelled? || order.expired? || order.partially_refunded?
+      return if order.completed_at.present? || order.tickets.exists?
+      return if order.inventory_holds.where.not(status: [:released, :expired]).exists? ||
         order.catalog_item_holds.where.not(status: [:released, :expired]).exists?
 
       captures = order.payments.where(status: [:succeeded, :partially_refunded])
       payment = captured_payment || (captures.sole if captures.count == 1)
-      payment && payment.order_id == order.id && payment.provider == "stripe" &&
+      return unless payment && payment.order_id == order.id && payment.provider == "stripe" &&
         %w[test live].include?(payment.provider_environment) && payment.succeeded_at.present? &&
         payment.amount_cents == order.total_cents && payment.currency == order.currency &&
-        ReconciliationException.where(order: order, payment: payment,
-          code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
+        ReconciliationException.where(order: order, payment: payment, code: LateCaptureRefund::CODES).exists?
+
+      payment
     end
 
     def lock_selected_tickets!
@@ -589,7 +603,7 @@ module Commerce
       return unless refund.payment.refunded? && refund.order.completed_at.nil? && refund.order.tickets.empty?
 
       ReconciliationException.open.where(order: refund.order, payment: refund.payment,
-        code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).find_each do |issue|
+        code: LateCaptureRefund::CODES + LATE_CAPTURE_COMPANION_CODES).find_each do |issue|
         issue.resolve!
         AuditLogger.record!(action: "reconciliation_exception.resolved", auditable: issue, actor: requested_by,
           organization: refund.order.event.organization, event: refund.order.event, outcome: "succeeded",

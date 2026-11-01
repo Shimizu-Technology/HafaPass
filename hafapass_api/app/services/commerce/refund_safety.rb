@@ -13,11 +13,18 @@ module Commerce
       refund_aggregate_requires_reconciliation
     ].freeze
 
-    def self.finance_review_required?(order, except_codes: [])
+    # except_payment_codes: { payment_id => codes } ignores those codes only
+    # for that one payment (a late capture's own failed cancel, for example).
+    def self.finance_review_required?(order, except_codes: [], except_payment_codes: {})
       return false unless order
 
       relevant = ReconciliationException.open.where(code: FINANCIAL_CODES - except_codes)
-      relevant.where(order_id: order.id).or(relevant.where(payment_id: order.payments.select(:id))).exists?
+      scope = relevant.where(order_id: order.id).or(relevant.where(payment_id: order.payments.select(:id)))
+      except_payment_codes.each do |payment_id, codes|
+        scope = scope.where("reconciliation_exceptions.payment_id IS DISTINCT FROM ? OR reconciliation_exceptions.code NOT IN (?)",
+          payment_id, Array(codes))
+      end
+      scope.exists?
     end
   end
 end

@@ -208,6 +208,14 @@ class AuditActions
         "order.fraud_refund_requested" => "Requested a fraud refund after a Stripe early fraud warning."
       }
 
+    # A paid late completion used a promo code past max_uses (see
+    # OrderLifecycle#finalize_promo!). Platform review only.
+    define registry, area: "promotions", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "promo_code.over_redeemed" => "Completed a late-paid order one promo use over its limit."
+      }
+
     define registry, area: "refunds", audience: %w[org_owner org_finance],
       tenant: true, event_required: true,
       snapshots: %w[status amount_cents], metadata: %w[operation retry_refund_id amount_cents order_id refund_id provider_status], actions: {

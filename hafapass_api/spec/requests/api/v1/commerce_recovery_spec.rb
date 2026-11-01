@@ -118,7 +118,12 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
       Commerce::OrderLifecycle.cancel!(order)
     else
       order.update!(expires_at: 1.minute.ago)
-      order.inventory_holds.update_all(expires_at: 1.minute.ago) if terminal == :hold_expired
+      if terminal == :hold_expired
+        order.inventory_holds.update_all(expires_at: 1.minute.ago)
+        # A signed late success is fulfilled when inventory is still free;
+        # take it away so this exercises the release-and-repay path.
+        type.update_column(:quantity_available, 1)
+      end
       Commerce::OrderLifecycle.expire!(order) unless terminal == :hold_expired
     end
     id = signed_webhook("payment_intent.succeeded", { id: payment.provider_payment_id, amount_received: 5250, currency: "usd" })
@@ -126,6 +131,7 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
     signed_webhook("payment_intent.succeeded", { id: payment.provider_payment_id, amount_received: 5250, currency: "usd" }, id: id)
     expect(response).to have_http_status(:ok)
     expect(order.reload.status).to eq(terminal == :cancelled ? "cancelled" : "expired")
+    type.update_column(:quantity_available, 10)
     expect(payment.reload).to be_succeeded
     expect(order.tickets).to be_empty
     expect(type.reload.quantity_sold).to eq(0)

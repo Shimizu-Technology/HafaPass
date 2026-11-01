@@ -5,6 +5,9 @@ require "timeout"
 module Commerce
   class OrderLifecycle
     class InvalidTransition < StandardError; end
+    # Expiry asks Stripe whether a lapsed order's payment already succeeded.
+    # Keep it short: the expiry job works through many orders per minute.
+    PROVIDER_CHECK_TIMEOUT = 5.seconds
 
     class << self
       # Match completion/failure's event -> order order before inspecting a
@@ -52,6 +55,11 @@ module Commerce
 
           unless order.pending?
             mark_payment_succeeded!(payment)
+            # One late capture, one exception and one refund job: a second
+            # notice for the same payment (the expiry job's own check, then
+            # the webhook) must not open a duplicate.
+            next if payment && ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+
             ReconciliationException.create!(
               order: order,
               payment: payment,
@@ -109,7 +117,7 @@ module Commerce
 
           issued_tickets = issue_tickets!(order)
           Seating::SessionLifecycle.consume!(seat_session, tickets: issued_tickets) if seat_session
-          finalize_promo!(order)
+          finalize_promo!(order, late: completed_late)
           finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
@@ -202,7 +210,7 @@ module Commerce
         payment = order.payments.pending.where(provider: "stripe").where.not(provider_payment_id: nil).order(:id).last
         return unless payment && %w[test live].include?(payment.provider_environment)
 
-        intent = Timeout.timeout(30.seconds) { StripeService.retrieve_payment_intent(payment) }
+        intent = Timeout.timeout(PROVIDER_CHECK_TIMEOUT) { StripeService.retrieve_payment_intent(payment) }
         return unless intent.status.to_s == "succeeded" && intent.id == payment.provider_payment_id &&
           intent.livemode == (payment.provider_environment == "live")
 
@@ -408,12 +416,29 @@ module Commerce
         end
       end
 
-      def finalize_promo!(order)
+      # A late completion's hold lapsed, so another buyer may have taken the
+      # code's last use meanwhile. The buyer already paid the discounted price:
+      # complete anyway (one use over max_uses) and leave an audit note rather
+      # than refund a paid order over a promo count.
+      def finalize_promo!(order, late: false)
         redemption = order.promo_redemption
         return unless redemption&.reserved?
 
-        redemption.promo_code.lock!
-        redemption.promo_code.increment!(:current_uses)
+        promo = redemption.promo_code
+        promo.lock!
+        if late && promo.max_uses
+          others = promo.promo_redemptions.where.not(id: redemption.id)
+          used = others.finalized.count + others.reserved.joins(:order)
+            .where(orders: { status: Order.statuses[:pending] }).where("orders.expires_at > ?", Time.current).count
+          if used >= promo.max_uses
+            AuditLogger.record!(action: "promo_code.over_redeemed", auditable: promo,
+              organization: order.event.organization, event: order.event, outcome: "succeeded",
+              deduplication_key: "promo_code:#{promo.id}:over_redeemed:order:#{order.id}",
+              metadata: { order_id: order.id, max_uses: promo.max_uses, uses_before: used,
+                note: "Payment finished after the hold expired; the buyer paid the discounted price, so the order was completed" })
+          end
+        end
+        promo.increment!(:current_uses)
         redemption.update!(status: :finalized, finalized_at: Time.current)
       end
 
