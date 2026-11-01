@@ -83,4 +83,71 @@ RSpec.describe OperationalAlertJob do
     expect_alert("failed_background_jobs", 1)
     expect(Sentry).to have_received(:capture_message).twice
   end
+
+  describe "repeat alerts" do
+    def open_exception
+      create(:reconciliation_exception, status: :open)
+    end
+
+    def run_after(duration)
+      travel(duration)
+      described_class.perform_now
+    end
+
+    it "doesn't re-alert a standing count every run, but reminds every six hours while it stays non-zero" do
+      open_exception
+      described_class.perform_now
+      expect(Sentry).to have_received(:capture_message).once
+
+      alerted_at = Time.current
+      run_after(5.minutes)
+      run_after(5.hours + 54.minutes)
+      expect(Sentry).to have_received(:capture_message).once
+
+      run_after(1.minute)
+      expect(Sentry).to have_received(:capture_message).twice
+      expect(RuntimeAlertState.find("open_reconciliation_exceptions"))
+        .to have_attributes(last_count: 1, last_alerted_at: alerted_at + 6.hours)
+    end
+
+    it "alerts again as soon as the count rises" do
+      open_exception
+      described_class.perform_now
+      open_exception
+      run_after(5.minutes)
+
+      expect_alert("open_reconciliation_exceptions", 1)
+      expect_alert("open_reconciliation_exceptions", 2)
+      expect(Sentry).to have_received(:capture_message).twice
+    end
+
+    it "alerts on new failures after the count dropped, and right away after it cleared" do
+      first = open_exception
+      second = open_exception
+      described_class.perform_now
+      second.update!(status: :resolved)
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).once
+
+      open_exception
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).twice
+
+      ReconciliationException.update_all(status: ReconciliationException.statuses[:resolved])
+      run_after(5.minutes)
+      expect(RuntimeAlertState.find("open_reconciliation_exceptions").last_count).to eq(0)
+      first.reload.update!(status: :open)
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).exactly(3).times
+    end
+
+    it "remembers alerts across job instances and only stores signals that have fired" do
+      open_exception
+      described_class.perform_now
+      described_class.new.perform
+
+      expect(Sentry).to have_received(:capture_message).once
+      expect(RuntimeAlertState.pluck(:signal)).to eq(["open_reconciliation_exceptions"])
+    end
+  end
 end

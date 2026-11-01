@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_02_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2059,6 +2059,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_010000) do
     t.index ["order_id"], name: "index_registration_responses_on_order_id"
     t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
     t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
+  end
+
+  create_table "runtime_alert_states", primary_key: "signal", id: :string, force: :cascade do |t|
+    t.integer "last_count", default: 0, null: false
+    t.datetime "last_alerted_at"
+    t.datetime "updated_at", null: false
   end
 
   create_table "runtime_executions", id: false, force: :cascade do |t|

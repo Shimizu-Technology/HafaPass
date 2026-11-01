@@ -2596,6 +2596,12 @@
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
+    "runtime_alert_states": {
+      "signal": "system",
+      "last_count": "non-personal",
+      "last_alerted_at": "system",
+      "updated_at": "system"
+    },
     "runtime_executions": {
       "task_key": "system",
       "application_revision": "pii",
