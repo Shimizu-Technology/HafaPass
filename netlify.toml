@@ -50,9 +50,10 @@
     Cache-Control = "public, max-age=31536000, immutable"
     Access-Control-Allow-Origin = "https://js.stripe.com"
 
-# Personal, account and staff pages: keep them out of search results and never
-# send their URLs (which can carry ticket credentials or tokens) as a referrer.
-# Each path is listed exactly; a section root and its subpaths are separate.
+# Pages whose URL carries a ticket credential, order access, transfer, invitation
+# or unsubscribe token: keep them out of search results and never send the URL
+# as a referrer. Each path is listed exactly; a section root and its subpaths
+# are separate.
 [[headers]]
   for = "/tickets/*"
   [headers.values]
@@ -61,12 +62,6 @@
 
 [[headers]]
   for = "/orders/*"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/checkout/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
     Referrer-Policy = "no-referrer"
@@ -84,60 +79,6 @@
     Referrer-Policy = "no-referrer"
 
 [[headers]]
-  for = "/my-tickets"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/saved"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/admin"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/admin/*"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/support"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/support/*"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/privacy"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/privacy/*"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
-  for = "/account/*"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
-
-[[headers]]
   for = "/organization-invitations/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
@@ -149,38 +90,86 @@
     X-Robots-Tag = "noindex, nofollow"
     Referrer-Policy = "no-referrer"
 
+# Personal, account, sign-in, checkout and staff pages: out of search results,
+# but they keep the site-wide referrer policy. Clerk's bot protection
+# (Cloudflare Turnstile) and Stripe's 3-D Secure frames may check the
+# referring origin, and these URLs carry no credentials.
+[[headers]]
+  for = "/checkout/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/my-tickets"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/saved"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/admin"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/support"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/support/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/privacy"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/privacy/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/account/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
 [[headers]]
   for = "/sign-in"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
 
 [[headers]]
   for = "/sign-in/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
 
 [[headers]]
   for = "/sign-up"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
 
 [[headers]]
   for = "/sign-up/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
 
 [[headers]]
   for = "/dashboard"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"
 
 [[headers]]
   for = "/dashboard/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
-    Referrer-Policy = "no-referrer"

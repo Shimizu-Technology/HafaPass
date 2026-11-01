@@ -40,13 +40,20 @@ describe('Netlify response headers', () => {
     })
   })
 
-  it('keeps personal, account and staff pages out of search and referrers', () => {
-    for (const path of ['/tickets/*', '/orders/*', '/checkout/*', '/ticket-transfers/*', '/unsubscribe/*', '/my-tickets',
-      '/saved', '/admin', '/admin/*', '/support', '/support/*', '/privacy', '/privacy/*', '/account/*',
-      '/organization-invitations/*', '/platform-invitations/*', '/sign-in', '/sign-in/*', '/sign-up', '/sign-up/*',
-      '/events/*/preview']) {
+  it('keeps credential-bearing pages out of search and never sends their URL as a referrer', () => {
+    for (const path of ['/tickets/*', '/orders/*', '/ticket-transfers/*', '/unsubscribe/*', '/organization-invitations/*',
+      '/platform-invitations/*', '/events/*/preview']) {
       expect(byPath[path], path).toEqual({ 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' })
     }
+  })
+
+  it('keeps sign-in, checkout, account and staff pages out of search without stripping the referrer', () => {
+    // Clerk's Turnstile challenge and Stripe 3-D Secure frames may rely on the referring origin.
+    for (const path of ['/checkout/*', '/my-tickets', '/saved', '/admin', '/admin/*', '/support', '/support/*', '/privacy',
+      '/privacy/*', '/account/*', '/sign-in', '/sign-in/*', '/sign-up', '/sign-up/*', '/dashboard', '/dashboard/*']) {
+      expect(byPath[path], path).toEqual({ 'X-Robots-Tag': 'noindex, nofollow' })
+    }
+    expect(byPath['/*']['Referrer-Policy']).toBe('strict-origin-when-cross-origin')
   })
 
   it('reports, without enforcing, a content security policy for the services the app uses', () => {
