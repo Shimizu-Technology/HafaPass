@@ -230,6 +230,22 @@ RSpec.describe "Admin tax operations", type: :request do
     expect(audit.metadata.to_json).not_to include(tax.tin)
   end
 
+  it "neutralizes spreadsheet formulas in annual CSV text, including ones behind leading whitespace" do
+    tax.update_columns(legal_name: " =HYPERLINK(\"https://example.test\",\"Payee\")")
+    event = create(:event, organization: organization)
+    create(:payout, organization: organization, event: event,
+      settlement: create(:settlement, organization: organization, event: event),
+      connected_account: create(:connected_account, organization: organization),
+      status: :paid, amount_cents: 10_000, paid_at: Time.utc(2026, 10, 4))
+
+    post "/api/v1/admin/annual_tax_reports/export", params: { year: 2026 }, headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:ok)
+    row = CSV.parse(response.body, headers: true).first
+    expect(row["payee_name"]).to eq("\t =HYPERLINK(\"https://example.test\",\"Payee\")")
+    expect(row["gross_paid_cents"]).to eq("10000")
+  end
+
   it "masks a formatted payer TIN in the default annual CSV" do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("TAX_PAYER_TIN").and_return("12-3456789")
