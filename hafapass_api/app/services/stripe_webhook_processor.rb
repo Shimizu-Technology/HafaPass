@@ -65,6 +65,8 @@ class StripeWebhookProcessor
       process_refund!(receipt, payment, object)
     when "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"
       process_dispute!(receipt, payment, object)
+    when "radar.early_fraud_warning.created", "radar.early_fraud_warning.updated"
+      process_early_fraud_warning!(receipt, payment, object)
     else
       receipt.update!(status: :ignored, processed_at: Time.current)
       return
@@ -392,6 +394,31 @@ class StripeWebhookProcessor
           amount_cents: dispute.amount_cents, currency: dispute.currency,
           provider_status: provider_status })
     end
+  end
+
+  # A card issuer reported likely fraud. Nothing changes automatically: an
+  # administrator reviews the open exception and can cancel the tickets and
+  # refund as fraudulent (Commerce::EarlyFraudWarningRefund). The code is not
+  # a RefundSafety financial code, so it never blocks that refund.
+  def process_early_fraud_warning!(receipt, payment, object)
+    warning_id = value(object, :id).to_s
+    charge = value(object, :charge)
+    details = { "warning_id" => warning_id, "fraud_type" => value(object, :fraud_type),
+      "actionable" => value(object, :actionable), "charge_id" => charge.is_a?(String) ? charge : nested_value(charge, :id),
+      "payment_intent_id" => value(object, :payment_intent).presence&.to_s, "last_event_type" => event.type }.compact
+    existing = ReconciliationException.where(code: "early_fraud_warning")
+      .where("details ->> 'warning_id' = ?", warning_id).order(:id).first if warning_id.present?
+    if existing
+      existing.update!(details: existing.details.merge(details))
+      return
+    end
+
+    issue = ReconciliationException.create!(order: payment&.order, payment: payment, webhook_event: receipt,
+      code: "early_fraud_warning", details: details)
+    Sentry.capture_message("Stripe early fraud warning received; review the order", level: :warning,
+      fingerprint: ["stripe-early-fraud-warning"],
+      extra: { reconciliation_exception_id: issue.id, order_id: payment&.order_id, payment_id: payment&.id,
+        fraud_type: details["fraud_type"], payment_found: payment.present? })
   end
 
   def cancel_disputed_tickets!(order, dispute)

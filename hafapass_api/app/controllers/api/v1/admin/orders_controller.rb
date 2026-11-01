@@ -34,6 +34,26 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
     }
   end
 
+  # POST /api/v1/admin/orders/:id/fraud_refund
+  # Body: reconciliation_exception_id (the open early_fraud_warning), note.
+  def fraud_refund
+    order = Order.find_by(id: params[:id])
+    return render json: { error: "Order not found" }, status: :not_found unless order
+
+    issue = order.reconciliation_exceptions.find_by(id: params[:reconciliation_exception_id],
+      code: Commerce::EarlyFraudWarningRefund::CODE)
+    return render json: { error: "Early fraud warning not found for this order" }, status: :not_found unless issue
+
+    refund = Commerce::EarlyFraudWarningRefund.call(issue: issue, actor: @current_user, note: params[:note], request: request)
+    render json: {
+      refund: { id: refund.id, status: refund.status, amount_cents: refund.amount_cents, reason: refund.reason },
+      order: order_json(Order.includes(:event, :order_items, :payments, :refunds, :reconciliation_exceptions,
+        tickets: :ticket_type).find(order.id))
+    }, status: :created
+  rescue Commerce::EarlyFraudWarningRefund::Error => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
   private
 
   def order_json(o)
@@ -91,6 +111,8 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
       },
       reconciliation_exceptions: o.reconciliation_exceptions.map { |exception|
         { id: exception.id, code: exception.code, status: exception.status, created_at: exception.created_at }
+          .merge(exception.code == Commerce::EarlyFraudWarningRefund::CODE ?
+            { fraud_type: exception.details["fraud_type"], actionable: exception.details["actionable"] } : {})
       },
       tickets: o.tickets.map { |t|
         {

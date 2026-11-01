@@ -389,7 +389,10 @@ Rails.application.routes.draw do
           end
         end
         resources :organizer_profiles, only: [:update]
-        resources :orders, only: [:index]
+        resources :orders, only: [:index] do
+          # Stripe early fraud warning: cancel the tickets and refund as fraudulent.
+          post :fraud_refund, on: :member
+        end
         resources :connected_accounts, only: [:update] do
           member do
             post :approve_payout_method

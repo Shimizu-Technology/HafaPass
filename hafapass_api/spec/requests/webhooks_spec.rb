@@ -37,6 +37,37 @@ RSpec.describe "Stripe webhooks", type: :request do
     )
   end
 
+  it "opens one early fraud warning exception per warning, alerts Sentry once and keeps refunds unblocked" do
+    allow(Sentry).to receive(:capture_message)
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_efw")
+    object = { id: "issfr_efw", object: "radar.early_fraud_warning", payment_intent: payment.provider_payment_id,
+      charge: "ch_efw", fraud_type: "made_with_stolen_card", actionable: true }
+
+    2.times { post_stripe_event("radar.early_fraud_warning.created", object, event_id: "evt_efw_created") }
+    expect(response).to have_http_status(:ok)
+    post_stripe_event("radar.early_fraud_warning.updated", object.merge(actionable: false), event_id: "evt_efw_updated")
+    expect(response).to have_http_status(:ok)
+
+    issue = ReconciliationException.where(code: "early_fraud_warning").sole
+    expect(issue).to have_attributes(order_id: order.id, payment_id: payment.id, status: "open")
+    expect(issue.details).to include("warning_id" => "issfr_efw", "fraud_type" => "made_with_stolen_card",
+      "actionable" => false, "charge_id" => "ch_efw", "last_event_type" => "radar.early_fraud_warning.updated")
+    expect(WebhookEvent.where(provider_event_id: %w[evt_efw_created evt_efw_updated]).pluck(:status).uniq).to eq(["processed"])
+    expect(Sentry).to have_received(:capture_message).with(/early fraud warning/, hash_including(level: :warning)).once
+    expect(Commerce::RefundSafety::FINANCIAL_CODES).not_to include("early_fraud_warning")
+    expect(Commerce::RefundSafety.finance_review_required?(order)).to be(false)
+  end
+
+  it "still records an early fraud warning whose payment HåfaPass cannot match" do
+    allow(Sentry).to receive(:capture_message)
+    post_stripe_event("radar.early_fraud_warning.created", { id: "issfr_unknown", payment_intent: "pi_not_ours",
+      charge: "ch_unknown", fraud_type: "unauthorized_use_of_card", actionable: true }, event_id: "evt_efw_unknown")
+    expect(response).to have_http_status(:ok)
+    expect(ReconciliationException.find_by!(code: "early_fraud_warning")).to have_attributes(order_id: nil, payment_id: nil)
+    expect(Sentry).to have_received(:capture_message).with(/early fraud warning/, hash_including(extra: hash_including(payment_found: false)))
+  end
+
   it "records scoped dispute opened, updated and won outcomes once per provider event" do
     order = create(:order, event: event)
     payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_audit_dispute")

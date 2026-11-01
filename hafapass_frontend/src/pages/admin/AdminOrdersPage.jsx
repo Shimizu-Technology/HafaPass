@@ -1,15 +1,57 @@
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
-import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useId, useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Loader2, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import apiClient from '../../api/client'
 import TestPaymentBadge from '../../components/TestPaymentBadge'
+import Dialog from '../../components/Dialog'
 import AdminLayout from './AdminLayout'
+import { errorMessage } from './adminOperations'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
 const orderStatuses = ['', 'pending', 'completed', 'refunded', 'cancelled', 'partially_refunded', 'expired']
 
 const money = (cents = 0) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+const openFraudWarning = exception => exception.code === 'early_fraud_warning' && exception.status === 'open'
+
+// Stripe early fraud warning: refund the order as fraudulent. The refund
+// cancels unadmitted tickets once Stripe confirms it.
+function FraudRefundDialog({ order, warning, onClose, onRefunded }) {
+  const titleId = useId()
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async event => {
+    event.preventDefault()
+    if (!note.trim()) { setError('Add a note explaining the fraud decision.'); return }
+    setBusy(true)
+    setError('')
+    try {
+      const response = await apiClient.post(`/admin/orders/${order.id}/fraud_refund`, { reconciliation_exception_id: warning.id, note: note.trim() })
+      onRefunded(response.data)
+    } catch (failure) {
+      setError(errorMessage(failure, 'The fraud refund could not be completed. Check the order before trying again.'))
+      setBusy(false)
+    }
+  }
+  return <Dialog labelledBy={titleId} onClose={onClose} busy={busy} className="max-w-lg">
+    <form noValidate onSubmit={submit}>
+      <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Refund order #{order.id} as fraud</h2>
+      <p className="mt-2 text-sm text-neutral-700">
+        Stripe reported likely fraud{warning.fraud_type ? ` (${warning.fraud_type.replaceAll('_', ' ')})` : ''}. This refunds the remaining {money(order.total_cents - (order.refund_cents || 0))} to the card and cancels every ticket that has not been scanned. It cannot be undone.
+      </p>
+      <label className="mt-4 block text-sm font-medium text-neutral-800">Note for the audit log
+        <textarea className="input mt-1 min-h-24" value={note} maxLength={2000} onChange={event => setNote(event.target.value)} required />
+      </label>
+      {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Refunding…' : 'Cancel tickets and refund'}</button>
+      </div>
+    </form>
+  </Dialog>
+}
 
 function AdminOrdersPageSession({ identity, resourcePath }) {
   const { beginRequest } = usePlatformRequests(identity, resourcePath)
@@ -25,6 +67,8 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState(null)
+  const [fraudRefund, setFraudRefund] = useState(null)
+  const [notice, setNotice] = useState('')
 
   const fetchOrders = useCallback(() => {
     const request = beginRequest()
@@ -60,6 +104,13 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
 
   return (
     <AdminLayout>
+      {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
+      {fraudRefund && <FraudRefundDialog order={fraudRefund.order} warning={fraudRefund.warning} onClose={() => setFraudRefund(null)}
+        onRefunded={data => {
+          setOrders(current => current.map(order => order.id === data.order.id ? data.order : order))
+          setNotice(`Order #${data.order.id}: fraud refund ${data.refund.status === 'succeeded' ? 'sent' : 'requested'}.`)
+          setFraudRefund(null)
+        }} />}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -187,6 +238,10 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                                     {order.reconciliation_exceptions.map(exception => (
                                       <div key={exception.id} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                         {exception.code.replaceAll('_', ' ')} · {exception.status}
+                                        {openFraudWarning(exception) && <button type="button" onClick={() => setFraudRefund({ order, warning: exception })}
+                                          className="mt-2 block min-h-11 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-focus">
+                                          Cancel tickets and refund as fraud
+                                        </button>}
                                       </div>
                                     ))}
                                   </div>

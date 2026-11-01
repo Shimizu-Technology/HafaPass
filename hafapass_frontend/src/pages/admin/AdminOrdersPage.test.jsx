@@ -1,12 +1,13 @@
 import { MemoryRouter } from 'react-router-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import AdminOrdersPage from './AdminOrdersPage'
 
 vi.mock('../../api/client', async importOriginal => ({
   ...await importOriginal(),
-  default: { get: vi.fn() },
+  default: { get: vi.fn(), post: vi.fn() },
 }))
 
 vi.mock('./AdminLayout', () => ({
@@ -62,6 +63,31 @@ describe('AdminOrdersPage', () => {
     expect(screen.getByText(/pi_test/)).toBeInTheDocument()
     expect(screen.getByText(/payment amount mismatch/)).toBeInTheDocument()
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/orders', expect.objectContaining({ params: { page: 1, per_page: 20 } })))
+  })
+
+  it('refunds an order flagged by a Stripe early fraud warning after a confirmed note', async () => {
+    const original = await apiClient.get()
+    const flagged = { ...original.data.orders[0], status: 'completed', total_cents: 4700, refund_cents: 0,
+      reconciliation_exceptions: [{ id: 7, code: 'early_fraud_warning', status: 'open', fraud_type: 'made_with_stolen_card' }] }
+    apiClient.get.mockResolvedValue({ data: { ...original.data, orders: [flagged] } })
+    apiClient.post.mockResolvedValue({ data: { refund: { id: 3, status: 'succeeded' },
+      order: { ...flagged, status: 'refunded', reconciliation_exceptions: [{ id: 7, code: 'early_fraud_warning', status: 'resolved' }] } } })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Order 42 details' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel tickets and refund as fraud' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/made with stolen card/)).toBeInTheDocument()
+    expect(dialog.getByText(/\$47\.00/)).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Cancel tickets and refund' }))
+    expect(dialog.getByRole('alert')).toHaveTextContent('Add a note')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.type(dialog.getByLabelText('Note for the audit log'), 'Issuer confirmed stolen card')
+    await user.click(dialog.getByRole('button', { name: 'Cancel tickets and refund' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/orders/42/fraud_refund',
+      { reconciliation_exception_id: 7, note: 'Issuer confirmed stolen card' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Order #42: fraud refund sent.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('marks orders paid in Stripe test mode', async () => {
