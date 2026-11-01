@@ -82,7 +82,7 @@ RSpec.describe DataRetention do
         row = if table == "orders"
           created = create(:order, buyer_email: "#{sentinel}@example.test")
           created.update_columns(buyer_name: sentinel, buyer_phone: sentinel,
-            refund_reason: sentinel, marketing_opt_in: true)
+            refund_reason: sentinel, marketing_opt_in: true, checkout_ip_digest: sentinel)
           created
         else
           attrs = model.columns.each_with_object({}) do |column, values|

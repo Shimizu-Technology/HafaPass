@@ -562,7 +562,8 @@
         "buyer_name",
         "buyer_phone",
         "refund_reason",
-        "marketing_opt_in"
+        "marketing_opt_in",
+        "checkout_ip_digest"
       ],
       "pending_rule": {
         "period": "90_days",
@@ -2080,6 +2081,7 @@
       "checkout_key_digest": "non-personal",
       "checkout_request_digest": "non-personal",
       "checkout_recovery_expires_at": "non-personal",
+      "checkout_ip_digest": "pii",
       "processing_fee_bearer_snapshot": "money",
       "locale": "non-personal",
       "marketing_opt_in": "pii",

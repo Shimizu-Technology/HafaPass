@@ -32,12 +32,17 @@ RSpec.describe "Request throttles", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
-  it "starts with fresh counters and enforces the ten-order IP limit across different buyers" do
-    10.times do |index|
+  it "starts with fresh counters and enforces the 30-order IP limit across different buyers" do
+    # Checkout's own free-ticket cap per network would stop this burst first.
+    previous = ENV["HAFAPASS_MAX_FREE_TICKETS_PER_IP"]
+    ENV["HAFAPASS_MAX_FREE_TICKETS_PER_IP"] = "0"
+    30.times do |index|
       checkout("buyer#{index}@example.invalid")
       expect(response).to have_http_status(:created)
     end
     expect { checkout("next-buyer@example.invalid") }.not_to change(Order, :count)
     expect(response).to have_http_status(:too_many_requests)
+  ensure
+    previous.nil? ? ENV.delete("HAFAPASS_MAX_FREE_TICKETS_PER_IP") : ENV["HAFAPASS_MAX_FREE_TICKETS_PER_IP"] = previous
   end
 end

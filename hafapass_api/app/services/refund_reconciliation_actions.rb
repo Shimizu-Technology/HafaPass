@@ -141,6 +141,11 @@ class RefundReconciliationActions
       raise ActionError, "Only an open late-capture exception can be refunded here"
     end
 
+    earlier = order.refunds.find_by(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(@record.payment))
+    if earlier&.failed? || earlier&.cancelled?
+      raise ActionError, "The automatic refund failed; use Retry refund on its refund row"
+    end
+
     result = Commerce::LateCaptureRefund.call(payment: @record.payment, requested_by: @actor)
     audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
     result

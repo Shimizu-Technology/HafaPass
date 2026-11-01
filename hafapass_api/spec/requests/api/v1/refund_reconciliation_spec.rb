@@ -243,6 +243,21 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(StripeService).to have_received(:refund_payment).once
   end
 
+  it "points a late capture whose automatic refund failed to the failed refund's own retry" do
+    order = create(:order, event: event, status: :expired, completed_at: nil, total_cents: 5250)
+    payment = payment_for(order)
+    issue = create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_hold_expiry")
+    create(:refund, order: order, payment: payment, status: :failed, failed_at: 1.hour.ago, succeeded_at: nil,
+      amount_cents: 5250, idempotency_key: "late-capture:payment:#{payment.id}")
+    allow(StripeService).to receive(:refund_payment)
+
+    post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("Retry refund on its refund row")
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
   it "executes an unfulfilled buyer request once through RefundCreator" do
     order = create(:order, event: event, created_at: 2.days.ago)
     ticket_type = create(:ticket_type, event: event)
