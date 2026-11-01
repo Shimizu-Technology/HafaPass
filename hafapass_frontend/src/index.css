@@ -278,3 +278,18 @@
   --tw-ring-color: var(--focus-ring);
   --tw-ring-offset-color: var(--focus-ring-offset);
 }
+
+/* Printing a ticket or order: keep the QR and details, drop navigation and
+   controls, and print dark surfaces as plain paper with dark text. */
+@media print {
+  .app-nav, footer, button, [role="button"], .btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost, [data-print="hide"] {
+    display: none !important;
+  }
+  html, body, .app-shell, .bg-brand-950, .surface-dark { background: #ffffff !important; }
+  :is(.bg-brand-950, .surface-dark) :is(.text-white, .text-brand-100, .text-content-inverse, .text-content-inverse-muted) { color: #0f172a !important; }
+  .min-h-dvh, .min-h-screen, .route-loading, .public-listing-min-height { min-height: 0 !important; }
+  .ticket-top, .ticket-stub { -webkit-mask: none !important; mask: none !important; border: 1px solid #cbd5e1; }
+  .ticket-top { border-bottom-style: dashed; }
+  .ticket-stub { border-top: 0; }
+  .ticket, svg, canvas, img { break-inside: avoid; }
+}

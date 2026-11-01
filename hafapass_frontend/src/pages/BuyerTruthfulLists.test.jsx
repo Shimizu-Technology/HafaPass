@@ -96,3 +96,16 @@ it.each([
   expect(await screen.findByText('Current event')).toBeInTheDocument()
   expect(api.get).toHaveBeenLastCalledWith(expect.any(String), { params: { page: 1 } })
 })
+
+it('labels privacy requests and their status in the buyer language, not raw server values', async () => {
+  api.get.mockResolvedValue({ data: { requests: [
+    { id: 3, kind: 'access', status: 'partially_completed' },
+    { id: 4, kind: 'deletion', status: 'blocked' },
+  ] } })
+  show(PrivacyRequestsPage, '/privacy/requests', '/privacy/requests')
+  expect(await screen.findByText('Data request #3')).toBeInTheDocument()
+  expect(screen.getByText('Partly completed')).toBeInTheDocument()
+  expect(screen.getByText('Deletion request #4')).toBeInTheDocument()
+  expect(screen.getByText('On hold')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Your privacy choices' })).toBeInTheDocument()
+})

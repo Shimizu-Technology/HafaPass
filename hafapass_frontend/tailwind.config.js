@@ -7,6 +7,9 @@ export default {
   // Shared semantic variants must retain their complete component rules even
   // when a variant has no literal consumer in the current source scan.
   safelist: ['btn-primary', 'btn-teal', 'btn-danger', 'btn-secondary', 'btn-ghost'],
+  // HåfaPass has one light theme. Without this, a stray dark: utility would
+  // follow the phone's dark mode and put dark surfaces inside light pages.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

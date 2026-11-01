@@ -1457,6 +1457,24 @@
       },
       "loading": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Loading your requests…"
+      },
+      "title": {
+        "context": "Heading of the HåfaPass page where buyers ask for a copy of their data or its deletion."
+      },
+      "intro": {
+        "context": "Privacy request explanation. Keep the meaning precise: financial records may be retained; personal details are removed when deletion is allowed."
+      },
+      "accessRequest": {
+        "context": "A buyer's request for a copy of their personal data. Keep {{id}} unchanged."
+      },
+      "deletionRequest": {
+        "context": "A buyer's request to delete their personal data. Keep {{id}} unchanged."
+      },
+      "status_partially_completed": {
+        "context": "Some data was deleted; records that must be kept for accounting, tax or disputes remain."
+      },
+      "status_blocked": {
+        "context": "The request cannot proceed yet because a legal hold, dispute, refund or payout is open."
       }
     },
     "myTicketsPage": {

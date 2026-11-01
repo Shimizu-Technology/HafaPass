@@ -35,3 +35,10 @@ it('pulses spinners instead of freezing them under reduced motion', () => {
   const reduced = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'))
   expect(reduced).toMatch(/\[class\*="animate-spin"\][^{]*\{\s*animation: loading-pulse[^}]*!important/)
 })
+
+it('prints tickets without navigation or controls, on plain paper', () => {
+  const print = css.slice(css.indexOf('@media print'))
+  expect(print).toMatch(/\.app-nav, footer, button[^{]*\{\s*display: none !important;/)
+  expect(print).toMatch(/\.bg-brand-950[^{]*\{ background: #ffffff !important; \}/)
+  expect(print).not.toMatch(/\.ticket[^{]*\{[^}]*display: none/)
+})
