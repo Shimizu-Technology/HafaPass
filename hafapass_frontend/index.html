@@ -4,9 +4,11 @@
     <meta charset="UTF-8" />
     <style>
       html, body { margin: 0; min-height: 100%; background: #f8fafb; color: #0f172a; }
-      .boot-splash { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; }
-      .boot-splash::before { content: ""; position: absolute; inset: 0 0 auto; height: 65px; background: var(--startup-header-color, #ffffff); }
-      .boot-splash span { color: #0e7c7b; font: 700 2rem/1.2 system-ui, sans-serif; letter-spacing: -0.04em; }
+      /* The startup script picks the route's page, header and wordmark colors.
+         The bar matches the header: 64px row + 1px border below the notch. */
+      .boot-splash { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; background: var(--startup-page-color, #f8fafb); }
+      .boot-splash::before { content: ""; position: absolute; inset: 0 0 auto; height: calc(65px + env(safe-area-inset-top, 0px)); background: var(--startup-header-color, #ffffff); }
+      .boot-splash span { color: var(--startup-wordmark-color, #0b6563); font: 700 2rem/1.2 "Space Grotesk Variable", "Plus Jakarta Sans Variable", system-ui, sans-serif; letter-spacing: -0.04em; }
     </style>
     <script>
       (function () {
@@ -80,7 +82,8 @@
     <meta name="twitter:image" content="%PUBLIC_WEB_URL%/og-default.jpg" data-rh="true" />
     <!-- /public-site-url -->
 
-    <!-- Fonts are bundled with the app and use font-display: swap. -->
+    <!-- Fonts are bundled with the app and use font-display: swap. The build
+         preloads the two Latin variable files (config/fontPreload.js). -->
 
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#ffffff" />
@@ -94,7 +97,7 @@
 
     <!-- Additional SEO & PWA -->
     <meta name="apple-mobile-web-app-title" content="HåfaPass" />
-    <meta name="msapplication-TileColor" content="#0e7c7b" />
+    <meta name="msapplication-TileColor" content="#032827" />
 
     <!-- Structured Data: absolute URLs come from VITE_PUBLIC_WEB_URL at build time. -->
     <!-- public-site-url -->
