@@ -345,10 +345,14 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
     end
 
-    # A recorded request keeps the window it was made in, so a retry after a
-    # failed provider refund is judged at the original response time.
-    eligibility = EventChangeRefundEligibility.call(order: @order, change: change,
-      at: existing_response&.responded_at || Time.current)
+    # A recorded request keeps the window it was made in for the tickets it
+    # named, so a retry after a failed provider refund is judged at the
+    # original response time; anything else is judged now.
+    eligibility = if existing_response
+      EventChangeRefundEligibility.for_recorded_request(order: @order, change: change, response: existing_response)
+    else
+      EventChangeRefundEligibility.call(order: @order, change: change)
+    end
     unless existing_response || eligibility.order_predates_change
       return render json: { error: EventChangeRefundEligibility::MESSAGES.fetch("ordered_after_change"),
         code: "ordered_after_change" }, status: :unprocessable_entity
@@ -360,7 +364,8 @@ class Api::V1::OrdersController < ApplicationController
 
     response = existing_response || EventChangeResponse.transaction do
       recorded_response = change.event_change_responses.create!(
-        order: @order, decision: decision, responded_at: Time.current)
+        order: @order, decision: decision, responded_at: Time.current,
+        requested_ticket_ids: decision == "refund_requested" ? eligibility.tickets.map(&:id) : [])
       if decision == "refund_requested"
         AuditLogger.record!(action: "refund.buyer_requested", auditable: recorded_response,
           actor: @current_user, organization: @order.event.organization, event: @order.event,

@@ -1486,6 +1486,7 @@
       "decision": "system",
       "event_change_id": "system",
       "order_id": "system",
+      "requested_ticket_ids": "system",
       "responded_at": "system",
       "updated_at": "system"
     },

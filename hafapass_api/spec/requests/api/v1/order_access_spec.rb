@@ -473,6 +473,66 @@ RSpec.describe "Buyer order access", type: :request do
       expect(response).to have_http_status(:ok)
       expect(paid.refunds.succeeded.count).to eq(1)
       expect(free_ticket.reload).to be_issued
+      # The holder's ticket still admits them and they still hear about changes.
+      expect(paid.reload).to be_partially_refunded
+      expect(free_ticket.reload.admission_allowed?).to be(true)
+      later = doors_change(occurred_at: Time.current)
+      EmailService.send_event_change_notifications_async(later)
+      expect(MessageDelivery.where(template: "event_change").pluck(:recipient)).to include(holder.email.downcase)
+    end
+
+    it "keeps a failed request's window only for the tickets it named when retried with a new key" do
+      paid = paid_order(tickets: 2)
+      named, reclaimed = paid.tickets.order(:id).to_a
+      reclaimed.update!(holder_user: holder, holder_email: holder.email)
+      change = date_change
+      allow(StripeService).to receive(:refund_payment).and_raise(Stripe::InvalidRequestError.new("declined", nil))
+
+      respond_to_change(paid, change)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(change.event_change_responses.sole.requested_ticket_ids).to eq([named.id])
+      expect(paid.refunds.sole).to be_failed
+
+      allow(StripeService).to receive(:refund_payment) do |_intent, amount_cents:, **|
+        OpenStruct.new(id: "re_#{SecureRandom.hex(4)}", status: "succeeded", amount: amount_cents, currency: "usd")
+      end
+      reclaimed.update!(holder_user: nil, holder_email: nil)
+      travel_to(event.starts_at + 1.minute) do
+        respond_to_change(paid, change)
+      end
+
+      expect(response).to have_http_status(:ok), response.body
+      retry_refund = paid.refunds.succeeded.sole
+      expect(retry_refund.refund_tickets.pluck(:ticket_id)).to eq([named.id])
+      expect(reclaimed.reload).to be_issued
+    end
+
+    it "refuses a retry past the deadline for a recorded request that named no tickets" do
+      paid = paid_order
+      change = date_change
+      change.event_change_responses.create!(order: paid, decision: "refund_requested", responded_at: 1.hour.ago)
+
+      travel_to(event.starts_at + 1.minute) do
+        respond_to_change(paid, change)
+      end
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "deadline_passed")
+      expect(paid.refunds).to be_empty
+    end
+
+    it "waives an earlier change's refund once the buyer keeps their tickets after a later change" do
+      paid = paid_order
+      earlier = date_change(occurred_at: 1.day.ago)
+      later = doors_change(occurred_at: 1.hour.ago)
+
+      respond_to_change(paid, later, decision: "accepted")
+      expect(response).to have_http_status(:ok)
+      respond_to_change(paid, earlier)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "accepted_later_change")
+      expect(paid.refunds).to be_empty
     end
 
     it "applies the same rules to paid ticket refunds while an event is postponed" do

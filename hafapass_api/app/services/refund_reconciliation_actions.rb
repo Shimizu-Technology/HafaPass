@@ -138,8 +138,11 @@ class RefundReconciliationActions
     raise ActionError, "The buyer request already has a refund" if order.refunds.exists?(reason: "event_change_refund")
 
     # The buyer's window is judged when they asked, but only for an order that
-    # predates a qualifying change and only for tickets it still controls.
-    eligibility = EventChangeRefundEligibility.call(order: order, change: @record.event_change, at: @record.responded_at)
+    # predates a qualifying (net) change and only for tickets it still
+    # controls. A request recorded in time is honoured after the event closes.
+    requested_ids = @record.requested_ticket_ids.presence
+    eligibility = EventChangeRefundEligibility.call(order: order, change: @record.event_change, at: @record.responded_at,
+      recorded_request: true, ticket_ids: requested_ids)
     raise ActionError, eligibility.message unless eligibility.eligible?
 
     tickets = eligibility.tickets.select { |ticket| ticket.refundable_cents.positive? }

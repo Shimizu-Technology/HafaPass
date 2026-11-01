@@ -280,6 +280,48 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(refund.amount_cents).to eq(5000)
   end
 
+  it "executes a buyer request recorded in time after the event has completed" do
+    order = create(:order, event: event, created_at: 3.days.ago)
+    ticket_type = create(:ticket_type, event: event)
+    item = create(:order_item, order: order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 5000,
+      subtotal_cents: 5000, fee_cents: 250, organizer_proceeds_cents: 5000)
+    ticket = create(:ticket, order: order, order_item: item, event: event, ticket_type: ticket_type)
+    payment_for(order)
+    event.update!(starts_at: 3.hours.ago, doors_open_at: 4.hours.ago, ends_at: 1.hour.ago)
+    change = event.event_changes.create!(change_type: "rescheduled", occurred_at: 2.days.ago,
+      before_data: { starts_at: (event.starts_at - 1.day).iso8601 }, after_data: { starts_at: event.starts_at.iso8601 })
+    request = change.event_change_responses.create!(order: order, decision: "refund_requested", responded_at: 1.day.ago,
+      requested_ticket_ids: [ticket.id])
+    event.update!(status: :completed)
+    allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(
+      id: "re_completed_#{request.id}", status: "succeeded", amount: order.total_cents, currency: "usd"))
+
+    post "/api/v1/admin/refund_reconciliation/request/#{request.id}/retry", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:ok), response.body
+    expect(order.refunds.succeeded.sole.refund_tickets.pluck(:ticket_id)).to eq([ticket.id])
+  end
+
+  it "refuses a recorded buyer request made after the event started" do
+    order = create(:order, event: event, created_at: 3.days.ago)
+    ticket_type = create(:ticket_type, event: event)
+    item = create(:order_item, order: order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 5000,
+      subtotal_cents: 5000, fee_cents: 250, organizer_proceeds_cents: 5000)
+    create(:ticket, order: order, order_item: item, event: event, ticket_type: ticket_type)
+    payment_for(order)
+    event.update!(starts_at: 3.hours.ago, doors_open_at: 4.hours.ago, ends_at: 1.hour.ago, status: :completed)
+    change = event.event_changes.create!(change_type: "rescheduled", occurred_at: 2.days.ago,
+      before_data: { starts_at: (event.starts_at - 1.day).iso8601 }, after_data: { starts_at: event.starts_at.iso8601 })
+    request = change.event_change_responses.create!(order: order, decision: "refund_requested", responded_at: 2.hours.ago)
+    allow(StripeService).to receive(:refund_payment)
+
+    post "/api/v1/admin/refund_reconciliation/request/#{request.id}/retry", headers: auth_headers(admin)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to match(/closed when the event started/)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
   it "re-syncs a pending Stripe refund and audits the provider result" do
     refund = pending_refund
     allow(StripeService).to receive(:retrieve_refund).and_return(OpenStruct.new(

@@ -485,6 +485,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_020000) do
     t.bigint "order_id", null: false
     t.datetime "responded_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "requested_ticket_ids", default: [], null: false, array: true
     t.index ["event_change_id", "order_id"], name: "idx_event_change_responses_unique", unique: true
     t.index ["event_change_id"], name: "index_event_change_responses_on_event_change_id"
     t.index ["order_id"], name: "index_event_change_responses_on_order_id"

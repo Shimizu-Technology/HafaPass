@@ -473,8 +473,16 @@ module Commerce
         end
         succeeded_total = succeeded_refunds.sum(:amount_cents)
         full_refund = succeeded_total >= refund.order.total_cents
+        # A ticket-selected refund can reach the order total when the rest
+        # are free. A transferred ticket left with its new holder must still
+        # admit them and hear about later changes, so the order stays
+        # partially refunded (a refunded order no longer fulfils tickets).
+        retained_transfer = full_refund && refund.refund_tickets.any? &&
+          refund.order.tickets.where.not(status: :cancelled).where.not(id: refund.refund_tickets.select(:ticket_id))
+            .any? { |ticket| ticket.transferred_away_from?(refund.order) }
+        order_refunded = full_refund && !retained_transfer
         refund.order.update!(
-          status: full_refund ? :refunded : :partially_refunded,
+          status: order_refunded ? :refunded : :partially_refunded,
           refund_amount_cents: succeeded_total,
           refund_reason: reason,
           refunded_at: Time.current,
@@ -484,7 +492,7 @@ module Commerce
         resolve_repaid_late_capture!(refund)
         audit_refund!(refund, "succeeded", outcome: "succeeded",
           source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
-        AuditLogger.record!(action: "order.#{full_refund ? 'refunded' : 'partially_refunded'}",
+        AuditLogger.record!(action: "order.#{order_refunded ? 'refunded' : 'partially_refunded'}",
           auditable: refund.order, actor: requested_by, organization: refund.order.event.organization,
           event: refund.order.event, outcome: "succeeded",
           deduplication_key: "order:#{refund.order_id}:refund:#{refund.id}",

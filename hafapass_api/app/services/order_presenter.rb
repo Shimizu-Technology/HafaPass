@@ -123,9 +123,9 @@ class OrderPresenter
     else
       responses.find_by(order: order)
     end
-    # A recorded refund request keeps the window it was made in.
-    eligibility = EventChangeRefundEligibility.call(order: order, change: change,
-      at: response&.decision == "refund_requested" ? response.responded_at : Time.current)
+    # A recorded refund request keeps the window it was made in for the
+    # tickets it named.
+    eligibility = EventChangeRefundEligibility.for_recorded_request(order: order, change: change, response: response)
     {
       id: change.id,
       change_type: change.change_type,
