@@ -287,6 +287,12 @@
   },
   "buyer": {
     "EventDetail": {
+      "postponedBanner": {
+        "context": "Banner on a postponed event's page. Tickets already bought remain valid for the new date; updates arrive by email."
+      },
+      "cancelledBanner": {
+        "context": "Banner on a cancelled event's page. Card payments are refunded automatically without a request; do not promise refunds for other payment methods."
+      },
       "getTickets": {
         "context": "Buyer-facing EventDetail interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },

@@ -2,7 +2,7 @@ import { allInPriceNoteKey } from '../utils/priceDisclosure'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
@@ -314,7 +314,10 @@ function EventDetailContent() {
   const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
   const advertisedDescription = lowestPrice === null ? truncatedDescription
     : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
-  const onSale = !event.private_preview && event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
+  // A direct link still opens after a postponement or cancellation so ticket
+  // holders can read the status; sales are closed and the page offers no buying.
+  const closedStatus = ['postponed', 'cancelled'].includes(event.status) ? event.status : null
+  const onSale = !closedStatus && !event.private_preview && event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
   const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
 
   // Build JSON-LD structured data for the event
@@ -331,6 +334,7 @@ function EventDetailContent() {
     name: event.title,
     startDate: event.starts_at,
     ...(event.ends_at && { endDate: event.ends_at }),
+    ...(closedStatus && { eventStatus: closedStatus === 'postponed' ? 'https://schema.org/EventPostponed' : 'https://schema.org/EventCancelled' }),
     description: advertisedDescription,
     ...(coverImage && { image: coverImage }),
     ...(lineup?.items?.length && { performer: lineup.items.map(item => ({ '@type': 'Person', name: item.name })) }),
@@ -342,7 +346,7 @@ function EventDetailContent() {
         ...(event.venue_address && { address: event.venue_address }),
       },
     }),
-    ...(prices.length > 0 && {
+    ...(prices.length > 0 && !closedStatus && {
       offers: {
         '@type': 'AggregateOffer',
         lowPrice: Math.min(...prices).toFixed(2),
@@ -373,6 +377,10 @@ function EventDetailContent() {
       />
       {event.private_preview && <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-4 text-center text-sm font-semibold text-amber-950">
         {t('organizerVerification.previewBanner')}
+      </div>}
+      {closedStatus && <div role="status" className={`border-b px-4 py-4 text-center text-sm font-semibold ${closedStatus === 'cancelled' ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-300 bg-amber-50 text-amber-950'}`}>
+        <AlertTriangle aria-hidden="true" className="mr-2 inline h-4 w-4 align-[-2px]" />
+        {t(closedStatus === 'cancelled' ? 'buyer.EventDetail.cancelledBanner' : 'buyer.EventDetail.postponedBanner')}
       </div>}
       {/* One grid keeps purchasing beside the title on desktop and after the artwork on phones. */}
       <div className="bg-white">
@@ -408,7 +416,7 @@ function EventDetailContent() {
                   </div>
                 )}
               </div>
-              {!event.private_preview && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
+              {!event.private_preview && !closedStatus && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
 
               {coverImage && (
                 <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
@@ -441,7 +449,12 @@ function EventDetailContent() {
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
                 <div className="card p-3 sm:p-5">
-                  {event.private_preview ? (
+                  {closedStatus ? (
+                    <div className="p-2 text-sm text-neutral-700">
+                      <p className="font-semibold text-neutral-900">{t('buyer.EventDetail.salesClosed')}</p>
+                      <Link to="/orders/recover" className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-700 underline">{t('buyer.EventDetail.findMyTickets')}</Link>
+                    </div>
+                  ) : event.private_preview ? (
                     <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-950">
                       <button type="button" disabled aria-describedby="preview-ticket-explanation" className="btn-primary w-full min-h-11 opacity-60">{t('buyer.EventDetail.getTickets')}</button>
                       <p id="preview-ticket-explanation" className="mt-2">{t('organizerVerification.previewTicketsDisabled')}</p>
@@ -453,11 +466,11 @@ function EventDetailContent() {
                   ) : (
                     <p className="text-neutral-500 text-center py-4">{t('buyer.EventDetail.noTicketsAvailable')}</p>
                   )}
-                  <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
+                  {!closedStatus && <div className="mt-4 space-y-1 border-t border-neutral-100 pt-3">
                     <AllInPriceNote ticketTypes={event.ticket_types || []} includesProcessing={event.service_fee_includes_processing === true}
                       platform={event.seller?.ticketing_service} />
                     <SellerLine seller={event.seller} />
-                  </div>
+                  </div>}
                 </div>
                 {/* Waitlist form when all ticket types are sold out */}
                 {event.ticket_types?.length > 0 &&
@@ -480,7 +493,7 @@ function EventDetailContent() {
             >
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2 mb-6">
-                {event.starts_at && !event.private_preview && (
+                {event.starts_at && !event.private_preview && !closedStatus && (
                   <a
                     href={buildGoogleCalendarUrl(event)}
                     target="_blank"
@@ -499,7 +512,7 @@ function EventDetailContent() {
                 {!event.private_preview && <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
                   <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
                 </button>}
-                {!event.private_preview && <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
+                {!event.private_preview && !closedStatus && <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
                   <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
                 </button>}
               </div>

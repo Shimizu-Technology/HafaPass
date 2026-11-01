@@ -180,11 +180,36 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
-    it "returns 404 for cancelled events" do
-      event = create(:event, :cancelled, organizer_profile: organizer_profile)
+    %i[postponed cancelled].each do |status|
+      it "shows a #{status} event by direct link with sales closed, but keeps it out of discovery and the sitemap" do
+        event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now)
+        create(:ticket_type, event: event)
+        event.update!(status: status)
 
-      get "/api/v1/events/#{event.slug}"
+        get "/api/v1/events/#{event.slug}"
 
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include("status" => status.to_s, "purchasable" => false)
+        expect(response.parsed_body.fetch("ticket_types")).to all(include("on_sale" => false))
+
+        get "/api/v1/events"
+        expect(response.parsed_body.fetch("events").pluck("id")).not_to include(event.id)
+        get "/sitemap.xml"
+        expect(response.body).not_to include(event.slug)
+      end
+    end
+
+    it "keeps postponed events hidden by a policy hold or an unverified organizer" do
+      held = create(:event, :published, organizer_profile: organizer_profile)
+      held.update!(status: :postponed, policy_hold_scope: "hidden", policy_hold_at: Time.current, policy_hold_reason: "Review")
+
+      get "/api/v1/events/#{held.slug}"
+      expect(response).to have_http_status(:not_found)
+
+      allow(OrganizerProfile).to receive(:verification_gate_enabled?).and_return(true)
+      unverified = create(:event, :published, organizer_profile: create(:organizer_profile, verification_status: :pending))
+      unverified.update!(status: :postponed)
+      get "/api/v1/events/#{unverified.slug}"
       expect(response).to have_http_status(:not_found)
     end
 

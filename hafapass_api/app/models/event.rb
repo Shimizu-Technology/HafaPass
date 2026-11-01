@@ -149,6 +149,14 @@ class Event < ApplicationRecord
     where(status: [:published, :completed], live_money_proof_candidate: false)
       .without_hidden_policy_hold.with_public_organizer
   }
+  # A direct event link keeps working after a postponement or cancellation so
+  # ticket holders can read the status. Sales stay closed (sales_open? needs
+  # a published event), and discovery, the sitemap and checkout keep using
+  # publicly_visible, published or discoverable.
+  scope :publicly_showable, -> {
+    where(status: [:published, :completed, :postponed, :cancelled], live_money_proof_candidate: false)
+      .without_hidden_policy_hold.with_public_organizer
+  }
   scope :discoverable, ->(at = Time.current) {
     published
       .where(live_money_proof_candidate: false)
