@@ -417,6 +417,8 @@ GEM
     stripe (20.0.0)
       bigdecimal
       logger
+    strong_migrations (2.8.0)
+      activerecord (>= 7.2)
     thor (1.5.0)
     timeout (0.6.1)
     traces (0.18.2)
@@ -479,6 +481,7 @@ DEPENDENCIES
   sidekiq (~> 8.1)
   solid_queue (= 1.7.0)
   stripe
+  strong_migrations (~> 2.8)
   tzinfo-data
   webmock
 
