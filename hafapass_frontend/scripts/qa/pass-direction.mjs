@@ -34,7 +34,7 @@ for (const [engine, browserType] of [['chromium', chromium], ...(phase === 'afte
     await page.locator('main [role="status"][aria-label]').waitFor({state:'detached'})
    }
    if (name === 'host') await page.getByLabel('Ticket price', {exact:true}).waitFor()
-   if (name.startsWith('home')) await page.getByText(populated ? 'Guam Community Night' : 'The first events go on sale soon.',{exact:true}).first().waitFor()
+   if (name.startsWith('home')) await page.getByText(populated ? 'Guam Community Night' : 'The first events are on their way.',{exact:true}).first().waitFor()
    await page.evaluate(() => document.fonts.ready)
    await page.locator('.hero-ticket').evaluateAll(elements => Promise.all(elements.flatMap(el => el.getAnimations().map(a => a.finished.catch(() => {})))))
    let ledeLines

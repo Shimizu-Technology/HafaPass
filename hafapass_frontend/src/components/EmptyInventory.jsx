@@ -13,15 +13,13 @@ export function HostingStub() {
   </div>
 }
 
-export default function EmptyInventory({ className = '', embedded = false }) {
+export default function EmptyInventory({ className = '' }) {
   const { t } = useTranslation()
-  const content = <>
+  return <Ticket className={`text-content ${className}`} stub={<HostingStub />}>
+    <div className="home-ticket-content home-ticket-empty px-6 py-6 sm:px-8 sm:py-7">
       <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
       <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
       <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
-  </>
-  if (embedded) return content
-  return <Ticket className={`text-content ${className}`} stub={<HostingStub />}>
-    <div className="home-ticket-content home-ticket-empty px-6 py-6 sm:px-8 sm:py-7">{content}</div>
+    </div>
   </Ticket>
 }

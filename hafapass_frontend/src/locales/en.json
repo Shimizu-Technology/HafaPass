@@ -1288,13 +1288,21 @@
       "sellTickets": "Sell tickets",
       "title": "Your night out on Guam starts here.",
       "lede": "Find what’s on, get your tickets, and walk right in.",
-      "firstEvents": "The first events go on sale soon.",
-      "checkBack": "Come back soon to find your next night out.",
+      "firstEvents": "The first events are on their way.",
+      "checkBack": "When organizers publish, you’ll find them here. Buy in a minute and keep your tickets on your phone.",
       "when": "When",
       "where": "Where",
       "guamTime": "All dates in Guam time.",
       "noEvents": "No events are listed yet. Check back soon.",
-      "comingUp": "Coming up"
+      "comingUp": "Coming up",
+      "findTicket": "Already bought a ticket? Find it",
+      "howItWorks": "How your pass works",
+      "stepFindTitle": "Find an event",
+      "stepFindBody": "Everything on Guam, in Guam time.",
+      "stepBuyTitle": "Buy in a minute",
+      "stepBuyBody": "Pay by card. Your tickets arrive by email, no account needed.",
+      "stepDoorTitle": "Walk right in",
+      "stepDoorBody": "Show the QR on your phone at the door."
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",
@@ -1317,6 +1325,15 @@
       "collectionDescription": "A selection of events to explore on Guam.",
       "loadingCollection": "Loading collection",
       "eventResults": "Event results"
+    },
+    "install": {
+      "addToHomeScreen": "Add to Home Screen",
+      "addToPhone": "Add HåfaPass to your phone",
+      "steps": "Open your browser’s menu and choose Install app or Add to Home Screen. On iPhone or iPad, open HåfaPass in Safari, then choose Share and Add to Home Screen.",
+      "offlineNote": "Download your ticket before going offline. Installing HåfaPass does not save every ticket on your phone.",
+      "install": "Install HåfaPass",
+      "opening": "Opening installation…",
+      "promptFailed": "Use your browser’s menu to add HåfaPass to your home screen."
     }
   },
   "pageTitles": {

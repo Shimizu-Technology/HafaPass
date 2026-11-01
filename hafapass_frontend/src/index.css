@@ -213,6 +213,10 @@
 .ticket-tear { position: absolute; inset: auto calc(var(--notch-radius, 13px) + 4px) 0; border-top: 2px dashed theme('colors.neutral.300'); }
 .home-ticket-content { min-height: 328px; display: grid; align-content: center; }
 .home-ticket-content.home-ticket-empty { min-height: 0; }
+/* The planning ticket sits on brand-950; a light tear line keeps the stub visible without glare. */
+.planning-ticket .ticket-tear { border-color: rgb(255 255 255 / 0.28); }
+/* "How your pass works" stubs: a small notch on each side, no tear line. */
+.pass-step { --notch-radius: 10px; }
 /* Theme changes must keep header text and its background in sync: route
    changes swap instantly with the page; a scroll-driven change fades every
    header color together on one clock. */

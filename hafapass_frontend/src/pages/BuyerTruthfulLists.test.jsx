@@ -42,7 +42,7 @@ it('shows a discover failure with retry, then the genuine empty state', async ()
 it('shows hosting on Discover when both collections and public inventory are empty', async () => {
   api.get.mockImplementation(url => Promise.resolve({ data: url === '/events' ? { events: [], meta: { total_count: 0 } } : { collections: [] } }))
   show(CollectionsPage)
-  expect(await screen.findByRole('heading', { name: 'The first events go on sale soon.' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'The first events are on their way.' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
   expect(screen.queryByRole('link', { name: 'Browse events' })).not.toBeInTheDocument()
 })

@@ -109,16 +109,18 @@ export default function EventsPage() {
   const clearFilters = () => { setSearch(''); setActiveCategory('all'); setDateRange('upcoming'); setPrice('all'); setVillage(''); setPage(1) }
 
   if (!onListingRoute) return null
+  // An empty marketplace is one short ticket; reserving listing height would leave a blank gap.
+  const showEmptyInventory = !loading && !loadError && inventoryEmpty
 
   return (
-    <div className="public-listing-min-height bg-stone-50">
+    <div className={`${showEmptyInventory ? '' : 'public-listing-min-height '}bg-stone-50`}>
       <SEO
         title={t('buyer.Events.browseEvents')}
         description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')}
         url={`${PUBLIC_WEB_URL}/events`}
       />
       <BuyerTitleBand title={t('buyer.Events.events')} description={t('buyer.Events.discoverWhatsHappeningOnGuam')} />
-      {!loading && !loadError && inventoryEmpty ? <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><EmptyInventory className="mx-auto max-w-2xl" /></div> : <>
+      {showEmptyInventory ? <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><EmptyInventory className="mx-auto max-w-2xl" /></div> : <>
       <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
           {/* Search bar */}
           <div className="max-w-2xl">

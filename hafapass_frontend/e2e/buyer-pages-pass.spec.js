@@ -75,7 +75,7 @@ for (const width of [375, 390, 1280]) {
     await page.goto('/my-tickets')
     await page.getByRole('link', { name: 'Browse events', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Events', exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
     await page.goto('/saved')
     await expect(page.getByRole('heading', { name: 'Saved', exact: true })).toBeVisible()
     for (const instruction of ['Tap Save on an event to keep it here.', 'Tap Follow in an event’s organizer section to keep them here.', 'Tap Remind me on an event to get an email before it starts.']) await expect(page.getByText(instruction, { exact: true })).toBeVisible()
