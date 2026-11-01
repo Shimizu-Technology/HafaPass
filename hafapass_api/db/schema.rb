@@ -1319,10 +1319,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.string "locale", default: "en", null: false
     t.boolean "marketing_opt_in", default: false, null: false
     t.datetime "retention_anonymized_at"
+    t.string "checkout_ip_digest"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
+    t.index ["event_id", "checkout_ip_digest"], name: "index_orders_on_event_id_and_checkout_ip_digest", where: "(checkout_ip_digest IS NOT NULL)"
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
@@ -2531,7 +2533,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.integer "door_allocation"
     t.bigint "event_id", null: false
     t.integer "max_per_buyer"
-    t.integer "max_per_order", default: 10
+    t.integer "max_per_order", default: 10, null: false
     t.string "name", null: false
     t.integer "price_cents"
     t.integer "quantity_available"

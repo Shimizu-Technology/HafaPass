@@ -78,6 +78,8 @@ class Api::V1::OrdersController < ApplicationController
       checkout_lease_token: @checkout_claim&.lease_token,
       expected_total_cents: params[:expected_total_cents],
       client_quote_required: true,
+      checkout_ip_digest: Commerce::CheckoutIpDigest.call(request.remote_ip),
+      enforce_buyer_limits: true,
       line_items: params[:line_items],
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],

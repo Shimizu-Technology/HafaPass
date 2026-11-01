@@ -13,6 +13,17 @@ RSpec.describe TicketType, type: :model do
       expect(ticket_type.errors[:name]).to include("can't be blank")
     end
 
+    it "defaults a blank per-order limit to 10 instead of unlimited and rejects non-positive limits" do
+      ticket_type = create(:ticket_type, max_per_order: nil)
+      expect(ticket_type.reload.max_per_order).to eq(10)
+      ticket_type.max_per_order = ""
+      expect(ticket_type).to be_valid
+      expect(ticket_type.max_per_order).to eq(10)
+      ticket_type.max_per_order = 0
+      expect(ticket_type).not_to be_valid
+      expect { ticket_type.update_column(:max_per_order, nil) }.to raise_error(ActiveRecord::NotNullViolation)
+    end
+
     it "requires price_cents" do
       ticket_type = build(:ticket_type, price_cents: nil)
       expect(ticket_type).not_to be_valid

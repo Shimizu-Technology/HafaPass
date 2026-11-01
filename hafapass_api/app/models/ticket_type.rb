@@ -19,10 +19,17 @@ class TicketType < ApplicationRecord
   has_many :event_seats, dependent: :restrict_with_error
   has_many :seat_holds, through: :event_seats
 
+  # Every ticket type caps one order. A blank limit falls back to the default
+  # rather than "unlimited", so one checkout cannot hold a whole ticket type.
+  DEFAULT_MAX_PER_ORDER = 10
+
+  before_validation { self.max_per_order = DEFAULT_MAX_PER_ORDER if max_per_order.blank? }
+
   validates :name, presence: true
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validates :quantity_available, presence: true, numericality: { greater_than: 0 }
   validates :quantity_sold, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :max_per_order, numericality: { only_integer: true, greater_than: 0 }
   validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :door_allocation, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validate :sold_quantity_within_capacity

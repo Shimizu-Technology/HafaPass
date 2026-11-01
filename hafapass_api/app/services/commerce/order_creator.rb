@@ -10,6 +10,13 @@ module Commerce
 
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     PROMO_CODE_REQUIRED = "Re-enter your promo code and try again"
+    ACTIVE_CHECKOUT_EXISTS = "You already have a checkout in progress for this event. Finish or cancel it, " \
+      "or try again in 10 minutes."
+    NETWORK_HOLD_LIMIT = "Too many tickets are being held from your network right now. Try again in a few minutes."
+    NETWORK_FREE_LIMIT = "Your network has reached the free ticket limit for this event. " \
+      "Contact the organizer if you need more tickets."
+    DEFAULT_MAX_HELD_TICKETS_PER_IP = 40
+    DEFAULT_MAX_FREE_TICKETS_PER_IP = 20
     class CheckoutError < StandardError; end
     class PriceChanged < CheckoutError; end
     class RefreshRequired < PriceChanged; end
@@ -28,7 +35,7 @@ module Commerce
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
       checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
-      locale: AppLocale::DEFAULT)
+      checkout_ip_digest: nil, enforce_buyer_limits: false, locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -63,6 +70,9 @@ module Commerce
       @checkout_lease_token = checkout_lease_token
       @expected_total_cents = expected_total_cents
       @client_quote_required = client_quote_required
+      # Public buyer checkout only: staff, guest-list and cash sales are trusted.
+      @checkout_ip_digest = checkout_ip_digest
+      @enforce_buyer_limits = enforce_buyer_limits
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
       # The buyer's language for receipts and ticket emails; staff-created orders stay English.
@@ -130,6 +140,7 @@ module Commerce
           (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
         validate_production_payment!(totals, requires_payment)
         validate_live_money_proof_scope!(totals)
+        enforce_buyer_checkout_limits!(selections, totals) if @enforce_buyer_limits
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
 
         order = Order.create!(
@@ -152,6 +163,7 @@ module Commerce
           checkout_key_digest: @checkout_key_digest,
           checkout_request_digest: @checkout_request_digest,
           checkout_recovery_expires_at: @checkout_key_digest ? 30.minutes.from_now : nil,
+          checkout_ip_digest: @checkout_ip_digest,
           cash_sale_key: @cash_sale_key,
           cash_sale_request_digest: @cash_sale_request_digest,
           buyer_terms_version: buyer_terms_version,
@@ -508,6 +520,38 @@ module Commerce
       return if requested_quantity <= remaining
 
       raise CheckoutError, "Purchase limit is #{ticket_type.max_per_buyer} tickets per buyer for #{ticket_type.name}"
+    end
+
+    # Runs under the event lock taken above, so concurrent checkouts for one
+    # event cannot both pass. Same-key recovery returns before reaching here.
+    def enforce_buyer_checkout_limits!(selections, totals)
+      live = event.orders.pending.where("orders.expires_at > ?", Time.current)
+      same_buyer = live.where("LOWER(BTRIM(orders.buyer_email)) = ?", buyer_email.to_s.strip.downcase)
+      same_buyer = same_buyer.or(live.where(user_id: user.id)) if user
+      raise CheckoutError, ACTIVE_CHECKOUT_EXISTS if same_buyer.exists?
+      return if @checkout_ip_digest.blank?
+
+      requested = selections.sum { |selection| selection[:quantity] }
+      held_cap = per_ip_cap("HAFAPASS_MAX_HELD_TICKETS_PER_IP", DEFAULT_MAX_HELD_TICKETS_PER_IP)
+      if held_cap
+        held = InventoryHold.current.joins(:order)
+          .where(event_id: event.id, orders: { checkout_ip_digest: @checkout_ip_digest }).sum(:quantity)
+        raise CheckoutError, NETWORK_HOLD_LIMIT if held + requested > held_cap
+      end
+      free_cap = per_ip_cap("HAFAPASS_MAX_FREE_TICKETS_PER_IP", DEFAULT_MAX_FREE_TICKETS_PER_IP)
+      return unless free_cap && totals[:total_cents].zero?
+
+      issued = Ticket.joins(:order).where(event_id: event.id, status: [:issued, :checked_in],
+        orders: { checkout_ip_digest: @checkout_ip_digest, total_cents: 0 }).count
+      raise CheckoutError, NETWORK_FREE_LIMIT if issued + requested > free_cap
+    end
+
+    # A positive integer sets the cap; 0 turns it off. Anything else keeps the default.
+    def per_ip_cap(name, default)
+      value = Integer(ENV.fetch(name, default.to_s), exception: false)
+      return default if value.nil? || value.negative?
+
+      value.positive? ? value : nil
     end
 
     def enforce_pricing_tier_capacity!(tier, requested_quantity, offer: nil, reserved_seat_quantity: 0)

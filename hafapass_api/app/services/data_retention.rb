@@ -214,7 +214,7 @@ class DataRetention
     raise Protected if RetentionGuard.protected?(order)
 
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
-      refund_reason: nil,
+      refund_reason: nil, checkout_ip_digest: nil,
       marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
       retention_anonymized_at: Time.current, updated_at: Time.current)
     true
