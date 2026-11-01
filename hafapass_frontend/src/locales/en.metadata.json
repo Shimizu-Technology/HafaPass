@@ -1370,6 +1370,12 @@
   },
   "buyerAccount": {
     "orderConfirmationPage": {
+      "changeRefundDeadline": {
+        "context": "After an event is postponed or its start time changes, buyers who bought before the change may request a refund until the event starts. The inserted value is a date and time in the event's time zone."
+      },
+      "changeRefundNotOffered": {
+        "context": "Shown after an event change (for example a new venue or doors time) that has no self-serve refund. Do not imply a refund will be given."
+      },
       "free": {
         "context": "Ticket price of zero US dollars. Not an instruction to release a ticket."
       },

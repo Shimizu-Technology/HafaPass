@@ -47,6 +47,37 @@ RSpec.describe OrderPresenter do
     end
   end
 
+  [false, true].each do |preloaded|
+    it "reports change-refund eligibility and its deadline with event changes preloaded=#{preloaded}" do
+      event = create(:event, :published, starts_at: 10.days.from_now)
+      order = create(:order, event: event, created_at: 3.days.ago)
+      create(:ticket, order: order, event: event, ticket_type: create(:ticket_type, event: event))
+      event.event_changes.create!(change_type: "rescheduled", occurred_at: 2.days.ago,
+        before_data: { starts_at: 9.days.from_now.iso8601 }, after_data: { starts_at: event.starts_at.iso8601 })
+      order.event.event_changes.load if preloaded
+
+      expect(described_class.call(order)[:latest_event_change]).to include(
+        response_available: true, refund_eligible: true, refund_deadline_at: event.starts_at)
+
+      later = create(:order, event: event, created_at: 1.day.ago)
+      create(:ticket, order: later, event: event, ticket_type: event.ticket_types.first)
+      expect(described_class.call(later)[:latest_event_change]).to include(
+        response_available: false, refund_eligible: false, refund_deadline_at: nil)
+    end
+  end
+
+  it "judges a recorded refund request at the time the buyer made it" do
+    event = create(:event, :published, starts_at: 1.hour.ago)
+    order = create(:order, event: event, created_at: 3.days.ago)
+    create(:ticket, order: order, event: event, ticket_type: create(:ticket_type, event: event))
+    change = event.event_changes.create!(change_type: "rescheduled", occurred_at: 2.days.ago,
+      before_data: { starts_at: 3.days.from_now.iso8601 }, after_data: { starts_at: event.starts_at.iso8601 })
+    expect(described_class.call(order)[:latest_event_change]).to include(refund_eligible: false)
+
+    change.event_change_responses.create!(order: order, decision: "refund_requested", responded_at: 1.day.ago)
+    expect(described_class.call(order)[:latest_event_change]).to include(refund_eligible: true)
+  end
+
   it "preserves original allocations while reporting cancelled tickets as non-refundable" do
     order = create(:order, subtotal_cents: 2_000, service_fee_cents: 200, total_cents: 2_200)
     ticket_type = create(:ticket_type, event: order.event, price_cents: 1_000)

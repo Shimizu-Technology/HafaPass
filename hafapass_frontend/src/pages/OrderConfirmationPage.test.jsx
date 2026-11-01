@@ -143,9 +143,9 @@ describe('guest order recovery actions', () => {
   it('reuses the same guest refund operation after a lost response and page reload', async () => {
     const order = {
       id: 923, reference: 'HP-923', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 500, order_items: [],
-      latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' },
+      latest_event_change: { id: 4, change_type: 'postponed', response: 'refund_requested', response_available: true, refund_eligible: true },
       tickets: [{ id: 1, status: 'issued', refundable_cents: 500, display_credential: 'signed-display', ticket_type: { id: 7, name: 'Admission' } }],
-      event: { id: 37, slug: 'cancelled-event', title: 'Cancelled Event', status: 'cancelled', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
+      event: { id: 37, slug: 'postponed-event', title: 'Postponed Event', status: 'postponed', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
     }
     apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
     apiClient.post.mockRejectedValueOnce(new Error('response lost'))
@@ -251,6 +251,8 @@ describe('buyer refund outcomes and terminal retries', () => {
     tickets: [{ id: 1, status: 'issued', refundable_cents: 500, display_credential: 'display', ticket_type: { id: 7, name: 'Admission' } }],
     event: { id: 37, slug: 'refund-event', title: 'Refund Event', status: 'cancelled', starts_at: '2026-10-20T08:00:00Z', timezone: 'Pacific/Guam', transfers_enabled: false },
   }
+  const postponedRequest = { ...paidOrder, event: { ...paidOrder.event, status: 'postponed' },
+    latest_event_change: { id: 4, change_type: 'postponed', response: 'refund_requested', response_available: true, refund_eligible: true } }
   const mockOrder = order => apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
   const mount = () => render(<MemoryRouter initialEntries={['/orders/925/confirmation?guest_token=guest-token']}><Routes><Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} /></Routes></MemoryRouter>)
 
@@ -294,10 +296,39 @@ describe('buyer refund outcomes and terminal retries', () => {
   })
 
   it.each(['postponed', 'rescheduled'])('preserves both choices for an unresolved %s change', async change_type => {
-    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: change_type }, latest_event_change: { id: 4, change_type } })
+    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: change_type },
+      latest_event_change: { id: 4, change_type, response_available: true, refund_eligible: true } })
     mount()
     expect(await screen.findByRole('button', { name: 'Keep my tickets' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Request refund' })).toBeInTheDocument()
+  })
+
+  it('shows the refund deadline in the event time zone', async () => {
+    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: 'published' },
+      latest_event_change: { id: 4, change_type: 'rescheduled', response_available: true, refund_eligible: true,
+        refund_deadline_at: '2030-01-02T08:00:00Z' } })
+    mount()
+    expect(await screen.findByText('You can request a refund until Jan 2, 2030, 6:00 PM Guam time.')).toBeInTheDocument()
+  })
+
+  it('offers only keeping tickets when the change has no self-serve refund', async () => {
+    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: 'published' },
+      latest_event_change: { id: 4, change_type: 'venue_changed', response_available: true, refund_eligible: false } })
+    mount()
+    expect(await screen.findByRole('button', { name: 'Keep my tickets' })).toBeInTheDocument()
+    expect(screen.getByText("Self-serve refunds aren't offered for this change. Contact support if you have questions.")).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refund', exact: true })).not.toBeInTheDocument()
+  })
+
+  it('shows a change without choices to a buyer who ordered after it', async () => {
+    mockOrder({ ...paidOrder, event: { ...paidOrder.event, status: 'postponed' },
+      latest_event_change: { id: 4, change_type: 'postponed', reason: 'Storm warning', response_available: false, refund_eligible: false } })
+    mount()
+    expect(await screen.findByText('Storm warning')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Keep my tickets' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Request refund' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refund', exact: true })).not.toBeInTheDocument()
   })
 
   it.each(['failed', 'cancelled'])('allows a new ticket refund attempt only after the provider confirms %s, and retains the next pending identity after reload', async status => {
@@ -338,7 +369,7 @@ describe('buyer refund outcomes and terminal retries', () => {
   })
 
   it('shows pending event refunds and rekeys only a confirmed terminal event refund failure', async () => {
-    mockOrder({ ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } })
+    mockOrder(postponedRequest)
     apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
     mount()
     const user = userEvent.setup()
@@ -356,7 +387,7 @@ describe('buyer refund outcomes and terminal retries', () => {
   })
 
   it.each(['ticket', 'event'])('can retrieve the saved %s refund result after ticket cancellation completes while the page is closed', async kind => {
-    const withChange = kind === 'event' ? { ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } } : paidOrder
+    const withChange = kind === 'event' ? postponedRequest : paidOrder
     mockOrder(withChange)
     apiClient.post.mockResolvedValueOnce({ data: { refund_status: 'pending', reconciliation_required: true } })
     const first = mount()
@@ -373,7 +404,7 @@ describe('buyer refund outcomes and terminal retries', () => {
     expect(apiClient.post.mock.calls[1][2].headers['Idempotency-Key']).toBe(key)
   })
   it.each(['ticket', 'event'])('retains a %s finance-review hold and status-check action after reload with cancelled tickets', async kind => {
-    const withChange = kind === 'event' ? { ...paidOrder, latest_event_change: { id: 4, change_type: 'cancelled', response: 'refund_requested' } } : paidOrder
+    const withChange = kind === 'event' ? postponedRequest : paidOrder
     mockOrder(withChange)
     apiClient.post.mockRejectedValueOnce({ response: { data: { refund_status: 'failed', finance_review_required: true, reconciliation_required: true } } })
     const first = mount()

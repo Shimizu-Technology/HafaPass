@@ -135,7 +135,8 @@ RSpec.describe "Buyer operations during an audit storage outage", type: :request
 
   it "records a buyer's event-change refund request and cancels free tickets" do
     ticket
-    change = event.event_changes.create!(change_type: "cancelled", occurred_at: Time.current)
+    event.update!(status: :postponed)
+    change = event.event_changes.create!(change_type: "postponed", occurred_at: Time.current)
     headers = auth_headers(buyer).merge("Idempotency-Key" => "buyer-audit-outage-refund")
     fail_audit_writes!
     post "/api/v1/orders/#{order.id}/event_change_response",

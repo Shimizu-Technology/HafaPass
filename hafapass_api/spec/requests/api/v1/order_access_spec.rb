@@ -133,6 +133,7 @@ RSpec.describe "Buyer order access", type: :request do
   end
 
   it "records that the buyer accepts an event change" do
+    order
     change = event.event_changes.create!(change_type: "rescheduled", reason: "Later start",
       before_data: {}, after_data: {}, occurred_at: Time.current)
 
@@ -184,7 +185,8 @@ RSpec.describe "Buyer order access", type: :request do
       subtotal_cents: 1000, fee_cents: 0, organizer_proceeds_cents: 1000)
     ticket = create(:ticket, order: order, order_item: item, event: event, ticket_type: ticket_type)
     create(:payment, :succeeded, order: order)
-    change = event.event_changes.create!(change_type: "cancelled", occurred_at: Time.current)
+    event.update!(status: :postponed)
+    change = event.event_changes.create!(change_type: "postponed", occurred_at: Time.current)
     provider_pending = OpenStruct.new(id: "re_buyer_pending", status: "pending", amount: 1000, currency: "usd")
     allow(StripeService).to receive(:refund_payment).and_return(provider_pending)
     headers = access_headers.merge("Idempotency-Key" => "buyer-event-outcome")
@@ -242,5 +244,211 @@ RSpec.describe "Buyer order access", type: :request do
     post "/api/v1/orders/#{order.id}/tickets/#{other.id}/cancel", headers: headers
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body).not_to have_key("refund_id")
+  end
+
+  describe "event-change refund eligibility" do
+    include ActiveSupport::Testing::TimeHelpers
+
+    let(:holder) { create(:user) }
+
+    def paid_order(created_at: 2.days.ago, tickets: 1, user: nil)
+      paid = create(:order, event: event, user: user, created_at: created_at,
+        subtotal_cents: 1000 * tickets, service_fee_cents: 0, total_cents: 1000 * tickets)
+      item = create(:order_item, order: paid, ticket_type: ticket_type, quantity: tickets, unit_price_cents: 1000,
+        subtotal_cents: 1000 * tickets, fee_cents: 0, organizer_proceeds_cents: 1000 * tickets)
+      tickets.times { create(:ticket, order: paid, order_item: item, event: event, ticket_type: ticket_type) }
+      create(:payment, :succeeded, order: paid)
+      paid
+    end
+
+    def date_change(occurred_at: 1.day.ago)
+      event.event_changes.create!(change_type: "rescheduled", reason: "New date", occurred_at: occurred_at,
+        before_data: { starts_at: (event.starts_at - 1.day).iso8601, doors_open_at: event.doors_open_at&.iso8601 },
+        after_data: { starts_at: event.starts_at.iso8601, doors_open_at: event.doors_open_at&.iso8601 })
+    end
+
+    def doors_change(occurred_at: 1.day.ago)
+      event.event_changes.create!(change_type: "rescheduled", reason: "Doors later", occurred_at: occurred_at,
+        before_data: { starts_at: event.starts_at.iso8601, doors_open_at: (event.starts_at - 1.hour).iso8601 },
+        after_data: { starts_at: event.starts_at.iso8601, doors_open_at: (event.starts_at - 30.minutes).iso8601 })
+    end
+
+    def headers_for(paid, key: SecureRandom.uuid)
+      { "X-Guest-Order-Token" => GuestOrderAccess.issue!(paid), "Idempotency-Key" => key }
+    end
+
+    def respond_to_change(paid, change, decision: "refund_requested")
+      post "/api/v1/orders/#{paid.id}/event_change_response",
+        params: { event_change_id: change.id, decision: decision }, headers: headers_for(paid)
+    end
+
+    def latest_change_for(paid)
+      get "/api/v1/orders/#{paid.id}", headers: headers_for(paid)
+      response.parsed_body.fetch("latest_event_change")
+    end
+
+    before do
+      allow(StripeService).to receive(:refund_payment) do |_intent, amount_cents:, **|
+        OpenStruct.new(id: "re_#{SecureRandom.hex(4)}", status: "succeeded", amount: amount_cents, currency: "usd")
+      end
+    end
+
+    it "refunds an order placed before a start-time change until the event starts" do
+      paid = paid_order
+      change = date_change
+
+      expect(latest_change_for(paid)).to include("refund_eligible" => true, "response_available" => true,
+        "refund_deadline_at" => event.starts_at.as_json)
+      respond_to_change(paid, change)
+
+      expect(response).to have_http_status(:ok)
+      expect(paid.refunds.succeeded.sole).to have_attributes(amount_cents: 1000, reason: "event_change_refund")
+    end
+
+    it "refuses refunds and responses for orders placed after the change" do
+      change = date_change(occurred_at: 3.days.ago)
+      paid = paid_order(created_at: 2.days.ago)
+
+      expect(latest_change_for(paid)).to include("refund_eligible" => false, "response_available" => false,
+        "refund_deadline_at" => nil)
+      respond_to_change(paid, change)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "ordered_after_change")
+      respond_to_change(paid, change, decision: "accepted")
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(change.event_change_responses).to be_empty
+      expect(StripeService).not_to have_received(:refund_payment)
+    end
+
+    it "closes the refund window when a published event starts" do
+      paid = paid_order
+      change = date_change
+
+      travel_to(event.starts_at + 1.minute) do
+        expect(latest_change_for(paid)).to include("refund_eligible" => false, "response_available" => true)
+        respond_to_change(paid, change)
+      end
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "deadline_passed")
+      expect(paid.refunds).to be_empty
+    end
+
+    it "keeps postponed events open with no deadline, then closes them once resumed and started" do
+      paid = paid_order
+      event.update!(status: :postponed)
+      change = event.event_changes.create!(change_type: "postponed", reason: "Storm", occurred_at: 1.day.ago)
+
+      travel_to(event.starts_at + 1.day) do
+        expect(latest_change_for(paid)).to include("refund_eligible" => true, "refund_deadline_at" => nil)
+        event.update!(status: :published)
+        expect(latest_change_for(paid)).to include("refund_eligible" => false)
+        respond_to_change(paid, change)
+      end
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "deadline_passed")
+    end
+
+    it "leaves cancelled events to the automatic cancellation refunds" do
+      paid = paid_order
+      event.update!(status: :cancelled)
+      change = event.event_changes.create!(change_type: "cancelled", reason: "Venue closed", occurred_at: 1.day.ago)
+
+      expect(latest_change_for(paid)).to include("refund_eligible" => false)
+      respond_to_change(paid, change)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "event_cancelled")
+    end
+
+    it "lets buyers accept a doors-only change without offering a refund" do
+      paid = paid_order
+      change = doors_change
+
+      expect(latest_change_for(paid)).to include("refund_eligible" => false, "response_available" => true)
+      respond_to_change(paid, change)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "change_not_refundable")
+
+      respond_to_change(paid, change, decision: "accepted")
+      expect(response).to have_http_status(:ok)
+      expect(change.event_change_responses.sole.decision).to eq("accepted")
+    end
+
+    it "keeps an earlier start-time change refundable after a later doors-only correction" do
+      paid = paid_order
+      date_change(occurred_at: 1.day.ago)
+      correction = doors_change(occurred_at: 1.hour.ago)
+
+      expect(latest_change_for(paid)).to include("id" => correction.id, "refund_eligible" => true)
+      respond_to_change(paid, correction)
+
+      expect(response).to have_http_status(:ok)
+      expect(paid.refunds.succeeded.sole.amount_cents).to eq(1000)
+    end
+
+    it "refunds only tickets the order still controls" do
+      paid = paid_order(tickets: 2)
+      kept, given = paid.tickets.order(:id).to_a
+      given.update!(holder_user: holder, holder_email: holder.email)
+      change = date_change
+
+      respond_to_change(paid, change)
+
+      expect(response).to have_http_status(:ok)
+      refund = paid.refunds.sole
+      expect(refund.refund_tickets.pluck(:ticket_id)).to eq([kept.id])
+      expect(refund.amount_cents).to eq(1000)
+      expect(given.reload).to be_issued
+      expect(given.holder_user).to eq(holder)
+    end
+
+    it "refuses a change refund when every ticket was transferred away" do
+      paid = paid_order
+      paid.tickets.sole.update!(holder_user: holder, holder_email: holder.email)
+      change = date_change
+
+      expect(latest_change_for(paid)).to include("refund_eligible" => false)
+      respond_to_change(paid, change)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "no_tickets")
+      expect(paid.refunds).to be_empty
+    end
+
+    it "does not fail the free-ticket path after refunding paid tickets when a free ticket was transferred" do
+      paid = paid_order
+      free_type = create(:ticket_type, :free, event: event, quantity_sold: 1)
+      free_item = create(:order_item, order: paid, ticket_type: free_type, unit_price_cents: 0,
+        subtotal_cents: 0, fee_cents: 0, organizer_proceeds_cents: 0)
+      free_ticket = create(:ticket, order: paid, order_item: free_item, event: event, ticket_type: free_type,
+        holder_user: holder, holder_email: holder.email)
+      change = date_change
+
+      respond_to_change(paid, change)
+
+      expect(response).to have_http_status(:ok)
+      expect(paid.refunds.succeeded.count).to eq(1)
+      expect(free_ticket.reload).to be_issued
+    end
+
+    it "applies the same rules to paid ticket refunds while an event is postponed" do
+      early = paid_order(created_at: 3.days.ago)
+      event.update!(status: :postponed)
+      event.event_changes.create!(change_type: "postponed", reason: "Storm", occurred_at: 2.days.ago)
+      late = paid_order(created_at: 1.day.ago)
+
+      late_ticket = late.tickets.sole
+      post "/api/v1/orders/#{late.id}/tickets/#{late_ticket.id}/cancel", headers: headers_for(late)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include("code" => "ordered_after_change")
+      expect(late_ticket.reload).to be_issued
+
+      early_ticket = early.tickets.sole
+      post "/api/v1/orders/#{early.id}/tickets/#{early_ticket.id}/cancel", headers: headers_for(early)
+      expect(response).to have_http_status(:created)
+      expect(early_ticket.reload).to be_cancelled
+    end
   end
 end

@@ -137,7 +137,12 @@ class RefundReconciliationActions
     raise ActionError, "Only an unexecuted buyer request can be issued" unless @record.decision == "refund_requested"
     raise ActionError, "The buyer request already has a refund" if order.refunds.exists?(reason: "event_change_refund")
 
-    tickets = order.tickets.where(status: :issued).to_a.select { |ticket| ticket.refundable_cents.positive? }
+    # The buyer's window is judged when they asked, but only for an order that
+    # predates a qualifying change and only for tickets it still controls.
+    eligibility = EventChangeRefundEligibility.call(order: order, change: @record.event_change, at: @record.responded_at)
+    raise ActionError, eligibility.message unless eligibility.eligible?
+
+    tickets = eligibility.tickets.select { |ticket| ticket.refundable_cents.positive? }
     raise ActionError, "The buyer balance is already resolved" if tickets.empty?
 
     result = Commerce::RefundCreator.call(order: order, tickets: tickets, reason: "event_change_refund",

@@ -248,7 +248,13 @@ class Api::V1::OrdersController < ApplicationController
       return render json: OrderPresenter.call(@order.reload, include_tickets: true)
     end
 
-    unless @order.event.cancelled? || @order.event.postponed?
+    if @order.event.postponed?
+      eligibility = EventChangeRefundEligibility.call(order: @order, change: latest_buyer_visible_change)
+      unless eligibility.eligible? && eligibility.tickets.include?(ticket)
+        return render json: { error: eligibility.message || EventChangeRefundEligibility::MESSAGES.fetch("no_tickets"),
+          code: eligibility.reason || "no_tickets" }, status: :unprocessable_entity
+      end
+    elsif !@order.event.cancelled?
       return render json: { error: "Paid self-service refunds are available after an event is cancelled or postponed" },
         status: :unprocessable_entity
     end
@@ -339,6 +345,19 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
     end
 
+    # A recorded request keeps the window it was made in, so a retry after a
+    # failed provider refund is judged at the original response time.
+    eligibility = EventChangeRefundEligibility.call(order: @order, change: change,
+      at: existing_response&.responded_at || Time.current)
+    unless existing_response || eligibility.order_predates_change
+      return render json: { error: EventChangeRefundEligibility::MESSAGES.fetch("ordered_after_change"),
+        code: "ordered_after_change" }, status: :unprocessable_entity
+    end
+    replay = existing_response && decision == "refund_requested" && @order.refunds.exists?(idempotency_key: idempotency_key)
+    if decision == "refund_requested" && !eligibility.eligible? && !replay
+      return render json: { error: eligibility.message, code: eligibility.reason }, status: :unprocessable_entity
+    end
+
     response = existing_response || EventChangeResponse.transaction do
       recorded_response = change.event_change_responses.create!(
         order: @order, decision: decision, responded_at: Time.current)
@@ -353,7 +372,7 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     if decision == "refund_requested"
-      refundable_tickets = @order.tickets.where(status: :issued).to_a
+      refundable_tickets = eligibility.tickets
       paid_tickets = refundable_tickets.select { |ticket| ticket.refundable_cents.positive? }
       free_tickets = refundable_tickets - paid_tickets
       Commerce::RefundCreator.call(
@@ -405,6 +424,10 @@ class Api::V1::OrdersController < ApplicationController
 
     render json: { error: "This ticket belongs to its new holder" }, status: :forbidden
     nil
+  end
+
+  def latest_buyer_visible_change
+    @order.event.event_changes.buyer_visible.order(occurred_at: :desc, id: :desc).first
   end
 
   def controls_ticket?(ticket)

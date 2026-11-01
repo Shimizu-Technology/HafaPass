@@ -345,6 +345,19 @@ RSpec.describe Commerce::RefundCreator do
 
     expect(StripeService).not_to have_received(:refund_payment)
   end
+  it "rejects a selective buyer refund for a ticket transferred to a new holder" do
+    given = order.tickets.first
+    given.update!(holder_user: create(:user), holder_email: "holder@example.test")
+    allow(StripeService).to receive(:refund_payment)
+
+    expect do
+      described_class.call(order: order, tickets: [given], reason: "event_change_refund", idempotency_key: "given-ticket")
+    end.to raise_error(described_class::RefundError, /current holder/)
+
+    expect(order.refunds).to be_empty
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
   it "submits every partial refund against the original captured payment" do
     payment.update!(provider_payment_id: "pi_original")
     allow(StripeService).to receive(:refund_payment) { OpenStruct.new(id: "re_#{SecureRandom.hex(8)}", status: "succeeded") }

@@ -276,6 +276,12 @@ module Commerce
       selected = order.tickets.where(id: tickets.map(&:id)).order(:id).lock.to_a
       raise RefundError, "Ticket not found for this order" unless selected.length == tickets.map(&:id).uniq.length
       raise RefundError, "Only unused active tickets can be refunded" if selected.any? { |ticket| ticket.cancelled? || ticket.transferred? || ticket.checked_in? }
+      # An accepted transfer leaves the ticket issued with a new holder (the
+      # `transferred` status is never set). Only an event cancellation may
+      # refund the buyer for a ticket that now belongs to someone else.
+      if !reason.to_s.start_with?("event_cancel") && selected.any? { |ticket| ticket.transferred_away_from?(order) }
+        raise RefundError, "Transferred tickets are controlled by their current holder"
+      end
       if RefundTicket.active.where(ticket_id: selected.map(&:id)).exists?
         raise RefundError, "A selected ticket already has a refund"
       end
@@ -585,7 +591,12 @@ module Commerce
             code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
         return
       end
+      selected_ids = refund.refund_tickets.pluck(:ticket_id)
       refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
+        # A ticket-selected refund can reach the order total when the rest are
+        # free; it must not take back a ticket that now belongs to someone else.
+        next if selected_ids.any? && selected_ids.exclude?(ticket.id) && ticket.transferred_away_from?(refunded_order)
+
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
       refunded_order.order_items.where.not(item_kind: OrderItem.item_kinds[:ticket]).find_each do |item|
