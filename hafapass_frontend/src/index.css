@@ -253,3 +253,13 @@
 /* Public route changes fade the new page in. Reduced motion turns the
    animation off with every other animation above. */
 .route-fade { animation: ticket-fade 150ms ease-out; }
+
+/* Loading feedback. The whole-route wordmark dims gently only when loading
+   takes long enough to notice. Under reduced motion, spinners and skeletons
+   pulse in place instead of freezing, so progress still shows. */
+@keyframes loading-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.page-loading-mark { animation: loading-pulse 1.6s ease-in-out 400ms infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-mark { animation: loading-pulse 1.6s ease-in-out 400ms infinite !important; }
+  [class*="animate-spin"], .animate-pulse { animation: loading-pulse 1.2s ease-in-out infinite !important; }
+}

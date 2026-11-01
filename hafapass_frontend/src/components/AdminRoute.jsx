@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
-import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import PageLoading from './PageLoading'
 import apiClient from '../api/client'
 import { signInDestination } from '../utils/authDestination'
 
@@ -14,6 +15,7 @@ function AdminGate({ children }) {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const { t } = useTranslation()
 
   useEffect(() => {
     if (!isLoaded) return
@@ -32,22 +34,10 @@ function AdminGate({ children }) {
     return () => { active = false }
   }, [isLoaded, isSignedIn, userId, attempt])
 
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" role="status" aria-label="Checking administrator access">
-        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-      </div>
-    )
-  }
+  if (!isLoaded) return <PageLoading label={t('buyer.layout.checkingAdmin')} />
 
   if (!isSignedIn) return <Navigate to={signInDestination(location)} replace />
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" role="status" aria-label="Checking administrator access">
-        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <PageLoading label={t('buyer.layout.checkingAdmin')} />
   if (failed) return <div className="mx-auto max-w-md px-4 py-12" role="alert"><p>We could not verify your administrator access. Please try again.</p><button className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>Retry</button></div>
   if (role !== 'admin') return <Navigate to="/" replace />
 

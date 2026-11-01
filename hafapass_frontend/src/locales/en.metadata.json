@@ -1203,6 +1203,18 @@
       },
       "loaded": {
         "context": "Buyer-facing buyer.layout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "loadingAccount": {
+        "context": "Screen-reader status while HåfaPass confirms who is signed in."
+      },
+      "preparingAccount": {
+        "context": "Shown while HåfaPass securely switches to the signed-in account and clears the previous account's saved data on this device."
+      },
+      "checkingAdmin": {
+        "context": "Screen-reader status while HåfaPass confirms the signed-in person is a platform administrator."
+      },
+      "checkingSupport": {
+        "context": "Screen-reader status while HåfaPass confirms the signed-in person is on the support team."
       }
     }
   },

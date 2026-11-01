@@ -666,7 +666,11 @@
     "layout": {
       "skip": "Skip to main content",
       "loading": "Loading page",
-      "loaded": "Page loaded"
+      "loaded": "Page loaded",
+      "loadingAccount": "Loading your account",
+      "preparingAccount": "Preparing your account…",
+      "checkingAdmin": "Checking administrator access",
+      "checkingSupport": "Checking support access"
     }
   },
   "buyerDiscovery": {
