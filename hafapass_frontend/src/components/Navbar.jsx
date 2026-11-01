@@ -47,17 +47,21 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   useEffect(() => {
     const path = location.pathname
+    // Layout resets scroll after this effect runs, and lazy pages render their
+    // band later: measure on the next frame, and treat changes shortly after a
+    // route change as part of that change (an instant swap, never a fade).
+    const routeStarted = performance.now()
     let frame = 0
     const measure = () => {
       frame = 0
       setScrollTheme(previous => {
         const past = pastDarkBand(header.current)
         if (previous.path === path && previous.past === past) return previous
-        return { path, past, fade: previous.path === path }
+        return { path, past, fade: previous.path === path && performance.now() - routeStarted > 500 }
       })
     }
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure) }
-    measure()
+    schedule()
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
     return () => {
@@ -66,6 +70,12 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
       window.removeEventListener('resize', schedule)
     }
   }, [location.pathname])
+  // Drop the fade once it has run so hover and menu colors stay instant.
+  useEffect(() => {
+    if (!scrollTheme.fade) return undefined
+    const timer = window.setTimeout(() => setScrollTheme(previous => ({ ...previous, fade: false })), 260)
+    return () => window.clearTimeout(timer)
+  }, [scrollTheme])
   const currentScrollTheme = scrollTheme.path === location.pathname ? scrollTheme : { past: false, fade: false }
   const scrolled = currentScrollTheme.past
 

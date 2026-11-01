@@ -72,39 +72,17 @@ it('does not reload a page that already runs the latest release while the old wo
   expect(reload).not.toHaveBeenCalled()
   expect(Object.keys(sessionStorage).filter(key => key.startsWith('hafapass_release_reload:'))).toEqual([])
 })
-it('turns the next link to a safe page into one full page load', async () => {
-  const assign = vi.fn()
-  Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, reload, assign } })
+it('updates after a worker activates even when release.json cannot be read', async () => {
+  fetch.mockImplementation(async url => url === '/release.json'
+    ? { ok: false, json: async () => ({}) }
+    : { ok: true, text: async () => `<meta name="hafapass-revision" content="${shellRevision}">` })
   mount()
-  const link = document.createElement('a')
-  link.href = '/events?category=music'
-  link.textContent = 'Events'
-  link.addEventListener('click', event => event.preventDefault())
-  document.body.appendChild(link)
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
   shellRevision = B
-  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
-  fireEvent.click(link)
-  expect(assign).toHaveBeenCalledTimes(1)
-  expect(assign.mock.calls[0][0]).toMatch(/\/events\?category=music$/)
+  await act(async () => setHidden(true))
   expect(reload).not.toHaveBeenCalled()
-  fireEvent.click(link)
-  expect(assign).toHaveBeenCalledTimes(1)
-  link.remove()
-})
-it('leaves links alone without a waiting update, and for protected destinations', async () => {
-  const assign = vi.fn()
-  Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, reload, assign } })
-  mount()
-  const link = document.createElement('a')
-  link.href = '/checkout/show'
-  link.addEventListener('click', event => event.preventDefault())
-  document.body.appendChild(link)
-  fireEvent.click(link)
-  shellRevision = B
   await act(async () => registerSW.mock.calls[0][0].onNeedReload())
-  fireEvent.click(link)
-  expect(assign).not.toHaveBeenCalled()
-  link.remove()
+  expect(reload).toHaveBeenCalledTimes(1)
 })
 it('keeps checkout mounted after activation and reloads once on safe navigation', async () => {
   const router = mount('/checkout/show')

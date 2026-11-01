@@ -40,37 +40,35 @@ export function canRecoverShell({ pathname, hidden, navigated, unsaved, notFound
 // It also supplies the latest published revision. A page loaded from the
 // network can be newer than the worker's installed shell; only a shell that
 // matches the latest release is an update, never an older one.
+// An update applies on the next route change or while the page is hidden.
 export function createReleaseReloadPolicy({ currentRevision, storage, reload, getState }) {
   let pending = null
   let pendingNavigationKey
   let reloading = false
   return {
-    notice(shellRevision, latestRevision) {
+    notice(shellRevision, latestRevision, { activated = false } = {}) {
       const candidate = validRevision(shellRevision)
-      if (candidate && candidate === validRevision(latestRevision) && candidate !== currentRevision && candidate !== pending) {
+      const latest = validRevision(latestRevision)
+      // Without a readable latest release, only a worker that just activated
+      // (whose shell is new by definition) can establish an update.
+      const current = latest ? candidate === latest : activated
+      if (candidate && current && candidate !== currentRevision && candidate !== pending) {
         pending = candidate
         pendingNavigationKey = getState().navigationKey
       }
       this.attempt()
     },
-    hasPending() { return Boolean(pending) && !reloading },
-    // Records the once-per-revision guard. Without a durable guard, defer
-    // rather than risk a loop.
-    claim() {
-      if (!pending || reloading) return false
-      try {
-        const key = RELEASE_RELOAD_PREFIX + pending
-        if (storage.getItem(key)) return false
-        storage.setItem(key, '1')
-      } catch { return false }
-      reloading = true
-      return true
-    },
     attempt() {
       if (!pending || reloading) return
       const state = getState()
       if (!canReloadForRelease({ ...state, navigated: state.navigationKey !== pendingNavigationKey })) return
-      if (this.claim()) reload()
+      try {
+        const key = RELEASE_RELOAD_PREFIX + pending
+        if (storage.getItem(key)) return
+        storage.setItem(key, '1')
+      } catch { return } // Without a durable guard, defer rather than risk a loop.
+      reloading = true
+      reload()
     },
   }
 }

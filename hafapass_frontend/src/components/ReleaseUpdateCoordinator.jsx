@@ -2,7 +2,7 @@ import { useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { DraftProtectionContext } from '../hooks/useDraftProtection'
-import { canRecoverShell, canReloadForRelease, createReleaseReloadPolicy, trackUnsavedInputs, validRevision } from '../utils/releaseUpdate'
+import { canRecoverShell, createReleaseReloadPolicy, trackUnsavedInputs, validRevision } from '../utils/releaseUpdate'
 
 export default function ReleaseUpdateCoordinator() {
   const location = useLocation()
@@ -61,16 +61,18 @@ export default function ReleaseUpdateCoordinator() {
       const { ok, body } = await fetchResource('/release.json', response => response.json())
       return ok ? validRevision(body.revision) : null
     }
-    async function readShell(latest) {
+    // `activated`: a worker just took control. Its shell is new by definition,
+    // so it counts as an update even when release.json can't be read.
+    async function readShell(latest, { activated = false } = {}) {
       try {
         // This request intentionally goes through the current worker's precache.
         const [shell, latestRevision] = await Promise.all([
           fetchResource('/index.html', response => response.text()),
-          latest === undefined ? readRelease() : latest,
+          latest === undefined ? readRelease().catch(() => null) : latest,
         ])
         if (!shell.ok || disposed) return
         const html = new DOMParser().parseFromString(shell.body, 'text/html')
-        if (!disposed) reloadPolicy.notice(html.querySelector('meta[name="hafapass-revision"]')?.content, latestRevision)
+        if (!disposed) reloadPolicy.notice(html.querySelector('meta[name="hafapass-revision"]')?.content, latestRevision, { activated })
       } catch { /* Offline without a prepared shell: retry on reconnect. */ }
     }
     async function check() {
@@ -88,33 +90,15 @@ export default function ReleaseUpdateCoordinator() {
     registerSW({
       immediate: true,
       // Suppress the virtual module's unconditional autoUpdate reload.
-      onNeedReload: () => readShell(),
+      onNeedReload: () => readShell(undefined, { activated: true }),
       onRegisteredSW: (_url, value) => { registration = value; if (!disposed) void check() },
     })
     const onVisibility = () => { reloadPolicy.attempt(); if (!document.hidden) void check() }
     const onOnline = () => { void check() }
     // Listen directly too: updates initiated by another tab can claim this one.
-    const onControllerChange = () => { void readShell() }
+    const onControllerChange = () => { void readShell(undefined, { activated: true }) }
     navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange)
     document.addEventListener('visibilitychange', onVisibility)
-    // With an update waiting, the next ordinary link to a safe page becomes a
-    // single full page load instead of a route change followed by a reload.
-    const onClick = event => {
-      if (!reloadPolicy.hasPending() || event.defaultPrevented || event.button !== 0
-        || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      const anchor = event.target.closest?.('a[href]')
-      if (!anchor || (anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) return
-      const url = new URL(anchor.href, window.location.href)
-      if (url.origin !== window.location.origin) return
-      if (url.pathname === window.location.pathname && url.search === window.location.search) return
-      if (getState().unsaved) return
-      if (!canReloadForRelease({ pathname: url.pathname, navigated: true })) return
-      if (!reloadPolicy.claim()) return
-      event.preventDefault()
-      event.stopPropagation()
-      window.location.assign(url.href)
-    }
-    document.addEventListener('click', onClick, true)
     window.addEventListener('online', onOnline)
     const timer = window.setInterval(check, 60_000)
     // Lazy not-found rendering and form removal can establish a safe moment.
@@ -130,7 +114,6 @@ export default function ReleaseUpdateCoordinator() {
       window.clearInterval(timer)
       navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange)
       document.removeEventListener('visibilitychange', onVisibility)
-      document.removeEventListener('click', onClick, true)
       window.removeEventListener('online', onOnline)
     }
   }, [drafts])

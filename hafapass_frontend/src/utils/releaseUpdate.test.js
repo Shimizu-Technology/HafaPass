@@ -100,7 +100,6 @@ describe('release reload policy', () => {
     Object.assign(state, { hidden: true, navigationKey: 'later' })
     policy.attempt()
     expect(reload).not.toHaveBeenCalled()
-    expect(policy.hasPending()).toBe(false)
   })
   it('waits for the shell to match the latest release, and for an unknown latest release', () => {
     const { state, reload, policy } = fixture()
@@ -115,11 +114,23 @@ describe('release reload policy', () => {
     const { state, reload, policy } = fixture()
     policy.notice(B, B)
     expect(reload).not.toHaveBeenCalled()
-    expect(policy.hasPending()).toBe(true)
     state.hidden = true
     policy.attempt()
     expect(reload).toHaveBeenCalledTimes(1)
-    expect(policy.hasPending()).toBe(false)
+  })
+  it('accepts a just-activated worker shell when the latest release is unknown, but not an arbitrary read', () => {
+    const { state, reload, policy } = fixture()
+    state.hidden = true
+    policy.notice(B, null)
+    expect(reload).not.toHaveBeenCalled()
+    policy.notice(B, null, { activated: true })
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+  it('never lets activation override a known latest release', () => {
+    const { state, reload, policy } = fixture('/', B)
+    state.hidden = true
+    policy.notice(A, B, { activated: true })
+    expect(reload).not.toHaveBeenCalled()
   })
 })
 
