@@ -33,9 +33,10 @@
     opacity: 1;
   }
   /* iOS renders date and time fields shorter than text inputs and centers
-     the value; match the 48px field height and left alignment. */
-  input:is([type="date"], [type="time"], [type="datetime-local"]) { min-height: 3rem; }
-  input::-webkit-date-and-time-value { text-align: left; }
+     the value; match the 48px field height and left alignment. :where() keeps
+     these at zero specificity so utilities such as min-h-* still win. */
+  :where(input:is([type="date"], [type="time"], [type="datetime-local"])) { min-height: 3rem; }
+  :where(input)::-webkit-date-and-time-value { text-align: left; }
   /* Keep Safari from zooming the form while preserving pinch-to-zoom. */
   @media (pointer: coarse) {
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
@@ -48,7 +49,7 @@
   }
 
   /* Smooth transitions on all interactive elements */
-  a, button, input, select, textarea {
+  a, button, input, select, textarea, summary {
     @apply transition-colors duration-200;
   }
 }
@@ -149,7 +150,7 @@
 /* State colors restore full contrast in the same frame. Interpolating from a
    neutral disabled surface to white-on-brand can briefly make labels unreadable.
    Page transition utilities must not reintroduce color or opacity interpolation. */
-:is(button, a, input, [role="button"]):is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost) {
+:is(button, a, input, summary, [role="button"]):is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost) {
   transition-property: border-color, box-shadow, transform;
 }
 

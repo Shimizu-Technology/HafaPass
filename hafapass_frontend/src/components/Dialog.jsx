@@ -11,7 +11,14 @@ export default function Dialog({ children, labelledBy, onClose, busy = false, cl
     const previous = document.activeElement
     const scroll = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const focusable = () => [...ref.current.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]')]
+    // Skip controls with no layout box (display:none, hidden file inputs) so the
+    // trap wraps at the last control a keyboard user can actually reach. jsdom
+    // reports no boxes for anything, so fall back to every candidate there.
+    const focusable = () => {
+      const candidates = [...ref.current.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]')]
+      const rendered = candidates.filter(element => element.getClientRects().length > 0)
+      return rendered.length ? rendered : candidates
+    }
     ;(initialFocusRef?.current || focusable()[0] || ref.current).focus()
     const keydown = event => {
       if (event.key === 'Escape' && !busyRef.current) { event.preventDefault(); closeRef.current?.() }

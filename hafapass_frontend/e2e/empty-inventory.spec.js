@@ -30,7 +30,10 @@ for (const width of [375, 1280]) {
         await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
         await expect(main.getByRole('link', { name: 'Start hosting' })).toHaveAttribute('href', '/host')
         await expect(main.getByRole('link', { name: 'Sell tickets' })).toHaveCount(0)
-        await expect(main.getByText('Add to Home Screen')).toBeVisible()
+        // Desktop Chrome reports a fine pointer and makes no install offer, so the
+        // hero keeps order recovery as its only action. Phones are covered below.
+        await expect(main.getByText('Add to Home Screen', { exact: true })).toHaveCount(0)
+        await expect(main.getByRole('button', { name: 'Install HåfaPass' })).toHaveCount(0)
         await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveAttribute('href', '/orders/recover')
         await expect(main.getByRole('heading', { name: 'How your pass works' })).toBeVisible()
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
@@ -113,3 +116,24 @@ for (const width of [375, 768, 1280]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
   })
 }
+
+test.describe('on a touch phone', () => {
+  test.use({ hasTouch: true, viewport: { width: 375, height: 812 } })
+
+  test('the empty Home offers Add to Home Screen steps beside order recovery', async ({ page }) => {
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, { payment_mode: 'simulate', service_fee_percent: 0, service_fee_flat_cents: 0 }))
+    await page.route('**/api/v1/event_categories', route => json(route, { categories: [] }))
+    await page.route('**/api/v1/marketplace_collections', route => json(route, { collections: [] }))
+    await page.route('**/api/v1/events*', route => json(route, { events: [], meta: { total_count: 0, total_pages: 1, current_page: 1 } }))
+    await page.goto('/')
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
+    const main = page.getByRole('main')
+    const install = main.locator('summary', { hasText: 'Add to Home Screen' })
+    await expect(install).toBeVisible()
+    await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toBeVisible()
+    await install.tap()
+    await expect(main.getByText(/On iPhone or iPad, open HåfaPass in Safari/)).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)
+  })
+})

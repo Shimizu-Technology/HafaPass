@@ -51,3 +51,18 @@ it('folds each entry into labelled cells so phone users reach the row actions wi
   expect([...row.cells].map(cell => cell.dataset.label)).toEqual(['Position', 'Name', 'Email', 'Ticket type', 'Qty', 'Status', 'Joined', 'Actions'])
   expect(row.cells[7]).toContainElement(screen.getByRole('button', { name: 'Remove Buyer' }))
 })
+
+it('keeps the folded phone list out of the tab order and makes the scrollable table a tab stop', async () => {
+  const mount = () => render(<MemoryRouter initialEntries={['/dashboard/events/7/waitlist']}><Routes>
+    <Route path="/dashboard/events/:id/waitlist" element={<WaitlistPage />} />
+  </Routes></MemoryRouter>)
+  const media = wide => vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: wide, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+  media(false)
+  const phone = mount()
+  expect(await screen.findByRole('region', { name: 'Waitlist entries' })).not.toHaveAttribute('tabindex')
+  phone.unmount()
+  media(true)
+  mount()
+  expect(await screen.findByRole('region', { name: 'Waitlist entries' })).toHaveAttribute('tabindex', '0')
+  vi.unstubAllGlobals()
+})

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HomePage from './HomePage'
 import apiClient from '../api/client'
 vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
@@ -9,7 +9,9 @@ vi.mock('../components/SEO', () => ({ default: () => null }))
 const event = { id: 37, slug: 'community-night', title: 'Community night', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }
 function Destination() { const location = useLocation(); return <p>Browse destination {location.pathname}{location.search}</p> }
 function mount() { return render(<MemoryRouter><Routes><Route path="/" element={<HomePage />} /><Route path="/events" element={<Destination />} /><Route path="/host" element={<h1>Host your event</h1>} /></Routes></MemoryRouter>) }
+const pointer = coarse => vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: coarse && query === '(pointer: coarse)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 beforeEach(() => { apiClient.get.mockReset(); apiClient.get.mockResolvedValue({data:{events:[]}}) })
+afterEach(() => { vi.unstubAllGlobals() })
 describe('the public ticket', () => {
  it('keeps empty inventory honest with no search, category links or borrowed photos', async () => {
   mount()
@@ -25,11 +27,12 @@ describe('the public ticket', () => {
   const footer=screen.getByRole('contentinfo')
   for(const policy of ['privacy','buyer-terms','refunds','organizer-agreement','accessibility','cookies']) expect(footer.querySelector(`a[href="/policies/${policy}"]`)).toBeInTheDocument()
  })
- it('gives buyers an install action, order recovery and how the pass works, and pitches hosting once', async () => {
+ it('gives phone buyers an install action, order recovery and how the pass works, and pitches hosting once', async () => {
+  pointer(true)
   const {container}=mount()
   await screen.findByRole('heading', {name:'The first events are on their way.'})
   const hero=container.querySelector('.hero-ticket')
-  await userEvent.setup().click(within(hero).getByText('Add to Home Screen'))
+  await userEvent.setup().click(within(hero).getByText('Add to Home Screen', {selector:'summary'}))
   expect(within(hero).getByText(/On iPhone or iPad, open HåfaPass in Safari/)).toBeVisible()
   expect(within(hero).getByRole('link',{name:'Already bought a ticket? Find it'})).toHaveAttribute('href','/orders/recover')
   expect(within(hero).queryByRole('link',{name:'Sell tickets'})).not.toBeInTheDocument()
@@ -42,6 +45,32 @@ describe('the public ticket', () => {
   expect(screen.getAllByRole('link',{name:/hosting|sell tickets/i}).map(link=>link.getAttribute('href'))).toEqual(['/host'])
   expect(container.querySelector('.planning-ticket .btn-primary')).not.toBeInTheDocument()
  })
+ it('leaves order recovery as the only hero action on a desktop without an install offer', async () => {
+  pointer(false)
+  const {container}=mount()
+  await screen.findByRole('heading', {name:'The first events are on their way.'})
+  const hero=container.querySelector('.hero-ticket')
+  expect(within(hero).queryByText('Add to Home Screen')).not.toBeInTheDocument()
+  expect(within(hero).queryByRole('button',{name:'Install HåfaPass'})).not.toBeInTheDocument()
+  expect(within(hero).getByRole('link',{name:'Already bought a ticket? Find it'})).toHaveAttribute('href','/orders/recover')
+ })
+ it('swaps the phone install steps for the browser installer in place when an offer arrives late', async () => {
+  pointer(true)
+  const {initializeInstallationOffers}=await import('../utils/installationOffers')
+  const stop=initializeInstallationOffers()
+  const {container}=mount()
+  await screen.findByRole('heading', {name:'The first events are on their way.'})
+  const hero=container.querySelector('.hero-ticket')
+  const slot=within(hero).getByText('Add to Home Screen', {selector:'summary'}).closest('details').parentElement
+  const offer=new Event('beforeinstallprompt',{cancelable:true})
+  Object.assign(offer,{prompt:vi.fn().mockResolvedValue(undefined),userChoice:Promise.resolve({outcome:'accepted'})})
+  act(()=>{ fireEvent(window,offer) })
+  const button=within(hero).getByRole('button',{name:'Install HåfaPass'})
+  expect(button.parentElement.parentElement).toBe(slot.parentElement)
+  expect(button.parentElement.previousElementSibling).toBeNull()
+  expect(within(hero).queryByText('Add to Home Screen')).not.toBeInTheDocument()
+  stop()
+ })
  it('opens the browser installer directly from the empty Home when one was offered', async () => {
   const {initializeInstallationOffers}=await import('../utils/installationOffers')
   const stop=initializeInstallationOffers()
@@ -50,7 +79,7 @@ describe('the public ticket', () => {
   Object.assign(offer,{prompt,userChoice:Promise.resolve({outcome:'accepted'})})
   fireEvent(window,offer)
   mount()
-  await userEvent.setup().click(await screen.findByRole('button',{name:'Add to Home Screen'}))
+  await userEvent.setup().click(await screen.findByRole('button',{name:'Install HåfaPass'}))
   expect(prompt).toHaveBeenCalledOnce()
   stop()
  })

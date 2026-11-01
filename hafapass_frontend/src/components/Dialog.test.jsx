@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import Dialog from './Dialog'
@@ -22,5 +22,19 @@ describe('operational dialogs', () => {
     view.unmount()
     expect(previous).toHaveFocus()
     previous.remove()
+  })
+
+  it('wraps focus past controls with no layout box, such as a hidden file input', () => {
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function () { return this.type === 'file' ? [] : [{}] })
+    render(<Dialog labelledBy="photo-title" onClose={() => {}}><h2 id="photo-title">Edit profile</h2><button>Cancel</button><button>Save</button><input type="file" aria-label="Logo" className="hidden" /></Dialog>)
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(cancel).toHaveFocus()
+    save.focus()
+    fireEvent.keyDown(save, { key: 'Tab' })
+    expect(cancel).toHaveFocus()
+    fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true })
+    expect(save).toHaveFocus()
+    vi.restoreAllMocks()
   })
 })

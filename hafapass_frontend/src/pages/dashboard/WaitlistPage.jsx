@@ -60,6 +60,16 @@ function WaitlistSession({ eventId, identity }) {
   const [confirmation, setConfirmation] = useState(null)
   const [entries, setEntries] = useState([])
   const [stats, setStats] = useState({})
+  // The table scrolls sideways only from md up; folded phone rows are not a
+  // scroll container, so they should not be a tab stop either.
+  const [tableScrolls, setTableScrolls] = useState(() => window.matchMedia?.('(min-width: 768px)').matches ?? true)
+  useEffect(() => {
+    const media = window.matchMedia?.('(min-width: 768px)')
+    if (!media) return undefined
+    const changed = () => setTableScrolls(media.matches)
+    media.addEventListener?.('change', changed)
+    return () => media.removeEventListener?.('change', changed)
+  }, [])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [notifyCount, setNotifyCount] = useState('1')
@@ -263,7 +273,7 @@ function WaitlistSession({ eventId, identity }) {
         <div className="text-center py-12 text-content-muted">No waitlist entries found.</div>
       ) : (
         // Rows fold into labelled cards below md so Offer, Notify and Remove stay on screen on a phone.
-        <div className="min-w-0 rounded-xl border border-neutral-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 md:overflow-x-auto md:rounded-lg md:border-0 md:bg-transparent" role="region" aria-label="Waitlist entries" tabIndex={0}>
+        <div className="min-w-0 rounded-xl border border-neutral-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 md:overflow-x-auto md:rounded-lg md:border-0 md:bg-transparent" role="region" aria-label="Waitlist entries" tabIndex={tableScrolls ? 0 : undefined}>
           <table className={foldTable}>
             <thead>
               <tr className="border-b border-neutral-200 text-left text-content-muted">

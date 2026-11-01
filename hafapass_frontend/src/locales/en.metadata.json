@@ -1545,11 +1545,20 @@
       "howItWorks": {
         "context": "Heading over three short steps explaining how buying and using a HåfaPass ticket works. 'Pass' means the buyer's ticket."
       },
+      "stepFindTitle": {
+        "context": "Title of step 1 of 3 in 'How your pass works': the buyer finds an event on HåfaPass. Keep it short, like a card heading."
+      },
       "stepFindBody": {
         "context": "Event times are shown in Guam time (Pacific/Guam)."
       },
+      "stepBuyTitle": {
+        "context": "Title of step 2 of 3 in 'How your pass works': checkout takes about a minute. Keep it short, like a card heading."
+      },
       "stepBuyBody": {
         "context": "Guest checkout: buyers pay by card and receive tickets by email without creating an account."
+      },
+      "stepDoorTitle": {
+        "context": "Title of step 3 of 3 in 'How your pass works': the buyer shows the ticket QR code at the door and is admitted without waiting. Keep it short, like a card heading."
       },
       "stepDoorBody": {
         "context": "Door staff scan the QR code on the buyer's phone at the event entrance."
@@ -1557,13 +1566,25 @@
     },
     "install": {
       "addToHomeScreen": {
-        "context": "Button to install the HåfaPass web app. 'Add to Home Screen' is Apple's iPhone menu item; use the wording iOS uses in this language."
+        "context": "Primary control on the empty Home page, shown on phones when the browser offers no direct installer; it expands steps for adding the HåfaPass web app to the phone's home screen. 'Add to Home Screen' is Apple's iPhone menu item; use the wording iOS uses in this language."
+      },
+      "addToPhone": {
+        "context": "Expandable heading on My tickets that reveals how to add the HåfaPass web app to a phone's home screen. HåfaPass is the product name; keep it as written."
       },
       "steps": {
         "context": "Install app and Add to Home Screen are browser menu items, and Share is the Safari share button; use the wording the browsers use in this language."
       },
       "offlineNote": {
         "context": "Installing the app does not store tickets offline; buyers must download a ticket first."
+      },
+      "install": {
+        "context": "Button that opens the browser's own installer (Chrome, Edge, Android) for the HåfaPass web app. HåfaPass is the product name; keep it as written."
+      },
+      "opening": {
+        "context": "Temporary button label while the browser's installer is opening."
+      },
+      "promptFailed": {
+        "context": "Shown when the browser's installer could not open; the buyer can still add HåfaPass from the browser menu. HåfaPass is the product name; keep it as written."
       }
     }
   }

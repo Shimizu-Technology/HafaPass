@@ -674,13 +674,13 @@ function CheckoutContent({ buyerId }) {
                 <Tag className="w-3.5 h-3.5" /> {t('checkout.havePromoCode')}
               </button>
             ) : promoData ? (
-              <div className="flex items-center justify-between bg-success-50 border border-success-200 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-success-700" />
-                  <span className="text-sm font-medium text-success-800">{promoData.code}</span>
-                  <span className="text-sm text-success-700">{promoData.description}</span>
+              <div className="flex items-center justify-between gap-2 bg-success-50 border border-success-200 rounded-xl px-4 py-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <Tag className="w-4 h-4 shrink-0 text-success-700" />
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere] text-sm font-medium text-success-800">{promoData.code}</span>
+                  <span className="min-w-0 break-words text-sm text-success-700">{promoData.description}</span>
                 </div>
-                <button aria-label={t('buyer.Checkout.removePromoCode')} onClick={clearPromo} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-success-700 hover:text-success-900 transition-colors">
+                <button aria-label={t('buyer.Checkout.removePromoCode')} onClick={clearPromo} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-success-700 hover:text-success-900 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>

@@ -5,12 +5,19 @@ import { getInstallationOffer, subscribeInstallationOffers, takeInstallationOffe
 
 const isInstalled = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true
 
-// `panel` is the quiet disclosure on My tickets. `action` is a primary button
-// for the empty Home: it opens the browser's installer when one was offered,
-// and otherwise expands the same manual Safari/Android steps.
+const hasTouchPointer = () => window.matchMedia?.('(pointer: coarse)').matches === true
+
+// `panel` is the quiet disclosure on My tickets. `action` is the primary hero
+// control on the empty Home. With a browser install offer (Chrome, Edge,
+// Android) it opens the installer. Without one it expands the manual
+// Safari/Android steps, but only on touch devices; desktop browsers without an
+// offer get nothing, so order recovery stays the main hero action. On phones an
+// offer that arrives late swaps the same primary slot from steps to installer,
+// so nothing below it moves.
 export default function InstallAppHelp({ variant = 'panel' }) {
   const { t } = useTranslation()
   const [installed, setInstalled] = useState(isInstalled)
+  const [touch] = useState(hasTouchPointer)
   const installPrompt = useSyncExternalStore(subscribeInstallationOffers, getInstallationOffer, () => null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -53,9 +60,10 @@ export default function InstallAppHelp({ variant = 'panel' }) {
   if (variant === 'action') {
     if (installPrompt || busy) return <div>
       <button type="button" onClick={install} disabled={busy} className="btn-primary gap-2">
-        <Download className="h-4 w-4" aria-hidden="true" />{busy ? t('pass.install.opening') : t('pass.install.addToHomeScreen')}
+        <Download className="h-4 w-4" aria-hidden="true" />{busy ? t('pass.install.opening') : t('pass.install.install')}
       </button>
     </div>
+    if (!touch) return errorNote ? <div>{errorNote}</div> : null
     return <div>
       <details className="group text-sm text-neutral-700">
         <summary className="btn-primary cursor-pointer list-none gap-2 [&::-webkit-details-marker]:hidden">
