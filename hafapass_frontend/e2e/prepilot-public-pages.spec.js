@@ -13,7 +13,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await page.goto('/')
     await expect(page.getByRole('status').filter({ hasText: 'Loading upcoming events' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toHaveCount(0)
-    await expect(page.locator('a.btn-secondary').filter({ hasText: 'Browse Events' })).toHaveAttribute('href', '/events')
+    await expect(page.locator('a.btn-secondary').filter({ hasText: 'Browse events' })).toHaveAttribute('href', '/events')
     const footer = page.locator('footer')
     if (width < 768) {
       const policies = footer.locator('summary').filter({ hasText: 'Other policies' })
@@ -44,7 +44,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
     await expect(page.locator('main img')).toHaveCount(0)
     await expect(page.locator('footer summary').filter({ hasText: 'Photo credits' })).toHaveCount(0)
-    const hosting = page.getByRole('link', { name: 'Start Hosting', exact: true })
+    const hosting = page.getByRole('link', { name: 'Start hosting', exact: true })
     await hosting.focus()
     await expect(hosting).toBeFocused()
     await expect(hosting).toHaveCSS('outline-style', 'solid')

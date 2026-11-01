@@ -21,9 +21,9 @@ describe('organizer ticket setup', () => {
   it('refuses a missing positive quantity before contacting the API and focuses the field', async () => {
     render(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={vi.fn()} /></MemoryRouter>)
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Add Ticket Type' }))
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
     await user.type(screen.getByRole('textbox', { name: 'Name', exact: true }), 'General Admission')
-    await user.click(screen.getByRole('button', { name: 'Add Ticket Type' }))
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a positive whole number of tickets available.')
     expect(screen.getByRole('spinbutton', { name: 'Tickets available', exact: true })).toHaveFocus()
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -37,12 +37,12 @@ describe('organizer ticket setup', () => {
     } })
     render(<MemoryRouter initialEntries={['/dashboard/events/42/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Add Ticket Type' }))
+    await user.click(await screen.findByRole('button', { name: 'Add ticket type' }))
     expect(screen.getByRole('spinbutton', { name: 'Tickets available', exact: true })).toHaveValue(18)
     expect(screen.getByRole('spinbutton', { name: 'Price ($)', exact: true })).toHaveValue(0)
     expect(screen.getByText('More ticket options').closest('details')).not.toHaveAttribute('open')
     await user.type(screen.getByRole('textbox', { name: 'Name', exact: true }), 'General Admission')
-    await user.click(screen.getByRole('button', { name: 'Add Ticket Type' }))
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/42/ticket_types', {
       name: 'General Admission', description: null, price_cents: 0, quantity_available: 18,
       door_allocation: null, max_per_order: null, max_per_buyer: null, sales_start_at: null, sales_end_at: null,

@@ -149,7 +149,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone, defa
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
         <button type="submit" disabled={saving} className="btn-primary min-h-11 text-sm px-4 py-1.5">
-          {saving ? 'Saving...' : initial ? 'Update' : 'Add Ticket Type'}
+          {saving ? 'Saving...' : initial ? 'Update' : 'Add ticket type'}
         </button>
       </div>
     </form>
@@ -224,10 +224,10 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
   return (
     <div className="card p-5 sm:p-6 mt-6">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <h2 className="text-lg font-semibold text-neutral-900">Ticket Types</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">Ticket types</h2>
         {!showForm && !editingId && (
           <button disabled={locked} onClick={() => setShowForm(true)} className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5">
-            <Plus className="w-4 h-4" /> Add Ticket Type
+            <Plus className="w-4 h-4" /> Add ticket type
           </button>
         )}
       </div>

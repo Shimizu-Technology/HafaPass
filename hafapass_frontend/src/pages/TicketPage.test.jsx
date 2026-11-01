@@ -112,7 +112,7 @@ it('keeps admission and expandable device instructions immediately usable with r
     expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled()
     const instructions = screen.getByRole('button', { name: 'Add to Home Screen' })
     await userEvent.click(instructions)
-    expect(screen.getByText('Android Instructions:')).toBeVisible()
+    expect(screen.getByText('Android instructions:')).toBeVisible()
     expect(instructions).toHaveAttribute('aria-expanded', 'true')
     expect(document.querySelector('.animate-pulse')).toBeNull()
     await userEvent.click(instructions)

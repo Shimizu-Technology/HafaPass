@@ -136,10 +136,10 @@ function AdminDashboardSession({ identity }) {
       <SetupRequired items={data.setup_required} beginRequest={beginRequest} onApproved={refreshQuietly} />
 
       <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StaggerItem><StatCard label="Total Events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
-        <StaggerItem><StatCard label="Total Users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Total events" value={totalEvents} icon={Calendar} color="bg-brand-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Total users" value={totalUsers} icon={Users} color="bg-indigo-500" /></StaggerItem>
         <StaggerItem><StatCard label="Buyer payments (less refunds)" value={grossRevenue} icon={DollarSign} color="bg-emerald-500" /></StaggerItem>
-        <StaggerItem><StatCard label="Tickets Sold" value={data.total_tickets_sold} icon={Ticket} color="bg-accent-500" /></StaggerItem>
+        <StaggerItem><StatCard label="Tickets sold" value={data.total_tickets_sold} icon={Ticket} color="bg-accent-500" /></StaggerItem>
       </StaggerContainer>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label="Financial ledger summary">
@@ -206,7 +206,7 @@ function AdminDashboardSession({ identity }) {
         {/* Recent Events */}
         <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-neutral-100">
-            <h2 className="font-semibold text-neutral-900">Recent Events</h2>
+            <h2 className="font-semibold text-neutral-900">Recent events</h2>
             <Link to="/admin/events" className="min-h-11 rounded text-sm text-brand-700 hover:text-brand-900 flex items-center gap-1">
               View all <ArrowRight className="w-3.5 h-3.5" />
             </Link>
@@ -234,7 +234,7 @@ function AdminDashboardSession({ identity }) {
         {/* Recent Orders */}
         <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-neutral-200/50 shadow-soft overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-neutral-100">
-            <h2 className="font-semibold text-neutral-900">Recent Orders</h2>
+            <h2 className="font-semibold text-neutral-900">Recent orders</h2>
             <Link to="/admin/orders" className="min-h-11 rounded text-sm text-brand-700 hover:text-brand-900 flex items-center gap-1">
               View all <ArrowRight className="w-3.5 h-3.5" />
             </Link>

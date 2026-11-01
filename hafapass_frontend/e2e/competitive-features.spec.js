@@ -40,14 +40,14 @@ test('buyer completes an organizer-absorbed checkout with an add-on, registratio
 
   await page.goto('/events/island-festival')
   await page.getByRole('button', { name: 'Increase quantity' }).click()
-  await page.getByRole('button', { name: /Buy Tickets/ }).click()
-  await page.getByLabel('Full Name').fill('Guam Buyer')
-  await page.getByLabel('Email Address').fill('buyer@example.com')
+  await page.getByRole('button', { name: /Buy tickets/ }).click()
+  await page.getByLabel('Full name').fill('Guam Buyer')
+  await page.getByLabel('Email address').fill('buyer@example.com')
   await page.locator('input[aria-label="Festival shirt quantity"]:visible').fill('1')
   await page.locator('input#question-9:visible').fill('Vegetarian')
   await page.locator('label:visible').filter({ hasText: 'I accept version 2.0' }).click()
   await page.locator('input#termsAccepted:visible').check()
-  await page.getByRole('button', { name: /Place Order/ }).click()
+  await page.getByRole('button', { name: /Place order/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
   expect(submitted.catalog_items).toEqual([{ catalog_item_id: 8, quantity: 1, amount_cents: null }])

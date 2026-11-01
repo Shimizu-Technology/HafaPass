@@ -230,9 +230,9 @@ test('box office exposes card sales only for a verified terminal and sends an id
   await page.goto('/dashboard/events/42/box-office')
   await page.getByRole('button', { name: 'Add General Admission' }).click()
   await page.getByRole('button', { name: 'Card at Door' }).click()
-  await page.getByRole('button', { name: /Process Sale/ }).click()
+  await page.getByRole('button', { name: /Process sale/ }).click()
 
-  await expect(page.getByText('Sale Complete!')).toBeVisible()
+  await expect(page.getByText('Sale complete!')).toBeVisible()
   expect(receivedIdempotencyKey).toMatch(/^box-office-/)
 })
 

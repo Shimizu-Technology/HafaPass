@@ -64,7 +64,7 @@ describe('the public ticket', () => {
   expect(screen.queryByRole('region',{name:'How your pass works'})).not.toBeInTheDocument()
   expect(screen.getByRole('heading',{name:'Planning an event?'})).toBeInTheDocument()
  })
- it.each(['Start Hosting','For Organizers'])('opens hosting from %s', async name => {
+ it.each(['Start hosting','For organizers'])('opens hosting from %s', async name => {
   mount(); await screen.findByText('The first events are on their way.')
   await userEvent.setup().click(screen.getByRole('link',{name,exact:true}))
   expect(screen.getByRole('heading',{name:'Host your event'})).toBeInTheDocument()
@@ -73,7 +73,7 @@ describe('the public ticket', () => {
   let finish; apiClient.get.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
   const {container}=mount()
   expect(screen.getByText('Loading upcoming events…')).toBeInTheDocument()
-  expect(screen.getAllByRole('link',{name:'Browse Events'})[0]).toHaveAttribute('href','/events')
+  expect(screen.getAllByRole('link',{name:'Browse events'})[0]).toHaveAttribute('href','/events')
   const ticket=container.querySelector('.hero-ticket')
   const footer=screen.getByRole('contentinfo')
   for(const policy of ['privacy','buyer-terms','refunds','organizer-agreement','accessibility','cookies']) expect(footer.querySelector(`a[href="/policies/${policy}"]`)).toBeInTheDocument()

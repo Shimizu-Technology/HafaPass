@@ -157,7 +157,7 @@ function GuestListSession({ eventId, identity }) {
   if (loading) return <div className="flex justify-center py-20" role="status"><Loader2 className="w-8 h-8 text-brand-500 animate-spin" /> Loading guest list…</div>
   if (!event) return <main className="mx-auto max-w-3xl px-4 py-8">
     <Link to="/dashboard" className="inline-flex min-h-11 items-center font-medium text-brand-800">All events</Link>
-    <h1 className="mt-3 text-2xl font-bold">Guest List</h1>
+    <h1 className="mt-3 text-2xl font-bold">Guest list</h1>
     <p role="alert" className="mt-4 text-sm text-red-800">{loadError || mutationError || 'Event access is unavailable.'}</p>
     <button type="button" disabled={refreshing} onClick={fetchData} className="btn-secondary mt-3">Retry guest list</button>
   </main>
@@ -170,11 +170,11 @@ function GuestListSession({ eventId, identity }) {
 
    <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center sm:justify-between">
     <div>
-     <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Guest List</h2>
+     <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Guest list</h2>
      <p className="text-sm text-neutral-500 mt-1">{unredeemed.length} pending, {redeemed.length} tickets created</p>
     </div>
     <button disabled={mutationsLocked} onClick={() => setShowForm(!showForm)} className="btn-primary text-sm !py-2.5 gap-1.5">
-     <UserPlus className="w-4 h-4" /> Add Guest
+     <UserPlus className="w-4 h-4" /> Add guest
     </button>
    </div>
 
@@ -192,7 +192,7 @@ function GuestListSession({ eventId, identity }) {
 
    {showForm && (
     <form onSubmit={handleCreate} className="card p-4 sm:p-6 mb-6"><fieldset className="min-w-0" disabled={mutationsLocked}>
-     <h3 className="font-semibold text-neutral-900 mb-4">Add to Guest List</h3>
+     <h3 className="font-semibold text-neutral-900 mb-4">Add to guest list</h3>
      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
        <label htmlFor="guest-guest_name" className="block text-sm font-medium text-neutral-700 mb-1.5">Name</label>
@@ -203,7 +203,7 @@ function GuestListSession({ eventId, identity }) {
        <input type="email" id="guest-guest_email" value={form.guest_email} onChange={e => setForm({...form, guest_email: e.target.value})} className="input min-w-0 max-w-full" placeholder="e.g. guest@example.com" />
       </div>
       <div>
-       <label htmlFor="guest-ticket_type_id" className="block text-sm font-medium text-neutral-700 mb-1.5">Ticket Type</label>
+       <label htmlFor="guest-ticket_type_id" className="block text-sm font-medium text-neutral-700 mb-1.5">Ticket type</label>
        <select id="guest-ticket_type_id" value={form.ticket_type_id} onChange={e => setForm({...form, ticket_type_id: parseInt(e.target.value, 10) || ''})} className="input min-w-0 max-w-full">
         {ticketTypes.map(tt => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
        </select>
@@ -221,7 +221,7 @@ function GuestListSession({ eventId, identity }) {
       </div>
      </div>
      <div className="flex flex-wrap gap-3 mt-5">
-      <button type="submit" disabled={saving || !validQuantity} className="btn-primary text-sm !py-2.5">{saving ? 'Adding...' : 'Add Guest'}</button>
+      <button type="submit" disabled={saving || !validQuantity} className="btn-primary text-sm !py-2.5">{saving ? 'Adding...' : 'Add guest'}</button>
       <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-sm !py-2.5">Cancel</button>
      </div>
     </fieldset></form>

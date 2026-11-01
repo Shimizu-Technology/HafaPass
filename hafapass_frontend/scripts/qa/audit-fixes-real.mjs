@@ -22,9 +22,9 @@ try {
  await cards.first().click()
  await page.getByRole('heading',{name:'Guam community night',exact:true}).waitFor()
  await page.getByRole('button',{name:'Increase quantity for General admission',exact:true}).click()
- await page.getByRole('button',{name:/Buy Tickets/}).click()
+ await page.getByRole('button',{name:/Buy tickets/}).click()
  await page.waitForURL('**/checkout/guam-community-night')
- await page.getByLabel('Full Name').waitFor()
- await page.reload();await page.getByLabel('Full Name').waitFor()
+ await page.getByLabel('Full name').waitFor()
+ await page.reload();await page.getByLabel('Full name').waitFor()
  process.stdout.write('Real Rails fixture flow passed: matching-title fixtures in Hagåtña and Yigo → Home search + village=Hagåtña → one matching event → quantity → guest checkout; checkout survives reload. No order/payment submitted.' + '\n')
 } finally {await browser.close()}

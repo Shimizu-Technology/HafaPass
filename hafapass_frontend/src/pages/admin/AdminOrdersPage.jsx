@@ -73,7 +73,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
           />
         </div>
         <select aria-label="Filter orders by status" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-          <option value="">All Statuses</option>
+          <option value="">All statuses</option>
           {orderStatuses.filter(Boolean).map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
       </div>

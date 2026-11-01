@@ -159,11 +159,11 @@ function AdminEventsPageSession({ identity, resourcePath }) {
           />
         </div>
         <select aria-label="Filter events by status" value={status} onChange={e => changeListing(() => { setStatus(e.target.value); setPage(1) })} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-          <option value="">All Statuses</option>
+          <option value="">All statuses</option>
           {statuses.filter(Boolean).map(s => <option key={s} value={s}>{adminLabel(s)}</option>)}
         </select>
         <select aria-label="Filter events by category" value={category} onChange={e => changeListing(() => { setCategory(e.target.value); setPage(1) })} className="px-4 py-2.5 bg-white/70 border border-neutral-200/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-          <option value="">All Categories</option>
+          <option value="">All categories</option>
           {categories.filter(Boolean).map(c => <option key={c} value={c}>{adminLabel(c)}</option>)}
         </select>
         <label className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-neutral-200/50 bg-white/70 px-4 text-sm text-neutral-800">

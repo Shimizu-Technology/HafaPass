@@ -28,7 +28,7 @@ for (const width of [375, 1280]) {
         await expect(main.getByText('Your event guide on Guam')).toHaveCount(0)
         await expect(main.getByRole('img')).toHaveCount(0)
         await expect(main.getByRole('heading', { name: 'Planning an event?' })).toBeVisible()
-        await expect(main.getByRole('link', { name: 'Start Hosting' })).toHaveAttribute('href', '/host')
+        await expect(main.getByRole('link', { name: 'Start hosting' })).toHaveAttribute('href', '/host')
         await expect(main.getByRole('link', { name: 'Sell tickets' })).toHaveCount(0)
         await expect(main.getByText('Add to Home Screen')).toBeVisible()
         await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveAttribute('href', '/orders/recover')

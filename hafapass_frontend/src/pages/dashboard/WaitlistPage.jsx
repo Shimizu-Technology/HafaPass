@@ -218,7 +218,7 @@ function WaitlistSession({ eventId, identity }) {
             />
             <button onClick={handleNotifyNext} disabled={mutationsLocked || !addressReady || !validNotifyCount || nobodyWaiting} aria-describedby={!addressReady ? 'waitlist-address-required' : nobodyWaiting ? 'waitlist-notify-empty' : undefined} className="btn-primary min-w-0 flex-1 text-sm !px-3 !py-2.5 gap-1.5 sm:flex-none">
               {notifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Notify Next
+              Notify next
             </button>
           </div>
           <p id="waitlist-notify-count-help" className={`mt-1.5 text-sm ${validNotifyCount ? 'text-content-muted' : 'text-red-700'}`}>
@@ -268,7 +268,7 @@ function WaitlistSession({ eventId, identity }) {
                 <th className="pb-3 font-medium">#</th>
                 <th className="pb-3 font-medium">Name</th>
                 <th className="pb-3 font-medium">Email</th>
-                <th className="pb-3 font-medium">Ticket Type</th>
+                <th className="pb-3 font-medium">Ticket type</th>
                 <th className="pb-3 font-medium">Qty</th>
                 <th className="pb-3 font-medium">Status</th>
                 <th className="pb-3 font-medium">Joined</th>

@@ -13,7 +13,7 @@ vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal(
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tools = [
-  { path: 'guest-list', endpoint: 'guest_list', Component: GuestListPage, title: 'Guest List', retry: 'Retry guest list',
+  { path: 'guest-list', endpoint: 'guest_list', Component: GuestListPage, title: 'Guest list', retry: 'Retry guest list',
     permission: 'manage_attendees', dialogButton: 'Create tickets', row: owner => ({ id: 5, guest_name: `${owner} private guest`, guest_email: `${owner}@example.invalid`, redeemed: false, quantity: 1, ticket_type: { id: 8, name: 'Admission' } }),
     result: rows => ({ guest_list: rows }), button: 'Create tickets', confirmation: 'Create tickets', notice: 'Tickets created. Check these tickets in separately when the guest arrives.', method: 'post', tail: '/5/redeem' },
   { path: 'promo-codes', endpoint: 'promo_codes', Component: PromoCodesPage, title: 'Promo codes', retry: 'Retry promo codes',
@@ -256,9 +256,9 @@ describe('draft retention and current waitlist view', () => {
   it('allows clear-and-type guest quantity and sends the valid numeric quantity with scoped ownership', async () => {
     activeTool = tools[0]
     mount(activeTool)
-    await screen.findByRole('heading', { name: 'Guest List', level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: 'Add Guest' }))
-    const form = screen.getByRole('heading', { name: 'Add to Guest List' }).closest('form')
+    await screen.findByRole('heading', { name: 'Guest list', level: 2 })
+    await userEvent.click(screen.getByRole('button', { name: 'Add guest' }))
+    const form = screen.getByRole('heading', { name: 'Add to guest list' }).closest('form')
     await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Synthetic guest')
     const quantity = within(form).getByRole('spinbutton', { name: 'Quantity' })
     await userEvent.clear(quantity)
@@ -266,7 +266,7 @@ describe('draft retention and current waitlist view', () => {
     await userEvent.type(quantity, '3')
     expect(quantity).toHaveValue(3)
     expect(quantity).toHaveAttribute('aria-invalid', 'false')
-    await userEvent.click(within(form).getByRole('button', { name: 'Add Guest' }))
+    await userEvent.click(within(form).getByRole('button', { name: 'Add guest' }))
     await screen.findByText('Guest added. Any notification is handled separately.')
     expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/guest_list', {
       guest_name: 'Synthetic guest', guest_email: '', guest_phone: '', notes: '', quantity: 3, ticket_type_id: 8,
@@ -277,9 +277,9 @@ describe('draft retention and current waitlist view', () => {
   it.each(['', '0', '11', '1.5'])('blocks invalid guest quantity %j at both the submit control and handler', async value => {
     activeTool = tools[0]
     mount(activeTool)
-    await screen.findByRole('heading', { name: 'Guest List', level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: 'Add Guest' }))
-    const form = screen.getByRole('heading', { name: 'Add to Guest List' }).closest('form')
+    await screen.findByRole('heading', { name: 'Guest list', level: 2 })
+    await userEvent.click(screen.getByRole('button', { name: 'Add guest' }))
+    const form = screen.getByRole('heading', { name: 'Add to guest list' }).closest('form')
     await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Retained guest draft')
     const quantity = within(form).getByRole('spinbutton', { name: 'Quantity' })
     expect(quantity).toBeRequired()
@@ -290,7 +290,7 @@ describe('draft retention and current waitlist view', () => {
     expect(quantity).toHaveValue(value ? Number(value) : null)
     expect(quantity).toHaveAttribute('aria-invalid', 'true')
     expect(quantity).toHaveAccessibleDescription('Enter a whole number from 1 to 10.')
-    const addGuest = within(form).getByRole('button', { name: 'Add Guest' })
+    const addGuest = within(form).getByRole('button', { name: 'Add guest' })
     expect(addGuest).toBeDisabled()
     await userEvent.click(addGuest)
     fireEvent.submit(form)
@@ -308,16 +308,16 @@ describe('draft retention and current waitlist view', () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { errors: ['Synthetic validation rejected'] } } })
     mount(activeTool)
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
-    const form = screen.getByRole('heading', { name: path === 'guest-list' ? 'Add to Guest List' : 'Create promo code' }).closest('form')
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add guest' : 'New code' }))
+    const form = screen.getByRole('heading', { name: path === 'guest-list' ? 'Add to guest list' : 'Create promo code' }).closest('form')
     const field = within(form).getByLabelText(path === 'guest-list' ? 'Name' : 'Code')
     await userEvent.type(field, path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     if (path === 'promo-codes') await userEvent.type(within(form).getByLabelText('Discount (%)'), '20')
-    await userEvent.click(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create code' }))
+    await userEvent.click(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add guest' : 'Create code' }))
     await screen.findByText('Synthetic validation rejected')
     expect(field).toHaveValue(path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     await userEvent.click(screen.getByRole('button', { name: 'Check latest list' }))
-    await waitFor(() => expect(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'Create code' })).toBeEnabled())
+    await waitFor(() => expect(within(form).getByRole('button', { name: path === 'guest-list' ? 'Add guest' : 'Create code' })).toBeEnabled())
     expect(field).toHaveValue(path === 'guest-list' ? 'Unsaved guest draft' : 'DRAFT20')
     expect(apiClient.post).toHaveBeenCalledTimes(1)
   })
@@ -326,13 +326,13 @@ describe('draft retention and current waitlist view', () => {
     activeTool = tools.find(tool => tool.path === path)
     mount(activeTool)
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add guest' : 'New code' }))
     const label = path === 'guest-list' ? 'Name' : 'Code'
     await userEvent.type(screen.getByLabelText(label), 'PRIVATE-DRAFT')
     await act(async () => bind('actor-b', 'two'))
     expect(screen.queryByDisplayValue('PRIVATE-DRAFT')).not.toBeInTheDocument()
     await screen.findByRole('heading', { name: activeTool.title, level: 2 })
-    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add Guest' : 'New code' }))
+    await userEvent.click(screen.getByRole('button', { name: path === 'guest-list' ? 'Add guest' : 'New code' }))
     expect(screen.getByLabelText(label)).toHaveValue('')
     expect(apiClient.post).not.toHaveBeenCalled()
   })
@@ -378,7 +378,7 @@ describe('draft retention and current waitlist view', () => {
     await userEvent.clear(count)
     await userEvent.type(count, '3')
     expect(count).toHaveValue(3)
-    await userEvent.click(screen.getByRole('button', { name: 'Notify Next' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Notify next' }))
     const dialog = screen.getByRole('dialog', { name: 'Confirm action' })
     expect(within(dialog).getByText('Notify the next 3 people on the waitlist?')).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -397,7 +397,7 @@ describe('draft retention and current waitlist view', () => {
     expect(count).toHaveValue(value ? Number(value) : null)
     expect(count).toHaveAttribute('aria-invalid', 'true')
     expect(count).toHaveAccessibleDescription('Enter a whole number from 1 to 50.')
-    const notifyNext = screen.getByRole('button', { name: 'Notify Next' })
+    const notifyNext = screen.getByRole('button', { name: 'Notify next' })
     expect(notifyNext).toBeDisabled()
     await userEvent.click(notifyNext)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -420,14 +420,14 @@ describe('waitlist readable statuses', () => {
     expect(within(filters).getAllByRole('button').map(button => button.textContent)).toEqual(['All', 'Waiting (3)', 'Notified (2)', 'Expired (0)', 'Converted (1)'])
     for (const name of ['Waiting (3)', 'Notified (2)', 'Expired (0)', 'Converted (1)']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Waitlist entries' })).getByText('Waiting')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Notify Next' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Notify next' })).toBeEnabled()
   })
 
   it('disables notify-next with a reason when nobody is waiting', async () => {
     activeTool = { ...tools[2], result: () => ({ waitlist: [], stats: { total_waiting: 0, total_notified: 1 } }) }
     mount(activeTool)
     await screen.findByText('No waitlist entries found.')
-    const notifyNext = screen.getByRole('button', { name: 'Notify Next' })
+    const notifyNext = screen.getByRole('button', { name: 'Notify next' })
     expect(notifyNext).toBeDisabled()
     expect(notifyNext).toHaveAccessibleDescription('No one is waiting to be notified.')
     await userEvent.click(notifyNext)
@@ -448,7 +448,7 @@ it('shows address readiness and a delivery failure before organizer waitlist ret
   mount(tools[2])
   expect(await screen.findByText(/add and certify the business mailing address/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/dashboard/settings')
-  expect(screen.getByRole('button', { name: 'Notify Next' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Notify next' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Offer' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Offer' })).toHaveAttribute('aria-describedby', 'waitlist-address-required')
   expect(screen.getByText(/Couldn't send: mailing address missing/)).toBeInTheDocument()

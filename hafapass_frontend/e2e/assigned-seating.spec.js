@@ -47,7 +47,7 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   await page.route('**/api/v1/orders/101', route => json(route, completedOrder))
 
   await page.goto('/events/guam-theater')
-  const animatedContent = page.getByRole('link', { name: 'Add to Calendar' }).locator('xpath=ancestor::div[contains(@class,"lg:col-span-2")]')
+  const animatedContent = page.getByRole('link', { name: 'Add to calendar' }).locator('xpath=ancestor::div[contains(@class,"lg:col-span-2")]')
   await expect.poll(() => animatedContent.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
   const accessibilityResults = await new AxeBuilder({ page }).analyze()
   expect(accessibilityResults.violations.filter(violation => ['serious', 'critical'].includes(violation.impact))).toEqual([])
@@ -57,11 +57,11 @@ test('buyer selects an exact seat, holds it, and completes seat-specific checkou
   await expect(seatButton).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Reserve selected seats' }).click()
   await expect(page.getByText(seat.display_label, { exact: true })).toBeVisible()
-  await page.getByLabel('Full Name').fill('Seat Buyer')
-  await page.getByLabel('Email Address').fill('buyer@example.com')
+  await page.getByLabel('Full name').fill('Seat Buyer')
+  await page.getByLabel('Email address').fill('buyer@example.com')
   await page.locator('input#termsAccepted:visible').check()
   const orderResponse = page.waitForResponse(response => response.url().endsWith('/api/v1/orders') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: /Place Order/ }).click()
+  await page.getByRole('button', { name: /Place order/ }).click()
   expect((await orderResponse).status()).toBe(201)
 
   await expect(page).toHaveURL(/\/orders\/101\/confirmation$/, { timeout: 15_000 })

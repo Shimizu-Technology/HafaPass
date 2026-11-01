@@ -55,7 +55,7 @@ describe('staff dashboard entry', () => {
     expect(link).toHaveAttribute('href', '/dashboard/scanner?event=42')
     expect(screen.getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
     for (const name of ['Create event', 'Settings']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
-    expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Edit profile')).not.toBeInTheDocument()
     expect(screen.queryByText('Get ready to sell tickets')).not.toBeInTheDocument()
     expect(screen.queryByText('Review and accept')).not.toBeInTheDocument()
   })
@@ -64,7 +64,7 @@ describe('staff dashboard entry', () => {
     mount()
     await screen.findByText('No assigned events')
     expect(screen.getByText('Ask your event manager to assign an event to you.')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Create Your First Event' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create your first event' })).not.toBeInTheDocument()
   })
   it('retains owner setup and replaces it when switching to scanner context', async () => {
     window.localStorage.setItem('hafapass_organization_id', '1')
@@ -75,7 +75,7 @@ describe('staff dashboard entry', () => {
     await userEvent.setup().selectOptions(screen.getByLabelText('Organization'), '2')
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Create event' })).not.toBeInTheDocument())
     expect(window.localStorage.getItem('hafapass_organization_id')).toBe('2')
-    expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Edit profile')).not.toBeInTheDocument()
   })
   it('asks for re-acceptance in a dialog with what changed instead of a browser confirm', async () => {
     window.localStorage.setItem('hafapass_organization_id', '1')
@@ -107,7 +107,7 @@ describe('staff dashboard entry', () => {
     apiClient.get.mockImplementation(path => path === '/organizer_profile' ? Promise.reject({ response: { status: 404 } }) : normalGet(path))
     mount()
     await screen.findByText(/Organizer setup is unavailable for this organization/)
-    expect(screen.queryByRole('button', { name: 'Create Organizer Profile' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create organizer profile' })).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
   })
   it('preserves first-time organizer setup when there are no organizations', async () => {

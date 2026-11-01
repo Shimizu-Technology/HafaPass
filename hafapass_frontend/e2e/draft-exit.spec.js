@@ -20,7 +20,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await prepare(page)
     await page.goto('/dashboard/events/601/edit')
-    const title = page.getByLabel(/Event Title/)
+    const title = page.getByLabel(/Event title/)
     await expect(title).toHaveValue(event.title)
     await title.fill('Unsaved event draft')
     if (width < 768) {
@@ -50,7 +50,7 @@ test('browser Back retains the editor until the user approves departure', async 
   await page.getByRole('link', { name: /Synthetic Draft Event.*Open event/ }).click()
   await expect(page).toHaveURL(/\/dashboard\/events\/601$/)
   await page.getByRole('region', { name: 'Event tools' }).getByRole('link', { name: 'Edit event', exact: true }).click()
-  const title = page.getByLabel(/Event Title/)
+  const title = page.getByLabel(/Event title/)
   await title.fill('Unsaved before Back')
   await page.goBack()
   await expect(page.getByRole('dialog', { name: 'Leave unsaved event changes?' })).toBeVisible()
@@ -65,7 +65,7 @@ test('browser Back retains the editor until the user approves departure', async 
 test('reload requests native confirmation and dismissal retains the draft', async ({ page }) => {
   await prepare(page)
   await page.goto('/dashboard/events/601/edit')
-  const title = page.getByLabel(/Event Title/)
+  const title = page.getByLabel(/Event title/)
   await title.fill('Unsaved before reload')
   let dialogType
   let finishDismissal
