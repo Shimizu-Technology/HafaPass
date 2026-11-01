@@ -1072,6 +1072,7 @@
       "preparingYourAccount": "Preparing your account…",
       "ticketNotFound": "Ticket not found.",
       "failedToLoadTicketPleaseTryAgain": "We couldn't load this ticket.",
+      "offlineTicket": "You're offline. Reconnect to show your ticket QR, or open it from Apple Wallet if you added it.",
       "thePDFCannotDisplaySomeTextOnThis": "The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.",
       "weCouldnTDownloadThePDFYourTicket": "We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.",
       "myTicket": "My Ticket",

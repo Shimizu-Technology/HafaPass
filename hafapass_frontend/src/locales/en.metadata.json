@@ -1441,6 +1441,9 @@
       "failedToLoadTicketPleaseTryAgain": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load this ticket."
       },
+      "offlineTicket": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. You're offline. Reconnect to show your ticket QR, or open it from Apple Wallet if you added it."
+      },
       "sharingDoesNotTransfer": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Sharing this link does not transfer the ticket."
       },
