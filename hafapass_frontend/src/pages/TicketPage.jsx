@@ -14,62 +14,11 @@ import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
+import useScreenWakeLock from '../hooks/useScreenWakeLock'
 
-// Mounted only with an authorized, scannable QR. A late request must never
-// retain a lock after navigation or after the document becomes hidden.
+// Mounted only with an authorized, scannable QR, so the lock follows the QR.
 function ScreenWakeLock() {
-  useEffect(() => {
-    if (!navigator.wakeLock?.request) return undefined
-    let active = true
-    let sentinel = null
-    let pending = false
-    let generation = 0
-    let retryTimer = null
-    let retries = 0
-    const clearRetry = () => { clearTimeout(retryTimer); retryTimer = null }
-    const release = lock => { try { Promise.resolve(lock?.release()).catch(() => {}) } catch { /* Optional browser feature. */ } }
-    const request = async () => {
-      if (!active || pending || sentinel || document.visibilityState !== 'visible') return
-      const attempt = generation
-      pending = true
-      try {
-        const lock = await navigator.wakeLock.request('screen')
-        if (!active || attempt !== generation || document.visibilityState !== 'visible') release(lock)
-        else {
-          sentinel = lock
-          lock.addEventListener?.('release', () => {
-            if (sentinel !== lock) return
-            sentinel = null
-            // Battery/browser policy can release a visible lock. Try once per
-            // visibility period, without fighting a persistent power policy.
-            if (active && document.visibilityState === 'visible' && retries < 1) {
-              retries += 1
-              retryTimer = setTimeout(() => { retryTimer = null; request() }, 1000)
-            }
-          }, { once: true })
-        }
-      } catch { /* Denied, unsupported, or low battery: the QR remains usable. */ }
-      finally {
-        pending = false
-        if (active && attempt !== generation) request()
-      }
-    }
-    const visibilityChanged = () => {
-      clearRetry()
-      if (document.visibilityState === 'visible') { retries = 0; request() }
-      else { generation += 1; const lock = sentinel; sentinel = null; release(lock) }
-    }
-    request()
-    document.addEventListener('visibilitychange', visibilityChanged)
-    return () => {
-      active = false
-      clearRetry()
-      generation += 1
-      document.removeEventListener('visibilitychange', visibilityChanged)
-      release(sentinel)
-      sentinel = null
-    }
-  }, [])
+  useScreenWakeLock(true)
   return null
 }
 
