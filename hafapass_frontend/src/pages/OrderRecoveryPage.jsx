@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle, Mail, Search } from 'lucide-react'
 import apiClient from '../api/client'
+import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import SEO from '../components/SEO'
 
 export default function OrderRecoveryPage() {
@@ -21,7 +22,8 @@ export default function OrderRecoveryPage() {
       await apiClient.post('/order_lookup', { reference: reference.trim(), buyer_email: email.trim() })
       setSubmitted(true)
     } catch (requestError) {
-      setError(requestError.response?.status === 429 ? t('buyerAccount.orderRecoveryPage.pleaseWaitBeforeRequestingAnotherAccessLink') : t('buyerAccount.orderRecoveryPage.weCouldNotRequestTheLinkRightNow'))
+      setError(requestError.response?.status === 429 ? t('buyerAccount.orderRecoveryPage.pleaseWaitBeforeRequestingAnotherAccessLink')
+        : isTimeoutError(requestError) ? slowConnectionMessage() : t('buyerAccount.orderRecoveryPage.weCouldNotRequestTheLinkRightNow'))
     } finally {
       setSubmitting(false)
     }
@@ -29,7 +31,7 @@ export default function OrderRecoveryPage() {
 
   return (
     <div className="min-h-[70vh] bg-neutral-50 px-4 py-12">
-      <SEO title={t('buyerAccount.orderRecoveryPage.findYourOrder')} />
+      <SEO title={t('buyerAccount.orderRecoveryPage.findYourOrder')} noIndex />
       <div className="mx-auto max-w-md">
         <div className="mb-6 text-center">
           <Search className="mx-auto mb-3 h-9 w-9 text-brand-600" />

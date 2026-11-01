@@ -408,7 +408,7 @@ function OrderConfirmationContent() {
     }
   }
 
-  if (loading) return <div className="public-listing-min-height flex items-center justify-center bg-stone-50"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (loading) return <div className="public-listing-min-height flex items-center justify-center bg-surface"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
 
   if (error || !order) {
     return (
@@ -423,8 +423,8 @@ function OrderConfirmationContent() {
   }
 
   return (
-    <div className="public-listing-min-height bg-stone-50 tabular-nums">
-      <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} />
+    <div className="public-listing-min-height bg-surface tabular-nums">
+      <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} noIndex />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
           <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>

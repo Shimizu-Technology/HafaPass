@@ -188,7 +188,7 @@ function EventAnalyticsPageSession({ id, identity }) {
      <button type="button" onClick={fetchData} className="ml-3 min-h-11 font-semibold underline">Retry analytics</button>
     </div>
     <Link to="/dashboard" className="mt-4 inline-flex min-h-11 items-center rounded text-brand-700 hover:text-brand-900 text-sm font-medium">
-     Back to Dashboard
+     Back to dashboard
     </Link>
    </div>
   )
@@ -208,7 +208,7 @@ function EventAnalyticsPageSession({ id, identity }) {
   <EventWorkspace eventId={id} event={event}><div className="max-w-4xl mx-auto">
    {/* Header */}
 
-   <h2 className="text-2xl font-bold text-neutral-900 mb-1">Event Analytics</h2>
+   <h2 className="text-2xl font-bold text-neutral-900 mb-1">Event analytics</h2>
    {event && (
     <p className="text-neutral-600 mb-6">{event.title}</p>
    )}
@@ -230,7 +230,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        </svg>
       </div>
       <div>
-       <p className="text-sm text-neutral-500">Tickets Sold</p>
+       <p className="text-sm text-neutral-500">Tickets sold</p>
        <p className="text-2xl font-bold text-neutral-900">{stats.total_tickets_sold}</p>
        {totalTickets > 0 && (
         <p className="text-xs text-content-muted">of {totalTickets} total</p>
@@ -247,7 +247,7 @@ function EventAnalyticsPageSession({ id, identity }) {
        </svg>
       </div>
       <div>
-       <p className="text-sm text-neutral-500">Total Revenue</p>
+       <p className="text-sm text-neutral-500">Total revenue</p>
        <p className="text-2xl font-bold text-neutral-900">{formatCents(stats.total_revenue_cents)}</p>
       </div>
      </div>
@@ -336,7 +336,7 @@ function EventAnalyticsPageSession({ id, identity }) {
    {/* Tickets by Type */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">
     <div className="px-4 sm:px-5 py-4 border-b border-neutral-200">
-     <h2 className="text-lg font-semibold text-neutral-900">Tickets by Type</h2>
+     <h2 className="text-lg font-semibold text-neutral-900">Tickets by type</h2>
     </div>
     <div className="overflow-x-auto">
      <table className="w-full">
@@ -370,7 +370,7 @@ function EventAnalyticsPageSession({ id, identity }) {
    {/* Recent Orders */}
    <div className="bg-white rounded-xl shadow-sm border border-neutral-200 mb-8">
     <div className="px-5 py-4 border-b border-neutral-200">
-     <h2 className="text-lg font-semibold text-neutral-900">Recent Orders</h2>
+     <h2 className="text-lg font-semibold text-neutral-900">Recent orders</h2>
     </div>
     {(stats.recent_orders || []).length > 0 ? (
      <>

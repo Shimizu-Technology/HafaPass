@@ -79,7 +79,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
-          <input id={`${formId}-name`} value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., Early Bird" disabled={saving} />
+          <input id={`${formId}-name`} value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g. Early Bird" disabled={saving} />
         </div>
         <div>
           <label htmlFor={`${formId}-price`} className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
@@ -90,8 +90,8 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
         <div>
           <label htmlFor={`${formId}-tier_type`} className="block text-sm font-medium text-neutral-700 mb-1">Type</label>
           <select id={`${formId}-tier_type`} value={form.tier_type} onChange={e => setForm(f => ({...f, tier_type: e.target.value}))} className="input" disabled={saving}>
-            <option value="quantity_based">Quantity Based</option>
-            <option value="time_based">Time Based</option>
+            <option value="quantity_based">Quantity based</option>
+            <option value="time_based">Time based</option>
           </select>
         </div>
         <div>
@@ -101,18 +101,18 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       </div>
       {form.tier_type === 'quantity_based' && (
         <div>
-          <label htmlFor={`${formId}-quantity_limit`} className="block text-sm font-medium text-neutral-700 mb-1">Quantity Limit</label>
-          <input type="number" min="1" id={`${formId}-quantity_limit`} value={form.quantity_limit} onChange={e => setForm(f => ({...f, quantity_limit: e.target.value}))} className="input" placeholder="e.g., 50" disabled={saving} />
+          <label htmlFor={`${formId}-quantity_limit`} className="block text-sm font-medium text-neutral-700 mb-1">Quantity limit</label>
+          <input type="number" min="1" id={`${formId}-quantity_limit`} value={form.quantity_limit} onChange={e => setForm(f => ({...f, quantity_limit: e.target.value}))} className="input" placeholder="e.g. 50" disabled={saving} />
         </div>
       )}
       {form.tier_type === 'time_based' && (
         <div><p className="text-xs text-neutral-500 mb-2">Times use {eventTimezone || 'Pacific/Guam'}.</p><div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor={`${formId}-starts_at`} className="block text-sm font-medium text-neutral-700 mb-1">Starts At</label>
+            <label htmlFor={`${formId}-starts_at`} className="block text-sm font-medium text-neutral-700 mb-1">Starts at</label>
             <input type="datetime-local" id={`${formId}-starts_at`} value={form.starts_at} onChange={e => setForm(f => ({...f, starts_at: e.target.value}))} className="input" disabled={saving} />
           </div>
           <div>
-            <label htmlFor={`${formId}-ends_at`} className="block text-sm font-medium text-neutral-700 mb-1">Ends At</label>
+            <label htmlFor={`${formId}-ends_at`} className="block text-sm font-medium text-neutral-700 mb-1">Ends at</label>
             <input type="datetime-local" id={`${formId}-ends_at`} value={form.ends_at} onChange={e => setForm(f => ({...f, ends_at: e.target.value}))} className="input" disabled={saving} />
           </div>
         </div></div>
@@ -120,7 +120,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 rounded px-3 py-1.5 text-sm text-content-muted hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-focus">Cancel</button>
         <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-1.5">
-          {saving ? 'Saving...' : initial ? 'Update' : 'Add Tier'}
+          {saving ? 'Saving...' : initial ? 'Update' : 'Add tier'}
         </button>
       </div>
     </form>
@@ -222,10 +222,10 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
   return (
     <div className="mt-3 ml-4 border-l-2 border-brand-200 pl-4">
       <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-medium text-neutral-700">Pricing Tiers</h4>
+        <h4 className="text-sm font-medium text-neutral-700">Pricing tiers</h4>
         {!showForm && !editingId && (
           <button disabled={locked} onClick={() => setShowForm(true)} className="min-h-11 rounded px-2 text-sm text-brand-800 hover:text-brand-900 font-medium flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-focus">
-            <Plus className="w-3 h-3" /> Add Tier
+            <Plus className="w-3 h-3" /> Add tier
           </button>
         )}
       </div>

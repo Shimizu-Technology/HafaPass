@@ -41,7 +41,7 @@ export default function LanguageSwitcher({ isDarkMode = false }) {
       <Globe className="h-4 w-4" aria-hidden="true" /><span lang={currentLang.html}>{currentLang.short}</span>
       <ChevronDown className="h-3 w-3" aria-hidden="true" />
     </button>
-    {open && <div id={id} role="group" aria-label={t('language.available', { defaultValue: 'Available languages' })} className="absolute right-0 top-full z-50 mt-1 max-h-[min(24rem,calc(100dvh-6rem))] w-56 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white py-1 shadow-lg">
+    {open && <div id={id} role="group" aria-label={t('language.available', { defaultValue: 'Available languages' })} className="absolute right-0 top-full z-50 mt-1 max-h-[min(24rem,calc(100dvh-6rem))] w-56 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white py-1 shadow-float">
       {languages.map(lang => {
         const selected = lang.code === currentLang.code
         return <button key={lang.code} type="button" data-language={lang.code}

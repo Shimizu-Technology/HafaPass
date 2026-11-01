@@ -51,6 +51,22 @@ describe('verified uploads', () => {
     expect(window.sessionStorage.length).toBe(0)
   })
 
+  it('keys recovery by the selected original so a differently resized copy still finds the saved upload', async () => {
+    const original = new File(['original camera bytes'], 'IMG_0001.JPG', { type: 'image/jpeg' })
+    const firstResize = new File(['resized once'], 'IMG_0001.webp', { type: 'image/webp' })
+    const secondResize = new File(['resized again, different bytes'], 'IMG_0001.webp', { type: 'image/webp' })
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    await expect(uploadImage(firstResize, 37, undefined, { source: original })).rejects.toThrow('Response lost')
+    expect(fetch.mock.calls[0][1].body.get('file')).toBe(firstResize)
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ filename: 'IMG_0001.webp', content_type: 'image/webp', byte_size: firstResize.size })
+    vi.resetModules()
+    const reloaded = await import('./uploads')
+    apiClient.post.mockResolvedValueOnce({ data: { public_url: 'https://images.invalid/recovered.webp' } })
+    expect(await reloaded.uploadImage(secondResize, 37, undefined, { source: original })).toBe('https://images.invalid/recovered.webp')
+    expect(apiClient.post.mock.calls.map(([path]) => path)).toEqual(['/uploads/presign', '/uploads/complete', '/uploads/complete'])
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('lets a remounted caller recover the original token after the old component withdraws its context', async () => {
     let finish
     let originalMounted = true

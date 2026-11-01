@@ -61,6 +61,8 @@ test('an earlier setup refusal cannot erase the current scanner or its accepted 
   await page.getByLabel('Ticket QR code').fill(credential)
   await page.getByRole('button', { name: 'Check in ticket', exact: true }).click()
   await expect(page.getByText('Already scanned on this device', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-armed', 'true')
+  await page.getByRole('button', { name: 'Check ticket. Dismiss scan result' }).click()
   await expect(page.getByText('Earlier setup refused', { exact: true })).toHaveCount(0)
   await expectManifest(page, 'Saved ticket list · version 2 · 1 ticket')
   expect(sent).toHaveLength(1)

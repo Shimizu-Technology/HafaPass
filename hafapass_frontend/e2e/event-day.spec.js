@@ -86,6 +86,13 @@ for (const fragment of ['', '#manual-ticket-entry']) {
     await page.getByLabel('Ticket QR code').fill(credentials[1])
     await page.getByRole('button', { name: 'Check in ticket' }).click()
     await expect(page.getByText('Already scanned on this device')).toBeVisible()
+    // Needs-attention results hold a full-screen amber alert dialog until
+    // tapped. It ignores taps for a moment after appearing (data-armed).
+    await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'warning')
+    await expect(page.getByRole('alertdialog', { name: 'Check ticket' })).toBeVisible()
+    await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-armed', 'true')
+    await page.getByRole('button', { name: 'Check ticket. Dismiss scan result' }).click()
+    await expect(page.getByTestId('scan-result-overlay')).toHaveCount(0)
 
     await context.setOffline(false)
     await expect.poll(() => syncedActions.length).toBe(1)
@@ -147,6 +154,13 @@ test('online scanner waits neutrally before accepted and refused acknowledgement
       results: actions.map(action => ({ ...action, result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' })) })
     await expect(page.getByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit', { exact: true })).toBeVisible()
     await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+    if (verdict === 'rejected') {
+      // A refusal holds the red overlay until staff tap it away.
+      await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'error')
+      await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-armed', 'true')
+      await page.getByRole('button', { name: 'Do not admit. Dismiss scan result' }).click()
+      await expect(page.getByTestId('scan-result-overlay')).toHaveCount(0)
+    }
   }
 })
 
@@ -216,9 +230,9 @@ test('box office exposes card sales only for a verified terminal and sends an id
   await page.goto('/dashboard/events/42/box-office')
   await page.getByRole('button', { name: 'Add General Admission' }).click()
   await page.getByRole('button', { name: 'Card at Door' }).click()
-  await page.getByRole('button', { name: /Process Sale/ }).click()
+  await page.getByRole('button', { name: /Process sale/ }).click()
 
-  await expect(page.getByText('Sale Complete!')).toBeVisible()
+  await expect(page.getByText('Sale complete!')).toBeVisible()
   expect(receivedIdempotencyKey).toMatch(/^box-office-/)
 })
 

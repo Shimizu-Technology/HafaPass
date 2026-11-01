@@ -245,7 +245,7 @@ function BoxOfficePageSession({ id, identity }) {
       <div className="flex items-center gap-3 mb-8">
         <ShoppingCart className="w-6 h-6 text-brand-600" />
         <div>
-          <h2 className="text-2xl font-bold text-neutral-900 font-display">Box Office</h2>
+          <h2 className="text-2xl font-bold text-neutral-900 font-display">Box office</h2>
           <p className="text-sm text-neutral-500">{event.title}</p>
         </div>
       </div>
@@ -259,7 +259,7 @@ function BoxOfficePageSession({ id, identity }) {
             <p className="mt-1">Retry checks the original saved sale. Don't collect another payment until its result is confirmed.</p>
             <p className="mt-2 break-all font-mono text-xs">Reference: {pendingSale.key}</p>
           </div>}
-          <h2 className="text-lg font-semibold text-neutral-900">Select Tickets</h2>
+          <h2 className="text-lg font-semibold text-neutral-900">Select tickets</h2>
 
           {event.assigned_seating ? (
             <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
@@ -318,7 +318,7 @@ function BoxOfficePageSession({ id, identity }) {
 
           {/* Buyer Info (optional) */}
           <div className="mt-6">
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Buyer Info (Optional)</h2>
+            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Buyer info (optional)</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 type="text"
@@ -339,7 +339,7 @@ function BoxOfficePageSession({ id, identity }) {
 
           {/* Payment Method */}
           <div className="mt-6">
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Payment Method</h2>
+            <h2 className="text-lg font-semibold text-neutral-900 mb-3">Payment method</h2>
             <div className="grid grid-cols-2 gap-3">
               <button
                 disabled={saleLocked} onClick={() => setPaymentMethod('door_cash')}
@@ -386,7 +386,7 @@ function BoxOfficePageSession({ id, identity }) {
             {submitting ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> {paymentMethod === 'door_card' ? 'Waiting for terminal…' : 'Processing…'}</>
             ) : (
-              <>{pendingSale ? 'Retry saved sale' : 'Process Sale'} · ${((pendingSale?.total_cents ?? totalCents) / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
+              <>{pendingSale ? 'Retry saved sale' : 'Process sale'} · ${((pendingSale?.total_cents ?? totalCents) / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
             )}
           </button>
         </div>
@@ -396,14 +396,14 @@ function BoxOfficePageSession({ id, identity }) {
           {/* Session Summary */}
           {summary && (
             <div className="p-5 bg-white border border-neutral-200 rounded-xl">
-              <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider mb-3">Door Sales Summary</h3>
+              <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider mb-3">Door sales summary</h3>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-neutral-600">Total Orders</span>
+                  <span className="text-sm text-neutral-600">Total orders</span>
                   <span className="font-semibold">{summary.total_orders}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-neutral-600">Total Tickets</span>
+                  <span className="text-sm text-neutral-600">Total tickets</span>
                   <span className="font-semibold">{summary.total_tickets}</span>
                 </div>
                 <div className="flex justify-between">
@@ -415,7 +415,7 @@ function BoxOfficePageSession({ id, identity }) {
                   <span className="font-semibold">${((summary.by_payment_method?.door_card || 0) / 100).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-neutral-100">
-                  <span className="text-sm font-medium text-neutral-900">Total Revenue</span>
+                  <span className="text-sm font-medium text-neutral-900">Total revenue</span>
                   <span className="font-bold text-brand-600">${((summary.total_revenue_cents || 0) / 100).toFixed(2)}</span>
                 </div>
               </div>
@@ -427,7 +427,7 @@ function BoxOfficePageSession({ id, identity }) {
             <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl">
               <div className="flex items-center gap-2 mb-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-semibold text-emerald-800">Sale Complete!</h3>
+                <h3 className="text-sm font-semibold text-emerald-800">Sale complete!</h3>
               </div>
               <p className="text-sm text-emerald-700 mb-2">{lastOrder.buyer_name} · ${(lastOrder.total_cents / 100).toFixed(2)}</p>
               <div className="space-y-3">

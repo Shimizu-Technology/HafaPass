@@ -6,6 +6,7 @@ import { offlinePrecache } from './config/pwaPrecache.js'
 import { execFileSync } from 'node:child_process'
 import { releaseMetadataPlugin, resolveRevision } from './config/releaseMetadata.js'
 import { headerThemePlugin } from './config/headerTheme.js'
+import { fontPreloadPlugin } from './config/fontPreload.js'
 import { publicSitePlugin } from './config/publicSite.js'
 
 let gitRevision = null
@@ -42,6 +43,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       headerThemePlugin(),
+      fontPreloadPlugin(),
       releaseMetadataPlugin(applicationRevision),
       publicSitePlugin(env.VITE_PUBLIC_WEB_URL),
       precache.plugin,

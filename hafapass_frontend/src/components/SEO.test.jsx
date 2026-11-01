@@ -1,8 +1,10 @@
 import { render, waitFor } from '@testing-library/react'
 import { HelmetProvider } from 'react-helmet-async'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import SEO from './SEO'
 import indexHtml from '../../index.html?raw'
+import { PUBLIC_WEB_URL } from '../utils/site'
 
 function siteStructuredData() {
   const match = indexHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
@@ -78,5 +80,26 @@ describe('SEO', () => {
     expect(document.head.querySelector('meta[property="og:image:height"]').content).toBe('630')
     rerender(<HelmetProvider><SEO noSocial /></HelmetProvider>)
     await waitFor(() => expect(document.head.querySelectorAll('meta[property^="og:image"],meta[name="twitter:image"]')).toHaveLength(0))
+  })
+
+  it('points the canonical URL at the current page instead of the home page', async () => {
+    render(<HelmetProvider><MemoryRouter initialEntries={['/venues/hall?sort=soon']}><SEO title="Hall" /></MemoryRouter></HelmetProvider>)
+    await waitFor(() => expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute('href', `${PUBLIC_WEB_URL}/venues/hall`))
+    expect(document.head.querySelector('meta[property="og:url"]')).toHaveAttribute('content', `${PUBLIC_WEB_URL}/venues/hall`)
+  })
+
+  it('keeps the home page canonical at the site root and honors an explicit URL', async () => {
+    const { rerender } = render(<HelmetProvider><MemoryRouter initialEntries={['/']}><SEO /></MemoryRouter></HelmetProvider>)
+    await waitFor(() => expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute('href', PUBLIC_WEB_URL))
+    rerender(<HelmetProvider><MemoryRouter initialEntries={['/']}><SEO url="https://example.test/events/night" /></MemoryRouter></HelmetProvider>)
+    await waitFor(() => expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute('href', 'https://example.test/events/night'))
+  })
+
+  it('publishes no canonical or og:url for pages kept out of indexes', async () => {
+    render(<HelmetProvider><MemoryRouter initialEntries={['/tickets/secret-credential']}><SEO title="Your ticket" noIndex /></MemoryRouter></HelmetProvider>)
+    await waitFor(() => expect(document.title).toBe('Your ticket | HåfaPass'))
+    expect(document.head.querySelector('link[rel="canonical"]')).not.toBeInTheDocument()
+    expect(document.head.querySelector('meta[property="og:url"]')).not.toBeInTheDocument()
+    expect(document.head.innerHTML).not.toContain('secret-credential')
   })
 })

@@ -39,10 +39,10 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
             assert.equal(await page.getByRole('combobox', { name: 'Status', exact: true }).inputValue(), 'failed')
           }
           if (name === 'dashboard-selects') {
-            await page.getByLabel('Age Restriction', { exact: true }).selectOption('eighteen_plus')
+            await page.getByLabel('Age restriction', { exact: true }).selectOption('eighteen_plus')
             await page.reload()
-            await page.getByLabel('Age Restriction', { exact: true }).waitFor()
-            assert.equal(await page.getByLabel('Age Restriction', { exact: true }).inputValue(), 'eighteen_plus')
+            await page.getByLabel('Age restriction', { exact: true }).waitFor()
+            assert.equal(await page.getByLabel('Age restriction', { exact: true }).inputValue(), 'eighteen_plus')
           }
           await page.evaluate(() => document.fonts.ready)
           await page.locator('main h1').first().waitFor()

@@ -8,7 +8,9 @@ export default function PrivatePreviewPage({ onRetry }) {
   const support = useSupportContact()
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
-      <SEO title={t('buyerDiscovery.privatePreview.håfapassConnectionUnavailable')} description={t('buyerDiscovery.privatePreview.håfapassServicesAreTemporarilyUnavailableRetryYour')} />
+      {/* Rendered outside the router on any path, including private ticket and
+          unsubscribe links, so it must never publish the address as canonical. */}
+      <SEO title={t('buyerDiscovery.privatePreview.håfapassConnectionUnavailable')} description={t('buyerDiscovery.privatePreview.håfapassServicesAreTemporarilyUnavailableRetryYour')} noIndex />
       <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <a href="/" className="font-display text-xl font-bold tracking-tight">Håfa<span className="text-brand-400">Pass</span></a>
@@ -26,7 +28,7 @@ export default function PrivatePreviewPage({ onRetry }) {
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
               href={support.mailto()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-4 font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:-translate-y-0.5 hover:bg-brand-600"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-7 py-4 font-semibold text-white shadow-float transition hover:-translate-y-0.5 hover:bg-brand-600"
             >
               <Mail className="h-5 w-5" />{t('buyerDiscovery.privatePreview.contactSupport')}</a>
             {onRetry ? (

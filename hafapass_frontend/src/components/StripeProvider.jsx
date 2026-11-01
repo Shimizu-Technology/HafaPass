@@ -1,6 +1,7 @@
 import { Elements } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { useMemo } from 'react'
+import plusJakartaSans from '@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2'
 
 // Cache loaded Stripe instances by publishable key to avoid re-loading
 const stripeCache = {}
@@ -28,14 +29,20 @@ export default function StripeProvider({ publishableKey, clientSecret, stripeAcc
 
   const options = {
     clientSecret,
+    // Elements render in Stripe's iframe, so the font needs an absolute URL
+    // (served with a CORS header) to match the rest of checkout.
+    fonts: [{ family: 'Plus Jakarta Sans', src: `url(${new URL(plusJakartaSans, window.location.origin).href})`, weight: '200 800' }],
     appearance: {
       theme: 'stripe',
       variables: {
-        colorPrimary: '#0e7c7b',
+        colorPrimary: '#0b6563',
         colorBackground: '#ffffff',
-        colorText: '#1f2937',
-        colorDanger: '#dc2626',
-        fontFamily: 'Plus Jakarta Sans, system-ui, -apple-system, sans-serif',
+        colorText: '#0f172a',
+        colorTextSecondary: '#475569',
+        colorTextPlaceholder: '#64748b',
+        colorDanger: '#b91c1c',
+        fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif',
+        fontSizeBase: '16px',
         borderRadius: '12px',
         spacingUnit: '4px',
       },

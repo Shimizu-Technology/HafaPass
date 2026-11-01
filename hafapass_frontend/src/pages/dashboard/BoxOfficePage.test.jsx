@@ -28,7 +28,7 @@ describe('uncertain box office sale', () => {
     await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
     await user.click(screen.getByRole('button', { name: 'Card at Door' }))
     await user.type(screen.getByLabelText('Buyer name'), 'Door Buyer')
-    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
     await screen.findByText('Do not charge the card again')
     const [url, payload, options] = apiClient.post.mock.calls[0]
     expect(options.headers['Idempotency-Key']).toBeTruthy()
@@ -41,7 +41,7 @@ describe('uncertain box office sale', () => {
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation([url, payload, options]))
-    expect(await screen.findByText('Sale Complete!')).toBeInTheDocument()
+    expect(await screen.findByText('Sale complete!')).toBeInTheDocument()
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
   })
 
@@ -52,7 +52,7 @@ describe('uncertain box office sale', () => {
     const user = userEvent.setup()
     expect(await screen.findByText(/\$30\.00 · 10 at door/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add Admission' }))
-    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
     expect(apiClient.post.mock.calls[0][1].expected_total_cents).toBe(3000)
   })
 
@@ -61,7 +61,7 @@ describe('uncertain box office sale', () => {
     mountBoxOffice()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
-    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
     expect(await screen.findByText('Ticket price changed. Review the updated total before paying.')).toBeInTheDocument()
     expect(screen.queryByText('A saved sale needs confirmation')).not.toBeInTheDocument()
   })
@@ -71,7 +71,7 @@ describe('uncertain box office sale', () => {
     const first = mountBoxOffice()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
-    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
     await screen.findByText('A saved sale needs confirmation')
     expect(screen.getByText('Do not record another cash sale')).toBeInTheDocument()
     const original = apiClient.post.mock.calls[0]
@@ -80,7 +80,7 @@ describe('uncertain box office sale', () => {
     apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
-    await screen.findByText('Sale Complete!')
+    await screen.findByText('Sale complete!')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
   })
@@ -92,7 +92,7 @@ describe('uncertain box office sale', () => {
     await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
     await user.click(screen.getByRole('button', { name: 'Card at Door' }))
     await user.type(screen.getByLabelText('Buyer name'), 'Interrupted Buyer')
-    await user.click(screen.getByRole('button', { name: /Process Sale/ }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
     await screen.findByText('Do not charge the card again')
     const original = apiClient.post.mock.calls[0]
     const storageKey = 'hafapass:pending-box-office:v2:local-preview:default:37'
@@ -111,7 +111,7 @@ describe('uncertain box office sale', () => {
     expect(screen.getByLabelText('Buyer name')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Admission' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: /Process Sale/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Process sale/ })).not.toBeInTheDocument()
     second.unmount()
 
     mountBoxOffice()
@@ -120,7 +120,7 @@ describe('uncertain box office sale', () => {
     expect(apiClient.post).toHaveBeenCalledTimes(3)
     for (const call of apiClient.post.mock.calls) expect(operation(call)).toEqual(operation(original))
     expect(window.sessionStorage.getItem(storageKey)).toBe(saved)
-    expect(screen.queryByText('Sale Complete!')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sale complete!')).not.toBeInTheDocument()
   })
 })
 

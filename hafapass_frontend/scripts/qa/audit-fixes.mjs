@@ -30,8 +30,8 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit]]) {
           await page.locator('main h1').waitFor()
           if (name === 'checkout') {
             await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
-            await page.getByRole('button', { name: /Buy Tickets/ }).click()
-            await page.getByLabel('Full Name').waitFor()
+            await page.getByRole('button', { name: /Buy tickets/ }).click()
+            await page.getByLabel('Full name').waitFor()
           }
           if (name.startsWith('events') || name === 'filters-open') {
             await page.getByRole('status', { name: 'Loading events', exact: true }).waitFor({ state: 'hidden' })

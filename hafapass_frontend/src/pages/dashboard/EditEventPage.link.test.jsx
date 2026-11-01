@@ -62,7 +62,7 @@ describe('event link editing', () => {
     expect(screen.getByText(/This event is already public\. After you save, the old link/)).toHaveTextContent(
       `${PUBLIC_WEB_URL}/events/reef-night`)
     await screen.findByText('This link is available.')
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await screen.findByText('Event updated successfully.')
     expect(apiClient.put.mock.calls[0][1]).toMatchObject({ slug: 'reef-night-encore' })
     expect(screen.queryByText(/already public/)).not.toBeInTheDocument()
@@ -79,7 +79,7 @@ describe('event link editing', () => {
     expect(field).toHaveAttribute('aria-invalid', 'true')
     await user.type(field, '-')
     expect(screen.getByText(/single hyphens between words/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(apiClient.put).not.toHaveBeenCalled()
     await waitFor(() => expect(field).toHaveFocus())
     expect(apiClient.get).not.toHaveBeenCalledWith('/organizer/events/37/slug_availability', expect.anything())
@@ -93,7 +93,7 @@ describe('event link editing', () => {
     await user.type(field, 'checkout')
 
     expect(await screen.findByText('Event link is reserved. Choose a different link name')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(apiClient.put).not.toHaveBeenCalled()
   })
 
@@ -104,7 +104,7 @@ describe('event link editing', () => {
     const field = await screen.findByLabelText('Link name')
     await user.clear(field)
     await user.type(field, 'taken-link')
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     expect((await screen.findAllByText('Event link is already used by another event')).length).toBeGreaterThan(0)
     await waitFor(() => expect(field).toHaveFocus())
@@ -117,8 +117,8 @@ describe('event link editing', () => {
     await screen.findByLabelText('Link name')
     expect(screen.getByText(/Until you publish or change it, the link updates to match the title/)).toBeInTheDocument()
 
-    await user.type(screen.getByLabelText(/Event Title/), ' Live')
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await user.type(screen.getByLabelText(/Event title/), ' Live')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await screen.findByText('Event updated successfully.')
     expect(apiClient.put.mock.calls[0][1]).not.toHaveProperty('slug')

@@ -188,7 +188,7 @@ function EventStaffSession({ id, identity }) {
         <form onSubmit={inviteStaff} className="mt-4 space-y-4">
           <label className="block text-sm font-medium text-neutral-900">
             Email
-            <input type="email" required disabled={locked} value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} className="input mt-1" placeholder="door.staff@example.com" autoComplete="off" />
+            <input type="email" required disabled={locked} value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} className="input mt-1" placeholder="e.g. door.staff@example.com" autoComplete="off" />
           </label>
           <RoleRadioGroup legend="What will they do?" roles={EVENT_INVITE_ROLES} value={inviteRole} onChange={setInviteRole} disabled={locked} name="event-invite-role" />
           <button disabled={locked || !inviteEmail.trim()} className="btn-primary w-full sm:w-auto">Send invitation</button>

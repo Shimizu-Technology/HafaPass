@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
+import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
@@ -181,7 +182,7 @@ function EventDetailContent() {
       .catch(error => { if (current()) {
         setError(error.response?.status === 404
           ? { message: translation.current('buyer.EventDetail.eventNotFound'), retryable: false }
-          : { message: translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
+          : { message: isTimeoutError(error) ? slowConnectionMessage() : translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
         setLoading(false)
       } })
     return () => { active = false }
@@ -377,7 +378,7 @@ function EventDetailContent() {
       <div className="bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8">
           <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
-            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-stone-50 px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
+            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-surface px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
               {/* Back link */}
               <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
                 <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
@@ -411,7 +412,7 @@ function EventDetailContent() {
 
               {coverImage && (
                 <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
-                  <img src={coverImage} alt={event.title} width="1600" height="900"
+                  <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
                     className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
                 </div>
               )}

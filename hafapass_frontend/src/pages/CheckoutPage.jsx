@@ -9,6 +9,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
 import apiClient from '../api/client'
+import { apiErrorMessage, isTimeoutError, slowConnectionMessage } from '../api/errors'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
@@ -24,7 +25,7 @@ import { useSupportContact } from '../utils/supportContact'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
-  return <div className="min-h-screen bg-stone-50">
+  return <div className="min-h-screen bg-surface">
     {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
     <CheckoutSupport />
   </div>
@@ -222,7 +223,7 @@ function CheckoutContent({ buyerId }) {
     }
     recover().catch(err => {
       if (current()) {
-        setError(err.response?.data?.error || translation.current('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis'))
+        setError(apiErrorMessage(err, translation.current('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis')))
         setLoading(false)
       }
     }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
@@ -445,13 +446,18 @@ function CheckoutContent({ buyerId }) {
       }
     } catch (err) {
       if (!current()) return
+      let needsRecovery = false
       if (attempt && checkoutDefinitelyRejected(err) && clearCheckoutAttempt(slug, attempt.payload.checkout_key, context.buyerId)) {
         rejectionContext.current = context
         setCanStartNewCheckout(true)
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
+        needsRecovery = true
         setCheckoutNeedsRecovery(true)
       }
-      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
+      // A timed-out order may still have been created; keep the recovery promise.
+      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message
+        : isTimeoutError(err) ? [slowConnectionMessage(), needsRecovery && t('buyer.Checkout.retryToRecoverTheSameCheckout')].filter(Boolean).join(' ')
+          : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
     } finally {
       if (contextCurrent(context)) setSubmitting(false)
     }
@@ -488,7 +494,7 @@ function CheckoutContent({ buyerId }) {
           : canStartNewCheckout
           ? <button type="button" onClick={startNewCheckout} className="btn-primary mb-3">{t('buyer.Checkout.startANewCheckout')}</button>
           : <button type="button" onClick={retrySavedCheckout} className="btn-primary mb-3">{t('buyer.Checkout.retrySavedCheckout')}</button>}
-        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">{t('buyer.Checkout.backToEvent')}</Link>
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="mx-auto flex min-h-11 w-fit items-center font-semibold underline">{t('buyer.Checkout.backToEvent')}</Link>
       </div>
     </div>
   )
@@ -522,7 +528,7 @@ function CheckoutContent({ buyerId }) {
       <div className="card p-8 text-center" role="alert">
         <p className="text-red-600 mb-4">{t('checkout.feesUnavailable')}</p>
         <button type="button" onClick={retryFees} className="btn-primary mb-3">{t('checkout.retryFees')}</button>
-        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="block font-semibold underline">{t('checkout.backToEvent')}</Link>
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="mx-auto flex min-h-11 w-fit items-center font-semibold underline">{t('checkout.backToEvent')}</Link>
       </div>
     </div>
   )
@@ -555,11 +561,11 @@ function CheckoutContent({ buyerId }) {
   const isSimulate = paymentMode === 'simulate'
 
   return (
-    <div className="bg-stone-50 tabular-nums">
-      <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex={liveMoneyProof} />
+    <div className="bg-surface tabular-nums">
+      <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
-        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 mb-6 text-sm font-medium transition-colors">
+        <Link to={`/events/${slug}`} state={{ browseFrom: location.state?.browseFrom }} className="inline-flex min-h-11 items-center gap-1.5 text-neutral-600 hover:text-neutral-900 mb-4 text-sm font-medium transition-colors">
           <ArrowLeft className="w-4 h-4" />
           {t('checkout.backToEvent')}
         </Link>
@@ -569,9 +575,9 @@ function CheckoutContent({ buyerId }) {
 
         {/* Progress */}
         <div className="flex items-center gap-3 mb-6">
-          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'info' ? 'text-brand-800' : 'text-emerald-700'}`}>
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'info' ? 'text-brand-800' : 'text-success-700'}`}>
             {step === 'payment'
-              ? <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div>
+              ? <div className="w-5 h-5 rounded-full bg-success-600 flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div>
               : <span className="w-5 h-5 rounded-full bg-brand-800 text-white text-xs flex items-center justify-center">1</span>
             }
             {t('checkout.yourInfo')}
@@ -587,7 +593,7 @@ function CheckoutContent({ buyerId }) {
         <div className="card p-4 mb-6 flex items-center gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
+              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="80" height="80" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">
@@ -636,18 +642,18 @@ function CheckoutContent({ buyerId }) {
             </div>
           )}
           <hr className="border-neutral-100 my-4" />
-          <div className="space-y-3 rounded-xl bg-stone-50 p-4 text-sm">
+          <div className="space-y-3 rounded-xl bg-surface p-4 text-sm">
             <div className="flex justify-between"><span className="text-neutral-700">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
             <div className="flex justify-between gap-4">
               <span className="text-neutral-700">
                 {t('checkout.serviceFee')}
-                {feeIncludesProcessing && <span className="block text-xs text-neutral-500">{t('checkout.serviceFeeIncludesProcessing')}</span>}
+                {feeIncludesProcessing && <span className="block text-sm text-neutral-600">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
               {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
               <span>{formatMoneyCents(displayedFee)}</span>
             </div>
             {displayedDiscount > 0 && (
-              <div className="flex justify-between text-emerald-600">
+              <div className="flex justify-between text-success-700">
                 <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || t('buyer.Checkout.discount')}</span>
                 <span>-{formatPrice(displayedDiscount)}</span>
               </div>
@@ -668,13 +674,13 @@ function CheckoutContent({ buyerId }) {
                 <Tag className="w-3.5 h-3.5" /> {t('checkout.havePromoCode')}
               </button>
             ) : promoData ? (
-              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-emerald-600" />
-                  <span className="text-sm font-medium text-emerald-700">{promoData.code}</span>
-                  <span className="text-xs text-emerald-600">{promoData.description}</span>
+              <div className="flex items-center justify-between gap-2 bg-success-50 border border-success-200 rounded-xl px-4 py-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <Tag className="w-4 h-4 shrink-0 text-success-700" />
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere] text-sm font-medium text-success-800">{promoData.code}</span>
+                  <span className="min-w-0 break-words text-sm text-success-700">{promoData.description}</span>
                 </div>
-                <button aria-label={t('buyer.Checkout.removePromoCode')} onClick={clearPromo} className="text-emerald-600 hover:text-emerald-800 transition-colors">
+                <button aria-label={t('buyer.Checkout.removePromoCode')} onClick={clearPromo} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-success-700 hover:text-success-900 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -689,12 +695,12 @@ function CheckoutContent({ buyerId }) {
                   className="btn-secondary !py-2.5 text-sm disabled:opacity-50">
                   {promoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('checkout.apply')}
                 </button>
-                <button aria-label={t('buyer.Checkout.closePromoCodeEntry')} onClick={() => { setShowPromo(false); setPromoError(null) }} className="text-neutral-600 hover:text-neutral-600">
+                <button aria-label={t('buyer.Checkout.closePromoCodeEntry')} onClick={() => { setShowPromo(false); setPromoError(null) }} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-neutral-600 hover:text-neutral-900">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             )}
-            {promoError && <p className="text-red-700 text-xs mt-1.5">{promoError}</p>}
+            {promoError && <p className="text-danger-700 text-sm mt-1.5">{promoError}</p>}
           </div>
         )}
 
@@ -730,7 +736,7 @@ function CheckoutContent({ buyerId }) {
                     onChange={(e) => { setBuyerName(e.target.value); setFormErrors(p => ({ ...p, name: null })) }}
                     className={`input ${formErrors.name ? 'input-error' : ''}`}
                     placeholder={t('buyer.Checkout.enterYourFullName')} disabled={submitting} />
-                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.name}</p>}
+                  {formErrors.name && <p id="buyer-name-error" role="alert" className="text-danger-700 text-sm mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerEmail" className="block text-sm font-medium text-neutral-700 mb-1.5">{t('checkout.emailAddress')}</label>
@@ -738,7 +744,7 @@ function CheckoutContent({ buyerId }) {
                     onChange={(e) => { setBuyerEmail(e.target.value); setFormErrors(p => ({ ...p, email: null })) }}
                     className={`input ${formErrors.email ? 'input-error' : ''}`}
                     placeholder={t('buyer.Checkout.youexamplecom')} disabled={submitting} />
-                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-red-700 text-xs mt-1">{formErrors.email}</p>}
+                  {formErrors.email && <p id="buyer-email-error" role="alert" className="text-danger-700 text-sm mt-1">{formErrors.email}</p>}
                 </div>
                 <div>
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
@@ -755,9 +761,9 @@ function CheckoutContent({ buyerId }) {
                       {event.catalog_items.map(item => {
                         const selection = catalogSelections[item.id] || { quantity: 0, amount_cents: item.minimum_price_cents || item.price_cents }
                         return <div key={item.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-xs text-neutral-500">{item.description || (item.kind === 'donation' ? t('buyer.Checkout.supportThisEvent') : formatPrice(item.price_cents))}</p></div>
+                          <div className="min-w-0 break-words"><p className="text-sm font-medium text-neutral-800">{item.name}</p><p className="text-sm text-neutral-600">{item.description || (item.kind === 'donation' ? t('buyer.Checkout.supportThisEvent') : formatPrice(item.price_cents))}</p></div>
                           <div className="flex items-center gap-2">
-                            {item.kind === 'donation' && selection.quantity > 0 && <label className="text-xs text-neutral-500">$<input aria-label={t('buyer.Checkout.amount', { value1: item.name })} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
+                            {item.kind === 'donation' && selection.quantity > 0 && <label className="text-sm text-neutral-600">$<input aria-label={t('buyer.Checkout.amount', { value1: item.name })} type="number" min={(item.minimum_price_cents || item.price_cents) / 100} max={item.maximum_price_cents ? item.maximum_price_cents / 100 : undefined} step="1" value={(selection.amount_cents || 0) / 100} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, amount_cents: Math.round(Number(e.target.value) * 100) } }))} className="ml-1 w-20 rounded-lg border border-neutral-300 px-2 py-1" /></label>}
                             <input aria-label={t('buyer.Checkout.quantity', { value1: item.name })} type="number" min="0" max={item.quantity_remaining || 10} value={selection.quantity} onChange={e => setCatalogSelections(previous => ({ ...previous, [item.id]: { ...selection, quantity: Math.max(0, Number(e.target.value) || 0) } }))} className="w-16 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm" />
                           </div>
                         </div>
@@ -775,7 +781,7 @@ function CheckoutContent({ buyerId }) {
                           : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.chooseAnAnswer')}</option><option value="true">{t('buyer.Checkout.yes')}</option><option value="false">{t('buyer.Checkout.no')}</option></select>
                             : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
                               : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
-                        {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`question_${question.id}`]}</p>}
+                        {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-sm text-danger-700">{formErrors[`question_${question.id}`]}</p>}
                       </div>)}
                     </div>
                   </fieldset>
@@ -783,9 +789,9 @@ function CheckoutContent({ buyerId }) {
                 {event.waivers?.map(waiver => (
                   <div key={waiver.id} className="rounded-xl border border-neutral-200 p-4">
                     <p className="text-sm font-semibold text-neutral-900">{waiver.title}</p>
-                    <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-600">{waiver.body}</div>
+                    <div className="my-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-sm text-neutral-600">{waiver.body}</div>
                     <label className="flex items-start gap-2 text-sm text-neutral-700"><input id={`waiver-${waiver.id}`} type="checkbox" required={waiver.required} aria-invalid={Boolean(formErrors[`waiver_${waiver.id}`])} aria-describedby={formErrors[`waiver_${waiver.id}`] ? `waiver-${waiver.id}-error` : undefined} disabled={submitting} checked={Boolean(acceptedWaivers[waiver.id])} onChange={e => { setAcceptedWaivers(previous => ({ ...previous, [waiver.id]: e.target.checked })); setFormErrors(previous => ({ ...previous, [`waiver_${waiver.id}`]: null })) }} className="mt-0.5" />{t('buyer.Checkout.acceptVersion', { version: waiver.version })}{waiver.required && ' *'}</label>
-                    {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-xs text-red-700">{formErrors[`waiver_${waiver.id}`]}</p>}
+                    {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-sm text-danger-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
                 <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700" htmlFor="marketingOptIn">
@@ -813,7 +819,7 @@ function CheckoutContent({ buyerId }) {
                       privacyPolicy: <Link className="text-brand-700 underline" to="/policies/privacy" target="_blank" />,
                     }} /></span>
                   </label>
-                  {formErrors.terms && <p id="buyer-terms-error" className="text-red-700 text-xs mt-1" role="alert">{formErrors.terms}</p>}
+                  {formErrors.terms && <p id="buyer-terms-error" className="text-danger-700 text-sm mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
               <PaidCheckoutGate active={paidCheckoutAdminOnly}>
@@ -876,12 +882,12 @@ function CheckoutContent({ buyerId }) {
                   setOrderId(null)
                   setOrderData(null)
                 } catch (err) {
-                  if (current()) setSubmitError(err.response?.data?.error || t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis'))
+                  if (current()) setSubmitError(apiErrorMessage(err, t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis')))
                 } finally { if (viewCurrent()) setSubmitting(false) }
               }}
                 className="min-h-11 text-sm font-medium text-brand-800 hover:text-brand-900">{t('checkout.editInfo')}</button>
             </div>
-            <p className="mb-4 text-xs text-neutral-600">{t('checkout.cancelAndEditExplanation')}</p>
+            <p className="mb-4 text-sm text-neutral-600">{t('checkout.cancelAndEditExplanation')}</p>
             {submitError && <p role="alert" className="mb-4 text-sm text-red-700">{submitError}</p>}
             <div className="bg-neutral-50 rounded-xl p-3 mb-4 text-sm text-neutral-600">
               <span className="font-medium">{orderData?.buyer_name}</span> &middot; {orderData?.buyer_email}

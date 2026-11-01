@@ -14,7 +14,7 @@ import FormErrorSummary from '../../components/FormErrorSummary'
 import { emptyEventForm, hasNewEventDraft, newEventDraftKey, readNewEventDraft } from '../../utils/newEventDraft'
 
 const AGE_RESTRICTIONS = [
- { value: 'all_ages', label: 'All Ages' },
+ { value: 'all_ages', label: 'All ages' },
  { value: 'eighteen_plus', label: '18+' },
  { value: 'twenty_one_plus', label: '21+' }
 ]
@@ -164,7 +164,7 @@ function CreateEventSession({ identity }) {
 
  return (
   <WorkspacePage width="form">
-   <PageHeader back={<BackLink />} title="Create New Event" className="!mb-6" />
+   <PageHeader back={<BackLink />} title="Create new event" className="!mb-6" />
 
    {error && (
     <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -183,11 +183,11 @@ function CreateEventSession({ identity }) {
    <form noValidate onSubmit={handleSubmit} className="space-y-8">
     {/* Basic Info Section */}
     <section>
-     <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Info</h2>
+     <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic info</h2>
      <div className="space-y-4">
       <div>
        <label htmlFor="title" className="block text-sm font-medium text-neutral-700 mb-1">
-        Event Title <span className="text-red-500">*</span>
+        Event title <span className="text-red-500">*</span>
        </label>
        <input
         id="title"
@@ -198,7 +198,7 @@ function CreateEventSession({ identity }) {
         value={form.title}
         onChange={(e) => updateField('title', e.target.value)}
         className={`input ${formErrors.title ? 'input-error' : ''}`}
-        placeholder="e.g., Full Moon Beach Party"
+        placeholder="e.g. Full Moon Beach Party"
         disabled={submitting}
        />
        {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
@@ -206,7 +206,7 @@ function CreateEventSession({ identity }) {
 
       <div>
        <label htmlFor="short_description" className="block text-sm font-medium text-neutral-700 mb-1">
-        Short Description
+        Short description
        </label>
        <input
         id="short_description"
@@ -255,7 +255,7 @@ function CreateEventSession({ identity }) {
 
        <div>
         <label htmlFor="age_restriction" className="block text-sm font-medium text-neutral-700 mb-1">
-         Age Restriction
+         Age restriction
         </label>
         <select
          id="age_restriction"
@@ -279,7 +279,7 @@ function CreateEventSession({ identity }) {
      <div className="space-y-4">
       <div>
        <label htmlFor="venue_name" className="block text-sm font-medium text-neutral-700 mb-1">
-        Venue Name <span className="text-red-500">*</span>
+        Venue name <span className="text-red-500">*</span>
        </label>
        <input
         id="venue_name"
@@ -290,7 +290,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_name}
         onChange={(e) => updateField('venue_name', e.target.value)}
         className={`input ${formErrors.venue_name ? 'input-error' : ''}`}
-        placeholder="e.g., Tumon Beach Club"
+        placeholder="e.g. Tumon Beach Club"
         disabled={submitting}
        />
        {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
@@ -298,7 +298,7 @@ function CreateEventSession({ identity }) {
 
       <div>
        <label htmlFor="venue_address" className="block text-sm font-medium text-neutral-700 mb-1">
-        Venue Address
+        Venue address
        </label>
        <input
         id="venue_address"
@@ -306,7 +306,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_address}
         onChange={(e) => updateField('venue_address', e.target.value)}
         className="input"
-        placeholder="123 Pale San Vitores Rd, Tumon"
+        placeholder="e.g. 123 Pale San Vitores Rd, Tumon"
         disabled={submitting}
        />
       </div>
@@ -321,7 +321,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_city}
         onChange={(e) => updateField('venue_city', e.target.value)}
         className="input"
-        placeholder="Tamuning"
+        placeholder="e.g. Tamuning"
         disabled={submitting}
        />
       </div>
@@ -330,12 +330,12 @@ function CreateEventSession({ identity }) {
 
     {/* Date/Time Section */}
     <section>
-     <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & Time</h2>
+     <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & time</h2>
      <p className="text-sm text-neutral-500 mb-4">All event times are entered and displayed in Guam time (Pacific/Guam).</p>
      <div className="space-y-4">
       <div>
        <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
-        Start Date & Time <span className="text-red-500">*</span>
+        Start date & time <span className="text-red-500">*</span>
        </label>
        <input
         id="starts_at"
@@ -353,7 +353,7 @@ function CreateEventSession({ identity }) {
 
       <div>
        <label htmlFor="ends_at" className="block text-sm font-medium text-neutral-700 mb-1">
-        End Date & Time
+        End date & time
        </label>
        <input
         id="ends_at"
@@ -370,7 +370,7 @@ function CreateEventSession({ identity }) {
 
       <div>
        <label htmlFor="doors_open_at" className="block text-sm font-medium text-neutral-700 mb-1">
-        Doors Open At
+        Doors open at
        </label>
        <input
         id="doors_open_at"
@@ -393,7 +393,7 @@ function CreateEventSession({ identity }) {
      <div className="space-y-4">
       <div>
        <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">
-        Max Capacity
+        Max capacity
        </label>
        <input
         id="max_capacity"
@@ -426,7 +426,7 @@ function CreateEventSession({ identity }) {
       disabled={submitting}
       className="btn-primary w-full sm:w-auto"
      >
-      {submitting ? 'Creating Event...' : 'Create Event'}
+      {submitting ? 'Creating event…' : 'Create event'}
      </button>
      <div className="mt-3 p-3 bg-brand-50 border border-brand-200 rounded-xl">
       <p className="text-sm text-brand-700 flex items-start gap-2"><ClipboardList className="w-4 h-4 mt-0.5 shrink-0" /> <span><strong>You&apos;ll add ticket types on the next step.</strong> After creating the event, you&apos;ll be taken to the edit page where you can set up ticket types, upload a cover image, and publish.</span></p>

@@ -238,7 +238,7 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     render(view(true, '/events'))
     await screen.findByRole('link', { name: 'Admin' })
     const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
-    for (const name of ["Events", 'Discover', "My Tickets", 'Saved', "Scanner", "Dashboard"]) {
+    for (const name of ["Events", 'Discover', "My tickets", 'Saved', "Scanner", "Dashboard"]) {
       expect(within(primary).getByRole('link', { name })).toBeInTheDocument()
     }
     expect(screen.queryByRole('link', { name: /View public site/ })).not.toBeInTheDocument()
@@ -274,7 +274,7 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(within(primary).getByRole('link', { name: "Scanner" })).toHaveAttribute('href', '/dashboard/scanner')
     expect(within(primary).getByRole('link', { name: "Settings" })).toHaveAttribute('href', '/dashboard/settings')
     expect(within(primary).getByRole('link', { name: "Support" })).toHaveAttribute('href', '/support')
-    for (const name of ["Events", 'Discover', "My Tickets", 'Saved']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    for (const name of ["Events", 'Discover', "My tickets", 'Saved']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: "View public site" })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: "HåfaPass workspace home" })).toHaveAttribute('href', '/dashboard')
     expect(screen.queryByRole('button', { name: 'Search events' })).not.toBeInTheDocument()

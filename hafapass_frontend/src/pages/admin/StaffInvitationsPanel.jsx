@@ -81,7 +81,7 @@ export default function StaffInvitationsPanel({ beginRequest }) {
       <form onSubmit={invite} className="mt-4 space-y-4">
         <label className="block text-sm font-medium text-neutral-900">
           Email
-          <input type="email" required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} className="input mt-1" placeholder="name@example.com" autoComplete="off" />
+          <input type="email" required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} className="input mt-1" placeholder="e.g. name@example.com" autoComplete="off" />
         </label>
         <RoleRadioGroup legend="Role" roles={STAFF_ROLES} value={role} onChange={setRole} disabled={busy} name="staff-invite-role" />
         {role === 'admin' && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Admins have full platform access, including money and settings.</p>}

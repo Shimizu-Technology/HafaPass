@@ -6,6 +6,7 @@ import Layout from './Layout'
 vi.mock('./Navbar', () => ({ default: () => <nav><Link to="/dashboard/new">Next page</Link></nav> }))
 vi.mock('./Footer', () => ({ default: () => null, WorkspaceFooter: () => null }))
 vi.mock('./EnvironmentBanner', () => ({ default: () => null }))
+vi.mock('./SEO', () => ({ default: () => null }))
 beforeEach(() => { window.scrollTo = vi.fn(); window.history.replaceState(null, '', '/') })
 function Page() {
   const [value, setValue] = useState('')

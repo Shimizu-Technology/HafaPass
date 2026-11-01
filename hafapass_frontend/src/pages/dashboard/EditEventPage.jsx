@@ -21,7 +21,7 @@ import { eventLinkFormatError, eventLinkUrl, normalizeEventLinkInput } from '../
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const AGE_RESTRICTIONS = [
-  { value: 'all_ages', label: 'All Ages' },
+  { value: 'all_ages', label: 'All ages' },
   { value: 'eighteen_plus', label: '18+' },
   { value: 'twenty_one_plus', label: '21+' }
 ]
@@ -453,7 +453,7 @@ function EditEventSession({ id, identity }) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>
-        <Link to="/dashboard" className="mt-4 inline-block text-action-teal hover:text-action-teal-hover text-sm font-medium">Back to Dashboard</Link>
+        <Link to="/dashboard" className="mt-4 inline-block text-action-teal hover:text-action-teal-hover text-sm font-medium">Back to dashboard</Link>
       </div>
     )
   }
@@ -505,7 +505,7 @@ function EditEventSession({ id, identity }) {
 
       <h2 className="mb-6 text-xl font-semibold text-neutral-950">Event details</h2>
 
-      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save Changes before publishing. Preview shows the last saved event in a new tab; the live preview below shows your draft.</p>}
+      {hasUnsavedChanges && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">You have unsaved changes. Save changes before publishing. Preview shows the last saved event in a new tab; the live preview below shows your draft.</p>}
 
       {/* Publish Button for Draft Events */}
       {canManage && event?.status === 'draft' && (
@@ -515,7 +515,7 @@ function EditEventSession({ id, identity }) {
               <p className="text-sm font-medium text-brand-800">Prepare your event for publishing</p>
               <p className="text-xs text-brand-600 mt-0.5">Complete the steps below, save your changes, and preview your event before publishing.</p>
             </div>
-            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish || hasUnsavedChanges || submitting || publishing} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish Event</button>
+            <button onClick={() => setShowPublishConfirm(true)} disabled={!readyToPublish || hasUnsavedChanges || submitting || publishing} className="btn-primary text-sm px-4 py-2 disabled:opacity-50">Publish event</button>
           </div>
           <ul className="grid sm:grid-cols-2 gap-2 mt-4" aria-label="Publishing checklist">
             {organizerSteps.map(item => (
@@ -535,11 +535,11 @@ function EditEventSession({ id, identity }) {
       {/* Publish Confirmation Dialog */}
       {showPublishConfirm && (
         <ConfirmModal
-          title="Publish Event?"
+          title="Publish event?"
           message={salesWaitOnVerification
             ? `Publish the saved event “${event.title}”? Your event will be visible through a private preview link now, and goes public automatically once you're verified.`
             : `Publish the saved event “${event.title}”? Attendees will be able to browse and purchase tickets.`}
-          confirmLabel={publishing ? 'Publishing...' : 'Yes, Publish'}
+          confirmLabel={publishing ? 'Publishing...' : 'Yes, publish'}
           confirmClass="bg-action-teal hover:bg-action-teal-hover"
           onConfirm={handlePublish}
           onCancel={() => setShowPublishConfirm(false)}
@@ -550,9 +550,9 @@ function EditEventSession({ id, identity }) {
       {/* Danger zone modals */}
       {showDeleteConfirm && (
         <ConfirmModal
-          title="Delete Event?"
+          title="Delete event?"
           message="This will permanently delete this draft event and all its data. This cannot be undone."
-          confirmLabel="Yes, Delete"
+          confirmLabel="Yes, delete"
           onConfirm={handleDeleteEvent}
           onCancel={() => setShowDeleteConfirm(false)}
           loading={dangerLoading}
@@ -560,9 +560,9 @@ function EditEventSession({ id, identity }) {
       )}
       {showCompleteConfirm && (
         <ConfirmModal
-          title="Mark as Completed?"
+          title="Mark as completed?"
           message="This will mark the event as completed. No more ticket sales will be allowed."
-          confirmLabel="Yes, Complete"
+          confirmLabel="Yes, complete"
           confirmClass="bg-neutral-700 hover:bg-neutral-800"
           onConfirm={() => handleLifecycle('complete', 'Event marked as completed.')}
           onCancel={() => setShowCompleteConfirm(false)}
@@ -571,9 +571,9 @@ function EditEventSession({ id, identity }) {
       )}
       {showPostponeConfirm && (
         <ConfirmModal
-          title="Postpone Event?"
+          title="Postpone event?"
           message="Ticket sales will stop immediately. Update the schedule before resuming the event."
-          confirmLabel="Yes, Postpone"
+          confirmLabel="Yes, postpone"
           confirmClass="bg-action-danger hover:bg-action-danger-hover"
           onConfirm={() => handleLifecycle('postpone', 'Event has been postponed and sales are paused.')}
           onCancel={() => { setShowPostponeConfirm(false); setLifecycleReason('') }}
@@ -596,17 +596,17 @@ function EditEventSession({ id, identity }) {
       <form noValidate onSubmit={handleSubmit} className="space-y-8">
         {/* Basic Info Section */}
         <section>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Info</h2>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic info</h2>
           <div className="space-y-4">
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-neutral-700 mb-1">
-                Event Title <span className="text-red-500">*</span>
+                Event title <span className="text-red-500">*</span>
               </label>
               <input id="title" aria-invalid={Boolean(formErrors.title)} aria-describedby={formErrors.title ? 'title-error' : undefined} required type="text" value={form.title} onChange={(e) => updateField('title', e.target.value)} className={`input ${formErrors.title ? 'input-error' : ''}`} placeholder="e.g., Full Moon Beach Party" disabled={submitting} />
               {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
             </div>
             <div>
-              <label htmlFor="short_description" className="block text-sm font-medium text-neutral-700 mb-1">Short Description</label>
+              <label htmlFor="short_description" className="block text-sm font-medium text-neutral-700 mb-1">Short description</label>
               <input id="short_description" type="text" value={form.short_description} onChange={(e) => updateField('short_description', e.target.value)} className="input" placeholder="A brief tagline for your event" maxLength={200} disabled={submitting} />
             </div>
             <div>
@@ -623,7 +623,7 @@ function EditEventSession({ id, identity }) {
                 </select>
               </div>
               {canManage && <div>
-                <label htmlFor="age_restriction" className="block text-sm font-medium text-neutral-700 mb-1">Age Restriction</label>
+                <label htmlFor="age_restriction" className="block text-sm font-medium text-neutral-700 mb-1">Age restriction</label>
                 <select id="age_restriction" value={form.age_restriction} onChange={(e) => updateField('age_restriction', e.target.value)} className="input" disabled={submitting}>
                   {AGE_RESTRICTIONS.map(ar => <option key={ar.value} value={ar.value}>{ar.label}</option>)}
                 </select>
@@ -634,7 +634,7 @@ function EditEventSession({ id, identity }) {
 
         {/* Event Link Section */}
         <section aria-labelledby="event-link-heading">
-          <h2 id="event-link-heading" className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Event Link</h2>
+          <h2 id="event-link-heading" className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Event link</h2>
           <label htmlFor="slug" className="block text-sm font-medium text-neutral-700 mb-1">Link name</label>
           <input
             id="slug"
@@ -684,13 +684,13 @@ function EditEventSession({ id, identity }) {
           <div className="space-y-4">
             <div>
               <label htmlFor="venue_name" className="block text-sm font-medium text-neutral-700 mb-1">
-                Venue Name <span className="text-red-500">*</span>
+                Venue name <span className="text-red-500">*</span>
               </label>
               <input id="venue_name" aria-invalid={Boolean(formErrors.venue_name)} aria-describedby={formErrors.venue_name ? 'venue_name-error' : undefined} required type="text" value={form.venue_name} onChange={(e) => updateField('venue_name', e.target.value)} className={`input ${formErrors.venue_name ? 'input-error' : ''}`} placeholder="e.g., Tumon Beach Club" disabled={submitting} />
               {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
             </div>
             <div>
-              <label htmlFor="venue_address" className="block text-sm font-medium text-neutral-700 mb-1">Venue Address</label>
+              <label htmlFor="venue_address" className="block text-sm font-medium text-neutral-700 mb-1">Venue address</label>
               <input id="venue_address" type="text" value={form.venue_address} onChange={(e) => updateField('venue_address', e.target.value)} className="input" placeholder="123 Pale San Vitores Rd, Tumon" disabled={submitting} />
             </div>
             <div>
@@ -702,23 +702,23 @@ function EditEventSession({ id, identity }) {
 
         {/* Date/Time Section */}
         <section>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & Time</h2>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Date & time</h2>
           <p className="text-sm text-neutral-500 mb-4">All event times are entered and displayed in Guam time (Pacific/Guam).</p>
           <div className="space-y-4">
             <div>
               <label htmlFor="starts_at" className="block text-sm font-medium text-neutral-700 mb-1">
-                Start Date & Time <span className="text-red-500">*</span>
+                Start date & time <span className="text-red-500">*</span>
               </label>
               <input id="starts_at" aria-invalid={Boolean(formErrors.starts_at)} aria-describedby={formErrors.starts_at ? 'starts_at-error' : undefined} required type="datetime-local" value={form.starts_at} onChange={(e) => updateField('starts_at', e.target.value)} className={`input ${formErrors.starts_at ? 'input-error' : ''}`} disabled={submitting} />
               {formErrors.starts_at && <p id="starts_at-error" className="mt-1 text-sm text-red-600">{formErrors.starts_at}</p>}
             </div>
             <div>
-              <label htmlFor="ends_at" className="block text-sm font-medium text-neutral-700 mb-1">End Date & Time</label>
+              <label htmlFor="ends_at" className="block text-sm font-medium text-neutral-700 mb-1">End date & time</label>
               <input id="ends_at" aria-invalid={Boolean(formErrors.ends_at)} aria-describedby={formErrors.ends_at ? 'ends_at-error' : undefined} type="datetime-local" value={form.ends_at} onChange={(e) => updateField('ends_at', e.target.value)} className={`input ${formErrors.ends_at ? 'input-error' : ''}`} disabled={submitting} />
               {formErrors.ends_at && <p id="ends_at-error" className="mt-1 text-sm text-red-600">{formErrors.ends_at}</p>}
             </div>
             <div>
-              <label htmlFor="doors_open_at" className="block text-sm font-medium text-neutral-700 mb-1">Doors Open At</label>
+              <label htmlFor="doors_open_at" className="block text-sm font-medium text-neutral-700 mb-1">Doors open at</label>
               <input id="doors_open_at" aria-invalid={Boolean(formErrors.doors_open_at)} aria-describedby={formErrors.doors_open_at ? 'doors_open_at-error' : undefined} type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
               {formErrors.doors_open_at && <p id="doors_open_at-error" className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
             </div>
@@ -738,7 +738,7 @@ function EditEventSession({ id, identity }) {
           <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Settings</h2>
           <div className="space-y-4">
             <div>
-              <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">Max Capacity</label>
+              <label htmlFor="max_capacity" className="block text-sm font-medium text-neutral-700 mb-1">Max capacity</label>
               <input id="max_capacity" aria-invalid={Boolean(formErrors.max_capacity)} aria-describedby={`max_capacity-help${formErrors.max_capacity ? ' max_capacity-error' : ''}`} type="number" min="1" value={form.max_capacity} onChange={(e) => updateField('max_capacity', e.target.value)} className={`input ${formErrors.max_capacity ? 'input-error' : ''}`} placeholder="Maximum number of attendees" disabled={submitting} />
               <p id="max_capacity-help" className="mt-1 text-sm text-neutral-600">Required before publishing.</p>
               {formErrors.max_capacity && <p id="max_capacity-error" className="mt-1 text-sm text-red-600">{formErrors.max_capacity}</p>}
@@ -778,10 +778,10 @@ function EditEventSession({ id, identity }) {
 
         {/* Recurring Event Section */}
         <section hidden={!capabilities.recurring_events || event?.can_create_events !== true}>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Recurring Event</h2>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Recurring event</h2>
           <div className="space-y-4">
             <div>
-              <label htmlFor="recurrence_rule" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence Pattern</label>
+              <label htmlFor="recurrence_rule" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence pattern</label>
               <select id="recurrence_rule" value={form.recurrence_rule} onChange={(e) => updateField('recurrence_rule', e.target.value)} className="input" disabled={submitting}>
                 <option value="">None (one-time event)</option>
                 <option value="weekly">Weekly</option>
@@ -792,11 +792,11 @@ function EditEventSession({ id, identity }) {
             {form.recurrence_rule && (
               <>
                 <div>
-                  <label htmlFor="recurrence_end_date" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence End Date (optional)</label>
+                  <label htmlFor="recurrence_end_date" className="block text-sm font-medium text-neutral-700 mb-1">Recurrence end date (optional)</label>
                   <input id="recurrence_end_date" type="date" value={form.recurrence_end_date} onChange={(e) => updateField('recurrence_end_date', e.target.value)} className="input" disabled={submitting} />
                 </div>
                 <div>
-                  <label htmlFor="recurrence_count" className="block text-sm font-medium text-neutral-700 mb-1">Number of Instances to Generate</label>
+                  <label htmlFor="recurrence_count" className="block text-sm font-medium text-neutral-700 mb-1">Number of instances to generate</label>
                   <input id="recurrence_count" type="number" min="1" max="12" value={recurrenceCount} onChange={(e) => setRecurrenceCount(Math.min(12, Math.max(1, parseInt(e.target.value) || 1)))} className="input" disabled={submitting} />
                 </div>
                 <button
@@ -824,7 +824,7 @@ function EditEventSession({ id, identity }) {
                   className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`w-4 h-4 ${generatingRecurrences ? 'animate-spin' : ''}`} />
-                  {generatingRecurrences ? 'Generating...' : 'Generate Upcoming Events'}
+                  {generatingRecurrences ? 'Generating...' : 'Generate upcoming events'}
                 </button>
                 {!form.starts_at && (
                   <p className="text-xs text-amber-600">Save the event with start/end dates first before generating recurring instances.</p>
@@ -834,11 +834,11 @@ function EditEventSession({ id, identity }) {
             {/* Show linked recurring events */}
             {(recurrenceChildren.length > 0 || (event?.recurrence_parent_id)) && (
               <div className="mt-4">
-                <h3 className="text-sm font-medium text-neutral-700 mb-2">Linked Recurring Events</h3>
+                <h3 className="text-sm font-medium text-neutral-700 mb-2">Linked recurring events</h3>
                 <div className="space-y-2">
                   {event?.recurrence_parent_id && (
                     <Link to={`/dashboard/events/${event.recurrence_parent_id}/edit`} className="block text-sm text-action-teal hover:text-action-teal-hover">
-                      ← View Parent Event
+                      ← View parent event
                     </Link>
                   )}
                   {recurrenceChildren.map(child => (
@@ -868,7 +868,7 @@ function EditEventSession({ id, identity }) {
               {submitting ? 'Saving event details…' : hasUnsavedChanges ? 'Unsaved event detail changes' : 'Event details are saved'}
             </p>
             <button type="submit" disabled={submitting} aria-describedby="event-details-save-state" className="btn-primary w-full sm:w-auto">
-              {submitting ? 'Saving...' : 'Save Changes'}
+              {submitting ? 'Saving...' : 'Save changes'}
             </button>
           </div>
         </div>
@@ -882,7 +882,7 @@ function EditEventSession({ id, identity }) {
 
       {/* Ticket Types CRUD */}
       {permissions.manage_inventory && <section id="ticket-types" tabIndex={-1} aria-label="Ticket types" className="mt-10 scroll-mt-24 border-t border-neutral-200 pt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" aria-busy={inventoryRefreshing}>
-        <p className="rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600"><span className="font-semibold text-neutral-800">Saved separately.</span> Ticket type changes save as soon as you add, edit or remove one. They are not part of Save Changes above.</p>
+        <p className="rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600"><span className="font-semibold text-neutral-800">Saved separately.</span> Ticket type changes save as soon as you add, edit or remove one. They are not part of Save changes above.</p>
         {inventoryRefreshing && <p role="status" className="mt-6 text-sm text-neutral-600">Updating ticket list…</p>}
         {inventoryError && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p>{inventoryError}</p>
@@ -911,7 +911,7 @@ function EditEventSession({ id, identity }) {
             {event.status === 'published' && (
               <div className="flex items-center justify-between p-3 bg-orange-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Postpone Event</p>
+                  <p className="text-sm font-medium text-neutral-900">Postpone event</p>
                   <p className="text-xs text-neutral-600">Pause sales while a new date is arranged.</p>
                 </div>
                 <button onClick={() => setShowPostponeConfirm(true)} className="min-h-11 px-3 py-1.5 text-sm font-medium text-orange-700 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1.5">
@@ -922,7 +922,7 @@ function EditEventSession({ id, identity }) {
             {event.status === 'postponed' && (
               <div className="flex items-center justify-between p-3 bg-brand-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Resume Event</p>
+                  <p className="text-sm font-medium text-neutral-900">Resume event</p>
                   <p className="text-xs text-neutral-500">Restore public visibility and ticket sales using the updated schedule.</p>
                 </div>
                 <button onClick={() => handleLifecycle('resume', 'Event resumed and ticket sales restored.')} className="btn-primary text-sm px-3 py-1.5">Resume</button>
@@ -931,7 +931,7 @@ function EditEventSession({ id, identity }) {
             {event.status === 'published' && eventEndedInPast && (
               <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Mark Completed</p>
+                  <p className="text-sm font-medium text-neutral-900">Mark completed</p>
                   <p className="text-xs text-neutral-500">Mark this past event as completed.</p>
                 </div>
                 <button onClick={() => setShowCompleteConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-200 transition-colors flex items-center gap-1.5">
@@ -942,7 +942,7 @@ function EditEventSession({ id, identity }) {
             {event.status === 'draft' && (
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Delete Event</p>
+                  <p className="text-sm font-medium text-neutral-900">Delete event</p>
                   <p className="text-xs text-neutral-600">Permanently delete this draft event.</p>
                 </div>
                 <button onClick={() => setShowDeleteConfirm(true)} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100">
@@ -953,7 +953,7 @@ function EditEventSession({ id, identity }) {
             {['draft', 'cancelled', 'completed'].includes(event.status) && (
               <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">Archive Event</p>
+                  <p className="text-sm font-medium text-neutral-900">Archive event</p>
                   <p className="text-xs text-neutral-500">Keep its record while removing it from active work.</p>
                 </div>
                 <button onClick={() => handleLifecycle('archive', 'Event archived.')} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">

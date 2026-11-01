@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
-import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import PageLoading from './PageLoading'
 import apiClient from '../api/client'
 import { signInDestination } from '../utils/authDestination'
 
@@ -14,6 +15,7 @@ function SupportGate({ children }) {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const { t } = useTranslation()
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return
@@ -27,7 +29,7 @@ function SupportGate({ children }) {
   }, [isLoaded, isSignedIn, userId, attempt])
 
   if (isLoaded && !isSignedIn) return <Navigate to={signInDestination(location)} replace />
-  if (!isLoaded || loading) return <div className="min-h-screen grid place-items-center" role="status" aria-label="Checking support access"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (!isLoaded || loading) return <PageLoading label={t('buyer.layout.checkingSupport')} />
   if (failed) return <div className="mx-auto max-w-md px-4 py-12" role="alert"><p>We could not verify your support access. Please try again.</p><button className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>Retry</button></div>
   if (!['support', 'admin'].includes(role)) return <Navigate to="/" replace />
   return children

@@ -84,7 +84,7 @@ describe('authoritative analytics access', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Your event access does not include analytics and finances.')
     expect(privateReads()).toHaveLength(0)
     expect(screen.queryByRole('button', { name: /^Request payout / })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to Dashboard' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeInTheDocument()
   })
   it('rejects a mismatched event or organization before private data is requested', async () => {
     apiClient.get.mockResolvedValue({ data: { ...event, organization_id: 2 } })

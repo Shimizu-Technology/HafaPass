@@ -1,15 +1,27 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Search } from 'lucide-react'
+import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
 import Ticket from '../components/Ticket'
-import EmptyInventory, { HostingStub } from '../components/EmptyInventory'
+import { HostingStub } from '../components/EmptyInventory'
+import InstallAppHelp from '../components/InstallAppHelp'
 import EventCard from '../components/EventCard'
 import useContentLanguage from '../hooks/useContentLanguage'
 import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
+
+const passStepsFor = t => [
+  [t('pass.home.stepFindTitle'), t('pass.home.stepFindBody')],
+  [t('pass.home.stepBuyTitle'), t('pass.home.stepBuyBody')],
+  [t('pass.home.stepDoorTitle'), t('pass.home.stepDoorBody')],
+]
+
+function FindTicketLink() {
+  const { t } = useTranslation()
+  return <Link to="/orders/recover" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.findTicket')}<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" /></Link>
+}
 
 const categoriesFor = t => [
   { name: t('buyer.Home.Nightlife'), slug: 'nightlife' },
@@ -69,7 +81,11 @@ export default function HomePage() {
             <h1 className="max-w-lg font-display text-[2.5rem] font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-6xl">{t('pass.home.title')}</h1>
             <p className="mt-4 max-w-md text-base leading-relaxed text-brand-100 sm:text-lg">{t('pass.home.lede')}</p>
           </div>
-          <Ticket className="hero-ticket text-content" stub={<HostingStub />}>
+          {/* Hosting is pitched once: in the hero stub while loading, then by the planning ticket. */}
+          <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
+            <InstallAppHelp variant="action" />
+            <FindTicketLink />
+          </div> : <div className="px-6 py-3 sm:px-8"><FindTicketLink /></div>}>
             <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
               {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
                 <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
@@ -78,7 +94,11 @@ export default function HomePage() {
                 <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
                 <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
                 <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
-              </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center"><EmptyInventory embedded /></div> : <form role="search" onSubmit={browse}>
+              </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
+                <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
+                <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
+                <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
+              </div> : <form role="search" onSubmit={browse}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
                   <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-sm font-medium">{t('pass.home.when')}</label>
                     <div className="relative"><select id="home-when" className="input min-h-12 !pl-3 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div></div>
@@ -96,17 +116,24 @@ export default function HomePage() {
           </Ticket>
         </div>
       </section>
-      <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-stone-50 pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-12">
+      <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-8 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {!loading && !loadError && !inventoryEmpty ? <>
             <section aria-labelledby="upcoming-heading">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 id="upcoming-heading" className="font-display text-2xl font-bold sm:text-3xl">{t('pass.home.comingUp')}</h2><Link to="/events" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>
               <ul className="event-track" aria-label={t('pass.home.comingUp')}>{upcoming.map(event => <li key={`${event.id}:${event.cover_image_url || ''}`} className="min-w-0"><EventCard event={event} /></li>)}</ul>
             </section>
-            <section aria-labelledby="categories-heading" className="pt-9"><h2 id="categories-heading" className="mb-4 font-display text-xl font-bold">{t('buyer.Home.exploreByCategory')}</h2><div className="flex flex-wrap gap-2">{categoriesFor(t).map(({name,slug}) => <Link key={slug} to={`/events?category=${slug}`} className="ticket-chip inline-flex min-h-11 items-center rounded-full border border-stone-200 bg-white px-4 text-sm font-medium">{name}</Link>)}</div></section>
+            <section aria-labelledby="categories-heading" className="pt-9"><h2 id="categories-heading" className="mb-4 font-display text-xl font-bold">{t('buyer.Home.exploreByCategory')}</h2><div className="flex flex-wrap gap-2">{categoriesFor(t).map(({name,slug}) => <Link key={slug} to={`/events?category=${slug}`} className="ticket-chip inline-flex min-h-11 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-medium">{name}</Link>)}</div></section>
           </> : null}
-          {!loading && <section className={inventoryEmpty ? '' : 'mt-9'}>
-            <Ticket className="planning-ticket" topClassName="!bg-brand-800 text-white" stubClassName="!bg-brand-800 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-primary gap-2">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
+          {inventoryEmpty && <section aria-labelledby="pass-steps-heading">
+            <h2 id="pass-steps-heading" className="mb-4 font-display text-xl font-bold sm:text-2xl">{t('pass.home.howItWorks')}</h2>
+            <ol className="grid gap-3 sm:grid-cols-3">{passStepsFor(t).map(([title, body], index) => <li key={title} className="pass-step ticket-notch flex items-center gap-4 rounded-2xl bg-white px-6 py-5">
+              <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 font-display text-sm font-bold text-brand-800">{index + 1}</span>
+              <div className="min-w-0"><h3 className="font-display text-lg font-bold leading-snug">{title}</h3><p className="mt-1 text-sm leading-relaxed text-content-muted">{body}</p></div>
+            </li>)}</ol>
+          </section>}
+          {!loading && <section className="mt-9">
+            <Ticket className="planning-ticket" topClassName="!bg-brand-950 text-white" stubClassName="!bg-brand-950 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-secondary gap-2 !border-white !text-brand-950">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
               <div className="px-6 py-6 sm:px-8"><h2 className="font-display text-2xl font-bold">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>
             </Ticket>
           </section>}

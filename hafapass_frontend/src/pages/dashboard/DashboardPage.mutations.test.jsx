@@ -20,7 +20,7 @@ const deferred = () => {
 let profiles, clearAuth, scrollIntoView
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
 const mount = () => render(<MemoryRouter initialEntries={['/dashboard']}><DashboardPage /></MemoryRouter>)
-const closeEditor = () => userEvent.click(screen.getByRole('heading', { name: 'Edit Profile' }).parentElement.querySelector('button'))
+const closeEditor = () => userEvent.click(screen.getByRole('heading', { name: 'Edit profile' }).parentElement.querySelector('button'))
 const bind = (userId = 'actor-a', sessionId = 'session-a', getToken = () => Promise.resolve('synthetic-token')) => {
   window.localStorage.setItem('hafapass_scanner_user_id', userId)
   clearAuth = setAuthTokenGetter(getToken, { userId, sessionId, ready: true })
@@ -59,6 +59,22 @@ afterEach(() => {
 })
 
 describe('dashboard mutation ownership', () => {
+  it('edits the profile in a modal dialog that traps focus, closes on Escape and returns focus', async () => {
+    mount()
+    const edit = await screen.findByTitle('Edit profile')
+    await userEvent.click(edit)
+    const dialog = screen.getByRole('dialog', { name: 'Edit profile' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByLabelText(/Business name/)).toHaveFocus()
+    for (let step = 0; step < 6; step += 1) {
+      await userEvent.tab({ shift: true })
+      expect(dialog).toContainElement(document.activeElement)
+    }
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(edit).toHaveFocus()
+  })
+
   it('opens and scrolls to the same inline verification form from the checklist', async () => {
     mount()
     await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])
@@ -95,7 +111,7 @@ describe('dashboard mutation ownership', () => {
   ])('previews only a logo from the approved host (%s)', async (logo, host, visible) => {
     profiles[1] = { ...profiles[1], logo_url: logo, image_asset_host: host }
     mount()
-    await userEvent.click(await screen.findByTitle('Edit Profile'))
+    await userEvent.click(await screen.findByTitle('Edit profile'))
     expect(screen.queryByRole('img', { name: 'Logo' }) !== null).toBe(visible)
   })
   it.each(['page', 'search'])('keeps a readiness mutation live while changing the event %s', async navigation => {
@@ -177,7 +193,7 @@ describe('dashboard mutation ownership', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading Beta organization')
     expect(screen.queryByRole('link', { name: /Private Alpha event/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Welcome, Alpha' })).not.toBeInTheDocument()
-    expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Edit profile')).not.toBeInTheDocument()
     expect(screen.queryByText('19 sold')).not.toBeInTheDocument()
     expect(screen.queryByText('Get ready to sell tickets')).not.toBeInTheDocument()
     if (outcome === 'failure') {
@@ -185,7 +201,7 @@ describe('dashboard mutation ownership', () => {
       await screen.findByText('Failed to load dashboard. Please try again.')
       expect(screen.queryByText(/Private Alpha/)).not.toBeInTheDocument()
       expect(screen.queryByText('19 sold')).not.toBeInTheDocument()
-      expect(screen.queryByTitle('Edit Profile')).not.toBeInTheDocument()
+      expect(screen.queryByTitle('Edit profile')).not.toBeInTheDocument()
     } else {
       await act(async () => betaProfile.resolve({ data: profiles[2] }))
       await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/organizer/events', expect.objectContaining({ organizationId: '2' })))
@@ -233,16 +249,16 @@ describe('dashboard mutation ownership', () => {
     const old = deferred()
     apiClient.put.mockReturnValueOnce(old.promise)
     mount()
-    await userEvent.click(await screen.findByTitle('Edit Profile'))
+    await userEvent.click(await screen.findByTitle('Edit profile'))
     await userEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
     await closeEditor()
     await switchTo(2)
-    await userEvent.click(screen.getByTitle('Edit Profile'))
+    await userEvent.click(screen.getByTitle('Edit profile'))
     const name = screen.getByDisplayValue('Beta')
     await userEvent.clear(name); await userEvent.type(name, 'Beta draft')
     const reads = apiClient.get.mock.calls.length
     await act(async () => outcome === 'success' ? old.resolve({ data: profiles[1] }) : old.reject(new Error('Old save failure')))
-    expect(screen.getByRole('heading', { name: 'Edit Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Edit profile' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('Beta draft')).toBeInTheDocument()
     expect(apiClient.get.mock.calls).toHaveLength(reads)
     apiClient.put.mockImplementation((_path, payload) => { profiles[2] = { ...profiles[2], ...payload }; return Promise.resolve({ data: profiles[2] }) })
@@ -255,10 +271,10 @@ describe('dashboard mutation ownership', () => {
     const old = deferred()
     apiClient.put.mockReturnValueOnce(old.promise)
     mount()
-    await userEvent.click(await screen.findByTitle('Edit Profile'))
+    await userEvent.click(await screen.findByTitle('Edit profile'))
     await userEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
     await closeEditor()
-    await userEvent.click(screen.getByTitle('Edit Profile'))
+    await userEvent.click(screen.getByTitle('Edit profile'))
     await userEvent.type(screen.getAllByDisplayValue('Alpha').at(-1), ' newer draft')
     await act(async () => old.resolve({ data: profiles[1] }))
     expect(screen.getByDisplayValue('Alpha newer draft')).toBeInTheDocument()
@@ -268,12 +284,12 @@ describe('dashboard mutation ownership', () => {
     const old = deferred()
     uploadImage.mockReturnValueOnce(old.promise)
     mount()
-    await userEvent.click(await screen.findByTitle('Edit Profile'))
+    await userEvent.click(await screen.findByTitle('Edit profile'))
     await userEvent.upload(document.querySelector('input[type="file"]'), new File(['synthetic-image'], 'alpha.png', { type: 'image/png' }))
     const ownerCurrent = uploadImage.mock.calls[0][2]
     expect(ownerCurrent()).toBe(true)
     await closeEditor(); await switchTo(2)
-    await userEvent.click(screen.getByTitle('Edit Profile'))
+    await userEvent.click(screen.getByTitle('Edit profile'))
     await act(async () => old.resolve('https://synthetic.invalid/alpha-logo.png'))
     expect(ownerCurrent()).toBe(false)
     apiClient.put.mockResolvedValueOnce({ data: profiles[2] })
@@ -334,13 +350,13 @@ describe('dashboard mutation ownership', () => {
     const old = deferred()
     apiClient.post.mockReturnValueOnce(old.promise)
     mount()
-    await userEvent.type(await screen.findByLabelText(/Business Name/), 'Alpha setup')
-    await userEvent.click(screen.getByRole('button', { name: 'Create Organizer Profile' }))
+    await userEvent.type(await screen.findByLabelText(/Business name/), 'Alpha setup')
+    await userEvent.click(screen.getByRole('button', { name: 'Create organizer profile' }))
     await act(async () => bind('actor-b', 'session-b'))
-    await userEvent.type(await screen.findByLabelText(/Business Name/), 'Beta setup draft')
+    await userEvent.type(await screen.findByLabelText(/Business name/), 'Beta setup draft')
     const reads = apiClient.get.mock.calls.length
     await act(async () => old.resolve({ data: profile('Alpha setup') }))
-    expect(screen.getByLabelText(/Business Name/)).toHaveValue('Beta setup draft')
+    expect(screen.getByLabelText(/Business name/)).toHaveValue('Beta setup draft')
     expect(apiClient.get.mock.calls).toHaveLength(reads)
     expect(apiClient.post.mock.calls[0][2].organizationId).toBeNull()
     expect(apiClient.post.mock.calls[0][2].authContext.userId).toBe('actor-a')

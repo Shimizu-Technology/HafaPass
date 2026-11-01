@@ -20,7 +20,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await prepare(page)
     await page.goto('/dashboard/events/601/edit')
-    const title = page.getByLabel(/Event Title/)
+    const title = page.getByLabel(/Event title/)
     await expect(title).toHaveValue(event.title)
     await title.fill('Unsaved event title')
     if (width < 1024) await page.getByRole('button', { name: 'Event navigation', exact: true }).click()
@@ -69,7 +69,7 @@ for (const width of [320, 1440]) {
   test(`ticket navigation scrolls and focuses the editor section without losing a draft at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await prepare(page)
     await page.goto('/dashboard/events/601/edit')
-    const title = page.getByLabel(/Event Title/)
+    const title = page.getByLabel(/Event title/)
     await expect(title).toHaveValue(event.title)
     await title.fill('Preserved before ticket jump')
     if (width < 1024) await page.getByRole('button', { name: 'Event navigation', exact: true }).click()

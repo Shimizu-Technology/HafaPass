@@ -130,8 +130,8 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     await checkout.goto(`${origin}/events/deploy-test`)
     await installed(checkout)
     await checkout.getByRole('button', { name: 'Increase quantity for General', exact: true }).click()
-    await checkout.getByRole('button', { name: /Buy Tickets/ }).click()
-    await checkout.getByLabel('Full Name').fill('Unsaved buyer')
+    await checkout.getByRole('button', { name: /Buy tickets/i }).click()
+    await checkout.getByLabel('Full name').fill('Unsaved buyer')
     await checkout.evaluate(() => { window.originalCheckoutDocument = true })
 
     await selection.goto(`${origin}/events/deploy-test`)
@@ -187,7 +187,7 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     }
     await checkout.waitForTimeout(2_000)
     await expect(checkout.locator('#deploy-marker')).toHaveText('Build A')
-    await expect(checkout.getByLabel('Full Name')).toHaveValue('Unsaved buyer')
+    await expect(checkout.getByLabel('Full name')).toHaveValue('Unsaved buyer')
     expect(await checkout.evaluate(() => window.originalCheckoutDocument)).toBe(true)
     await checkout.screenshot({ path: testInfo.outputPath('checkout-preserved.png'), fullPage: true })
     // A hidden transaction must remain protected as well.
@@ -202,22 +202,22 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
     expect(await selection.evaluate(() => window.originalSelectionDocument)).toBe(true)
     await selection.screenshot({ path: testInfo.outputPath('selection-preserved.png'), fullPage: true })
-    await selection.getByRole('button', { name: /Buy Tickets/ }).click()
-    await expect(selection.getByLabel('Full Name')).toBeVisible()
+    await selection.getByRole('button', { name: /Buy tickets/i }).click()
+    await expect(selection.getByLabel('Full name')).toBeVisible()
     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
     // The same A document must also complete the task after B removed A assets.
     const order = { id: 99, reference: 'HP-DEPLOY', status: 'completed', buyer_name: 'Synthetic Buyer', buyer_email: 'buyer@example.invalid', guest_access_token: 'synthetic-order-access',
       subtotal_cents: 1000, service_fee_cents: 0, discount_cents: 0, total_cents: 1000, refunded_cents: 0, event,
       order_items: [{ id: 1, name: 'General', quantity: 1, subtotal_cents: 1000 }], tickets: [] }
     await configure(server, { api: { '/api/v1/orders': order, '/api/v1/orders/99': order } })
-    await selection.getByLabel('Full Name').fill('Synthetic Buyer')
-    await selection.getByLabel('Email Address').fill('buyer@example.invalid')
+    await selection.getByLabel('Full name').fill('Synthetic Buyer')
+    await selection.getByLabel('Email address').fill('buyer@example.invalid')
     await selection.locator('input#termsAccepted:visible').check()
-    await selection.getByRole('button', { name: /Place Order/ }).click()
+    await selection.getByRole('button', { name: /Place order/i }).click()
     await expect(selection.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
     expect(server.requests.find(request => request.path === '/api/v1/orders' && request.method === 'POST')?.body.line_items).toEqual([{ ticket_type_id: 1, quantity: 1 }])
     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
-    await expect(checkout.getByLabel('Full Name')).toHaveValue('Unsaved buyer')
+    await expect(checkout.getByLabel('Full name')).toHaveValue('Unsaved buyer')
     // Use the application's navigation, which discards the departed form.
     await checkout.getByRole('link', { name: /HåfaPass/ }).first().click()
     await expect(checkout.locator('#deploy-marker')).toHaveText('Build B', { timeout: 15_000 })

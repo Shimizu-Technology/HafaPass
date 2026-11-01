@@ -76,7 +76,7 @@ describe('buyer account pages in another language', () => {
     await screen.findByText(translated(key), { exact: false })
     expect(screen.queryByText('Your order is confirmed')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Download PDF' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'My Tickets' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'My tickets' })).not.toBeInTheDocument()
     expect(screen.getByText(event.title)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: translated('translation.showOriginal') }))
     expect(screen.getByText('Organizer original event')).toBeInTheDocument()

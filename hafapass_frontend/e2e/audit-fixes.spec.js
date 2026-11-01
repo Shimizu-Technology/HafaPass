@@ -96,11 +96,11 @@ for (const width of [390, 1280]) {
     await expect(page.getByRole('combobox', { name: 'Status', exact: true })).toHaveValue('failed')
     await page.goto('/dashboard/events/new')
     await verifySelect(page.getByLabel('Category', { exact: true }))
-    const age = page.getByLabel('Age Restriction', { exact: true })
+    const age = page.getByLabel('Age restriction', { exact: true })
     await verifySelect(age)
     await age.selectOption('eighteen_plus')
     await page.reload()
-    await expect(page.getByLabel('Age Restriction', { exact: true })).toHaveValue('eighteen_plus')
+    await expect(page.getByLabel('Age restriction', { exact: true })).toHaveValue('eighteen_plus')
   })
 }
 
@@ -112,7 +112,7 @@ test('checkout configuration failure keeps cached support reachable at 390px', a
   await expect(page.locator('footer').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
   await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
   await page.route('**/api/v1/config', route => route.fulfill({ status: 503, json: { error: 'Synthetic config outage' } }))
-  await page.getByRole('button', { name: /Buy Tickets/ }).click()
+  await page.getByRole('button', { name: /Buy tickets/ }).click()
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
   await expect(page.locator('main').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
   await expect(page.locator('main').getByRole('link', { name: '(671) 483-0219', exact: true })).toHaveAttribute('href', 'tel:6714830219')

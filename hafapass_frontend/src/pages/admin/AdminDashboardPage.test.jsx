@@ -72,7 +72,7 @@ describe('AdminDashboardPage', () => {
 
   it('uses a defined color token for every stat card icon', async () => {
     render(<MemoryRouter initialEntries={['/admin']}><AdminDashboardPage /></MemoryRouter>)
-    const tickets = (await screen.findByText('Tickets Sold')).nextElementSibling
+    const tickets = (await screen.findByText('Tickets sold')).nextElementSibling
     expect(tickets).toHaveClass('bg-accent-500')
     expect(document.querySelector('[class*="coral"]')).toBeNull()
   })

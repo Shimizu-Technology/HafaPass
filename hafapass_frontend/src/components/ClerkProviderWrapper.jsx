@@ -1,4 +1,6 @@
 import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react'
+import { useTranslation } from 'react-i18next'
+import PageLoading from './PageLoading'
 import { Sentry } from '../monitoring'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { setAuthTokenGetter } from '../api/client'
@@ -23,6 +25,7 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
   const { getToken, isLoaded: authLoaded, sessionId, userId } = useAuth()
   const { isLoaded, isSignedIn, user } = useUser()
   const currentUserId = isSignedIn && user ? user.id : null
+  const { t } = useTranslation()
 
   useEffect(() => {
     return setAuthTokenGetter(() => getToken(), {
@@ -98,7 +101,9 @@ function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
   const savedOwner = currentVerification && !bindingWithdrawn && !hasPendingScannerBinding()
     && (!bindingReady || (boundUser && boundUser === currentScannerOwner())) ? currentScannerOwner() : null
   if (!isLoaded && loadingFallback && savedOwner && savedOwner === (loadingFallbackOwner ?? initialFallbackOwner.current)) return loadingFallback
-  if (isLoaded && !unchangedBinding && (!bindingReady || boundUser !== currentUserId)) return <div className="grid min-h-screen place-items-center" role="status">Preparing your account…</div>
+  // The real navigation depends on the account being prepared, so a static
+  // header keeps the page's frame in place until it can render.
+  if (isLoaded && !unchangedBinding && (!bindingReady || boundUser !== currentUserId)) return <PageLoading header message={t('buyer.layout.preparingAccount')} />
   return typeof children === 'function' ? children({ scannerOwner: isLoaded ? (currentVerification && currentUserId === currentScannerOwner() ? currentUserId : null) : savedOwner }) : children
 }
 

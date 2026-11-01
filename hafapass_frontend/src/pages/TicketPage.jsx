@@ -10,65 +10,17 @@ import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smar
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
+import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
+import useScreenWakeLock from '../hooks/useScreenWakeLock'
+import { visibleWallets } from '../utils/walletPlatform'
+import { revokeObjectUrlLater } from '../utils/download'
 
-// Mounted only with an authorized, scannable QR. A late request must never
-// retain a lock after navigation or after the document becomes hidden.
+// Mounted only with an authorized, scannable QR, so the lock follows the QR.
 function ScreenWakeLock() {
-  useEffect(() => {
-    if (!navigator.wakeLock?.request) return undefined
-    let active = true
-    let sentinel = null
-    let pending = false
-    let generation = 0
-    let retryTimer = null
-    let retries = 0
-    const clearRetry = () => { clearTimeout(retryTimer); retryTimer = null }
-    const release = lock => { try { Promise.resolve(lock?.release()).catch(() => {}) } catch { /* Optional browser feature. */ } }
-    const request = async () => {
-      if (!active || pending || sentinel || document.visibilityState !== 'visible') return
-      const attempt = generation
-      pending = true
-      try {
-        const lock = await navigator.wakeLock.request('screen')
-        if (!active || attempt !== generation || document.visibilityState !== 'visible') release(lock)
-        else {
-          sentinel = lock
-          lock.addEventListener?.('release', () => {
-            if (sentinel !== lock) return
-            sentinel = null
-            // Battery/browser policy can release a visible lock. Try once per
-            // visibility period, without fighting a persistent power policy.
-            if (active && document.visibilityState === 'visible' && retries < 1) {
-              retries += 1
-              retryTimer = setTimeout(() => { retryTimer = null; request() }, 1000)
-            }
-          }, { once: true })
-        }
-      } catch { /* Denied, unsupported, or low battery: the QR remains usable. */ }
-      finally {
-        pending = false
-        if (active && attempt !== generation) request()
-      }
-    }
-    const visibilityChanged = () => {
-      clearRetry()
-      if (document.visibilityState === 'visible') { retries = 0; request() }
-      else { generation += 1; const lock = sentinel; sentinel = null; release(lock) }
-    }
-    request()
-    document.addEventListener('visibilitychange', visibilityChanged)
-    return () => {
-      active = false
-      clearRetry()
-      generation += 1
-      document.removeEventListener('visibilitychange', visibilityChanged)
-      release(sentinel)
-      sentinel = null
-    }
-  }, [])
+  useScreenWakeLock(true)
   return null
 }
 
@@ -101,7 +53,7 @@ function AddToHomeScreenInstructions() {
             transition={{ duration: reducedMotion ? 0 : 0.2 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-xs text-neutral-600 space-y-1.5">
+            <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-sm text-neutral-600 space-y-1.5">
               {isIOS ? (
                 <>
                   <p className="font-medium text-neutral-700">{t('buyerAccount.ticketPage.iOSInstructions')}</p>
@@ -129,7 +81,7 @@ function WalletButton({ label, icon, onClick, disabled, loading }) {
   const { t } = useTranslation()
   return (
       <button onClick={onClick} disabled={disabled || loading}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
+        className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
         {icon}
         <span>{loading ? t('buyerAccount.ticketPage.opening') : label}</span>
       </button>
@@ -182,8 +134,21 @@ function AuthenticatedTicket() {
     authContext={userId ? context : undefined} />
 }
 
+// Follows connectivity changes so the offline explanation appears and clears
+// as the buyer's phone drops and regains signal.
+const subscribeConnectivity = callback => {
+  window.addEventListener('online', callback)
+  window.addEventListener('offline', callback)
+  return () => {
+    window.removeEventListener('online', callback)
+    window.removeEventListener('offline', callback)
+  }
+}
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
 function TicketContent({ authContext }) {
   const { t } = useTranslation()
+  const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
   const reducedMotion = useReducedMotion()
   const { credential } = useParams()
   const location = useLocation()
@@ -275,7 +240,7 @@ function TicketContent({ authContext }) {
         : t('buyerAccount.ticketPage.weCouldnTDownloadThePDFYourTicket'))
     } finally {
       downloadLink?.remove()
-      if (downloadUrl) window.URL.revokeObjectURL(downloadUrl)
+      if (downloadUrl) revokeObjectUrlLater(downloadUrl)
       if (current()) setDownloading(false)
     }
   }
@@ -311,7 +276,9 @@ function TicketContent({ authContext }) {
         const link = document.createElement('a')
         link.href = walletUrl
         link.download = `hafapass-ticket-${ticket.id}.pkpass`
+        document.body.appendChild(link)
         link.click()
+        link.remove()
       } else {
         const response = await api.get(`/tickets/${encodeURIComponent(credential)}/wallet/google`, {
           params: { response: 'json' }, headers: orderAccessHeaders(orderId, access.current.token), authContext,
@@ -322,7 +289,7 @@ function TicketContent({ authContext }) {
     } catch (err) {
       if (current()) setWalletError(err.response?.data?.error || t('buyerAccount.ticketPage.walletIsUnavailable', { wallet: kind === 'apple' ? 'Apple' : 'Google' }))
     } finally {
-      if (walletUrl) window.URL.revokeObjectURL(walletUrl)
+      if (walletUrl) revokeObjectUrlLater(walletUrl)
       if (current()) setWalletLoading(null)
     }
   }
@@ -337,11 +304,11 @@ function TicketContent({ authContext }) {
 
   if (error) {
     return (
-      <div className="max-w-md mx-auto px-4 py-12 text-center">
-        <div className="card p-8">
+      <div className="min-h-dvh bg-brand-950 px-4 py-12 text-center">
+        <div className="card p-8 max-w-md mx-auto">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-neutral-950 mb-3">{t('buyerAccount.ticketPage.ticketUnavailable')}</h1>
-          <p role="alert" className="text-red-700 font-medium mb-4">{error}</p>
+          <p role="alert" className="text-red-700 font-medium mb-4">{offline ? t('buyerAccount.ticketPage.offlineTicket') : error}</p>
           <div className="flex flex-wrap justify-center gap-3"><button type="button" className="btn-primary text-sm" onClick={() => setLoadAttempt(value => value + 1)}>{t('buyerAccount.ticketPage.tryAgain')}</button><Link to="/orders/recover" className="btn-secondary text-sm">{t('buyerAccount.ticketPage.findMyOrder')}</Link></div>
         </div>
       </div>
@@ -364,9 +331,11 @@ function TicketContent({ authContext }) {
   const accessPaused = ticket.status === 'issued' && ticket.admission_allowed !== true
   const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.access_paused
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
+  const wallets = visibleWallets(ticket.wallet_availability)
 
   return (
     <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+      <SEO title={t('pageTitles.ticket')} noIndex />
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
         initial={reducedMotion ? false : { opacity: 1, y: 8 }}
@@ -417,14 +386,14 @@ function TicketContent({ authContext }) {
           >
             <ScreenWakeLock />
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
-              <QRCode value={ticket.scan_credential} size={220} />
+              <QRCode value={ticket.scan_credential} size={280} className="block w-full max-w-[17.5rem] h-auto" />
             </div>
             <p className="mt-2 text-xs text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
           </motion.div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-700">{t('buyerAccount.ticketPage.entryCodeUnavailable')}</p>
-              <p className="mt-1 text-xs text-neutral-500">{ticket.admission_allowed === true
+              <p className="mt-1 text-sm text-neutral-500">{ticket.admission_allowed === true
                 ? t('buyerAccount.ticketPage.openThisTicketFromYourSecureOrderConfirmation')
                 : ticket.admission_block_reason || t(`buyerAccount.ticketPage.entryState.${ticket.status}`, { defaultValue: t('buyerAccount.ticketPage.thisTicketIsNotCurrentlyValidForEntry') })}</p>
             </div>
@@ -440,7 +409,7 @@ function TicketContent({ authContext }) {
               <MachineTranslationNotice {...eventContent.notice} />
               <p className="text-sm text-brand-800 font-semibold font-sans">{ticket_type.name}</p>
               {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
-              {ticket.seat?.obstructed_view && <p className="mt-1 text-xs text-amber-700">{t('buyerAccount.ticketPage.obstructedView')}{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
+              {ticket.seat?.obstructed_view && <p className="mt-1 text-sm text-amber-700">{t('buyerAccount.ticketPage.obstructedView')}{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
 
             <div className="space-y-2.5">
@@ -448,7 +417,7 @@ function TicketContent({ authContext }) {
                 <Calendar className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm text-neutral-700 font-sans">{formatDate(event.starts_at)}</p>
-                  <p className="text-xs text-neutral-500 font-sans">
+                  <p className="text-sm text-neutral-500 font-sans">
                     {formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}
                   </p>
                 </div>
@@ -459,7 +428,7 @@ function TicketContent({ authContext }) {
                 <div>
                   <p className="text-sm text-neutral-700 font-sans">{event.venue_name}</p>
                   {event.venue_address && (
-                    <p className="text-xs text-neutral-500 font-sans">{event.venue_address}</p>
+                    <p className="text-sm text-neutral-500 font-sans">{event.venue_address}</p>
                   )}
                 </div>
               </div>
@@ -467,7 +436,7 @@ function TicketContent({ authContext }) {
               {event.doors_open_at && (
                 <div className="flex items-center gap-2.5">
                   <Clock className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                  <p className="text-xs text-neutral-500 font-sans">{t('buyerAccount.ticketPage.doorsOpenAt', { time: formatTime(event.doors_open_at) })}</p>
+                  <p className="text-sm text-neutral-500 font-sans">{t('buyerAccount.ticketPage.doorsOpenAt', { time: formatTime(event.doors_open_at) })}</p>
                 </div>
               )}
             </div>
@@ -496,24 +465,24 @@ function TicketContent({ authContext }) {
             {typeof navigator !== 'undefined' && navigator.share && (
               <button
                 onClick={handleShare}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-sm font-medium transition-colors"
+                className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-sm font-medium transition-colors"
               >
                 <Share2 className="w-4 h-4" />
                 <span>{t('buyerAccount.ticketPage.shareTicket')}</span>
               </button>
             )}
             {typeof navigator !== 'undefined' && navigator.share && (
-              <p className="text-center text-xs text-neutral-500">{t('buyerAccount.ticketPage.sharingDoesNotTransfer')}</p>
+              <p className="text-center text-sm text-neutral-500">{t('buyerAccount.ticketPage.sharingDoesNotTransfer')}</p>
             )}
 
-            {walletError && <p className="text-center text-xs text-red-600">{walletError}</p>}
-            {(ticket.wallet_availability?.apple || ticket.wallet_availability?.google) && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {ticket.wallet_availability.apple && (
+            {walletError && <p role="alert" className="text-center text-sm text-red-700">{walletError}</p>}
+            {(wallets.apple || wallets.google) && (
+              <div className={`grid grid-cols-1 gap-2 ${wallets.apple && wallets.google ? 'sm:grid-cols-2' : ''}`}>
+                {wallets.apple && (
                   <WalletButton label={t('buyerAccount.ticketPage.appleWallet')} icon={<AppleWalletIcon />} disabled={!showCredential}
                     loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
                 )}
-                {ticket.wallet_availability.google && (
+                {wallets.google && (
                   <WalletButton label={t('buyerAccount.ticketPage.googleWallet')} icon={<GoogleWalletIcon />} disabled={!showCredential}
                     loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
                 )}
@@ -523,7 +492,7 @@ function TicketContent({ authContext }) {
 
           {/* Footer */}
           <div className="px-4 sm:px-6 py-3 bg-neutral-50 text-center border-t border-neutral-100">
-            <p className="text-xs text-content-muted font-sans">
+            <p className="text-sm text-content-muted font-sans">
               {showCredential ? t('buyerAccount.ticketPage.presentThisQRCodeAtTheDoor') : t('buyerAccount.ticketPage.thisTicketHasNoActiveEntryCode')}
             </p>
           </div>

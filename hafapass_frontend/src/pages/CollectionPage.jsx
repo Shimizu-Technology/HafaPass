@@ -26,11 +26,11 @@ export default function CollectionPage() {
     return () => { active = false }
   }, [page, slug, attempt])
 
-  if (!data) return <div className="public-listing-min-height bg-stone-50"><BuyerTitleBand title={t('pass.buyer.collection')} description={t('pass.buyer.collectionDescription')} /><div role="status" aria-label={t('pass.buyer.loadingCollection')} className="flex min-h-48 items-center justify-center"><Loader2 aria-hidden="true" className="h-8 w-8 animate-spin text-brand-700" /></div></div>
+  if (!data) return <div className="public-listing-min-height bg-surface"><BuyerTitleBand title={t('pass.buyer.collection')} description={t('pass.buyer.collectionDescription')} /><div role="status" aria-label={t('pass.buyer.loadingCollection')} className="flex min-h-48 items-center justify-center"><Loader2 aria-hidden="true" className="h-8 w-8 animate-spin text-brand-700" /></div></div>
   if (data.error === 'missing') return <NotFound kind="collection" />
-  if (data.error) return <div className="public-listing-min-height bg-stone-50"><BuyerTitleBand title={t('pass.buyer.collection')} description={t('pass.buyer.collectionDescription')} /><div className="px-4 py-8 text-center"><p role="alert" className="text-neutral-700">{t('buyerDiscovery.collection.thisCollectionCouldnTLoadPleaseTry')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.collection.retry')}</button></div></div>
+  if (data.error) return <div className="public-listing-min-height bg-surface"><BuyerTitleBand title={t('pass.buyer.collection')} description={t('pass.buyer.collectionDescription')} /><div className="px-4 py-8 text-center"><p role="alert" className="text-neutral-700">{t('buyerDiscovery.collection.thisCollectionCouldnTLoadPleaseTry')}</p><button type="button" className="btn-primary mt-4" onClick={() => setAttempt(value => value + 1)}>{t('buyerDiscovery.collection.retry')}</button></div></div>
 
-  return <div className="public-listing-min-height bg-stone-50">
+  return <div className="public-listing-min-height bg-surface">
     <SEO title={data.seo_title || data.title} description={data.seo_description || data.description} />
     <BuyerTitleBand title={data.title} description={data.description} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">

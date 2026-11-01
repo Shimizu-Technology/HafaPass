@@ -83,7 +83,7 @@ for (const width of [320, 390, 768, 1440]) {
       await page.getByRole('button', { name: 'Filters', exact: true }).click()
       await expect(page.getByLabel('Category', { exact: true })).toBeVisible()
       await expect(page.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(11)
-      await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'All events', exact: true })).toHaveCount(0)
       const date = await page.getByLabel('When', { exact: true }).boundingBox()
       const price = await page.getByLabel('Price', { exact: true }).boundingBox()
       if (width < 400) {
@@ -95,7 +95,7 @@ for (const width of [320, 390, 768, 1440]) {
       }
     } else {
       await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
-      await expect(page.getByRole('button', { name: 'All Events', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.getByRole('button', { name: 'All events', exact: true })).toHaveAttribute('aria-pressed', 'true')
       for (const { label } of categories) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
     }
     const checkFilterText = async () => {
@@ -262,7 +262,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.evaluate(() => document.fonts.ready)
 
     const checkGeometry = async label => {
-      await expect(page.getByRole('link', { name: 'Add to Calendar' })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Add to calendar' })).toBeVisible()
       for (const name of ['Share', 'Save', label]) await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
       const bounds = await page.getByRole('button', { name: label, exact: true }).locator('..').evaluate(row =>
         Array.from(row.children, control => {
@@ -321,12 +321,12 @@ test('reduced-motion event navigation retains B inventory through a late A respo
   await json(oldRoute, a)
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await expect(page.getByRole('heading', { name: 'Event B', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: /Buy Tickets/ }).click()
+  await page.getByRole('button', { name: /Buy tickets/ }).click()
   await expect(page).toHaveURL(/\/checkout\/event-b$/)
-  await page.getByLabel('Full Name').fill('Synthetic Route Buyer')
-  await page.getByLabel('Email Address').fill('buyer@example.invalid')
+  await page.getByLabel('Full name').fill('Synthetic Route Buyer')
+  await page.getByLabel('Email address').fill('buyer@example.invalid')
   await page.locator('#termsAccepted').check()
-  await page.getByRole('button', { name: /Place Order/ }).click()
+  await page.getByRole('button', { name: /Place order/ }).click()
   await expect.poll(() => submitted?.event_id).toBe(42)
   expect(submitted.line_items).toEqual([{ ticket_type_id: 222, quantity: 2 }])
 })

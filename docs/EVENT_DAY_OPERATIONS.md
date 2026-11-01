@@ -64,7 +64,10 @@ Automated coverage exercises signed manifests, duplicate reconciliation, revoked
 - A red result must not be overridden by changing the payment method or sharing another ticket. Use attendee lookup, order support, or the printed list under the event's documented exception policy.
 - Manual attendee lookup returns no buyer email. It may admit only a ticket present and valid in the signed manifest.
 - An online scanner makes a bounded fresh-list attempt for an unfamiliar QR before calling it invalid. If verification or connectivity fails, inspect that message and use **Sync now** after recovery. Repeated invalid scans do not trigger unlimited downloads. Quiet successful scans use the sync acknowledgement without downloading the whole list each time.
-- Keep devices charged, prevent screen sleep where practical, and sync before moving a device to another door. Never share one registered browser profile between staff accounts.
+- Each result flashes the whole screen: green "Admitted" clears itself in under a second; red "Do not admit" and amber "Check ticket" stay until tapped, and the camera does not check another ticket until then. The reason stays in the result panel under the camera. A ticket the guest keeps holding in front of the camera after its result is ignored until it has been out of view for about five seconds; type the code under **Enter a ticket QR code** to check it again sooner. An online scan stays neutral ("Waiting for server confirmation") until the server answers, then flashes. Undo results never flash.
+- The scanner plays a high tone for admit and two low beeps for a refusal or warning. Audio starts with the **Start camera** tap; use the **Sound** button to mute a device (the choice is remembered on that device). Rehearse with the venue noise and the phone's volume up; Android also vibrates.
+- While the camera runs, the scanner asks the browser to keep the screen on. If the browser can't, the page says so; set Auto-Lock (iPhone) or Screen timeout (Android) to Never for the shift.
+- Keep devices charged and sync before moving a device to another door. Never share one registered browser profile between staff accounts.
 
 ## Recovering a retained offline journal
 

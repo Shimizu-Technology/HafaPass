@@ -42,7 +42,7 @@ it('shows a discover failure with retry, then the genuine empty state', async ()
 it('shows hosting on Discover when both collections and public inventory are empty', async () => {
   api.get.mockImplementation(url => Promise.resolve({ data: url === '/events' ? { events: [], meta: { total_count: 0 } } : { collections: [] } }))
   show(CollectionsPage)
-  expect(await screen.findByRole('heading', { name: 'The first events go on sale soon.' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'The first events are on their way.' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
   expect(screen.queryByRole('link', { name: 'Browse events' })).not.toBeInTheDocument()
 })
@@ -95,4 +95,17 @@ it.each([
   await userEvent.click(screen.getByRole('button', { name: 'Back to first page' }))
   expect(await screen.findByText('Current event')).toBeInTheDocument()
   expect(api.get).toHaveBeenLastCalledWith(expect.any(String), { params: { page: 1 } })
+})
+
+it('labels privacy requests and their status in the buyer language, not raw server values', async () => {
+  api.get.mockResolvedValue({ data: { requests: [
+    { id: 3, kind: 'access', status: 'partially_completed' },
+    { id: 4, kind: 'deletion', status: 'blocked' },
+  ] } })
+  show(PrivacyRequestsPage, '/privacy/requests', '/privacy/requests')
+  expect(await screen.findByText('Data request #3')).toBeInTheDocument()
+  expect(screen.getByText('Partly completed')).toBeInTheDocument()
+  expect(screen.getByText('Deletion request #4')).toBeInTheDocument()
+  expect(screen.getByText('On hold')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Your privacy choices' })).toBeInTheDocument()
 })

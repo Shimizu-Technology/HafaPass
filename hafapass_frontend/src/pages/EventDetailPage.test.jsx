@@ -60,7 +60,7 @@ it('hides the waitlist in a sold-out private preview', async () => {
     <Route path="/events/:slug/preview" element={<EventDetailPage />} />
   </Routes></MemoryRouter>)
   await screen.findByRole('heading', { name: 'Reef Night' })
-  expect(screen.queryByText('Join the Waitlist')).not.toBeInTheDocument()
+  expect(screen.queryByText('Join the waitlist')).not.toBeInTheDocument()
   expect(screen.queryByText('Already on the waitlist?')).not.toBeInTheDocument()
   expect(screen.getAllByText(/Tickets aren't available in this private preview/)).toHaveLength(1)
 })
@@ -134,7 +134,7 @@ describe('EventDetailPage buyer polish', () => {
 
   it('keeps the back link on its own row above the category label', async () => {
     mount(baseEvent)
-    const back = await screen.findByRole('link', { name: 'All Events' })
+    const back = await screen.findByRole('link', { name: 'All events' })
     expect(back).toHaveClass('flex', 'mb-6')
     expect(screen.getByText('Nightlife')).toHaveClass('block')
   })

@@ -216,7 +216,7 @@ export default function PageDesignEditor({
               aria-label="Custom accent hex"
               aria-invalid={Boolean(page.accent && !/^#[0-9a-f]{6}$/i.test(page.accent))}
               className="input w-28"
-              placeholder="#087e82"
+              placeholder="e.g. #087e82"
               maxLength="7"
               value={page.accent || ''}
               onChange={(event) => change({ accent: event.target.value })}

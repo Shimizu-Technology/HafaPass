@@ -153,7 +153,7 @@ export default function TeamManager({ basePath, request, canTransfer = false, he
       <form onSubmit={invite} className="mt-5 space-y-4">
         <label className="block text-sm font-medium text-neutral-900">
           Teammate email
-          <input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="input mt-1" placeholder="teammate@example.com" autoComplete="off" disabled={busy} />
+          <input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="input mt-1" placeholder="e.g. teammate@example.com" autoComplete="off" disabled={busy} />
         </label>
         <RoleRadioGroup legend="Role" roles={inviteRoles} value={role} onChange={setRole} disabled={busy} name="team-invite-role" action={comparisonAction} />
         <button disabled={busy || !email.trim()} className="btn-primary w-full gap-2 sm:w-auto"><UserPlus aria-hidden="true" className="h-4 w-4" />{busy ? 'Sending…' : 'Invite'}</button>

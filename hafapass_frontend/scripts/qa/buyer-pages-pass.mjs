@@ -32,14 +32,14 @@ for (const [engine, type] of [['chromium', chromium], ...(phase === 'after' && p
           await page.goto(base + (name === 'checkout' ? '/events/community-night' : path))
           if (name === 'checkout') {
             await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
-            await page.getByRole('button', { name: /Buy Tickets/ }).click()
+            await page.getByRole('button', { name: /Buy tickets/ }).click()
           }
           await page.locator('main h1').waitFor()
           if (name.startsWith('events')) await page.waitForFunction(() => !document.querySelector('[aria-label="Loading events"]'))
           if (name === 'events-populated') await page.locator('.event-card').first().waitFor()
           if (name.includes('my-tickets')) await page.getByRole('tablist').waitFor()
           if (name.startsWith('saved')) await page.getByRole('heading', { name: /Reminders/ }).waitFor()
-          if (name === 'checkout') await page.getByLabel('Full Name').waitFor()
+          if (name === 'checkout') await page.getByLabel('Full name').waitFor()
           await page.evaluate(() => document.fonts.ready)
           await page.waitForTimeout(600)
           const filename = `${engine === 'webkit' ? 'webkit-' : ''}${width}-${name}.png`

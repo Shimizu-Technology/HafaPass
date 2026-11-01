@@ -200,7 +200,7 @@ function PromoCodesSession({ eventId, identity }) {
      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
        <label htmlFor="promo-code" className="block text-sm font-medium text-neutral-700 mb-1.5">Code</label>
-       <input id="promo-code" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} className="input min-w-0 max-w-full uppercase" placeholder="SUMMER20" required />
+       <input id="promo-code" value={form.code} onChange={e => setForm({...form, code: e.target.value.toUpperCase()})} className="input min-w-0 max-w-full uppercase" placeholder="e.g. SUMMER20" required />
       </div>
       <div>
        <label htmlFor="promo-discount_type" className="block text-sm font-medium text-neutral-700 mb-1.5">Discount type</label>
@@ -213,7 +213,7 @@ function PromoCodesSession({ eventId, identity }) {
        <label htmlFor="promo-discount_value" className="block text-sm font-medium text-neutral-700 mb-1.5">
         {form.discount_type === 'percentage' ? 'Discount (%)' : 'Discount ($)'}
        </label>
-       <input type="number" min={form.discount_type === 'percentage' ? 1 : 0.01} max={form.discount_type === 'percentage' ? 100 : undefined} step={form.discount_type === 'percentage' ? 1 : 0.01} id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input min-w-0 max-w-full" placeholder={form.discount_type === 'percentage' ? '20' : '5.00'} required />
+       <input type="number" min={form.discount_type === 'percentage' ? 1 : 0.01} max={form.discount_type === 'percentage' ? 100 : undefined} step={form.discount_type === 'percentage' ? 1 : 0.01} id="promo-discount_value" value={form.discount_value} onChange={e => setForm({...form, discount_value: e.target.value})} className="input min-w-0 max-w-full" placeholder={form.discount_type === 'percentage' ? 'e.g. 20' : 'e.g. 5.00'} required />
       </div>
       <div>
        <label htmlFor="promo-max_uses" className="block text-sm font-medium text-neutral-700 mb-1.5">Maximum uses <span className="text-content-muted font-normal">(optional)</span></label>

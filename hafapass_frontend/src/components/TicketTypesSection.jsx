@@ -66,7 +66,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
             : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
 
           return (
-            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-sm' : ''}`}>
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-soft' : ''}`}>
               <div className="flex flex-col gap-3">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">

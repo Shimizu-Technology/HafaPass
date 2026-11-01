@@ -1,22 +1,18 @@
-import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '@clerk/clerk-react'
 import { Navigate, useLocation } from 'react-router-dom'
 
 import { signInDestination } from '../utils/authDestination'
+import PageLoading from './PageLoading'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 function AuthGate({ children }) {
   const { isSignedIn, isLoaded } = useAuth()
   const location = useLocation()
+  const { t } = useTranslation()
 
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" role="status" aria-label="Loading your account">
-        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-      </div>
-    )
-  }
+  if (!isLoaded) return <PageLoading label={t('buyer.layout.loadingAccount')} />
 
   if (!isSignedIn) {
     return <Navigate to={signInDestination(location)} replace />

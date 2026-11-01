@@ -14,8 +14,8 @@ test('opens the public marketplace when backend services are available', async (
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Start Hosting', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Start hosting', exact: true })).toBeVisible()
 })
 
 test('keeps public browsing mounted with a recoverable outage banner when the background health check fails', async ({ page }) => {

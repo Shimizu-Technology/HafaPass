@@ -56,7 +56,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 
 }
 
 for (const width of [375, 1280]) {
-  test(`discover loading keeps the footer stable through confirmed empty inventory at ${width}px`, async ({ page }) => {
+  test(`discover loading never pushes the footer down when empty inventory is confirmed at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 812 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
@@ -76,10 +76,12 @@ for (const width of [375, 1280]) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const footerTop = await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)
     finishCollections()
-    await expect(page.getByRole('heading', { name: 'The first events go on sale soon.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
     // Read the settled layout after React commits the new utility classes.
+    // The empty state drops the listing min-height on purpose so the footer
+    // does not float under a blank gap; it may rise, but must never drop.
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    expect(await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)).toBe(footerTop)
+    expect(await page.locator('footer').evaluate(element => element.getBoundingClientRect().top)).toBeLessThanOrEqual(footerTop)
   })
 }
 

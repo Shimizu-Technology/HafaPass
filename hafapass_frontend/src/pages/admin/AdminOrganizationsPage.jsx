@@ -44,7 +44,7 @@ function CreateOrganizationDialog({ busy, error, created, onCancel, onCreate }) 
           <label className="block text-sm font-medium text-neutral-900">
             Owner’s email
             <span className="block font-normal text-content-muted">They get an invitation to manage the team, payouts and all events.</span>
-            <input required type="email" value={ownerEmail} onChange={event => setOwnerEmail(event.target.value)} className="input mt-1" placeholder="owner@example.com" autoComplete="off" disabled={busy} />
+            <input required type="email" value={ownerEmail} onChange={event => setOwnerEmail(event.target.value)} className="input mt-1" placeholder="e.g. owner@example.com" autoComplete="off" disabled={busy} />
           </label>
           <label className="flex min-h-11 items-start gap-3 text-sm text-neutral-900">
             <input type="checkbox" checked={preVerified} onChange={event => setPreVerified(event.target.checked)} disabled={busy} className="mt-1 h-4 w-4 accent-brand-600" />

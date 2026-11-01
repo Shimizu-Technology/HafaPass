@@ -3,9 +3,11 @@ import { Sentry } from '../monitoring'
 import { monitoringPath } from '../utils/telemetryPrivacy'
 import { getActiveLanguage } from '../utils/locale'
 export { monitoringPath } from '../utils/telemetryPrivacy'
+import { DEFAULT_TIMEOUT_MS, DOWNLOAD_TIMEOUT_MS, SLOW_WRITE_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, slowConnectionMessage } from './errors'
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1',
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -36,8 +38,28 @@ function assertCurrentOrganization(config) {
   }
 }
 
+// Writes to an existing order (payment resume, cancel, transfer, resend) and
+// other buyer writes without an idempotency key (ticket transfer and accept,
+// seat holds) wait longer before giving up. Order creation is keyed by
+// checkout_key and keeps the default. File uploads get the longest wait.
+const SLOW_WRITES = [
+  /^\/?orders\/[^/?]+\//,
+  /^\/?me\/tickets\/[^/?]+\/transfer(?:[/?]|$)/,
+  /^\/?me\/ticket_transfers\/accept(?:[/?]|$)/,
+  /^\/?events\/[^/?]+\/seat_holds(?:[/?]|$)/,
+]
+export function requestTimeout(config) {
+  if (config.responseType === 'blob') return DOWNLOAD_TIMEOUT_MS
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) return UPLOAD_TIMEOUT_MS
+  const keyed = config.headers?.['Idempotency-Key'] || config.headers?.get?.('Idempotency-Key')
+  const url = config.url || ''
+  if (String(config.method).toLowerCase() === 'post' && !keyed && SLOW_WRITES.some(pattern => pattern.test(url))) return SLOW_WRITE_TIMEOUT_MS
+  return config.timeout
+}
+
 // Request interceptor to attach auth token when available
 apiClient.interceptors.request.use(async (config) => {
+  if (config.timeout === DEFAULT_TIMEOUT_MS) config.timeout = requestTimeout(config)
   // The API answers in the language chosen in the app (event text, and the
   // language saved on orders for their emails), not the browser default.
   if (!config.headers['Accept-Language']) config.headers['Accept-Language'] = getActiveLanguage()
@@ -73,6 +95,12 @@ apiClient.interceptors.request.use(async (config) => {
 apiClient.interceptors.response.use(
   response => response,
   (error) => {
+    // Axios reports a timeout as ECONNABORTED ("timeout of …ms exceeded"), or
+    // ETIMEDOUT with clarifyTimeoutError. A browser-aborted request is not one.
+    if (error.code === 'ETIMEDOUT' || (error.code === 'ECONNABORTED' && /timeout/i.test(error.message || ''))) {
+      error.isTimeout = true
+      error.message = slowConnectionMessage()
+    }
     if (error.response?.status >= 500) {
       const monitoringError = new Error(`API request failed with status ${error.response.status}`)
       monitoringError.name = 'ApiRequestError'

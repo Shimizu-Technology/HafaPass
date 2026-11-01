@@ -429,11 +429,11 @@ function AttendeesPageSession({ id, identity }) {
                 <tr className="bg-neutral-50">
                   <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Name</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Email</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Ticket type</th>
                   {filter('view') === 'orders' && <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Purchased</th>}
                   {filter('view') === 'orders' && canSeeFinance && <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Amount</th>}
                   <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked In</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked in</th>
                   {showActions && <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>

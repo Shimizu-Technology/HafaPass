@@ -662,6 +662,9 @@
       "somethingWentWrongRetryToRecoverTheSame": {
         "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
+      "retryToRecoverTheSameCheckout": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
       "retry": {
         "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
@@ -1130,6 +1133,9 @@
       },
       "developmentDetails": {
         "context": "Buyer-facing ErrorFallback interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "goHome": {
+        "context": "Link on the HåfaPass error screen that opens the home page with a fresh load."
       }
     },
     "service": {
@@ -1203,6 +1209,18 @@
       },
       "loaded": {
         "context": "Buyer-facing buyer.layout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "loadingAccount": {
+        "context": "Screen-reader status while HåfaPass confirms who is signed in."
+      },
+      "preparingAccount": {
+        "context": "Shown while HåfaPass securely switches to the signed-in account and clears the previous account's saved data on this device."
+      },
+      "checkingAdmin": {
+        "context": "Screen-reader status while HåfaPass confirms the signed-in person is a platform administrator."
+      },
+      "checkingSupport": {
+        "context": "Screen-reader status while HåfaPass confirms the signed-in person is on the support team."
       }
     }
   },
@@ -1423,6 +1441,9 @@
       "failedToLoadTicketPleaseTryAgain": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. We couldn't load this ticket."
       },
+      "offlineTicket": {
+        "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. You're offline. Reconnect to show your ticket QR, or open it from your phone's wallet app if you added it."
+      },
       "sharingDoesNotTransfer": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Sharing this link does not transfer the ticket."
       },
@@ -1442,6 +1463,24 @@
       },
       "loading": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Loading your requests…"
+      },
+      "title": {
+        "context": "Heading of the HåfaPass page where buyers ask for a copy of their data or its deletion."
+      },
+      "intro": {
+        "context": "Privacy request explanation. Keep the meaning precise: financial records may be retained; personal details are removed when deletion is allowed."
+      },
+      "accessRequest": {
+        "context": "A buyer's request for a copy of their personal data. Keep {{id}} unchanged."
+      },
+      "deletionRequest": {
+        "context": "A buyer's request to delete their personal data. Keep {{id}} unchanged."
+      },
+      "status_partially_completed": {
+        "context": "Some data was deleted; records that must be kept for accounting, tax or disputes remain."
+      },
+      "status_blocked": {
+        "context": "The request cannot proceed yet because a legal hold, dispute, refund or payout is open."
       }
     },
     "myTicketsPage": {
@@ -1456,6 +1495,97 @@
     },
     "previewTicketsDisabled": {
       "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Tickets aren't available in this private preview."
+    }
+  },
+  "pageTitles": {
+    "dashboard": {
+      "context": "Browser tab title for the organizer workspace home on HåfaPass, an event-ticketing platform for Guam."
+    },
+    "boxOffice": {
+      "context": "Browser tab title for the door sales tool where organizers sell tickets in person."
+    },
+    "scanner": {
+      "context": "Browser tab title for the tool door staff use to scan ticket QR codes at the entrance."
+    },
+    "admin": {
+      "context": "Browser tab title for the HåfaPass platform administrator console."
+    },
+    "order": {
+      "context": "Browser tab title for a buyer's ticket order on HåfaPass."
+    },
+    "ticket": {
+      "context": "Browser tab title for a buyer's event ticket with its entry QR code."
+    },
+    "ticketTransfer": {
+      "context": "Browser tab title for accepting a ticket that another attendee gave to you."
+    },
+    "invitation": {
+      "context": "Browser tab title for accepting an invitation to join an organizer team on HåfaPass."
+    }
+  },
+  "common": {
+    "slowConnection": {
+      "context": "Shown when a request to HåfaPass times out on a weak mobile signal or busy venue Wi-Fi."
+    },
+    "imageTooLargeToPrepare": {
+      "context": "Shown to an event organizer who picks a cover photo too large for the browser to resize safely. Keep the numbers 25 MB and 50 megapixels."
+    }
+  },
+  "pass": {
+    "home": {
+      "firstEvents": {
+        "context": "Heading on the Home page and event list while no events are on sale yet. Do not promise dates."
+      },
+      "checkBack": {
+        "context": "Explains the empty event list: events appear once organizers publish them. Buyers pay quickly and keep tickets on their phone."
+      },
+      "findTicket": {
+        "context": "Link for guests who already bought a ticket; opens the page to recover a guest order with the order reference and email."
+      },
+      "howItWorks": {
+        "context": "Heading over three short steps explaining how buying and using a HåfaPass ticket works. 'Pass' means the buyer's ticket."
+      },
+      "stepFindTitle": {
+        "context": "Title of step 1 of 3 in 'How your pass works': the buyer finds an event on HåfaPass. Keep it short, like a card heading."
+      },
+      "stepFindBody": {
+        "context": "Event times are shown in Guam time (Pacific/Guam)."
+      },
+      "stepBuyTitle": {
+        "context": "Title of step 2 of 3 in 'How your pass works': checkout takes about a minute. Keep it short, like a card heading."
+      },
+      "stepBuyBody": {
+        "context": "Guest checkout: buyers pay by card and receive tickets by email without creating an account."
+      },
+      "stepDoorTitle": {
+        "context": "Title of step 3 of 3 in 'How your pass works': the buyer shows the ticket QR code at the door and is admitted without waiting. Keep it short, like a card heading."
+      },
+      "stepDoorBody": {
+        "context": "Door staff scan the QR code on the buyer's phone at the event entrance."
+      }
+    },
+    "install": {
+      "addToHomeScreen": {
+        "context": "Primary control on the empty Home page, shown on phones when the browser offers no direct installer; it expands steps for adding the HåfaPass web app to the phone's home screen. 'Add to Home Screen' is Apple's iPhone menu item; use the wording iOS uses in this language."
+      },
+      "addToPhone": {
+        "context": "Expandable heading on My tickets that reveals how to add the HåfaPass web app to a phone's home screen. HåfaPass is the product name; keep it as written."
+      },
+      "steps": {
+        "context": "Install app and Add to Home Screen are browser menu items, and Share is the Safari share button; use the wording the browsers use in this language."
+      },
+      "offlineNote": {
+        "context": "Installing the app does not store tickets offline; buyers must download a ticket first."
+      },
+      "install": {
+        "context": "Button that opens the browser's own installer (Chrome, Edge, Android) for the HåfaPass web app. HåfaPass is the product name; keep it as written."
+      },
+      "opening": {
+        "context": "Temporary button label while the browser's installer is opening."
+      },
+      "promptFailed": {
+        "context": "Shown when the browser's installer could not open; the buyer can still add HåfaPass from the browser menu. HåfaPass is the product name; keep it as written."
+      }
     }
   }
 }

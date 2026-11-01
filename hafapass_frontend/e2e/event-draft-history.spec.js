@@ -34,7 +34,7 @@ for (const width of [390, 1440]) {
     })
     await page.goto('/dashboard/events/604/edit')
     await page.getByRole('button', { name: 'Delete', exact: true }).click()
-    await page.getByRole('button', { name: 'Yes, Delete', exact: true }).click()
+    await page.getByRole('button', { name: 'Yes, delete', exact: true }).click()
     await expect(page.getByRole('alert')).toHaveText(refusal)
     await page.getByRole('button', { name: 'Archive', exact: true }).click()
     await started
@@ -45,7 +45,7 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
     expect(saved.status).toBe('archived')
     await page.reload()
-    await expect(page.getByLabel(/Event Title/)).toHaveValue(saved.title)
+    await expect(page.getByLabel(/Event title/)).toHaveValue(saved.title)
     await expect(page.getByRole('button', { name: 'Archive', exact: true })).toHaveCount(0)
     await expect(page.getByRole('alert')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)

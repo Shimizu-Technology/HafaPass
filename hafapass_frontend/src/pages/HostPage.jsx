@@ -116,7 +116,7 @@ function FeeCalculator({ pricing }) {
     : ''
 
   return (
-    <Ticket className="hero-ticket text-content" stub={<div className="bg-stone-50 px-5 py-6 sm:px-7">
+    <Ticket className="hero-ticket text-content" stub={<div className="bg-surface px-5 py-6 sm:px-7">
       <p role="status" className="sr-only">{summary}</p>
       <div className="mt-5">
         {result && result.subtotalCents === 0 && (
@@ -159,7 +159,7 @@ function FeeCalculator({ pricing }) {
           <div className="relative">
             <span aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500">$</span>
             <input id={`${id}-price`} type="text" inputMode="decimal" autoComplete="off" enterKeyHint="done" value={priceInput}
-              onChange={event => setPriceInput(event.target.value)} placeholder="25.00"
+              onChange={event => setPriceInput(event.target.value)} placeholder="e.g. 25.00"
               aria-invalid={priceError ? true : undefined} aria-describedby={priceError ? `${id}-price-error` : undefined}
               className={`input !pl-8 text-base tabular-nums ${priceError ? 'input-error' : ''}`} />
           </div>
@@ -268,7 +268,7 @@ function HostContent({ targets }) {
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
 
   return (
-    <div className="public-intros bg-stone-50 text-content">
+    <div className="public-intros bg-surface text-content">
       <SEO
         title={t('buyerDiscovery.host.hostYourEvent')}
         description={t('buyerDiscovery.host.sellTicketsForYourGuamEventWith')}

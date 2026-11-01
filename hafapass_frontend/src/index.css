@@ -29,9 +29,14 @@
   input, select, textarea { scroll-margin-block: 7rem 4rem; }
   /* Custom fields need readable hints too, even without the .input class. */
   input::placeholder, textarea::placeholder {
-    @apply text-content-muted;
+    @apply text-neutral-500;
     opacity: 1;
   }
+  /* iOS renders date and time fields shorter than text inputs and centers
+     the value; match the 48px field height and left alignment. :where() keeps
+     these at zero specificity so utilities such as min-h-* still win. */
+  :where(input:is([type="date"], [type="time"], [type="datetime-local"])) { min-height: 3rem; }
+  :where(input)::-webkit-date-and-time-value { text-align: left; }
   /* Keep Safari from zooming the form while preserving pinch-to-zoom. */
   @media (pointer: coarse) {
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
@@ -44,7 +49,7 @@
   }
 
   /* Smooth transitions on all interactive elements */
-  a, button, input, select, textarea {
+  a, button, input, select, textarea, summary {
     @apply transition-colors duration-200;
   }
 }
@@ -111,7 +116,7 @@
 
   .input {
     @apply w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-900
-           placeholder:text-content-muted transition-[border-color,box-shadow,background-color] duration-200
+           placeholder:text-neutral-500 transition-[border-color,box-shadow,background-color] duration-200
            focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
            hover:border-neutral-300;
   }
@@ -145,7 +150,7 @@
 /* State colors restore full contrast in the same frame. Interpolating from a
    neutral disabled surface to white-on-brand can briefly make labels unreadable.
    Page transition utilities must not reintroduce color or opacity interpolation. */
-:is(button, a, input, [role="button"]):is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost) {
+:is(button, a, input, summary, [role="button"]):is(.btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost) {
   transition-property: border-color, box-shadow, transform;
 }
 
@@ -232,6 +237,10 @@
 @keyframes ticket-fade { from { opacity: 0; } to { opacity: 1; } }
 .event-ticket { --notch-radius: 10px; display: flex; flex-direction: column; height: 100%; }
 .event-ticket > .ticket-stub { flex: 1; }
+/* The planning ticket sits on brand-950; a light tear line keeps the stub visible without glare. */
+.planning-ticket .ticket-tear { border-color: rgb(255 255 255 / 0.28); }
+/* "How your pass works" stubs: a small notch on each side, no tear line. */
+.pass-step { --notch-radius: 10px; }
 .event-card { display: block; height: 100%; min-width: 0; border-radius: 1.25rem; transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
 .event-card:active { transform: scale(0.98); }
 .event-card:focus-visible { outline: 3px solid theme('colors.focus'); outline-offset: 3px; }
@@ -248,4 +257,48 @@
   .hero-ticket { animation: ticket-fade 280ms cubic-bezier(0.23, 1, 0.32, 1) !important; }
   .event-card { transition: none; }
   .event-card:active { transform: none; }
+}
+
+/* Public route changes fade the new page in. Reduced motion turns the
+   animation off with every other animation above. */
+.route-fade { animation: ticket-fade 150ms ease-out; }
+
+/* Loading feedback. The whole-route wordmark dims gently only when loading
+   takes long enough to notice. Under reduced motion, spinners and skeletons
+   pulse in place instead of freezing, so progress still shows. */
+@keyframes loading-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.page-loading-mark { animation: loading-pulse 1.6s ease-in-out 400ms infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-mark { animation: loading-pulse 1.6s ease-in-out 400ms infinite !important; }
+  [class*="animate-spin"], .animate-pulse { animation: loading-pulse 1.2s ease-in-out infinite !important; }
+}
+
+/* Focus on dark surfaces. The teal ring disappears on brand-950, so dark
+   surfaces (hero, title bands, Host dark sections, ticket page, footer, the
+   dark header) switch to aqua. .bg-brand-950 counts as dark automatically;
+   use .surface-dark for other dark backgrounds. Light surfaces nested inside
+   switch back. The variable inherits, so the nearest surface wins. */
+.surface-dark, .bg-brand-950 { --focus-ring: theme('colors.focus-on-dark'); --focus-ring-offset: theme('colors.brand.950'); }
+:is(.surface-dark, .bg-brand-950) :is(.surface-light, .bg-white, .bg-surface, .bg-neutral-50, .bg-neutral-100, .card, .ticket-top, .ticket-stub) {
+  --focus-ring: theme('colors.focus'); --focus-ring-offset: #ffffff;
+}
+:is(.surface-dark, .bg-brand-950) :focus-visible {
+  outline-color: var(--focus-ring);
+  --tw-ring-color: var(--focus-ring);
+  --tw-ring-offset-color: var(--focus-ring-offset);
+}
+
+/* Printing a ticket or order: keep the QR and details, drop navigation and
+   controls, and print dark surfaces as plain paper with dark text. */
+@media print {
+  .app-nav, footer, button, [role="button"], .btn-primary, .btn-teal, .btn-danger, .btn-secondary, .btn-ghost, [data-print="hide"] {
+    display: none !important;
+  }
+  html, body, .app-shell, .bg-brand-950, .surface-dark { background: #ffffff !important; }
+  :is(.bg-brand-950, .surface-dark) :is(.text-white, .text-brand-100, .text-content-inverse, .text-content-inverse-muted) { color: #0f172a !important; }
+  .min-h-dvh, .min-h-screen, .route-loading, .public-listing-min-height { min-height: 0 !important; }
+  .ticket-top, .ticket-stub { -webkit-mask: none !important; mask: none !important; border: 1px solid #cbd5e1; }
+  .ticket-top { border-bottom-style: dashed; }
+  .ticket-stub { border-top: 0; }
+  .ticket, svg, canvas, img { break-inside: avoid; }
 }
