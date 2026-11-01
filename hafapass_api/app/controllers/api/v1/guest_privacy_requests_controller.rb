@@ -10,15 +10,23 @@ class Api::V1::GuestPrivacyRequestsController < ApplicationController
       return render json: { error: "A current verified order link is required" }, status: :forbidden
     end
 
-    item = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email,
-      verified_emails: [order.buyer_email.to_s.downcase])
-    code = item.issue_guest_challenge!
-    EmailService.send_guest_privacy_challenge_now(item, code)
-    AuditLogger.record!(action: "privacy_request.submitted", auditable: item,
-      metadata: { kind: kind, guest: true }, request: request)
+    # The request, its code email and the audit entry commit together. If the
+    # send fails or times out, nothing is kept: no unaudited request is left
+    # behind, and a retry starts a fresh request with a fresh code. (A code
+    # that reached the inbox despite a timeout belongs to the rolled-back
+    # request and can never verify anything.) The send is bounded by the
+    # 10-second HTTP timeouts in config/initializers/resend.rb.
+    item = PrivacyRequest.transaction(requires_new: true) do
+      created = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email,
+        verified_emails: [order.buyer_email.to_s.downcase])
+      code = created.issue_guest_challenge!
+      EmailService.send_guest_privacy_challenge_now(created, code)
+      AuditLogger.record!(action: "privacy_request.submitted", auditable: created,
+        metadata: { kind: kind, guest: true }, request: request)
+      created
+    end
     render json: item.as_json(only: [:id, :kind, :status, :created_at]), status: :created
   rescue Timeout::Error
-    # The delivery is already marked failed; the buyer can simply ask again.
     response.set_header("Retry-After", "60")
     render json: { error: "We couldn't send your code right now. Try again in a minute.", retryable: true },
       status: :service_unavailable
