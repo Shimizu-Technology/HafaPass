@@ -36,18 +36,22 @@ describe('ticket at the door', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
   })
 
-  it('switches between the offline explanation and the load error as connectivity changes', async () => {
+  it('adds the offline explanation under the load error as connectivity changes', async () => {
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     api.get.mockRejectedValue(new Error('Server Error'))
     showTicket()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent("We couldn't load this ticket.")
+    expect(alert).not.toHaveTextContent(offlineMessage)
     onLine.mockReturnValue(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
+    // The load error stays; the offline explanation is added beneath it.
+    expect(screen.getByRole('alert')).toHaveTextContent("We couldn't load this ticket.")
     expect(screen.getByRole('alert')).toHaveTextContent(offlineMessage)
     onLine.mockReturnValue(true)
     act(() => { window.dispatchEvent(new Event('online')) })
     expect(screen.getByRole('alert')).toHaveTextContent("We couldn't load this ticket.")
+    expect(screen.getByRole('alert')).not.toHaveTextContent(offlineMessage)
   })
 
   it('keeps the load error when the device is online', async () => {
