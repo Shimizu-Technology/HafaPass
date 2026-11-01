@@ -28,6 +28,7 @@ const skipReasons = {
   provider_accepted: 'already accepted by the email provider',
   replay_window_expired: 'too old to resend safely',
   suppressed_recipient: 'to an address that bounced or complained',
+  recently_queued: 'already queued in the last 15 minutes',
 }
 
 function bulkResendSummary({ queued = 0, skipped = {}, capped = false }) {
@@ -140,7 +141,7 @@ function SupportSession({ identity, resourcePath }) {
   const bulkReplay = async () => {
     if (actionBusy.current || accessDenied.current) return
     const range = bulkWindows[bulkWindow]
-    if (!window.confirm(`Resend every failed message from ${range.label} that the email provider never accepted? Up to 500 are queued at a time. Addresses that bounced or complained are skipped.`)) return
+    if (!window.confirm(`Resend every failed message from ${range.label} that the email provider never accepted? Up to 500 are queued at a time. Messages already queued in the last 15 minutes and addresses that bounced or complained are skipped.`)) return
     const request = beginRequest()
     if (!request) return
     actionBusy.current = true

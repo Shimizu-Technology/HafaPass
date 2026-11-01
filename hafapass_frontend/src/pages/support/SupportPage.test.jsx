@@ -82,7 +82,7 @@ describe('support record lookup', () => {
 
   it('resends failed messages in bulk only after confirmation and reports what was skipped', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
-    apiClient.post.mockResolvedValue({ data: { queued: 3, matched: 6, capped: true, skipped: { provider_accepted: 1, suppressed_recipient: 2 } } })
+    apiClient.post.mockResolvedValue({ data: { queued: 3, matched: 6, capped: true, skipped: { provider_accepted: 1, suppressed_recipient: 2, recently_queued: 4 } } })
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
     render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
     const user = userEvent.setup()
@@ -97,7 +97,7 @@ describe('support record lookup', () => {
     await user.click(button)
     expect(confirm).toHaveBeenLastCalledWith(expect.stringContaining('any time'))
     expect(apiClient.post).toHaveBeenCalledWith('/support/message_deliveries/bulk_resend', { status: 'failed' }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(await screen.findByText('Queued 3 messages for another delivery attempt. Skipped 3: 1 already accepted by the email provider, 2 to an address that bounced or complained. More failed messages remain. Run it again to queue the next batch.')).toBeVisible()
+    expect(await screen.findByText('Queued 3 messages for another delivery attempt. Skipped 7: 1 already accepted by the email provider, 2 to an address that bounced or complained, 4 already queued in the last 15 minutes. More failed messages remain. Run it again to queue the next batch.')).toBeVisible()
     confirm.mockRestore()
   })
 

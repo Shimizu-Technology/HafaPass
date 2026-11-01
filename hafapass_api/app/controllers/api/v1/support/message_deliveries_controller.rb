@@ -25,6 +25,7 @@ class Api::V1::Support::MessageDeliveriesController < Api::V1::Support::BaseCont
         status: :unprocessable_entity
     end
 
+    delivery.update_columns(replay_requested_at: Time.current)
     MessageDeliveryJob.perform_later(delivery.id)
     AuditLogger.record!(action: "message_delivery.replayed", auditable: delivery, actor: current_user,
       request: request)
@@ -32,7 +33,9 @@ class Api::V1::Support::MessageDeliveriesController < Api::V1::Support::BaseCont
   end
 
   # After a provider outage: replay up to BULK_RESEND_LIMIT failed deliveries
-  # (oldest failure first) with the same per-row checks as a single replay.
+  # (oldest failure first) with the same checks as a single replay. Each queued
+  # row is stamped, so running it again queues the next batch rather than the
+  # same rows, and concurrent runs skip rows the other has locked.
   def bulk_resend
     unless params[:status].to_s == "failed"
       return render json: { error: "Bulk re-send only replays failed deliveries (status=failed)" },
@@ -42,28 +45,39 @@ class Api::V1::Support::MessageDeliveriesController < Api::V1::Support::BaseCont
     failed_before = bulk_time(:failed_before) unless performed?
     return if performed?
 
+    now = Time.current
     deliveries = MessageDelivery.failed
     deliveries = deliveries.where(failed_at: failed_after..) if failed_after
     deliveries = deliveries.where(failed_at: ...failed_before) if failed_before
     deliveries = deliveries.where(event_id: params[:event_id]) if params[:event_id].present?
     matched = deliveries.count
+    retryable_count = deliveries.retryable(now).count
+    provider_accepted = deliveries.provider_accepted.count
+    eligible = deliveries.retryable(now).not_recently_replayed(now)
+    pending = eligible.order(:failed_at, :id).pluck(:id)
+    skipped = Hash.new(0).merge("provider_accepted" => provider_accepted,
+      "replay_window_expired" => matched - retryable_count - provider_accepted,
+      "recently_queued" => retryable_count - pending.size)
     queued = 0
-    skipped = Hash.new(0)
 
-    deliveries.order(:failed_at, :id).limit(BULK_RESEND_LIMIT).each do |delivery|
-      if (reason = bulk_skip_reason(delivery))
-        skipped[reason] += 1
-        next
+    while pending.any? && queued < BULK_RESEND_LIMIT
+      slice = pending.shift(BULK_RESEND_LIMIT - queued)
+      locked = eligible.where(id: slice).lock("FOR UPDATE SKIP LOCKED").index_by(&:id)
+      slice.each do |id|
+        delivery = locked[id]
+        next skipped["recently_queued"] += 1 if delivery.nil?
+        next skipped["suppressed_recipient"] += 1 if delivery.suppressed_recipient?
+
+        delivery.update_columns(replay_requested_at: now)
+        MessageDeliveryJob.perform_later(delivery.id)
+        AuditLogger.record!(action: "message_delivery.replayed", auditable: delivery, actor: current_user,
+          metadata: { bulk: true }, request: request)
+        queued += 1
       end
-
-      MessageDeliveryJob.perform_later(delivery.id)
-      AuditLogger.record!(action: "message_delivery.replayed", auditable: delivery, actor: current_user,
-        metadata: { bulk: true }, request: request)
-      queued += 1
     end
 
-    render json: { queued: queued, skipped: skipped, matched: matched, capped: matched > BULK_RESEND_LIMIT },
-      status: :accepted
+    render json: { queued: queued, skipped: skipped.select { |_reason, count| count.positive? }, matched: matched,
+                   capped: pending.any? }, status: :accepted
   end
 
   def fulfill
@@ -85,13 +99,6 @@ class Api::V1::Support::MessageDeliveriesController < Api::V1::Support::BaseCont
   rescue ArgumentError
     render json: { error: "#{key} must be an ISO 8601 time" }, status: :unprocessable_entity
     nil
-  end
-
-  def bulk_skip_reason(delivery)
-    return "provider_accepted" if delivery.provider_id.present?
-    return "replay_window_expired" unless delivery.retryable?
-
-    "suppressed_recipient" if delivery.suppressed_recipient?
   end
 
   def delivery_json(delivery)

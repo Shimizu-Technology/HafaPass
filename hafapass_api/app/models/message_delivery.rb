@@ -76,6 +76,22 @@ class MessageDelivery < ApplicationRecord
   }
 
   PROVIDER_REPLAY_WINDOW = 23.hours
+  # A replay already queued this recently is still in flight; a repeated bulk
+  # re-send skips it instead of queueing it twice.
+  REPLAY_COOLDOWN = 15.minutes
+
+  scope :provider_accepted, -> { where.not("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'") }
+  # SQL form of retryable?: failed, never accepted by the provider, and not past
+  # the replay window when the provider outcome is unknown.
+  scope :retryable, ->(now = Time.current) {
+    failed.where("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'").where.not(<<~SQL.squish, cutoff: now - PROVIDER_REPLAY_WINDOW)
+      (provider_outcome_unknown OR (provider = 'resend' AND provider_attempted_at IS NULL AND attempts > 0))
+        AND COALESCE(provider_attempted_at, created_at) <= :cutoff
+    SQL
+  }
+  scope :not_recently_replayed, ->(now = Time.current) {
+    where("replay_requested_at IS NULL OR replay_requested_at <= ?", now - REPLAY_COOLDOWN)
+  }
 
   before_validation :assign_idempotency_key, on: :create
 

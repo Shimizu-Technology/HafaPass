@@ -1996,7 +1996,8 @@
       "platform_invitation_id": "system",
       "privacy_request_id": "system",
       "retention_anonymized_at": "system",
-      "reconciled_at": "system"
+      "reconciled_at": "system",
+      "replay_requested_at": "system"
     },
     "message_provider_events": {
       "id": "system",

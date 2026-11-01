@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Api::V1::Support", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:support_user) { create(:user, role: :support) }
   let(:attendee) { create(:user, role: :attendee) }
   let(:order) { create(:order, reference: "HP-SUPPORT-123", buyer_email: "islandbuyer@example.com") }
@@ -74,6 +76,7 @@ RSpec.describe "Api::V1::Support", type: :request do
       expect(audit).to have_attributes(actor_user_id: support_user.id)
       expect(audit.metadata).to include("bulk" => true)
       expect(AuditLog.where(action: "message_delivery.replayed").count).to eq(1)
+      expect(queued.reload.replay_requested_at).to be_present
     end
 
     it "filters by failure window and event" do
@@ -100,6 +103,47 @@ RSpec.describe "Api::V1::Support", type: :request do
       expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:twice)
       expect(response.parsed_body).to include("queued" => 2, "matched" => 3, "capped" => true)
       expect(AuditLog.where(action: "message_delivery.replayed").pluck(:auditable_id)).to contain_exactly(oldest.id, older.id)
+    end
+
+    it "queues the next batch when run again and never re-queues a replay from the last 15 minutes" do
+      stub_const("Api::V1::Support::MessageDeliveriesController::BULK_RESEND_LIMIT", 2)
+      oldest = failed_delivery(failed_at: 3.hours.ago)
+      older = failed_delivery(failed_at: 2.hours.ago)
+      newest = failed_delivery(failed_at: 1.hour.ago)
+
+      expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:twice)
+      expect(response.parsed_body).to include("queued" => 2, "capped" => true)
+
+      expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:once).with(newest.id)
+      expect(response.parsed_body).to include("queued" => 1, "capped" => false, "skipped" => { "recently_queued" => 2 })
+
+      expect { bulk_resend(status: "failed") }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response.parsed_body).to include("queued" => 0, "capped" => false, "skipped" => { "recently_queued" => 3 })
+
+      travel(16.minutes) do
+        expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:twice)
+        expect(AuditLog.where(action: "message_delivery.replayed").order(:id).last(2).map(&:auditable_id))
+          .to contain_exactly(oldest.id, older.id)
+      end
+    end
+
+    it "skips a delivery just replayed on its own" do
+      delivery = failed_delivery
+      post "/api/v1/support/message_deliveries/#{delivery.id}/resend", headers: auth_headers(support_user)
+      expect(delivery.reload.replay_requested_at).to be_present
+
+      expect { bulk_resend(status: "failed") }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response.parsed_body).to include("queued" => 0, "skipped" => { "recently_queued" => 1 })
+    end
+
+    it "doesn't let suppressed recipients use up a batch" do
+      stub_const("Api::V1::Support::MessageDeliveriesController::BULK_RESEND_LIMIT", 1)
+      create(:message_delivery, order: order, recipient: "bounced@example.com", status: :bounced)
+      failed_delivery(recipient: "bounced@example.com", failed_at: 3.hours.ago)
+      deliverable = failed_delivery(failed_at: 2.hours.ago)
+
+      expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:once).with(deliverable.id)
+      expect(response.parsed_body).to include("queued" => 1, "capped" => false, "skipped" => { "suppressed_recipient" => 1 })
     end
 
     it "requires the failed status filter and valid times, and is limited to support staff" do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_02_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1194,6 +1194,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_000000) do
     t.bigint "privacy_request_id"
     t.datetime "retention_anonymized_at"
     t.datetime "reconciled_at"
+    t.datetime "replay_requested_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
