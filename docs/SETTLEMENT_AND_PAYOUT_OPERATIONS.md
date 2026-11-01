@@ -2,13 +2,15 @@
 
 ## Statement lifecycle
 
-1. Complete or cancel the event.
+1. Complete or cancel the event. The hourly `CompletePastEventsJob` completes published events 6 hours after their end time (system actor, audited as `event.completed` with source `system`); an organizer manager can complete earlier. Events without an end time are not completed automatically.
 2. Resolve every pending refund and open dispute.
 3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs deducted from the organizer, processing covered by HåfaPass, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance. Each order's processing-fee bearer snapshot decides which processing column it uses; see [Stripe processing fee evidence](./STRIPE_PROCESSING_FEE_OPERATIONS.md#who-bears-the-processing-cost).
 4. Finalize the statement. An identical ledger returns the existing version; changed activity creates the next immutable version.
 5. Confirm the connected account has current provider capabilities, no provider requirements, and an unexpired independent readiness approval; then confirm the organization-wide available balance is sufficient.
 6. Submit the payout with a unique idempotency key.
 7. Reconcile processing payouts to paid, failed, or reversed from provider/bank evidence. Every transition is audited.
+
+Archive an event only after its money is closed. `EventLifecycle` refuses `archive` for anything but a draft unless the latest finalized statement's digest still matches the live calculation (a payout counts as activity, so finalize again after the final payout), no payout for the event is pending, processing or held, nothing remains payable (`payable_cents - paid_cents`), and no reserve is held. Archived events cannot be finalized. If an event was archived before this guard existed, or too early, an administrator can use **Unarchive** in Admin → Events (`POST /api/v1/admin/events/:id/unarchive`, reason required, audited as `event.unarchived`); it returns the event to the status it was archived from.
 
 The organizer's **Request payout** action reserves a request. A `processing` result does not confirm a transfer. Production simulation cannot mark a payout paid. Manual processing remains reserved until an administrator records a confirmed outcome.
 

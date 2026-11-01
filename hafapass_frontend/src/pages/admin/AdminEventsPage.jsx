@@ -14,6 +14,7 @@ import PilotCloseoutDialog from '../../components/PilotCloseoutDialog'
 import { adminLabel } from './adminLabels'
 import EventPolicyHoldDialog from './EventPolicyHoldDialog'
 import EventSalesSuspensionDialog from './EventSalesSuspensionDialog'
+import EventUnarchiveDialog from './EventUnarchiveDialog'
 import CancellationRefundProgress from '../../components/CancellationRefundProgress'
 import { POLICY_HOLD_SCOPES } from './adminOperations'
 
@@ -61,6 +62,7 @@ function AdminEventsPageSession({ identity, resourcePath }) {
   const [heldOnly, setHeldOnly] = useState(false)
   const [policyEvent, setPolicyEvent] = useState(null)
   const [resumeEvent, setResumeEvent] = useState(null)
+  const [unarchiveEvent, setUnarchiveEvent] = useState(null)
   const [notice, setNotice] = useState('')
   const [page, setPage] = useState(1)
   const [actionError, setActionError] = useState('')
@@ -219,6 +221,9 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                         {event.sales_suspended && <button type="button" onClick={() => { setNotice(''); setResumeEvent(event) }} className="inline-flex min-h-11 items-center text-brand-700 underline-offset-2 hover:underline sm:min-h-8">
                           Resume sales<span className="sr-only"> for {event.title}</span>
                         </button>}
+                        {event.status === 'archived' && <button type="button" onClick={() => { setNotice(''); setUnarchiveEvent(event) }} className="inline-flex min-h-11 items-center text-brand-700 underline-offset-2 hover:underline sm:min-h-8">
+                          Unarchive<span className="sr-only"> {event.title}</span>
+                        </button>}
                       </div>
                       {['published', 'postponed', 'cancelled'].includes(event.status) && <CancellationRefundProgress admin canMarkCash eventId={event.id} status={event.status} eventTimeZone={event.timezone} onCancelled={() => fetchEvents({ keepRows: true })} />}
                     </td>
@@ -264,6 +269,8 @@ function AdminEventsPageSession({ identity, resourcePath }) {
       )}
       {policyEvent && <EventPolicyHoldDialog event={policyEvent} beginRequest={beginRequest} onClose={() => setPolicyEvent(null)}
         onSaved={message => { setPolicyEvent(null); setNotice(message); refreshAfterAction() }} />}
+      {unarchiveEvent && <EventUnarchiveDialog event={unarchiveEvent} beginRequest={beginRequest} onClose={() => setUnarchiveEvent(null)}
+        onSaved={message => { setUnarchiveEvent(null); setNotice(message); refreshAfterAction() }} />}
       {resumeEvent && <EventSalesSuspensionDialog event={resumeEvent} beginRequest={beginRequest} onClose={() => setResumeEvent(null)}
         onSaved={message => { setResumeEvent(null); setNotice(message); refreshAfterAction() }} />}
     </AdminLayout>

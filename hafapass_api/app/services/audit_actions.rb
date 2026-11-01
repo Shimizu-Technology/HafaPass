@@ -626,7 +626,8 @@ class AuditActions
         "event.resumed" => "Resumed event.",
         "event.cancelled" => "Cancelled event.",
         "event.completed" => "Completed event.",
-        "event.archived" => "Archived event."
+        "event.archived" => "Archived event.",
+        "event.unarchived" => "Restored an archived event."
       }
 
     define registry, area: "tickets", audience: %w[org_owner org_manager],

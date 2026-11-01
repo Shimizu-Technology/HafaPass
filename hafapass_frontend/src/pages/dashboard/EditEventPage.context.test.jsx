@@ -41,6 +41,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null })
 
 describe('event editor context ownership with the real router', () => {
+  it('explains that a sold event must be finalized before archiving and shows the refusal', async () => {
+    rows[11] = { ...rows[11], status: 'completed' }
+    apiClient.post.mockRejectedValueOnce({ response: { data: { error: "Finalize this event's statement before archiving it. Archived events cannot be finalized or paid out." } } })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Archive', exact: true }))
+    const dialog = screen.getByRole('dialog', { name: 'Archive this event?' })
+    expect(dialog).toHaveTextContent('Archived events cannot be finalized or paid out')
+    expect(dialog).toHaveTextContent('nothing more is owed to you')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, archive', exact: true }))
+    expect(apiClient.post.mock.calls[0][0]).toBe('/organizer/events/11/archive')
+    expect(await screen.findByRole('alert')).toHaveTextContent("Finalize this event's statement before archiving it.")
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it.each(['success', 'error'])('clears a refused deletion while archiving and shows only the current %s result', async outcome => {
     const archive = deferred()
     const refusal = 'This event has saved history or related records and cannot be deleted. Archive it instead to keep those records.'
@@ -51,6 +66,8 @@ describe('event editor context ownership with the real router', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Yes, delete', exact: true }))
     await screen.findByText(refusal)
     await userEvent.click(screen.getByRole('button', { name: 'Archive', exact: true }))
+    expect(screen.getByRole('dialog', { name: 'Archive this event?' })).toHaveTextContent('keeps its history')
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, archive', exact: true }))
     expect(screen.queryByText(refusal)).not.toBeInTheDocument()
     expect(apiClient.post.mock.calls[0][0]).toBe('/organizer/events/11/archive')
     await act(async () => outcome === 'success'
@@ -73,6 +90,7 @@ describe('event editor context ownership with the real router', () => {
     apiClient.delete.mockRejectedValueOnce({ response: { data: { error: 'Beta deletion refused' } } })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Archive', exact: true }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, archive', exact: true }))
     await beta()
     await userEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }))
     await userEvent.click(screen.getByRole('button', { name: 'Yes, delete', exact: true }))

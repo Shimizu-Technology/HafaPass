@@ -98,6 +98,7 @@ function EditEventSession({ id, identity }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [lifecycleReason, setLifecycleReason] = useState('')
   const [dangerLoading, setDangerLoading] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -392,6 +393,7 @@ function EditEventSession({ id, identity }) {
       setEvent(current => ({ ...current, ...res.data }))
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
+      setShowArchiveConfirm(false)
       setLifecycleReason('')
       setSuccessMessage(success)
     } catch (err) {
@@ -399,6 +401,7 @@ function EditEventSession({ id, identity }) {
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
+      setShowArchiveConfirm(false)
     } finally {
       request.release()
       if (request.current()) setDangerLoading(false)
@@ -588,6 +591,20 @@ function EditEventSession({ id, identity }) {
           reason={lifecycleReason}
           onReasonChange={setLifecycleReason}
           requireReason
+        />
+      )}
+
+      {showArchiveConfirm && (
+        <ConfirmModal
+          title="Archive this event?"
+          message={event.status === 'draft'
+            ? 'The draft leaves your active events and keeps its history. Archived events cannot be edited or published.'
+            : 'Archived events cannot be finalized or paid out. HåfaPass archives a sold event only after its latest statement is finalized, matches every sale, refund and payout, and nothing more is owed to you. If money is still owed, finalize the statement and request the payout first.'}
+          confirmLabel="Yes, archive"
+          confirmClass="bg-neutral-700 hover:bg-neutral-800"
+          onConfirm={() => handleLifecycle('archive', 'Event archived.')}
+          onCancel={() => setShowArchiveConfirm(false)}
+          loading={dangerLoading}
         />
       )}
 
@@ -965,7 +982,7 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Archive event</p>
                   <p className="text-xs text-neutral-500">Keep its record while removing it from active work.</p>
                 </div>
-                <button onClick={() => handleLifecycle('archive', 'Event archived.')} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">
+                <button onClick={() => setShowArchiveConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">
                   <Archive className="w-4 h-4" /> Archive
                 </button>
               </div>

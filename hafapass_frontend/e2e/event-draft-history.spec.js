@@ -37,6 +37,7 @@ for (const width of [390, 1440]) {
     await page.getByRole('button', { name: 'Yes, delete', exact: true }).click()
     await expect(page.getByRole('alert')).toHaveText(refusal)
     await page.getByRole('button', { name: 'Archive', exact: true }).click()
+    await page.getByRole('button', { name: 'Yes, archive', exact: true }).click()
     await started
     await expect(page.getByRole('alert')).toHaveCount(0)
     releaseArchive()

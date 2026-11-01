@@ -299,6 +299,7 @@ Rails.application.routes.draw do
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member
+          post :unarchive, on: :member
         end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
         post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"

@@ -511,6 +511,24 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
     end
   end
 
+  describe "POST /api/v1/organizer/events/:id/archive" do
+    it "refuses to archive a completed event until its statement is finalized" do
+      event = create(:event, :completed, organizer_profile: organizer_profile)
+
+      post "/api/v1/organizer/events/#{event.id}/archive", headers: headers
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("Finalize this event's statement before archiving it")
+      expect(event.reload).to be_completed
+
+      Settlements::Finalizer.call(event: event, actor: user)
+      post "/api/v1/organizer/events/#{event.id}/archive", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(event.reload).to be_archived
+    end
+  end
+
   describe "POST /api/v1/organizer/events/:id/publish" do
     it "publishes a draft event" do
       policy = PolicyRegistry.organizer_agreement
