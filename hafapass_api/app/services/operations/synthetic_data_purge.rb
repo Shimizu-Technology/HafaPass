@@ -169,7 +169,12 @@ module Operations
       before = row_counts(counted)
       # IDs keep counting up: email idempotency keys ("order-confirmation/<id>")
       # and job arguments must never point at a reused ID.
-      connection.execute(statement("TRUNCATE", tables, "")) if tables.any?
+      if tables.any?
+        # The audit_logs TRUNCATE guard only yields to this transaction-scoped opt-in.
+        connection.execute("SET LOCAL hafapass.audit_truncate = 'on'")
+        connection.execute(statement("TRUNCATE", tables, ""))
+        connection.execute("SET LOCAL hafapass.audit_truncate = 'off'")
+      end
       deleted_jobs = delete_pending_jobs!
       deleted_users = User.where("email IS NULL OR LOWER(email) NOT IN (?)", @keep_user_emails).delete_all
       after_purge = row_counts(counted)

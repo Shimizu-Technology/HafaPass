@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3111,6 +3111,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     DROP TRIGGER IF EXISTS audit_logs_append_only ON audit_logs;
     CREATE TRIGGER audit_logs_append_only BEFORE UPDATE OR DELETE ON audit_logs
       FOR EACH ROW EXECUTE FUNCTION hafapass_protect_audit_log();
+    CREATE OR REPLACE FUNCTION hafapass_protect_audit_log_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.audit_truncate', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Audit logs cannot be truncated' USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
   SQL
 
 end
