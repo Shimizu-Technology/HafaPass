@@ -1145,7 +1145,7 @@ class EmailService
           <p style="margin: 0 0 20px;">
             <a href="#{link}" style="display: inline-block; background: #0e7c7b; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 600;">View Order</a>
           </p>
-          <p style="color: #6b7280; font-size: 13px; margin: 0;">This link expires in 30 days. Request a new one if it stops working.</p>
+          <p style="color: #6b7280; font-size: 13px; margin: 0;">This link works for at least 30 days. Request a new one if it stops working.</p>
         HTML
       end
     end
@@ -1259,7 +1259,9 @@ class EmailService
     def order_access_url(order)
       token = order.user_id.nil? ? GuestOrderAccess.issue!(order) : nil
       base = "#{frontend_url}/orders/#{order.id}/confirmation"
-      token ? "#{base}?guest_token=#{ERB::Util.url_encode(token)}" : base
+      # The fragment never reaches servers, proxies or access logs; the page
+      # reads it, stores it and removes it from the address bar.
+      token ? "#{base}#guest_token=#{ERB::Util.url_encode(token)}" : base
     end
 
     def frontend_url

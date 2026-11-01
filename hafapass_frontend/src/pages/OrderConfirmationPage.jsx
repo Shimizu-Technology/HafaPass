@@ -93,14 +93,20 @@ function OrderConfirmationContent() {
   }, [])
 
   useEffect(() => {
+    // Email links carry the guest token in the fragment (#guest_token=…), which
+    // never reaches servers or logs. Older emails used the query string.
     const params = new URLSearchParams(location.search)
-    const token = params.get('guest_token')
+    const fragment = new URLSearchParams(location.hash.replace(/^#/, ''))
+    const fragmentToken = fragment.get('guest_token')
+    const token = fragmentToken || params.get('guest_token')
     if (token) saveOrderAccess(id, token)
     const privateParams = ['guest_token', 'payment_intent_client_secret', 'payment_intent', 'redirect_status']
-    if (!privateParams.some(key => params.has(key))) return
+    if (!privateParams.some(key => params.has(key)) && fragmentToken === null) return
     privateParams.forEach(key => params.delete(key))
-    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true })
-  }, [id, location.pathname, location.search, navigate])
+    fragment.delete('guest_token')
+    const hash = fragmentToken === null ? location.hash : (fragment.toString() ? `#${fragment}` : '')
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '', hash }, { replace: true })
+  }, [id, location.pathname, location.search, location.hash, navigate])
 
   const fetchOrder = useCallback(async ({ preserveOrder = false } = {}) => {
     const generation = lifecycle.current.generation

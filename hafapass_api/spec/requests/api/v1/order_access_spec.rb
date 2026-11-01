@@ -22,15 +22,17 @@ RSpec.describe "Buyer order access", type: :request do
     delivery = create(:message_delivery, order: order)
     html = EmailService.prepare_delivery_payload(delivery).fetch("html")
     link = URI.parse(Nokogiri::HTML(html).at_css("a")["href"])
-    params = Rack::Utils.parse_query(link.query)
+    # The token travels in the fragment, which browsers never send to servers.
+    expect(link.query).to be_nil
+    headers = { "X-Guest-Order-Token" => Rack::Utils.parse_query(link.fragment).fetch("guest_token") }
 
     expect(link.path).to eq("/orders/#{order.id}/confirmation")
-    get "/api/v1/orders/#{order.id}", params: params
+    get "/api/v1/orders/#{order.id}", headers: headers
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("id" => order.id, "status" => "completed")
     expect(response.parsed_body.fetch("tickets").length).to eq(1)
 
-    get "/api/v1/orders/#{create(:order).id}", params: params
+    get "/api/v1/orders/#{create(:order).id}", headers: headers
     expect(response).to have_http_status(:not_found)
   end
 

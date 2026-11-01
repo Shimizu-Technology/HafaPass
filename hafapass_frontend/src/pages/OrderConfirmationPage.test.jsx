@@ -121,6 +121,22 @@ describe('guest order recovery actions', () => {
     expect(getActiveCheckout('free-event')).toBe('922')
   })
 
+  it('imports a guest token from the email link fragment and removes it from the address', async () => {
+    const order = {
+      id: 926, reference: 'HP-926', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [], tickets: [],
+      event: { id: 37, slug: 'fragment-event', title: 'Fragment Event', status: 'published', starts_at: '2030-01-02T08:00:00Z', timezone: 'Pacific/Guam' },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    const Address = () => { const location = useLocation(); return <output data-testid="address">{`${location.search}${location.hash}`}</output> }
+    render(<MemoryRouter initialEntries={['/orders/926/confirmation#guest_token=fragment-token']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<><OrderConfirmationPage /><Address /></>} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Fragment Event')
+    expect(apiClient.get.mock.calls.find(([url]) => url === '/orders/926')[1].headers['X-Guest-Order-Token']).toBe('fragment-token')
+    await waitFor(() => expect(screen.getByTestId('address')).toHaveTextContent(/^$/))
+    expect(window.sessionStorage.getItem('hafapass:order-access:926')).toBe('fragment-token')
+  })
+
   it('uses the guest token imported from the recovery link on initial fetch and every later action', async () => {
     const order = {
       id: 922, reference: 'HP-922', status: 'completed', buyer_name: 'Guest', buyer_email: 'guest@example.invalid', total_cents: 0,

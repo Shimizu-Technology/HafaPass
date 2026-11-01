@@ -26,7 +26,9 @@ class Api::V1::OrderRecoveryController < ApplicationController
     order.with_lock do
       return unless recovery_allowed?(order)
 
-      GuestOrderAccess.issue!(order, rotate: true)
+      # Knowing a reference and email must not revoke the buyer's existing
+      # links. Rotate only to restore access after an explicit revocation.
+      GuestOrderAccess.issue!(order, rotate: order.guest_access_revoked_at.present?)
       EmailService.send_order_recovery_async(order)
     end
   rescue StandardError => e
