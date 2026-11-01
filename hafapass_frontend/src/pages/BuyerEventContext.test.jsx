@@ -196,7 +196,7 @@ describe('buyer event selection across the real reduced-motion layout', () => {
     await user.type(screen.getByLabelText('Promo code'), 'SAVE')
     await user.click(screen.getByRole('button', { name: "Apply" }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/promo_codes/validate', {
-      event_id: 42, code: 'SAVE', subtotal_cents: 5000,
+      event_id: 42, code: 'SAVE', subtotal_cents: 5000, total_cents: 5000,
     }))
     await user.type(screen.getByLabelText("Full name"), 'Current B Buyer')
     await user.type(screen.getByLabelText("Email address"), 'buyer@example.invalid')
