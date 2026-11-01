@@ -231,9 +231,7 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     await expect(ticket.getByRole('heading', { name: 'Synthetic deploy event', exact: true })).toBeVisible()
     await ticket.reload()
     await expect(ticket.locator('#deploy-marker')).toHaveText('Build B')
-    // The offline ticket request fails through the service worker; CI runners
-    // can take longer than the default 5s to settle the error state.
-    await expect(ticket.getByText("We couldn't load this ticket.", { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(ticket.getByText("We couldn't load this ticket.", { exact: true })).toBeVisible()
     server = await serve()
 
     // A never-visited navigation must time out to the precached shell even

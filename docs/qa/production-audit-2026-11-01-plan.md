@@ -49,7 +49,7 @@ Branch `fix/refunds-event-changes`.
    - Also notify holders whose `holder_email` differs from the buyer (transferred tickets), with no duplicate sends.
    - Specs: Guam time and reason shown; two edits within 10 min → one email per recipient.
 5. **Guest link lifetime (M2), `guest_order_access.rb`.**
-   - `expires_at = [30.days.from_now, event.ends_at + 7.days].max` for confirmation and event emails. Only ever extend `guest_access_expires_at` (take the max).
+   - `expires_at = [30.days.from_now, (event.ends_at || event.starts_at)&.+(7.days)].compact.max` (as shipped in `GuestOrderAccess.default_expires_at`, so an event with no end time still gets at least 30 days) for confirmation and event emails. Only ever extend `guest_access_expires_at` (take the max).
    - Spec: an order for an event 60 days out still opens on event day.
 6. **Guest token out of query strings (L5).**
    - Email links (`email_service.rb` ~l.627, ~l.1134) put `guest_token` in the URL fragment (`#guest_token=`). The frontend (`OrderConfirmationPage.jsx` ~l.96) reads the fragment, still accepts the legacy query param, and strips both from the URL.
@@ -108,7 +108,7 @@ Branch `fix/ops-hardening`.
    - open reconciliation exceptions
    - Solid Queue failed executions in the last hour
 
-   Specs for each.
+   Repeat an alert only when a signal's count rises, or at most every 6 hours while it stays above 0 (as shipped, with state in `runtime_alert_states`). Specs for each.
 5. **Bulk re-send.**
    - `POST /api/v1/support/message_deliveries/bulk_resend` with filters `status=failed`, `failed_after`, `failed_before`, `event_id`; cap 500. Apply per-row `retryable?` and suppression checks. Return `{queued, skipped:{reason:count}}` and write audit entries.
    - Add a button with a confirmation in the support console message-deliveries screen.

@@ -308,7 +308,10 @@ function TicketContent({ authContext }) {
         <div className="card p-8 max-w-md mx-auto">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-neutral-950 mb-3">{t('buyerAccount.ticketPage.ticketUnavailable')}</h1>
-          <p role="alert" className="text-red-700 font-medium mb-4">{offline ? t('buyerAccount.ticketPage.offlineTicket') : error}</p>
+          <div role="alert" className="mb-4">
+            <p className="text-red-700 font-medium">{error}</p>
+            {offline && <p className="mt-2 text-sm text-neutral-700">{t('buyerAccount.ticketPage.offlineTicket')}</p>}
+          </div>
           <div className="flex flex-wrap justify-center gap-3"><button type="button" className="btn-primary text-sm" onClick={() => setLoadAttempt(value => value + 1)}>{t('buyerAccount.ticketPage.tryAgain')}</button><Link to="/orders/recover" className="btn-secondary text-sm">{t('buyerAccount.ticketPage.findMyOrder')}</Link></div>
         </div>
       </div>
