@@ -7,6 +7,12 @@ class EmailService
   LOCAL_FROM_EMAIL = "tickets@example.test"
   class ProviderDisabled < StandardError; end
   class TransportContextChanged < StandardError; end
+  # The guest privacy code is sent inside the request that creates it. HTTP
+  # timeouts bound each read, not the whole exchange, so a response that
+  # trickles in could otherwise hold the request (and its open transaction)
+  # far longer. This caps the provider call's total wall-clock time; the
+  # resulting Timeout::Error rolls the transaction back.
+  GUEST_CHALLENGE_SEND_DEADLINE = 15.seconds
 
   class << self
     def configured?
@@ -140,7 +146,9 @@ class EmailService
         end
         delivery.update!(provider: "resend", attempts: 1, provider_attempted_at: Time.current,
           provider_outcome_unknown: true, transport_context_digest: transport_context_digest)
-        response = Resend::Emails.send(payload, options: { idempotency_key: delivery.idempotency_key })
+        response = Timeout.timeout(GUEST_CHALLENGE_SEND_DEADLINE) do
+          Resend::Emails.send(payload, options: { idempotency_key: delivery.idempotency_key })
+        end
         provider_id = response[:id] || response["id"] if response.respond_to?(:[])
         raise MessageDeliveryJob::UnknownProviderResult, "Provider acceptance did not include a message ID" if provider_id.blank?
 

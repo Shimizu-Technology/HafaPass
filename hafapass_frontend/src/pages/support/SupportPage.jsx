@@ -31,14 +31,20 @@ const skipReasons = {
   recently_queued: 'already queued in the last 15 minutes',
 }
 
-function bulkResendSummary({ queued = 0, skipped = {}, capped = false }) {
+// A lost response, timeout or server error after the request was sent leaves
+// the outcome unknown: the server may already have queued (and audited) a batch.
+const bulkOutcomeUnknown = "We couldn't confirm whether the bulk resend ran, so some messages may already be queued. Check the delivery list and the audit log before running it again."
+
+function bulkResendSummary(data) {
+  if (!data || typeof data.queued !== 'number') return bulkOutcomeUnknown
+  const { queued, skipped = {}, capped = false, remaining } = data
   const parts = [`Queued ${queued} ${queued === 1 ? 'message' : 'messages'} for another delivery attempt.`]
   const reasons = Object.entries(skipped).filter(([, count]) => count > 0)
   if (reasons.length) {
     const total = reasons.reduce((sum, [, count]) => sum + count, 0)
     parts.push(`Skipped ${total}: ${reasons.map(([reason, count]) => `${count} ${skipReasons[reason] || reason.replaceAll('_', ' ')}`).join(', ')}.`)
   }
-  if (capped) parts.push('More failed messages remain. Run it again to queue the next batch.')
+  if (capped) parts.push(`More failed messages remain${remaining > 0 ? ` (${remaining} not checked yet)` : ''}. Run it again to queue the next batch.`)
   return parts.join(' ')
 }
 
@@ -155,7 +161,16 @@ function SupportSession({ identity, resourcePath }) {
       setMessage(bulkResendSummary(response.data || {}))
       loadDeliveries()
     } catch (error) {
-      if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Bulk resend failed. Nothing new was queued; try again.') }
+      if (!request.current()) return
+      const status = error.response?.status
+      if (status && status < 500) {
+        // The server answered and refused the request before queuing anything.
+        if ([401, 403].includes(status)) withdrawAccess()
+        setMessage(error.response?.data?.error || 'Bulk resend failed. Nothing new was queued; try again.')
+      } else {
+        setMessage(bulkOutcomeUnknown)
+        if (!accessDenied.current) loadDeliveries()
+      }
     } finally {
       request.release()
       actionBusy.current = false

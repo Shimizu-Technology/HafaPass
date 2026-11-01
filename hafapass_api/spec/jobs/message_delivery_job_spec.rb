@@ -99,6 +99,23 @@ RSpec.describe MessageDeliveryJob do
     expect(EmailService).to have_received(:send_delivery_payload).once
   end
 
+  it "batches the suppressed-recipient check with the same answers as the per-row check" do
+    other = "complainer@example.com"
+    create(:message_delivery, order: delivery.order, recipient: delivery.recipient, status: :bounced)
+    create(:message_delivery, order: delivery.order, recipient: other, status: :complained)
+    candidates = [
+      create(:message_delivery, order: delivery.order, recipient: " #{delivery.recipient.upcase}", status: :failed),
+      create(:message_delivery, order: delivery.order, recipient: other, status: :failed),
+      create(:message_delivery, order: delivery.order, recipient: other, status: :failed, template: "communication_campaign"),
+      create(:message_delivery, order: delivery.order, recipient: "clean@example.com", status: :failed)
+    ]
+
+    expected = candidates.select(&:suppressed_recipient?).map(&:id)
+    expect(expected).to contain_exactly(candidates[0].id, candidates[2].id)
+    expect(MessageDelivery.suppressed_recipient_ids(candidates).to_a).to match_array(expected)
+    expect(MessageDelivery.suppressed_recipient_ids([])).to be_empty
+  end
+
   it "never sends to a reserved placeholder address" do
     delivery.update_columns(recipient: GuestListEntry::PLACEHOLDER_EMAIL)
     allow(EmailService).to receive(:send_delivery_payload)

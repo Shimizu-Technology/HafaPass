@@ -70,7 +70,7 @@ RSpec.describe "Api::V1::Support", type: :request do
       expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).with(queued.id).exactly(:once)
 
       expect(response).to have_http_status(:accepted)
-      expect(response.parsed_body).to eq("queued" => 1, "matched" => 4, "capped" => false,
+      expect(response.parsed_body).to eq("queued" => 1, "matched" => 4, "capped" => false, "remaining" => 0,
         "skipped" => { "provider_accepted" => 1, "replay_window_expired" => 1, "suppressed_recipient" => 1 })
       audit = AuditLog.find_by!(action: "message_delivery.replayed", auditable: queued)
       expect(audit).to have_attributes(actor_user_id: support_user.id)
@@ -101,7 +101,7 @@ RSpec.describe "Api::V1::Support", type: :request do
       failed_delivery(failed_at: 1.hour.ago)
 
       expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:twice)
-      expect(response.parsed_body).to include("queued" => 2, "matched" => 3, "capped" => true)
+      expect(response.parsed_body).to include("queued" => 2, "matched" => 3, "capped" => true, "remaining" => 1)
       expect(AuditLog.where(action: "message_delivery.replayed").pluck(:auditable_id)).to contain_exactly(oldest.id, older.id)
     end
 
@@ -144,6 +144,40 @@ RSpec.describe "Api::V1::Support", type: :request do
 
       expect { bulk_resend(status: "failed") }.to have_enqueued_job(MessageDeliveryJob).exactly(:once).with(deliverable.id)
       expect(response.parsed_body).to include("queued" => 1, "capped" => false, "skipped" => { "suppressed_recipient" => 1 })
+    end
+
+    it "examines at most the scan limit per request and reports what remains" do
+      stub_const("Api::V1::Support::MessageDeliveriesController::BULK_RESEND_SCAN_LIMIT", 2)
+      create(:message_delivery, order: order, recipient: "bounced@example.com", status: :bounced)
+      failed_delivery(recipient: "bounced@example.com", failed_at: 4.hours.ago)
+      failed_delivery(recipient: "BOUNCED@example.com ", failed_at: 3.hours.ago)
+      unexamined = failed_delivery(failed_at: 2.hours.ago)
+
+      expect { bulk_resend(status: "failed") }.not_to have_enqueued_job(MessageDeliveryJob)
+      expect(response.parsed_body).to include("queued" => 0, "matched" => 3, "capped" => true, "remaining" => 1,
+        "skipped" => { "suppressed_recipient" => 2 })
+      expect(unexamined.reload.replay_requested_at).to be_nil
+    end
+
+    it "looks up suppressed recipients in a batch rather than once per row" do
+      count_queries = lambda do
+        count = 0
+        counter = ->(*, payload) { count += 1 unless payload[:name] == "SCHEMA" || payload[:sql].match?(/\A\s*(SAVEPOINT|RELEASE|ROLLBACK)/) }
+        ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { bulk_resend(status: "failed") }
+        count
+      end
+      create(:message_delivery, order: order, recipient: "bounced@example.com", status: :bounced)
+      2.times { failed_delivery(recipient: "bounced@example.com") }
+      count_queries.call # warm per-user and per-process lookups
+      few = count_queries.call
+      expect(response.parsed_body["skipped"]).to eq("suppressed_recipient" => 2)
+
+      %w[a b c d].each do |name|
+        create(:message_delivery, order: order, recipient: "#{name}@bounced.example", status: :bounced)
+        2.times { failed_delivery(recipient: "#{name}@bounced.example") }
+      end
+      expect(count_queries.call).to eq(few)
+      expect(response.parsed_body["skipped"]).to eq("suppressed_recipient" => 10)
     end
 
     it "requires the failed status filter and valid times, and is limited to support staff" do

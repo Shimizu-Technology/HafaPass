@@ -101,6 +101,57 @@ describe('support record lookup', () => {
     confirm.mockRestore()
   })
 
+  it.each([
+    ['a lost response', Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' })],
+    ['a timeout', Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' })],
+    ['a gateway error', Object.assign(new Error('Bad Gateway'), { response: { status: 502, data: {} } })],
+  ])('says the outcome is unknown when a confirmed bulk resend ends in %s', async (_label, failure) => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    apiClient.post.mockRejectedValue(failure)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await screen.findByText('No recent message deliveries.')
+    const loadsBefore = apiClient.get.mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Resend failed messages' }))
+    expect(confirm).toHaveBeenCalled()
+    expect(await screen.findByText(/couldn't confirm whether the bulk resend ran/)).toBeVisible()
+    expect(screen.getByText(/Check the delivery list and the audit log before running it again/)).toBeVisible()
+    expect(screen.queryByText(/Queued 0/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nothing new was queued/)).not.toBeInTheDocument()
+    expect(apiClient.get.mock.calls.length).toBeGreaterThan(loadsBefore)
+    expect(screen.getByRole('button', { name: 'Resend failed messages' })).toBeEnabled()
+    confirm.mockRestore()
+  })
+
+  it('reports a refused bulk resend as nothing queued, and an empty success body as unknown', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    apiClient.post
+      .mockRejectedValueOnce(Object.assign(new Error('Unprocessable'), { response: { status: 422, data: { error: 'failed_after must be an ISO 8601 time' } } }))
+      .mockResolvedValueOnce({ data: {} })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await screen.findByText('No recent message deliveries.')
+    await user.click(screen.getByRole('button', { name: 'Resend failed messages' }))
+    expect(await screen.findByText('failed_after must be an ISO 8601 time')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Resend failed messages' }))
+    expect(await screen.findByText(/couldn't confirm whether the bulk resend ran/)).toBeVisible()
+    confirm.mockRestore()
+  })
+
+  it('says how many failed messages were not checked when a bulk resend is capped', async () => {
+    apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
+    apiClient.post.mockResolvedValue({ data: { queued: 500, matched: 900, capped: true, remaining: 400, skipped: {} } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<MemoryRouter initialEntries={['/support']}><SupportPage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await screen.findByText('No recent message deliveries.')
+    await user.click(screen.getByRole('button', { name: 'Resend failed messages' }))
+    expect(await screen.findByText('Queued 500 messages for another delivery attempt. More failed messages remain (400 not checked yet). Run it again to queue the next batch.')).toBeVisible()
+    confirm.mockRestore()
+  })
+
   it('limits a bulk resend to the chosen failure window', async () => {
     apiClient.get.mockResolvedValue({ data: { deliveries: [] } })
     apiClient.post.mockResolvedValue({ data: { queued: 1, matched: 1, capped: false, skipped: {} } })

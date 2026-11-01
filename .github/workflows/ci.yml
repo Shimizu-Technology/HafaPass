@@ -16,7 +16,7 @@ jobs:
     env:
       RELEASE_FREEZE: ${{ vars.RELEASE_FREEZE }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Enforce candidate freeze
         run: ruby scripts/check_release_freeze.rb
 
@@ -43,8 +43,8 @@ jobs:
       RAILS_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hafapass_api_test
     steps:
-      - uses: actions/checkout@v7
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: "3.3.13"
           bundler-cache: true
@@ -67,8 +67,8 @@ jobs:
     name: Backend / Quality and security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: "3.3.13"
           bundler-cache: true
@@ -109,7 +109,7 @@ jobs:
     env:
       IMAGE: hafapass-api:smoke
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Detect API or workflow changes
@@ -211,8 +211,8 @@ jobs:
       run:
         working-directory: hafapass_frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: npm
@@ -234,8 +234,8 @@ jobs:
       run:
         working-directory: hafapass_frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: npm
@@ -261,7 +261,7 @@ jobs:
     name: Repository / Secret and debug hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Check tracked application files

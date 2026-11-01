@@ -83,7 +83,7 @@ Create these alerts in the production monitoring project before a pilot:
 
 The same line is written to the log as `{"event":"operational_alert",...}`, so it is visible without Sentry.
 
-After a Resend outage, the support console's **Resend failed messages** button (or `POST /api/v1/support/message_deliveries/bulk_resend` with `status=failed` and optional `failed_after`, `failed_before`, `event_id`) queues up to 500 failed messages per request, oldest first. It skips messages the provider already accepted, messages past the safe replay window, messages already queued for a replay in the last 15 minutes (`message_deliveries.replay_requested_at`, also set by a single **Retry delivery**), and addresses that bounced or complained, and reports how many it skipped for each reason. Each queued message writes a `message_delivery.replayed` audit entry. If the response says more remain, run it again: the next run takes the next batch, never the messages just queued. A message whose replay failed again becomes eligible 15 minutes after it was queued.
+After a Resend outage, the support console's **Resend failed messages** button (or `POST /api/v1/support/message_deliveries/bulk_resend` with `status=failed` and optional `failed_after`, `failed_before`, `event_id`) queues up to 500 failed messages per request, oldest first. It skips messages the provider already accepted, messages past the safe replay window, messages already queued for a replay in the last 15 minutes (`message_deliveries.replay_requested_at`, also set by a single **Retry delivery**), and addresses that bounced or complained, and reports how many it skipped for each reason. Each queued message writes a `message_delivery.replayed` audit entry. One request examines at most 2,000 candidates; `remaining` counts the eligible messages it did not reach. If the response says more remain, run it again: the next run takes the next batch, never the messages just queued. If the request times out or the response is lost, the outcome is unknown: check the delivery list and the `message_delivery.replayed` audit entries before running it again. A message whose replay failed again becomes eligible 15 minutes after it was queued.
 
 ### External alert and uptime setup
 
@@ -127,12 +127,13 @@ After restoring the database/queue or restarting its owning service:
 
 ## Deploy order
 
-The API deploys by hand and the frontend auto-deploys from `main`, so the order is a decision every release:
+The API deploys by hand, but Netlify auto-publishes `main` as soon as a merge lands. A frontend change that needs a new API must therefore never reach `main` while the old API is still live. Every merge waits for the gate and CI to pass.
 
-1. Merge to `main` only after the gate and CI pass.
-2. If the release touches the API, deploy it first: fast-forward `hafapass-staging` to the release commit (`git push origin <commit>:hafapass-staging`, fast-forward only), then deploy `hafapass-api` on Render. The pre-deploy command runs `bin/release-migrate`.
-3. Wait until `GET /api/v1/health` reports the new `revision` and readiness returns 200.
-4. Only then let the frontend publish. If the frontend change depends on the new API, hold the Netlify publish (or merge the frontend part afterwards) until step 3 passes.
+To deploy the API: fast-forward `hafapass-staging` to the release commit (`git push origin <commit>:hafapass-staging`, fast-forward only), then deploy `hafapass-api` on Render. The pre-deploy command runs `bin/release-migrate`. The API is live once `GET /api/v1/health` reports the new `revision` and readiness returns 200.
+
+- **API-only or frontend-only release:** merge, then deploy the API if it changed. Nothing waits on anything else.
+- **Frontend depends on new API, option A (preferred): split the PRs.** Merge the API-only PR first, deploy the API, and confirm the health `revision`. Only then merge the frontend PR.
+- **Frontend depends on new API, option B: one PR with the Netlify publish locked.** Before merging, open Netlify → Deploys → **Lock to stop auto publishing**. Merge, deploy the API, and confirm the health `revision`. Then publish the new deploy from Netlify and unlock auto publishing. Do not leave publishing locked after the release.
 
 Make API changes expand-then-contract so either order is survivable: add new fields, endpoints and columns in one release and keep the old ones working; switch the frontend; remove the old ones in a later release. A migration must work with the code that is already running, because the old release keeps serving while the pre-deploy migration runs. `strong_migrations` checks every migration added after `20261024310000` and sets `lock_timeout` 10 s and `statement_timeout` 1 h for migrations.
 

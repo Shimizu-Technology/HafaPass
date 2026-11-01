@@ -14,8 +14,10 @@ class Api::V1::GuestPrivacyRequestsController < ApplicationController
     # send fails or times out, nothing is kept: no unaudited request is left
     # behind, and a retry starts a fresh request with a fresh code. (A code
     # that reached the inbox despite a timeout belongs to the rolled-back
-    # request and can never verify anything.) The send is bounded by the
-    # 10-second HTTP timeouts in config/initializers/resend.rb.
+    # request and can never verify anything.) Each HTTP phase is bounded by
+    # the 10-second timeouts in config/initializers/resend.rb, and the whole
+    # provider call by EmailService::GUEST_CHALLENGE_SEND_DEADLINE, so a
+    # slowly trickling response still ends in the retryable 503 below.
     item = PrivacyRequest.transaction(requires_new: true) do
       created = PrivacyRequest.create!(kind: kind, order: order, requester_email: order.buyer_email,
         verified_emails: [order.buyer_email.to_s.downcase])

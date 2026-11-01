@@ -48,6 +48,26 @@ RSpec.describe "Provider webhook and ticket page throttles", type: :request do
     expect(response).not_to have_http_status(:too_many_requests)
   end
 
+  it "counts trailing-slash, format and percent-encoded spellings of one ticket in the same bucket" do
+    spellings = %w[HP-THROTTLE-0 HP-THROTTLE-0/ HP-THROTTLE-0// HP-THROTTLE-0.json HP-THROTTLE-0.json/ HP-THROTTLE-%30]
+    60.times { |index| get "/api/v1/tickets/#{spellings[index % spellings.size]}" }
+    expect(response).not_to have_http_status(:too_many_requests)
+    spellings.each do |spelling|
+      get "/api/v1/tickets/#{spelling}"
+      expect(response).to have_http_status(:too_many_requests), spelling
+    end
+    get "/api/v1/tickets/HP-THROTTLE-1.json"
+    expect(response).not_to have_http_status(:too_many_requests)
+  end
+
+  it "issues display credentials that never contain a dot" do
+    ticket = create(:ticket)
+    5.times do
+      expect(ticket.display_credential).to match(/\A[A-Za-z0-9_-]+--[0-9a-f]+\z/)
+      ticket.revoke_display_credential!
+    end
+  end
+
   it "still counts ticket downloads and other ticket actions in the visitor budget" do
     visitor_budget.times { get "/api/v1/tickets/HP-THROTTLE-0/download" }
     get "/api/v1/tickets/HP-THROTTLE-0/download"

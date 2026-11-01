@@ -64,8 +64,17 @@ class Rack::Attack
   end
   # A buyer's ticket page is opened at the door by a whole crowd on one venue
   # Wi-Fi or carrier NAT address, so it is limited per ticket instead.
+  # The credential is the path segment as Rails routes it: percent-decoded,
+  # without trailing slashes or a ".format" suffix, so /tickets/X, /X/, /X//
+  # and /X.json share one bucket. Display credentials are url-safe signed
+  # tokens (base64url + "--" + hex digest) and never contain ".", and the
+  # route's :credential segment stops at "." anyway.
+  ticket_view_credential = lambda do |req|
+    segment = req.path[%r{\A/api/v1/tickets/([^/]+)/*\z}, 1]
+    segment && Rack::Utils.unescape_path(segment).split(".", 2).first.presence
+  end
   ticket_view = lambda do |req|
-    req.get? && req.path.match?(%r{\A/api/v1/tickets/[^/]+/*\z})
+    req.get? && ticket_view_credential.call(req).present?
   end
 
   # Throttle all requests by IP (300 requests per 5 minutes)
@@ -81,7 +90,7 @@ class Rack::Attack
   end
 
   throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|
-    Digest::SHA256.hexdigest(req.path) if ticket_view.call(req)
+    Digest::SHA256.hexdigest(ticket_view_credential.call(req)) if ticket_view.call(req)
   end
 
   throttle("ticket-view/ip", limit: 600, period: 1.minute) do |req|
