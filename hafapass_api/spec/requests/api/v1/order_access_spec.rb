@@ -248,6 +248,46 @@ RSpec.describe "Buyer order access", type: :request do
     expect(response.parsed_body).not_to have_key("refund_id")
   end
 
+  describe "administrator access" do
+    let(:admin) { create(:user, :admin) }
+    let!(:ticket) { create(:ticket, order: order, event: event, ticket_type: ticket_type) }
+
+    it "lets an administrator view the order and resend its tickets" do
+      delivery = create(:message_delivery, order: order, template: "fulfillment_resend")
+      allow(FulfillmentResender).to receive(:call).and_return(delivery)
+
+      get "/api/v1/orders/#{order.id}", headers: auth_headers(admin)
+      expect(response).to have_http_status(:ok)
+
+      post "/api/v1/orders/#{order.id}/resend", headers: auth_headers(admin)
+      expect(response).to have_http_status(:accepted)
+    end
+
+    it "does not let an administrator act as the buyer" do
+      change = event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current,
+        before_data: { starts_at: 1.day.from_now.iso8601 }, after_data: { starts_at: event.starts_at.iso8601 })
+      headers = auth_headers(admin).merge("Idempotency-Key" => SecureRandom.uuid)
+      allow(Commerce::RefundCreator).to receive(:call)
+
+      [
+        [:post, "/api/v1/orders/#{order.id}/event_change_response", { event_change_id: change.id, decision: "refund_requested" }],
+        [:post, "/api/v1/orders/#{order.id}/cancel", {}],
+        [:post, "/api/v1/orders/#{order.id}/tickets/#{ticket.id}/cancel", {}],
+        [:post, "/api/v1/orders/#{order.id}/tickets/#{ticket.id}/rotate_scan", {}],
+        [:post, "/api/v1/orders/#{order.id}/tickets/#{ticket.id}/transfer", { recipient_email: "friend@example.test" }],
+        [:delete, "/api/v1/orders/#{order.id}/tickets/#{ticket.id}/transfer", {}],
+        [:post, "/api/v1/orders/#{order.id}/tickets/#{ticket.id}/exchange_seat", { event_seat_id: 1 }],
+        [:get, "/api/v1/orders/#{order.id}/receipt", {}]
+      ].each do |verb, path, params|
+        public_send(verb, path, params: params, headers: headers)
+        expect(response).to have_http_status(:not_found), "#{verb.upcase} #{path} returned #{response.status}"
+      end
+      expect(change.event_change_responses).to be_empty
+      expect(Commerce::RefundCreator).not_to have_received(:call)
+      expect(ticket.reload).to be_issued
+    end
+  end
+
   describe "event-change refund eligibility" do
     include ActiveSupport::Testing::TimeHelpers
 

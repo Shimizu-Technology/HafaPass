@@ -473,8 +473,10 @@ class Api::V1::OrdersController < ApplicationController
   def set_accessible_order
     response.headers["Cache-Control"] = "private, no-store" if %w[show receipt].include?(action_name)
     order = Order.find_by(id: params[:id])
+    # Administrators may look at an order and resend its tickets for support,
+    # but never act as the buyer (refunds, cancellations, transfers, seats, QR).
     authorized = order && (
-      (@current_user&.admin? && action_name != "receipt") ||
+      (@current_user&.admin? && %w[show resend].include?(action_name)) ||
       (order.user_id.present? && order.user_id == @current_user&.id) ||
       GuestOrderAccess.find(guest_access_token)&.id == order.id
     )
