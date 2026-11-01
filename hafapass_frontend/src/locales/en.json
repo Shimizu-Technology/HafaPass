@@ -267,7 +267,8 @@
     "next": "Next",
     "close": "Close",
     "view": "View",
-    "slowConnection": "Your connection is slow, and this is taking too long. Check your signal and try again."
+    "slowConnection": "Your connection is slow, and this is taking too long. Check your signal and try again.",
+    "imageTooLargeToPrepare": "This image is too large to prepare here. Choose one under 25 MB and 50 megapixels, or save a smaller copy first."
   },
   "footer": {
     "tagline": "Find events on Guam, buy tickets, and keep them ready on your phone.",
@@ -460,6 +461,7 @@
       "pleaseEnterAValidEmail": "Please enter a valid email",
       "youMustAcceptTheBuyerTermsToContinue": "You must accept the buyer terms to continue",
       "somethingWentWrongRetryToRecoverTheSame": "Something went wrong. Retry to recover the same checkout.",
+      "retryToRecoverTheSameCheckout": "Retry to recover the same checkout.",
       "retry": "Retry",
       "reloadCheckout": "Reload checkout",
       "startANewCheckout": "Start a new checkout",

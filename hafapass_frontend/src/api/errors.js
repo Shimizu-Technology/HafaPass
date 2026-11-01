@@ -10,6 +10,9 @@ export const DOWNLOAD_TIMEOUT_MS = 60_000
 // Order and payment writes without an idempotency key wait longer: giving up
 // early leaves the buyer unsure whether the action happened.
 export const SLOW_WRITE_TIMEOUT_MS = 45_000
+// File uploads sent through the API (FormData bodies) can take minutes on a
+// weak signal.
+export const UPLOAD_TIMEOUT_MS = 120_000
 
 export const isTimeoutError = error => Boolean(error?.isTimeout)
 export const slowConnectionMessage = () => i18next.t('common.slowConnection')

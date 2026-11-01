@@ -4,6 +4,10 @@ import { forgetUploadToken, uploadRecoveryPrefix, uploadScope, uploadScopeCurren
 const inFlight = new Map()
 class UploadContextChanged extends Error {}
 
+// The recovery key identifies the photo the organizer selected. When the
+// browser resized it first, the key still comes from the original, so choosing
+// the same photo again after a reload finds the saved upload. The server
+// receipt verifies the stored object against its own upload token, not this key.
 async function recoveryKey(file, scope) {
   const bytes = file.arrayBuffer ? await file.arrayBuffer() : await new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -78,12 +82,13 @@ async function upload(file, eventId, scope, key) {
   return completeUpload(key, upload_token, scope)
 }
 
-export async function uploadImage(file, eventId, isCurrent) {
+// `source` is the originally selected file when `file` is a resized copy of it.
+export async function uploadImage(file, eventId, isCurrent, { source = file } = {}) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file?.type)) throw new Error('Choose a JPG, PNG, or WebP image.')
   if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Image must be between 1 byte and 5 MB.')
   const scope = { ...uploadScope(eventId), isCurrent }
   if (!scope.userId) throw new Error('Sign in before uploading an image.')
-  const key = await recoveryKey(file, scope)
+  const key = await recoveryKey(source || file, scope)
   while (inFlight.has(key)) {
     const previous = inFlight.get(key)
     try {

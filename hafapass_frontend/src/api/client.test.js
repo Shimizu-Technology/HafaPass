@@ -172,6 +172,20 @@ describe('request timeouts', () => {
     expect(await sentTimeout('get', '/me', { timeout: 8000 })).toBe(8000)
   })
 
+  it('gives unkeyed buyer transfer, accept and seat-hold writes 45 s and FormData uploads 120 s', async () => {
+    expect(await sentTimeout('post', '/me/tickets/9/transfer')).toBe(45_000)
+    expect(await sentTimeout('post', '/me/ticket_transfers/accept')).toBe(45_000)
+    expect(await sentTimeout('post', '/events/night-market/seat_holds')).toBe(45_000)
+    expect(await sentTimeout('delete', '/me/tickets/9/transfer')).toBe(20_000)
+    expect(await sentTimeout('get', '/events/night-market/seat_holds')).toBe(20_000)
+    expect(await sentTimeout('post', '/me/tickets/9/transfer', { headers: { 'Idempotency-Key': 'k' } })).toBe(20_000)
+    expect(await sentTimeout('post', '/me/tickets/9/transferred')).toBe(20_000)
+    const data = new FormData()
+    data.append('file', new Blob(['irs']), 'results.txt')
+    expect(await sentTimeout('post', '/admin/tin_matching/import', { data })).toBe(120_000)
+    expect(await sentTimeout('post', '/admin/tin_matching/import', { data, timeout: 5000 })).toBe(5000)
+  })
+
   it('marks a timeout with a friendly slow-connection message but leaves other aborts alone', async () => {
     apiClient.defaults.adapter = async request => { throw new AxiosError('timeout of 20000ms exceeded', 'ECONNABORTED', request) }
     const timedOut = await apiClient.get('/events').catch(error => error)

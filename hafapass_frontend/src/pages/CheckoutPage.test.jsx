@@ -568,6 +568,22 @@ describe('checkout navigation', () => {
     expect(apiClient.post.mock.calls[1][1].checkout_key).not.toBe(originalKey)
   })
 
+  it('keeps the same-checkout recovery promise when order creation times out', async () => {
+    const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000, service_fee_cents: 30, all_in_price_cents: 1030 }] }
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
+    apiClient.post.mockRejectedValueOnce(Object.assign(new Error('Slow'), { code: 'ECONNABORTED', isTimeout: true }))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
+      <Route path='/checkout/:slug' element={<CheckoutPage />} />
+    </Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText("Full Name"), 'Slow Buyer')
+    await user.type(screen.getByLabelText("Email Address"), 'slow@example.invalid')
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
+    await user.click(screen.getByRole('button', { name: /Continue to Payment/ }))
+    await screen.findByRole('button', { name: 'Recover earlier checkout' })
+    expect(screen.getByText(/connection is slow/i)).toHaveTextContent('Retry to recover the same checkout.')
+  })
+
   it('shows the server buyer when a paid recovery follows local edits after a lost response', async () => {
     const event = { id: 37, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{ id: 7, name: 'Admission', price_cents: 1000, service_fee_cents: 30, all_in_price_cents: 1030 }] }
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })

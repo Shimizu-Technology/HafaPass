@@ -3,7 +3,7 @@ import { Sentry } from '../monitoring'
 import { monitoringPath } from '../utils/telemetryPrivacy'
 import { getActiveLanguage } from '../utils/locale'
 export { monitoringPath } from '../utils/telemetryPrivacy'
-import { DEFAULT_TIMEOUT_MS, DOWNLOAD_TIMEOUT_MS, SLOW_WRITE_TIMEOUT_MS, slowConnectionMessage } from './errors'
+import { DEFAULT_TIMEOUT_MS, DOWNLOAD_TIMEOUT_MS, SLOW_WRITE_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, slowConnectionMessage } from './errors'
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1',
@@ -38,14 +38,22 @@ function assertCurrentOrganization(config) {
   }
 }
 
-// Writes to an existing order (payment resume, cancel, transfer, resend) carry
-// no idempotency key, so they wait longer before giving up. Order creation is
-// keyed by checkout_key and keeps the default.
-const ORDER_WRITE = /^\/?orders\/[^/?]+\//
+// Writes to an existing order (payment resume, cancel, transfer, resend) and
+// other buyer writes without an idempotency key (ticket transfer and accept,
+// seat holds) wait longer before giving up. Order creation is keyed by
+// checkout_key and keeps the default. File uploads get the longest wait.
+const SLOW_WRITES = [
+  /^\/?orders\/[^/?]+\//,
+  /^\/?me\/tickets\/[^/?]+\/transfer(?:[/?]|$)/,
+  /^\/?me\/ticket_transfers\/accept(?:[/?]|$)/,
+  /^\/?events\/[^/?]+\/seat_holds(?:[/?]|$)/,
+]
 export function requestTimeout(config) {
   if (config.responseType === 'blob') return DOWNLOAD_TIMEOUT_MS
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) return UPLOAD_TIMEOUT_MS
   const keyed = config.headers?.['Idempotency-Key'] || config.headers?.get?.('Idempotency-Key')
-  if (String(config.method).toLowerCase() === 'post' && ORDER_WRITE.test(config.url || '') && !keyed) return SLOW_WRITE_TIMEOUT_MS
+  const url = config.url || ''
+  if (String(config.method).toLowerCase() === 'post' && !keyed && SLOW_WRITES.some(pattern => pattern.test(url))) return SLOW_WRITE_TIMEOUT_MS
   return config.timeout
 }
 

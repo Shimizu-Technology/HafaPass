@@ -446,14 +446,18 @@ function CheckoutContent({ buyerId }) {
       }
     } catch (err) {
       if (!current()) return
+      let needsRecovery = false
       if (attempt && checkoutDefinitelyRejected(err) && clearCheckoutAttempt(slug, attempt.payload.checkout_key, context.buyerId)) {
         rejectionContext.current = context
         setCanStartNewCheckout(true)
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
+        needsRecovery = true
         setCheckoutNeedsRecovery(true)
       }
+      // A timed-out order may still have been created; keep the recovery promise.
       setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message
-        : isTimeoutError(err) ? slowConnectionMessage() : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
+        : isTimeoutError(err) ? [slowConnectionMessage(), needsRecovery && t('buyer.Checkout.retryToRecoverTheSameCheckout')].filter(Boolean).join(' ')
+          : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
     } finally {
       if (contextCurrent(context)) setSubmitting(false)
     }

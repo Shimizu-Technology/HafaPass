@@ -662,6 +662,9 @@
       "somethingWentWrongRetryToRecoverTheSame": {
         "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
+      "retryToRecoverTheSameCheckout": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
       "retry": {
         "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       },
@@ -1520,6 +1523,9 @@
   "common": {
     "slowConnection": {
       "context": "Shown when a request to HåfaPass times out on a weak mobile signal or busy venue Wi-Fi."
+    },
+    "imageTooLargeToPrepare": {
+      "context": "Shown to an event organizer who picks a cover photo too large for the browser to resize safely. Keep the numbers 25 MB and 50 megapixels."
     }
   }
 }

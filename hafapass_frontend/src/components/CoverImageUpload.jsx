@@ -1,16 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
 import { isTimeoutError } from '../api/errors'
-import { downscaleImage } from '../utils/imageDownscale'
+import { downscaleImage, oversizedInput } from '../utils/imageDownscale'
 import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 import { approvedImageUrl } from '../utils/eventPageDesign'
 
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+// Axios reports a dropped or aborted request as ECONNABORTED or ERR_CANCELED.
+const INTERRUPTED_CODES = ['ECONNABORTED', 'ERR_CANCELED', 'ERR_NETWORK']
 const clampPercent = value => Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 50
 
 export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eventId, focalPoint, onFocalChange, imageAssetHost, label = 'Cover image' }) {
+  const { t } = useTranslation()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
@@ -36,9 +40,9 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
-  // A retry sends the exact bytes prepared the first time, so upload recovery
-  // can match the earlier attempt.
-  const handleFile = async (selected, prepared = false) => {
+  // A retry sends the exact bytes prepared the first time. Upload recovery is
+  // keyed by the selected original either way.
+  const handleFile = async (selected, prepared = null) => {
     if (!selected || disabled || uploading) return
     const startedEvent = eventId
     const startedGeneration = generation.current
@@ -52,12 +56,22 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       return
     }
 
+    setUploading(true)
+    // Refuse originals too large to decode safely before anything (preview
+    // included) decodes them; a crashed tab would lose the unsaved event form.
+    if (!prepared && await oversizedInput(selected)) {
+      if (!current()) return
+      setError(t('common.imageTooLargeToPrepare'))
+      setUploading(false)
+      return
+    }
+    if (!current()) return
+
     // Show local preview immediately
     const localUrl = URL.createObjectURL(selected)
     setPreview(localUrl)
-    setUploading(true)
     // Large phone photos are resized first, so they also fit the 5MB limit.
-    const file = prepared ? selected : await downscaleImage(selected)
+    const file = prepared || await downscaleImage(selected)
     if (!current()) return
     if (file.size > MAX_SIZE) {
       setError('Image must be under 5MB.')
@@ -67,7 +81,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     }
 
     try {
-      const finalUrl = await uploadImage(file, eventId, current)
+      const finalUrl = await uploadImage(file, eventId, current, { source: selected })
       if (!current()) return
       onUploaded(finalUrl)
       setCompletedUrl(finalUrl)
@@ -75,8 +89,9 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
     } catch (uploadError) {
       if (!current()) return
       const interrupted = ['Network Error', 'Failed to fetch'].includes(uploadError.message) || isTimeoutError(uploadError)
+        || INTERRUPTED_CODES.includes(uploadError.code)
       setError(uploadError.response?.data?.error || (interrupted ? 'Image upload was interrupted. Retry the upload to recover it.' : uploadError.message) || 'Upload failed. Please try again.')
-      setRetryFile(file)
+      setRetryFile({ source: selected, file })
       setPreview(null)
     } finally {
       if (current()) setUploading(false)
@@ -149,7 +164,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       />
 
       {error && <p role="alert" className="mt-1 text-sm text-red-600">{error}</p>}
-      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile, true)}>Retry image upload</button>}
+      {retryFile && <button type="button" className="btn-secondary mt-2" disabled={disabled || uploading} onClick={() => handleFile(retryFile.source, retryFile.file)}>Retry image upload</button>}
     </div>
   )
 }
