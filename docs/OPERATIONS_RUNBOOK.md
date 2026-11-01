@@ -72,7 +72,7 @@ Create these alerts in the production monitoring project before a pilot:
 | Payment/webhook error | Any new payment/webhook issue; page after 3 in 5 minutes | Stop risky deploys, preserve provider event IDs, reconcile before retrying |
 | Frontend crash spike | 10 affected sessions in 10 minutes | Inspect browser/release pattern and activate recovery/private preview if needed |
 
-`OperationalAlertJob` runs every 5 minutes (`config/recurring.yml`). For each signal above zero it sends one Sentry message, level error, with the fingerprint `operational-alert/<signal>`, so each signal stays one Sentry issue:
+`OperationalAlertJob` runs every 5 minutes (`config/recurring.yml`). A signal above zero sends one Sentry message, level error, with the fingerprint `operational-alert/<signal>`, so each signal stays one Sentry issue. It alerts when the count rose since the previous check, and otherwise repeats at most every 6 hours while the count stays above zero; a count that falls to zero and comes back alerts at once. The last count and alert time are kept per signal in the `runtime_alert_states` table, so deploys and restarts don't re-alert.
 
 | Signal | Counts | First response |
 |---|---|---|
@@ -83,7 +83,7 @@ Create these alerts in the production monitoring project before a pilot:
 
 The same line is written to the log as `{"event":"operational_alert",...}`, so it is visible without Sentry.
 
-After a Resend outage, the support console's **Resend failed messages** button (or `POST /api/v1/support/message_deliveries/bulk_resend` with `status=failed` and optional `failed_after`, `failed_before`, `event_id`) queues up to 500 failed messages per request, oldest first. It skips messages the provider already accepted, messages past the safe replay window, and addresses that bounced or complained, and reports how many it skipped for each reason. Each queued message writes a `message_delivery.replayed` audit entry. If the response says more remain, run it again.
+After a Resend outage, the support console's **Resend failed messages** button (or `POST /api/v1/support/message_deliveries/bulk_resend` with `status=failed` and optional `failed_after`, `failed_before`, `event_id`) queues up to 500 failed messages per request, oldest first. It skips messages the provider already accepted, messages past the safe replay window, messages already queued for a replay in the last 15 minutes (`message_deliveries.replay_requested_at`, also set by a single **Retry delivery**), and addresses that bounced or complained, and reports how many it skipped for each reason. Each queued message writes a `message_delivery.replayed` audit entry. If the response says more remain, run it again: the next run takes the next batch, never the messages just queued. A message whose replay failed again becomes eligible 15 minutes after it was queued.
 
 ### External alert and uptime setup
 
@@ -136,6 +136,18 @@ The API deploys by hand and the frontend auto-deploys from `main`, so the order 
 
 Make API changes expand-then-contract so either order is survivable: add new fields, endpoints and columns in one release and keep the old ones working; switch the frontend; remove the old ones in a later release. A migration must work with the code that is already running, because the old release keeps serving while the pre-deploy migration runs. `strong_migrations` checks every migration added after `20261024310000` and sets `lock_timeout` 10 s and `statement_timeout` 1 h for migrations.
 
+## Audit log TRUNCATE guard
+
+Migration `20261102000000` adds the statement-level `audit_logs_no_truncate` trigger, which rejects `TRUNCATE audit_logs` unless the transaction has set `SET LOCAL hafapass.audit_truncate = 'on'` (details in [Audit integrity](AUDIT_INTEGRITY.md)). Consequences:
+
+- Locally, `bin/rails db:truncate_all`, `db:seed:replant` and any tool that truncates every table fail on `audit_logs`. Use `db:reset` or `db:schema:load` (which drop and recreate tables) for a fresh local database instead.
+- Rolling back past `20261102000000` drops the trigger and its function. Rolling back a later migration keeps the trigger in place.
+- The synthetic-data purge (`hafapass:purge_synthetic_data`) is the only application path that opts in, inside its own transaction.
+
+## Frontend asset caching
+
+Netlify serves `/assets/*` with `Cache-Control: public, max-age=31536000, immutable`, because Vite fingerprints every file there. The rule matches by path, so a request for a missing hash (for example, an old tab asking for a chunk from a previous deploy) may also get the immutable header on its 404 or SPA fallback response, and a browser or CDN can cache that miss. We accept this: a missing hash never becomes valid later, because new builds use new names, and the app's chunk-load recovery reloads the page to pick up the current asset names.
+
 ## Deployment verification
 
 Every release must pass `./scripts/gate.sh` and CI before merge. After deployment:
@@ -150,7 +162,7 @@ Every release must pass `./scripts/gate.sh` and CI before merge. After deploymen
 
 Rack::Attack keys its IP throttles on Rack's `req.ip`. Render's proxy reaches the app from a private address, so Rack skips it and uses the last untrusted `X-Forwarded-For` entry. If a CDN edge sits in that chain, `req.ip` would be the edge rather than the visitor, and one busy edge would share a single throttle bucket. Each process logs one `rack_attack_client_ip_source` line after boot with the source (`x_forwarded_for` or `remote_addr`), the number of forwarded hops, and whether `CF-Connecting-IP` and `True-Client-IP` match `req.ip`. It never logs an address. The token-protected readiness detail shows the same fields for your own request. If either header reports `differs`, the throttles are keyed on an edge address: fix the trusted-proxy setup before relying on per-IP limits.
 
-Provider webhooks (`/webhooks/stripe`, `/webhooks/resend`) don't use the 300-per-5-minute visitor budget; they have 600 per minute per address. Ticket pages (`GET /api/v1/tickets/:credential`) are limited to 60 per minute per ticket under a 1,200-per-minute address ceiling, so a door crowd on one venue Wi-Fi can open passes.
+Provider webhook deliveries (`POST /webhooks/stripe`, `POST /webhooks/resend`) don't use the 300-per-5-minute visitor budget; they have 600 per minute per address. Other methods on those paths count as ordinary visitor traffic. Ticket pages (`GET /api/v1/tickets/:credential`) are limited to 60 per minute per ticket under a 600-per-minute address ceiling, so a door crowd on one venue Wi-Fi can open passes.
 
 ## Database settings, backups and restore drill
 
