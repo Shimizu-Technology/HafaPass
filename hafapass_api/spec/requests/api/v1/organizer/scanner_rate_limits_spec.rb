@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Production scanner rate-limit contract", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   # Drive the installed middleware/config, not isolated throttle predicates.
   # The response app avoids 600 real check-ins; verification uses the same
   # ClerkAuthenticator entry point as production, with synthetic signed IDs.
@@ -64,7 +66,10 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
     # count toward it, without needing thousands of database/auth operations.
     throttle = Rack::Attack.throttles.fetch("scanner/ip")
     request = Rack::Attack::Request.new(Rack::MockRequest.env_for(path, method: "POST", "REMOTE_ADDR" => "203.0.113.99"))
-    2400.times { expect(throttle.matched_by?(request)).to be_falsey }
-    expect(throttle.matched_by?(request)).to be_truthy
+    # Keep all hits in one throttle window; a minute boundary mid-loop resets the count.
+    freeze_time do
+      2400.times { expect(throttle.matched_by?(request)).to be_falsey }
+      expect(throttle.matched_by?(request)).to be_truthy
+    end
   end
 end
