@@ -7,7 +7,7 @@ import SavedJournalExports from '../../components/admissions/SavedJournalExports
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
-  RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, XCircle,
+  RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, Volume2, VolumeX, XCircle,
 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { WORKSPACE_WIDTHS } from '../../utils/workspace'
@@ -18,6 +18,8 @@ import {
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess, verifyLegacyJournalOwner,
 } from '../../utils/admissionStore'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
+import useScreenWakeLock from '../../hooks/useScreenWakeLock'
+import useScanSound from '../../hooks/useScanSound'
 
 const LOOKUP_STATUS_LABELS = {
   issued: 'Issued', checked_in: 'Already checked in', cancelled: 'Cancelled',
@@ -188,9 +190,58 @@ async function scannerDefaultCandidates(config, q) {
 
 function admissionAcknowledgement(current, receipt) {
   const result = receipt.result || receipt.status
-  if (result === 'accepted') return { ...current, type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
-  if (receipt.reason_code === 'refund_pending') return { ...current, type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
-  return { ...current, type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+  const next = result === 'accepted'
+    ? { type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
+    : receipt.reason_code === 'refund_pending'
+      ? { type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
+      : { type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+  // A verdict that arrives while the guest waits is the door decision. Later
+  // receipts for an already-decided scan update the panel, not the overlay.
+  return { ...current, ...next, alertType: current.type === 'pending' ? next.type : current.alertType }
+}
+
+// Full-screen door feedback, readable at arm's length in a dark, loud venue.
+// The result panel stays the screen-reader announcement; this is visual only.
+const OVERLAY_STYLES = {
+  success: ['bg-emerald-600 text-white', CheckCircle2, 'Admitted'],
+  warning: ['bg-amber-500 text-neutral-950', AlertTriangle, 'Check ticket'],
+  error: ['bg-red-700 text-white', XCircle, 'Do not admit'],
+}
+export const ADMITTED_OVERLAY_MS = 700
+
+function ScanResultOverlay({ id, type, onDismiss }) {
+  const buttonRef = useRef(null)
+  const persistent = type !== 'success'
+  const dismiss = useCallback(() => onDismiss(id), [id, onDismiss])
+  useEffect(() => {
+    if (!persistent) {
+      const timer = window.setTimeout(dismiss, ADMITTED_OVERLAY_MS)
+      return () => window.clearTimeout(timer)
+    }
+    // Refusals wait for a tap. Hold focus on the overlay so Enter, Space or
+    // Escape dismisses it, then return focus to where staff were working.
+    const button = buttonRef.current
+    const previous = document.activeElement
+    button?.focus({ preventScroll: true })
+    const onKey = event => { if (event.key === 'Escape') dismiss() }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      const active = document.activeElement
+      if ((active === button || active === document.body || !active) && previous instanceof HTMLElement && previous.isConnected) {
+        previous.focus({ preventScroll: true })
+      }
+    }
+  }, [dismiss, persistent])
+  const [classes, Icon, headline] = OVERLAY_STYLES[type]
+  return (
+    <button ref={buttonRef} type="button" onClick={dismiss} aria-label="Dismiss scan result" data-testid="scan-result-overlay" data-result={type}
+      className={`fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center animate-[fadeIn_120ms_ease-out] focus:outline-none ${classes}`}>
+      <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
+      <span aria-hidden="true" className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
+      {persistent && <span aria-hidden="true" className="text-lg font-semibold">Tap to continue</span>}
+    </button>
+  )
 }
 
 function ResultPanel({ result, className = '' }) {
@@ -270,12 +321,16 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [credentialBusy, setCredentialBusy] = useState(false)
   const [cameraError, setCameraError] = useState(null)
   const [sessionCount, setSessionCount] = useState(0)
+  const [dismissedFeedback, setDismissedFeedback] = useState(0)
+  const wakeLock = useScreenWakeLock(scanning)
+  const { soundOn, toggleSound, primeSound, playScanSound } = useScanSound()
 
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const detectorTimerRef = useRef(null)
   const zxingControlsRef = useRef(null)
   const scanCooldownRef = useRef(false)
+  const feedbackSequenceRef = useRef(0)
   const syncingRef = useRef(false)
   const credentialInFlightRef = useRef(false)
   const unknownRefreshRef = useRef({ scope: null, after: 0 })
@@ -995,10 +1050,23 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     resultContextRef.current = result.actionUuid ? { uuid: result.actionUuid, kind: result.actionKind,
       ticketId: result.ticket?.ticket_id, deviceId: result.deviceId, owner: currentScannerOwner(), eventId: eventIdRef.current,
       generation: setupGenerationRef.current, presentation: presentationRef.current } : null
-    setScanResult(result)
+    // Every shown result is a new door decision; a pending admission gets its
+    // alert when the verdict arrives (admissionAcknowledgement).
+    const alertType = result.type !== 'pending' && result.actionKind !== 'reverse' ? result.type : undefined
+    setScanResult({ ...result, feedbackId: ++feedbackSequenceRef.current, alertType })
     if (result.type === 'success' || (result.type === 'pending' && result.actionKind === 'admit')) setSessionCount(count => count + 1)
-    if (navigator.vibrate && result.type !== 'pending') navigator.vibrate(result.type === 'success' ? 80 : [100, 60, 100])
   }, [])
+
+  // Sound and vibration fire once per door decision (iOS has no vibration).
+  const alertKey = scanResult?.alertType ? `${scanResult.feedbackId}:${scanResult.alertType}` : null
+  useEffect(() => {
+    if (!alertKey) return
+    const success = alertKey.endsWith(':success')
+    playScanSound(success ? 'admit' : 'refuse')
+    if (navigator.vibrate) navigator.vibrate(success ? 80 : [100, 60, 100])
+  }, [alertKey, playScanSound])
+  const overlay = scanResult?.alertType && scanResult.feedbackId !== dismissedFeedback
+    ? { id: scanResult.feedbackId, type: scanResult.alertType } : null
 
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current, scanManifest = manifest) => {
     if (!device || !scanManifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== scanManifest.digest) return
@@ -1401,23 +1469,31 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       </div>
 
       <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-7 sm:mb-5 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-span-3">
-        <ResultPanel result={scanResult} />
         <section id="scanner-camera" className="scroll-mt-24 overflow-hidden rounded-2xl bg-neutral-950">
-          <button onClick={scanning ? stopCamera : startCamera} disabled={!ready}
-            className="flex min-h-11 w-full items-center justify-center gap-2 bg-brand-800 px-4 py-4 font-semibold text-white enabled:hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-neutral-700">
-            {scanning ? <><StopCircle className="h-5 w-5" /> Stop camera</> : <><Camera className="h-5 w-5" /> Start camera</>}
-          </button>
-          <div className="relative aspect-[4/3]">
-            <video ref={videoRef} className={`h-full w-full object-cover ${scanning ? '' : 'hidden'}`} playsInline muted />
+          <div className="flex">
+            {/* The tap that starts the camera also unlocks audio on iOS. */}
+            <button onClick={scanning ? stopCamera : () => { primeSound(); startCamera() }} disabled={!ready}
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 bg-brand-800 px-4 py-4 font-semibold text-white enabled:hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-neutral-700">
+              {scanning ? <><StopCircle className="h-5 w-5" /> Stop camera</> : <><Camera className="h-5 w-5" /> Start camera</>}
+            </button>
+            <button type="button" onClick={toggleSound} aria-pressed={soundOn}
+              className="flex min-h-11 shrink-0 items-center justify-center gap-2 border-l border-white/20 bg-brand-800 px-4 font-semibold text-white hover:bg-brand-900">
+              {soundOn ? <Volume2 aria-hidden="true" className="h-5 w-5" /> : <VolumeX aria-hidden="true" className="h-5 w-5" />} Sound
+            </button>
+          </div>
+          <div className="relative aspect-[4/3] max-h-[60dvh]">
+            <video ref={videoRef} className={`h-full max-h-[60dvh] w-full object-cover ${scanning ? '' : 'hidden'}`} playsInline muted />
             {!scanning && (
               <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center text-neutral-200">
                 <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">{ready ? 'Point the camera at the ticket QR code' : setupBusy ? 'Preparing this scanner…' : 'Choose an assigned event and prepare this device to enable the camera.'}</p>
               </div>
             )}
-            {scanning && <div className="pointer-events-none absolute inset-0 m-auto h-52 w-52 rounded-3xl border-4 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />}
+            {scanning && <div className="pointer-events-none absolute inset-0 m-auto h-52 max-h-[85%] w-52 max-w-[85%] rounded-3xl border-4 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />}
           </div>
 
         </section>
+        <ResultPanel result={scanResult} />
+        {scanning && (!wakeLock.supported || wakeLock.failed) && <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800">This browser can’t keep the screen on. Set Auto-Lock or Screen timeout to Never while scanning.</p>}
         {cameraError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cameraError} You can enter the ticket QR code below or find the attendee online.</p>}
       </div>
 
@@ -1522,6 +1598,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </div>
         </section>
       )}
+      {overlay && <ScanResultOverlay key={overlay.id} id={overlay.id} type={overlay.type} onDismiss={setDismissedFeedback} />}
     </div>
   )
 }

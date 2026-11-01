@@ -86,6 +86,10 @@ for (const fragment of ['', '#manual-ticket-entry']) {
     await page.getByLabel('Ticket QR code').fill(credentials[1])
     await page.getByRole('button', { name: 'Check in ticket' }).click()
     await expect(page.getByText('Already scanned on this device')).toBeVisible()
+    // Needs-attention results hold a full-screen amber overlay until tapped.
+    await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'warning')
+    await page.getByRole('button', { name: 'Dismiss scan result' }).click()
+    await expect(page.getByTestId('scan-result-overlay')).toHaveCount(0)
 
     await context.setOffline(false)
     await expect.poll(() => syncedActions.length).toBe(1)
@@ -147,6 +151,12 @@ test('online scanner waits neutrally before accepted and refused acknowledgement
       results: actions.map(action => ({ ...action, result: verdict, reason_code: verdict === 'accepted' ? 'admitted' : 'refund_pending' })) })
     await expect(page.getByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit', { exact: true })).toBeVisible()
     await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+    if (verdict === 'rejected') {
+      // A refusal holds the red overlay until staff tap it away.
+      await expect(page.getByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'error')
+      await page.getByRole('button', { name: 'Dismiss scan result' }).click()
+      await expect(page.getByTestId('scan-result-overlay')).toHaveCount(0)
+    }
   }
 })
 

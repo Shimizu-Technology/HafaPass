@@ -356,6 +356,8 @@ for (const width of [375, 1440]) {
     await page.keyboard.press('Enter')
     await expect(page.getByText('Admission confirmed', { exact: true })).toBeVisible()
     await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+    // The admitted overlay clears itself; audit the page staff return to.
+    await expect(page.getByTestId('scan-result-overlay')).toHaveCount(0)
     await scan(page, 'scanner admission result')
   })
 }
