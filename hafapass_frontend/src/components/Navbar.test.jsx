@@ -79,6 +79,53 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     }
   })
 
+  it('keeps the header dark over a dark band, fades on scroll, and swaps instantly on route changes', async () => {
+    Object.assign(auth, { isSignedIn: false, userId: null, sessionId: null, user: null })
+    let y = 0
+    const band = document.createElement('section')
+    band.dataset.headerBand = 'dark'
+    const sheet = document.createElement('div')
+    // The light sheet is tucked 24px over the band's lower edge, like Home.
+    band.getBoundingClientRect = () => ({ top: 64 - y, bottom: 564 - y, height: 500 })
+    sheet.getBoundingClientRect = () => ({ top: 540 - y, bottom: 1540 - y, height: 1000 })
+    document.body.append(band, sheet)
+    function RouteControls() {
+      const navigate = useNavigate()
+      return <button onClick={() => navigate('/about')}>Go to about</button>
+    }
+    const scroll = async next => {
+      await act(async () => {
+        y = next
+        Object.defineProperty(window, 'scrollY', { configurable: true, value: next })
+        window.dispatchEvent(new Event('scroll'))
+        await new Promise(resolve => requestAnimationFrame(resolve))
+      })
+    }
+    try {
+      render(<MemoryRouter initialEntries={['/']}><Navbar /><RouteControls /></MemoryRouter>)
+      const banner = screen.getByRole('banner')
+      expect(banner).toHaveClass('bg-brand-950')
+      expect(banner).not.toHaveClass('app-nav-fade')
+      // Header bottom is 0 in jsdom: the sheet reaches it at 540px.
+      await scroll(300)
+      expect(banner).toHaveClass('bg-brand-950')
+      await scroll(560)
+      await waitFor(() => expect(banner).toHaveClass('bg-white'))
+      expect(banner).toHaveClass('app-nav-fade')
+      await scroll(0)
+      await waitFor(() => expect(banner).toHaveClass('bg-brand-950'))
+      band.remove()
+      sheet.remove()
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Go to about' }))
+      await waitFor(() => expect(screen.getByRole('banner')).toHaveClass('bg-white'))
+      expect(screen.getByRole('banner')).not.toHaveClass('app-nav-fade')
+    } finally {
+      band.remove()
+      sheet.remove()
+      await scroll(0)
+    }
+  })
+
   it('waits for real bootstrap and asynchronous token retrieval before loading desktop and mobile admin navigation', async () => {
     let finishToken
     auth.getToken.mockReturnValue(new Promise(resolve => { finishToken = resolve }))

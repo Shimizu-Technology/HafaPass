@@ -12,10 +12,27 @@ import { useCanManageOrganizationSettings, useCanViewOrganizationFinances, useCa
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
+// A dark page introduction marks itself with data-header-band="dark". The
+// header stays dark while that band (or a light sheet tucked over its lower
+// edge) has not yet reached the header. Pages without one use a small offset.
+function pastDarkBand(header) {
+  const band = document.querySelector('[data-header-band="dark"]')
+  if (!band) return window.scrollY > 10
+  const headerBottom = header ? header.getBoundingClientRect().bottom : 64
+  const bandRect = band.getBoundingClientRect()
+  const next = band.nextElementSibling?.getBoundingClientRect()
+  // Ignore a hidden or unrelated sibling; only a sheet overlapping the band counts.
+  const overlaps = next && next.height > 0 && next.top > bandRect.top && next.top < bandRect.bottom
+  return (overlaps ? next.top : bandRect.bottom) <= headerBottom
+}
+
 function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const menuTrigger = useRef(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
+  const header = useRef(null)
+  // Scroll-driven header theme for the current path. `fade` marks a change the
+  // reader caused by scrolling; route changes swap instantly with the page.
+  const [scrollTheme, setScrollTheme] = useState({ path: null, past: false, fade: false })
   const [roleState, setRoleState] = useState(null)
   const [roleAttempt, setRoleAttempt] = useState(0)
   const authContext = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
@@ -29,10 +46,28 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
   const { t } = useTranslation()
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 10)
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    const path = location.pathname
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      setScrollTheme(previous => {
+        const past = pastDarkBand(header.current)
+        if (previous.path === path && previous.past === past) return previous
+        return { path, past, fade: previous.path === path }
+      })
+    }
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure) }
+    measure()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+    }
+  }, [location.pathname])
+  const currentScrollTheme = scrollTheme.path === location.pathname ? scrollTheme : { past: false, fade: false }
+  const scrolled = currentScrollTheme.past
 
   useEffect(() => {
     if (!accountReady) return
@@ -117,7 +152,8 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   return (
     <header
-      className={`app-nav sticky top-0 z-50 ${
+      ref={header}
+      className={`app-nav sticky top-0 z-50 ${currentScrollTheme.fade ? 'app-nav-fade ' : ''}${
         isDarkMode
           ? 'bg-brand-950 border-b border-transparent'
           : scrolled

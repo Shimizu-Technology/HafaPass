@@ -63,7 +63,7 @@ export default function HomePage() {
   return (
     <div className="public-intros min-h-dvh bg-brand-950 text-content">
       <SEO />
-      <section className="bg-brand-950 pb-16 pt-8 text-white sm:pb-20 sm:pt-12 lg:pb-28 lg:pt-20">
+      <section data-header-band="dark" className="bg-brand-950 pb-16 pt-8 text-white sm:pb-20 sm:pt-12 lg:pb-28 lg:pt-20">
         <div className="mx-auto grid max-w-6xl items-center gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-16 lg:px-8">
           <div>
             <h1 className="max-w-lg font-display text-[2.5rem] font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-6xl">{t('pass.home.title')}</h1>
