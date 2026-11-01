@@ -139,7 +139,7 @@ RSpec.describe "Advertised all-in pricing", type: :request do
     advertised_total = 2 * listing.fetch(general.id).fetch("all_in_price_cents")
 
     order = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: general.id, quantity: 2 }],
-      buyer_email: "promo@example.com", buyer_name: "Promo Buyer", promo_code_id: promo.id, payment_required: false).order
+      buyer_email: "promo@example.com", buyer_name: "Promo Buyer", promo_code: promo.code, payment_required: false).order
 
     # The fee stays on the pre-discount price; the discount comes off the tickets.
     expect(order.service_fee_cents).to eq(2 * listing.fetch(general.id).fetch("service_fee_cents"))

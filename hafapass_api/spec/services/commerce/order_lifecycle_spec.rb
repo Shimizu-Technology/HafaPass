@@ -14,7 +14,7 @@ RSpec.describe "Commerce order lifecycle" do
     allow(EmailService).to receive(:send_ticket_email_async)
   end
 
-  def create_pending_order(quantity: 1, promo_code_id: nil, intent_id: "pi_#{SecureRandom.hex(4)}")
+  def create_pending_order(quantity: 1, promo_code: nil, intent_id: "pi_#{SecureRandom.hex(4)}")
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent).and_return(
       OpenStruct.new(id: intent_id, client_secret: "#{intent_id}_secret")
@@ -25,7 +25,7 @@ RSpec.describe "Commerce order lifecycle" do
       line_items: [{ ticket_type_id: ticket_type.id, quantity: quantity }],
       buyer_email: "buyer@example.com",
       buyer_name: "Buyer",
-      promo_code_id: promo_code_id
+      promo_code: promo_code
     )
   end
 
@@ -213,11 +213,11 @@ RSpec.describe "Commerce order lifecycle" do
 
   it "reserves, releases, and finalizes limited and unlimited promo uses" do
     limited = create(:promo_code, event: event, code: "ONLYONE", max_uses: 1, discount_type: "fixed", discount_value: 500)
-    first = create_pending_order(promo_code_id: limited.id)
+    first = create_pending_order(promo_code: limited.code)
     expect(first.order.promo_redemption).to be_reserved
 
     expect do
-      create_pending_order(promo_code_id: limited.id)
+      create_pending_order(promo_code: limited.code)
     end.to raise_error(Commerce::OrderCreator::CheckoutError, /no longer available/)
 
     Commerce::OrderLifecycle.cancel!(first.order)
@@ -225,7 +225,7 @@ RSpec.describe "Commerce order lifecycle" do
     expect(AuditLog.find_by!(auditable: first.order, action: "order.cancelled")).to have_attributes(
       organization_id: event.organization_id, event_id: event.id, outcome: "succeeded")
 
-    third = create_pending_order(promo_code_id: limited.id)
+    third = create_pending_order(promo_code: limited.code)
     Commerce::OrderLifecycle.complete!(
       third.order,
       payment: third.payment,
@@ -236,7 +236,7 @@ RSpec.describe "Commerce order lifecycle" do
     expect(third.order.promo_redemption.reload).to be_finalized
 
     unlimited = create(:promo_code, event: event, code: "OPEN", max_uses: nil, discount_type: "fixed", discount_value: 100)
-    unlimited_order = create_pending_order(promo_code_id: unlimited.id)
+    unlimited_order = create_pending_order(promo_code: unlimited.code)
     Commerce::OrderLifecycle.complete!(
       unlimited_order.order,
       payment: unlimited_order.payment,

@@ -96,7 +96,7 @@ describe('buyer refund request persistence', () => {
     expect(prepareCheckoutAttempt('event', { line_items: [{ ticket_type_id: 7, quantity: 1 }], buyer_email: 'buyer@example.invalid' })).toEqual(first)
     expect(() => prepareCheckoutAttempt('event', { ...payload, buyer_email: 'edited@example.invalid' })).toThrow(CheckoutAttemptConflict)
     expect(() => prepareCheckoutAttempt('event', { ...payload, line_items: [{ ticket_type_id: 7, quantity: 2 }] })).toThrow(CheckoutAttemptConflict)
-    expect(() => prepareCheckoutAttempt('event', { ...payload, promo_code_id: 9 })).toThrow(CheckoutAttemptConflict)
+    expect(() => prepareCheckoutAttempt('event', { ...payload, promo_code: 'ISLAND' })).toThrow(CheckoutAttemptConflict)
     expect(getCheckoutAttempt('event')).toEqual(first)
     clearCheckoutAttempt('event', first.payload.checkout_key)
     const next = prepareCheckoutAttempt('event', { ...payload, buyer_email: 'edited@example.invalid' })

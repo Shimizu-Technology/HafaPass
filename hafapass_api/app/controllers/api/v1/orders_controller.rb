@@ -2,7 +2,7 @@
 
 class Api::V1::OrdersController < ApplicationController
   prepend_before_action :ensure_public_checkout_event, only: :create
-  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
+  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id promo_code catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
     terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents].freeze
   skip_before_action :authenticate_user!, only: [
@@ -85,6 +85,7 @@ class Api::V1::OrdersController < ApplicationController
       marketing_opt_in: [true, "true", 1, "1"].include?(params[:marketing_opt_in]),
       user: @current_user,
       promo_code_id: params[:promo_code_id],
+      promo_code: params[:promo_code],
       catalog_items: params[:catalog_items],
       registration_answers: params[:registration_answers],
       waiver_acceptances: params[:waiver_acceptances],

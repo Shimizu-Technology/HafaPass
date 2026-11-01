@@ -415,6 +415,57 @@ RSpec.describe "Api::V1::Orders", type: :request do
       end
     end
 
+    context "with a promo code" do
+      let!(:island) { create(:promo_code, event: event, code: "ISLAND", discount_type: "percentage", discount_value: 10) }
+      let!(:secret) { create(:promo_code, event: event, code: "STAFFONLY", discount_type: "percentage", discount_value: 100) }
+
+      it "applies the code the buyer typed, using the validate endpoint's normalization" do
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: " island ")
+
+        expect(response).to have_http_status(:created), response.body
+        order = Order.find(response.parsed_body.fetch("id"))
+        expect(order.promo_code).to eq(island)
+        expect(order.discount_cents).to eq(1250)
+      end
+
+      it "never applies a code selected only by a guessed ID" do
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code_id: secret.id)
+        end.not_to change(Order, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Re-enter your promo code and try again")
+      end
+
+      it "rejects a typed code whose ID does not match the one sent with it" do
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code: "ISLAND", promo_code_id: secret.id)
+        end.not_to change(Order, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Promo code is no longer available")
+      end
+
+      it "rejects unknown and non-string codes" do
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: "NOPE")
+        expect(response).to have_http_status(:unprocessable_content)
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: { code: "ISLAND" })
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Order.count).to eq(0)
+      end
+
+      it "binds the typed code into the checkout recovery identity" do
+        key = SecureRandom.hex(32)
+        post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key, promo_code: "ISLAND")
+        expect(response).to have_http_status(:created)
+
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key, promo_code: "STAFFONLY")
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+    end
+
     context "with Stripe enabled" do
       before do
         allow(StripeService).to receive(:payment_enabled?).and_return(true)

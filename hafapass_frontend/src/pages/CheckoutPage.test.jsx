@@ -201,6 +201,51 @@ describe('checkout navigation', () => {
     expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }], expected_total_cents: 0 })
   })
 
+  it('sends the typed promo code rather than its record ID', async () => {
+    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
+      ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725, service_fee_cents: 225 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    apiClient.post.mockImplementation(url => url === '/promo_codes/validate'
+      ? Promise.resolve({ data: { valid: true, promo_code_id: 41, code: 'ISLAND', discount_cents: 250, description: '10% off' } })
+      : Promise.reject({ response: { status: 422, data: { error: 'Stop here', checkout_recovery_required: false } } }))
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Full Name'), 'Guest Buyer')
+    await user.type(screen.getByLabelText('Email Address'), 'guest@example.invalid')
+    await user.click(screen.getByRole('button', { name: 'Have a promo code?' }))
+    await user.type(screen.getByLabelText('Promo code'), 'island')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(await screen.findByText('10% off')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
+    await user.click(screen.getByRole('button', { name: /Place Order/ }))
+    expect(await screen.findByText('Stop here')).toBeInTheDocument()
+    const orderPayload = apiClient.post.mock.calls.find(([url]) => url === '/orders')[1]
+    expect(orderPayload).toMatchObject({ promo_code: 'ISLAND' })
+    expect(orderPayload).not.toHaveProperty('promo_code_id')
+  })
+
+  it('shows the minimum charge message when a promo would leave a tiny card payment', async () => {
+    const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
+      ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725, service_fee_cents: 225 }] }
+    apiClient.get.mockImplementation(url => url === '/config'
+      ? Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      : new Promise(() => {}))
+    apiClient.post.mockResolvedValue({ data: { valid: false, error: 'Card payments must be at least $0.50. Remove the promo code or add tickets.' } })
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Have a promo code?' }))
+    await user.type(screen.getByLabelText('Promo code'), 'almostfree')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(await screen.findByText('Card payments must be at least $0.50. Remove the promo code or add tickets.')).toBeInTheDocument()
+    expect(apiClient.post).toHaveBeenCalledWith('/promo_codes/validate', expect.objectContaining({ code: 'ALMOSTFREE' }))
+  })
+
   it('sends the displayed total and returns the buyer to fresh prices when it changed', async () => {
     const event = { id: 38, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
       ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, all_in_price_cents: 2725, service_fee_cents: 225 }] }

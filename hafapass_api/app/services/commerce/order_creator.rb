@@ -9,6 +9,7 @@ module Commerce
     PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
+    PROMO_CODE_REQUIRED = "Re-enter your promo code and try again"
     class CheckoutError < StandardError; end
     class PriceChanged < CheckoutError; end
     class RefreshRequired < PriceChanged; end
@@ -20,7 +21,7 @@ module Commerce
       new(**).call
     end
 
-    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil,
+    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil, promo_code: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
@@ -36,6 +37,9 @@ module Commerce
       @marketing_opt_in = marketing_opt_in
       @user = user
       @promo_code_id = promo_code_id
+      # The code the buyer typed is the only selector. A promo ID never picks a
+      # code on its own, so guessing another code's ID cannot apply its discount.
+      @promo_code_input = promo_code
       @payment_required = payment_required
       @service_fee = service_fee
       @complimentary = complimentary
@@ -291,7 +295,7 @@ module Commerce
       unless live_money_proof_authorization&.event_id == event.id
         raise CheckoutError, "An approved live-money proof authorization is required"
       end
-      unless user&.admin? && promo_code_id.blank? && catalog_items.empty? && referral_code.blank? &&
+      unless user&.admin? && promo_code_id.blank? && @promo_code_input.blank? && catalog_items.empty? && referral_code.blank? &&
           waitlist_offer_token.blank? && seat_hold_token.blank? && totals[:total_cents].between?(1, live_money_proof_authorization.max_amount_cents)
         raise CheckoutError, "The live-money proof order exceeds its approved buyer, item, or amount scope"
       end
@@ -583,9 +587,12 @@ module Commerce
     end
 
     def locked_promo_code(subtotal_cents)
-      return if promo_code_id.blank?
+      return if promo_code_id.blank? && @promo_code_input.blank?
+      raise CheckoutError, PROMO_CODE_REQUIRED unless @promo_code_input.is_a?(String) && @promo_code_input.strip.present?
 
-      promo = event.promo_codes.lock.find_by(id: promo_code_id)
+      # Same normalization as PromoCode#normalize_code and the validate endpoint.
+      promo = event.promo_codes.lock.find_by(code: @promo_code_input.strip.upcase)
+      promo = nil if promo && promo_code_id.present? && promo.id.to_s != promo_code_id.to_s
       unless promo&.usable? && (!promo.max_uses || promo.reserved_and_finalized_uses < promo.max_uses) &&
           promo.calculate_discount(subtotal_cents).positive?
         raise CheckoutError, "Promo code is no longer available"

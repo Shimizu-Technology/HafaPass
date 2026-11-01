@@ -401,7 +401,7 @@ function CheckoutContent({ buyerId }) {
         buyer_phone: buyerPhone.trim() || null,
         line_items: lineItems.map(item => ({ ticket_type_id: item.ticket_type_id, quantity: item.quantity })),
         expected_total_cents: displayedTotal,
-        promo_code_id: promoData?.promo_code_id || null,
+        promo_code: promoData?.code || null,
         catalog_items: Object.entries(catalogSelections).filter(([, value]) => value.quantity > 0).map(([id, value]) => ({
           catalog_item_id: Number(id), quantity: value.quantity,
           amount_cents: event.catalog_items?.find(item => item.id === Number(id))?.kind === 'donation' ? (value.amount_cents || null) : null,
