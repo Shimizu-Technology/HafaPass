@@ -10,6 +10,14 @@
 # The correct key is set per-request by StripeService.configure_stripe!
 # so we don't set Stripe.api_key globally here.
 
+# Network limits for every Stripe::StripeClient (clients copy these globals).
+# Checkout and webhooks run on a few Puma threads, so a slow Stripe call must
+# fail fast rather than hold a thread for the gem's 30 s/80 s defaults. Retries
+# reuse the request's idempotency key, so a retried POST cannot double-charge.
+Stripe.open_timeout = 5
+Stripe.read_timeout = 20
+Stripe.max_network_retries = 2
+
 # Log which keys are available at boot
 test_key = ENV["STRIPE_TEST_SECRET_KEY"].presence || ENV["STRIPE_SECRET_KEY"]
 live_key = ENV["STRIPE_LIVE_SECRET_KEY"]

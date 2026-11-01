@@ -10,6 +10,57 @@ RSpec.describe StripeService do
   def accounts_api(id = "acct_testplatform")
     double("accounts API", retrieve_current: OpenStruct.new(id: id))
   end
+  it "configures every Stripe client with short network timeouts and bounded retries" do
+    config = Stripe::StripeClient.new("sk_test_timeouts").instance_variable_get(:@requestor).config
+    expect(config).to have_attributes(open_timeout: 5, read_timeout: 20, max_network_retries: 2)
+  end
+
+  describe "platform account confirmation cache" do
+    include ActiveSupport::Testing::TimeHelpers
+
+    let(:payment) do
+      create(:payment, provider: "stripe", provider_environment: "test", provider_platform_account_id: "acct_testplatform",
+        provider_payment_id: "pi_cached")
+    end
+    let(:intents) { double("payment intents API", retrieve: OpenStruct.new(id: "pi_cached")) }
+
+    before { allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("sk_test_cached") }
+
+    def stub_client(account_id)
+      accounts = accounts_api(account_id)
+      client = instance_double(Stripe::StripeClient, v1: double("v1", accounts: accounts, payment_intents: intents))
+      allow(Stripe::StripeClient).to receive(:new).with("sk_test_cached").and_return(client)
+      accounts
+    end
+
+    it "reuses a confirmed match for ten minutes per key and environment" do
+      accounts = stub_client("acct_testplatform")
+      3.times { described_class.retrieve_payment_intent(payment) }
+      expect(accounts).to have_received(:retrieve_current).once
+
+      travel 11.minutes do
+        described_class.retrieve_payment_intent(payment)
+      end
+      expect(accounts).to have_received(:retrieve_current).twice
+    end
+
+    it "never caches a mismatch and rechecks when the expected account differs" do
+      accounts = stub_client("acct_other")
+      2.times do
+        expect { described_class.retrieve_payment_intent(payment) }
+          .to raise_error(described_class::PaymentError, /different platform account/)
+      end
+      expect(accounts).to have_received(:retrieve_current).twice
+
+      matching = stub_client("acct_testplatform")
+      described_class.retrieve_payment_intent(payment)
+      rotated = create(:payment, provider_platform_account_id: "acct_rotated", provider_payment_id: "pi_rotated")
+      expect { described_class.retrieve_payment_intent(rotated) }
+        .to raise_error(described_class::PaymentError, /different platform account/)
+      expect(matching).to have_received(:retrieve_current).twice
+    end
+  end
+
   it "limits a new ticket intent to cards without incompatible dynamic method parameters" do
     SiteSetting.instance.update!(payment_mode: "test")
     allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_test_cards")
