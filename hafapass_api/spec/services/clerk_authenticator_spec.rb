@@ -180,5 +180,50 @@ RSpec.describe ClerkAuthenticator do
       expect(results).to all(verified)
       expect(calls.value).to eq(1)
     end
+
+    it "keeps verifying with the stale key set while another thread refreshes it" do
+      release = Queue.new
+      fetching = Queue.new
+      calls = Concurrent::AtomicFixnum.new
+      allow(described_class).to receive(:fetch_jwks_from_clerk) do
+        if calls.increment == 1
+          published
+        else
+          fetching << true
+          release.pop
+          published
+        end
+      end
+      freeze_time do
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        travel 1.hour + 1.second
+
+        refresher = Thread.new { described_class.verify(signed(private_key, "kid-a")) }
+        fetching.pop
+        # The refresh is in flight and holds no lock: this request isn't blocked.
+        expect(Timeout.timeout(2) { described_class.verify(signed(private_key, "kid-a")) }).to verified
+        release << true
+        expect(refresher.value).to verified
+        expect(calls.value).to eq(2)
+      end
+    end
+
+    it "stops waiting on a stalled refresh when it has no keys to fall back on" do
+      stub_const("#{described_class}::JWKS_REFRESH_WAIT", 0.1)
+      release = Queue.new
+      fetching = Queue.new
+      allow(described_class).to receive(:fetch_jwks_from_clerk) do
+        fetching << true
+        release.pop
+        published
+      end
+      refresher = Thread.new { described_class.verify(signed(private_key, "kid-a")) }
+      fetching.pop
+
+      expect(Timeout.timeout(2) { described_class.verify(signed(private_key, "kid-a")) }).to be_nil
+      release << true
+      expect(refresher.value).to verified
+      expect(described_class).to have_received(:fetch_jwks_from_clerk).once
+    end
   end
 end

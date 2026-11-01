@@ -13,6 +13,10 @@ class ClerkAuthenticator
   # but no more than this often, so forged kids can't hammer Clerk.
   UNKNOWN_KID_REFETCH_INTERVAL = 5.minutes
   JWKS_MUTEX = Mutex.new
+  JWKS_REFRESHED = ConditionVariable.new
+  # Longest a request with no usable keys waits on another thread's fetch;
+  # the fetch itself gives up after 5 s to connect plus 5 s to read.
+  JWKS_REFRESH_WAIT = 11 # seconds
 
   class << self
     def verify(token)
@@ -124,11 +128,15 @@ class ClerkAuthenticator
       kid.nil? ? keys : keys.select { |key| key["kid"] == kid }
     end
 
+    # Single-flight refresh: one thread fetches from Clerk, outside the lock.
+    # Meanwhile other threads keep verifying with the stale (but still usable)
+    # set. Only a thread with no usable keys, or one whose token names a key the
+    # stale set lacks, waits for the fetch in flight.
     def fetch_jwks(unknown_kid: false)
+      url = jwks_url
+      now = Time.current
       JWKS_MUTEX.synchronize do
-        url = jwks_url
         reset_jwks_cache! unless @jwks_url == url
-        now = Time.current
 
         if unknown_kid
           return usable_jwks(now) if @jwks_kid_refetched_at && now - @jwks_kid_refetched_at < UNKNOWN_KID_REFETCH_INTERVAL
@@ -137,16 +145,52 @@ class ClerkAuthenticator
         end
         return usable_jwks(now) if @jwks_failed_at && now - @jwks_failed_at < JWKS_FAILURE_TTL
 
-        @jwks_kid_refetched_at = now if unknown_kid
-        response = fetch_jwks_from_clerk
-        if response.is_a?(Hash) && response["keys"].is_a?(Array)
-          @jwks, @jwks_url, @jwks_fetched_at, @jwks_failed_at = response, url, now, nil
-        else
-          @jwks_url = url
-          @jwks_failed_at = now
-          Rails.logger.warn("ClerkAuthenticator serving cached JWKS after a failed fetch") if usable_jwks(now)
+        if @jwks_refreshing
+          stale = usable_jwks(now)
+          return stale if stale && !unknown_kid
+
+          return await_jwks_refresh
         end
-        usable_jwks(now)
+
+        @jwks_refreshing = true
+        @jwks_url = url
+        @jwks_kid_refetched_at = now if unknown_kid
+      end
+
+      response = nil
+      begin
+        response = fetch_jwks_from_clerk
+      ensure
+        JWKS_MUTEX.synchronize do
+          @jwks_refreshing = false
+          store_jwks_result(response, url, now)
+          JWKS_REFRESHED.broadcast
+        end
+      end
+      JWKS_MUTEX.synchronize { usable_jwks(now) }
+    end
+
+    # Called with JWKS_MUTEX held. Bounded by the fetch's own timeouts.
+    def await_jwks_refresh
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + JWKS_REFRESH_WAIT
+      while @jwks_refreshing
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        break if remaining <= 0
+
+        JWKS_REFRESHED.wait(JWKS_MUTEX, remaining)
+      end
+      usable_jwks(Time.current)
+    end
+
+    # Called with JWKS_MUTEX held.
+    def store_jwks_result(response, url, now)
+      return unless @jwks_url == url # the configured URL changed mid-fetch
+
+      if response.is_a?(Hash) && response["keys"].is_a?(Array)
+        @jwks, @jwks_fetched_at, @jwks_failed_at = response, now, nil
+      else
+        @jwks_failed_at = now
+        Rails.logger.warn("ClerkAuthenticator serving cached JWKS after a failed fetch") if usable_jwks(now)
       end
     end
 
@@ -158,6 +202,7 @@ class ClerkAuthenticator
 
     def reset_jwks_cache!
       @jwks = @jwks_url = @jwks_fetched_at = @jwks_failed_at = @jwks_kid_refetched_at = nil
+      @jwks_refreshing = false
     end
 
     private
