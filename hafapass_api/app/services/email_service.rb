@@ -207,23 +207,46 @@ class EmailService
       raise
     end
 
+    # Buyers of every paid or free completed order hear about the change, and
+    # so does each current holder of a transferred ticket, once per change.
+    # Schedule and venue notices wait so a quick correction sends one email
+    # (see EventChange::NOTICE_COALESCE_WINDOW); cancellations go at once.
     def send_event_change_notifications_async(change)
       return unless change && EventChange::TYPES.include?(change.change_type)
 
-      change.event.orders.where(status: [:completed, :partially_refunded]).find_each do |order|
-        delivery = nil
-        delivery = create_delivery(order: order, event: change.event, template: "event_change",
-          recipient: order.buyer_email, metadata: { event_change_id: change.id }, idempotency_key: "event-change/#{change.id}/#{order.id}")
-        MessageDeliveryJob.perform_later(delivery.id)
-      rescue StandardError => e
-        raise unless delivery
+      wait = change.change_type == "cancelled" ? nil : EventChange::NOTICE_COALESCE_WINDOW
+      orders = change.event.orders.where(status: [:completed, :partially_refunded])
+      notified = orders.pluck(:buyer_email).to_set { |email| email.to_s.strip.downcase }
+      orders.find_each do |order|
+        queue_event_change_delivery(change, order: order, recipient: order.buyer_email,
+          idempotency_key: "event-change/#{change.id}/#{order.id}", metadata: { event_change_id: change.id }, wait: wait)
+      end
+      Ticket.where(order_id: orders.select(:id), status: :issued).where.not(holder_user_id: nil)
+        .includes(:order).order(:id).find_each do |ticket|
+        email = ticket.holder_email.to_s.strip.downcase
+        next if email.blank? || !ticket.transferred_away_from?(ticket.order) || notified.include?(email)
 
-        record_enqueue_failure(delivery, e)
-        Rails.logger.error(
-          "[EventChangeNotification] Unable to queue change=#{change.id} order=#{order.id}: #{e.class}"
-        )
+        notified << email
+        queue_event_change_delivery(change, order: ticket.order, ticket: ticket, recipient: email,
+          idempotency_key: "event-change/#{change.id}/holder/#{Digest::SHA256.hexdigest(email).first(32)}",
+          metadata: { event_change_id: change.id, audience: "holder" }, wait: wait)
       end
     end
+
+    def queue_event_change_delivery(change, order:, recipient:, idempotency_key:, metadata:, wait:, ticket: nil)
+      delivery = nil
+      delivery = create_delivery(order: order, ticket: ticket, event: change.event, template: "event_change",
+        recipient: recipient, metadata: metadata, idempotency_key: idempotency_key)
+      (wait ? MessageDeliveryJob.set(wait: wait) : MessageDeliveryJob).perform_later(delivery.id)
+    rescue StandardError => e
+      raise unless delivery
+
+      record_enqueue_failure(delivery, e)
+      Rails.logger.error(
+        "[EventChangeNotification] Unable to queue change=#{change.id} order=#{order.id}: #{e.class}"
+      )
+    end
+    private :queue_event_change_delivery
 
     def send_refund_notification_async(order, refund:)
       unless refund.order_id == order.id && refund.succeeded?
@@ -540,33 +563,18 @@ class EmailService
     def send_event_change_notification(change, order, delivery: nil)
       return unless change && EventChange::TYPES.include?(change.change_type)
 
-      if change.change_type == "cancelled"
-        html, subject = in_locale(order.locale) do
-          title = event_title(change.event)
-          heading = t("event_cancelled.heading", event: title)
-          [email_wrapper(heading) do
-            <<~HTML
-              <h2 style="color:#1f2937">#{h(heading)}</h2>
-              <p style="color:#6b7280">#{ht('event_cancelled.body')}</p>
-              <a href="#{order_access_url(order)}">#{ht('event_cancelled.view_order')}</a>
-            HTML
-          end, safe_subject(t("event_cancelled.subject", event: title))]
+      # A transferred ticket's holder has no order link or refund choice, and
+      # their language is unknown (as for transfer emails), so English.
+      holder = delivery&.metadata.to_h["audience"] == "holder"
+      recipient = holder ? delivery.recipient : order.buyer_email
+      html, subject = in_locale(holder ? AppLocale::DEFAULT : order.locale) do
+        if change.change_type == "cancelled"
+          build_event_cancelled_html(change, order, holder: holder)
+        else
+          build_event_change_html(change, order, holder: holder)
         end
-        return deliver(to: order.buyer_email, subject: subject, html: html, tag: "event_change",
-          delivery: delivery, order_id: order.id)
       end
-
-      action = change.change_type.humanize.downcase
-      html = email_wrapper("Event #{action}") do
-        <<~HTML
-          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{ERB::Util.html_escape(change.event.title)} was #{action}</h2>
-          <p style="color: #6b7280; margin: 0 0 20px;">The organizer updated this event. Review the current schedule and your ticket options below.</p>
-          <p style="color: #6b7280; margin: 0 0 24px;">Review the latest details and choose whether to keep your tickets or request an eligible refund.</p>
-          <a href="#{order_access_url(order)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">Review order #{order.reference}</a>
-        HTML
-      end
-      deliver(to: order.buyer_email, subject: safe_subject("Important update: #{change.event.title}"), html: html,
-        tag: "event_change", delivery: delivery, order_id: order.id)
+      deliver(to: recipient, subject: subject, html: html, tag: "event_change", delivery: delivery, order_id: order.id)
     end
 
     # ── Individual Ticket Email ─────────────────────────────────────
@@ -1005,6 +1013,126 @@ class EmailService
             #{pdf_attachment_note(pdfs)}
           </div>
         HTML
+      end
+    end
+
+    def build_event_cancelled_html(change, order, holder:)
+      title = event_title(change.event)
+      heading = t("event_cancelled.heading", event: title)
+      link = holder ? "#{frontend_url}/my-tickets" : order_access_url(order)
+      body = email_wrapper(heading) do
+        <<~HTML
+          <h2 style="color:#1f2937">#{h(heading)}</h2>
+          <p style="color:#6b7280">#{ht(holder ? 'event_cancelled.holder_body' : 'event_cancelled.body')}</p>
+          #{event_change_reasons_html([change])}
+          <a href="#{h(link)}">#{ht(holder ? 'event_change.view_tickets' : 'event_cancelled.view_order')}</a>
+        HTML
+      end
+      [body, safe_subject(t("event_cancelled.subject", event: title))]
+    end
+
+    # One notice describes the newest change and any earlier ones it replaced:
+    # before comes from the oldest change in the burst, after from the newest.
+    def build_event_change_html(change, order, holder:)
+      event = change.event
+      title = event_title(event)
+      burst = change.notice_burst
+      before = burst.first.before_data.to_h.stringify_keys
+      after = change.after_data.to_h.stringify_keys
+      rows = event_change_rows(before, after, event.timezone)
+      start_moved = rows.any? { |row| row[:key] == "starts_at" }
+      kind = if change.change_type == "postponed" then "postponed"
+      elsif start_moved then "new_date"
+      elsif rows.any? { |row| row[:key] == "venue" } then "venue"
+      else "updated"
+      end
+      heading = t("event_change.heading.#{kind}", event: title)
+      original_start = parse_change_time(before["starts_at"])
+      notes = []
+      if kind == "postponed" || after["status"] == "postponed"
+        notes << ht("event_change.postponed_note")
+        notes << ht("event_change.original_date", date: format_local_datetime(original_start, event.timezone)) if original_start && !start_moved
+      end
+      notes << event_change_choice_html(order, change) unless holder
+      link = holder ? "#{frontend_url}/my-tickets" : order_access_url(order)
+      cta = holder ? ht("event_change.view_tickets") : ht("event_change.review_order", reference: order.reference)
+      body = email_wrapper(heading) do
+        <<~HTML
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
+          <p style="color: #6b7280; margin: 0 0 20px;">#{ht(holder ? 'event_change.holder_intro' : 'event_change.intro')}</p>
+          #{event_change_table_html(rows)}
+          #{event_change_reasons_html(burst)}
+          #{notes.map { |note| %(<p style="color: #374151; margin: 0 0 16px;">#{note}</p>) }.join}
+          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{cta}</a>
+        HTML
+      end
+      [body, safe_subject(t("event_change.subject.#{kind}", event: title))]
+    end
+
+    def event_change_rows(before, after, zone)
+      rows = %w[starts_at doors_open_at ends_at].filter_map do |key|
+        next unless before.key?(key) && after.key?(key)
+
+        was = parse_change_time(before[key])
+        now = parse_change_time(after[key])
+        next if was == now
+
+        { key: key, label: t("event_change.labels.#{key}"),
+          was: format_local_datetime(was, zone) || t("event_change.not_set"),
+          now: format_local_datetime(now, zone) || t("event_change.not_set") }
+      end
+      venue = ->(data) { [data["venue_name"], data["venue_address"], data["venue_city"]].map { |part| part.to_s.strip }.compact_blank.join(", ") }
+      if venue_parts(before, after).uniq.length > 1
+        rows << { key: "venue", label: t("event_change.labels.venue"),
+          was: venue.call(before).presence || t("event_change.not_set"), now: venue.call(after).presence || t("event_change.not_set") }
+      end
+      rows
+    end
+
+    # Compare only the venue fields both snapshots recorded (older snapshots
+    # have no village).
+    def venue_parts(before, after)
+      keys = %w[venue_name venue_address venue_city].select { |key| before.key?(key) && after.key?(key) }
+      [before, after].map { |data| keys.map { |key| data[key].to_s.strip } }
+    end
+
+    def parse_change_time(value)
+      Time.zone.parse(value.to_s) if value.present?
+    rescue ArgumentError
+      nil
+    end
+
+    def event_change_table_html(rows)
+      return "" if rows.empty?
+
+      cells = rows.map do |row|
+        <<~HTML
+          <tr>
+            <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #1f2937; vertical-align: top;">#{h(row[:label])}</td>
+            <td style="padding: 10px 4px; border-bottom: 1px solid #e5e7eb; color: #374151;">#{ht('event_change.was', value: row[:was])}<br><strong>#{ht('event_change.now', value: row[:now])}</strong></td>
+          </tr>
+        HTML
+      end
+      %(<table style="width: 100%; border-collapse: collapse; margin: 0 0 20px;">#{cells.join}</table>)
+    end
+
+    def event_change_reasons_html(changes)
+      changes.filter_map { |item| item.reason.to_s.strip.presence }.uniq.map do |reason|
+        %(<p style="color: #374151; margin: 0 0 16px;">#{ht('event_change.organizer_reason', reason: reason)}</p>)
+      end.join
+    end
+
+    # Matches the order page: a refund choice only where the policy offers one.
+    def event_change_choice_html(order, change)
+      eligibility = EventChangeRefundEligibility.call(order: order, change: change)
+      if eligibility.eligible?
+        if eligibility.deadline_at
+          ht("event_change.refund_until", deadline: format_local_datetime(eligibility.deadline_at, change.event.timezone))
+        else
+          ht("event_change.refund_open")
+        end
+      else
+        ht("event_change.no_refund")
       end
     end
 

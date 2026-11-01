@@ -48,6 +48,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "This is not a material event change")
         next :done
       end
+      if superseded_event_change?(delivery)
+        delivery.update!(status: :cancelled, last_error: "A newer event change notice replaces this one")
+        next :done
+      end
       if obsolete_waitlist?(delivery)
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
         next :done
@@ -327,6 +331,14 @@ class MessageDeliveryJob < ApplicationJob
 
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
     !change || !EventChange::TYPES.include?(change.change_type) || change.event_id != delivery.order&.event_id
+  end
+
+  # Never withdraw a notice once a provider attempt may have happened.
+  def superseded_event_change?(delivery)
+    return false unless delivery.template == "event_change" && delivery.attempts.zero? &&
+      delivery.outbound_payload.blank? && delivery.provider_attempted_at.nil?
+
+    EventChange.find_by(id: delivery.metadata["event_change_id"])&.superseded_notice? || false
   end
 
   def mark_reminder_sent!(delivery)
