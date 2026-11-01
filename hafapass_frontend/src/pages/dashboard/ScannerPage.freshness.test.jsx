@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { setTimeout as nativeDelay } from 'node:timers/promises'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,15 @@ import ScannerPage from './ScannerPage'
 import * as store from '../../utils/admissionStore'
 
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() }, getApiAuthContext: vi.fn(() => null), subscribeApiAuthContext: () => () => {} }))
+
+// A refusal holds a modal overlay that staff tap away before the next entry.
+// It ignores taps for a moment after appearing (data-armed).
+async function dismissScanResult(user = userEvent) {
+  const overlay = screen.queryByTestId('scan-result-overlay')
+  if (overlay?.getAttribute('role') !== 'alertdialog') return
+  await waitFor(() => expect(overlay).toHaveAttribute('data-armed', 'true'))
+  await user.click(within(overlay).getByRole('button'))
+}
 
 function ScannerVisitControl() {
   const navigate = useNavigate()
@@ -123,6 +132,7 @@ describe('online unknown credential recovery', () => {
     return { device, envelope }
   }
   async function enterQr(code) {
+    await dismissScanResult()
     await userEvent.type(screen.getByLabelText('Ticket QR code'), code)
     await userEvent.click(screen.getByRole('button', { name: 'Check in ticket' }))
   }

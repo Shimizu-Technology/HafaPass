@@ -1,10 +1,19 @@
 import 'fake-indexeddb/auto'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+
+// A refusal holds a modal overlay that staff tap away before the next entry.
+// It ignores taps for a moment after appearing (data-armed).
+async function dismissScanResult(user = userEvent) {
+  const overlay = screen.queryByTestId('scan-result-overlay')
+  if (overlay?.getAttribute('role') !== 'alertdialog') return
+  await waitFor(() => expect(overlay).toHaveAttribute('data-armed', 'true'))
+  await user.click(within(overlay).getByRole('button'))
+}
 const auth = vi.hoisted(() => ({ userId: 'staff-a', sessionId: 'session-a', getToken: vi.fn() }))
 async function findManifest(version) {
   const summary = await screen.findByText('Device details', { exact: true })
@@ -671,6 +680,7 @@ describe('scanner setup refusal with the real Clerk wrapper and Axios intercepto
     await screen.findByText(verdict === 'accepted' ? 'Admission confirmed' : 'Refund pending — do not admit')
     await waitFor(() => expect(syncCalls).toBe(2))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled())
+    await dismissScanResult(user)
     vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
     await user.type(screen.getByLabelText('Ticket QR code'), 'peer-guard-qr')
     await user.click(screen.getByRole('button', { name: 'Check in ticket', exact: true }))

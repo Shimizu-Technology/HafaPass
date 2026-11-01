@@ -14,7 +14,10 @@ const PATTERNS = {
 
 // Door feedback tones. Browsers (iOS especially) only allow audio from a
 // context created or resumed during a tap, so call primeSound from the
-// "Start camera" or Sound tap before playScanSound can be heard.
+// "Start camera" or Sound tap before playScanSound can be heard. A phone call,
+// Siri or a screen lock interrupts the context, and resuming it outside a tap
+// can fail silently, so the scanner also calls primeSound from its other door
+// taps (dismissing a result, manual check-in, lookup Admit).
 export default function useScanSound() {
   const [soundOn, setSoundOn] = useState(readSoundPreference)
   const soundOnRef = useRef(soundOn)
@@ -28,7 +31,13 @@ export default function useScanSound() {
     if (!AudioContextClass) return
     try {
       if (!contextRef.current || contextRef.current.state === 'closed') contextRef.current = new AudioContextClass()
-      Promise.resolve(contextRef.current.resume?.()).catch(() => {})
+      const context = contextRef.current
+      Promise.resolve(context.resume?.()).catch(() => {
+        // A context the browser refuses to resume is replaced on the next tap.
+        if (contextRef.current !== context) return
+        contextRef.current = null
+        try { Promise.resolve(context.close?.()).catch(() => {}) } catch { /* Already closed. */ }
+      })
     } catch { contextRef.current = null /* Audio is optional; the screen still shows the result. */ }
   }, [])
 

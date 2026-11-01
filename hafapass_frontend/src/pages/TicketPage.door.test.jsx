@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import TicketPage from './TicketPage'
 import api from '../api/client'
@@ -14,19 +14,39 @@ const ticket = { id: 3, status: 'issued', admission_allowed: true, scan_credenti
 const showTicket = () => render(<MemoryRouter initialEntries={['/tickets/display?order=2']}><Routes><Route path="/tickets/:credential" element={<TicketPage />} /></Routes></MemoryRouter>)
 const iPhone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'
+const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+// jsdom has no navigator.maxTouchPoints; iPadOS detection reads it.
+const setTouchPoints = value => Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, get: () => value })
+const offlineMessage = "You're offline. Reconnect to show your ticket QR, or open it from your phone's wallet app if you added it."
 
 describe('ticket at the door', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => { vi.restoreAllMocks(); delete navigator.maxTouchPoints })
 
   it('explains offline loading on the dark ticket background and points to the wallet', async () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     api.get.mockRejectedValue(new Error('Network Error'))
     showTicket()
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent("You're offline. Reconnect to show your ticket QR, or open it from Apple Wallet if you added it.")
+    expect(alert).toHaveTextContent(offlineMessage)
+    expect(alert).not.toHaveTextContent('Apple Wallet')
     expect(alert.closest('.bg-brand-950')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
+  })
+
+  it('switches between the offline explanation and the load error as connectivity changes', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    api.get.mockRejectedValue(new Error('Server Error'))
+    showTicket()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("We couldn't load this ticket.")
+    onLine.mockReturnValue(false)
+    act(() => { window.dispatchEvent(new Event('offline')) })
+    expect(screen.getByRole('alert')).toHaveTextContent(offlineMessage)
+    onLine.mockReturnValue(true)
+    act(() => { window.dispatchEvent(new Event('online')) })
+    expect(screen.getByRole('alert')).toHaveTextContent("We couldn't load this ticket.")
   })
 
   it('keeps the load error when the device is online', async () => {
@@ -49,14 +69,26 @@ describe('ticket at the door', () => {
   it.each([
     [iPhone, ['Apple Wallet']],
     [android, ['Google Wallet']],
-  ])('shows only the wallet this device can use (%s)', async (userAgent, labels) => {
+    [mac, ['Apple Wallet', 'Google Wallet']],
+    [windows, ['Apple Wallet', 'Google Wallet']],
+  ])('shows only the wallets this device can use (%s)', async (userAgent, labels) => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent)
+    setTouchPoints(userAgent === iPhone || userAgent === android ? 5 : 0)
     api.get.mockResolvedValue({ data: ticket })
     showTicket()
     await screen.findByRole('img', { name: 'Ticket entry QR code' })
     const buttons = screen.getAllByRole('button', { name: /Wallet/ })
     expect(buttons.map(button => button.textContent)).toEqual(labels)
     for (const button of buttons) expect(button).toHaveClass('min-h-11')
+  })
+
+  it('treats a touch-screen Mac user agent as iPadOS', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(mac)
+    setTouchPoints(5)
+    api.get.mockResolvedValue({ data: ticket })
+    showTicket()
+    await screen.findByRole('img', { name: 'Ticket entry QR code' })
+    expect(screen.getAllByRole('button', { name: /Wallet/ }).map(button => button.textContent)).toEqual(['Apple Wallet'])
   })
 
   it('keeps both wallets when the device is unknown and none when wallets are off', async () => {

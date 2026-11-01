@@ -134,8 +134,21 @@ function AuthenticatedTicket() {
     authContext={userId ? context : undefined} />
 }
 
+// Follows connectivity changes so the offline explanation appears and clears
+// as the buyer's phone drops and regains signal.
+const subscribeConnectivity = callback => {
+  window.addEventListener('online', callback)
+  window.addEventListener('offline', callback)
+  return () => {
+    window.removeEventListener('online', callback)
+    window.removeEventListener('offline', callback)
+  }
+}
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
 function TicketContent({ authContext }) {
   const { t } = useTranslation()
+  const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
   const reducedMotion = useReducedMotion()
   const { credential } = useParams()
   const location = useLocation()
@@ -290,7 +303,6 @@ function TicketContent({ authContext }) {
   }
 
   if (error) {
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
     return (
       <div className="min-h-dvh bg-brand-950 px-4 py-12 text-center">
         <div className="card p-8 max-w-md mx-auto">

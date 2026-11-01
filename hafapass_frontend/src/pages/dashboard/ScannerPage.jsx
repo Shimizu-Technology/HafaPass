@@ -4,7 +4,7 @@ import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
 import JournalRecovery from '../../components/admissions/JournalRecovery'
 import SavedJournalExports from '../../components/admissions/SavedJournalExports'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
   RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, Volume2, VolumeX, XCircle,
@@ -196,55 +196,101 @@ function admissionAcknowledgement(current, receipt) {
       ? { type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
       : { type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
   // A verdict that arrives while the guest waits is the door decision. Later
-  // receipts for an already-decided scan update the panel, not the overlay.
-  return { ...current, ...next, alertType: current.type === 'pending' ? next.type : current.alertType }
+  // receipts for an already-decided scan update the panel, not the overlay,
+  // except a confirmation: an amber "Already scanned" overlay must not keep
+  // contradicting a panel that now says "Admission confirmed", so it clears.
+  if (current.type === 'pending') return { ...current, ...next, alertType: next.type }
+  return { ...current, ...next, alertType: next.type === 'success' && current.alertType !== 'success' ? undefined : current.alertType }
 }
 
 // Full-screen door feedback, readable at arm's length in a dark, loud venue.
-// The result panel stays the screen-reader announcement; this is visual only.
+// The result panel stays the live announcement; a held refusal is also a modal
+// alert dialog so keyboard and screen-reader users meet the verdict first.
 const OVERLAY_STYLES = {
   success: ['bg-emerald-600 text-white', CheckCircle2, 'Admitted'],
   warning: ['bg-amber-500 text-neutral-950', AlertTriangle, 'Check ticket'],
   error: ['bg-red-700 text-white', XCircle, 'Do not admit'],
 }
 export const ADMITTED_OVERLAY_MS = 700
+// Camera reads of a code that was just decided are ignored this long after its
+// result (and while it stays in view), so a guest who keeps holding up an
+// admitted ticket does not trigger "Already scanned on this device".
+export const SAME_CREDENTIAL_QUIET_MS = 5000
+// A tap or key meant for the previous result must not clear the one that just
+// replaced it, so a newly shown overlay ignores dismissal this long.
+export const OVERLAY_TAP_GUARD_MS = 400
+export const SCAN_RESULT_MESSAGE_ID = 'scan-result-message'
 
-function ScanResultOverlay({ id, type, onDismiss }) {
+function ScanResultOverlay({ id, type, onDismiss, onGesture }) {
+  const dialogRef = useRef(null)
   const buttonRef = useRef(null)
+  const headlineId = useId()
+  const armedRef = useRef(false)
+  const [armed, setArmed] = useState(false)
   const persistent = type !== 'success'
-  const dismiss = useCallback(() => onDismiss(id), [id, onDismiss])
+  const dismiss = useCallback(() => {
+    if (!armedRef.current) return
+    // Each dismissal is a tap or key press, which lets iOS resume audio.
+    onGesture?.()
+    onDismiss(id)
+  }, [id, onDismiss, onGesture])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { armedRef.current = true; setArmed(true) }, OVERLAY_TAP_GUARD_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
   useEffect(() => {
     if (!persistent) {
-      const timer = window.setTimeout(dismiss, ADMITTED_OVERLAY_MS)
+      const timer = window.setTimeout(() => onDismiss(id), ADMITTED_OVERLAY_MS)
       return () => window.clearTimeout(timer)
     }
-    // Refusals wait for a tap. Hold focus on the overlay so Enter, Space or
+    // Refusals wait for a tap. Keep focus inside the dialog so Enter, Space or
     // Escape dismisses it, then return focus to where staff were working.
     const button = buttonRef.current
     const previous = document.activeElement
     button?.focus({ preventScroll: true })
-    const onKey = event => { if (event.key === 'Escape') dismiss() }
+    const onKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); dismiss() }
+      else if (event.key === 'Tab') { event.preventDefault(); button?.focus({ preventScroll: true }) }
+    }
+    const onFocusIn = event => { if (!dialogRef.current?.contains(event.target)) button?.focus({ preventScroll: true }) }
     document.addEventListener('keydown', onKey)
+    document.addEventListener('focusin', onFocusIn)
     return () => {
       document.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocusIn)
       const active = document.activeElement
       if ((active === button || active === document.body || !active) && previous instanceof HTMLElement && previous.isConnected) {
         previous.focus({ preventScroll: true })
       }
     }
-  }, [dismiss, persistent])
+  }, [dismiss, id, onDismiss, persistent])
   const [classes, Icon, headline] = OVERLAY_STYLES[type]
+  const layout = 'flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center'
+  if (!persistent) {
+    // The admitted flash is visual only (the panel announces it) and clears itself.
+    return (
+      <div aria-hidden="true" onClick={dismiss} data-testid="scan-result-overlay" data-result={type} data-armed={armed}
+        className={`fixed inset-0 z-[60] animate-[fadeIn_120ms_ease-out] ${layout} ${classes}`}>
+        <Icon className="h-24 w-24 shrink-0" strokeWidth={2.5} />
+        <span className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
+      </div>
+    )
+  }
   return (
-    <button ref={buttonRef} type="button" onClick={dismiss} aria-label="Dismiss scan result" data-testid="scan-result-overlay" data-result={type}
-      className={`fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center animate-[fadeIn_120ms_ease-out] focus:outline-none ${classes}`}>
-      <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
-      <span aria-hidden="true" className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
-      {persistent && <span aria-hidden="true" className="text-lg font-semibold">Tap to continue</span>}
-    </button>
+    <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={headlineId} aria-describedby={SCAN_RESULT_MESSAGE_ID}
+      data-testid="scan-result-overlay" data-result={type} data-armed={armed}
+      className={`fixed inset-0 z-[60] animate-[fadeIn_120ms_ease-out] ${classes}`}>
+      <button ref={buttonRef} type="button" onClick={dismiss} aria-label={`${headline}. Dismiss scan result`}
+        className={`h-full w-full focus:outline-none ${layout}`}>
+        <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
+        <span id={headlineId} className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
+        <span aria-hidden="true" className="text-lg font-semibold">Tap to continue</span>
+      </button>
+    </div>
   )
 }
 
-function ResultPanel({ result, className = '' }) {
+function ResultPanel({ result, className = '', panelRef }) {
   if (!result) return null
   const styles = {
     pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
@@ -254,11 +300,11 @@ function ResultPanel({ result, className = '' }) {
   }
   const [classes, Icon] = styles[result.type]
   return (
-    <div className={`rounded-2xl border-2 p-5 ${classes} ${className}`} role="status" aria-live="assertive" aria-atomic="true">
+    <div ref={panelRef} className={`rounded-2xl border-2 p-5 ${classes} ${className}`} role="status" aria-live="assertive" aria-atomic="true">
       <div className="flex gap-3">
         <Icon aria-hidden="true" className="h-7 w-7 shrink-0" />
         <div className="min-w-0 break-words">
-          <p className="text-lg font-bold">{result.message}</p>
+          <p id={SCAN_RESULT_MESSAGE_ID} className="text-lg font-bold">{result.message}</p>
           {result.detail && <p className="mt-1 text-sm">{result.detail}</p>}
           {result.ticket && (
             <p className="mt-2 text-sm font-medium">
@@ -330,6 +376,12 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const detectorTimerRef = useRef(null)
   const zxingControlsRef = useRef(null)
   const scanCooldownRef = useRef(false)
+  // The camera read the guest is still holding up, and until when a repeat read
+  // of it is ignored (Infinity while it is being checked).
+  const lastDecodedRef = useRef({ code: null, until: 0 })
+  const decodePausedRef = useRef(false)
+  const resultPanelRef = useRef(null)
+  const scanningRef = useRef(false)
   const feedbackSequenceRef = useRef(0)
   const syncingRef = useRef(false)
   const credentialInFlightRef = useRef(false)
@@ -1068,6 +1120,32 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const overlay = scanResult?.alertType && scanResult.feedbackId !== dismissedFeedback
     ? { id: scanResult.feedbackId, type: scanResult.alertType } : null
 
+  // While a refusal or warning holds the screen, the camera stops deciding, so
+  // the next guest cannot be admitted unseen behind it. If the held result came
+  // from a code still in front of the camera, it stays ignored for a few
+  // seconds after the dismissal tap too.
+  const holdsDoor = Boolean(overlay && overlay.type !== 'success')
+  useEffect(() => {
+    if (!holdsDoor) return undefined
+    decodePausedRef.current = true
+    const recent = lastDecodedRef.current
+    const live = Boolean(recent.code) && recent.until > Date.now()
+    return () => {
+      decodePausedRef.current = false
+      if (live && lastDecodedRef.current === recent) recent.until = Math.max(recent.until, Date.now() + SAME_CREDENTIAL_QUIET_MS)
+    }
+  }, [holdsDoor])
+
+  // In landscape the result panel can sit below the camera; bring it into view
+  // when a camera scan produces a result.
+  scanningRef.current = scanning
+  const feedbackId = scanResult?.feedbackId
+  useEffect(() => {
+    if (!feedbackId || !scanningRef.current) return
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    resultPanelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' })
+  }, [feedbackId])
+
   const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current, scanManifest = manifest) => {
     if (!device || !scanManifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== scanManifest.digest) return
     const owner = currentScannerOwner()
@@ -1203,13 +1281,27 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   processCredentialRef.current = processCredential
 
   const handleDecoded = useCallback(code => {
-    if (!code || scanCooldownRef.current) return
+    if (!code || decodePausedRef.current) return
+    const recent = lastDecodedRef.current
+    if (recent.code === code && Date.now() < recent.until) {
+      // Same guest still holding the code up: keep ignoring it until it has
+      // been out of view for SAME_CREDENTIAL_QUIET_MS. Manual entry is unaffected.
+      if (recent.until !== Infinity) recent.until = Date.now() + SAME_CREDENTIAL_QUIET_MS
+      return
+    }
+    if (scanCooldownRef.current) return
     scanCooldownRef.current = true
-    processCredentialRef.current(code).finally(() => setTimeout(() => { scanCooldownRef.current = false }, 1800))
+    const entry = { code, until: Infinity }
+    lastDecodedRef.current = entry
+    processCredentialRef.current(code).finally(() => {
+      if (lastDecodedRef.current === entry) entry.until = Date.now() + SAME_CREDENTIAL_QUIET_MS
+      setTimeout(() => { scanCooldownRef.current = false }, 1800)
+    })
   }, [])
 
   const startCamera = useCallback(async () => {
     const generation = ++cameraGenerationRef.current
+    lastDecodedRef.current = { code: null, until: 0 }
     setCameraError(null)
     setScanning(true)
     try {
@@ -1221,7 +1313,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         await videoRef.current.play()
         const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
         detectorTimerRef.current = setInterval(async () => {
-          if (!videoRef.current || scanCooldownRef.current) return
+          if (!videoRef.current || scanCooldownRef.current || decodePausedRef.current) return
           const codes = await detector.detect(videoRef.current).catch(() => [])
           if (generation === cameraGenerationRef.current) handleDecoded(codes[0]?.rawValue)
         }, 250)
@@ -1481,8 +1573,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
               {soundOn ? <Volume2 aria-hidden="true" className="h-5 w-5" /> : <VolumeX aria-hidden="true" className="h-5 w-5" />} Sound
             </button>
           </div>
-          <div className="relative aspect-[4/3] max-h-[60dvh]">
-            <video ref={videoRef} className={`h-full max-h-[60dvh] w-full object-cover ${scanning ? '' : 'hidden'}`} playsInline muted />
+          <div className="relative aspect-[4/3] max-h-[60dvh] landscape:max-h-[45dvh]">
+            <video ref={videoRef} className={`h-full max-h-[60dvh] w-full object-cover landscape:max-h-[45dvh] ${scanning ? '' : 'hidden'}`} playsInline muted />
             {!scanning && (
               <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center text-neutral-200">
                 <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">{ready ? 'Point the camera at the ticket QR code' : setupBusy ? 'Preparing this scanner…' : 'Choose an assigned event and prepare this device to enable the camera.'}</p>
@@ -1492,7 +1584,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </div>
 
         </section>
-        <ResultPanel result={scanResult} />
+        <ResultPanel result={scanResult} panelRef={resultPanelRef} />
         {scanning && (!wakeLock.supported || wakeLock.failed) && <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800">This browser can’t keep the screen on. Set Auto-Lock or Screen timeout to Never while scanning.</p>}
         {cameraError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cameraError} You can enter the ticket QR code below or find the attendee online.</p>}
       </div>
@@ -1521,7 +1613,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
           <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">A valid ticket will be recorded as admitted. Camera not working? Paste the QR code or link from the ticket. For a ticket number such as HP-T123, use attendee lookup below.</p>
           <label htmlFor="manual-ticket-code" className="mb-1 block text-sm font-medium text-neutral-800">Ticket QR code</label>
-          <form onSubmit={event => { event.preventDefault(); if (credentialInFlightRef.current) return; processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
+          <form onSubmit={event => { event.preventDefault(); primeSound(); if (credentialInFlightRef.current) return; processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
             <input value={manualCode} onChange={event => setManualCode(event.target.value)} id="manual-ticket-code" className="input min-w-0 flex-1" aria-describedby="manual-ticket-help" placeholder="Paste ticket QR code or link" disabled={!ready} />
             <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy}>{credentialBusy ? 'Checking ticket…' : 'Check in ticket'}</button>
           </form>
@@ -1543,7 +1635,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
                   {ticket.admission_allowed && !ticketsById.has(Number(ticket.id)) && <p className="mt-1 text-amber-900">Sync the ticket list before admitting this guest.</p>}
                 </div>
                 <button className="btn-primary text-sm" disabled={!ticket.admission_allowed || !ticketsById.has(Number(ticket.id))}
-                  onClick={() => { const entry = ticketsById.get(Number(ticket.id)); admitEntry(entry, entry.credential_hash, performance.now(), 'manual_lookup') }}>Admit</button>
+                  onClick={() => { primeSound(); const entry = ticketsById.get(Number(ticket.id)); admitEntry(entry, entry.credential_hash, performance.now(), 'manual_lookup') }}>Admit</button>
               </div>
             ))}
           </div>
@@ -1598,7 +1690,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </div>
         </section>
       )}
-      {overlay && <ScanResultOverlay key={overlay.id} id={overlay.id} type={overlay.type} onDismiss={setDismissedFeedback} />}
+      {overlay && <ScanResultOverlay key={`${overlay.id}:${overlay.type}`} id={overlay.id} type={overlay.type} onDismiss={setDismissedFeedback} onGesture={primeSound} />}
     </div>
   )
 }
