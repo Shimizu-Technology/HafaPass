@@ -329,6 +329,9 @@ function CheckoutContent({ buyerId }) {
         event_id: event.id,
         code: promoInput.trim(),
         subtotal_cents: currentSubtotal,
+        // The pre-discount all-in total lets the server refuse a code that
+        // would leave less than the minimum card charge.
+        total_cents: subtotalCents + catalogSubtotalCents + serviceFeeCents,
       })
       if (res.data.valid) {
         setPromoData(res.data)

@@ -226,6 +226,9 @@ describe('checkout navigation', () => {
     const orderPayload = apiClient.post.mock.calls.find(([url]) => url === '/orders')[1]
     expect(orderPayload).toMatchObject({ promo_code: 'ISLAND' })
     expect(orderPayload).not.toHaveProperty('promo_code_id')
+    const validation = apiClient.post.mock.calls.find(([url]) => url === '/promo_codes/validate')[1]
+    expect(validation).toMatchObject({ event_id: 38, code: 'ISLAND', subtotal_cents: 2500 })
+    expect(validation.total_cents).toBe(orderPayload.expected_total_cents + 250)
   })
 
   it('shows the minimum charge message when a promo would leave a tiny card payment', async () => {

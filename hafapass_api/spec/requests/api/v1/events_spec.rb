@@ -13,6 +13,24 @@ RSpec.describe "Api::V1::Events", type: :request do
     expect(response.parsed_body.fetch("description")).to eq("$12,345.67 off")
   end
 
+  it "refuses a promo that would leave a 1-49 cent card payment, with checkout's message" do
+    event = create(:event, :published, organizer_profile: organizer_profile)
+    create(:promo_code, event: event, code: "NEARLY", discount_type: "fixed", discount_value: 2000)
+    allow(StripeService).to receive(:payment_enabled?).and_return(true)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2049 }, as: :json
+    expect(response.parsed_body).to eq("valid" => false, "error" => Commerce::OrderCreator::MINIMUM_CHARGE_MESSAGE)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2050 }, as: :json
+    expect(response.parsed_body).to include("valid" => true)
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2000 }, as: :json
+    expect(response.parsed_body).to include("valid" => true, "discount_cents" => 2000)
+
+    allow(StripeService).to receive(:payment_enabled?).and_return(false)
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2049 }, as: :json
+    expect(response.parsed_body).to include("valid" => true)
+  end
+
   describe "GET /api/v1/events" do
     it "sends only card design fields in lists and the full design on detail" do
       event = create(:event, :published, organizer_profile: organizer_profile,

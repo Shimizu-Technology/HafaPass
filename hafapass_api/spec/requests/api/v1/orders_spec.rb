@@ -454,6 +454,19 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(Order.count).to eq(0)
       end
 
+      it "refuses a paid checkout the promo leaves between 1 and 49 cents, before creating an order" do
+        allow(StripeService).to receive(:payment_enabled?).and_return(true)
+        event.update!(fee_policy: :organizer_absorbs, buyer_fee_percent: 0)
+        create(:promo_code, event: event, code: "NEARLYFREE", discount_type: "fixed", discount_value: 2470)
+
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code: "NEARLYFREE",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }])
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq(Commerce::OrderCreator::MINIMUM_CHARGE_MESSAGE)
+      end
+
       it "binds the typed code into the checkout recovery identity" do
         key = SecureRandom.hex(32)
         post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key, promo_code: "ISLAND")

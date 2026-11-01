@@ -10,6 +10,9 @@ module Commerce
 
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
     PROMO_CODE_REQUIRED = "Re-enter your promo code and try again"
+    # Stripe's smallest USD card charge. A promo that leaves 1–49¢ cannot be paid.
+    MINIMUM_CHARGE_CENTS = 50
+    MINIMUM_CHARGE_MESSAGE = "Card payments must be at least $0.50. Remove the promo code or add tickets."
     ACTIVE_CHECKOUT_EXISTS = "You already have a checkout in progress for this event. Finish or cancel it, " \
       "or try again in 10 minutes."
     NETWORK_HOLD_LIMIT = "Too many tickets are being held from your network right now. Try again in a few minutes."
@@ -139,6 +142,7 @@ module Commerce
         requires_payment = totals[:total_cents].positive? &&
           (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
         validate_production_payment!(totals, requires_payment)
+        raise CheckoutError, MINIMUM_CHARGE_MESSAGE if requires_payment && totals[:total_cents] < MINIMUM_CHARGE_CENTS
         validate_live_money_proof_scope!(totals)
         enforce_buyer_checkout_limits!(selections, totals) if @enforce_buyer_limits
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now

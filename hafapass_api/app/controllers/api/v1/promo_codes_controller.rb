@@ -42,6 +42,16 @@ module Api
         subtotal_cents = params[:subtotal_cents].to_i
         discount = promo.calculate_discount(subtotal_cents)
 
+        # Checkout sends its pre-discount all-in total; the fee stays on the
+        # undiscounted price, so this is the exact amount the card would pay.
+        if params[:total_cents].present? && card_payment_required?
+          remaining = params[:total_cents].to_i - discount
+          if remaining.between?(1, Commerce::OrderCreator::MINIMUM_CHARGE_CENTS - 1)
+            render json: { valid: false, error: Commerce::OrderCreator::MINIMUM_CHARGE_MESSAGE }, status: :ok
+            return
+          end
+        end
+
         render json: {
           valid: true,
           promo_code_id: promo.id,
@@ -51,6 +61,14 @@ module Api
           discount_cents: discount,
           description: promo.percentage? ? "#{promo.discount_value}% off" : "#{UsdMoney.format_cents(promo.discount_value)} off"
         }
+      end
+
+      private
+
+      def card_payment_required?
+        StripeService.payment_enabled?
+      rescue StripeService::PaymentError
+        false
       end
     end
   end
