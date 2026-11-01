@@ -214,14 +214,14 @@ describe('checkout navigation', () => {
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText('Full Name'), 'Guest Buyer')
-    await user.type(screen.getByLabelText('Email Address'), 'guest@example.invalid')
+    await user.type(await screen.findByLabelText('Full name'), 'Guest Buyer')
+    await user.type(screen.getByLabelText('Email address'), 'guest@example.invalid')
     await user.click(screen.getByRole('button', { name: 'Have a promo code?' }))
     await user.type(screen.getByLabelText('Promo code'), 'island')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(await screen.findByText('10% off')).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
-    await user.click(screen.getByRole('button', { name: /Place Order/ }))
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
     expect(await screen.findByText('Stop here')).toBeInTheDocument()
     const orderPayload = apiClient.post.mock.calls.find(([url]) => url === '/orders')[1]
     expect(orderPayload).toMatchObject({ promo_code: 'ISLAND', promo_code_id: 41 })
