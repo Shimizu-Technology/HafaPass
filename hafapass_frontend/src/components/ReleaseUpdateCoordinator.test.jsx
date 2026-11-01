@@ -26,6 +26,8 @@ function mount(path = '/') {
   return router
 }
 beforeEach(() => {
+  // Most cases model a page that has been open for a while.
+  vi.spyOn(performance, 'now').mockReturnValue(60_000)
   vi.stubEnv('PROD', true)
   vi.stubEnv('VITE_SENTRY_RELEASE', A)
   shellRevision = A
@@ -37,18 +39,67 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async url => ({ ok: true, json: async () => ({ revision: B }), text: async () => url === '/index.html' ? `<meta name="hafapass-revision" content="${shellRevision}">` : '' })))
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
-it('waits for the new worker shell even when release.json already advertises B', async () => {
+function setHidden(hidden) {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => hidden ? 'hidden' : 'visible' })
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+afterEach(() => {
+  delete document.visibilityState
+  delete document.hidden
+})
+it('waits for the new worker shell, then updates a visible Home page only once it is hidden', async () => {
   mount()
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
   expect(reload).not.toHaveBeenCalled()
   shellRevision = B
   await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  expect(reload).not.toHaveBeenCalled()
+  await act(async () => setHidden(true))
   expect(reload).toHaveBeenCalledTimes(1)
+})
+it('updates a just-loaded Home page served from an older cached shell', async () => {
+  performance.now.mockReturnValue(2_000)
+  mount()
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
+  shellRevision = B
+  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+it('does not reload a page that already runs the latest release while the old worker shell is installed', async () => {
+  // Reproduces the post-deploy refresh: network HTML is B, the precache is A.
+  vi.stubEnv('VITE_SENTRY_RELEASE', B)
+  const router = mount()
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
+  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  await act(async () => setHidden(true))
+  await act(async () => router.navigate('/events'))
+  expect(reload).not.toHaveBeenCalled()
+  expect(Object.keys(sessionStorage).filter(key => key.startsWith('hafapass_release_reload:'))).toEqual([])
+})
+it('updates after a worker activates even when release.json cannot be read', async () => {
+  const serviceWorker = new EventTarget()
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: serviceWorker })
+  fetch.mockImplementation(async url => url === '/release.json'
+    ? { ok: false, json: async () => ({}) }
+    : { ok: true, text: async () => `<meta name="hafapass-revision" content="${shellRevision}">` })
+  mount()
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/index.html', expect.anything()))
+  shellRevision = B
+  await act(async () => setHidden(true))
+  expect(reload).not.toHaveBeenCalled()
+  // Workbox's activation callback alone doesn't prove the new worker controls the page.
+  await act(async () => registerSW.mock.calls[0][0].onNeedReload())
+  expect(reload).not.toHaveBeenCalled()
+  await act(async () => serviceWorker.dispatchEvent(new Event('controllerchange')))
+  expect(reload).toHaveBeenCalledTimes(1)
+  delete navigator.serviceWorker
 })
 it('keeps checkout mounted after activation and reloads once on safe navigation', async () => {
   const router = mount('/checkout/show')
@@ -65,6 +116,10 @@ it('queries the existing draft registry even on a public route', async () => {
   await act(async () => registerSW.mock.calls[0][0].onNeedReload())
   expect(reload).not.toHaveBeenCalled()
   expect(window.hafapassCanRecoverShell()).toBe(false)
+})
+it('lets a visible public page recover a missing script', async () => {
+  mount()
+  expect(window.hafapassCanRecoverShell()).toBe(true)
 })
 
 it('does not treat a same-page anchor as the next route navigation', async () => {

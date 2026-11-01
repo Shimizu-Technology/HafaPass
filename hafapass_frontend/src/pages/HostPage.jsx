@@ -197,7 +197,7 @@ function PricingSection({ configState, targets }) {
   ]
 
   return (
-    <section id="pricing" aria-labelledby="pricing-heading" className="scroll-mt-20 bg-brand-950 pb-16 pt-10 text-white sm:pb-20 sm:pt-14 lg:py-20">
+    <section id="pricing" data-header-band="dark" aria-labelledby="pricing-heading" className="scroll-mt-20 bg-brand-950 pb-16 pt-10 text-white sm:pb-20 sm:pt-14 lg:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-start gap-9 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12">
           <div>
