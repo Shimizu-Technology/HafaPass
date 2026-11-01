@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle, Mail, Search } from 'lucide-react'
 import apiClient from '../api/client'
+import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import SEO from '../components/SEO'
 
 export default function OrderRecoveryPage() {
@@ -21,7 +22,8 @@ export default function OrderRecoveryPage() {
       await apiClient.post('/order_lookup', { reference: reference.trim(), buyer_email: email.trim() })
       setSubmitted(true)
     } catch (requestError) {
-      setError(requestError.response?.status === 429 ? t('buyerAccount.orderRecoveryPage.pleaseWaitBeforeRequestingAnotherAccessLink') : t('buyerAccount.orderRecoveryPage.weCouldNotRequestTheLinkRightNow'))
+      setError(requestError.response?.status === 429 ? t('buyerAccount.orderRecoveryPage.pleaseWaitBeforeRequestingAnotherAccessLink')
+        : isTimeoutError(requestError) ? slowConnectionMessage() : t('buyerAccount.orderRecoveryPage.weCouldNotRequestTheLinkRightNow'))
     } finally {
       setSubmitting(false)
     }

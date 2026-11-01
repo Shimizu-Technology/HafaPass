@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
+import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
 import SeatSelector from '../components/SeatSelector'
@@ -181,7 +182,7 @@ function EventDetailContent() {
       .catch(error => { if (current()) {
         setError(error.response?.status === 404
           ? { message: translation.current('buyer.EventDetail.eventNotFound'), retryable: false }
-          : { message: translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
+          : { message: isTimeoutError(error) ? slowConnectionMessage() : translation.current('buyer.EventDetail.thisEventCouldntLoadPleaseTryAgain'), retryable: true })
         setLoading(false)
       } })
     return () => { active = false }

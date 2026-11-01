@@ -266,7 +266,8 @@
     "back": "Back",
     "next": "Next",
     "close": "Close",
-    "view": "View"
+    "view": "View",
+    "slowConnection": "Your connection is slow, and this is taking too long. Check your signal and try again."
   },
   "footer": {
     "tagline": "Find events on Guam, buy tickets, and keep them ready on your phone.",

@@ -9,6 +9,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
 import apiClient from '../api/client'
+import { apiErrorMessage, isTimeoutError, slowConnectionMessage } from '../api/errors'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
 import PaymentModeBanner from '../components/PaymentModeBanner'
@@ -222,7 +223,7 @@ function CheckoutContent({ buyerId }) {
     }
     recover().catch(err => {
       if (current()) {
-        setError(err.response?.data?.error || translation.current('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis'))
+        setError(apiErrorMessage(err, translation.current('buyer.Checkout.weCouldNotRestoreYourCheckoutRetryThis')))
         setLoading(false)
       }
     }).finally(() => { if (!cancelled && contextCurrent(context)) setRecovering(false) })
@@ -451,7 +452,8 @@ function CheckoutContent({ buyerId }) {
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
         setCheckoutNeedsRecovery(true)
       }
-      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
+      setSubmitError(err.response?.data?.error || (err instanceof CheckoutAttemptConflict ? err.message
+        : isTimeoutError(err) ? slowConnectionMessage() : t('buyer.Checkout.somethingWentWrongRetryToRecoverTheSame')))
     } finally {
       if (contextCurrent(context)) setSubmitting(false)
     }
@@ -876,7 +878,7 @@ function CheckoutContent({ buyerId }) {
                   setOrderId(null)
                   setOrderData(null)
                 } catch (err) {
-                  if (current()) setSubmitError(err.response?.data?.error || t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis'))
+                  if (current()) setSubmitError(apiErrorMessage(err, t('buyer.Checkout.weCouldNotConfirmCancellationPleaseRefreshThis')))
                 } finally { if (viewCurrent()) setSubmitting(false) }
               }}
                 className="min-h-11 text-sm font-medium text-brand-800 hover:text-brand-900">{t('checkout.editInfo')}</button>

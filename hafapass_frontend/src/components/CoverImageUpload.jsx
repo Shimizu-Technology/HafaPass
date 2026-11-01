@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
 import { uploadImage } from '../utils/uploads'
+import { isTimeoutError } from '../api/errors'
 import { uploadScope, uploadScopeCurrent } from '../utils/uploadRecovery'
 import { approvedImageUrl } from '../utils/eventPageDesign'
 
@@ -65,7 +66,7 @@ export default function CoverImageUpload({ currentUrl, onUploaded, disabled, eve
       setPreview(null)
     } catch (uploadError) {
       if (!current()) return
-      const interrupted = ['Network Error', 'Failed to fetch'].includes(uploadError.message) || uploadError.code === 'ECONNABORTED'
+      const interrupted = ['Network Error', 'Failed to fetch'].includes(uploadError.message) || isTimeoutError(uploadError)
       setError(uploadError.response?.data?.error || (interrupted ? 'Image upload was interrupted. Retry the upload to recover it.' : uploadError.message) || 'Upload failed. Please try again.')
       setRetryFile(file)
       setPreview(null)

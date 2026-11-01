@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { getApiAuthContext, monitoringPath, setAuthTokenGetter, subscribeApiAuthContext } from './client'
 import { configureEnabledLanguages, setActiveLanguage } from '../utils/locale'
+import { AxiosError } from 'axios'
+import { apiErrorMessage, isTimeoutError } from './errors'
 
 describe('monitoringPath', () => {
   it('removes query data and opaque identifiers from monitored paths', () => {
@@ -146,5 +148,40 @@ describe('request language', () => {
 
     await apiClient.get('/events', { headers: { 'Accept-Language': 'ja' } })
     expect(adapter.mock.calls[2][0].headers['Accept-Language']).toBe('ja')
+  })
+})
+
+describe('request timeouts', () => {
+  const originalAdapter = apiClient.defaults.adapter
+  afterEach(() => { apiClient.defaults.adapter = originalAdapter })
+  const sentTimeout = async (method, url, config = {}) => {
+    let sent
+    apiClient.defaults.adapter = async request => { sent = request; return { data: {}, status: 200, statusText: 'OK', headers: {}, config: request } }
+    await apiClient.request({ method, url, ...config })
+    return sent.timeout
+  }
+
+  it('ends stalled requests after 20 s and gives downloads and unkeyed order writes longer', async () => {
+    expect(await sentTimeout('get', '/events')).toBe(20_000)
+    expect(await sentTimeout('post', '/orders')).toBe(20_000)
+    expect(await sentTimeout('get', '/organizer/events/4/attendees.csv', { responseType: 'blob' })).toBe(60_000)
+    expect(await sentTimeout('post', '/orders/12/payment_resume')).toBe(45_000)
+    expect(await sentTimeout('post', '/orders/12/tickets/3/transfer')).toBe(45_000)
+    expect(await sentTimeout('post', '/orders/12/tickets/3/cancel', { headers: { 'Idempotency-Key': 'k' } })).toBe(20_000)
+    expect(await sentTimeout('get', '/orders/12')).toBe(20_000)
+    expect(await sentTimeout('get', '/me', { timeout: 8000 })).toBe(8000)
+  })
+
+  it('marks a timeout with a friendly slow-connection message but leaves other aborts alone', async () => {
+    apiClient.defaults.adapter = async request => { throw new AxiosError('timeout of 20000ms exceeded', 'ECONNABORTED', request) }
+    const timedOut = await apiClient.get('/events').catch(error => error)
+    expect(isTimeoutError(timedOut)).toBe(true)
+    expect(timedOut.message).toMatch(/connection is slow/i)
+    expect(apiErrorMessage(timedOut, 'Fallback')).toBe(timedOut.message)
+
+    apiClient.defaults.adapter = async request => { throw new AxiosError('Request aborted', 'ECONNABORTED', request) }
+    const aborted = await apiClient.get('/events').catch(error => error)
+    expect(isTimeoutError(aborted)).toBe(false)
+    expect(apiErrorMessage(aborted, 'Fallback')).toBe('Fallback')
   })
 })
