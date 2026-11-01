@@ -279,7 +279,7 @@
    use .surface-dark for other dark backgrounds. Light surfaces nested inside
    switch back. The variable inherits, so the nearest surface wins. */
 .surface-dark, .bg-brand-950 { --focus-ring: theme('colors.focus-on-dark'); --focus-ring-offset: theme('colors.brand.950'); }
-:is(.surface-dark, .bg-brand-950) :is(.surface-light, .bg-white, .bg-surface, .bg-stone-50, .bg-neutral-50, .bg-neutral-100, .card, .ticket-top, .ticket-stub) {
+:is(.surface-dark, .bg-brand-950) :is(.surface-light, .bg-white, .bg-surface, .bg-neutral-50, .bg-neutral-100, .card, .ticket-top, .ticket-stub) {
   --focus-ring: theme('colors.focus'); --focus-ring-offset: #ffffff;
 }
 :is(.surface-dark, .bg-brand-950) :focus-visible {

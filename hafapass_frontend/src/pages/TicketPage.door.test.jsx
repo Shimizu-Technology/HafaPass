@@ -5,6 +5,7 @@ import TicketPage from './TicketPage'
 import api from '../api/client'
 
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
+vi.mock('../components/SEO', () => ({ default: () => null }))
 
 const ticket = { id: 3, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan',
   wallet_availability: { apple: true, google: true },

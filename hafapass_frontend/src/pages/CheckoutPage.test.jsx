@@ -576,10 +576,10 @@ describe('checkout navigation', () => {
       <Route path='/checkout/:slug' element={<CheckoutPage />} />
     </Routes></MemoryRouter>)
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText("Full Name"), 'Slow Buyer')
-    await user.type(screen.getByLabelText("Email Address"), 'slow@example.invalid')
+    await user.type(await screen.findByLabelText("Full name"), 'Slow Buyer')
+    await user.type(screen.getByLabelText("Email address"), 'slow@example.invalid')
     await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
-    await user.click(screen.getByRole('button', { name: /Continue to Payment/ }))
+    await user.click(screen.getByRole('button', { name: /Continue to payment/ }))
     await screen.findByRole('button', { name: 'Recover earlier checkout' })
     expect(screen.getByText(/connection is slow/i)).toHaveTextContent('Retry to recover the same checkout.')
   })
