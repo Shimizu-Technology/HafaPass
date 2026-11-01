@@ -57,11 +57,42 @@ class Rack::Attack
 
   # ─── General Throttles ────────────────────────────────────────────────────
 
+  # Provider webhooks arrive from a small pool of provider addresses, and a
+  # rejected delivery is retried later, so they never share the visitor budget.
+  provider_webhook = lambda do |req|
+    req.path.to_s.downcase.match?(%r{\A/webhooks/(?:stripe|resend)(?:\.[a-z0-9]+)?/*\z})
+  end
+  # A buyer's ticket page is opened at the door by a whole crowd on one venue
+  # Wi-Fi or carrier NAT address, so it is limited per ticket instead.
+  ticket_view = lambda do |req|
+    req.get? && req.path.match?(%r{\A/api/v1/tickets/[^/]+/*\z})
+  end
+
   # Throttle all requests by IP (300 requests per 5 minutes)
   # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
   # or a small provider IP pool, so they have their own limits below.
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") || scanner_user.call(req)
+    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") ||
+      provider_webhook.call(req) || ticket_view.call(req) || scanner_user.call(req)
+  end
+
+  throttle("webhooks/ip", limit: 600, period: 1.minute) do |req|
+    req.ip if provider_webhook.call(req)
+  end
+
+  throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|
+    Digest::SHA256.hexdigest(req.path) if ticket_view.call(req)
+  end
+
+  throttle("ticket-view/ip", limit: 1200, period: 1.minute) do |req|
+    req.ip if ticket_view.call(req)
+  end
+
+  # Record once per process which header supplied req.ip (never the address
+  # itself), so production confirms the IP throttles key on the visitor.
+  track("client-ip-source") do |req|
+    Operations::ClientIpSource.log_once(req)
+    false
   end
 
   # ─── Authentication Throttles ─────────────────────────────────────────────
