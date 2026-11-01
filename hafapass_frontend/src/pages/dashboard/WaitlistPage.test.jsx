@@ -38,3 +38,16 @@ it('reissues a withdrawn delivered offer with one click', async () => {
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/7/waitlist/4/offer', {}, expect.any(Object)))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
+
+it('folds each entry into labelled cells so phone users reach the row actions without scrolling sideways', async () => {
+  render(<MemoryRouter initialEntries={['/dashboard/events/7/waitlist']}><Routes>
+    <Route path="/dashboard/events/:id/waitlist" element={<WaitlistPage />} />
+  </Routes></MemoryRouter>)
+
+  const region = await screen.findByRole('region', { name: 'Waitlist entries' })
+  expect(region.className).not.toMatch(/(^| )overflow-x-auto/)
+  expect(region.querySelector('table').className).not.toMatch(/min-w-/)
+  const row = screen.getByRole('row', { name: /buyer@example.com/ })
+  expect([...row.cells].map(cell => cell.dataset.label)).toEqual(['Position', 'Name', 'Email', 'Ticket type', 'Qty', 'Status', 'Joined', 'Actions'])
+  expect(row.cells[7]).toContainElement(screen.getByRole('button', { name: 'Remove Buyer' }))
+})

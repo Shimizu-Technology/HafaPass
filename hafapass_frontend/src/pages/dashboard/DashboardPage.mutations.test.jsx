@@ -59,6 +59,22 @@ afterEach(() => {
 })
 
 describe('dashboard mutation ownership', () => {
+  it('edits the profile in a modal dialog that traps focus, closes on Escape and returns focus', async () => {
+    mount()
+    const edit = await screen.findByTitle('Edit profile')
+    await userEvent.click(edit)
+    const dialog = screen.getByRole('dialog', { name: 'Edit profile' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByLabelText(/Business name/)).toHaveFocus()
+    for (let step = 0; step < 6; step += 1) {
+      await userEvent.tab({ shift: true })
+      expect(dialog).toContainElement(document.activeElement)
+    }
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(edit).toHaveFocus()
+  })
+
   it('opens and scrolls to the same inline verification form from the checklist', async () => {
     mount()
     await userEvent.click((await screen.findAllByRole('button', { name: 'Request verification' }))[1])

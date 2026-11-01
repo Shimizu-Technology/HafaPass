@@ -7,6 +7,7 @@ import { Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import SupportLink from '../../components/SupportLink'
+import { foldCell, foldRow, foldTable } from '../../utils/foldTable'
 
 const STATUS_COLORS = {
   waiting: 'bg-amber-50 text-amber-700',
@@ -261,36 +262,37 @@ function WaitlistSession({ eventId, identity }) {
       {entries.length === 0 ? (
         <div className="text-center py-12 text-content-muted">No waitlist entries found.</div>
       ) : (
-        <div className="max-w-full overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700" role="region" aria-label="Waitlist entries" tabIndex={0}>
-          <table className="w-full min-w-[48rem] text-sm">
+        // Rows fold into labelled cards below md so Offer, Notify and Remove stay on screen on a phone.
+        <div className="min-w-0 rounded-xl border border-neutral-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 md:overflow-x-auto md:rounded-lg md:border-0 md:bg-transparent" role="region" aria-label="Waitlist entries" tabIndex={0}>
+          <table className={foldTable}>
             <thead>
-              <tr className="border-b border-neutral-200 text-left text-neutral-500">
-                <th className="pb-3 font-medium">#</th>
-                <th className="pb-3 font-medium">Name</th>
-                <th className="pb-3 font-medium">Email</th>
-                <th className="pb-3 font-medium">Ticket type</th>
-                <th className="pb-3 font-medium">Qty</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Joined</th>
-                <th className="pb-3 font-medium">Actions</th>
+              <tr className="border-b border-neutral-200 text-left text-content-muted">
+                <th scope="col" className="px-3 pb-3 font-medium">#</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Name</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Email</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Ticket type</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Qty</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Status</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Joined</th>
+                <th scope="col" className="px-3 pb-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {entries.map(entry => (
-                <tr key={entry.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className="py-3 text-neutral-900 font-medium">{entry.position}</td>
-                  <td className="py-3 pr-4 max-w-48 text-neutral-900 [overflow-wrap:anywhere]">{entry.name || '—'}</td>
-                  <td className="py-3 pr-4 max-w-56 text-neutral-600 [overflow-wrap:anywhere]">{entry.email}</td>
-                  <td className="py-3 pr-4 max-w-48 text-neutral-600 [overflow-wrap:anywhere]">{entry.ticket_type?.name || 'Any'}</td>
-                  <td className="py-3 text-neutral-600">{entry.quantity}</td>
-                  <td className="py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[entry.status] || ''}`}>
+                <tr key={entry.id} className={`${foldRow} md:hover:bg-neutral-50`}>
+                  <td data-label="Position" className={`${foldCell} font-medium text-neutral-900`}><span>{entry.position}</span></td>
+                  <td data-label="Name" className={`${foldCell} text-neutral-900 md:max-w-48`}><span>{entry.name || '—'}</span></td>
+                  <td data-label="Email" className={`${foldCell} text-neutral-600 md:max-w-56`}><span>{entry.email}</span></td>
+                  <td data-label="Ticket type" className={`${foldCell} text-neutral-600 md:max-w-48`}><span>{entry.ticket_type?.name || 'Any'}</span></td>
+                  <td data-label="Qty" className={`${foldCell} text-neutral-600`}><span>{entry.quantity}</span></td>
+                  <td data-label="Status" className={foldCell}>
+                    <span><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[entry.status] || ''}`}>
                       {statusLabel(entry.status)}
-                    </span>
+                    </span></span>
                   </td>
-                  <td className="py-3 text-content-muted text-xs">{formatDate(entry.created_at)}</td>
-                  <td className="py-3">
-                    <div className="flex items-center gap-1">
+                  <td data-label="Joined" className={`${foldCell} text-content-muted`}><span>{formatDate(entry.created_at)}</span></td>
+                  <td data-label="Actions" className={`${foldCell} flex-wrap md:flex-nowrap`}><div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1">
                       {entry.status === 'waiting' && (
                         <button disabled={mutationsLocked || !addressReady} aria-describedby={!addressReady ? 'waitlist-address-required' : undefined} onClick={() => entry.withdrawn_offer_delivered
                           ? performMutation('reissue_offer', config => apiClient.post(`/organizer/events/${eventId}/waitlist/${entry.id}/offer`, {}, config), () => setNotice('Ticket offer reissued. Delivery is handled separately.'))
@@ -317,7 +319,7 @@ function WaitlistSession({ eventId, identity }) {
                       </button>
                     </div>
                     {entry.delivery_failure && <p role="alert" className="mt-1 max-w-52 text-xs text-red-700 [overflow-wrap:anywhere]">{entry.delivery_failure.startsWith('Delivery unconfirmed') ? entry.delivery_failure : `Couldn't send: ${entry.delivery_failure}.`} {entry.status === 'waiting' ? 'Retry with Offer or Notify.' : ''}</p>}
-                  </td>
+                  </div></td>
                 </tr>
               ))}
             </tbody>

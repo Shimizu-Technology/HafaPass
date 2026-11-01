@@ -5,6 +5,7 @@ import { PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import { canManageOrganizationSettings, loadOrganizerOrganizations, resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import OrganizerSetupChecklist from './OrganizerSetupChecklist'
 import VerificationNotice from '../../components/VerificationNotice'
+import Dialog from '../../components/Dialog'
 import { roleLabel } from '../../utils/roles'
 import { uploadImage } from '../../utils/uploads'
 import { Loader2, Pencil, X, Upload, Plus, ScanLine, Settings } from 'lucide-react'
@@ -185,6 +186,7 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
  const [uploading, setUploading] = useState(false)
  const [error, setError] = useState(null)
  const fileRef = useRef(null)
+ const nameRef = useRef(null)
  const mounted = useRef(false)
  const current = () => mounted.current && isCurrent()
  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -230,10 +232,9 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
  }
 
  return (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-   <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+  <Dialog labelledBy="edit-profile-title" onClose={onClose} busy={saving || uploading} className="max-w-md" initialFocusRef={nameRef}>
     <div className="flex items-center justify-between mb-4">
-     <h3 className="text-lg font-semibold text-neutral-900">Edit profile</h3>
+     <h3 id="edit-profile-title" className="text-lg font-semibold text-neutral-900">Edit profile</h3>
      <button onClick={onClose} aria-label="Close profile editor" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-focus"><X className="w-5 h-5" /></button>
     </div>
     {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
@@ -256,19 +257,18 @@ function EditProfileModal({ profile, context, beginRequest, isCurrent, onClose, 
      </div>
      <div>
       <label htmlFor="edit-business-name" className="block text-sm font-medium text-neutral-700 mb-1">Business name <span className="text-red-500">*</span></label>
-      <input id="edit-business-name" value={businessName} onChange={e => setBusinessName(e.target.value)} className="input" disabled={saving} />
+      <input ref={nameRef} id="edit-business-name" value={businessName} onChange={e => setBusinessName(e.target.value)} className="input" disabled={saving} />
      </div>
      <div>
-      <label className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
-      <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="input" disabled={saving} />
+      <label htmlFor="edit-business-description" className="block text-sm font-medium text-neutral-700 mb-1">Description</label>
+      <textarea id="edit-business-description" value={description} onChange={e => setDescription(e.target.value)} rows={3} className="input" disabled={saving} />
      </div>
      <div className="flex gap-3 justify-end">
       <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900">Cancel</button>
       <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-2">{saving ? 'Saving...' : 'Save'}</button>
      </div>
     </form>
-   </div>
-  </div>
+  </Dialog>
  )
 }
 
@@ -631,7 +631,7 @@ function DashboardSession({ authContext }) {
 
    {canManageProfile && editor && (
     <EditProfileModal
-     key={editor.id}
+     key={`profile-editor:${editor.id}`}
      profile={profile}
      context={editor.context}
      beginRequest={beginEditorRequest}
