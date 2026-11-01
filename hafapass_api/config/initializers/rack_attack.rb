@@ -57,11 +57,51 @@ class Rack::Attack
 
   # ─── General Throttles ────────────────────────────────────────────────────
 
+  # Provider webhooks arrive from a small pool of provider addresses, and a
+  # rejected delivery is retried later, so they never share the visitor budget.
+  provider_webhook = lambda do |req|
+    req.post? && req.path.to_s.downcase.match?(%r{\A/webhooks/(?:stripe|resend)(?:\.[a-z0-9]+)?/*\z})
+  end
+  # A buyer's ticket page is opened at the door by a whole crowd on one venue
+  # Wi-Fi or carrier NAT address, so it is limited per ticket instead.
+  # The credential is the path segment as Rails routes it: percent-decoded,
+  # without trailing slashes or a ".format" suffix, so /tickets/X, /X/, /X//
+  # and /X.json share one bucket. Display credentials are url-safe signed
+  # tokens (base64url + "--" + hex digest) and never contain ".", and the
+  # route's :credential segment stops at "." anyway.
+  ticket_view_credential = lambda do |req|
+    segment = req.path[%r{\A/api/v1/tickets/([^/]+)/*\z}, 1]
+    segment && Rack::Utils.unescape_path(segment).split(".", 2).first.presence
+  end
+  ticket_view = lambda do |req|
+    req.get? && ticket_view_credential.call(req).present?
+  end
+
   # Throttle all requests by IP (300 requests per 5 minutes)
   # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
   # or a small provider IP pool, so they have their own limits below.
   throttle("req/ip", limit: 300, period: 5.minutes) do |req|
-    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") || scanner_user.call(req)
+    req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") ||
+      provider_webhook.call(req) || ticket_view.call(req) || scanner_user.call(req)
+  end
+
+  throttle("webhooks/ip", limit: 600, period: 1.minute) do |req|
+    req.ip if provider_webhook.call(req)
+  end
+
+  throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|
+    Digest::SHA256.hexdigest(ticket_view_credential.call(req)) if ticket_view.call(req)
+  end
+
+  throttle("ticket-view/ip", limit: 600, period: 1.minute) do |req|
+    req.ip if ticket_view.call(req)
+  end
+
+  # Record once per process which header supplied req.ip (never the address
+  # itself), so production confirms the IP throttles key on the visitor.
+  track("client-ip-source") do |req|
+    Operations::ClientIpSource.log_once(req)
+    false
   end
 
   # ─── Authentication Throttles ─────────────────────────────────────────────
@@ -102,8 +142,10 @@ class Rack::Attack
 
   # ─── Order Creation Throttles ─────────────────────────────────────────────
 
-  # Throttle order creation by IP (10 orders per minute)
-  throttle("orders/ip", limit: 10, period: 1.minute) do |req|
+  # Throttle order creation by IP (30 orders per minute). Checkout itself caps
+  # live holds and free tickets per IP digest and allows one live unpaid order
+  # per buyer, so this ceiling can stay above carrier-NAT and venue Wi-Fi peaks.
+  throttle("orders/ip", limit: 30, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/orders" && req.post?
   end
 
@@ -115,7 +157,8 @@ class Rack::Attack
         raw = req.body.read
         req.body.rewind
         body = JSON.parse(raw)
-        body["buyer_email"]&.downcase
+        email = body["buyer_email"] if body.is_a?(Hash)
+        email.strip.downcase.presence if email.is_a?(String)
       rescue JSON::ParserError, IOError
         nil
       end
@@ -175,13 +218,6 @@ class Rack::Attack
 
   throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
-  end
-
-  # ─── Check-in Throttles ───────────────────────────────────────────────────
-
-  # Throttle check-in attempts (60 per minute per IP - for scanning)
-  throttle("checkin/ip", limit: 60, period: 1.minute) do |req|
-    req.ip if req.path.start_with?("/api/v1/check_in") && req.post?
   end
 
   # ─── Wallet Throttles ─────────────────────────────────────────────────────

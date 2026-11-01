@@ -5,6 +5,9 @@ require "timeout"
 module Commerce
   class OrderLifecycle
     class InvalidTransition < StandardError; end
+    # Expiry asks Stripe whether a lapsed order's payment already succeeded.
+    # Keep it short: the expiry job works through many orders per minute.
+    PROVIDER_CHECK_TIMEOUT = 5.seconds
 
     class << self
       # Match completion/failure's event -> order order before inspecting a
@@ -17,15 +20,23 @@ module Commerce
         end
       end
 
-      def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
+      # late_completion: the caller confirmed with the provider that this
+      # payment succeeded and the hold has only lapsed by time. Fulfil it
+      # normally when the inventory is still free; otherwise release it and
+      # refund the buyer automatically (LateCaptureRefundJob).
+      def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
+        late_completion: false)
         AuditContext.set(fail_open: true) do
           complete_with_audit!(order, payment: payment, webhook_event: webhook_event,
-            provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type)
+            provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type,
+            late_completion: late_completion)
         end
       end
 
-      def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil)
+      def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
+        late_completion: false)
         completed_now = false
+        completed_late = false
 
         Order.transaction do
           lock_event_context!(order)
@@ -44,6 +55,11 @@ module Commerce
 
           unless order.pending?
             mark_payment_succeeded!(payment)
+            # One late capture, one exception and one refund job: a second
+            # notice for the same payment (the expiry job's own check, then
+            # the webhook) must not open a duplicate.
+            next if payment && ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+
             ReconciliationException.create!(
               order: order,
               payment: payment,
@@ -51,6 +67,8 @@ module Commerce
               code: "late_payment_success_after_inventory_release",
               details: { order_status: order.status }
             )
+            # Enqueued after commit (ApplicationJob.enqueue_after_transaction_commit).
+            LateCaptureRefundJob.perform_later(payment.id) if payment
             next
           end
 
@@ -65,7 +83,11 @@ module Commerce
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
-          if holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? || hold.expires_at <= Time.current }
+          unusable = holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? }
+          lapsed = (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
+          completed_late = lapsed && !unusable && late_completion && payment.present? &&
+            late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
+          if unusable || (lapsed && !completed_late)
             release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
               claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             mark_payment_succeeded!(payment)
@@ -75,6 +97,7 @@ module Commerce
               webhook_event: webhook_event,
               code: "late_payment_success_after_hold_expiry"
             )
+            LateCaptureRefundJob.perform_later(payment.id) if payment
             next
           end
 
@@ -94,7 +117,7 @@ module Commerce
 
           issued_tickets = issue_tickets!(order)
           Seating::SessionLifecycle.consume!(seat_session, tickets: issued_tickets) if seat_session
-          finalize_promo!(order)
+          finalize_promo!(order, late: completed_late)
           finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
@@ -102,7 +125,7 @@ module Commerce
           AuditLogger.record!(action: "order.completed", auditable: order,
             organization: order.event.organization, event: order.event, outcome: "succeeded",
             deduplication_key: "order:#{order.id}:completed",
-            after_data: { status: order.status }, metadata: { payment_id: payment&.id },
+            after_data: { status: order.status }, metadata: { payment_id: payment&.id, late_completion: completed_late || nil }.compact,
             **(webhook_event ? { source: "provider" } : {}))
           record_marketplace_purchase!(order)
           EmailService.send_order_confirmation_async(order)
@@ -150,6 +173,16 @@ module Commerce
       end
 
       def expire!(order, at: Time.current)
+        # Ask the provider before releasing: a payment that already succeeded
+        # (for example, its webhook is delayed) must be fulfilled or refunded,
+        # never cancelled underneath the buyer.
+        if (late = succeeded_provider_payment(order, at: at))
+          payment, intent = late
+          complete!(order, payment: payment, provider_amount_cents: intent.amount_received,
+            provider_currency: intent.currency, late_completion: true)
+          order.reload
+          return order.expired? unless order.pending?
+        end
         payments_to_cancel = []
         expired_now = false
         Order.transaction do
@@ -169,6 +202,57 @@ module Commerce
       end
 
       private
+
+      # Network call; never run while holding the order or event locks.
+      def succeeded_provider_payment(order, at:)
+        return unless order.pending? && order.expires_at.present? && order.expires_at <= at
+
+        payment = order.payments.pending.where(provider: "stripe").where.not(provider_payment_id: nil).order(:id).last
+        return unless payment && %w[test live].include?(payment.provider_environment)
+
+        intent = Timeout.timeout(PROVIDER_CHECK_TIMEOUT) { StripeService.retrieve_payment_intent(payment) }
+        return unless intent.status.to_s == "succeeded" && intent.id == payment.provider_payment_id &&
+          intent.livemode == (payment.provider_environment == "live")
+
+        [payment, intent]
+      rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error => e
+        Rails.logger.warn({ event: "order_expiry_payment_check_failed", order_id: order.id, error_class: e.class.name }.to_json)
+        nil
+      end
+
+      # Runs under the completion locks (event, order, holds, ticket types,
+      # tiers), which serialize every capacity decision for this event. Only
+      # plain ticket orders qualify; seats, waitlist offers and add-ons are
+      # released and refunded instead.
+      def late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
+        return false if claimed_offer || seat_session || catalog_holds.any? || !order.event.published?
+
+        now = Time.current
+        types_free = holds.group_by(&:ticket_type).all? do |ticket_type, type_holds|
+          ticket_type.available_quantity >= type_holds.sum(&:quantity)
+        end
+        tiers_free = holds.select(&:pricing_tier).group_by(&:pricing_tier).all? do |tier, tier_holds|
+          next true unless tier.quantity_based?
+
+          remaining = tier.quantity_limit - tier.quantity_sold - tier.inventory_holds.current.sum(:quantity) -
+            tier.waitlist_offers.holding_inventory.sum(:quantity) - tier.active_seat_holds_quantity(now)
+          remaining >= tier_holds.sum(&:quantity)
+        end
+        types_free && tiers_free && event_capacity_free?(order.event, holds.sum(&:quantity), now)
+      end
+
+      def event_capacity_free?(event, quantity, now)
+        return true if event.max_capacity.blank?
+
+        sold = event.ticket_types.sum(:quantity_sold)
+        held = event.inventory_holds.current.sum(:quantity)
+        offered = event.waitlist_offers.holding_inventory.sum(:quantity)
+        seat_holds = SeatHold.status_active.joins(:seat_hold_session, :event_seat)
+          .where(event_seats: { event_seating_configuration_id: event.event_seating_configuration&.id })
+          .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+          .where("seat_hold_sessions.expires_at > ?", now).count
+        event.max_capacity - sold - held - offered - seat_holds >= quantity
+      end
 
       def lock_event_context!(order)
         order.event.organization.lock! if order.waitlist_offer&.claimed?
@@ -332,12 +416,29 @@ module Commerce
         end
       end
 
-      def finalize_promo!(order)
+      # A late completion's hold lapsed, so another buyer may have taken the
+      # code's last use meanwhile. The buyer already paid the discounted price:
+      # complete anyway (one use over max_uses) and leave an audit note rather
+      # than refund a paid order over a promo count.
+      def finalize_promo!(order, late: false)
         redemption = order.promo_redemption
         return unless redemption&.reserved?
 
-        redemption.promo_code.lock!
-        redemption.promo_code.increment!(:current_uses)
+        promo = redemption.promo_code
+        promo.lock!
+        if late && promo.max_uses
+          others = promo.promo_redemptions.where.not(id: redemption.id)
+          used = others.finalized.count + others.reserved.joins(:order)
+            .where(orders: { status: Order.statuses[:pending] }).where("orders.expires_at > ?", Time.current).count
+          if used >= promo.max_uses
+            AuditLogger.record!(action: "promo_code.over_redeemed", auditable: promo,
+              organization: order.event.organization, event: order.event, outcome: "succeeded",
+              deduplication_key: "promo_code:#{promo.id}:over_redeemed:order:#{order.id}",
+              metadata: { order_id: order.id, max_uses: promo.max_uses, uses_before: used,
+                note: "Payment finished after the hold expired; the buyer paid the discounted price, so the order was completed" })
+          end
+        end
+        promo.increment!(:current_uses)
         redemption.update!(status: :finalized, finalized_at: Time.current)
       end
 

@@ -142,7 +142,8 @@ for (const width of [375, 1440]) {
       order_items: [{ id: 1, name: 'Admission', quantity: 1, subtotal_cents: 2000 }],
       tickets: [{ id: 7, status: 'issued', admission_allowed: true, refundable_cents: 2000,
         display_credential: 'display-7', ticket_type: { id: 10, name: 'Admission' } }],
-      latest_event_change: { id: 4, change_type: 'rescheduled', reason: 'The venue changed its schedule.' },
+      latest_event_change: { id: 4, change_type: 'rescheduled', reason: 'The venue changed its schedule.',
+        response_available: true, refund_eligible: true, refund_deadline_at: event.starts_at },
       event: { ...event, transfers_enabled: true },
     }
     await page.route('**/api/v1/orders/99', route => json(route, order))

@@ -36,7 +36,8 @@ RSpec.describe MessageDeliveryJob do
     complaint = create(:message_delivery, order: delivery.order, event: delivery.order.event,
       recipient: delivery.recipient.upcase, template: "waitlist_notification", status: :complained)
     expect(complaint).to be_complained
-    change = delivery.order.event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current)
+    change = delivery.order.event.event_changes.create!(change_type: "rescheduled", occurred_at: Time.current,
+      before_data: { starts_at: 2.days.from_now.iso8601 }, after_data: { starts_at: 3.days.from_now.iso8601 })
     allow(EmailService).to receive(:prepare_delivery_payload).and_return({ "subject" => "Update", "html" => "Update" })
     allow(EmailService).to receive(:send_delivery_payload).and_return({ simulated: true })
 
@@ -96,6 +97,23 @@ RSpec.describe MessageDeliveryJob do
     described_class.new.perform(candidate.id)
     expect(candidate.reload).to be_suppressed
     expect(EmailService).to have_received(:send_delivery_payload).once
+  end
+
+  it "batches the suppressed-recipient check with the same answers as the per-row check" do
+    other = "complainer@example.com"
+    create(:message_delivery, order: delivery.order, recipient: delivery.recipient, status: :bounced)
+    create(:message_delivery, order: delivery.order, recipient: other, status: :complained)
+    candidates = [
+      create(:message_delivery, order: delivery.order, recipient: " #{delivery.recipient.upcase}", status: :failed),
+      create(:message_delivery, order: delivery.order, recipient: other, status: :failed),
+      create(:message_delivery, order: delivery.order, recipient: other, status: :failed, template: "communication_campaign"),
+      create(:message_delivery, order: delivery.order, recipient: "clean@example.com", status: :failed)
+    ]
+
+    expected = candidates.select(&:suppressed_recipient?).map(&:id)
+    expect(expected).to contain_exactly(candidates[0].id, candidates[2].id)
+    expect(MessageDelivery.suppressed_recipient_ids(candidates).to_a).to match_array(expected)
+    expect(MessageDelivery.suppressed_recipient_ids([])).to be_empty
   end
 
   it "never sends to a reserved placeholder address" do

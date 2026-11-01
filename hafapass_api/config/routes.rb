@@ -78,7 +78,6 @@ Rails.application.routes.draw do
       end
 
       # Ticket check-in
-      post "check_in/:credential", to: "check_ins#create", as: :check_in
 
       # Authenticated user endpoints
       namespace :me do
@@ -300,6 +299,7 @@ Rails.application.routes.draw do
           resource :policy_hold, only: [:create, :destroy], controller: "event_policy_holds"
           resource :sales_suspension, only: [:destroy], controller: "event_sales_suspensions"
           post :retranslate, on: :member
+          post :unarchive, on: :member
         end
         get "events/:event_id/pilot_readiness", to: "pilot_readiness_reviews#show"
         post "events/:event_id/pilot_readiness_reviews", to: "pilot_readiness_reviews#create"
@@ -390,7 +390,10 @@ Rails.application.routes.draw do
           end
         end
         resources :organizer_profiles, only: [:update]
-        resources :orders, only: [:index]
+        resources :orders, only: [:index] do
+          # Stripe early fraud warning: cancel the tickets and refund as fraudulent.
+          post :fraud_refund, on: :member
+        end
         resources :connected_accounts, only: [:update] do
           member do
             post :approve_payout_method
@@ -422,6 +425,12 @@ Rails.application.routes.draw do
           post :release_hold, on: :member
         end
         resources :disputes, only: [:index]
+        resources :reconciliation_exceptions, only: [:index, :show] do
+          member do
+            post :resolve
+            post :refund_buyer
+          end
+        end
         resources :audit_logs, only: [:index]
         resources :activity_log_exports, only: [:create, :show] do
           get :download, on: :member
@@ -440,7 +449,10 @@ Rails.application.routes.draw do
         get "search", to: "search#index"
         resources :message_deliveries, only: [:index] do
           member { post :resend }
-          collection { post "orders/:order_id/fulfill", to: "message_deliveries#fulfill" }
+          collection do
+            post "orders/:order_id/fulfill", to: "message_deliveries#fulfill"
+            post :bulk_resend
+          end
         end
         resources :notes, only: [:index, :create]
       end

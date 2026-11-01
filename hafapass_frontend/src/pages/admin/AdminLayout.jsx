@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, Building2, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck, Menu, PanelLeftClose, PanelLeftOpen, Landmark, Scale, Settings, ScrollText, LockKeyhole, RotateCcw } from 'lucide-react'
+import { BarChart3, Building2, Calendar, Users, ShoppingCart, Shield, LifeBuoy, Compass, ShieldCheck, Menu, PanelLeftClose, PanelLeftOpen, Landmark, Scale, Settings, ScrollText, LockKeyhole, RotateCcw, ListChecks } from 'lucide-react'
 import AdminNavigationDrawer from './AdminNavigationDrawer'
 import { WORKSPACE_WIDTHS } from '../../utils/workspace'
 
@@ -22,6 +22,7 @@ const navGroups = [
     { to: '/admin/payouts', label: 'Payouts', icon: Landmark },
     { to: '/admin/disputes', label: 'Disputes', icon: Scale },
     { to: '/admin/refund_reconciliation', label: 'Refund issues', icon: RotateCcw },
+    { to: '/admin/reconciliation_exceptions', label: 'Reconciliation', icon: ListChecks },
   ] },
   { label: 'Platform', items: [
     { to: '/admin/operations', label: 'Operational review', icon: LifeBuoy },

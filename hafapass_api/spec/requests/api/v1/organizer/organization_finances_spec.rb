@@ -71,6 +71,19 @@ RSpec.describe "Organizer finances and exports", type: :request do
         body.fetch("breakdown").fetch("in_flight_cents") - 1000)
     end
 
+    it "flags an ended event that still needs to be completed before its statement can be finalized" do
+      ended_event = create(:event, :published, organizer_profile: profile, title: "Ended Show",
+        starts_at: 5.hours.ago, ends_at: 1.hour.ago, doors_open_at: 6.hours.ago)
+      record_sale!(ended_event, bearer: "platform")
+
+      get "/api/v1/organizer/finances", headers: org_headers(owner)
+
+      rows = response.parsed_body.fetch("events").index_by { |entry| entry.fetch("id") }
+      expect(rows.fetch(ended_event.id)).to include("awaiting_completion" => true, "settlement_state" => "not_finalized")
+      expect(rows.fetch(upcoming_event.id)).to include("awaiting_completion" => false)
+      expect(rows.fetch(completed_event.id)).to include("awaiting_completion" => false)
+    end
+
     it "totals every event using each order's own processing-fee bearer snapshot" do
       get "/api/v1/organizer/finances", headers: org_headers(owner)
 

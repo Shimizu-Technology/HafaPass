@@ -267,3 +267,22 @@ it.each([[0, false], [100, false], [100, true]])('uses the visible fee policy fo
   expect(share).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining(disclosure) }))
   delete navigator.share
 })
+
+it.each([
+  ['postponed', 'Postponed — your tickets stay valid. Check your email for updates.', 'https://schema.org/EventPostponed'],
+  ['cancelled', 'Cancelled — refunds are automatic for online card payments.', 'https://schema.org/EventCancelled'],
+])('shows a %s event status with no way to buy', async (status, banner, schemaStatus) => {
+  vi.clearAllMocks()
+  window.IntersectionObserver = FakeIntersectionObserver
+  mount({ ...baseEvent, status, purchasable: false, ticket_types: baseEvent.ticket_types.map(ticket => ({ ...ticket, on_sale: false })) })
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(screen.getByRole('status')).toHaveTextContent(banner)
+  expect(screen.getByText('Ticket sales are closed for this event.')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Already bought a ticket? Find your order' })).toHaveAttribute('href', '/orders/recover')
+  expect(screen.queryByRole('link', { name: 'Choose tickets' })).not.toBeInTheDocument()
+  expect(screen.queryByText('VIP')).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: /Add to Calendar/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Remind me/i })).not.toBeInTheDocument()
+  expect(seo.props.jsonLd).toMatchObject({ eventStatus: schemaStatus })
+  expect(seo.props.jsonLd).not.toHaveProperty('offers')
+})

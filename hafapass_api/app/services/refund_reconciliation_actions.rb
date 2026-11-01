@@ -78,6 +78,9 @@ class RefundReconciliationActions
     if @type == "request"
       return execute_buyer_request!
     end
+    if @type == "exception"
+      return refund_late_capture!
+    end
     if @type == "cancellation"
       return retry_cancellation_item!
     end
@@ -133,11 +136,36 @@ class RefundReconciliationActions
     item
   end
 
+  def refund_late_capture!
+    unless Commerce::LateCaptureRefund::CODES.include?(@record.code) && @record.open? && @record.payment
+      raise ActionError, "Only an open late-capture exception can be refunded here"
+    end
+
+    earlier = order.refunds.find_by(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(@record.payment))
+    if earlier&.failed? || earlier&.cancelled?
+      raise ActionError, "The automatic refund failed; use Retry refund on its refund row"
+    end
+
+    result = Commerce::LateCaptureRefund.call(payment: @record.payment, requested_by: @actor)
+    audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
+    result
+  rescue Commerce::LateCaptureRefund::NotApplicable => e
+    raise ActionError, e.message
+  end
+
   def execute_buyer_request!
     raise ActionError, "Only an unexecuted buyer request can be issued" unless @record.decision == "refund_requested"
     raise ActionError, "The buyer request already has a refund" if order.refunds.exists?(reason: "event_change_refund")
 
-    tickets = order.tickets.where(status: :issued).to_a.select { |ticket| ticket.refundable_cents.positive? }
+    # The buyer's window is judged when they asked, but only for an order that
+    # predates a qualifying (net) change and only for tickets it still
+    # controls. A request recorded in time is honoured after the event closes.
+    requested_ids = @record.requested_ticket_ids.presence
+    eligibility = EventChangeRefundEligibility.call(order: order, change: @record.event_change, at: @record.responded_at,
+      recorded_request: true, ticket_ids: requested_ids)
+    raise ActionError, eligibility.message unless eligibility.eligible?
+
+    tickets = eligibility.tickets.select { |ticket| ticket.refundable_cents.positive? }
     raise ActionError, "The buyer balance is already resolved" if tickets.empty?
 
     result = Commerce::RefundCreator.call(order: order, tickets: tickets, reason: "event_change_refund",

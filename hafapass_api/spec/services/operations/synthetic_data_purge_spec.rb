@@ -176,6 +176,8 @@ RSpec.describe Operations::SyntheticDataPurge do
       expect(SiteSetting.instance.attributes).to eq(settings_before)
       expect(connection.select_value("SELECT COUNT(*) FROM schema_migrations").to_i).to eq(migrations_before)
 
+      # The TRUNCATE opt-in ends before the purge record is written.
+      expect(connection.select_value("SELECT current_setting('hafapass.audit_truncate', true)")).to eq("off")
       audit = AuditLog.sole
       expect(audit).to have_attributes(action: "operations.synthetic_data_purged", actor_user_id: nil,
         auditable: SiteSetting.instance)

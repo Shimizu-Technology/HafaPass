@@ -7,7 +7,9 @@ services:
   name: hafapass-api
   runtime: docker
   repo: https://github.com/Shimizu-Technology/HafaPass
-  branch: main
+  # The live service deploys this branch, fast-forwarded to main for each API
+  # release (docs/OPERATIONS_RUNBOOK.md, "Deploy order").
+  branch: hafapass-staging
   region: singapore
   rootDir: hafapass_api
   dockerfilePath: ./Dockerfile
@@ -77,6 +79,33 @@ services:
   - key: STRIPE_LIVE_PLATFORM_ACCOUNT_ID
     sync: false
   - key: STRIPE_LIVE_WEBHOOK_SECRET
+    sync: false
+  # TIN/W-9 encryption keys. Production refuses to boot without them; custody
+  # is in docs/OPERATIONS_RUNBOOK.md. Never rotate by editing these values.
+  - key: ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
+    sync: false
+  - key: MAILER_REPLY_TO
+    sync: false
+  - key: HAFAPASS_LAUNCH_CAPABILITIES
+    sync: false
+  # Optional. When set, X-Readiness-Token unlocks /api/v1/readiness detail.
+  - key: READINESS_TOKEN
+    sync: false
+  - key: APPLE_PASS_TYPE_IDENTIFIER
+    sync: false
+  - key: APPLE_TEAM_IDENTIFIER
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_PASSWORD
+    sync: false
+  - key: APPLE_WWDR_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_ICON_PATH
     sync: false
   plan: 0.5c-512mb
 envVarGroups:

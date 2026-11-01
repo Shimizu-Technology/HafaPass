@@ -13,6 +13,24 @@ RSpec.describe "Api::V1::Events", type: :request do
     expect(response.parsed_body.fetch("description")).to eq("$12,345.67 off")
   end
 
+  it "refuses a promo that would leave a 1-49 cent card payment, with checkout's message" do
+    event = create(:event, :published, organizer_profile: organizer_profile)
+    create(:promo_code, event: event, code: "NEARLY", discount_type: "fixed", discount_value: 2000)
+    allow(StripeService).to receive(:payment_enabled?).and_return(true)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2049 }, as: :json
+    expect(response.parsed_body).to eq("valid" => false, "error" => Commerce::OrderCreator::MINIMUM_CHARGE_MESSAGE)
+
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2050 }, as: :json
+    expect(response.parsed_body).to include("valid" => true)
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2000 }, as: :json
+    expect(response.parsed_body).to include("valid" => true, "discount_cents" => 2000)
+
+    allow(StripeService).to receive(:payment_enabled?).and_return(false)
+    post "/api/v1/promo_codes/validate", params: { event_id: event.id, code: "NEARLY", subtotal_cents: 2000, total_cents: 2049 }, as: :json
+    expect(response.parsed_body).to include("valid" => true)
+  end
+
   describe "GET /api/v1/events" do
     it "sends only card design fields in lists and the full design on detail" do
       event = create(:event, :published, organizer_profile: organizer_profile,
@@ -180,11 +198,36 @@ RSpec.describe "Api::V1::Events", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
-    it "returns 404 for cancelled events" do
-      event = create(:event, :cancelled, organizer_profile: organizer_profile)
+    %i[postponed cancelled].each do |status|
+      it "shows a #{status} event by direct link with sales closed, but keeps it out of discovery and the sitemap" do
+        event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now)
+        create(:ticket_type, event: event)
+        event.update!(status: status)
 
-      get "/api/v1/events/#{event.slug}"
+        get "/api/v1/events/#{event.slug}"
 
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include("status" => status.to_s, "purchasable" => false)
+        expect(response.parsed_body.fetch("ticket_types")).to all(include("on_sale" => false))
+
+        get "/api/v1/events"
+        expect(response.parsed_body.fetch("events").pluck("id")).not_to include(event.id)
+        get "/sitemap.xml"
+        expect(response.body).not_to include(event.slug)
+      end
+    end
+
+    it "keeps postponed events hidden by a policy hold or an unverified organizer" do
+      held = create(:event, :published, organizer_profile: organizer_profile)
+      held.update!(status: :postponed, policy_hold_scope: "hidden", policy_hold_at: Time.current, policy_hold_reason: "Review")
+
+      get "/api/v1/events/#{held.slug}"
+      expect(response).to have_http_status(:not_found)
+
+      allow(OrganizerProfile).to receive(:verification_gate_enabled?).and_return(true)
+      unverified = create(:event, :published, organizer_profile: create(:organizer_profile, verification_status: :pending))
+      unverified.update!(status: :postponed)
+      get "/api/v1/events/#{unverified.slug}"
       expect(response).to have_http_status(:not_found)
     end
 

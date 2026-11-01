@@ -37,6 +37,63 @@ RSpec.describe "Stripe webhooks", type: :request do
     )
   end
 
+  it "opens one early fraud warning exception per warning, alerts Sentry once and keeps refunds unblocked" do
+    allow(Sentry).to receive(:capture_message)
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_efw")
+    object = { id: "issfr_efw", object: "radar.early_fraud_warning", payment_intent: payment.provider_payment_id,
+      charge: "ch_efw", fraud_type: "made_with_stolen_card", actionable: true }
+
+    2.times { post_stripe_event("radar.early_fraud_warning.created", object, event_id: "evt_efw_created") }
+    expect(response).to have_http_status(:ok)
+    post_stripe_event("radar.early_fraud_warning.updated", object.merge(actionable: false), event_id: "evt_efw_updated")
+    expect(response).to have_http_status(:ok)
+
+    issue = ReconciliationException.where(code: "early_fraud_warning").sole
+    expect(issue).to have_attributes(order_id: order.id, payment_id: payment.id, status: "open")
+    expect(issue.details).to include("warning_id" => "issfr_efw", "fraud_type" => "made_with_stolen_card",
+      "actionable" => false, "charge_id" => "ch_efw", "last_event_type" => "radar.early_fraud_warning.updated")
+    expect(WebhookEvent.where(provider_event_id: %w[evt_efw_created evt_efw_updated]).pluck(:status).uniq).to eq(["processed"])
+    expect(Sentry).to have_received(:capture_message).with(/early fraud warning/, hash_including(level: :warning)).once
+    expect(Commerce::RefundSafety::FINANCIAL_CODES).not_to include("early_fraud_warning")
+    expect(Commerce::RefundSafety.finance_review_required?(order)).to be(false)
+  end
+
+  it "keeps one exception per early fraud warning when the created and updated events race" do
+    allow(Sentry).to receive(:capture_message)
+    order = create(:order, event: event)
+    payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_efw_race")
+    winner = create(:reconciliation_exception, order: order, payment: payment, code: "early_fraud_warning",
+      details: { "warning_id" => "issfr_race", "actionable" => true })
+    expect do
+      create(:reconciliation_exception, order: order, payment: payment, code: "early_fraud_warning",
+        details: { "warning_id" => "issfr_race" })
+    end.to raise_error(ActiveRecord::RecordNotUnique)
+
+    # The racing event looked before the winner committed, then lost the insert.
+    lookups = 0
+    allow_any_instance_of(StripeWebhookProcessor).to receive(:existing_early_fraud_warning).and_wrap_original do |original, id|
+      lookups += 1
+      lookups == 1 ? nil : original.call(id)
+    end
+    post_stripe_event("radar.early_fraud_warning.updated", { id: "issfr_race", payment_intent: "pi_efw_race",
+      charge: "ch_race", fraud_type: "made_with_stolen_card", actionable: false }, event_id: "evt_efw_race")
+
+    expect(response).to have_http_status(:ok)
+    expect(ReconciliationException.where(code: "early_fraud_warning").sole).to eq(winner)
+    expect(winner.reload.details).to include("actionable" => false, "fraud_type" => "made_with_stolen_card")
+    expect(Sentry).not_to have_received(:capture_message)
+  end
+
+  it "still records an early fraud warning whose payment HåfaPass cannot match" do
+    allow(Sentry).to receive(:capture_message)
+    post_stripe_event("radar.early_fraud_warning.created", { id: "issfr_unknown", payment_intent: "pi_not_ours",
+      charge: "ch_unknown", fraud_type: "unauthorized_use_of_card", actionable: true }, event_id: "evt_efw_unknown")
+    expect(response).to have_http_status(:ok)
+    expect(ReconciliationException.find_by!(code: "early_fraud_warning")).to have_attributes(order_id: nil, payment_id: nil)
+    expect(Sentry).to have_received(:capture_message).with(/early fraud warning/, hash_including(extra: hash_including(payment_found: false)))
+  end
+
   it "records scoped dispute opened, updated and won outcomes once per provider event" do
     order = create(:order, event: event)
     payment = create(:payment, :succeeded, order: order, provider_payment_id: "pi_audit_dispute")
@@ -257,6 +314,115 @@ RSpec.describe "Stripe webhooks", type: :request do
     expect(checkout.payment.reload).to be_succeeded
     expect(checkout.order.reconciliation_exceptions).to exist(code: "late_payment_success_after_inventory_release")
     expect(checkout.order.tickets).to be_empty
+  end
+
+  describe "a payment that succeeds after its hold lapsed" do
+    include ActiveJob::TestHelper
+
+    let(:refund_calls) { [] }
+
+    before do
+      SiteSetting.instance.update!(payment_mode: "test")
+      allow(StripeService).to receive(:card_only_intent?).and_return(true)
+      allow(StripeService).to receive(:refund_payment) do |intent_id, amount_cents:, reason:, idempotency_key:, payment:|
+        refund_calls << idempotency_key
+        OpenStruct.new(id: "re_#{refund_calls.length}", status: "succeeded", amount: amount_cents, currency: "usd",
+          payment_intent: intent_id, metadata: { "hafapass_refund_key" => idempotency_key })
+      end
+      allow(Sentry).to receive(:capture_message)
+      allow(Sentry).to receive(:capture_exception)
+    end
+
+    def lapsed_checkout(intent_id, quantity: 1)
+      checkout = create_pending_checkout(intent_id: intent_id, quantity: quantity)
+      expect(checkout.payment.provider_environment).to eq("test")
+      checkout.order.update_columns(expires_at: 1.minute.ago)
+      checkout.order.inventory_holds.update_all(expires_at: 1.minute.ago)
+      checkout
+    end
+
+    def succeed!(checkout, event_id:, amount: checkout.payment.amount_cents)
+      post_stripe_event("payment_intent.succeeded", { id: checkout.payment.provider_payment_id, amount: amount,
+        amount_received: amount, currency: "usd", status: "succeeded" }, event_id: event_id)
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "fulfils the order from the signed webhook when the inventory is still free, and expiry then changes nothing" do
+      checkout = lapsed_checkout("pi_late_free", quantity: 2)
+
+      succeed!(checkout, event_id: "evt_late_free")
+
+      expect(checkout.order.reload).to be_completed
+      expect(checkout.order.tickets.where(status: :issued).count).to eq(2)
+      expect(AuditLog.find_by!(auditable: checkout.order, action: "order.completed").metadata).to include("late_completion" => true)
+      expect(Commerce::OrderLifecycle.expire!(checkout.order)).to be(false)
+      ExpireInventoryHoldsJob.perform_now
+      expect(checkout.order.reload).to be_completed
+      expect(ReconciliationException.where(order: checkout.order)).to be_empty
+    end
+
+    it "does not fulfil a late webhook whose amount differs" do
+      checkout = lapsed_checkout("pi_late_short")
+      succeed!(checkout, event_id: "evt_late_short", amount: checkout.payment.amount_cents - 1)
+      expect(checkout.order.reload.tickets).to be_empty
+      expect(checkout.order.reconciliation_exceptions.pluck(:code)).to eq(["payment_amount_mismatch"])
+    end
+
+    it "releases and refunds once when the inventory was resold, even if the success is reported twice" do
+      checkout = lapsed_checkout("pi_late_resold", quantity: 2)
+      ticket_type.update_columns(quantity_available: 2, quantity_sold: 1)
+
+      expect { succeed!(checkout, event_id: "evt_late_resold") }.to have_enqueued_job(LateCaptureRefundJob).once
+      expect(checkout.order.reload).to be_expired
+      expect { succeed!(checkout, event_id: "evt_late_resold_again") }.not_to have_enqueued_job(LateCaptureRefundJob)
+      expect(checkout.order.reconciliation_exceptions.pluck(:code)).to eq(["late_payment_success_after_hold_expiry"])
+
+      perform_enqueued_jobs
+      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}"])
+      expect(checkout.order.reload).to be_refunded
+    end
+
+    it "refunds a payment that succeeded while expiry was cancelling it, despite the failed cancel" do
+      checkout = lapsed_checkout("pi_late_cancel_race")
+      # Expiry sees the payment still in progress, then the buyer's payment
+      # succeeds before the cancel reaches Stripe, so the cancel is refused.
+      allow(StripeService).to receive(:retrieve_payment_intent).and_return(OpenStruct.new(
+        id: checkout.payment.provider_payment_id, status: "requires_action", amount_received: 0, currency: "usd", livemode: false))
+      allow(StripeService).to receive(:cancel_payment_intent)
+        .and_raise(Stripe::InvalidRequestError.new("This PaymentIntent's status is succeeded", nil))
+
+      ExpireInventoryHoldsJob.perform_now
+
+      expect(checkout.order.reload).to be_expired
+      cancel_failure = checkout.order.reconciliation_exceptions.find_by!(code: "provider_payment_cancel_failed")
+      expect(Commerce::RefundSafety.finance_review_required?(checkout.order)).to be(true)
+
+      expect { succeed!(checkout, event_id: "evt_late_after_cancel") }.to have_enqueued_job(LateCaptureRefundJob)
+      perform_enqueued_jobs
+
+      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}"])
+      expect(checkout.order.reload).to be_refunded
+      expect(checkout.payment.reload).to be_refunded
+      # Processing-fee lookups are separate, nonfinancial follow-up work.
+      expect(checkout.order.reconciliation_exceptions.open.where(code: Commerce::RefundSafety::FINANCIAL_CODES)).to be_empty
+      expect(cancel_failure.reload).to be_resolved
+      expect(checkout.order.tickets).to be_empty
+    end
+
+    it "still blocks the late-capture refund on a failed cancel for a different payment" do
+      checkout = lapsed_checkout("pi_late_other_cancel")
+      ticket_type.update_columns(quantity_available: 1, quantity_sold: 1)
+      other = checkout.order.payments.create!(provider: "stripe", provider_environment: "test", provider_payment_id: "pi_other",
+        idempotency_key: "other:#{checkout.order.id}", amount_cents: 100, currency: "usd", status: :cancelled)
+      create(:reconciliation_exception, order: checkout.order, payment: other, code: "provider_payment_cancel_failed")
+
+      succeed!(checkout, event_id: "evt_late_other_cancel")
+      expect { perform_enqueued_jobs }.not_to raise_error
+
+      expect(refund_calls).to be_empty
+      expect(checkout.order.reconciliation_exceptions.open.where(code: Commerce::RefundSafety::FINANCIAL_CODES).pluck(:code))
+        .to contain_exactly("provider_payment_cancel_failed", "late_payment_success_after_hold_expiry")
+    end
   end
 
   it "keeps a mismatched provider amount pending and opens reconciliation" do

@@ -69,7 +69,7 @@ class Api::V1::Admin::AnnualTaxReportsController < Api::V1::Admin::BaseControlle
       csv << %w[year payer_tin organization_id payee_name payee_tin masked_payee_tin form_type jurisdiction
         reporting_status threshold_cents gross_paid_cents withheld_cents net_disbursed_cents refund_clawbacks_cents
         check_amount_adjustment_cents unattributed_refund_adjustment_cents]
-      rows.each { |row| csv << row.map { |value| value.is_a?(String) && value.start_with?("=", "+", "-", "@") ? "\t#{value}" : value } }
+      rows.each { |row| csv << row.map { |value| SpreadsheetExport.safe_value(value) } }
     end
     send_data data, filename: "annual-payees-#{year}#{full_tins ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv", type: "text/csv", disposition: "attachment"
   end

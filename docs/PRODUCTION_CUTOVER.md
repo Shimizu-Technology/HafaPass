@@ -66,7 +66,7 @@ the previous instance running). Add them in the same batch as
 
 ### 3. Stripe
 
-1. In live mode, create a webhook endpoint `https://<PUBLIC_API_URL host>/webhooks/stripe` with: `payment_intent.succeeded`, `payment_intent.processing`, `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.updated`, `charge.refunded`, `charge.refund.updated`, `refund.created`, `refund.updated`, `refund.failed`, `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed`. Keep the existing test-mode endpoint.
+1. In live mode, create a webhook endpoint `https://<PUBLIC_API_URL host>/webhooks/stripe` with: `payment_intent.succeeded`, `payment_intent.processing`, `payment_intent.payment_failed`, `payment_intent.canceled`, `charge.updated`, `charge.refunded`, `charge.refund.updated`, `refund.created`, `refund.updated`, `refund.failed`, `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed`, `radar.early_fraud_warning.created`, `radar.early_fraud_warning.updated`. Keep the existing test-mode endpoint, and add the two `radar.early_fraud_warning.*` events to it as well.
 2. Its signing secret becomes `STRIPE_LIVE_WEBHOOK_SECRET`. The test endpoint's secret stays in `STRIPE_WEBHOOK_SECRET`. The API checks a signed event's `livemode` and verifies it with the matching secret, so both endpoints can share one URL.
 3. Note the live platform account ID (`acct_…`, Shimizu Technology's account) for `STRIPE_LIVE_PLATFORM_ACCOUNT_ID`. The switch to live confirms the live secret key really belongs to that account.
 

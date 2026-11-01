@@ -2,7 +2,7 @@
 
 class Api::V1::OrdersController < ApplicationController
   prepend_before_action :ensure_public_checkout_event, only: :create
-  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id catalog_items
+  CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id promo_code catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
     terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents].freeze
   skip_before_action :authenticate_user!, only: [
@@ -78,6 +78,8 @@ class Api::V1::OrdersController < ApplicationController
       checkout_lease_token: @checkout_claim&.lease_token,
       expected_total_cents: params[:expected_total_cents],
       client_quote_required: true,
+      checkout_ip_digest: Commerce::CheckoutIpDigest.call(ClientIp.bucket(request.env)),
+      enforce_buyer_limits: true,
       line_items: params[:line_items],
       buyer_email: params[:buyer_email],
       buyer_name: params[:buyer_name],
@@ -85,6 +87,7 @@ class Api::V1::OrdersController < ApplicationController
       marketing_opt_in: [true, "true", 1, "1"].include?(params[:marketing_opt_in]),
       user: @current_user,
       promo_code_id: params[:promo_code_id],
+      promo_code: params[:promo_code],
       catalog_items: params[:catalog_items],
       registration_answers: params[:registration_answers],
       waiver_acceptances: params[:waiver_acceptances],
@@ -248,7 +251,13 @@ class Api::V1::OrdersController < ApplicationController
       return render json: OrderPresenter.call(@order.reload, include_tickets: true)
     end
 
-    unless @order.event.cancelled? || @order.event.postponed?
+    if @order.event.postponed?
+      eligibility = EventChangeRefundEligibility.call(order: @order, change: latest_buyer_visible_change)
+      unless eligibility.eligible? && eligibility.tickets.include?(ticket)
+        return render json: { error: eligibility.message || EventChangeRefundEligibility::MESSAGES.fetch("no_tickets"),
+          code: eligibility.reason || "no_tickets" }, status: :unprocessable_entity
+      end
+    elsif !@order.event.cancelled?
       return render json: { error: "Paid self-service refunds are available after an event is cancelled or postponed" },
         status: :unprocessable_entity
     end
@@ -339,9 +348,27 @@ class Api::V1::OrdersController < ApplicationController
       return render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity unless idempotency_key
     end
 
+    # A recorded request keeps the window it was made in for the tickets it
+    # named, so a retry after a failed provider refund is judged at the
+    # original response time; anything else is judged now.
+    eligibility = if existing_response
+      EventChangeRefundEligibility.for_recorded_request(order: @order, change: change, response: existing_response)
+    else
+      EventChangeRefundEligibility.call(order: @order, change: change)
+    end
+    unless existing_response || eligibility.order_predates_change
+      return render json: { error: EventChangeRefundEligibility::MESSAGES.fetch("ordered_after_change"),
+        code: "ordered_after_change" }, status: :unprocessable_entity
+    end
+    replay = existing_response && decision == "refund_requested" && @order.refunds.exists?(idempotency_key: idempotency_key)
+    if decision == "refund_requested" && !eligibility.eligible? && !replay
+      return render json: { error: eligibility.message, code: eligibility.reason }, status: :unprocessable_entity
+    end
+
     response = existing_response || EventChangeResponse.transaction do
       recorded_response = change.event_change_responses.create!(
-        order: @order, decision: decision, responded_at: Time.current)
+        order: @order, decision: decision, responded_at: Time.current,
+        requested_ticket_ids: decision == "refund_requested" ? eligibility.tickets.map(&:id) : [])
       if decision == "refund_requested"
         AuditLogger.record!(action: "refund.buyer_requested", auditable: recorded_response,
           actor: @current_user, organization: @order.event.organization, event: @order.event,
@@ -353,7 +380,7 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     if decision == "refund_requested"
-      refundable_tickets = @order.tickets.where(status: :issued).to_a
+      refundable_tickets = eligibility.tickets
       paid_tickets = refundable_tickets.select { |ticket| ticket.refundable_cents.positive? }
       free_tickets = refundable_tickets - paid_tickets
       Commerce::RefundCreator.call(
@@ -407,6 +434,10 @@ class Api::V1::OrdersController < ApplicationController
     nil
   end
 
+  def latest_buyer_visible_change
+    @order.event.event_changes.buyer_visible.order(occurred_at: :desc, id: :desc).first
+  end
+
   def controls_ticket?(ticket)
     ticket.holder_user_id.blank? || ticket.holder_user_id == @current_user&.id
   end
@@ -450,8 +481,10 @@ class Api::V1::OrdersController < ApplicationController
   def set_accessible_order
     response.headers["Cache-Control"] = "private, no-store" if %w[show receipt].include?(action_name)
     order = Order.find_by(id: params[:id])
+    # Administrators may look at an order and resend its tickets for support,
+    # but never act as the buyer (refunds, cancellations, transfers, seats, QR).
     authorized = order && (
-      (@current_user&.admin? && action_name != "receipt") ||
+      (@current_user&.admin? && %w[show resend].include?(action_name)) ||
       (order.user_id.present? && order.user_id == @current_user&.id) ||
       GuestOrderAccess.find(guest_access_token)&.id == order.id
     )

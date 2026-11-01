@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Loader2, Mail, Search, Send } from 'lucide-react'
+import { AlertTriangle, Loader2, Mail, RotateCcw, Search, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
@@ -16,6 +16,36 @@ const badge = {
   bounced: 'bg-red-100 text-red-800',
   complained: 'bg-purple-100 text-purple-800',
   suppressed: 'bg-neutral-800 text-white',
+}
+
+const bulkWindows = {
+  day: { label: 'the last 24 hours', hours: 24 },
+  week: { label: 'the last 7 days', hours: 24 * 7 },
+  all: { label: 'any time', hours: null },
+}
+
+const skipReasons = {
+  provider_accepted: 'already accepted by the email provider',
+  replay_window_expired: 'too old to resend safely',
+  suppressed_recipient: 'to an address that bounced or complained',
+  recently_queued: 'already queued in the last 15 minutes',
+}
+
+// A lost response, timeout or server error after the request was sent leaves
+// the outcome unknown: the server may already have queued (and audited) a batch.
+const bulkOutcomeUnknown = "We couldn't confirm whether the bulk resend ran, so some messages may already be queued. Check the delivery list and the audit log before running it again."
+
+function bulkResendSummary(data) {
+  if (!data || typeof data.queued !== 'number') return bulkOutcomeUnknown
+  const { queued, skipped = {}, capped = false, remaining } = data
+  const parts = [`Queued ${queued} ${queued === 1 ? 'message' : 'messages'} for another delivery attempt.`]
+  const reasons = Object.entries(skipped).filter(([, count]) => count > 0)
+  if (reasons.length) {
+    const total = reasons.reduce((sum, [, count]) => sum + count, 0)
+    parts.push(`Skipped ${total}: ${reasons.map(([reason, count]) => `${count} ${skipReasons[reason] || reason.replaceAll('_', ' ')}`).join(', ')}.`)
+  }
+  if (capped) parts.push(`More failed messages remain${remaining > 0 ? ` (${remaining} not checked yet)` : ''}. Run it again to queue the next batch.`)
+  return parts.join(' ')
 }
 
 function SupportSession({ identity, resourcePath }) {
@@ -36,6 +66,7 @@ function SupportSession({ identity, resourcePath }) {
   const [deliveryLoading, setDeliveryLoading] = useState(true)
   const [deliveryError, setDeliveryError] = useState('')
   const [busyAction, setBusyAction] = useState(null)
+  const [bulkWindow, setBulkWindow] = useState('day')
 
   const withdrawAccess = useCallback(() => {
     accessDenied.current = true
@@ -106,6 +137,40 @@ function SupportSession({ identity, resourcePath }) {
       loadDeliveries()
     } catch (error) {
       if (request.current()) { if ([401,403].includes(error.response?.status)) withdrawAccess(); setMessage(error.response?.data?.error || 'Replay failed') }
+    } finally {
+      request.release()
+      actionBusy.current = false
+      if (request.current()) setBusyAction(null)
+    }
+  }
+
+  const bulkReplay = async () => {
+    if (actionBusy.current || accessDenied.current) return
+    const range = bulkWindows[bulkWindow]
+    if (!window.confirm(`Resend every failed message from ${range.label} that the email provider never accepted? Up to 500 are queued at a time. Messages already queued in the last 15 minutes and addresses that bounced or complained are skipped.`)) return
+    const request = beginRequest()
+    if (!request) return
+    actionBusy.current = true
+    setBusyAction('bulk')
+    setMessage('')
+    const params = { status: 'failed' }
+    if (range.hours) params.failed_after = new Date(Date.now() - range.hours * 3_600_000).toISOString()
+    try {
+      const response = await apiClient.post('/support/message_deliveries/bulk_resend', params, request.config)
+      if (!request.current() || accessDenied.current) return
+      setMessage(bulkResendSummary(response.data || {}))
+      loadDeliveries()
+    } catch (error) {
+      if (!request.current()) return
+      const status = error.response?.status
+      if (status && status < 500) {
+        // The server answered and refused the request before queuing anything.
+        if ([401, 403].includes(status)) withdrawAccess()
+        setMessage(error.response?.data?.error || 'Bulk resend failed. Nothing new was queued; try again.')
+      } else {
+        setMessage(bulkOutcomeUnknown)
+        if (!accessDenied.current) loadDeliveries()
+      }
     } finally {
       request.release()
       actionBusy.current = false
@@ -186,7 +251,17 @@ function SupportSession({ identity, resourcePath }) {
         </section>}
 
         <section className="mt-10">
-          <div className="flex items-center gap-2"><Mail className="h-5 w-5 text-brand-600" /><h2 className="text-lg font-semibold text-neutral-900">Recent message deliveries</h2></div>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex items-center gap-2"><Mail className="h-5 w-5 text-brand-600" /><h2 className="text-lg font-semibold text-neutral-900">Recent message deliveries</h2></div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-sm font-medium text-neutral-700">Failed in
+                <select value={bulkWindow} onChange={event => setBulkWindow(event.target.value)} className="input mt-1 block w-auto">
+                  {Object.entries(bulkWindows).map(([key, range]) => <option key={key} value={key}>{range.label}</option>)}
+                </select>
+              </label>
+              <button type="button" disabled={Boolean(busyAction)} onClick={bulkReplay} className="btn-secondary inline-flex min-h-11 items-center gap-2">{busyAction === 'bulk' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Resend failed messages</button>
+            </div>
+          </div>
           {deliveryLoading && <p className="mt-3 text-sm text-neutral-600" role="status">Loading deliveries…</p>}
           {deliveryError && <div className="mt-3 text-sm text-red-700" role="alert">{deliveryError} <button className="min-h-11 font-semibold underline" onClick={loadDeliveries}>Retry</button></div>}
           {!deliveryLoading && !deliveryError && !deliveries.length && <p className="mt-3 text-sm text-neutral-600">No recent message deliveries.</p>}

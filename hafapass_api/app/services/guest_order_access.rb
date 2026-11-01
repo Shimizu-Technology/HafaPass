@@ -3,12 +3,24 @@
 class GuestOrderAccess
   PURPOSE = "guest_order_access"
   LIFETIME = 30.days
+  AFTER_EVENT = 7.days
 
   class << self
-    def issue!(order, expires_at: LIFETIME.from_now, rotate: false)
+    # Links from confirmation and event emails must still open on event day,
+    # even for an event months away: at least 30 days, and until a week after
+    # the event ends.
+    def default_expires_at(order, from: Time.current)
+      event_end = order.event&.ends_at || order.event&.starts_at
+      [from + LIFETIME, event_end && (event_end + AFTER_EVENT)].compact.max
+    end
+
+    # A new link never shortens the order's access window, so issuing one
+    # cannot expire links the buyer already holds.
+    def issue!(order, expires_at: nil, rotate: false)
+      expires_at ||= default_expires_at(order)
       order.with_lock do
         order.increment!(:guest_access_version) if rotate
-        attributes = { guest_access_expires_at: expires_at }
+        attributes = { guest_access_expires_at: [order.guest_access_expires_at, expires_at].compact.max }
         attributes[:guest_access_revoked_at] = nil if rotate
         order.update!(attributes)
       end

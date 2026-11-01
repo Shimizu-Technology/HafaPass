@@ -2,7 +2,8 @@
 
 class EventStateChange < ApplicationRecord
   belongs_to :event
-  belongs_to :actor_user, class_name: "User"
+  # Nil only for scheduled system transitions (CompletePastEventsJob).
+  belongs_to :actor_user, class_name: "User", optional: true
 
   validates :action, :from_status, :to_status, :occurred_at, presence: true
 
@@ -16,7 +17,8 @@ class EventStateChange < ApplicationRecord
   def promote_to_audit_log!
     suffix = {
       "publish" => "published", "postpone" => "postponed", "resume" => "resumed",
-      "cancel" => "cancelled", "complete" => "completed", "archive" => "archived"
+      "cancel" => "cancelled", "complete" => "completed", "archive" => "archived",
+      "unarchive" => "unarchived"
     }.fetch(action)
     AuditLogger.record!(action: "event.#{suffix}", auditable: event, event: event, actor: actor_user,
       source: AuditContext.current.source.presence || "user", outcome: "succeeded",

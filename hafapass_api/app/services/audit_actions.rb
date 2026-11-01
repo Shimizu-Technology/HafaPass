@@ -200,6 +200,22 @@ class AuditActions
         "refund.created" => "Requested a refund."
       }
 
+    # Payment reconciliation and fraud review are platform finance work.
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.resolved" => "Resolved a payment reconciliation exception.",
+        "order.fraud_refund_requested" => "Requested a fraud refund after a Stripe early fraud warning."
+      }
+
+    # A paid late completion used a promo code past max_uses (see
+    # OrderLifecycle#finalize_promo!). Platform review only.
+    define registry, area: "promotions", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "promo_code.over_redeemed" => "Completed a late-paid order one promo use over its limit."
+      }
+
     define registry, area: "refunds", audience: %w[org_owner org_finance],
       tenant: true, event_required: true,
       snapshots: %w[status amount_cents], metadata: %w[operation retry_refund_id amount_cents order_id refund_id provider_status], actions: {
@@ -381,6 +397,24 @@ class AuditActions
       tenant: true, event_required: false,
       snapshots: %w[], metadata: %w[fee_change_id], actions: {
         "site_settings.fee_change_acknowledged" => "Acknowledged an upcoming fee change."
+      }
+
+    # Admin reconciliation review (Admin -> Reconciliation). Some exceptions
+    # (payment_not_found and similar) have no order, so a manual resolution
+    # does not require an organization; when one exists the logger infers it.
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: false, event_required: false,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.manually_resolved" => "Resolved a payment reconciliation exception with a review note.",
+        "reconciliation_exception.resolved_without_ledger_change" =>
+          "Resolved a payment reconciliation exception after verifying no refund or payment record needed to change.",
+        "reconciliation_exception.reviewed_no_action" => "Resolved a Stripe early fraud warning without refunding the order."
+      }
+
+    define registry, area: "refunds", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "reconciliation_exception.buyer_refund_requested" => "Requested a refund of a card payment that arrived after its order was released."
       }
 
     define registry, area: "fees", audience: %w[admin_only],
@@ -610,7 +644,8 @@ class AuditActions
         "event.resumed" => "Resumed event.",
         "event.cancelled" => "Cancelled event.",
         "event.completed" => "Completed event.",
-        "event.archived" => "Archived event."
+        "event.archived" => "Archived event.",
+        "event.unarchived" => "Restored an archived event."
       }
 
     define registry, area: "tickets", audience: %w[org_owner org_manager],

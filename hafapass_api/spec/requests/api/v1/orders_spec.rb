@@ -1,6 +1,7 @@
 require "rails_helper"
 
 RSpec.describe "Api::V1::Orders", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
   let(:organizer_profile) { create(:organizer_profile) }
   let(:event) { create(:event, :published, organizer_profile: organizer_profile, starts_at: 5.days.from_now) }
   let!(:ga_ticket) { create(:ticket_type, event: event, name: "General Admission", price_cents: 2500, quantity_available: 100) }
@@ -412,6 +413,302 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(response).to have_http_status(:unprocessable_entity)
         json = JSON.parse(response.body)
         expect(json["error"]).to include("greater than 0")
+      end
+    end
+
+    context "with a promo code" do
+      let!(:island) { create(:promo_code, event: event, code: "ISLAND", discount_type: "percentage", discount_value: 10) }
+      let!(:secret) { create(:promo_code, event: event, code: "STAFFONLY", discount_type: "percentage", discount_value: 100) }
+
+      it "applies the code the buyer typed, using the validate endpoint's normalization" do
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: " island ")
+
+        expect(response).to have_http_status(:created), response.body
+        order = Order.find(response.parsed_body.fetch("id"))
+        expect(order.promo_code).to eq(island)
+        expect(order.discount_cents).to eq(1250)
+      end
+
+      it "applies a typed code sent with its matching ID, as current checkout sends both" do
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: "island", promo_code_id: island.id)
+
+        expect(response).to have_http_status(:created), response.body
+        expect(Order.find(response.parsed_body.fetch("id")).promo_code).to eq(island)
+      end
+
+      it "asks to re-enter the code when an older page sends a blank code with an ID" do
+        ["", "  ", nil].each do |blank|
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code: blank, promo_code_id: island.id)
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to eq("Re-enter your promo code and try again")
+        end
+        expect(Order.count).to eq(0)
+      end
+
+      it "never applies a code selected only by a guessed ID" do
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code_id: secret.id)
+        end.not_to change(Order, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Re-enter your promo code and try again")
+      end
+
+      it "rejects a typed code whose ID does not match the one sent with it" do
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code: "ISLAND", promo_code_id: secret.id)
+        end.not_to change(Order, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Promo code is no longer available")
+      end
+
+      it "rejects unknown and non-string codes" do
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: "NOPE")
+        expect(response).to have_http_status(:unprocessable_content)
+        post_json "/api/v1/orders", params: valid_params.merge(promo_code: { code: "ISLAND" })
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Order.count).to eq(0)
+      end
+
+      it "refuses a paid checkout the promo leaves between 1 and 49 cents, before creating an order" do
+        allow(StripeService).to receive(:payment_enabled?).and_return(true)
+        event.update!(fee_policy: :organizer_absorbs, buyer_fee_percent: 0)
+        create(:promo_code, event: event, code: "NEARLYFREE", discount_type: "fixed", discount_value: 2470)
+
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(promo_code: "NEARLYFREE",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }])
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq(Commerce::OrderCreator::MINIMUM_CHARGE_MESSAGE)
+      end
+
+      it "binds the typed code into the checkout recovery identity" do
+        key = SecureRandom.hex(32)
+        post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key, promo_code: "ISLAND")
+        expect(response).to have_http_status(:created)
+
+        expect do
+          post_json "/api/v1/orders", params: valid_params.merge(checkout_key: key, promo_code: "STAFFONLY")
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+    end
+
+    context "with public checkout hold limits" do
+      def checkout_from(ip, params)
+        post "/api/v1/orders", params: params.to_json, headers: json_headers, env: { "REMOTE_ADDR" => ip }
+      end
+
+      def with_env(values)
+        previous = values.keys.index_with { |key| ENV[key] }
+        values.each { |key, value| ENV[key] = value }
+        yield
+      ensure
+        previous.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+      end
+
+      before do
+        allow(StripeService).to receive(:payment_enabled?).and_return(true)
+        allow(StripeService).to receive(:payment_mode).and_return("test")
+        allow(StripeService).to receive(:publishable_key).and_return("pk_test_123")
+        allow(StripeService).to receive(:create_payment_intent) do
+          OpenStruct.new(id: "pi_#{SecureRandom.hex(6)}", client_secret: "secret_#{SecureRandom.hex(6)}")
+        end
+        Commerce::OrderCreator.reset_cap_alerts!
+        allow(Sentry).to receive(:capture_message)
+      end
+
+      let(:one_ga) { valid_params.merge(line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }]) }
+
+      it "caps a blank per-order limit at 10 for public checkout" do
+        ga_ticket.update!(max_per_order: nil)
+        checkout_from("203.0.113.30", valid_params.merge(line_items: [{ ticket_type_id: ga_ticket.id, quantity: 11 }]))
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to eq("Maximum 10 tickets per order for General Admission")
+
+        checkout_from("203.0.113.30", valid_params.merge(line_items: [{ ticket_type_id: ga_ticket.id, quantity: 10 }]))
+        expect(response).to have_http_status(:created), response.body
+      end
+
+      it "defaults to 60 live held tickets per network, logging and alerting Sentry once per interval on denial" do
+        expect(ENV).not_to have_key("HAFAPASS_MAX_HELD_TICKETS_PER_IP")
+        6.times do |index|
+          checkout_from("198.51.100.60", valid_params.merge(buyer_email: "held-#{index}@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 10 }]))
+          expect(response).to have_http_status(:created), response.body
+        end
+        allow(Rails.logger).to receive(:warn).and_call_original
+
+        2.times do |index|
+          checkout_from("198.51.100.60", one_ga.merge(buyer_email: "over-#{index}@example.com"))
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to include("held from your network")
+        end
+
+        expect(Rails.logger).to have_received(:warn)
+          .with(a_string_including('"event":"checkout_network_cap_denied"', '"cap":"held_tickets_per_ip"', '"limit":60',
+            '"counted":60', '"requested":1')).twice
+        expect(Sentry).to have_received(:capture_message).with("Checkout network cap denied a buyer",
+          hash_including(level: :warning, extra: hash_including(cap: "held_tickets_per_ip", event_id: event.id))).once
+      end
+
+      it "gives buyers with different edge client addresses their own allowance behind one proxy address" do
+        with_env("HAFAPASS_MAX_HELD_TICKETS_PER_IP" => "3") do
+          proxy = { "REMOTE_ADDR" => "10.0.0.5" }
+          post "/api/v1/orders", params: valid_params.merge(buyer_email: "cf-a@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]).to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "203.0.113.70"), env: proxy
+          expect(response).to have_http_status(:created), response.body
+          expect(Order.last.checkout_ip_digest).to eq(Commerce::CheckoutIpDigest.call("203.0.113.70"))
+
+          post "/api/v1/orders", params: one_ga.merge(buyer_email: "cf-b@example.com").to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "203.0.113.71"), env: proxy
+          expect(response).to have_http_status(:created), response.body
+
+          post "/api/v1/orders", params: one_ga.merge(buyer_email: "cf-c@example.com").to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "203.0.113.70"), env: proxy
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to include("held from your network")
+        end
+      end
+
+      it "treats addresses in one IPv6 /64 as one network" do
+        with_env("HAFAPASS_MAX_HELD_TICKETS_PER_IP" => "3") do
+          post "/api/v1/orders", params: valid_params.merge(buyer_email: "v6-a@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]).to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "2001:db8:1:2::a")
+          expect(response).to have_http_status(:created), response.body
+          expect(Order.last.checkout_ip_digest).to eq(Commerce::CheckoutIpDigest.call("2001:db8:1:2::/64"))
+
+          post "/api/v1/orders", params: one_ga.merge(buyer_email: "v6-b@example.com").to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "2001:db8:1:2:ffff::9")
+          expect(response).to have_http_status(:unprocessable_content)
+
+          post "/api/v1/orders", params: one_ga.merge(buyer_email: "v6-c@example.com").to_json,
+            headers: json_headers.merge("CF-Connecting-IP" => "2001:db8:1:3::a")
+          expect(response).to have_http_status(:created)
+        end
+      end
+
+      it "allows one live unpaid checkout per buyer email per event, without blocking same-key recovery" do
+        key = SecureRandom.hex(32)
+        checkout_from("203.0.113.10", one_ga.merge(checkout_key: key))
+        expect(response).to have_http_status(:created), response.body
+        first = Order.find(response.parsed_body.fetch("id"))
+        expect(first).to be_pending
+
+        expect do
+          checkout_from("203.0.113.11", one_ga.merge(buyer_email: "  BUYER@Example.com "))
+        end.not_to change(Order, :count)
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to include("already have a checkout in progress")
+
+        allow(Commerce::PaymentRecovery).to receive(:call) do |order:|
+          Commerce::PaymentRecovery::Result.new(order: order, payment_intent: OpenStruct.new(client_secret: "secret"),
+            payment_state: "requires_payment_method", publishable_key: "pk_test_123")
+        end
+        checkout_from("203.0.113.12", one_ga.merge(checkout_key: key))
+        expect(response).to have_http_status(:created), response.body
+        expect(response.parsed_body["id"]).to eq(first.id)
+
+        other_event = create(:event, :published, organizer_profile: organizer_profile, starts_at: 6.days.from_now)
+        other_type = create(:ticket_type, event: other_event, price_cents: 1000, quantity_available: 5)
+        checkout_from("203.0.113.10", one_ga.merge(event_id: other_event.id, line_items: [{ ticket_type_id: other_type.id, quantity: 1 }]))
+        expect(response).to have_http_status(:created)
+
+        first.update!(expires_at: 1.second.ago)
+        checkout_from("203.0.113.13", one_ga)
+        expect(response).to have_http_status(:created)
+      end
+
+      it "blocks a second live checkout for the same signed-in buyer under another email" do
+        user = create(:user)
+        signed_in = json_headers.merge(auth_headers(user))
+        post "/api/v1/orders", params: one_ga.merge(buyer_email: "first@example.com").to_json, headers: signed_in
+        expect(response).to have_http_status(:created), response.body
+        expect(Order.last.user).to eq(user)
+
+        post "/api/v1/orders", params: one_ga.merge(buyer_email: "second@example.com").to_json, headers: signed_in
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body["error"]).to include("already have a checkout in progress")
+      end
+
+      it "caps live held tickets per network digest and stores only the digest" do
+        with_env("HAFAPASS_MAX_HELD_TICKETS_PER_IP" => "5") do
+          checkout_from("198.51.100.7", valid_params.merge(buyer_email: "a@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]))
+          expect(response).to have_http_status(:created), response.body
+          order = Order.find(response.parsed_body.fetch("id"))
+          expect(order.checkout_ip_digest).to eq(Commerce::CheckoutIpDigest.call("198.51.100.7"))
+          expect(order.attributes.values.compact.map(&:to_s)).not_to include("198.51.100.7")
+
+          expect do
+            checkout_from("198.51.100.7", valid_params.merge(buyer_email: "b@example.com",
+              line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]))
+          end.not_to change(Order, :count)
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to include("held from your network")
+
+          checkout_from("198.51.100.8", valid_params.merge(buyer_email: "b@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]))
+          expect(response).to have_http_status(:created)
+
+          order.inventory_holds.update_all(expires_at: 1.second.ago)
+          checkout_from("198.51.100.7", valid_params.merge(buyer_email: "c@example.com",
+            line_items: [{ ticket_type_id: ga_ticket.id, quantity: 3 }]))
+          expect(response).to have_http_status(:created)
+        end
+      end
+
+      it "caps free tickets issued per network digest per event, and a zero cap turns it off" do
+        free = create(:ticket_type, :free, event: event, quantity_available: 100)
+        free_params = ->(email, quantity) { valid_params.merge(buyer_email: email, line_items: [{ ticket_type_id: free.id, quantity: quantity }]) }
+        with_env("HAFAPASS_MAX_FREE_TICKETS_PER_IP" => "3") do
+          checkout_from("192.0.2.40", free_params.call("one@example.com", 2))
+          expect(response).to have_http_status(:created), response.body
+          expect(Order.last).to be_completed
+
+          checkout_from("192.0.2.40", free_params.call("two@example.com", 2))
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to include("free ticket limit")
+
+          checkout_from("192.0.2.41", free_params.call("two@example.com", 2))
+          expect(response).to have_http_status(:created)
+          # Paid orders from the same network do not consume the free allowance.
+          checkout_from("192.0.2.40", valid_params.merge(buyer_email: "paid@example.com"))
+          expect(response).to have_http_status(:created)
+        end
+        with_env("HAFAPASS_MAX_FREE_TICKETS_PER_IP" => "0") do
+          checkout_from("192.0.2.40", free_params.call("three@example.com", 5))
+          expect(response).to have_http_status(:created)
+        end
+      end
+
+      it "leaves the free ticket cap off by default and, when on, counts only the last hour" do
+        free = create(:ticket_type, :free, event: event, quantity_available: 100)
+        free_params = ->(email, quantity) { valid_params.merge(buyer_email: email, line_items: [{ ticket_type_id: free.id, quantity: quantity }]) }
+        expect(ENV).not_to have_key("HAFAPASS_MAX_FREE_TICKETS_PER_IP")
+        3.times do |index|
+          checkout_from("192.0.2.50", free_params.call("default-#{index}@example.com", 10))
+          expect(response).to have_http_status(:created), response.body
+        end
+
+        with_env("HAFAPASS_MAX_FREE_TICKETS_PER_IP" => "3") do
+          checkout_from("192.0.2.51", free_params.call("window-1@example.com", 3))
+          expect(response).to have_http_status(:created), response.body
+          checkout_from("192.0.2.51", free_params.call("window-2@example.com", 1))
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body["error"]).to include("free ticket limit")
+          expect(Sentry).to have_received(:capture_message).with("Checkout network cap denied a buyer",
+            hash_including(extra: hash_including(cap: "free_tickets_per_ip", limit: 3, counted: 3)))
+
+          travel 61.minutes do
+            checkout_from("192.0.2.51", free_params.call("window-3@example.com", 3))
+            expect(response).to have_http_status(:created), response.body
+          end
+        end
       end
     end
 

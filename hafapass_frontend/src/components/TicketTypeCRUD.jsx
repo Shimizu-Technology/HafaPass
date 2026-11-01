@@ -136,7 +136,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone, defa
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="ticket-type-max-order" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per order</label>
-              <input id="ticket-type-max-order" type="number" min="1" step="1" value={form.max_per_order} onChange={e => setForm(f => ({ ...f, max_per_order: e.target.value }))} className="input" placeholder="No additional limit" disabled={saving} />
+              <input id="ticket-type-max-order" type="number" min="1" step="1" value={form.max_per_order} onChange={e => setForm(f => ({ ...f, max_per_order: e.target.value }))} className="input" placeholder="10 for online checkout if blank" disabled={saving} />
             </div>
             <div>
               <label htmlFor="ticket-type-max-buyer" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per buyer</label>

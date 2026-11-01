@@ -89,4 +89,141 @@ RSpec.describe ClerkAuthenticator do
     allow(ENV).to receive(:[]).with("CLERK_PUBLISHABLE_KEY").and_return("pk_test_xxx")
     expect(described_class.verify(token)).to be_nil
   end
+
+  describe "JWKS key selection and caching" do
+    include ActiveSupport::Testing::TimeHelpers
+
+    let(:rotated_key) { OpenSSL::PKey::RSA.generate(2048) }
+    let(:published) { { "keys" => [JWT::JWK.new(private_key, kid: "kid-a").export.stringify_keys] } }
+    let(:rotated) { { "keys" => published["keys"] + [JWT::JWK.new(rotated_key, kid: "kid-b").export.stringify_keys] } }
+
+    let(:verified) { include("sub" => "user_fixture") }
+
+    # Fresh timestamps so a token is still valid after travelling in time.
+    def signed(key, kid)
+      JWT.encode(claims.merge("exp" => 5.minutes.from_now.to_i, "nbf" => 5.seconds.ago.to_i), key, "RS256", { kid: kid })
+    end
+
+    before do
+      described_class.reset_jwks_cache!
+      allow(described_class).to receive(:fetch_jwks).and_call_original
+    end
+
+    after { described_class.reset_jwks_cache! }
+
+    it "verifies only with the key the token names" do
+      allow(described_class).to receive(:fetch_jwks_from_clerk).and_return(rotated)
+      expect(described_class.verify(signed(rotated_key, "kid-b"))).to verified
+      # Signed by key A while claiming key B's kid: key A is never tried.
+      expect(described_class.verify(signed(private_key, "kid-b"))).to be_nil
+      expect(described_class).to have_received(:fetch_jwks_from_clerk).once
+    end
+
+    it "refetches once for an unknown kid, then at most every five minutes" do
+      allow(described_class).to receive(:fetch_jwks_from_clerk).and_return(published, rotated)
+      freeze_time do
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        expect(described_class.verify(signed(rotated_key, "kid-b"))).to verified
+        expect(described_class).to have_received(:fetch_jwks_from_clerk).twice
+
+        expect(described_class.verify(signed(rotated_key, "kid-unknown"))).to be_nil
+        expect(described_class.verify(signed(rotated_key, "kid-forged"))).to be_nil
+        expect(described_class).to have_received(:fetch_jwks_from_clerk).twice
+
+        travel 5.minutes + 1.second
+        expect(described_class.verify(signed(rotated_key, "kid-unknown"))).to be_nil
+        expect(described_class).to have_received(:fetch_jwks_from_clerk).exactly(3).times
+      end
+    end
+
+    it "keeps serving the last good key set for a day when Clerk is unreachable, caching the failure" do
+      calls = 0
+      allow(described_class).to receive(:fetch_jwks_from_clerk) { (calls += 1) == 1 ? published : nil }
+      freeze_time do
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+
+        travel 1.hour + 1.second
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        expect(calls).to eq(2)
+        # The failure is cached: no request waits on Clerk again for 30 seconds.
+        travel 29.seconds
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        expect(calls).to eq(2)
+        travel 2.seconds
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        expect(calls).to eq(3)
+
+        travel 23.hours
+        expect(described_class.verify(signed(private_key, "kid-a"))).to be_nil
+      end
+    end
+
+    it "does not cache a failed first fetch beyond the failure window" do
+      allow(described_class).to receive(:fetch_jwks_from_clerk).and_return(nil, published)
+      freeze_time do
+        expect(described_class.verify(signed(private_key, "kid-a"))).to be_nil
+        expect(described_class.verify(signed(private_key, "kid-a"))).to be_nil
+        expect(described_class).to have_received(:fetch_jwks_from_clerk).once
+        travel 31.seconds
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+      end
+    end
+
+    it "fetches once when concurrent requests find the cache empty" do
+      calls = Concurrent::AtomicFixnum.new
+      allow(described_class).to receive(:fetch_jwks_from_clerk) do
+        calls.increment
+        sleep 0.05
+        published
+      end
+      results = Array.new(5) { Thread.new { described_class.verify(signed(private_key, "kid-a")) } }.map(&:value)
+      expect(results).to all(verified)
+      expect(calls.value).to eq(1)
+    end
+
+    it "keeps verifying with the stale key set while another thread refreshes it" do
+      release = Queue.new
+      fetching = Queue.new
+      calls = Concurrent::AtomicFixnum.new
+      allow(described_class).to receive(:fetch_jwks_from_clerk) do
+        if calls.increment == 1
+          published
+        else
+          fetching << true
+          release.pop
+          published
+        end
+      end
+      freeze_time do
+        expect(described_class.verify(signed(private_key, "kid-a"))).to verified
+        travel 1.hour + 1.second
+
+        refresher = Thread.new { described_class.verify(signed(private_key, "kid-a")) }
+        fetching.pop
+        # The refresh is in flight and holds no lock: this request isn't blocked.
+        expect(Timeout.timeout(2) { described_class.verify(signed(private_key, "kid-a")) }).to verified
+        release << true
+        expect(refresher.value).to verified
+        expect(calls.value).to eq(2)
+      end
+    end
+
+    it "stops waiting on a stalled refresh when it has no keys to fall back on" do
+      stub_const("#{described_class}::JWKS_REFRESH_WAIT", 0.1)
+      release = Queue.new
+      fetching = Queue.new
+      allow(described_class).to receive(:fetch_jwks_from_clerk) do
+        fetching << true
+        release.pop
+        published
+      end
+      refresher = Thread.new { described_class.verify(signed(private_key, "kid-a")) }
+      fetching.pop
+
+      expect(Timeout.timeout(2) { described_class.verify(signed(private_key, "kid-a")) }).to be_nil
+      release << true
+      expect(refresher.value).to verified
+      expect(described_class).to have_received(:fetch_jwks_from_clerk).once
+    end
+  end
 end

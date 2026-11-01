@@ -17,6 +17,9 @@ default: &default
   fee_change_activation_sweep:
     class: ActivateFeeChangeJob
     schedule: every minute
+  complete_past_events:
+    class: CompletePastEventsJob
+    schedule: every hour
   marketplace_retention:
     class: PurgeMarketplaceAnalyticsJob
     schedule: every day at 00:00 UTC
@@ -32,6 +35,9 @@ default: &default
   refund_reconciliation:
     class: RefundReconciliationJob
     schedule: every day at 02:00 UTC
+  operational_alerts:
+    class: OperationalAlertJob
+    schedule: every 5 minutes
 
 production:
   <<: *default

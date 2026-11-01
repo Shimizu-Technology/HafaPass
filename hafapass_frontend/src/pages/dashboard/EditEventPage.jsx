@@ -98,6 +98,7 @@ function EditEventSession({ id, identity }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
   const [showPostponeConfirm, setShowPostponeConfirm] = useState(false)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [lifecycleReason, setLifecycleReason] = useState('')
   const [dangerLoading, setDangerLoading] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -246,6 +247,13 @@ function EditEventSession({ id, identity }) {
       .map(field => [field, form[field] || null]),
   )
   const scheduleChanged = Object.keys(scheduleChanges).length > 0
+  // Ticket holders are told about schedule and venue edits to a live event.
+  // Only a new start time offers them a refund.
+  const venueChanged = Boolean(event) && ['venue_name', 'venue_address', 'venue_city']
+    .some(field => form[field].trim() !== (event[field] || '').trim())
+  const buyerVisibleChange = (scheduleChanged || venueChanged) && ['published', 'postponed'].includes(event?.status)
+  const changeReasonLabel = scheduleChanged && venueChanged ? 'Reason for schedule and venue change'
+    : scheduleChanged ? 'Reason for schedule change' : 'Reason for venue change'
 
   const validate = () => {
     const errors = {}
@@ -272,8 +280,8 @@ function EditEventSession({ id, identity }) {
           errors.max_capacity = 'Max capacity must be a positive integer'
         }
       }
-      if (scheduleChanged && ['published', 'postponed'].includes(event?.status) && !changeReason.trim()) {
-        errors.change_reason = 'Explain the schedule change for ticket holders'
+      if (buyerVisibleChange && !changeReason.trim()) {
+        errors.change_reason = scheduleChanged ? 'Explain the schedule change for ticket holders' : 'Explain the venue change for ticket holders'
       }
     }
     setFormErrors(errors)
@@ -315,7 +323,7 @@ function EditEventSession({ id, identity }) {
         const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url', 'page_customization']
         Object.keys(payload).forEach(key => { if (!presentationFields.includes(key)) delete payload[key] })
       }
-      if (canManage && scheduleChanged) payload.change_reason = changeReason.trim() || undefined
+      if (canManage && (scheduleChanged || venueChanged)) payload.change_reason = changeReason.trim() || undefined
       const res = await apiClient.put(`/organizer/events/${id}`, payload, request.config)
       if (!request.current()) return
       eventSaveGeneration.current += 1
@@ -385,6 +393,7 @@ function EditEventSession({ id, identity }) {
       setEvent(current => ({ ...current, ...res.data }))
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
+      setShowArchiveConfirm(false)
       setLifecycleReason('')
       setSuccessMessage(success)
     } catch (err) {
@@ -392,6 +401,7 @@ function EditEventSession({ id, identity }) {
       setSubmitError(err.response?.data?.error || `Failed to ${action} event`)
       setShowCompleteConfirm(false)
       setShowPostponeConfirm(false)
+      setShowArchiveConfirm(false)
     } finally {
       request.release()
       if (request.current()) setDangerLoading(false)
@@ -584,6 +594,20 @@ function EditEventSession({ id, identity }) {
         />
       )}
 
+      {showArchiveConfirm && (
+        <ConfirmModal
+          title="Archive this event?"
+          message={event.status === 'draft'
+            ? 'The draft leaves your active events and keeps its history. Archived events cannot be edited or published.'
+            : 'Archived events cannot be finalized or paid out. HåfaPass archives a sold event only after its latest statement is finalized, matches every sale, refund and payout, and nothing more is owed to you. If money is still owed, finalize the statement and request the payout first.'}
+          confirmLabel="Yes, archive"
+          confirmClass="bg-neutral-700 hover:bg-neutral-800"
+          onConfirm={() => handleLifecycle('archive', 'Event archived.')}
+          onCancel={() => setShowArchiveConfirm(false)}
+          loading={dangerLoading}
+        />
+      )}
+
       {successMessage && (
         <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{successMessage}{privatePreviewPublished && <p className="mt-2"><Link to={`/dashboard/events/${id}`} className="inline-flex min-h-11 items-center font-semibold underline">Open Overview to copy or share your preview link</Link></p>}</div>
       )}
@@ -722,10 +746,12 @@ function EditEventSession({ id, identity }) {
               <input id="doors_open_at" aria-invalid={Boolean(formErrors.doors_open_at)} aria-describedby={formErrors.doors_open_at ? 'doors_open_at-error' : undefined} type="datetime-local" value={form.doors_open_at} onChange={(e) => updateField('doors_open_at', e.target.value)} className={`input ${formErrors.doors_open_at ? 'input-error' : ''}`} disabled={submitting} />
               {formErrors.doors_open_at && <p id="doors_open_at-error" className="mt-1 text-sm text-red-600">{formErrors.doors_open_at}</p>}
             </div>
-            {scheduleChanged && ['published', 'postponed'].includes(event?.status) && (
+            {buyerVisibleChange && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <label htmlFor="change_reason" className="block text-sm font-semibold text-amber-950">Reason for schedule change <span className="text-red-500">*</span></label>
-                <p className="mb-2 mt-1 text-xs text-amber-800">Ticket holders will see this explanation and can keep their tickets or request a refund.</p>
+                <label htmlFor="change_reason" className="block text-sm font-semibold text-amber-950">{changeReasonLabel} <span className="text-red-500">*</span></label>
+                <p className="mb-2 mt-1 text-xs text-amber-800">{'starts_at' in scheduleChanges
+                  ? 'Ticket holders will see this explanation and can keep their tickets or request a refund.'
+                  : 'Ticket holders will see this explanation in an email about the change.'}</p>
                 <textarea id="change_reason" aria-invalid={Boolean(formErrors.change_reason)} aria-describedby={formErrors.change_reason ? 'change_reason-error' : undefined} rows="3" value={changeReason} onChange={(e) => { setChangeReason(e.target.value); setFormErrors(prev => ({ ...prev, change_reason: null })) }} className={`input ${formErrors.change_reason ? 'input-error' : ''}`} placeholder="Explain what changed and why" disabled={submitting} />
                 {formErrors.change_reason && <p id="change_reason-error" className="mt-1 text-sm text-red-600">{formErrors.change_reason}</p>}
               </div>
@@ -956,7 +982,7 @@ function EditEventSession({ id, identity }) {
                   <p className="text-sm font-medium text-neutral-900">Archive event</p>
                   <p className="text-xs text-neutral-500">Keep its record while removing it from active work.</p>
                 </div>
-                <button onClick={() => handleLifecycle('archive', 'Event archived.')} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">
+                <button onClick={() => setShowArchiveConfirm(true)} className="px-3 py-1.5 text-sm font-medium text-neutral-700 border border-neutral-300 rounded-lg hover:bg-neutral-100 transition-colors flex items-center gap-1.5">
                   <Archive className="w-4 h-4" /> Archive
                 </button>
               </div>

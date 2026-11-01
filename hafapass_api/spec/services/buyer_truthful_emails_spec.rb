@@ -30,7 +30,8 @@ RSpec.describe "Buyer email states", :webmock do
     expect(links.length).to eq(2)
     expect(links.map(&:to_s).uniq.length).to eq(1)
     expect(links.first.path).to eq("/orders/#{order.id}/confirmation")
-    token = Rack::Utils.parse_query(links.first.query).fetch("guest_token")
+    expect(links.first.query).to be_nil
+    token = Rack::Utils.parse_query(links.first.fragment).fetch("guest_token")
     expect(GuestOrderAccess.find(token)).to eq(order)
     expect(html).not_to include("My Tickets", "/my-tickets", "/tickets/")
   end

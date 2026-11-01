@@ -70,9 +70,29 @@ RSpec.describe AuditLog do
     expect(incoming).to be_empty
   end
 
-  it "includes the trigger in schema dumps for fresh databases" do
+  it "blocks TRUNCATE unless the transaction opts in, and the opt-in ends with it" do
+    row = entry
+    connection = described_class.connection
+    expect { isolated_statement { connection.execute("TRUNCATE audit_logs, audit_write_failures") } }
+      .to raise_error(ActiveRecord::StatementInvalid, /cannot be truncated/)
+    expect { isolated_statement { connection.execute("TRUNCATE audit_logs CASCADE") } }
+      .to raise_error(ActiveRecord::StatementInvalid, /cannot be truncated/)
+    expect(described_class.exists?(row.id)).to be(true)
+
+    isolated_statement do
+      connection.execute("SET LOCAL hafapass.audit_truncate = 'on'")
+      connection.execute("TRUNCATE audit_logs")
+      expect(described_class.count).to eq(0)
+      raise ActiveRecord::Rollback
+    end
+    expect(described_class.exists?(row.id)).to be(true)
+    expect(connection.select_value("SELECT current_setting('hafapass.audit_truncate', true)")).not_to eq("on")
+  end
+
+  it "includes the triggers in schema dumps for fresh databases" do
     output = StringIO.new
     ActiveRecord::SchemaDumper.dump(described_class.connection_pool, output)
-    expect(output.string).to include("CREATE TRIGGER audit_logs_append_only", "hafapass_protect_audit_log")
+    expect(output.string).to include("CREATE TRIGGER audit_logs_append_only", "hafapass_protect_audit_log",
+      "CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE", "hafapass_protect_audit_log_truncate")
   end
 end

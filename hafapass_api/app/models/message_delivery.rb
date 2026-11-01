@@ -76,6 +76,22 @@ class MessageDelivery < ApplicationRecord
   }
 
   PROVIDER_REPLAY_WINDOW = 23.hours
+  # A replay already queued this recently is still in flight; a repeated bulk
+  # re-send skips it instead of queueing it twice.
+  REPLAY_COOLDOWN = 15.minutes
+
+  scope :provider_accepted, -> { where.not("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'") }
+  # SQL form of retryable?: failed, never accepted by the provider, and not past
+  # the replay window when the provider outcome is unknown.
+  scope :retryable, ->(now = Time.current) {
+    failed.where("provider_id IS NULL OR provider_id ~ '^[[:space:]]*$'").where.not(<<~SQL.squish, cutoff: now - PROVIDER_REPLAY_WINDOW)
+      (provider_outcome_unknown OR (provider = 'resend' AND provider_attempted_at IS NULL AND attempts > 0))
+        AND COALESCE(provider_attempted_at, created_at) <= :cutoff
+    SQL
+  }
+  scope :not_recently_replayed, ->(now = Time.current) {
+    where("replay_requested_at IS NULL OR replay_requested_at <= ?", now - REPLAY_COOLDOWN)
+  }
 
   before_validation :assign_idempotency_key, on: :create
 
@@ -107,7 +123,34 @@ class MessageDelivery < ApplicationRecord
   end
 
   def suppressed_recipient?
-    history = self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase)
+    blocked, complained = self.class.recipient_block_history(
+      self.class.where("LOWER(recipient) = ?", recipient.to_s.strip.downcase)
+    )
+    blocked = blocked.or(complained) if promotional?
+    blocked.where.not(id: id).exists?
+  end
+
+  # Batched suppressed_recipient? for a set of loaded deliveries: two queries
+  # however many rows there are. Returns the ids whose recipient is blocked.
+  def self.suppressed_recipient_ids(deliveries)
+    keys = deliveries.map { |delivery| delivery.recipient.to_s.strip.downcase }.uniq
+    return Set.new if keys.empty?
+
+    blocked, complained = recipient_block_history(where("LOWER(recipient) IN (?)", keys))
+    group = ->(scope) { scope.pluck(Arel.sql("LOWER(recipient)"), :id).group_by(&:first).transform_values { |rows| rows.map(&:last) } }
+    blocker_ids = group.call(blocked)
+    complaint_ids = group.call(complained)
+    deliveries.each_with_object(Set.new) do |delivery, suppressed|
+      key = delivery.recipient.to_s.strip.downcase
+      ids = blocker_ids.fetch(key, [])
+      ids += complaint_ids.fetch(key, []) if delivery.promotional?
+      suppressed << delivery.id if ids.any? { |other_id| other_id != delivery.id }
+    end
+  end
+
+  # Rows in +history+ that suppress a recipient: [blocks every message, blocks
+  # promotional messages only (complaints)].
+  def self.recipient_block_history(history)
     # Local cancellation/propagated suppression is not provider evidence.
     transient_bounces = MessageProviderEvent.where(event_type: "email.bounced")
       .where("message_provider_events.message_delivery_id = message_deliveries.id")
@@ -126,9 +169,7 @@ class MessageDelivery < ApplicationRecord
     hard_bounces = history.where(status: :bounced).where.not(id: transient_bounces)
     provider_suppressions = history.where(status: :suppressed).where.not(provider_id: [nil, ""])
       .or(history.where("metadata ->> 'provider_address_invalid' = 'true'"))
-    blocked = hard_bounces.or(provider_suppressions)
-    blocked = blocked.or(history.where(status: :complained)) if promotional?
-    blocked.where.not(id: id).exists?
+    [hard_bounces.or(provider_suppressions), history.where(status: :complained)]
   end
 
   private

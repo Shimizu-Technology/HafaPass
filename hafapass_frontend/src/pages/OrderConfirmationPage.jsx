@@ -13,7 +13,7 @@ import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
-import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
+import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
 
@@ -93,14 +93,20 @@ function OrderConfirmationContent() {
   }, [])
 
   useEffect(() => {
+    // Email links carry the guest token in the fragment (#guest_token=…), which
+    // never reaches servers or logs. Older emails used the query string.
     const params = new URLSearchParams(location.search)
-    const token = params.get('guest_token')
+    const fragment = new URLSearchParams(location.hash.replace(/^#/, ''))
+    const fragmentToken = fragment.get('guest_token')
+    const token = fragmentToken || params.get('guest_token')
     if (token) saveOrderAccess(id, token)
     const privateParams = ['guest_token', 'payment_intent_client_secret', 'payment_intent', 'redirect_status']
-    if (!privateParams.some(key => params.has(key))) return
+    if (!privateParams.some(key => params.has(key)) && fragmentToken === null) return
     privateParams.forEach(key => params.delete(key))
-    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true })
-  }, [id, location.pathname, location.search, navigate])
+    fragment.delete('guest_token')
+    const hash = fragmentToken === null ? location.hash : (fragment.toString() ? `#${fragment}` : '')
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '', hash }, { replace: true })
+  }, [id, location.pathname, location.search, location.hash, navigate])
 
   const fetchOrder = useCallback(async ({ preserveOrder = false } = {}) => {
     const generation = lifecycle.current.generation
@@ -242,18 +248,30 @@ function OrderConfirmationContent() {
             : usableTickets
               ? t('buyerAccount.orderConfirmationPage.yourTicketsAreReadyYouCanRequestA')
               : t('buyerAccount.orderConfirmationPage.youCanViewYourOrderAndTicketStatuses')
-  const currentChangeTypes = event?.status === 'cancelled' ? ['cancelled']
-    : event?.status === 'postponed' ? ['postponed', 'rescheduled']
-      : ['published', 'rescheduled'].includes(event?.status) ? ['rescheduled'] : []
-  const change = currentChangeTypes.includes(order?.latest_event_change?.change_type)
-    ? order.latest_event_change : null
+  // A cancelled event shows only its cancellation. A live or postponed event
+  // shows its latest change, and the API's refund_eligible and
+  // response_available decide the choices. Once a postponed event resumes,
+  // its postponement matters only while it still offers (or has) a refund.
+  const latestChange = order?.latest_event_change
+  const resumedPostponement = latestChange?.change_type === 'postponed' && event?.status !== 'postponed'
+  const change = latestChange && (event?.status === 'cancelled'
+    ? latestChange.change_type === 'cancelled'
+    : ['published', 'postponed', 'rescheduled'].includes(event?.status) && latestChange.change_type !== 'cancelled' &&
+      (!resumedPostponement || latestChange.refund_eligible === true || latestChange.response === 'refund_requested'))
+    ? latestChange : null
   const refundNeedsRetry = change?.response === 'refund_requested' && order?.tickets?.some(ticket => (
     ticket.status === 'issued' && ticket.refundable_cents >= 0
   ))
   const eventRefundAttempt = change ? getBuyerRefundAttempt(id, `event:${change.id}`) : null
-  const canRespondToChange = change && (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt)) &&
-    ['cancelled', 'postponed', 'rescheduled'].includes(change.change_type) &&
-    (event?.status !== 'cancelled' || change.change_type === 'cancelled')
+  // The API decides who may refund: orders placed before a postponement or a
+  // new start time, until the event starts. Orders placed after a change see
+  // it without a choice to make.
+  const changeRefundOffered = change?.refund_eligible === true
+  const canRespondToChange = change && change.response_available !== false &&
+    (!change.response || refundNeedsRetry || refundNeedsStatusCheck(eventRefundAttempt))
+  const showChangeRefund = canRespondToChange && (changeRefundOffered || refundNeedsStatusCheck(eventRefundAttempt))
+  const showKeepTickets = canRespondToChange && !change.response && change.change_type !== 'cancelled'
+  const ticketRefundOpen = event?.status === 'cancelled' || (event?.status === 'postponed' && changeRefundOffered)
   const cancelledRefund = event?.status === 'cancelled' ? (order?.cancellation_refund || (order?.status === 'refunded'
     ? { status: 'refunded', amount_cents: order.refunded_cents, payment_method: order.payment_method } : null)) : null
   const showCancelledRefundStatus = cancelledRefund && ['refunded', 'processing', 'not_started', 'needs_cash_return', 'needs_card_return', 'needs_attention', 'awaiting_dispute', 'resolved'].includes(cancelledRefund.status)
@@ -461,12 +479,14 @@ function OrderConfirmationContent() {
                 awaiting_dispute: 'buyerAccount.orderConfirmationPage.cancelledRefundAwaitingDispute',
                 resolved: 'buyerAccount.orderConfirmationPage.cancelledPaymentResolved',
               }[cancelledRefund.status] || 'buyerAccount.orderConfirmationPage.cancelledRefundProcessing')}</p>}
-            {canRespondToChange && (!showCancelledRefundStatus || refundNeedsStatusCheck(eventRefundAttempt)) && (
+            {showChangeRefund && !change.response && change.refund_deadline_at && <p className="mt-3 text-sm text-amber-950">{t('buyerAccount.orderConfirmationPage.changeRefundDeadline', { date: formatEventDateTime(change.refund_deadline_at, event.timezone) })}</p>}
+            {showKeepTickets && !showChangeRefund && <p className="mt-3 text-sm text-amber-950">{t('buyerAccount.orderConfirmationPage.changeRefundNotOffered')}</p>}
+            {(showKeepTickets || showChangeRefund) && (!showCancelledRefundStatus || refundNeedsStatusCheck(eventRefundAttempt)) && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                {!change.response && change.change_type !== 'cancelled' && (
+                {showKeepTickets && (
                   <button className="btn-secondary" disabled={decisionBusy} onClick={() => respondToChange('accepted')}>{t('buyerAccount.orderConfirmationPage.keepMyTickets')}</button>
                 )}
-                <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? t('buyerAccount.orderConfirmationPage.retryRefund') : t('buyerAccount.orderConfirmationPage.requestRefund'))}</button>
+                {showChangeRefund && <button className="rounded-xl border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700" disabled={decisionBusy || eventRefundAttempt?.status === 'succeeded'} onClick={() => respondToChange('refund_requested')}>{refundButton(eventRefundAttempt, refundNeedsRetry ? t('buyerAccount.orderConfirmationPage.retryRefund') : t('buyerAccount.orderConfirmationPage.requestRefund'))}</button>}
               </div>
             )}
             {eventRefundAttempt && <p role="status" className="mt-3 text-sm text-amber-950">{refundNotice(eventRefundAttempt)}</p>}
@@ -519,7 +539,7 @@ function OrderConfirmationContent() {
                     {ticket.status === 'issued' && (
                       <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.refreshing') : t('buyerAccount.orderConfirmationPage.refreshQR')}</button>
                     )}
-                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ['cancelled', 'postponed'].includes(event.status)) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
+                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ticketRefundOpen) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
                       <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}</button>
                     )}
                     {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && transfersOpen && (

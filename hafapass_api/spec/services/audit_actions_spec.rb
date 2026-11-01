@@ -151,7 +151,7 @@ RSpec.describe AuditActions do
       "models/ticket_transfer.rb" => [AuditActionSourceInventory.string_tree('"ticket_transfer.#{status}"')],
       "models/catalog_fulfillment.rb" => [AuditActionSourceInventory.string_tree('"catalog_fulfillment.#{status}"')],
       "services/commerce/refund_creator.rb" => [AuditActionSourceInventory.string_tree('"refund.#{action}"'),
-        AuditActionSourceInventory.string_tree('"order.#{full_refund ? \'refunded\' : \'partially_refunded\'}"')],
+        AuditActionSourceInventory.string_tree('"order.#{order_refunded ? \'refunded\' : \'partially_refunded\'}"')],
       "services/stripe_webhook_processor.rb" => [AuditActionSourceInventory.string_tree('"refund.#{action}"'),
         AuditActionSourceInventory.string_tree('"dispute.#{status}"')],
       "services/commerce/order_lifecycle.rb" => [AuditActionSourceInventory.string_tree('"order.#{expired ? \'expired\' : \'cancelled\'}"')]

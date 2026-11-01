@@ -31,10 +31,21 @@ class SystemReadiness
     private
 
     def database_check
-      ActiveRecord::Base.connection.select_value("SELECT 1")
-      { ready: true, status: "connected" }
+      connection = ActiveRecord::Base.connection
+      connection.select_value("SELECT 1")
+      { ready: true, status: "connected" }.merge(database_settings(connection))
     rescue StandardError => e
       failure("unavailable", e)
+    end
+
+    # Informational, never required: the Neon role defaults are set outside the
+    # app (docs/OPERATIONS_RUNBOOK.md), and "0" means no limit.
+    def database_settings(connection)
+      { statement_timeout: connection.select_value("SHOW statement_timeout"),
+        idle_in_transaction_session_timeout: connection.select_value("SHOW idle_in_transaction_session_timeout"),
+        server_major_version: connection.database_version / 10_000 }
+    rescue StandardError
+      {}
     end
 
     def job_queue_check

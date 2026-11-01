@@ -193,4 +193,22 @@ describe('AdminEventsPage', () => {
     expect(await screen.findByText('Sales resumed for Reef Fest.')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume sales for Reef Fest' })).not.toBeInTheDocument())
   })
+
+  it('unarchives an archived event with a required reason', async () => {
+    const archived = { ...proofEvent, id: 9, title: 'Closing Night', status: 'archived' }
+    apiClient.get.mockResolvedValueOnce({ data: { events: [archived], meta: { page: 1, total_pages: 1 } } })
+      .mockResolvedValue({ data: { events: [{ ...archived, status: 'completed' }], meta: { page: 1, total_pages: 1 } } })
+    apiClient.post.mockResolvedValue({ data: { ...archived, status: 'completed' } })
+    render(<MemoryRouter initialEntries={['/admin/events']}><AdminEventsPage /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Unarchive Closing Night' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Restore Closing Night?' }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Restore event' }))
+    expect(dialog.getByRole('alert')).toHaveTextContent('Add a reason')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    fireEvent.change(dialog.getByRole('textbox', { name: /Reason/ }), { target: { value: 'Statement was never finalized' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Restore event' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/events/9/unarchive', { reason: 'Statement was never finalized' }, expect.anything()))
+    expect(await screen.findByText('Closing Night restored to completed.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Unarchive Closing Night' })).not.toBeInTheDocument())
+  })
 })

@@ -199,6 +199,9 @@ function EventAnalyticsPageSession({ id, identity }) {
   ? Math.round((stats.tickets_checked_in / stats.total_tickets_sold) * 100)
   : 0
  const latestSettlement = finance?.settlements?.[0]
+ // Ended but still published: finalizing waits for completion (automatic
+ // about 6 hours after the end, or Mark completed on the edit page).
+ const awaitingCompletion = event?.status === 'published' && Boolean(event?.ends_at) && new Date(event.ends_at) <= new Date()
  const currency = (finance?.preview?.currency || 'usd').toUpperCase()
  const exportName = event?.slug || `event-${id}`
  const statementValue = statementChoice || (latestSettlement ? String(latestSettlement.id) : 'current')
@@ -296,6 +299,10 @@ function EventAnalyticsPageSession({ id, identity }) {
 
      {finance.preview.negative_balance_cents > 0 && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">A {formatCents(finance.preview.negative_balance_cents)} negative balance will be withheld from future organization payouts.</div>}
      {payoutNotice && <p role="status" className="mt-4 rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700">{payoutNotice}</p>}
+     {awaitingCompletion && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="mark-completed-prompt">
+      <p className="font-semibold">Mark completed to finalize</p>
+      <p className="mt-1">This event has ended. Its statement can be finalized once it is marked completed. HåfaPass does this about 6 hours after the end time{permissions.manage_events === true ? <>, or you can <Link to={`/dashboard/events/${id}/edit`} className="font-semibold underline underline-offset-2">mark it completed now under Event actions</Link></> : ''}.</p>
+     </div>}
 
      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-5">
       {permissions.manage_finance === true && ['completed', 'cancelled'].includes(event?.status) && <button disabled={financeBusy} onClick={finalizeSettlement} className="rounded-xl border border-brand-200 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">{financeBusy ? 'Working…' : latestSettlement ? 'Finalize current version' : 'Finalize statement'}</button>}

@@ -23,8 +23,8 @@ const categories = {
   },
   open_reconciliation_exceptions: {
     label: 'Open reconciliation exceptions',
-    guidance: 'All open reconciliation exceptions, including those outside buyer refunds. The refund queue covers refund work only. Give the local record number to the finance owner for other exceptions; preserve evidence before any repair.',
-    link: '/admin/refund_reconciliation', linkLabel: 'Open refund issues (refund exceptions only)',
+    guidance: 'All open reconciliation exceptions, including those outside buyer refunds. Any open exception linked to an order holds every payout for that organization. Review, refund or resolve each one with a note in Reconciliation; preserve evidence before any repair.',
+    link: '/admin/reconciliation_exceptions', linkLabel: 'Review and resolve in Reconciliation',
   },
   unknown_card_present_results: {
     label: 'Unknown in-person card results',

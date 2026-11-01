@@ -16,8 +16,16 @@ class EventLifecycle
     resume: { from: %w[postponed], to: "published" },
     cancel: { from: %w[published postponed], to: "cancelled" },
     complete: { from: %w[published], to: "completed" },
-    archive: { from: %w[draft cancelled completed], to: "archived" }
+    archive: { from: %w[draft cancelled completed], to: "archived" },
+    # Admin-only (Api::V1::Admin::EventsController#unarchive): returns an event
+    # to the status it was archived from, so a missing statement can be finalized.
+    unarchive: { from: %w[archived], to: :previous }
   }.freeze
+
+  # Payouts that still reserve or may move money for the event.
+  OPEN_PAYOUT_STATUSES = %i[pending processing held].freeze
+  # Matches the admin unarchive dialog's field limit.
+  UNARCHIVE_REASON_LIMIT = 1000
 
   def self.call(...)
     new(...).call
@@ -53,15 +61,16 @@ class EventLifecycle
         end
 
         from_status = event.status
+        to_status = transition[:to] == :previous ? status_before_archive : transition[:to]
         before_data = event_snapshot
-        attributes = { status: transition[:to] }
+        attributes = { status: to_status }
         attributes[:published_at] = at if action == :publish && event.published_at.blank?
         event.update!(attributes)
         event.event_state_changes.create!(
           actor_user: actor,
           action: action,
           from_status: from_status,
-          to_status: transition[:to],
+          to_status: to_status,
           reason: reason,
           occurred_at: at
         )
@@ -90,13 +99,63 @@ class EventLifecycle
       end
     end
 
-    if %i[postpone cancel].include?(action) && reason.blank?
+    if %i[postpone cancel unarchive].include?(action) && reason.blank?
       raise TransitionError, "A reason is required to #{action} this event"
+    end
+    if action == :unarchive && reason.length > UNARCHIVE_REASON_LIMIT
+      raise TransitionError, "Keep the reason under #{UNARCHIVE_REASON_LIMIT} characters"
     end
 
     if action == :complete && (event.ends_at.blank? || event.ends_at > at)
       raise TransitionError, "An event cannot be completed before it ends"
     end
+
+    if action == :archive && !event.draft? && (problem = archive_blocker)
+      raise TransitionError, problem
+    end
+  end
+
+  # Archived events cannot be finalized (Settlements::Finalizer accepts only
+  # completed or cancelled events), so archiving early would strand the
+  # organizer's money. A sold event may be archived only when its latest
+  # finalized statement still matches the ledger and nothing is left to pay,
+  # and no money is still moving (the same checks the Finalizer applies).
+  def archive_blocker
+    if (in_flight = Settlements::Finalizer.open_money_blocker(event))
+      return "#{in_flight} before archiving this event. Archived events cannot be finalized or paid out."
+    end
+
+    settlement = event.settlements.status_finalized.order(version: :desc).first
+    unless settlement
+      return "Finalize this event's statement before archiving it. Archived events cannot be finalized or paid out."
+    end
+
+    preview = Settlements::Calculator.call(event).attributes
+    if settlement.source_digest != preview[:source_digest]
+      return "Activity changed after statement version #{settlement.version}, including any payout. " \
+        "Finalize a new version before archiving."
+    end
+    if event.payouts.where(status: OPEN_PAYOUT_STATUSES).exists?
+      return "A payout for this event is still in progress or on hold. Archive it after the payout is resolved."
+    end
+    remaining = preview[:payable_cents] - preview[:paid_cents]
+    if remaining.positive?
+      return "#{format('$%<dollars>d.%<cents>02d', dollars: remaining / 100, cents: remaining % 100)} is still payable for this event. Pay it out and finalize a new version before archiving."
+    end
+    if preview[:reserve_cents].positive?
+      return "A reserve is still held for this event. Release or settle it and finalize a new version before archiving."
+    end
+
+    nil
+  end
+
+  def status_before_archive
+    previous = event.event_state_changes.where(action: "archive").order(:occurred_at, :id).last&.from_status
+    unless TRANSITIONS.fetch(:archive)[:from].include?(previous)
+      raise TransitionError, "This event's status before archiving is not recorded"
+    end
+
+    previous
   end
 
   def record_buyer_change!(before_data)

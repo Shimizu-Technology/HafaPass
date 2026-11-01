@@ -123,4 +123,35 @@ RSpec.describe "Initial single-service deployment contract" do
       "STRIPE_WEBHOOK_SECRET", "STRIPE_LIVE_SECRET_KEY", "STRIPE_LIVE_PUBLISHABLE_KEY", "STRIPE_LIVE_PLATFORM_ACCOUNT_ID",
       "STRIPE_LIVE_WEBHOOK_SECRET", "DATABASE_MIGRATION_URL")
   end
+
+  it "matches the live service: its release branch and every secret it needs, none hardcoded" do
+    service = YAML.safe_load(Rails.root.join("../render.yaml").read).fetch("services").sole
+    expect(service).to include("branch" => "hafapass-staging", "autoDeployTrigger" => "off",
+      "preDeployCommand" => "bin/release-migrate")
+    env = service.fetch("envVars").reject { |entry| entry.key?("fromGroup") }
+    expect(env).to all(include("sync" => false))
+    expect(env.none? { |entry| entry.key?("value") }).to be(true)
+    expect(env.pluck("key")).to include(*EncryptionConfiguration.keys(environment: "test", env: {}).keys
+      .map { |suffix| "ACTIVE_RECORD_ENCRYPTION_#{suffix.upcase}" })
+    expect(env.pluck("key")).to include("MAILER_REPLY_TO", "HAFAPASS_LAUNCH_CAPABILITIES", "READINESS_TOKEN",
+      *PlatformCapabilities::DEFINITIONS.fetch("apple_wallet").fetch(:required_env) - %w[PUBLIC_API_URL PROVIDER_CONFIGURATION_REVISION],
+      "APPLE_PASS_CERTIFICATE_PASSWORD")
+    expect(env.pluck("key")).to eq(env.pluck("key").uniq)
+  end
+end
+
+RSpec.describe "API container image contract" do
+  let(:dockerfile) { Rails.root.join("Dockerfile").read }
+  let(:runtime_stage) { dockerfile.split(/^FROM /).last }
+
+  it "builds from one Ruby base and runs the Render command as an unprivileged user" do
+    expect(dockerfile.scan(/^FROM ruby:/).size).to eq(1)
+    expect(dockerfile).to match(/^FROM ruby:#{Regexp.escape(Rails.root.join(".ruby-version").read.strip)}-slim AS base$/)
+    service = YAML.safe_load(Rails.root.join("../render.yaml").read).fetch("services").sole
+    expect(JSON.parse(runtime_stage[/^CMD (.+)$/, 1]).join(" ")).to eq(service.fetch("dockerCommand"))
+    expect(runtime_stage).to match(/^USER 1000:1000$/)
+    expect(runtime_stage).not_to match(/build-essential|libpq-dev/)
+    expect(runtime_stage).to include("mkdir -p tmp/pids tmp/cache log storage", "chown -R rails:rails tmp log storage")
+    expect(Rails.root.join("bin/release-migrate")).to be_executable
+  end
 end

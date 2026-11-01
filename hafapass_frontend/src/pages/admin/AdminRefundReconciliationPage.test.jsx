@@ -64,6 +64,21 @@ describe('AdminRefundReconciliationPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Stripe status checked')
   })
 
+  it('refunds a late card capture as a known buyer balance, not a provider verification', async () => {
+    respond([{ ...item, type: 'exception', id: 31, status: 'late_capture', amount_cents: 2725,
+      reason: 'Card payment arrived after the ticket hold was released', next_action: "Refund the buyer's late card payment" }])
+    const user = userEvent.setup()
+    mount()
+    expect(await screen.findByText('Paid after the hold was released')).toBeInTheDocument()
+    expect(screen.getByText('$27.25')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Check Stripe status' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Refund buyer' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText(/No tickets were issued for this order/)).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Refund buyer' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/admin/refund_reconciliation/exception/31/retry', {}, expect.anything()))
+  })
+
   it('requires manual return evidence and sends the reference, date and note', async () => {
     const user = userEvent.setup()
     respond([{ ...item, type: 'cancellation', id: 21, status: 'needs_manual', manual_type: 'cash' }])

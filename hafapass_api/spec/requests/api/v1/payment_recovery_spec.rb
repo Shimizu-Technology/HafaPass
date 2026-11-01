@@ -101,7 +101,10 @@ RSpec.describe "Buyer payment recovery", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).not_to have_key("client_secret")
     expect(@order.reload).to be_expired
-    expect(intents).not_to have_received(:retrieve)
+    # Expiry asks Stripe once whether the payment already succeeded; it had
+    # not, so the intent is cancelled and no secret is returned.
+    expect(intents).to have_received(:retrieve).once
+    expect(intents).to have_received(:cancel).once
   end
 
   it "rejects an incorrect amount rather than returning a secret" do

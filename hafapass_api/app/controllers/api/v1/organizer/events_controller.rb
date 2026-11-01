@@ -113,14 +113,14 @@ module Api
               attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
             end
             attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
-            reschedule = reschedule?(attributes)
+            change_type = buyer_visible_change(attributes)
             change_reason = params[:change_reason].to_s.strip.presence
-            if reschedule && change_reason.blank?
-              return render json: { error: "A reason is required when changing the schedule of a published or postponed event" },
+            if change_type && change_reason.blank?
+              return render json: { error: "A reason is required when changing the schedule or venue of a published or postponed event" },
                 status: :unprocessable_entity
             end
 
-            before_data = event_change_snapshot(@event) if reschedule
+            before_data = event_change_snapshot(@event) if change_type
             previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
             updated = @event.update(attributes)
             if updated && previous_design && previous_design != @event.page_customization
@@ -128,10 +128,10 @@ module Api
                 before_data: { page_customization: previous_design },
                 after_data: { page_customization: @event.page_customization }, request: request)
             end
-            if updated && reschedule
+            if updated && change_type
               event_change = @event.event_changes.create!(
                 actor_user: current_user,
-                change_type: "rescheduled",
+                change_type: change_type,
                 reason: change_reason,
                 before_data: before_data,
                 after_data: event_change_snapshot(@event),
@@ -468,12 +468,36 @@ module Api
           raise ActionController::BadRequest, e.message
         end
 
-        def reschedule?(attributes)
-          return false unless @event.published? || @event.postponed?
+        # Buyers hear about schedule and venue edits to a published or
+        # postponed event. A schedule edit (which may also move the venue) is
+        # "rescheduled"; a venue-only edit is "venue_changed".
+        def buyer_visible_change(attributes)
+          return unless @event.published? || @event.postponed?
+          return "rescheduled" if schedule_change?(attributes)
 
+          "venue_changed" if venue_change?(attributes)
+        end
+
+        def schedule_change?(attributes)
           %w[starts_at ends_at doors_open_at].any? do |attribute|
             attributes.key?(attribute) && @event.public_send(attribute) != attributes[attribute]
           end
+        end
+
+        # Compare what buyers see. Choosing a saved venue copies its details
+        # (Event#copy_venue_details), so a venue ID alone is not a change.
+        def venue_change?(attributes)
+          return false unless (attributes.keys & %w[venue_id venue_name venue_address venue_city]).any?
+
+          venue = Venue.find_by(id: attributes["venue_id"]) if attributes["venue_id"].present? &&
+            attributes["venue_id"].to_s != @event.venue_id.to_s
+          proposed = if venue
+            [venue.name, venue.address, venue.village]
+          else
+            %w[venue_name venue_address venue_city].map { |key| attributes.fetch(key, @event.public_send(key)) }
+          end
+          current = [@event.venue_name, @event.venue_address, @event.venue_city]
+          proposed.map { |value| value.to_s.strip } != current.map { |value| value.to_s.strip }
         end
 
         def event_change_snapshot(event)
@@ -484,7 +508,8 @@ module Api
             ends_at: event.ends_at&.iso8601,
             doors_open_at: event.doors_open_at&.iso8601,
             venue_name: event.venue_name,
-            venue_address: event.venue_address
+            venue_address: event.venue_address,
+            venue_city: event.venue_city
           }
         end
 

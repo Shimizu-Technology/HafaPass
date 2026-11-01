@@ -30,9 +30,25 @@ emails:
       context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
     view_ticket:
       context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
+  event_cancelled:
+    holder_body:
+      context: Sent to someone who received a transferred ticket. Refunds always return to the original buyer's payment method, never to the ticket holder.
+  event_change:
+    refund_until:
+      context: "%{deadline} is a date and time in the event's time zone. Refunds after an event change are offered only before this deadline."
+    no_refund:
+      context: Shown when this change has no self-serve refund. Do not imply that a refund will be given.
+    postponed_note:
+      context: The ticket remains usable for the event's new date once the organizer sets it.
+    organizer_reason:
+      context: "%{reason} is the organizer's own explanation, inserted as written."
   refund:
     returned:
       context: "%{amount} is a US dollar amount such as $25.00."
+    late_capture_subject:
+      context: "%{amount} is a US dollar amount such as $25.00. Sent when a card payment finished after the buyer's ticket hold expired, so HåfaPass refunded it automatically."
+    late_capture_body:
+      context: "%{amount} is a US dollar amount such as $25.00. A ticket hold keeps tickets reserved for a few minutes while the buyer pays; no tickets were issued."
     subject:
       context: 'HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings. ''Event'' means a public event or happening, never a sports tournament, match or competition.'
     body:

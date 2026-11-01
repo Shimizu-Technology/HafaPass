@@ -36,6 +36,60 @@ RSpec.describe "Privacy requests and holds", type: :request do
     expect(PrivacyRequest.last.verified?).to be(false)
   end
 
+  it "answers a guest promptly with a retryable error when the code email times out" do
+    guest = create(:order)
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now).and_raise(Net::ReadTimeout)
+    post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+      guest_token: GuestOrderAccess.issue!(guest) }
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.headers["Retry-After"]).to eq("60")
+    expect(response.parsed_body).to include("retryable" => true, "error" => /couldn't send your code/)
+  end
+
+  it "keeps no request, delivery or audit row from a timed-out code email, so a retry starts clean" do
+    guest = create(:order)
+    token = GuestOrderAccess.issue!(guest)
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now).and_call_original
+    allow(EmailService).to receive(:configured?).and_return(true)
+    allow(Resend::Emails).to receive(:send).and_raise(Net::ReadTimeout)
+
+    expect do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id, guest_token: token }
+    end.not_to change { [PrivacyRequest.count, MessageDelivery.count, AuditLog.count] }
+    expect(response).to have_http_status(:service_unavailable)
+
+    allow(Resend::Emails).to receive(:send).and_return({ id: "re_privacy_retry" })
+    expect do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id, guest_token: token }
+    end.to change(PrivacyRequest, :count).by(1)
+    expect(response).to have_http_status(:created)
+    request_row = PrivacyRequest.find(response.parsed_body["id"])
+    expect(AuditLog.where(action: "privacy_request.submitted", auditable: request_row)).to exist
+    expect(MessageDelivery.find_by!(privacy_request: request_row)).to have_attributes(status: "sent", provider_id: "re_privacy_retry")
+  end
+
+  it "caps a trickling provider response at a total deadline and keeps no rows" do
+    guest = create(:order)
+    stub_const("EmailService::GUEST_CHALLENGE_SEND_DEADLINE", 0.3)
+    allow(EmailService).to receive(:send_guest_privacy_challenge_now).and_call_original
+    allow(EmailService).to receive(:configured?).and_return(true)
+    # Each chunk arrives well inside a per-read timeout, but the exchange never finishes.
+    allow(Resend::Emails).to receive(:send) do
+      200.times { sleep 0.02 }
+      { id: "re_too_late" }
+    end
+
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    expect do
+      post "/api/v1/guest_privacy_requests", params: { kind: "access", order_id: guest.id,
+        guest_token: GuestOrderAccess.issue!(guest) }
+    end.not_to change { [PrivacyRequest.count, MessageDelivery.count, AuditLog.count] }
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 2
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.headers["Retry-After"]).to eq("60")
+    expect(response.parsed_body).to include("retryable" => true)
+  end
+
   it "requires admin verification before execution and audits the purge setting" do
     privacy_request = PrivacyRequest.create!(kind: "access", user: buyer, requester_email: buyer.email)
     post "/api/v1/admin/privacy_requests/#{privacy_request.id}/execute", headers: auth_headers(admin)

@@ -8,6 +8,11 @@ class StripeService
   class BudgetExceeded < PaymentError; end
   class AmbiguousRefund < PaymentError; end
   REFUND_LOOKUP_PAGE_LIMIT = 3
+  # A confirmed key -> platform account match is reused for this long, per
+  # process. Mismatches and failures are never cached.
+  PLATFORM_ACCOUNT_CACHE_TTL = 10.minutes
+  @platform_account_matches = {}
+  @platform_account_mutex = Mutex.new
 
   class CallBudget
     attr_reader :calls, :limit
@@ -185,6 +190,10 @@ class StripeService
       StripeCredentials.platform_account_id(environment)
     end
 
+    def clear_platform_account_cache!
+      @platform_account_mutex.synchronize { @platform_account_matches.clear }
+    end
+
     # Confirms the mode's secret key belongs to the mode's platform account
     # before an administrator switches payment mode. Raises PaymentError.
     def verify_platform_credentials!(environment)
@@ -277,13 +286,35 @@ class StripeService
         raise PaymentError, "Payment platform account context is missing; finance review is required"
       end
       client = Stripe::StripeClient.new(key)
-      call_budget&.charge!
-      actual_platform = client.v1.accounts.retrieve_current.id
-      unless actual_platform == expected_platform
-        raise PaymentError, "Stripe credentials belong to a different platform account; finance review is required"
+      unless platform_account_confirmed?(key, environment, expected_platform)
+        call_budget&.charge!
+        actual_platform = client.v1.accounts.retrieve_current.id
+        unless actual_platform == expected_platform
+          raise PaymentError, "Stripe credentials belong to a different platform account; finance review is required"
+        end
+        remember_platform_account!(key, environment, actual_platform)
       end
       options = payment&.provider_account_id.present? ? { stripe_account: payment.provider_account_id } : {}
       [client, options]
+    end
+
+    # The cache key is a digest of the secret, never the secret itself.
+    def platform_account_cache_key(key, environment)
+      [Digest::SHA256.hexdigest(key), environment]
+    end
+
+    def platform_account_confirmed?(key, environment, expected_platform)
+      @platform_account_mutex.synchronize do
+        entry = @platform_account_matches[platform_account_cache_key(key, environment)]
+        entry.present? && entry[:account_id] == expected_platform && entry[:expires_at] > Time.current
+      end
+    end
+
+    def remember_platform_account!(key, environment, account_id)
+      @platform_account_mutex.synchronize do
+        @platform_account_matches[platform_account_cache_key(key, environment)] =
+          { account_id: account_id, expires_at: PLATFORM_ACCOUNT_CACHE_TTL.from_now }
+      end
     end
 
     # Returns the API key for per-request Stripe calls (thread-safe).

@@ -32,8 +32,8 @@ RSpec.describe "Request throttles", type: :request do
     expect(response).to have_http_status(:too_many_requests)
   end
 
-  it "starts with fresh counters and enforces the ten-order IP limit across different buyers" do
-    10.times do |index|
+  it "starts with fresh counters and enforces the 30-order IP limit across different buyers" do
+    30.times do |index|
       checkout("buyer#{index}@example.invalid")
       expect(response).to have_http_status(:created)
     end

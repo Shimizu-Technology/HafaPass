@@ -16,6 +16,49 @@ RSpec.describe ExpireInventoryHoldsJob do
     end.not_to change { [order.reload.status, hold.reload.status] }
   end
 
+  describe "with a slow payment provider" do
+    let(:event) { create(:event, :published, starts_at: 5.days.from_now) }
+    let(:ticket_type) { create(:ticket_type, event: event, price_cents: 2500, quantity_available: 10) }
+
+    before do
+      SiteSetting.instance.update!(payment_mode: "test")
+      allow(StripeService).to receive_messages(payment_enabled?: true, card_only_intent?: true)
+      allow(StripeService).to receive(:create_payment_intent) do
+        OpenStruct.new(id: "pi_slow_#{SecureRandom.hex(4)}", client_secret: "secret")
+      end
+      allow(StripeService).to receive(:cancel_payment_intent).and_return(OpenStruct.new(status: "canceled"))
+      # Every status check hangs past the (shortened) provider timeout.
+      allow(StripeService).to receive(:retrieve_payment_intent) { sleep 2 }
+      stub_const("Commerce::OrderLifecycle::PROVIDER_CHECK_TIMEOUT", 0.2.seconds)
+      allow(Rails.logger).to receive(:warn).and_call_original
+    end
+
+    def lapsed_order(index)
+      order = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }],
+        buyer_email: "slow-#{index}@example.com", buyer_name: "Slow Buyer").order
+      order.update_columns(expires_at: 1.minute.ago)
+      order.inventory_holds.update_all(expires_at: 1.minute.ago)
+      order
+    end
+
+    it "times out each status check, stops at the run budget and leaves the rest for the next run" do
+      orders = 3.times.map { |index| lapsed_order(index) }
+
+      described_class.perform_now(Time.current, budget: 0.3.seconds)
+
+      expect(orders.first.reload).to be_expired
+      expect(orders.last.reload).to be_pending
+      expect(Rails.logger).to have_received(:warn).with(a_string_including('"event":"order_expiry_payment_check_failed"')).at_least(:once)
+      expect(Rails.logger).to have_received(:warn).with(a_string_including('"event":"order_expiry_budget_exhausted"'))
+      # A deferred order's lapsed holds no longer reserve inventory.
+      expect(ticket_type.reload.available_quantity).to eq(10)
+
+      described_class.perform_now(Time.current)
+      expect(orders.map { |order| order.reload.status }).to all(eq("expired"))
+      expect(StripeService).to have_received(:cancel_payment_intent).exactly(3).times
+    end
+  end
+
   it "reports one failed transfer expiry and still expires later invitations exactly once" do
     event = create(:event, :published)
     ticket = create(:ticket, event: event, order: create(:order, event: event),

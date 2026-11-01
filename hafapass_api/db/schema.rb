@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -485,6 +485,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     t.bigint "order_id", null: false
     t.datetime "responded_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "requested_ticket_ids", default: [], null: false, array: true
     t.index ["event_change_id", "order_id"], name: "idx_event_change_responses_unique", unique: true
     t.index ["event_change_id"], name: "index_event_change_responses_on_event_change_id"
     t.index ["order_id"], name: "index_event_change_responses_on_order_id"
@@ -651,7 +652,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
 
   create_table "event_state_changes", force: :cascade do |t|
     t.string "action", null: false
-    t.bigint "actor_user_id", null: false
+    t.bigint "actor_user_id"
     t.datetime "created_at", null: false
     t.bigint "event_id", null: false
     t.string "from_status", null: false
@@ -1194,6 +1195,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     t.bigint "privacy_request_id"
     t.datetime "retention_anonymized_at"
     t.datetime "reconciled_at"
+    t.datetime "replay_requested_at"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
@@ -1317,10 +1319,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     t.string "locale", default: "en", null: false
     t.boolean "marketing_opt_in", default: false, null: false
     t.datetime "retention_anonymized_at"
+    t.string "checkout_ip_digest"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
+    t.index ["event_id", "checkout_ip_digest"], name: "index_orders_on_event_id_and_checkout_ip_digest", where: "(checkout_ip_digest IS NOT NULL)"
     t.index ["event_id"], name: "index_orders_on_event_id"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
@@ -1940,6 +1944,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id"
     t.datetime "retention_anonymized_at"
+    t.index "((details ->> 'warning_id'::text))", name: "index_reconciliation_exceptions_on_early_fraud_warning_id", unique: true, where: "(((code)::text = 'early_fraud_warning'::text) AND (details ? 'warning_id'::text))"
     t.index ["order_id"], name: "index_reconciliation_exceptions_on_order_id"
     t.index ["payment_id"], name: "index_reconciliation_exceptions_on_payment_id"
     t.index ["retention_anonymized_at"], name: "index_reconciliation_exceptions_on_retention_anonymized_at"
@@ -2058,6 +2063,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     t.index ["order_id"], name: "index_registration_responses_on_order_id"
     t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
     t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
+  end
+
+  create_table "runtime_alert_states", primary_key: "signal", id: :string, force: :cascade do |t|
+    t.integer "last_count", default: 0, null: false
+    t.datetime "last_alerted_at"
+    t.datetime "updated_at", null: false
   end
 
   create_table "runtime_executions", id: false, force: :cascade do |t|
@@ -3111,6 +3122,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_310000) do
     DROP TRIGGER IF EXISTS audit_logs_append_only ON audit_logs;
     CREATE TRIGGER audit_logs_append_only BEFORE UPDATE OR DELETE ON audit_logs
       FOR EACH ROW EXECUTE FUNCTION hafapass_protect_audit_log();
+    CREATE OR REPLACE FUNCTION hafapass_protect_audit_log_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.audit_truncate', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Audit logs cannot be truncated' USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
   SQL
 
 end

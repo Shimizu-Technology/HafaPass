@@ -89,7 +89,7 @@ module Api
           end
         end
 
-        event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_visible)
+        event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
         render json: show_json(event)
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found

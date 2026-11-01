@@ -16,7 +16,7 @@ jobs:
     env:
       RELEASE_FREEZE: ${{ vars.RELEASE_FREEZE }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Enforce candidate freeze
         run: ruby scripts/check_release_freeze.rb
 
@@ -43,8 +43,8 @@ jobs:
       RAILS_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hafapass_api_test
     steps:
-      - uses: actions/checkout@v7
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: "3.3.13"
           bundler-cache: true
@@ -67,8 +67,8 @@ jobs:
     name: Backend / Quality and security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
         with:
           ruby-version: "3.3.13"
           bundler-cache: true
@@ -83,6 +83,127 @@ jobs:
         working-directory: hafapass_api
         run: bundle exec bundler-audit check --update
 
+  # Builds the production API image the way Render does (render.yaml: rootDir
+  # hafapass_api, dockerfilePath ./Dockerfile, dockerContext .), then runs the
+  # pre-deploy migration, the web server and a runner as the image's non-root
+  # uid 1000 against a throwaway database. Advisory: not a required check.
+  # Every secret below is a dummy that only satisfies production boot checks.
+  backend-docker-smoke:
+    name: Backend / Docker image smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hafapass_docker_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      IMAGE: hafapass-api:smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Detect API or workflow changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] || \
+             ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" HEAD -- hafapass_api .github/workflows/ci.yml; then
+            echo "No changes under hafapass_api/; skipping the image smoke test."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build the production image
+        if: steps.changes.outputs.run == 'true'
+        working-directory: hafapass_api
+        run: docker build --file ./Dockerfile --tag "$IMAGE" .
+      - name: Write the dummy production environment
+        if: steps.changes.outputs.run == 'true'
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          # Fail-fast production checks: config/runtime_configuration.rb,
+          # config/release_migration_configuration.rb,
+          # config/encryption_configuration.rb, PublicSiteUrl and
+          # LaunchCapabilities. RENDER_GIT_COMMIT stands in for the value Render
+          # supplies; runtime bookkeeping rejects a missing revision.
+          cat > "$RUNNER_TEMP/smoke.env" <<EOF
+          RAILS_ENV=production
+          SECRET_KEY_BASE=ci-smoke-dummy-secret-key-base-0000000000000000000000000000000000000000000000000000000000000000
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/hafapass_docker_smoke
+          DATABASE_MIGRATION_URL=postgres://postgres:postgres@localhost:5432/hafapass_docker_smoke
+          PUBLIC_API_URL=https://api.smoke.invalid
+          FRONTEND_URL=https://app.smoke.invalid
+          PUBLIC_WEB_URL=https://app.smoke.invalid
+          ALLOWED_ORIGINS=https://app.smoke.invalid
+          ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=ci-smoke-dummy-primary-key-not-a-secret
+          ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=ci-smoke-dummy-deterministic-key-not-a-secret
+          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=ci-smoke-dummy-key-derivation-salt
+          MAILER_FROM_EMAIL=no-reply@smoke.invalid
+          HAFAPASS_RUNTIME=embedded
+          HAFAPASS_LAUNCH_SCOPE=general_admission
+          HAFAPASS_PROVIDER_REHEARSAL=false
+          ENABLE_FIRST_USER_ADMIN_BOOTSTRAP=false
+          RAILS_MAX_THREADS=3
+          SIDEKIQ_CONCURRENCY=3
+          DB_POOL=10
+          PORT=10000
+          RENDER_GIT_COMMIT=$REVISION
+          EOF
+      - name: Application code is read-only to uid 1000; runtime directories are writable
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          docker run --rm --user 1000:1000 "$IMAGE" sh -c \
+            'test "$(id -u)" = 1000 && test ! -w /app/app && test ! -w /app/Gemfile.lock && test -w /app/tmp && test -w /app/log'
+      - name: Run the pre-deploy migration as uid 1000
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          docker run --rm --network host --user 1000:1000 --env-file "$RUNNER_TEMP/smoke.env" "$IMAGE" bin/release-migrate
+      - name: Boot the web server as uid 1000 and wait for /up
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          docker run --detach --name hafapass-smoke --network host --user 1000:1000 \
+            --env-file "$RUNNER_TEMP/smoke.env" "$IMAGE"
+          for attempt in $(seq 1 60); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/up)" = 200 ]; then
+              echo "/up returned 200 after ${attempt} attempt(s)"
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' hafapass-smoke)" != true ]; then
+              echo "The web container exited"; docker logs hafapass-smoke; exit 1
+            fi
+            if [ "$attempt" = 60 ]; then
+              echo "/up never returned 200"; docker logs hafapass-smoke; exit 1
+            fi
+            sleep 2
+          done
+          # An application route through production Host authorization and the
+          # HTTPS check, as Render's proxy presents it.
+          curl --fail --silent --show-error -H "Host: api.smoke.invalid" -H "X-Forwarded-Proto: https" \
+            http://127.0.0.1:10000/api/v1/health | grep -q "\"revision\":\"${GITHUB_SHA}\""
+      - name: Resolve the Guam time zone as uid 1000
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          docker run --rm --network host --user 1000:1000 --env-file "$RUNNER_TEMP/smoke.env" "$IMAGE" \
+            bin/rails runner 'p ActiveSupport::TimeZone["Pacific/Guam"].now' | tee "$RUNNER_TEMP/guam.txt"
+          grep -q "ChST +10:00" "$RUNNER_TEMP/guam.txt"
+      - name: Web server log
+        if: always() && steps.changes.outputs.run == 'true'
+        run: docker logs hafapass-smoke 2>&1 | tail -n 200 || true
+
   frontend-quality:
     name: Frontend / Test, build, and security
     runs-on: ubuntu-latest
@@ -90,8 +211,8 @@ jobs:
       run:
         working-directory: hafapass_frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: npm
@@ -113,8 +234,8 @@ jobs:
       run:
         working-directory: hafapass_frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: npm
@@ -140,7 +261,7 @@ jobs:
     name: Repository / Secret and debug hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Check tracked application files

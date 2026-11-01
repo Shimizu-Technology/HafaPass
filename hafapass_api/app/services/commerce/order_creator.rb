@@ -9,6 +9,24 @@ module Commerce
     PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
     PAID_SALES_OPEN_SOON = "Paid ticket sales open soon"
+    PROMO_CODE_REQUIRED = "Re-enter your promo code and try again"
+    # Stripe's smallest USD card charge. A promo that leaves 1–49¢ cannot be paid.
+    MINIMUM_CHARGE_CENTS = 50
+    MINIMUM_CHARGE_MESSAGE = "Card payments must be at least $0.50. Remove the promo code or add tickets."
+    ACTIVE_CHECKOUT_EXISTS = "You already have a checkout in progress for this event. Finish or cancel it, " \
+      "or try again in 10 minutes."
+    NETWORK_HOLD_LIMIT = "Too many tickets are being held from your network right now. Try again in a few minutes."
+    NETWORK_FREE_LIMIT = "Your network has reached the free ticket limit for this event. " \
+      "Contact the organizer if you need more tickets."
+    # Guam carrier NAT and venue Wi-Fi put many buyers behind one address, so
+    # the per-network caps start loose (held) or off (free) and log every
+    # denial for tuning. See docs/OPERATIONS_RUNBOOK.md.
+    DEFAULT_MAX_HELD_TICKETS_PER_IP = 60
+    DEFAULT_MAX_FREE_TICKETS_PER_IP = 0
+    FREE_TICKET_WINDOW = 1.hour
+    CAP_ALERT_INTERVAL = 10.minutes
+    @cap_alerts = {}
+    @cap_alert_mutex = Mutex.new
     class CheckoutError < StandardError; end
     class PriceChanged < CheckoutError; end
     class RefreshRequired < PriceChanged; end
@@ -20,14 +38,29 @@ module Commerce
       new(**).call
     end
 
-    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil,
+    def self.cap_alert_due?(key, now: Time.current)
+      @cap_alert_mutex.synchronize do
+        last = @cap_alerts[key]
+        next false if last && last > now - CAP_ALERT_INTERVAL
+
+        @cap_alerts.delete_if { |_entry, at| at <= now - CAP_ALERT_INTERVAL } if @cap_alerts.size > 500
+        @cap_alerts[key] = now
+        true
+      end
+    end
+
+    def self.reset_cap_alerts!
+      @cap_alert_mutex.synchronize { @cap_alerts.clear }
+    end
+
+    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil, promo_code: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
       attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
       checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
-      locale: AppLocale::DEFAULT)
+      checkout_ip_digest: nil, enforce_buyer_limits: false, locale: AppLocale::DEFAULT)
       @event = event
       @line_items = line_items
       @buyer_email = buyer_email
@@ -36,6 +69,9 @@ module Commerce
       @marketing_opt_in = marketing_opt_in
       @user = user
       @promo_code_id = promo_code_id
+      # The code the buyer typed is the only selector. A promo ID never picks a
+      # code on its own, so guessing another code's ID cannot apply its discount.
+      @promo_code_input = promo_code
       @payment_required = payment_required
       @service_fee = service_fee
       @complimentary = complimentary
@@ -59,6 +95,10 @@ module Commerce
       @checkout_lease_token = checkout_lease_token
       @expected_total_cents = expected_total_cents
       @client_quote_required = client_quote_required
+      # Public buyer checkout only (one live checkout per buyer, per-network
+      # caps, blank max_per_order = 10): staff, guest-list and cash sales are trusted.
+      @checkout_ip_digest = checkout_ip_digest
+      @enforce_buyer_limits = enforce_buyer_limits
       @cash_sale_key = cash_sale_key
       @cash_sale_request_digest = cash_sale_request_digest
       # The buyer's language for receipts and ticket emails; staff-created orders stay English.
@@ -125,7 +165,12 @@ module Commerce
         requires_payment = totals[:total_cents].positive? &&
           (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
         validate_production_payment!(totals, requires_payment)
+        # Stripe's minimum only; cash and card-present terminals have none.
+        if requires_payment && stripe_payment? && totals[:total_cents] < MINIMUM_CHARGE_CENTS
+          raise CheckoutError, MINIMUM_CHARGE_MESSAGE
+        end
         validate_live_money_proof_scope!(totals)
+        enforce_buyer_checkout_limits!(selections, totals) if @enforce_buyer_limits
         expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
 
         order = Order.create!(
@@ -148,6 +193,7 @@ module Commerce
           checkout_key_digest: @checkout_key_digest,
           checkout_request_digest: @checkout_request_digest,
           checkout_recovery_expires_at: @checkout_key_digest ? 30.minutes.from_now : nil,
+          checkout_ip_digest: @checkout_ip_digest,
           cash_sale_key: @cash_sale_key,
           cash_sale_request_digest: @cash_sale_request_digest,
           buyer_terms_version: buyer_terms_version,
@@ -262,6 +308,16 @@ module Commerce
       end
     end
 
+    def stripe_payment?
+      payment_provider.blank? || payment_provider == "stripe"
+    end
+
+    # A blank limit means 10 for public checkout. Staff sales (box office,
+    # guest list, cash) keep a blank limit as unlimited.
+    def max_per_order_for(ticket_type)
+      ticket_type.max_per_order || (@enforce_buyer_limits ? TicketType::DEFAULT_MAX_PER_ORDER : nil)
+    end
+
     def validate_production_payment!(totals, requires_payment)
       return unless Rails.env.production? && totals[:total_cents].positive?
       return if !requires_payment && source == "box_office" && payment_method == "door_cash"
@@ -269,7 +325,7 @@ module Commerce
       unless requires_payment
         raise CheckoutError, "A recorded payment is required for paid tickets"
       end
-      stripe = payment_provider.blank? || payment_provider == "stripe"
+      stripe = stripe_payment?
       if stripe && SiteSetting.instance.simulate_mode?
         raise CheckoutError, "Paid tickets are not on sale yet: HåfaPass has not turned on payments"
       end
@@ -291,7 +347,7 @@ module Commerce
       unless live_money_proof_authorization&.event_id == event.id
         raise CheckoutError, "An approved live-money proof authorization is required"
       end
-      unless user&.admin? && promo_code_id.blank? && catalog_items.empty? && referral_code.blank? &&
+      unless user&.admin? && promo_code_id.blank? && @promo_code_input.blank? && catalog_items.empty? && referral_code.blank? &&
           waitlist_offer_token.blank? && seat_hold_token.blank? && totals[:total_cents].between?(1, live_money_proof_authorization.max_amount_cents)
         raise CheckoutError, "The live-money proof order exceeds its approved buyer, item, or amount scope"
       end
@@ -381,8 +437,9 @@ module Commerce
         if quantity > available
           raise CheckoutError, "Only #{available} tickets available for #{ticket_type.name}"
         end
-        if ticket_type.max_per_order && quantity > ticket_type.max_per_order
-          raise CheckoutError, "Maximum #{ticket_type.max_per_order} tickets per order for #{ticket_type.name}"
+        max_per_order = max_per_order_for(ticket_type)
+        if max_per_order && quantity > max_per_order
+          raise CheckoutError, "Maximum #{max_per_order} tickets per order for #{ticket_type.name}"
         end
         enforce_door_allocation!(ticket_type, quantity, reserved_seat_quantity: reserved_seat_quantity) if source == "box_office"
         enforce_buyer_limit!(ticket_type, quantity)
@@ -506,6 +563,60 @@ module Commerce
       raise CheckoutError, "Purchase limit is #{ticket_type.max_per_buyer} tickets per buyer for #{ticket_type.name}"
     end
 
+    # Runs under the event lock taken above, so concurrent checkouts for one
+    # event cannot both pass. Same-key recovery returns before reaching here.
+    def enforce_buyer_checkout_limits!(selections, totals)
+      live = event.orders.pending.where("orders.expires_at > ?", Time.current)
+      same_buyer = live.where("LOWER(BTRIM(orders.buyer_email)) = ?", buyer_email.to_s.strip.downcase)
+      same_buyer = same_buyer.or(live.where(user_id: user.id)) if user
+      raise CheckoutError, ACTIVE_CHECKOUT_EXISTS if same_buyer.exists?
+      return if @checkout_ip_digest.blank?
+
+      requested = selections.sum { |selection| selection[:quantity] }
+      held_cap = per_ip_cap("HAFAPASS_MAX_HELD_TICKETS_PER_IP", DEFAULT_MAX_HELD_TICKETS_PER_IP)
+      if held_cap
+        # Live holds only: an expired or released hold no longer counts.
+        held = InventoryHold.current.joins(:order)
+          .where(event_id: event.id, orders: { checkout_ip_digest: @checkout_ip_digest }).sum(:quantity)
+        if held + requested > held_cap
+          report_cap_denial!("held_tickets_per_ip", cap: held_cap, counted: held, requested: requested)
+          raise CheckoutError, NETWORK_HOLD_LIMIT
+        end
+      end
+      free_cap = per_ip_cap("HAFAPASS_MAX_FREE_TICKETS_PER_IP", DEFAULT_MAX_FREE_TICKETS_PER_IP)
+      return unless free_cap && totals[:total_cents].zero?
+
+      issued = Ticket.joins(:order).where(event_id: event.id, status: [:issued, :checked_in])
+        .where("tickets.created_at > ?", FREE_TICKET_WINDOW.ago)
+        .where(orders: { checkout_ip_digest: @checkout_ip_digest, total_cents: 0 }).count
+      return unless issued + requested > free_cap
+
+      report_cap_denial!("free_tickets_per_ip", cap: free_cap, counted: issued, requested: requested)
+      raise CheckoutError, NETWORK_FREE_LIMIT
+    end
+
+    # A positive integer sets the cap; 0 turns it off. Anything else keeps the default.
+    def per_ip_cap(name, default)
+      value = Integer(ENV.fetch(name, default.to_s), exception: false)
+      value = default if value.nil? || value.negative?
+
+      value.positive? ? value : nil
+    end
+
+    # Every denial is logged; Sentry hears about each cap and event at most
+    # once per CAP_ALERT_INTERVAL per process, so a busy venue cannot flood it.
+    def report_cap_denial!(cap_name, cap:, counted:, requested:)
+      details = { event: "checkout_network_cap_denied", cap: cap_name, limit: cap, counted: counted,
+        requested: requested, event_id: event.id, network_digest_prefix: @checkout_ip_digest.to_s.first(12) }
+      Rails.logger.warn(details.to_json)
+      return unless self.class.cap_alert_due?([cap_name, event.id])
+
+      Sentry.capture_message("Checkout network cap denied a buyer", level: :warning,
+        fingerprint: ["checkout-network-cap", cap_name], extra: details.except(:event))
+    rescue StandardError => e
+      Rails.logger.error({ event: "checkout_network_cap_report_failed", error_class: e.class.name }.to_json)
+    end
+
     def enforce_pricing_tier_capacity!(tier, requested_quantity, offer: nil, reserved_seat_quantity: 0)
       reserved_offer_quantity = offer&.pricing_tier_id == tier.id ? offer.quantity : 0
       remaining = [tier.quantity_limit - tier.quantity_sold - tier.inventory_holds.current.sum(:quantity) -
@@ -583,9 +694,12 @@ module Commerce
     end
 
     def locked_promo_code(subtotal_cents)
-      return if promo_code_id.blank?
+      return if promo_code_id.blank? && @promo_code_input.blank?
+      raise CheckoutError, PROMO_CODE_REQUIRED unless @promo_code_input.is_a?(String) && @promo_code_input.strip.present?
 
-      promo = event.promo_codes.lock.find_by(id: promo_code_id)
+      # Same normalization as PromoCode#normalize_code and the validate endpoint.
+      promo = event.promo_codes.lock.find_by(code: @promo_code_input.strip.upcase)
+      promo = nil if promo && promo_code_id.present? && promo.id.to_s != promo_code_id.to_s
       unless promo&.usable? && (!promo.max_uses || promo.reserved_and_finalized_uses < promo.max_uses) &&
           promo.calculate_discount(subtotal_cents).positive?
         raise CheckoutError, "Promo code is no longer available"

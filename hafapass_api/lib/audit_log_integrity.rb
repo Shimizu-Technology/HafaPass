@@ -3,7 +3,7 @@
 # Kept in the schema dump as executable DDL so db:schema:load/test:prepare has
 # the same protection as a migrated production database.
 module AuditLogIntegrity
-  SQL = <<~SQL.freeze
+  APPEND_ONLY_SQL = <<~SQL.freeze
     CREATE OR REPLACE FUNCTION hafapass_protect_audit_log() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
@@ -25,6 +25,24 @@ module AuditLogIntegrity
     CREATE TRIGGER audit_logs_append_only BEFORE UPDATE OR DELETE ON audit_logs
       FOR EACH ROW EXECUTE FUNCTION hafapass_protect_audit_log();
   SQL
+
+  # Row triggers never see TRUNCATE. Only the confirmed synthetic-data purge
+  # may empty the table, and it opts in with SET LOCAL inside its transaction.
+  TRUNCATE_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_protect_audit_log_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.audit_truncate', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Audit logs cannot be truncated' USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
+  SQL
+
+  SQL = (APPEND_ONLY_SQL + TRUNCATE_SQL).freeze
 
   module SchemaDump
     private

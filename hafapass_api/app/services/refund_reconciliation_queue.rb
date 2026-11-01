@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 class RefundReconciliationQueue
-  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open provider_review].freeze
+  STATUSES = %w[pending failed cancelled needs_manual waiting_on_pending_refund waiting_on_dispute request_unexecuted dispute_open provider_review
+    late_capture].freeze
   PAGE_SIZE = 50
 
   def self.call(**options)
@@ -124,6 +125,21 @@ class RefundReconciliationQueue
       rows << row(issue, "exception", "provider_review", 0,
         "External Stripe refund needs verification", nil).merge(provider_verification_amounts(issue))
     end
+    # A card payment that succeeded after its order was released is owed back
+    # in full. LateCaptureRefundJob normally repays it within minutes; a row
+    # here means the automatic refund has not finished yet.
+    late_captures = ReconciliationException.open.where(order_id: ids, code: Commerce::LateCaptureRefund::CODES).order(:id)
+      .includes(includes, payment: :refunds).to_a
+    late_captures.select! { |issue| live_payment_ids.include?(issue.payment_id) } if live_payment_ids
+    late_captures.uniq(&:payment_id).each do |issue|
+      next unless issue.payment
+
+      returned = issue.payment.refunds.select { |refund| refund.pending? || refund.succeeded? }.sum(&:amount_cents)
+      owed = [issue.payment.amount_cents - returned, 0].max
+      next if owed.zero?
+
+      rows << row(issue, "exception", "late_capture", owed, "Card payment arrived after the ticket hold was released", nil)
+    end
     unverified_order_ids = issues.map(&:order_id).to_set
     rows.each do |entry|
       entry[:buyer_amount_unverified] = unverified_order_ids.include?(entry[:order_id])
@@ -171,6 +187,7 @@ class RefundReconciliationQueue
     when "waiting_on_dispute", "dispute_open" then "Review the dispute outcome"
     when "provider_review" then "Check Stripe status to retrieve and verify the refund operations"
     when "request_unexecuted" then "Review and issue the buyer refund"
+    when "late_capture" then "Refund the buyer's late card payment"
     else "Review the refund"
     end
     organizer_already_paid = event.cancelled? && @paid_event_ids.include?(event.id)

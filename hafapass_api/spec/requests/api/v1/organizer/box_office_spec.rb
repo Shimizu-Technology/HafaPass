@@ -174,6 +174,33 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
     end
 
+    it "sells more than 10 at the door when the ticket type has no per-order limit" do
+      ticket_type.update!(max_per_order: nil)
+      post "/api/v1/organizer/events/#{event.id}/box_office",
+        params: valid_params.merge(line_items: [{ ticket_type_id: ticket_type.id, quantity: 12 }]), headers: headers
+
+      expect(response).to have_http_status(:created), response.body
+      expect(response.parsed_body["tickets"].length).to eq(12)
+    end
+
+    it "applies no Stripe minimum to small cash and card-present door sales" do
+      # Organizer-absorbed fees and a legacy 25 cent price (now refused for new prices).
+      event.update!(fee_policy: :organizer_absorbs, buyer_fee_percent: 0)
+      ticket_type.update_column(:price_cents, 25)
+      allow(StripeService).to receive(:payment_enabled?).and_return(true)
+      one = valid_params.merge(line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }])
+
+      post "/api/v1/organizer/events/#{event.id}/box_office", params: one, headers: headers
+      expect(response).to have_http_status(:created), response.body
+      expect(response.parsed_body).to include("total_cents" => 25, "status" => "completed")
+
+      create(:card_present_account, :verified, organization: event.organization)
+      post "/api/v1/organizer/events/#{event.id}/box_office", params: one.merge(payment_method: "door_card"),
+        headers: headers.merge("Idempotency-Key" => "door-card-small")
+      expect(response).to have_http_status(:created), response.body
+      expect(response.parsed_body).to include("total_cents" => 25, "status" => "completed")
+    end
+
     it "requires a verified Guam account and idempotency key for card sales" do
       card_params = valid_params.merge(payment_method: "door_card")
 

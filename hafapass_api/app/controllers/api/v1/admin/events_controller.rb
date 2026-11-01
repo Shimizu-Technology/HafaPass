@@ -77,6 +77,18 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
     end
   end
 
+  # POST /api/v1/admin/events/:id/unarchive
+  # Body: reason (required). Returns an archived event to the status it was
+  # archived from (draft, completed or cancelled) so its statement can be
+  # finalized again. Audited as event.unarchived through EventLifecycle.
+  def unarchive
+    event = Event.find(params[:id])
+    EventLifecycle.call(event: event, action: :unarchive, actor: @current_user, reason: params[:reason])
+    render json: event_json(event.reload)
+  rescue EventLifecycle::TransitionError => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
   # POST /api/v1/admin/events/:id/retranslate
   def retranslate
     event = Event.find(params[:id])

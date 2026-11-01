@@ -34,6 +34,7 @@ function StatementBadge({ row }) {
   const version = row.settlement?.version
   if (row.settlement_state === 'finalized') return <Badge tone="good" icon={CheckCircle2}>Finalized v{version}</Badge>
   if (row.settlement_state === 'changed') return <Badge tone="warning" icon={AlertTriangle}>Changed since v{version}</Badge>
+  if (row.awaiting_completion) return <Badge tone="warning" icon={Clock}>Mark completed to finalize</Badge>
   return <Badge>Not finalized</Badge>
 }
 
@@ -267,7 +268,8 @@ function FinancesSession({ identity }) {
           <section aria-labelledby="explain-heading" className="min-w-0 rounded-2xl border border-neutral-200 bg-neutral-50 p-5 sm:p-6">
             <h2 id="explain-heading" className="text-lg font-semibold text-neutral-900">What the statuses mean</h2>
             <dl className="mt-3 space-y-3 text-sm text-neutral-700">
-              <div><dt className="font-semibold text-neutral-900">Not finalized</dt><dd>Sales are still being counted. After the event ends, an owner or finance member finalizes its statement.</dd></div>
+              <div><dt className="font-semibold text-neutral-900">Not finalized</dt><dd>Sales are still being counted. A statement can be finalized once the event is marked completed (or cancelled). An owner or finance member then finalizes it.</dd></div>
+              <div><dt className="font-semibold text-neutral-900">Mark completed to finalize</dt><dd>The event has ended but is not marked completed yet. HåfaPass marks it completed about 6 hours after its end time. To finalize sooner, an owner or manager can mark it completed under Event actions on the event’s edit page.</dd></div>
               <div><dt className="font-semibold text-neutral-900">Finalized</dt><dd>The statement is approved and locked. If a refund or adjustment happens later, it shows as changed and a new version is needed. Earlier versions never change.</dd></div>
               <div><dt className="font-semibold text-neutral-900">Finalize new version</dt><dd>Money is still owed, but a refund, adjustment or the last payout came after the latest version. Finalize a new version on the event page to request the rest.</dd></div>
               <div><dt className="font-semibold text-neutral-900">Payout in progress</dt><dd>A payout was requested. Requesting does not mean the money has arrived yet.</dd></div>

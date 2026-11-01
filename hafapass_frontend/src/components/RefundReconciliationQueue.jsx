@@ -18,22 +18,26 @@ const returnKind = item => {
   return null
 }
 
+// A late capture is money HåfaPass already knows it owes back, not an
+// unverified provider observation.
+const lateCapture = item => item.type === 'exception' && item.status === 'late_capture'
+
 const actionLabel = (action, item) => {
-  if (action === 'retry') return item.type === 'request' ? 'Issue refund' : 'Retry refund'
+  if (action === 'retry') return item.type === 'request' ? 'Issue refund' : lateCapture(item) ? 'Refund buyer' : 'Retry refund'
   if (action === 'resync') return 'Check Stripe status'
   if (action === 'manual_return') return `Record ${returnKind(item)} return`
   return 'Mark unable to refund'
 }
 
-const needsVerification = item => item.type === 'exception' || item.buyer_amount_unverified
+const needsVerification = item => (item.type === 'exception' && !lateCapture(item)) || item.buyer_amount_unverified
 
 function availableActions(item, admin, canRecordCash) {
   // Verification can reconcile existing operations, but must not invite another
   // return or label an unknown buyer balance as an unpaid refund.
   if (needsVerification(item)) return admin && (item.type === 'exception' || (item.type === 'refund' && item.status === 'pending')) ? ['resync'] : []
   const actions = []
-  if (admin && ((['refund', 'cancellation'].includes(item.type) && ['failed', 'cancelled'].includes(item.status)) || (item.type === 'request' && item.status === 'request_unexecuted'))) actions.push('retry')
-  if (admin && ((item.type === 'refund' && item.status === 'pending') || item.type === 'exception')) actions.push('resync')
+  if (admin && ((['refund', 'cancellation'].includes(item.type) && ['failed', 'cancelled'].includes(item.status)) || (item.type === 'request' && item.status === 'request_unexecuted') || lateCapture(item))) actions.push('retry')
+  if (admin && ((item.type === 'refund' && item.status === 'pending') || (item.type === 'exception' && !lateCapture(item)))) actions.push('resync')
   if ((canRecordCash && returnKind(item) === 'cash') || (admin && returnKind(item))) actions.push('manual_return')
   if (admin) actions.push('unable')
   return actions
@@ -45,6 +49,7 @@ const issueLabel = status => ({
   waiting_on_dispute: 'Waiting for dispute',
   dispute_open: 'Dispute open',
   provider_review: 'External refund needs verification',
+  late_capture: 'Paid after the hold was released',
 })[status] || adminLabel(status)
 
 function VerificationAmount({ item }) {
@@ -93,7 +98,9 @@ function ActionDialog({ item, action, onClose, onAction, busy }) {
       </div> : <p className="mt-2 text-sm text-neutral-700">{money(item.amount_cents)} is still owed to the buyer. {manual
         ? 'Return the money to the buyer first, then record the evidence here.'
         : unable ? 'This keeps the amount visible as an outstanding liability.'
-          : action === 'retry' ? item.type === 'request' ? 'Issue the approved buyer request once and confirm its outcome.' : 'Check the earlier attempt before retrying. The original refund must not be duplicated.'
+          : action === 'retry' ? item.type === 'request' ? 'Issue the approved buyer request once and confirm its outcome.'
+            : lateCapture(item) ? 'Refund the full late payment once. No tickets were issued for this order.'
+              : 'Check the earlier attempt before retrying. The original refund must not be duplicated.'
             : 'Read the latest refund outcome from Stripe.'}</p>}
       {manual && <div className="mt-4 space-y-3">
         <label className="block text-sm font-medium text-neutral-800">{returnKind(item) === 'card' ? 'Card provider return reference' : 'Cash return reference'}
