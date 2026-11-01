@@ -25,7 +25,7 @@ import { useSupportContact } from '../utils/supportContact'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
-  return <div className="min-h-screen bg-stone-50">
+  return <div className="min-h-screen bg-surface">
     {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
     <CheckoutSupport />
   </div>
@@ -561,7 +561,7 @@ function CheckoutContent({ buyerId }) {
   const isSimulate = paymentMode === 'simulate'
 
   return (
-    <div className="bg-stone-50 tabular-nums">
+    <div className="bg-surface tabular-nums">
       <SEO title={event ? t('buyer.Checkout.checkout', { value1: event.title }) : t('buyer.Checkout.checkout2')} noIndex />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         {/* Back link */}
@@ -642,7 +642,7 @@ function CheckoutContent({ buyerId }) {
             </div>
           )}
           <hr className="border-neutral-100 my-4" />
-          <div className="space-y-3 rounded-xl bg-stone-50 p-4 text-sm">
+          <div className="space-y-3 rounded-xl bg-surface p-4 text-sm">
             <div className="flex justify-between"><span className="text-neutral-700">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
             <div className="flex justify-between gap-4">
               <span className="text-neutral-700">

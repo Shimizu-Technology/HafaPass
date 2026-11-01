@@ -48,7 +48,7 @@ export default function InstallAppHelp({ variant = 'panel' }) {
     <p>{t('pass.install.steps')}</p>
     <p className="mt-2">{t('pass.install.offlineNote')}</p>
   </>
-  const errorNote = error && <p className="mt-3 text-amber-900" role="status">{error}</p>
+  const errorNote = error && <p className="mt-3 text-warning-900" role="status">{error}</p>
 
   if (variant === 'action') {
     if (installPrompt || busy) return <div>

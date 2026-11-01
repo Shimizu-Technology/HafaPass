@@ -24,7 +24,7 @@ export default function SavedPage() {
       .catch(() => { if (active) setError(true) })
     return () => { active = false }
   }, [attempt])
-  return <div className="public-listing-min-height bg-stone-50">
+  return <div className="public-listing-min-height bg-surface">
     <SEO title={t('buyerDiscovery.saved.savedEvents')} description={t('buyerDiscovery.saved.yourHåfaPassFavoritesFollowedOrganizersAndEvent')} noIndex />
     <BuyerTitleBand title={t('buyerDiscovery.saved.saved')} description={t('pass.buyer.savedDescription')} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">

@@ -479,7 +479,7 @@
       "recoverEarlierCheckout": "Recover earlier checkout",
       "checkYourInformationBeforeContinuing": "Check your information before continuing.",
       "enterYourFullName": "Enter your full name",
-      "youexamplecom": "you@example.com",
+      "youexamplecom": "e.g. you@example.com",
       "extrasAndSupport": "Extras and support",
       "supportThisEvent": "Support this event",
       "amount": "{{value1}} amount",
@@ -1192,13 +1192,13 @@
       "ifThoseDetailsMatchAnOrderANew": "If those details match an order, a new secure access link will arrive in your inbox. Check your spam folder too.",
       "tryAnotherOrder": "Try another order",
       "orderReference": "Order reference",
-      "hPAB12CD34": "HP-AB12CD34",
+      "hPAB12CD34": "e.g. HP-AB12CD34",
       "emailAddress": "Email address",
       "sending": "Sending…",
       "emailSecureLink": "Email secure link",
       "haveAnAccount": "Have an account? ",
       "signIn": "Sign in",
-      "emailPlaceholder": "you@example.com"
+      "emailPlaceholder": "e.g. you@example.com"
     },
     "ticketTransferAcceptPage": {
       "thisTransferLinkIsIncomplete": "This transfer link is incomplete.",

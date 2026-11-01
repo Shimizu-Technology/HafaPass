@@ -378,7 +378,7 @@ function EventDetailContent() {
       <div className="bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8">
           <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
-            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-stone-50 px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
+            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-surface px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
               {/* Back link */}
               <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
                 <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>

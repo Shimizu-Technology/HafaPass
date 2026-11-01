@@ -389,7 +389,7 @@ function RefundsPageSession({ eventId, identity }) {
           <div className="flex-1 min-w-[200px]">
            <label htmlFor={`refund-reason-${order.id}`} className="block text-sm font-medium text-neutral-700 mb-1.5">{isCashOrder(order) ? 'Reason (required)' : 'Reason (optional)'}</label>
            <input id={`refund-reason-${order.id}`} aria-invalid={cashInvalidField === `refund-reason-${order.id}` || undefined} aria-describedby={cashInvalidField === `refund-reason-${order.id}` ? 'refund-notice' : undefined} disabled={processing || accessRefreshing || Boolean(pendingRequest)} value={refundForm.reason} onChange={e => setRefundForm({...refundForm, reason: e.target.value})}
-            className="input !py-2 text-sm" placeholder="Customer request, event cancelled..." />
+            className="input !py-2 text-sm" placeholder="e.g. Customer request or event cancelled" />
           </div>
           <button onClick={() => handleRefund(order.id)} disabled={processing || accessRefreshing || pendingRequest?.recoveryRequired || Boolean(partialAmountError(order))} aria-describedby={partialAmountError(order) ? `refund-amount-error-${order.id}` : undefined}
            className="btn-danger text-sm !py-2.5 gap-1">

@@ -198,7 +198,7 @@ function CreateEventSession({ identity }) {
         value={form.title}
         onChange={(e) => updateField('title', e.target.value)}
         className={`input ${formErrors.title ? 'input-error' : ''}`}
-        placeholder="e.g., Full Moon Beach Party"
+        placeholder="e.g. Full Moon Beach Party"
         disabled={submitting}
        />
        {formErrors.title && <p id="title-error" className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
@@ -290,7 +290,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_name}
         onChange={(e) => updateField('venue_name', e.target.value)}
         className={`input ${formErrors.venue_name ? 'input-error' : ''}`}
-        placeholder="e.g., Tumon Beach Club"
+        placeholder="e.g. Tumon Beach Club"
         disabled={submitting}
        />
        {formErrors.venue_name && <p id="venue_name-error" className="mt-1 text-sm text-red-600">{formErrors.venue_name}</p>}
@@ -306,7 +306,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_address}
         onChange={(e) => updateField('venue_address', e.target.value)}
         className="input"
-        placeholder="123 Pale San Vitores Rd, Tumon"
+        placeholder="e.g. 123 Pale San Vitores Rd, Tumon"
         disabled={submitting}
        />
       </div>
@@ -321,7 +321,7 @@ function CreateEventSession({ identity }) {
         value={form.venue_city}
         onChange={(e) => updateField('venue_city', e.target.value)}
         className="input"
-        placeholder="Tamuning"
+        placeholder="e.g. Tamuning"
         disabled={submitting}
        />
       </div>

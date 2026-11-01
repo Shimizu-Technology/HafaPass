@@ -53,7 +53,7 @@ export default function PolicyPage() {
   return (
     <div className="min-h-screen bg-neutral-50 px-4 py-12">
       <SEO title={content.title} description={content.summary} url={`${PUBLIC_WEB_URL}/policies/${policy}`} />
-      <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
+      <article className="mx-auto max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-soft sm:p-10">
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-950">{content.title}</h1>
         {effectiveDate && (
           <p className="mt-3 text-sm font-medium text-brand-800">{t('buyerDiscovery.policy.effective')} <time dateTime={registry.effectiveDate}>{effectiveDate}</time> · {t('buyerDiscovery.policy.versionLabel', { version: registry.version })}</p>

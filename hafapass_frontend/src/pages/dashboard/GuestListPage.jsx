@@ -200,7 +200,7 @@ function GuestListSession({ eventId, identity }) {
       </div>
       <div>
        <label htmlFor="guest-guest_email" className="block text-sm font-medium text-neutral-700 mb-1.5">Email <span className="text-content-muted font-normal">(optional)</span></label>
-       <input type="email" id="guest-guest_email" value={form.guest_email} onChange={e => setForm({...form, guest_email: e.target.value})} className="input min-w-0 max-w-full" placeholder="guest@email.com" />
+       <input type="email" id="guest-guest_email" value={form.guest_email} onChange={e => setForm({...form, guest_email: e.target.value})} className="input min-w-0 max-w-full" placeholder="e.g. guest@example.com" />
       </div>
       <div>
        <label htmlFor="guest-ticket_type_id" className="block text-sm font-medium text-neutral-700 mb-1.5">Ticket Type</label>
@@ -217,7 +217,7 @@ function GuestListSession({ eventId, identity }) {
       </div>
       <div className="sm:col-span-2">
        <label htmlFor="guest-notes" className="block text-sm font-medium text-neutral-700 mb-1.5">Notes <span className="text-content-muted font-normal">(optional)</span></label>
-       <input id="guest-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="input min-w-0 max-w-full" placeholder="VIP, photographer, etc." />
+       <input id="guest-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="input min-w-0 max-w-full" placeholder="e.g. VIP or photographer" />
       </div>
      </div>
      <div className="flex flex-wrap gap-3 mt-5">

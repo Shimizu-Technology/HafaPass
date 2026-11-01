@@ -82,7 +82,7 @@ function OrganizerProfileForm({ context, beginRequest, isCurrent, onSuccess }) {
        value={businessName}
        onChange={(e) => setBusinessName(e.target.value)}
        className="input"
-       placeholder="e.g., Island Nights Promotions"
+       placeholder="e.g. Island Nights Promotions"
        disabled={submitting}
       />
      </div>

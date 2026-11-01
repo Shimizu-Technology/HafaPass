@@ -169,8 +169,8 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-neutral-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={event => {
           if (event.target === event.currentTarget && !busy) closeCaptured()
         }}>
-          <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-readiness-title" className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-stone-50 shadow-2xl sm:max-w-3xl sm:rounded-3xl">
-            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-stone-50/95 px-6 py-5 backdrop-blur sm:px-8">
+          <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-readiness-title" className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-surface shadow-2xl sm:max-w-3xl sm:rounded-3xl">
+            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-neutral-200 bg-surface/95 px-6 py-5 backdrop-blur sm:px-8">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Advanced · payout evidence review</p>
                 <h2 id="payment-readiness-title" className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">
@@ -180,7 +180,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                   References and a digest belong here. Contracts, bank details, identity documents, and secrets do not.
                 </p>
               </div>
-              <button ref={closeRef} type="button" aria-label="Close payment readiness review" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-stone-200 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50">
+              <button ref={closeRef} type="button" aria-label="Close payment readiness review" disabled={busy} onClick={closeCaptured} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50">
                 <X className="h-5 w-5" />
               </button>
             </header>
@@ -227,7 +227,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                     <p className="mt-1 text-sm leading-relaxed text-neutral-600">Every item must be supported by the referenced evidence—not assumed from a sandbox test.</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       {controls.map(([key, label]) => (
-                        <label key={key} className="flex min-h-14 cursor-pointer items-start gap-3 border-l-2 border-stone-300 bg-white px-4 py-3 text-sm leading-snug text-neutral-700 transition-colors hover:border-brand-300 hover:bg-brand-50/40">
+                        <label key={key} className="flex min-h-14 cursor-pointer items-start gap-3 border-l-2 border-neutral-300 bg-white px-4 py-3 text-sm leading-snug text-neutral-700 transition-colors hover:border-brand-300 hover:bg-brand-50/40">
                           <input type="checkbox" checked={form.controls[key]} onChange={event => setForm(current => ({ ...current, controls: { ...current.controls, [key]: event.target.checked } }))} className="mt-0.5 h-5 w-5 rounded border-neutral-300 text-brand-600 focus:ring-brand-500" />
                           <span>{label}</span>
                         </label>
@@ -235,7 +235,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                     </div>
                   </fieldset>
 
-                  <div className="flex flex-col-reverse gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col-reverse gap-3 border-t border-neutral-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-xs leading-relaxed text-neutral-500">An administrator, including you, approves this exact snapshot next.</p>
                     <button type="submit" disabled={busy || !allControlsChecked} className="btn-primary min-h-11 disabled:cursor-not-allowed disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />} Submit evidence</button>
                   </div>
@@ -255,7 +255,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                   </div>
                   <p className="text-sm text-neutral-600">Effective {formatDate(pending.effective_at)} · expires {formatDate(pending.expires_at)} · merchant of record: <span className="font-semibold text-neutral-900">{pending.merchant_of_record}</span></p>
                   <label className="block text-sm font-semibold text-neutral-800">Rejection or correction reason<input value={reason} onChange={event => setReason(event.target.value)} className="input mt-2" placeholder="Explain what the submitter must correct" /></label>
-                  <div className="flex flex-col-reverse gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:justify-end">
+                  <div className="flex flex-col-reverse gap-3 border-t border-neutral-200 pt-6 sm:flex-row sm:justify-end">
                     <button type="button" onClick={reject} disabled={busy || !reason.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 disabled:opacity-50"><ShieldAlert className="h-4 w-4" /> Reject evidence</button>
                     <button type="button" onClick={approve} disabled={busy} className="btn-primary min-h-11 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Approve exact evidence</button>
                   </div>
@@ -267,7 +267,7 @@ function PaymentReadinessReviewDialogSession({ account, onComplete }) {
                   <div className="flex items-start gap-3 border-l-4 border-emerald-500 bg-emerald-50 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-900">Current approval</p><p className="mt-1 text-sm text-emerald-800">Approved by admin #{approval.actor_user_id}; expires {formatDate(approval.expires_at)}.</p></div></div>
                   <ReferenceList review={approval} />
                   <label className="block text-sm font-semibold text-neutral-800">Revocation reason<input required value={reason} onChange={event => setReason(event.target.value)} className="input mt-2" placeholder="What changed or became invalid?" /></label>
-                  <div className="flex justify-end border-t border-stone-200 pt-6"><button type="submit" disabled={busy || !reason.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-red-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} Revoke readiness</button></div>
+                  <div className="flex justify-end border-t border-neutral-200 pt-6"><button type="submit" disabled={busy || !reason.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-red-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} Revoke readiness</button></div>
                 </form>
               )}
             </div>

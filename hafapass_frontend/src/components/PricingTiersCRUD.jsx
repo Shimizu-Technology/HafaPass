@@ -79,7 +79,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
-          <input id={`${formId}-name`} value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., Early Bird" disabled={saving} />
+          <input id={`${formId}-name`} value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g. Early Bird" disabled={saving} />
         </div>
         <div>
           <label htmlFor={`${formId}-price`} className="block text-sm font-medium text-neutral-700 mb-1">Price ($)</label>
@@ -102,7 +102,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
       {form.tier_type === 'quantity_based' && (
         <div>
           <label htmlFor={`${formId}-quantity_limit`} className="block text-sm font-medium text-neutral-700 mb-1">Quantity Limit</label>
-          <input type="number" min="1" id={`${formId}-quantity_limit`} value={form.quantity_limit} onChange={e => setForm(f => ({...f, quantity_limit: e.target.value}))} className="input" placeholder="e.g., 50" disabled={saving} />
+          <input type="number" min="1" id={`${formId}-quantity_limit`} value={form.quantity_limit} onChange={e => setForm(f => ({...f, quantity_limit: e.target.value}))} className="input" placeholder="e.g. 50" disabled={saving} />
         </div>
       )}
       {form.tier_type === 'time_based' && (

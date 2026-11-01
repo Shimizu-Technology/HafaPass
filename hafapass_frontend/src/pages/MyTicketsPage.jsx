@@ -188,7 +188,7 @@ function MyTicketsContent({ refreshSession, signOut }) {
 
   if (signedOut) {
     return (
-      <div className="public-listing-min-height bg-stone-50">
+      <div className="public-listing-min-height bg-surface">
         <SEO title={t('buyerAccount.myTicketsPage.myTickets')} noIndex />
         <BuyerTitleBand compact title={t('buyerAccount.myTicketsPage.myTickets')} description={t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')} />
         <div className="mx-auto max-w-md px-4 py-8"><div className="card p-6 sm:p-8 text-center">
@@ -256,10 +256,10 @@ function MyTicketsContent({ refreshSession, signOut }) {
   }
 
   return (
-    <div className="public-listing-min-height bg-stone-50 tabular-nums">
+    <div className="public-listing-min-height bg-surface tabular-nums">
       <SEO title={t('buyerAccount.myTicketsPage.myTickets')} noIndex />
       <BuyerTitleBand compact title={t('buyerAccount.myTicketsPage.myTickets')} description={t('buyerAccount.myTicketsPage.yourEventPassesAllInOnePlace')} />
-      <div className="bg-stone-50">
+      <div className="bg-surface">
         <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
           {recoveryNotice}
           <InstallAppHelp />

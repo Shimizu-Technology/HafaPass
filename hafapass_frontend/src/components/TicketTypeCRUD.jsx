@@ -94,7 +94,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone, defa
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div>
         <label htmlFor="ticket-type-name" className="block text-sm font-medium text-neutral-700 mb-1">Name <span aria-hidden="true" className="text-red-500">*</span></label>
-        <input id="ticket-type-name" required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g., General Admission" disabled={saving} />
+        <input id="ticket-type-name" required value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} className="input" placeholder="e.g. General Admission" disabled={saving} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -104,7 +104,7 @@ function TicketTypeForm({ initial, onSave, onCancel, saving, eventTimezone, defa
         </div>
         <div>
           <label htmlFor="ticket-type-quantity" className="block text-sm font-medium text-neutral-700 mb-1">Tickets available <span aria-hidden="true" className="text-red-500">*</span></label>
-          <input id="ticket-type-quantity" type="number" min="1" step="1" required value={form.quantity_available} onChange={e => setForm(f => ({ ...f, quantity_available: e.target.value }))} className="input" placeholder="e.g., 30" aria-describedby="ticket-type-quantity-help" disabled={saving} />
+          <input id="ticket-type-quantity" type="number" min="1" step="1" required value={form.quantity_available} onChange={e => setForm(f => ({ ...f, quantity_available: e.target.value }))} className="input" placeholder="e.g. 30" aria-describedby="ticket-type-quantity-help" disabled={saving} />
           <p id="ticket-type-quantity-help" className="mt-1 text-xs text-neutral-500">Total tickets for this type, including any already sold.{!initial && defaultQuantity != null && ` ${Math.max(0, defaultQuantity)} places remain in the event capacity.`}</p>
         </div>
       </div>

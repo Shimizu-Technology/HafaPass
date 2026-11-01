@@ -11,7 +11,7 @@ export default function SignUpPage() {
     <SEO title={t('buyerDiscovery.signUp.documentTitle')} noIndex />
     {!clerkPubKey ? (
       <div className="min-h-[calc(100dvh-4rem)] flex items-center justify-center bg-neutral-50 px-4 py-8">
-        <div className="text-center p-8 bg-white rounded-xl shadow-sm max-w-md">
+        <div className="text-center p-8 bg-white rounded-xl shadow-soft max-w-md">
           <h1 className="text-2xl font-bold text-neutral-800 mb-2">{t('buyerDiscovery.signUp.signUp')}</h1>
           <p className="text-neutral-500">{t('buyerDiscovery.signUp.accountRegistrationIsTemporarilyUnavailablePleaseTry')}</p>
         </div>

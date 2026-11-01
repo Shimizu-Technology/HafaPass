@@ -1,3 +1,5 @@
+import colors from 'tailwindcss/colors'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -74,6 +76,12 @@ export default {
         focus: '#087e7a',
         // Focus indicator on brand-950 surfaces (see .surface-dark in index.css).
         'focus-on-dark': '#53f5df',
+        // Status roles. Use these instead of raw emerald/amber/red/sky so
+        // buyer messages share one palette.
+        success: colors.emerald,
+        warning: colors.amber,
+        danger: colors.red,
+        info: colors.sky,
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans Variable"', 'system-ui', '-apple-system', 'sans-serif'],
@@ -90,35 +98,6 @@ export default {
         'glow-brand': '0 4px 24px rgba(13,158,150,0.15)',
         'glow-accent': '0 4px 24px rgba(240,86,74,0.2)',
         'float': '0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.5s ease-out',
-        'fade-up': 'fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
-        'shimmer': 'shimmer 2s linear infinite',
-        'float': 'float 6s ease-in-out infinite',
-        'pulse-soft': 'pulseSoft 3s ease-in-out infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        fadeUp: {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        shimmer: {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(100%)' },
-        },
-        float: {
-          '0%, 100%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-12px)' },
-        },
-        pulseSoft: {
-          '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.7' },
-        },
       },
     },
   },

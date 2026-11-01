@@ -113,7 +113,7 @@ export default function EventsPage() {
   const showEmptyInventory = !loading && !loadError && inventoryEmpty
 
   return (
-    <div className={`${showEmptyInventory ? '' : 'public-listing-min-height '}bg-stone-50`}>
+    <div className={`${showEmptyInventory ? '' : 'public-listing-min-height '}bg-surface`}>
       <SEO
         title={t('buyer.Events.browseEvents')}
         description={t('buyer.Events.discoverWhatsHappeningOnGuamBrowseConcertsNightlife')}
@@ -141,7 +141,7 @@ export default function EventsPage() {
       </div>
 
       {/* Light content area */}
-      <div className="bg-stone-50 min-h-[50vh]">
+      <div className="bg-surface min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <h2 className="sr-only">{t('pass.buyer.eventResults')}</h2>
           {/* Responsive discovery filters */}

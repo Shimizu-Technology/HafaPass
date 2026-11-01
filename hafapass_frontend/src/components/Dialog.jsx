@@ -36,7 +36,7 @@ export default function Dialog({ children, labelledBy, onClose, busy = false, cl
   }, [initialFocusRef])
 
   return <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/50 px-4 py-6">
-    <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={labelledBy} className={`max-h-[calc(100dvh-3rem)] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-xl ${className}`}>
+    <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={labelledBy} className={`max-h-[calc(100dvh-3rem)] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-float ${className}`}>
       {children}
     </div>
   </div>

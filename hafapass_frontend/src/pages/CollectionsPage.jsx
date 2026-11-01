@@ -32,7 +32,7 @@ export default function CollectionsPage() {
     return () => { active = false }
   }, [attempt])
   const showEmptyInventory = !error && collections && inventoryEmpty
-  return <div className={`${showEmptyInventory ? '' : 'public-listing-min-height '}bg-stone-50`}>
+  return <div className={`${showEmptyInventory ? '' : 'public-listing-min-height '}bg-surface`}>
     <SEO title={t('buyerDiscovery.collections.discoverGuam')} description={t('buyerDiscovery.collections.curatedEventsForTonightThisWeekendFamilies')} />
     <BuyerTitleBand title={t('pass.buyer.discover')} description={t('pass.buyer.discoverDescription')} />
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
