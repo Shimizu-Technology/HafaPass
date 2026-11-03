@@ -53,7 +53,7 @@ module Commerce
       @cap_alert_mutex.synchronize { @cap_alerts.clear }
     end
 
-    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, promo_code_id: nil, promo_code: nil,
+    def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, sold_by: nil, promo_code_id: nil, promo_code: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
       catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
@@ -68,6 +68,7 @@ module Commerce
       @buyer_phone = buyer_phone
       @marketing_opt_in = marketing_opt_in
       @user = user
+      @sold_by = sold_by
       @promo_code_id = promo_code_id
       # The code the buyer typed is the only selector. A promo ID never picks a
       # code on its own, so guessing another code's ID cannot apply its discount.
@@ -175,6 +176,7 @@ module Commerce
 
         order = Order.create!(
           user: user,
+          sold_by: @sold_by,
           event: event,
           promo_code: totals[:promo_code],
           status: :pending,
@@ -568,7 +570,11 @@ module Commerce
     def enforce_buyer_checkout_limits!(selections, totals)
       live = event.orders.pending.where("orders.expires_at > ?", Time.current)
       same_buyer = live.where("LOWER(BTRIM(orders.buyer_email)) = ?", buyer_email.to_s.strip.downcase)
-      same_buyer = same_buyer.or(live.where(user_id: user.id)) if user
+      same_buyer = if user
+        live.where(user_id: user.id)
+      else
+        same_buyer.where(checkout_ip_digest: @checkout_ip_digest)
+      end
       raise CheckoutError, ACTIVE_CHECKOUT_EXISTS if same_buyer.exists?
       return if @checkout_ip_digest.blank?
 

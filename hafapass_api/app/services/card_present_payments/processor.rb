@@ -116,7 +116,7 @@ module CardPresentPayments
     def adopt_existing_attempt!(existing)
       if order.id != existing.order_id
         equivalent = order.event_id == existing.event_id && user.id == existing.initiated_by_user_id &&
-          order.user_id == existing.initiated_by_user_id && order.total_cents == existing.amount_cents &&
+          order.sold_by_id == existing.initiated_by_user_id && order.total_cents == existing.amount_cents &&
           line_item_quantities(order) == line_item_quantities(existing.order)
         Commerce::OrderLifecycle.cancel!(order, reason: "duplicate_card_present_request") if order.pending?
         unless equivalent

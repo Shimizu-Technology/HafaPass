@@ -2075,6 +2075,7 @@
       "total_cents": "money",
       "updated_at": "non-personal",
       "user_id": "non-personal",
+      "sold_by_id": "non-personal",
       "wallet_type": "non-personal",
       "cash_sale_key": "non-personal",
       "cash_sale_request_digest": "non-personal",

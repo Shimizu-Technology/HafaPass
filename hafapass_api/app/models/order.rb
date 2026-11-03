@@ -15,6 +15,7 @@ class Order < ApplicationRecord
 
   has_one :live_money_proof_authorization, dependent: :restrict_with_error
   belongs_to :user, optional: true
+  belongs_to :sold_by, class_name: "User", optional: true
   belongs_to :event
   belongs_to :promo_code, optional: true
   has_many :order_items, dependent: :restrict_with_error

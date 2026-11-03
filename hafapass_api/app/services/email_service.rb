@@ -810,7 +810,8 @@ class EmailService
         ticket&.cache_key_with_version, event&.cache_key_with_version, metadata.to_json].join("|")
       invitation_subject = organization_membership || platform_invitation
       digest_source = "#{digest_source}|#{invitation_subject.class.name}/#{invitation_subject.id}" if invitation_subject
-      suppressed = template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(recipient)
+      suppressed = recipient.to_s.strip.downcase.end_with?("@boxoffice.local") ||
+        (template != "privacy_request_confirmation" && PrivacyEmailSuppression.for?(recipient))
       attributes = {
         order: order,
         ticket: ticket,
@@ -849,6 +850,8 @@ class EmailService
 
     # ── Unified delivery method ─────────────────────────────────────
     def deliver(to:, subject:, html:, tag: nil, delivery: nil, attachments: nil, **log_meta)
+      return if to.to_s.strip.downcase.end_with?("@boxoffice.local")
+
       sender_name = log_meta[:sender_name].to_s.gsub(/[\r\n<>"\\]/, " ").squish.first(80)
       from = sender_name.present? ? %("#{sender_name} via HåfaPass" <#{from_email}>) : from_email
       params = { from: from, to: delivery ? delivery.recipient : to, subject: subject, html: html }

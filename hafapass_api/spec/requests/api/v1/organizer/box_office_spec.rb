@@ -22,6 +22,21 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
 
       expect(response).to have_http_status(:created)
       json = JSON.parse(response.body)
+      order = Order.find(json.fetch("id"))
+      expect(order.user).to be_nil
+      expect(order.sold_by).to eq(user)
+      expect(order.tickets.pluck(:holder_user_id)).to all(be_nil)
+      token = GuestOrderAccess.issue!(order)
+      expect(GuestOrderAccess.find(token)).to eq(order)
+      get "/api/v1/orders/#{order.id}", headers: headers
+      expect(response).to have_http_status(:not_found)
+      post "/api/v1/orders/#{order.id}/tickets/#{order.tickets.first.id}/transfer",
+        params: { recipient_email: "someone@example.com" }, headers: headers
+      expect(response).to have_http_status(:not_found)
+      delivery = EmailService.send_order_confirmation_async(order)
+      expect(delivery).not_to be_suppressed
+      get "/api/v1/orders/#{order.id}", headers: { "X-Guest-Order-Token" => token }
+      expect(response).to have_http_status(:ok)
       expect(json["source"]).to eq("box_office")
       expect(json["payment_method"]).to eq("door_cash")
       expect(json["status"]).to eq("completed")
@@ -53,6 +68,7 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
       expect(response).to have_http_status(:created)
       json = JSON.parse(response.body)
       expect(json["buyer_name"]).to eq("Walk-in")
+      expect(EmailService.send_order_confirmation_async(Order.find(json.fetch("id")))).to be_suppressed
     end
 
     it "rejects invalid payment method" do

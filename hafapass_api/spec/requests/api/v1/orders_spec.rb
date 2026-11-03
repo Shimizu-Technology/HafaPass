@@ -592,7 +592,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         end
       end
 
-      it "allows one live unpaid checkout per buyer email per event, without blocking same-key recovery" do
+      it "allows one live unpaid checkout per buyer email and network per event, without blocking same-key recovery" do
         key = SecureRandom.hex(32)
         checkout_from("203.0.113.10", one_ga.merge(checkout_key: key))
         expect(response).to have_http_status(:created), response.body
@@ -600,7 +600,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(first).to be_pending
 
         expect do
-          checkout_from("203.0.113.11", one_ga.merge(buyer_email: "  BUYER@Example.com "))
+          checkout_from("203.0.113.10", one_ga.merge(buyer_email: "  BUYER@Example.com "))
         end.not_to change(Order, :count)
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body["error"]).to include("already have a checkout in progress")
@@ -621,6 +621,13 @@ RSpec.describe "Api::V1::Orders", type: :request do
         first.update!(expires_at: 1.second.ago)
         checkout_from("203.0.113.13", one_ga)
         expect(response).to have_http_status(:created)
+      end
+
+      it "allows the same guest email on a different network" do
+        checkout_from("203.0.113.10", one_ga)
+        expect(response).to have_http_status(:created)
+        checkout_from("203.0.113.11", one_ga)
+        expect(response).to have_http_status(:created), response.body
       end
 
       it "blocks a second live checkout for the same signed-in buyer under another email" do
