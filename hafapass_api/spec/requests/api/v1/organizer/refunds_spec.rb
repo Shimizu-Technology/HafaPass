@@ -47,11 +47,32 @@ RSpec.describe "Organizer refunds", type: :request do
     create(:payout, event: event, organization: event.organization, status: :paid)
     RSpec::Mocks.space.proxy_for(StripeService).reset
     allow(StripeService).to receive(:refund_payment)
+    allow(StripeService).to receive(:find_refund).and_return(nil)
 
     post path, params: { amount_cents: 1000 }, headers: headers
 
     expect(response).to have_http_status(:unprocessable_entity)
     expect(response.parsed_body.fetch("error")).to include("Contact HåfaPass support")
+    expect(StripeService).to have_received(:find_refund)
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "still recovers a provider refund that was already made before the event paid out" do
+    allow(StripeService).to receive(:refund_payment)
+    path = "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund"
+    post path, params: { amount_cents: 1000 }, headers: headers
+    reserved = order.refunds.find_by!(idempotency_key: "organizer-refund-request")
+    reserved.update_columns(status: Refund.statuses.fetch("pending"), provider_refund_id: nil, failure_code: nil)
+    create(:payout, event: event, organization: event.organization, status: :paid)
+    RSpec::Mocks.space.proxy_for(StripeService).reset
+    allow(StripeService).to receive(:refund_payment)
+    allow(StripeService).to receive(:find_refund).and_return(
+      OpenStruct.new(id: "re_recovered_after_payout", status: "succeeded", amount: 1000, currency: "usd"))
+
+    post path, params: { amount_cents: 1000 }, headers: headers
+
+    expect(response).to have_http_status(:created), response.body
+    expect(reserved.reload).to have_attributes(provider_refund_id: "re_recovered_after_payout")
     expect(StripeService).not_to have_received(:refund_payment)
   end
 
