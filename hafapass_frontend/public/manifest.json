@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "HåfaPass — Events and Tickets on Guam",
   "short_name": "HåfaPass",
   "description": "Discover events on Guam, buy tickets, and check in with your phone.",
@@ -6,7 +7,7 @@
   "display": "standalone",
   "background_color": "#032827",
   "theme_color": "#032827",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "scope": "/",
   "icons": [
     {
@@ -22,13 +23,13 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
