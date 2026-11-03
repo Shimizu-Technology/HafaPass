@@ -17,6 +17,7 @@ RSpec.describe "Organizer cash return recording", type: :request do
   end
 
   it "records evidence and actor, serializes the manual outcome, and replays without issuing money" do
+    create(:payout, event: event, organization: event.organization, status: :paid)
     payload = { amount_cents: 1000, reason: "Cash already returned to buyer", cash_return: evidence }
     expect { post path, params: payload, headers: headers, as: :json }.to change(Refund, :count).by(1)
     expect(response).to have_http_status(:created)

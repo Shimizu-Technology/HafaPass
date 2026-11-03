@@ -6,11 +6,19 @@ module Api
       class RefundsController < BaseController
         before_action :set_event
         before_action :set_order
+        around_action :with_payout_lock, only: :create
 
         def create
           idempotency_key = request.headers["Idempotency-Key"].presence
           unless idempotency_key
             render json: { error: "Idempotency-Key header is required" }, status: :unprocessable_entity
+            return
+          end
+
+          if @order.payment_method != "door_cash" && organizer_refunds_locked?
+            render json: { error: "This event has already been paid out. Contact HåfaPass support to refund this order." }.merge(
+              Commerce::RefundOutcome.call(order: @order, idempotency_key: idempotency_key)),
+              status: :unprocessable_entity
             return
           end
 
@@ -35,6 +43,17 @@ module Api
         end
 
         private
+
+        def with_payout_lock
+          @event.organization.with_lock do
+            @event.with_lock("FOR NO KEY UPDATE") { yield }
+          end
+        end
+
+        def organizer_refunds_locked?
+          @event.payouts.where(status: [:pending, :processing, :held, :paid]).exists? ||
+            @event.settlements.status_finalized.where("paid_cents > 0").exists?
+        end
 
         def set_event
           @event = find_organization_event(params[:event_id])

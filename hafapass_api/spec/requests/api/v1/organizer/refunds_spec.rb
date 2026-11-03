@@ -26,6 +26,26 @@ RSpec.describe "Organizer refunds", type: :request do
     allow(EmailService).to receive(:send_refund_notification_async)
   end
 
+  [:pending, :processing, :held, :paid].each do |status|
+    it "refuses organizer card refunds with a #{status} payout" do
+      create(:payout, event: event, organization: event.organization, status: status)
+      expect do
+        post "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund",
+          params: { amount_cents: 1000 }, headers: headers
+      end.not_to change(Refund, :count)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("Contact HåfaPass support")
+    end
+  end
+
+  it "refuses a finalized paid statement even without an active payout" do
+    create(:settlement, event: event, organization: event.organization, paid_cents: 1000)
+    post "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund",
+      params: { amount_cents: 1000 }, headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("Contact HåfaPass support")
+  end
+
   it "requires an idempotency key before contacting the provider" do
     path = "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund"
 
