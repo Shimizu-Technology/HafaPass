@@ -1087,6 +1087,8 @@
       "ticketNotFound": "Ticket not found.",
       "failedToLoadTicketPleaseTryAgain": "We couldn't load this ticket.",
       "offlineTicket": "You're offline. Reconnect to show your ticket QR, or open the ticket PDF from your confirmation email or your downloads.",
+      "transferredRefundContactSupport": "This event changed. Because this ticket was transferred to you, HåfaPass support handles any refund.",
+      "transferredRefundSubject": "Refund for a transferred HåfaPass ticket",
       "saveForWeakSignal": "Venue signal can be weak. Download the PDF now so your QR opens without a connection.",
       "thePDFCannotDisplaySomeTextOnThis": "The PDF cannot display some text on this ticket. Your ticket and entry QR are still available here. Use this browser ticket or contact the organizer.",
       "weCouldnTDownloadThePDFYourTicket": "We couldn’t download the PDF. Your ticket is still available here. Check your connection and try Download PDF again.",
