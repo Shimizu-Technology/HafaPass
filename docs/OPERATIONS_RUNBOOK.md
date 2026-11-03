@@ -137,6 +137,18 @@ To deploy the API: fast-forward `hafapass-staging` to the release commit (`git p
 
 Make API changes expand-then-contract so either order is survivable: add new fields, endpoints and columns in one release and keep the old ones working; switch the frontend; remove the old ones in a later release. A migration must work with the code that is already running, because the old release keeps serving while the pre-deploy migration runs. `strong_migrations` checks every migration added after `20261024310000` and sets `lock_timeout` 10 s and `statement_timeout` 1 h for migrations.
 
+## Rolling back a release
+
+Roll back when an error spike, failed readiness or broken buyer or door flow lines up with a release. Write down the bad and last-good revisions first: `GET /api/v1/health` (`revision`) and `/release.json`.
+
+1. **Frontend (Netlify).** Deploys → open the last good published deploy → **Publish deploy**. Netlify then locks auto publishing. Confirm `/release.json` shows the old revision. After the fix merges, publish the new deploy and **unlock auto publishing**, or later merges silently won't go live.
+2. **API (Render).** `hafapass-api` → Events → the last good deploy → **Rollback**, or start a deploy of a specific commit (Render API `POST /v1/services/<service id>/deploys` with `{"commitId": "<sha>"}`). Confirm the health `revision` and that readiness returns 200.
+3. **Migrations are never reversed by a rollback.** Expand-then-contract keeps the old code compatible with the new schema. If a migration itself is the problem, take a Neon branch snapshot first, then run only its reviewed down step as a one-off job.
+4. **Keep the branch honest.** After a Render rollback, `hafapass-staging` still points at the bad commit, and a casual "deploy latest commit" would ship it again. Fix forward on `main`, then fast-forward `hafapass-staging` to the fix and deploy.
+5. **Reconcile the window.** Check Admin → Operations for failed or exhausted deliveries and reconciliation exceptions created while the bad release was live, and check Sentry for the release.
+
+The daily `Scheduled checks` workflow (`.github/workflows/scheduled-checks.yml`) fails when the live API or frontend no longer matches `main`, or readiness isn't 200. A failure after a rollback is expected until the fix is deployed.
+
 ## Audit log TRUNCATE guard
 
 Migration `20261102000000` adds the statement-level `audit_logs_no_truncate` trigger, which rejects `TRUNCATE audit_logs` unless the transaction has set `SET LOCAL hafapass.audit_truncate = 'on'` (details in [Audit integrity](AUDIT_INTEGRITY.md)). Consequences:

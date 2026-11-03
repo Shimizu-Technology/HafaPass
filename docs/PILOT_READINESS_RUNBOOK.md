@@ -91,6 +91,8 @@ The event commander decides operational safety; HåfaPass does not override venu
 
 ## Rollback
 
+The exact Netlify, Render and migration steps are in [Rolling back a release](OPERATIONS_RUNBOOK.md#rolling-back-a-release).
+
 1. Identify the last known-good commit and confirm its database compatibility.
 2. Stop deploys and risky background replays.
 3. Back up current database/object state and record the release IDs.
