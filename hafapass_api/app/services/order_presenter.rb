@@ -33,7 +33,7 @@ class OrderPresenter
       expires_at: order.expires_at,
       # Measured on the server so a buyer's skewed phone clock can't end
       # (or extend) the hold countdown early.
-      expires_in_seconds: order.expires_at && [ (order.expires_at - Time.current).ceil, 0 ].max,
+      expires_in_seconds: order.expires_at && [(order.expires_at - Time.current).ceil, 0].max,
       wallet_type: order.wallet_type,
       guest_access_token: guest_access_token,
       payment_status: latest_payment&.status,
