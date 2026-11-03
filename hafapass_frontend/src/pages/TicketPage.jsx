@@ -463,6 +463,7 @@ function TicketContent({ authContext }) {
               <span>{downloading ? t('buyerAccount.ticketPage.generating') : t('buyerAccount.ticketPage.downloadPDF')}</span>
             </button>
             {downloadError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">{downloadError}</p>}
+            {showCredential && !downloadError && <p className="text-center text-sm text-neutral-600">{t('buyerAccount.ticketPage.saveForWeakSignal')}</p>}
 
             {/* Share */}
             {typeof navigator !== 'undefined' && navigator.share && (

@@ -19,7 +19,7 @@ const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.1
 const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 // jsdom has no navigator.maxTouchPoints; iPadOS detection reads it.
 const setTouchPoints = value => Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, get: () => value })
-const offlineMessage = "You're offline. Reconnect to show your ticket QR, or open it from your phone's wallet app if you added it."
+const offlineMessage = "You're offline. Reconnect to show your ticket QR, or open the ticket PDF from your confirmation email or your downloads."
 
 describe('ticket at the door', () => {
   beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })

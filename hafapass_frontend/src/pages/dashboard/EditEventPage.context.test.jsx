@@ -11,7 +11,7 @@ vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'r
 vi.mock('../../components/CoverImageUpload', () => ({ default: ({ eventId, onUploaded }) => { uploads.set(String(eventId), onUploaded); return <p>Cover image control</p> } }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ onRefresh, ticketTypes }) => <div><button type="button" onClick={onRefresh}>Refresh saved inventory</button>{ticketTypes.map(ticket => <p key={ticket.id}>{ticket.name}</p>)}</div> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const dto = id => ({ id, can_create_events: true, title: id === 11 ? 'Alpha event' : 'Beta event', status: 'draft', venue_name: 'Synthetic venue',

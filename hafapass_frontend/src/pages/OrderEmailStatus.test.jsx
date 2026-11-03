@@ -6,7 +6,7 @@ import OrderConfirmationPage from './OrderConfirmationPage'
 import { saveOrderAccess } from '../utils/orderAccess'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
-vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 const baseOrder = {
   id: 42, reference: 'HP-42', status: 'completed', buyer_email: 'synthetic@example.invalid', total_cents: 0, order_items: [],

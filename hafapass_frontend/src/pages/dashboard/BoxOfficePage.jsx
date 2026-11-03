@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom'
 import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import QRCode from '../../components/QRCode'
-import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
+import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
 import SupportLink from '../../components/SupportLink'
 
@@ -45,7 +45,7 @@ function BoxOfficePageSession({ id, identity }) {
    return response
   } finally { request.release() }
  }, [beginRequest])
-  const capabilities = useLaunchCapabilities()
+  const { capabilities, status: capabilityStatus, retry: retryCapabilities } = useLaunchCapabilityState()
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -363,7 +363,13 @@ function BoxOfficePageSession({ id, identity }) {
                 <CreditCard className="w-5 h-5" /> Card at Door
               </button>
             </div>
-            {(!capabilities.door_card || !cardAccount?.payment_ready) && (
+            {!capabilities.door_card && capabilityStatus === 'loading' && (
+              <p role="status" className="mt-2 text-xs text-neutral-600">Checking whether card payments at the door are available…</p>
+            )}
+            {!capabilities.door_card && capabilityStatus === 'error' && (
+              <p role="alert" className="mt-2 text-xs text-amber-800">We couldn&apos;t check whether card payments at the door are available.{pendingSale ? '' : ' Use cash, or'} <button type="button" onClick={retryCapabilities} className="font-semibold underline">try again</button>. Never record a card payment manually.</p>
+            )}
+            {(capabilities.door_card || capabilityStatus === 'ready') && (!capabilities.door_card || !cardAccount?.payment_ready) && (
               <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Card payments at the door aren't available on HåfaPass yet.${pendingSale ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
             )}
           </div>

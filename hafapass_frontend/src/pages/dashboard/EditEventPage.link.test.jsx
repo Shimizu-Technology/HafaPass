@@ -10,7 +10,7 @@ vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal(
 vi.mock('../../components/CoverImageUpload', () => ({ default: () => null }))
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: () => null }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 
 const published = {
   permissions: { edit_event_content: true, manage_events: true }, id: 37, title: 'Reef Night', slug: 'reef-night',

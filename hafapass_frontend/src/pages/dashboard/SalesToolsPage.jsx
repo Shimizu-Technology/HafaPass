@@ -4,7 +4,8 @@ import { useParams } from 'react-router-dom'
 import { Download, Loader2, Plus, Send, Trash2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
-import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
+import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
+import CapabilityCheckFailed from '../../components/CapabilityCheckFailed'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { LANGUAGES } from '../../utils/locale'
 
@@ -40,7 +41,7 @@ const addButtonClass = 'btn-secondary min-h-11 gap-1.5 self-end whitespace-nowra
 
 function SalesToolsSession({ eventId, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${eventId}/sales-tools`)
-  const capabilities = useLaunchCapabilities()
+  const { capabilities, status: capabilityStatus, retry: retryCapabilities } = useLaunchCapabilityState()
   const loadState = useRef({ generation: 0, request: null })
   const initialized = useRef(false)
   const busyRef = useRef(false)
@@ -220,6 +221,8 @@ function SalesToolsSession({ eventId, identity }) {
   }, [translating, statusPoll, eventId, beginRequest])
   if (loading) return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!event) return <div className="mx-auto max-w-xl p-8"><p role="alert" className="text-red-700">{error || 'Sales tools could not be loaded.'}</p><button disabled={refreshing} className="btn-secondary mt-4" onClick={load}>Retry sales tools</button></div>
+  if (capabilities.advanced_sales_tools !== true && capabilityStatus === 'loading') return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+  if (capabilities.advanced_sales_tools !== true && capabilityStatus === 'error') return <CapabilityCheckFailed feature="advanced sales tools" onRetry={retryCapabilities} />
   if (capabilities.advanced_sales_tools !== true) return <EventAccessNotice event={event} message="Advanced sales tools are not enabled for this platform." />
   if (!['edit_event_content', 'manage_events', 'manage_inventory', 'manage_marketing', 'view_attendees'].some(permission)) return <EventAccessNotice event={event} message="Your event access does not include sales tools or attendee communication." />
   const locked = busy || Boolean(pending)

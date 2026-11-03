@@ -7,6 +7,8 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
+import { PaymentLoadFailure } from './StripeProvider'
+import { useStripeRetry } from './stripeRetry'
 
 export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError, submitting, setSubmitting }) {
   const { t } = useTranslation()
@@ -14,6 +16,8 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
   const elements = useElements()
   const [paymentError, setPaymentError] = useState(null)
   const [statusUnknown, setStatusUnknown] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const retryStripe = useStripeRetry()
   const errorRef = useRef(null)
 
   useEffect(() => { if (paymentError) errorRef.current?.focus() }, [paymentError])
@@ -52,7 +56,13 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       // Stripe may return a processing intent while the webhook is still
       // authoritative. Move the buyer to the confirmation page so it can poll
       // the order instead of leaving them on a form they might submit twice.
-      if (onSuccess) onSuccess(paymentIntent)
+      // A handler that can't move on (the route or account changed) returns
+      // false; point the buyer at the order instead of spinning forever.
+      if (onSuccess && onSuccess(paymentIntent) === false) {
+        setPaymentError(t('buyer.PaymentForm.paymentSubmittedCheckOrder'))
+        setStatusUnknown(true)
+        setSubmitting(false)
+      }
     } else {
       setPaymentError(t('buyer.PaymentForm.weCouldNotConfirmThePaymentStatusPlease'))
       setStatusUnknown(true)
@@ -69,8 +79,10 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
       )}
       {statusUnknown && returnUrl && <a href={returnUrl} className="btn-secondary mb-4 w-full">{t('buyer.PaymentForm.checkOrderStatus')}</a>}
 
-      <div className="mb-4" role="group" aria-label={t('checkout.payment')}>
+      {loadFailed && <PaymentLoadFailure onRetry={retryStripe} />}
+      <div className="mb-4" role="group" aria-label={t('checkout.payment')} hidden={loadFailed}>
         <PaymentElement
+          onLoadError={() => setLoadFailed(true)}
           options={{
             layout: 'tabs',
             wallets: {
@@ -85,7 +97,7 @@ export default function PaymentForm({ totalCents, returnUrl, onSuccess, onError,
 
       <button
         type="submit"
-        disabled={!stripe || !elements || submitting || statusUnknown}
+        disabled={!stripe || !elements || submitting || statusUnknown || loadFailed}
         className="btn-primary w-full py-4 text-lg font-bold"
       >
         {submitting ? (

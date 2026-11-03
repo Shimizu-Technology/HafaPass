@@ -5,7 +5,8 @@ import { useParams } from 'react-router-dom'
 import { Accessibility, AlertTriangle, Loader2, PauseCircle, PlayCircle } from 'lucide-react'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
-import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
+import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
+import CapabilityCheckFailed from '../../components/CapabilityCheckFailed'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 
 const rowLabel = (index) => {
@@ -21,7 +22,7 @@ const rowLabel = (index) => {
 
 function SeatingSession({ id, identity }) {
   const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/seating`)
-  const capabilities = useLaunchCapabilities()
+  const { capabilities, status: capabilityStatus, retry: retryCapabilities } = useLaunchCapabilityState()
   const loadState = useRef({ generation: 0, request: null })
   const layoutState = useRef({ generation: 0, request: null })
   const initialized = useRef(false)
@@ -175,6 +176,8 @@ function SeatingSession({ id, identity }) {
 
   if (!event) return <div className="mx-auto max-w-3xl p-6"><p role="alert" className="text-red-700">{error || 'Seating operations could not be loaded.'}</p><button disabled={refreshing} onClick={load} className="btn-secondary mt-4">Retry seating operations</button></div>
   if (event.permissions?.manage_inventory !== true) return <EventAccessNotice event={event} message="Your event access does not include seating management." />
+  if (!seating?.assigned_seating && capabilities.assigned_seating !== true && capabilityStatus === 'loading') return <div role="status" aria-label="Loading seating operations" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+  if (!seating?.assigned_seating && capabilities.assigned_seating !== true && capabilityStatus === 'error') return <CapabilityCheckFailed feature="assigned seating" onRetry={retryCapabilities} />
   if (!seating?.assigned_seating && capabilities.assigned_seating !== true) return <EventAccessNotice event={event} message="Assigned seating is not enabled for this platform." />
   const locked = saving || Boolean(pending)
   return (

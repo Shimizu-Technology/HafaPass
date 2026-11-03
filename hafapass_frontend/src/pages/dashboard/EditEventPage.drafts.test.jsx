@@ -10,7 +10,7 @@ vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'r
 vi.mock('../../components/CoverImageUpload', () => ({ default: () => null }))
 vi.mock('../../components/PricingTiersCRUD', () => ({ default: () => null }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 
 const ticket = { id: 1, name: 'Admission', price_cents: 1250, quantity_available: 20 }
 const event = { id: 37, title: 'Saved title', description: 'Saved description', status: 'published',

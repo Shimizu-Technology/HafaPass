@@ -10,7 +10,7 @@ import WaitlistPage from './WaitlistPage'
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: {
   get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn(),
 } }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const tools = [
   { path: 'guest-list', endpoint: 'guest_list', Component: GuestListPage, title: 'Guest list', retry: 'Retry guest list',

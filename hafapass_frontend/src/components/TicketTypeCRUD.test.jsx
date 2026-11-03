@@ -13,7 +13,7 @@ vi.mock('../api/client', async importOriginal => ({
 vi.mock('./PricingTiersCRUD', () => ({ default: () => null }))
 vi.mock('./CoverImageUpload', () => ({ default: () => null }))
 vi.mock('../hooks/useEventCategories', () => ({ default: () => [] }))
-vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 
 describe('organizer ticket setup', () => {
   beforeEach(() => { vi.clearAllMocks(); apiClient.post.mockResolvedValue({ data: {} }); apiClient.put.mockResolvedValue({ data: {} }) })

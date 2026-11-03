@@ -8,7 +8,7 @@ import apiClient from '../api/client'
 import MyTicketsPage from './MyTicketsPage'
 
 const launch = vi.hoisted(() => ({ value: {} }))
-vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => launch.value }))
+vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => launch.value, useLaunchCapabilityState: () => ({ capabilities: launch.value, status: 'ready', retry: () => {} }) }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 const clerk = vi.hoisted(() => ({ getToken: vi.fn(), signOut: vi.fn() }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: clerk.getToken }), useClerk: () => ({ signOut: clerk.signOut }) }))
