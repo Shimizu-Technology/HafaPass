@@ -121,7 +121,7 @@ class Api::V1::TicketsController < ApplicationController
   def event_change_refund_contact_support?(ticket)
     return false unless ticket.issued? && ticket.held_by?(@current_user) &&
       ticket.transferred_away_from?(ticket.order) && ticket.order.total_cents.positive? &&
-      (ticket.order_item ? (ticket.order_item.subtotal_cents - ticket.order_item.discount_cents).positive? : ticket.ticket_type.price_cents.positive?)
+      (ticket.order_item ? ticket.refundable_cents.positive? : ticket.ticket_type.price_cents.positive?)
 
     change = ticket.event.event_changes.buyer_visible.order(:occurred_at, :id).last
     eligibility = EventChangeRefundEligibility.call(order: ticket.order, change: change)

@@ -38,6 +38,23 @@ RSpec.describe "Organizer refunds", type: :request do
     end
   end
 
+  it "never submits a pending refund reserved before the event paid out" do
+    allow(StripeService).to receive(:refund_payment)
+    path = "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund"
+    post path, params: { amount_cents: 1000 }, headers: headers
+    reserved = order.refunds.find_by!(idempotency_key: "organizer-refund-request")
+    reserved.update_columns(status: Refund.statuses.fetch("pending"), provider_refund_id: nil, failure_code: nil)
+    create(:payout, event: event, organization: event.organization, status: :paid)
+    RSpec::Mocks.space.proxy_for(StripeService).reset
+    allow(StripeService).to receive(:refund_payment)
+
+    post path, params: { amount_cents: 1000 }, headers: headers
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("Contact HåfaPass support")
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
   it "refuses a finalized paid statement even without an active payout" do
     create(:settlement, event: event, organization: event.organization, paid_cents: 1000)
     post "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund",

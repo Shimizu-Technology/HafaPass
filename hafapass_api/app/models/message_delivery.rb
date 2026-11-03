@@ -119,7 +119,8 @@ class MessageDelivery < ApplicationRecord
   PLACEHOLDER_EMAIL_DOMAIN = "@hafapass.invalid"
 
   def undeliverable_recipient?
-    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN, "@privacy.invalid")
+    # Box-office walk-ins without an email get a @boxoffice.local placeholder.
+    recipient.to_s.strip.downcase.end_with?(PLACEHOLDER_EMAIL_DOMAIN, "@privacy.invalid", "@boxoffice.local")
   end
 
   def suppressed_recipient?

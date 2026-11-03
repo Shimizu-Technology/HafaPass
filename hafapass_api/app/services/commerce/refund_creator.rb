@@ -253,6 +253,10 @@ module Commerce
         order.lock!
         refund.lock!
         return false unless refund.pending? && refund.provider_refund_id.blank?
+        # A pending organizer refund reserved before the event paid out must
+        # not reach the provider afterwards. Recovering an earlier provider
+        # result still runs, because it is checked before this submission gate.
+        raise RefundError, PAID_OUT_MESSAGE if @organizer_initiated && order.payment_method != "door_cash" && event_paid_out?
 
         ensure_financial_review_resolved!
         # Persist uncertainty before leaving the locks for the external call.

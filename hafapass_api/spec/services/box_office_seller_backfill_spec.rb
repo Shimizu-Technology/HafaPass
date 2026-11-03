@@ -16,4 +16,16 @@ RSpec.describe BackfillBoxOfficeSellers do
     expect(transferred.reload.holder_user).to eq(recipient)
     expect(GuestOrderAccess.find(GuestOrderAccess.issue!(order))).to eq(order)
   end
+
+  it "keeps the seller as holder of a ticket they received through an accepted transfer" do
+    seller = create(:user)
+    order = create(:order, source: "box_office", user: seller)
+    returned = create(:ticket, order: order, event: order.event, holder_user: seller)
+    create(:ticket_transfer, ticket: returned, status: :accepted, accepted_by_user: seller, recipient_email: seller.email)
+
+    described_class.new.up
+
+    expect(order.reload.user_id).to be_nil
+    expect(returned.reload.holder_user).to eq(seller)
+  end
 end
