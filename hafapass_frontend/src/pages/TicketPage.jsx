@@ -16,6 +16,7 @@ import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../ut
 import { SellerLine } from '../components/PriceDisclosure'
 import useScreenWakeLock from '../hooks/useScreenWakeLock'
 import { visibleWallets } from '../utils/walletPlatform'
+import { useSupportContact } from '../utils/supportContact'
 import { revokeObjectUrlLater } from '../utils/download'
 
 // Mounted only with an authorized, scannable QR, so the lock follows the QR.
@@ -145,6 +146,18 @@ const subscribeConnectivity = callback => {
   }
 }
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+// Loads support contact details only for the holders who need them.
+function TransferredRefundSupport() {
+  const { t } = useTranslation()
+  const support = useSupportContact()
+  return (
+    <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      {t('buyerAccount.ticketPage.transferredRefundContactSupport')}{' '}
+      <a href={support.mailto(t('buyerAccount.ticketPage.transferredRefundSubject'))} className="font-semibold underline underline-offset-4">{t('footer.contactSupport')}</a>
+    </div>
+  )
+}
 
 function TicketContent({ authContext }) {
   const { t } = useTranslation()
@@ -349,6 +362,7 @@ function TicketContent({ authContext }) {
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <strong className="capitalize">{t('buyerAccount.ticketPage.event', { status: t(`buyerAccount.ticketPage.eventStatus.${event.status}`, { defaultValue: event.status }) })}</strong>{t('buyerAccount.ticketPage.keepThisTicketAndWatchYourEmailFor')}</div>
         )}
+        {ticket.event_change_refund_contact_support && <TransferredRefundSupport />}
         {!ticket.admission_allowed && !['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">
             <strong>{t('buyerAccount.ticketPage.ticketUnavailable2')}</strong> {ticket.admission_block_reason || t('buyerAccount.ticketPage.thisTicketIsNotCurrentlyValidForEntry')}
@@ -463,6 +477,7 @@ function TicketContent({ authContext }) {
               <span>{downloading ? t('buyerAccount.ticketPage.generating') : t('buyerAccount.ticketPage.downloadPDF')}</span>
             </button>
             {downloadError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">{downloadError}</p>}
+            {showCredential && !downloadError && <p className="text-center text-sm text-neutral-600">{t('buyerAccount.ticketPage.saveForWeakSignal')}</p>}
 
             {/* Share */}
             {typeof navigator !== 'undefined' && navigator.share && (

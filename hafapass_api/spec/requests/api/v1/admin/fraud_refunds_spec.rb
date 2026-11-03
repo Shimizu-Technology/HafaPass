@@ -26,6 +26,7 @@ RSpec.describe "Admin early fraud warning refunds", type: :request do
   end
 
   it "refunds the whole order as fraudulent, cancels its tickets and audits the note and resolution" do
+    create(:payout, event: event, organization: event.organization, status: :paid)
     post path, params: { reconciliation_exception_id: warning.id, note: "Issuer says stolen card" }, headers: auth_headers(admin), as: :json
 
     expect(response).to have_http_status(:created), response.body

@@ -13,7 +13,7 @@ HafaPass is a ticketing platform designed for Guam's hospitality industry. It en
 - **Authentication:** Clerk
 - **Database:** PostgreSQL
 - **Payments:** Provider-neutral local ledger; Stripe sandbox adapter; PayPal/manual payout paths with fail-closed evidence approval (one administrator may submit and approve) (see `docs/GUAM_PAYMENT_AND_PAYOUT_DECISION.md` and `docs/GATE_B_PAYMENT_READINESS_OPERATIONS.md`)
-- **Background Jobs:** Sidekiq + Redis
+- **Background Jobs:** Solid Queue in the API process (`HAFAPASS_RUNTIME=embedded`), stored in PostgreSQL; no Redis in production
 - **Rate Limiting:** Rack::Attack
 - **Email:** Resend
 - **Styling:** Tailwind CSS
@@ -27,9 +27,9 @@ HafaPass/
 │   │   ├── controllers/     # API endpoints
 │   │   ├── models/          # ActiveRecord models
 │   │   ├── services/        # Business logic (Stripe, Email, S3)
-│   │   └── jobs/            # Background jobs (Sidekiq)
+│   │   └── jobs/            # Background jobs (Active Job / Solid Queue)
 │   └── config/
-│       └── initializers/    # Sidekiq, Rack::Attack, Pagy, CORS
+│       └── initializers/    # Rack::Attack, Pagy, CORS, Stripe, Sentry
 ├── hafapass_frontend/       # React Vite frontend
 │   └── src/
 │       ├── components/      # Reusable UI components
@@ -47,7 +47,7 @@ HafaPass/
 
 ## Product and Delivery Roadmap
 
-The Phase 0–10 engineering program is merged, but HafaPass is not yet authorized for production real-money ticketing because external approvals and live drills remain open. Use these documents as the source of truth:
+HåfaPass has run in production with live card payments since 2026-10-21. The Phase 0–10 engineering program is merged; the remaining pilot drills and owner actions are tracked in the [operations runbook](docs/OPERATIONS_RUNBOOK.md) and the latest audit under `docs/qa/`. Use these documents as the source of truth:
 
 - [General-admission testing candidate](docs/LAUNCH_TESTING_CANDIDATE.md) — supported rehearsal, recovery checks, deployment impact, and remaining launch evidence.
 - [Private testing staging](docs/PRIVATE_TESTING_STAGING.md) — isolated production-style loading with simulated money and delivery.
@@ -74,7 +74,6 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - Ruby 3.3.13 and Rails 8+
 - Node.js 20.19+
 - PostgreSQL
-- Redis (for background jobs - optional in development)
 - Clerk account with test application
 
 ### Setup
@@ -106,12 +105,8 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
    npm run dev  # Runs on localhost:5173
    ```
 
-5. **Start background jobs** (in another terminal when testing queued work)
-   ```bash
-   cd hafapass_api
-   bundle exec sidekiq
-   ```
-   Development uses Rails' in-process async adapter when `REDIS_URL` is absent. Production requires Redis, a separately running Sidekiq worker, and exactly one commerce clock process; it does not silently fall back to non-durable work. The clock enqueues idempotent general-admission and assigned-seat hold expiry every minute and the marketplace retention job daily.
+5. **Background jobs**
+   Development runs jobs in-process (Active Job's async adapter) unless you set `REDIS_URL` or `HAFAPASS_RUNTIME`. To run them the way production does, start the API with `HAFAPASS_RUNTIME=embedded`: Solid Queue's worker, dispatcher and recurring scheduler then run inside Puma, with queue state in PostgreSQL. See [Single-service runtime](docs/SINGLE_SERVICE_RUNTIME.md).
 
 6. **Open the app**
    Visit http://localhost:5173
@@ -133,7 +128,7 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 - [x] Refund processing
 
 ### Infrastructure
-- [x] Background job processing (Sidekiq + Redis)
+- [x] Durable background jobs (Solid Queue in PostgreSQL)
 - [x] Rate limiting (Rack::Attack)
 - [x] API pagination
 - [x] CORS configuration via environment variables
@@ -148,13 +143,9 @@ The Phase 0–10 engineering program is merged, but HafaPass is not yet authoriz
 
 ### Background Jobs
 
-Emails are processed asynchronously using Sidekiq. Job queues:
-- `emails` - Order confirmations, ticket emails, refund notifications
-- `default` - General background tasks
+Production runs one Render web service with `HAFAPASS_RUNTIME=embedded`. Solid Queue runs inside the Puma process (one job thread), stores queued, delayed and recurring work in the main PostgreSQL database, and needs no Redis, worker or clock service. `config/recurring.yml` schedules hold expiry, outbox recovery, fee reconciliation, operational alerts and retention. `/api/v1/readiness` checks real queue progress, not just a heartbeat. Details, capacity limits and recovery rules: [Single-service runtime](docs/SINGLE_SERVICE_RUNTIME.md).
 
-Jobs automatically retry with exponential backoff (up to 5 attempts).
-
-Production boot requires `REDIS_URL`. Readiness reports Redis connectivity and whether a Sidekiq process is active.
+`HAFAPASS_RUNTIME=sidekiq` (Redis plus a separate worker and clock, `render.sidekiq.yaml`) is a prepared future option only. Never switch runtimes with undrained jobs.
 
 Commerce-ledger deployment, backfill, reconciliation, and rollback-forward procedures are documented in [docs/COMMERCE_LEDGER_OPERATIONS.md](docs/COMMERCE_LEDGER_OPERATIONS.md).
 
@@ -198,7 +189,8 @@ Query params: `?page=2&per_page=10`
 | `ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY` | Always in production (boot fails without it); staging only to collect W-9s | Active Record encryption deterministic key |
 | `ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT` | Always in production (boot fails without it); staging only to collect W-9s | Active Record encryption derivation salt |
 | `DATABASE_URL` | Production | PostgreSQL connection string (uses local DB in dev) |
-| `REDIS_URL` | Production | Redis URL for Sidekiq (e.g., `redis://localhost:6379/0`) |
+| `HAFAPASS_RUNTIME` | Production | `embedded` in production (Solid Queue inside Puma); see [Single-service runtime](docs/SINGLE_SERVICE_RUNTIME.md) |
+| `REDIS_URL` | Only with `HAFAPASS_RUNTIME=sidekiq` | Redis URL for the future Sidekiq option; production doesn't use it |
 | `ALLOWED_ORIGINS` | Staging/production | Comma-separated CORS origins (e.g., `https://tickets.example.com`); required in every deployed environment |
 | `STRIPE_TEST_SECRET_KEY`, `STRIPE_TEST_PUBLISHABLE_KEY`, `STRIPE_TEST_PLATFORM_ACCOUNT_ID` | Test payments | Stripe sandbox keys and account ID (simulated checkout without them). `STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY` are a deprecated test-only fallback |
 | `STRIPE_WEBHOOK_SECRET` | Test payments | Signing secret of the test-mode webhook endpoint |
@@ -273,9 +265,9 @@ Do not reuse another project’s production credentials. Compatible sandbox cred
 
 ### Deployment
 
-- **Backend:** Deploy to Render, Railway, or Heroku
-- **Frontend:** Deploy to Netlify or Vercel (SPA routing configured via `_redirects`)
-- **Sidekiq:** Run as separate worker process in production
+- **API:** one Render web service, deployed by hand from the `hafapass-staging` branch after it is fast-forwarded to the reviewed `main` commit. The pre-deploy step runs `bin/release-migrate`.
+- **Frontend:** Netlify publishes `main` automatically.
+- Deploy order, rollback and post-deploy checks: [operations runbook](docs/OPERATIONS_RUNBOOK.md#deploy-order). A daily `Scheduled checks` workflow fails if production stops matching `main` or a new dependency advisory appears.
 
 ## License
 

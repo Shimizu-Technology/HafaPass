@@ -9,6 +9,33 @@ RSpec.describe "Api::V1::Tickets", type: :request do
   let(:ticket) { create(:ticket, order: order, ticket_type: ticket_type, event: event, attendee_name: "Jane Doe") }
 
   describe "GET /api/v1/tickets/:credential" do
+    it "directs a paid transferred holder to support after postponement" do
+      recipient = create(:user)
+      ticket.update!(holder_user: recipient)
+      event.update!(status: :postponed)
+      event.event_changes.create!(change_type: "postponed", occurred_at: 1.second.from_now,
+        before_data: { status: "published" }, after_data: { status: "postponed" })
+      get "/api/v1/tickets/#{ticket.display_credential}", headers: auth_headers(recipient)
+      expect(response.parsed_body.fetch("event_change_refund_contact_support")).to be(true)
+      get "/api/v1/tickets/#{ticket.display_credential}"
+      expect(response.parsed_body.fetch("event_change_refund_contact_support")).to be(false)
+    end
+
+    it "counts the buyer fee when a full promotion leaves only the fee paid" do
+      recipient = create(:user)
+      promo_order = create(:order, event: event, subtotal_cents: 2500, discount_cents: 2500, service_fee_cents: 125, total_cents: 125)
+      item = create(:order_item, order: promo_order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 2500,
+        subtotal_cents: 2500, discount_cents: 2500, fee_cents: 125)
+      promo_ticket = create(:ticket, order: promo_order, order_item: item, ticket_type: ticket_type, event: event, holder_user: recipient)
+      event.update!(status: :postponed)
+      event.event_changes.create!(change_type: "postponed", occurred_at: 1.second.from_now,
+        before_data: { status: "published" }, after_data: { status: "postponed" })
+
+      get "/api/v1/tickets/#{promo_ticket.display_credential}", headers: auth_headers(recipient)
+
+      expect(response.parsed_body.fetch("event_change_refund_contact_support")).to be(true)
+    end
+
     it "returns only the public focal point alongside the image host and cover" do
       event.update!(page_customization: { focal_point: { x: 20, y: 80 }, accent: "#123456" })
       get "/api/v1/tickets/#{ticket.display_credential}"

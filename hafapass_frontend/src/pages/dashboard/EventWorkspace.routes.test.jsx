@@ -7,7 +7,7 @@ import GuestListPage from './GuestListPage'
 import PromoCodesPage from './PromoCodesPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 const event = { id: 37, organization_id: 1, title: 'Synthetic Guam reception', status: 'draft',
   starts_at: '2026-11-20T09:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Reception venue', ticket_types: [],
   permissions: { edit_event_content: true, manage_attendees: true, manage_marketing: true } }

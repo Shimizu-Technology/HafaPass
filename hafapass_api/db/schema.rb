@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -352,7 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
+    t.jsonb "segment", default: { "type"=>"all_attendees" }, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -1320,6 +1320,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.boolean "marketing_opt_in", default: false, null: false
     t.datetime "retention_anonymized_at"
     t.string "checkout_ip_digest"
+    t.bigint "sold_by_id"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
@@ -1330,6 +1331,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
     t.index ["reference"], name: "index_orders_on_reference", unique: true
     t.index ["retention_anonymized_at"], name: "index_orders_on_retention_anonymized_at"
+    t.index ["sold_by_id"], name: "index_orders_on_sold_by_id"
     t.index ["source"], name: "index_orders_on_source"
     t.index ["stripe_payment_intent_id"], name: "index_orders_on_unique_payment_intent", unique: true, where: "(stripe_payment_intent_id IS NOT NULL)"
     t.index ["user_id"], name: "index_orders_on_user_id"
@@ -2289,7 +2291,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     t.integer "fee_notice_days", default: 30, null: false
     t.string "backup_withholding_mode", default: "block", null: false
     t.integer "backup_withholding_rate_bps", default: 2400, null: false
-    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
+    t.jsonb "tax_reporting_thresholds", default: { "1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000 }, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
@@ -2963,6 +2965,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
   add_foreign_key "orders", "events"
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
+  add_foreign_key "orders", "users", column: "sold_by_id"
   add_foreign_key "organization_invitation_dispatches", "organizations"
   add_foreign_key "organization_invitation_dispatches", "users", column: "actor_user_id"
   add_foreign_key "organization_memberships", "organizations", on_delete: :restrict
@@ -3134,5 +3137,4 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_030000) do
     CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
   SQL
-
 end

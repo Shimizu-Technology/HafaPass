@@ -60,7 +60,7 @@ describe('Netlify response headers', () => {
     const policy = byPath['/*']['Content-Security-Policy-Report-Only']
     expect(byPath['/*']['Content-Security-Policy']).toBe("frame-ancestors 'none'")
     for (const source of ['https://js.stripe.com', 'https://api.stripe.com', 'https://hooks.stripe.com', 'https://*.clerk.accounts.dev',
-      'https://img.clerk.com', 'https://*.sentry.io', 'https://hafapass-api.onrender.com', '.s3.ap-southeast-2.amazonaws.com']) {
+      'https://img.clerk.com', 'https://cdn.protect.clerk.com', 'https://*.client.protect.clerk.com:*', 'https://*.sentry.io', 'https://hafapass-api.onrender.com', '.s3.ap-southeast-2.amazonaws.com']) {
       expect(policy).toContain(source)
     }
     expect(policy).not.toMatch(/fonts\.googleapis|fonts\.gstatic/)

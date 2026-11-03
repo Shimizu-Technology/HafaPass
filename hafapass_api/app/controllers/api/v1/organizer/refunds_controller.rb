@@ -25,6 +25,7 @@ module Api
             reason: params[:reason],
             requested_by: current_user,
             idempotency_key: idempotency_key,
+            organizer_initiated: true,
             **options
           )
 

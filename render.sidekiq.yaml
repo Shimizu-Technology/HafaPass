@@ -1,4 +1,7 @@
 # FUTURE SIDEKIQ OPTION: not the initial $7 configuration. Requires a drained SQL queue before switching.
+# DO NOT APPLY to the live service as-is: it reuses the name hafapass-api, deploys
+# main instead of hafapass-staging, and creates billed Redis, worker and clock
+# services. Production runs render.yaml (HAFAPASS_RUNTIME=embedded).
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 # Existing API: srv-d6bsuq0gjchc73fu35hg (Singapore, Docker, Starter).
 # Prepared contract only; inspect the sync preview before applying.

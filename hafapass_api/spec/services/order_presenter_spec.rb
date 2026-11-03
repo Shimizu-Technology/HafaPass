@@ -29,6 +29,15 @@ RSpec.describe OrderPresenter do
       status: "refunded", amount_cents: 5250, refunded_at: refund.succeeded_at)
   end
 
+  it "measures the hold's remaining seconds on the server" do
+    order = create(:order, status: :pending, expires_at: 7.minutes.from_now)
+    expect(described_class.call(order)[:expires_in_seconds]).to be_within(2).of(420)
+
+    order.update_columns(expires_at: 1.minute.ago)
+    expect(described_class.call(order)[:expires_in_seconds]).to eq(0)
+    expect(described_class.call(create(:order, expires_at: nil))).not_to have_key(:expires_in_seconds)
+  end
+
   it "includes the public image asset host with the cover URL" do
     order = create(:order)
     expect(described_class.call(order).fetch(:event)).to include(

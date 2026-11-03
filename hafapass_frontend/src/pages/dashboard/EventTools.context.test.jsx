@@ -9,7 +9,7 @@ import SeatingManagementPage from './SeatingManagementPage'
 
 const caps = vi.hoisted(() => ({ advanced_sales_tools: true, assigned_seating: true }))
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => caps }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => caps, useLaunchCapabilityState: () => ({ capabilities: caps, status: 'ready', retry: () => {} }) }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children, event }) => <div><h1>{event?.title}</h1>{children}</div> }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const permissions = { manage_staff: true, manage_inventory: true, manage_events: true, manage_marketing: true, edit_event_content: true, view_attendees: true }

@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { loadStripe } from '@stripe/stripe-js'
 import { expect, it, vi } from 'vitest'
 import StripeProvider from './StripeProvider'
 
@@ -27,4 +29,20 @@ it('renders children without Elements until a payment exists', () => {
   render(<StripeProvider publishableKey="pk_test_123"><p>Order details</p></StripeProvider>)
   expect(screen.getByText('Order details')).toBeInTheDocument()
   expect(elements.options).toBeNull()
+})
+
+it('offers a retry when Stripe.js fails to load, then loads it again', async () => {
+  loadStripe.mockRejectedValueOnce(new Error('Failed to load Stripe.js'))
+  render(<StripeProvider publishableKey="pk_test_retry" clientSecret="pi_9_secret_9"><p>Card form</p></StripeProvider>)
+  expect(await screen.findByRole('alert')).toHaveTextContent("The card form didn't load.")
+  expect(screen.queryByText('Card form')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Card form')).toBeInTheDocument()
+  expect(loadStripe).toHaveBeenCalledTimes(2)
+})
+
+it('styles card inputs like the app fields', () => {
+  render(<StripeProvider publishableKey="pk_test_rules" clientSecret="pi_8_secret_8"><p>Card form</p></StripeProvider>)
+  expect(elements.options.appearance.rules['.Input']).toMatchObject({ boxShadow: 'none' })
+  expect(elements.options.appearance.rules['.Input:focus'].borderColor).toBe('#0d9e96')
 })

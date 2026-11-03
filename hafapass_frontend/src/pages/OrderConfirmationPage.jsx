@@ -60,6 +60,7 @@ function OrderConfirmationContent() {
   const eventContent = useTranslatedContent(order?.event)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [pollError, setPollError] = useState(false)
   const [resendState, setResendState] = useState('idle')
   const [deliveryRefreshing, setDeliveryRefreshing] = useState(false)
   const [deliveryRefreshError, setDeliveryRefreshError] = useState(null)
@@ -108,7 +109,9 @@ function OrderConfirmationContent() {
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '', hash }, { replace: true })
   }, [id, location.pathname, location.search, location.hash, navigate])
 
-  const fetchOrder = useCallback(async ({ preserveOrder = false } = {}) => {
+  // `poll` refreshes an order already on screen: a failed poll shows a soft
+  // notice and keeps the page, and polling waits while offline or hidden.
+  const fetchOrder = useCallback(async ({ preserveOrder = false, poll = false } = {}) => {
     const generation = lifecycle.current.generation
     const buyerId = checkoutBuyerIdentity()
     const contextCurrent = () => lifecycle.current.active && lifecycle.current.generation === generation
@@ -120,7 +123,7 @@ function OrderConfirmationContent() {
       await deliveryRefreshInFlight.current
       if (!contextCurrent()) return
     }
-    if (preserveOrder && (navigator.onLine === false || document.visibilityState === 'hidden')) return
+    if ((preserveOrder || poll) && (navigator.onLine === false || document.visibilityState === 'hidden')) return
     const request = ++latestFetch.current
     const current = () => contextCurrent() && latestFetch.current === request
     let finishRefresh
@@ -133,6 +136,7 @@ function OrderConfirmationContent() {
       if (!current()) return
       setOrder(response.data)
       setError(null)
+      setPollError(false)
       setDeliveryRefreshError(null)
       if (response.data.confirmation_delivery?.reconciliation_required === false) setResendState(state => state === 'uncertain' ? 'idle' : state)
       if (response.data.event?.slug && finalStatuses.has(response.data.status)) clearActiveCheckout(response.data.event.slug, id)
@@ -141,6 +145,10 @@ function OrderConfirmationContent() {
       if (!current()) return
       if (preserveOrder && err.response?.status !== 404 && err.response?.status !== 401 && err.response?.status !== 403) {
         setDeliveryRefreshError(t('buyerAccount.orderConfirmationPage.unableToRefreshEmailStatusRightNowYour'))
+        return
+      }
+      if (poll && err.response?.status !== 404 && err.response?.status !== 401 && err.response?.status !== 403) {
+        setPollError(true)
         return
       }
       setError(err.response?.status === 404
@@ -158,9 +166,23 @@ function OrderConfirmationContent() {
 
   useEffect(() => {
     if (!order || finalStatuses.has(order.status)) return undefined
-    const interval = window.setInterval(fetchOrder, 3000)
-    return () => window.clearInterval(interval)
+    const interval = window.setInterval(() => fetchOrder({ poll: true }), 3000)
+    // Catch up as soon as the buyer comes back instead of waiting a full tick.
+    const resume = () => { if (document.visibilityState === 'visible') fetchOrder({ poll: true }) }
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('online', resume)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('online', resume)
+    }
   }, [fetchOrder, order])
+
+  const retryOrder = () => {
+    setError(null)
+    setLoading(true)
+    fetchOrder()
+  }
 
   useEffect(() => {
     const budgetKey = `${id}:${deliveryRefreshCycle}`
@@ -434,7 +456,10 @@ function OrderConfirmationContent() {
         <div className="card p-8 text-center">
           <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-500" />
           <p className="mb-5 text-neutral-700">{error}</p>
-          <Link to="/orders/recover" className="btn-primary">{t('buyerAccount.orderConfirmationPage.recoverMyOrder')}</Link>
+          <div className="flex flex-col items-center gap-3">
+            <button type="button" onClick={retryOrder} className="btn-primary min-h-11">{t('buyerAccount.orderConfirmationPage.tryAgain')}</button>
+            <Link to="/orders/recover" className="btn-secondary min-h-11">{t('buyerAccount.orderConfirmationPage.recoverMyOrder')}</Link>
+          </div>
         </div>
       </div>
     )
@@ -461,6 +486,7 @@ function OrderConfirmationContent() {
             <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.yourTicketsAreHeldUntilResumeTheOriginal', { time: formatEventTime(order.expires_at, event.timezone, { second: '2-digit' }) })}</p>
             <Link to={`/checkout/${event.slug}?resume=${order.id}`} className="btn-primary">{t('buyerAccount.orderConfirmationPage.resumePayment')}</Link>
           </div> : isProcessing && <p className="mt-2 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.thisPageRefreshesAutomaticallyDoNotSubmitAnother')}</p>}
+          {pollError && <p role="status" className="mt-3 rounded-lg bg-warning-50 p-3 text-sm text-warning-800">{t('buyerAccount.orderConfirmationPage.stillCheckingOrder')}</p>}
         </div>
 
         {(change || showCancelledRefundStatus) && (
@@ -503,6 +529,7 @@ function OrderConfirmationContent() {
                 <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.resend')}</button>
               )}
             </div>
+            {usableTickets && <p className="mb-3 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.saveTicketsForTheDoor')}</p>}
             {resendState === 'requested' && <p className="mb-3 text-sm text-neutral-700">{t('buyerAccount.orderConfirmationPage.yourEmailRequestWasSavedCheckTheDelivery')}</p>}
             {resendState === 'cooldown' && <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.anEmailRequestWasMadeRecentlyPleaseWait')}</p>}
             {resendState === 'uncertain' && <p className="mb-3 text-sm text-amber-700">{t('buyerAccount.orderConfirmationPage.aPreviousTicketEmailIsStillUnconfirmedUse')}</p>}

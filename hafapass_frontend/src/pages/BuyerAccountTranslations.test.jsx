@@ -15,7 +15,7 @@ import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
 
 vi.mock('../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
-vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({ ticket_transfers: true }) }))
+vi.mock('../hooks/useLaunchCapabilities', () => ({ default: () => ({ ticket_transfers: true }), useLaunchCapabilityState: () => ({ capabilities: ({ ticket_transfers: true }), status: 'ready', retry: () => {} }) }))
 vi.mock('../components/ui/ScrollReveal', () => ({ StaggerContainer: ({ children }) => <div>{children}</div>, StaggerItem: ({ children }) => <div>{children}</div> }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/QRCode', () => ({ default: () => <div data-testid="qr" /> }))

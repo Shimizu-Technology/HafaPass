@@ -7,7 +7,7 @@ import EventOverviewPage from './EventOverviewPage'
 
 vi.mock('../../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn() } }))
 const launch = vi.hoisted(() => ({}))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch, useLaunchCapabilityState: () => ({ capabilities: launch, status: 'ready', retry: () => {} }) }))
 
 const manager = { view_events: true, manage_events: true, edit_event_content: true, manage_inventory: true, view_attendees: true,
   manage_attendees: true, manage_marketing: true, manage_staff: true, scan: true, box_office: true, view_finance: true }

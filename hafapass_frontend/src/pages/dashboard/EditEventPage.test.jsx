@@ -11,7 +11,7 @@ vi.mock('../../components/CoverImageUpload', () => ({ default: ({ onUploaded }) 
 vi.mock('../../components/TicketTypeCRUD', () => ({ default: ({ ticketTypes }) => <ul>{ticketTypes.map(type => <li key={type.id}>{type.name}</li>)}</ul> }))
 vi.mock('../../hooks/useEventCategories', () => ({ default: () => [{ value: 'other', label: 'Other' }] }))
 const launch = vi.hoisted(() => ({ value: {} }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch.value }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => launch.value, useLaunchCapabilityState: () => ({ capabilities: launch.value, status: 'ready', retry: () => {} }) }))
 
 const event = { permissions: { edit_event_content: true, manage_events: true, manage_inventory: true, box_office: true, view_attendees: true, manage_staff: true, manage_attendees: true, view_finance: true }, id: 37, title: 'Published Workshop', venue_name: 'Venue', status: 'published', timezone: 'Pacific/Guam', category: 'other', age_restriction: 'all_ages', starts_at: '2026-10-16T09:00:42.123Z', ends_at: '2026-10-16T12:00:42.123Z', doors_open_at: '2026-10-16T08:30:42.123Z', ticket_types: [] }
 function mount() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>) }

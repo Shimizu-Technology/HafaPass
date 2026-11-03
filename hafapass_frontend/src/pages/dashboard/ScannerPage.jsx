@@ -19,6 +19,7 @@ import {
 } from '../../utils/admissionStore'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
 import useScreenWakeLock from '../../hooks/useScreenWakeLock'
+import useCameraRecovery from '../../hooks/useCameraRecovery'
 import useScanSound from '../../hooks/useScanSound'
 
 const LOOKUP_STATUS_LABELS = {
@@ -270,7 +271,7 @@ function ScanResultOverlay({ id, type, onDismiss, onGesture }) {
     // The admitted flash is visual only (the panel announces it) and clears itself.
     return (
       <div aria-hidden="true" onClick={dismiss} data-testid="scan-result-overlay" data-result={type} data-armed={armed}
-        className={`fixed inset-0 z-[60] animate-[fadeIn_120ms_ease-out] ${layout} ${classes}`}>
+        className={`fixed inset-0 z-[60] animate-[ticket-fade_120ms_ease-out] ${layout} ${classes}`}>
         <Icon className="h-24 w-24 shrink-0" strokeWidth={2.5} />
         <span className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
       </div>
@@ -279,7 +280,7 @@ function ScanResultOverlay({ id, type, onDismiss, onGesture }) {
   return (
     <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={headlineId} aria-describedby={SCAN_RESULT_MESSAGE_ID}
       data-testid="scan-result-overlay" data-result={type} data-armed={armed}
-      className={`fixed inset-0 z-[60] animate-[fadeIn_120ms_ease-out] ${classes}`}>
+      className={`fixed inset-0 z-[60] animate-[ticket-fade_120ms_ease-out] ${classes}`}>
       <button ref={buttonRef} type="button" onClick={dismiss} aria-label={`${headline}. Dismiss scan result`}
         className={`h-full w-full focus:outline-none ${layout}`}>
         <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
@@ -1333,6 +1334,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         : `Camera could not start: ${cameraFailure.message}`)
     }
   }, [handleDecoded, stopCamera])
+
+  useCameraRecovery({
+    scanning, videoRef,
+    restart: () => { stopCamera(); startCamera() },
+    onGiveUp: () => {
+      stopCamera()
+      setCameraError('The camera stopped. Tap Start camera to try again, or use manual entry.')
+    },
+  })
 
   // Keep the reader running across verified refreshes; its callback always reads current state.
   // Event/device changes and loss of authorization stop the old camera immediately.

@@ -30,7 +30,8 @@ module Commerce
 
         order = OrderCreator.call(
           event: event,
-          user: user,
+          user: nil,
+          sold_by: user,
           line_items: parameters["line_items"],
           buyer_name: parameters["buyer_name"].presence || "Walk-in",
           buyer_email: parameters["buyer_email"].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local",

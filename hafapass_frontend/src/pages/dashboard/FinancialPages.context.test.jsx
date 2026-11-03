@@ -13,7 +13,7 @@ import RefundsPage from './RefundsPage'
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 // The parent owns these records. A scoped navigation header cannot protect them.
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
-vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}) }))
+vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => ({}), useLaunchCapabilityState: () => ({ capabilities: ({}), status: 'ready', retry: () => {} }) }))
 vi.mock('../../components/QRCode', () => ({ default: () => <p>Private door QR</p> }))
 vi.mock('../../components/SeatSelector', () => ({ default: () => null }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }

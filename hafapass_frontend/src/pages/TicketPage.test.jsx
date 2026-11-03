@@ -15,6 +15,21 @@ vi.mock('../components/SEO', () => ({ default: () => null }))
 describe('ticket download recovery', () => {
   beforeEach(() => { vi.clearAllMocks(); motionPreference.reduced = false; window.sessionStorage.clear() })
 
+  it('sends a transfer recipient to support for an event-change refund and suggests saving the PDF', async () => {
+    api.get.mockResolvedValue({ data: {
+      id: 4, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan', wallet: {},
+      event_change_refund_contact_support: true,
+      event: { title: 'Moved Night', status: 'published', starts_at: '2026-11-21T07:00:00Z', timezone: 'Pacific/Guam' },
+      ticket_type: { name: 'Admission' },
+    } })
+    render(<MemoryRouter initialEntries={['/tickets/synthetic-display']}><Routes>
+      <Route path="/tickets/:credential" element={<TicketPage />} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText(/Because this ticket was transferred to you, HåfaPass support handles any refund/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Contact support' })).toBeInTheDocument()
+    expect(screen.getByText('Venue signal can be weak. Download the PDF now so your QR opens without a connection.')).toBeVisible()
+  })
+
   it('uses the public focal point for an approved ticket cover', async () => {
     api.get.mockResolvedValue({ data: {
       id: 3, status: 'issued', admission_allowed: true, scan_credential: 'synthetic-scan', wallet: {},

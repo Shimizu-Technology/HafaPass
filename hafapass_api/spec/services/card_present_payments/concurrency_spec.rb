@@ -17,7 +17,7 @@ RSpec.describe "Card-present lifecycle locking", :non_transactional do
       user = event.organizer_profile.user
       account = create(:card_present_account, :verified, organization: event.organization)
       ticket_type = create(:ticket_type, event: event, price_cents: 1000)
-      sale = Commerce::OrderCreator.call(event: event, user: user,
+      sale = Commerce::OrderCreator.call(event: event, user: nil, sold_by: user,
         line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }], buyer_email: "locking@example.invalid",
         buyer_name: "Locking fixture", payment_required: true, payment_provider: account.provider,
         source: "box_office", payment_method: "door_card", service_fee: false)

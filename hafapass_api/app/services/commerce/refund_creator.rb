@@ -54,8 +54,13 @@ module Commerce
         provider_refund: provider_refund).send(:finalize_refund!, refund, provider_refund)
     end
 
+    PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to refund this order."
+    # Payout states that have reserved or sent the event's money to the organizer.
+    PAYOUT_RESERVED_STATUSES = %i[pending processing held paid].freeze
+
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
-      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil)
+      provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil,
+      organizer_initiated: false)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -66,6 +71,7 @@ module Commerce
       @captured_payment = payment
       @cash_return = cash_return
       @manual_card_return = manual_card_return
+      @organizer_initiated = organizer_initiated
     end
 
     def call
@@ -139,6 +145,12 @@ module Commerce
       raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
     end
 
+    def event_paid_out?
+      event = order.event
+      event.payouts.where(status: PAYOUT_RESERVED_STATUSES).exists? ||
+        event.settlements.status_finalized.where("paid_cents > 0").exists?
+    end
+
     def reserve_refund!
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
       return validate_replay!(existing) if existing
@@ -152,6 +164,11 @@ module Commerce
         unless order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
+        # Checked under the organization and event locks that payout creation
+        # also takes. Once payout money is reserved or sent, an organizer card
+        # refund would come out of the platform's balance; support handles it.
+        # Organizers keep door cash, so cash returns stay theirs to record.
+        raise RefundError, PAID_OUT_MESSAGE if @organizer_initiated && order.payment_method != "door_cash" && event_paid_out?
 
         ensure_financial_review_resolved! unless provider_refund
 
@@ -236,6 +253,12 @@ module Commerce
         order.lock!
         refund.lock!
         return false unless refund.pending? && refund.provider_refund_id.blank?
+        # A pending organizer refund reserved before the event paid out must
+        # not reach the provider afterwards. Only the final gate (mark_unknown)
+        # checks it, so recovering an earlier provider result still runs first.
+        if mark_unknown && @organizer_initiated && order.payment_method != "door_cash" && event_paid_out?
+          raise RefundError, PAID_OUT_MESSAGE
+        end
 
         ensure_financial_review_resolved!
         # Persist uncertainty before leaving the locks for the external call.

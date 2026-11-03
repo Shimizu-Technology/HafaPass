@@ -1,13 +1,14 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PaymentForm from './PaymentForm'
 
 const confirmPayment = vi.fn()
 const paymentElementOptions = vi.hoisted(() => vi.fn())
+const paymentElementProps = vi.hoisted(() => ({ current: null }))
 
 vi.mock('@stripe/react-stripe-js', () => ({
-  PaymentElement: ({ options }) => { paymentElementOptions(options); return <div>Payment fields</div> },
+  PaymentElement: props => { paymentElementProps.current = props; paymentElementOptions(props.options); return <div>Payment fields</div> },
   useElements: () => ({ ready: true }),
   useStripe: () => ({ confirmPayment }),
 }))
@@ -93,4 +94,24 @@ it('directs a connection error to order status before permitting another payment
   expect(screen.getByRole('link', { name: 'Check order status' })).toHaveAttribute('href', '/orders/2/confirmation')
   expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeDisabled()
   expect(screen.getByText('Card details are handled by Stripe.')).toBeInTheDocument()
+})
+
+it('explains a card form that failed to load and disables Pay', async () => {
+  render(<PaymentForm totalCents={1250} returnUrl="https://example.test/confirmation"
+    onSuccess={vi.fn()} submitting={false} setSubmitting={vi.fn()} />)
+  await act(async () => paymentElementProps.current.onLoadError({ error: { type: 'api_connection_error' } }))
+  expect(screen.getByRole('alert')).toHaveTextContent("The card form didn't load.")
+  expect(screen.getByRole('alert')).toHaveTextContent("You haven't been charged.")
+  expect(screen.getByRole('button', { name: 'Pay $12.50' })).toBeDisabled()
+})
+
+it('points to the order when an accepted payment cannot move on', async () => {
+  const setSubmitting = vi.fn()
+  confirmPayment.mockResolvedValue({ paymentIntent: { id: 'pi_ok', status: 'succeeded' } })
+  render(<PaymentForm totalCents={1250} returnUrl="https://example.test/orders/1/confirmation"
+    onSuccess={() => false} submitting={false} setSubmitting={setSubmitting} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Pay $12.50' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Your payment was sent.')
+  expect(screen.getByRole('link', { name: 'Check order status' })).toHaveAttribute('href', 'https://example.test/orders/1/confirmation')
+  expect(setSubmitting).toHaveBeenLastCalledWith(false)
 })

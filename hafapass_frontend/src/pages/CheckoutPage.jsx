@@ -303,14 +303,21 @@ function CheckoutContent({ buyerId }) {
   useEffect(() => {
     const expiresAt = orderData?.expires_at || seatHoldExpiresAt
     if (!expiresAt) return undefined
+    // The server's remaining seconds, measured when this order arrived, give
+    // the phone clock's offset, so a clock that is minutes off doesn't end the
+    // hold early. Date.now keeps counting while the phone sleeps.
+    const deadline = new Date(expiresAt).getTime()
+    const serverSeconds = orderData?.expires_at && Number.isFinite(orderData?.expires_in_seconds)
+      ? orderData.expires_in_seconds : null
+    const clockOffset = serverSeconds === null ? 0 : deadline - serverSeconds * 1000 - Date.now()
 
     const updateCountdown = () => {
-      setSecondsRemaining(Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)))
+      setSecondsRemaining(Math.max(0, Math.ceil((deadline - (Date.now() + clockOffset)) / 1000)))
     }
     updateCountdown()
     const timer = window.setInterval(updateCountdown, 1000)
     return () => window.clearInterval(timer)
-  }, [orderData?.expires_at, seatHoldExpiresAt])
+  }, [orderData?.expires_at, orderData?.expires_in_seconds, seatHoldExpiresAt])
 
   const formatPrice = (cents) => cents === 0 ? t('events.free') : formatMoneyCents(cents)
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'short' })
@@ -469,11 +476,14 @@ function CheckoutContent({ buyerId }) {
     }
   }
 
+  // Returns whether checkout moved on. Stripe has already accepted the payment
+  // here, so the server owns the outcome: only a changed route or account stops
+  // the move, never leftover browser storage from an earlier attempt.
   const handlePaymentSuccess = (paymentIntent) => {
     const context = paymentContext.current
-    if (!context || context.orderId !== String(orderId) || !contextCurrent(context)
-      || getActiveCheckout(slug) !== context.orderId || getCheckoutAttempt(slug)) return
+    if (!context || context.orderId !== String(orderId) || !contextCurrent(context)) return false
     navigate(`/orders/${orderId}/confirmation`, { state: { order: orderData, event, paymentIntent }, replace: true })
+    return true
   }
 
   if (configError) return (
@@ -904,10 +914,15 @@ function CheckoutContent({ buyerId }) {
                 {checkoutExpired ? t('buyer.Checkout.yourTicketHoldExpiredReturnToTheEvent') : t('buyer.Checkout.ticketsHeldFor', { value1: countdownLabel })}
               </div>
             )}
+            {checkoutExpired && !submitting && (
+              <Link to={`/events/${slug}`} replace className="btn-primary mb-4 w-full">{t('buyer.Checkout.backToEvent')}</Link>
+            )}
             <PaymentModeBanner mode={paymentMode} />
             <div className="relative z-[60]">
               <StripeProvider publishableKey={stripePublishableKey} clientSecret={clientSecret} stripeAccount={stripeAccount}>
-                {!checkoutExpired && (
+                {/* A payment already in flight (or in a 3D Secure check) must finish
+                    on this form; the server refunds a capture after the hold. */}
+                {(!checkoutExpired || submitting) && (
                   <PaymentForm
                     totalCents={displayedTotal}
                     returnUrl={`${window.location.origin}/orders/${orderId}/confirmation`}
