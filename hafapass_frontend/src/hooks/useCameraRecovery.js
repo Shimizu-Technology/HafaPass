@@ -24,10 +24,15 @@ export default function useCameraRecovery({ scanning, videoRef, restart, onGiveU
 
   useEffect(() => {
     if (!scanning) return undefined
+    // Cleared on cleanup, so a check or play() rejection that settles after
+    // staff stop the camera, switch events or leave can't restart anything.
+    let active = true
+    let playing = false
     let lastTime = null
     let stalled = 0
 
     const recover = () => {
+      if (!active) return
       const now = Date.now()
       restarts.current = restarts.current.filter(time => now - time < RESTART_WINDOW_MS)
       if (restarts.current.length >= MAX_RESTARTS) {
@@ -39,14 +44,26 @@ export default function useCameraRecovery({ scanning, videoRef, restart, onGiveU
     }
 
     const check = () => {
+      if (!active || playing) return
       if (document.visibilityState !== 'visible') { lastTime = null; stalled = 0; return }
       const video = videoRef.current
       // Wait for the first stream instead of judging a camera still starting.
       if (!video?.srcObject) return
       if (!liveTrack(video) || video.ended) { recover(); return }
       if (video.paused) {
-        // A paused but live stream usually just needs play() again.
-        video.play?.()?.catch?.(() => recover())
+        // A paused but live stream usually just needs play() again. One
+        // attempt at a time, and only for the stream that was paused.
+        const stream = video.srcObject
+        const attempt = video.play?.()
+        if (!attempt?.then) return
+        playing = true
+        attempt.then(
+          () => { playing = false },
+          () => {
+            playing = false
+            if (active && videoRef.current?.srcObject === stream) recover()
+          },
+        )
         return
       }
       if (lastTime !== null && video.currentTime === lastTime) stalled += 1
@@ -60,6 +77,7 @@ export default function useCameraRecovery({ scanning, videoRef, restart, onGiveU
     window.addEventListener('pageshow', onVisible)
     const timer = window.setInterval(check, CHECK_MS)
     return () => {
+      active = false
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('pageshow', onVisible)
       window.clearInterval(timer)

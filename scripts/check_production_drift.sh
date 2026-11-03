@@ -33,9 +33,11 @@ check_component() {
     echo "$name is current ($revision)."
     return
   fi
-  local newest_age=$(( $(date +%s) - $(echo "$pending" | head -1 | cut -d' ' -f2) ))
-  if (( newest_age < GRACE_SECONDS )); then
-    echo "$name has changes from the last $((newest_age / 60)) minutes; not flagging yet."
+  # Judge the oldest missing change: a fresh merge must not hide an older one
+  # that was never deployed.
+  local oldest_age=$(( $(date +%s) - $(echo "$pending" | tail -1 | cut -d' ' -f2) ))
+  if (( oldest_age < GRACE_SECONDS )); then
+    echo "$name has changes from the last $((oldest_age / 60)) minutes; not flagging yet."
     return
   fi
   echo "::error::$name runs $revision but main has undeployed changes to $*:"

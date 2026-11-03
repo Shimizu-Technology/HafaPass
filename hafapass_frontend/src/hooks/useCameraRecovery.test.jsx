@@ -67,3 +67,32 @@ it('does nothing while the camera is off or the page is hidden', () => {
   act(() => vi.advanceTimersByTime(10000))
   expect(restart).not.toHaveBeenCalled()
 })
+
+it('ignores a play() rejection that settles after the camera was stopped or replaced', async () => {
+  const video = fakeVideo()
+  video.paused = true
+  let rejectPlay
+  video.play = vi.fn(() => new Promise((_, reject) => { rejectPlay = reject }))
+  const restart = vi.fn()
+  const { rerender } = renderHook(({ scanning }) => useCameraRecovery({ scanning, videoRef: { current: video }, restart }), { initialProps: { scanning: true } })
+  act(() => setVisibility('visible'))
+  expect(video.play).toHaveBeenCalledTimes(1)
+  act(() => vi.advanceTimersByTime(2500 * 3))
+  expect(video.play).toHaveBeenCalledTimes(1)
+  rerender({ scanning: false })
+  await act(async () => { rejectPlay(new Error('interrupted')) })
+  expect(restart).not.toHaveBeenCalled()
+})
+
+it('ignores a play() rejection for a stream that has since been replaced', async () => {
+  const video = fakeVideo()
+  video.paused = true
+  let rejectPlay
+  video.play = vi.fn(() => new Promise((_, reject) => { rejectPlay = reject }))
+  const restart = vi.fn()
+  renderHook(() => useCameraRecovery({ scanning: true, videoRef: { current: video }, restart }))
+  act(() => setVisibility('visible'))
+  video.srcObject = { getVideoTracks: () => [{ readyState: 'live', muted: false }] }
+  await act(async () => { rejectPlay(new Error('interrupted')) })
+  expect(restart).not.toHaveBeenCalled()
+})
