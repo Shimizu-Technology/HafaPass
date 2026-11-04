@@ -50,7 +50,8 @@ RSpec.describe "Admin order refunds", type: :request do
 
     post "/api/v1/organizer/events/#{event.id}/orders/#{order.id}/refund", params: { amount_cents: 1000 }, headers: headers
 
-    expect(response).not_to be_successful
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.fetch("error")).to eq("Organization membership required")
     expect(StripeService).not_to have_received(:refund_payment)
   end
 
@@ -60,6 +61,49 @@ RSpec.describe "Admin order refunds", type: :request do
     expect(response).to have_http_status(:created), response.body
     expect(response.parsed_body.dig("order", "status")).to eq("partially_refunded")
     expect(tickets.map { |ticket| ticket.reload.status }).to all(eq("issued"))
+  end
+
+  it "refuses a set amount that would complete the order, since that cancels tickets" do
+    refund!(amount_cents: 10_500)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to include("reconciliation_required" => false)
+    expect(response.parsed_body["error"]).to include("Choose Everything left")
+    expect(order.refunds).to be_empty
+    expect(tickets.map { |ticket| ticket.reload.status }).to all(eq("issued"))
+    expect(StripeService).not_to have_received(:refund_payment)
+  end
+
+  it "refuses a later set amount that would complete the order after an earlier refund" do
+    refund!(amount_cents: 1500)
+    refund!(amount_cents: 9000, request_headers: headers.merge("Idempotency-Key" => "admin-request-2"))
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body["error"]).to include("Choose Everything left")
+    expect(order.refunds.count).to eq(1)
+  end
+
+  it "allows a set amount equal to a smaller capture, and tickets stay valid" do
+    capped = create(:order, event: event, subtotal_cents: 10_000, service_fee_cents: 500, total_cents: 10_500)
+    capped_item = create(:order_item, order: capped, ticket_type: ticket_type, quantity: 1, unit_price_cents: 10_000,
+      subtotal_cents: 10_000, fee_cents: 500, organizer_proceeds_cents: 10_000)
+    ticket = create(:ticket, order: capped, order_item: capped_item, event: event, ticket_type: ticket_type)
+    create(:payment, :succeeded, order: capped, amount_cents: 5000, provider: "stripe",
+      provider_environment: "live", provider_payment_id: "pi_capped")
+
+    post "/api/v1/admin/orders/#{capped.id}/refund", params: { note: "Partial capture", amount_cents: 5000 }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created), response.body
+    expect(response.parsed_body.dig("order", "status")).to eq("partially_refunded")
+    expect(ticket.reload).to be_issued
+  end
+
+  it "replays a set amount already accepted, without applying the new check to it" do
+    refund!(amount_cents: 1500)
+    refund!(amount_cents: 1500)
+
+    expect(response).to have_http_status(:created), response.body
+    expect(order.refunds.count).to eq(1)
   end
 
   it "refunds only a selected ticket that was transferred, and cancels it for its new holder" do

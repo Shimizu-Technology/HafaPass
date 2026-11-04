@@ -85,6 +85,7 @@ module Commerce
     def call
       validate!
       amount = parsed_amount
+      refuse_amount_that_completes_order!(amount)
       tickets = selected_tickets
       paid_out = order.event.paid_out_to_organizer?
 
@@ -120,6 +121,18 @@ module Commerce
       return @raw_amount.to_i if @raw_amount.is_a?(String) && @raw_amount.match?(/\A[1-9]\d{0,8}\z/)
 
       raise fail_with("Refund amount must be a positive number of cents")
+    end
+
+    # A set amount promises tickets stay valid, but reaching the order total
+    # takes the full-refund path, which cancels them. Make that an explicit
+    # choice. A smaller capture can't reach the total, so it stays allowed.
+    def refuse_amount_that_completes_order!(amount)
+      return if amount.nil? || order.refunds.exists?(idempotency_key: refund_key)
+
+      returned = order.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      return unless amount + returned == order.total_cents
+
+      raise fail_with("That amount refunds the whole order, which cancels its unscanned tickets. Choose Everything left instead.")
     end
 
     def selected_tickets
