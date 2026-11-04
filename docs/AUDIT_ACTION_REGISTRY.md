@@ -339,6 +339,7 @@ entries are described above and defined in the registry's audience variants.
 | `refund.created` | historical | refunds | O/F | yes | yes | `status`, `amount_cents` | `order_id`, `amount_cents`, `event_title`, `order_reference`, `currency` | Requested a refund. |
 | `reconciliation_exception.resolved` | yes | refunds | A | yes | yes | — | — | Resolved a payment reconciliation exception. |
 | `order.fraud_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested a fraud refund after a Stripe early fraud warning. |
+| `order.admin_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested an administrator refund for an order. |
 | `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |

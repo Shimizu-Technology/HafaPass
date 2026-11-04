@@ -226,6 +226,13 @@ class Event < ApplicationRecord
       .distinct
   }
 
+  # True once a payout has reserved or sent this event's money to the organizer.
+  # Later card refunds then come out of the platform's Stripe balance.
+  def paid_out_to_organizer?
+    payouts.where(status: Payout::MONEY_RESERVED_STATUSES).exists? ||
+      settlements.status_finalized.where("paid_cents > 0").exists?
+  end
+
   def category_label
     CATEGORY_LABELS.fetch(category)
   end

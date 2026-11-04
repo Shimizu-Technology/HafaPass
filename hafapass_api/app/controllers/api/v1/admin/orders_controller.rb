@@ -54,6 +54,33 @@ class Api::V1::Admin::OrdersController < Api::V1::Admin::BaseController
     render json: { error: e.message }, status: :unprocessable_content
   end
 
+  # GET /api/v1/admin/orders/:id/refund_options
+  def refund_options
+    order = Order.find_by(id: params[:id])
+    return render json: { error: "Order not found" }, status: :not_found unless order
+
+    render json: Commerce::AdminOrderRefund.options(order)
+  end
+
+  # POST /api/v1/admin/orders/:id/refund
+  # Header: Idempotency-Key. Body: note, and at most one of amount_cents or
+  # ticket_ids. With neither, refunds everything left on the order.
+  def refund
+    order = Order.find_by(id: params[:id])
+    return render json: { error: "Order not found" }, status: :not_found unless order
+
+    refund = Commerce::AdminOrderRefund.call(order: order, actor: @current_user, note: params[:note],
+      idempotency_key: request.headers["Idempotency-Key"], amount_cents: params[:amount_cents],
+      ticket_ids: params[:ticket_ids], request: request)
+    render json: {
+      refund: { id: refund.id, status: refund.status, amount_cents: refund.amount_cents, reason: refund.reason },
+      order: order_json(Order.includes(:event, :order_items, :payments, :refunds, :reconciliation_exceptions,
+        tickets: :ticket_type).find(order.id))
+    }, status: :created
+  rescue Commerce::AdminOrderRefund::Error => e
+    render json: { error: e.message }.merge(e.outcome), status: :unprocessable_content
+  end
+
   private
 
   def order_json(o)
