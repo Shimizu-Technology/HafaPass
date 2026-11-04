@@ -113,6 +113,33 @@ describe('AdminOrdersPage', () => {
     expect(screen.queryByText(/fraud refund sent/)).not.toBeInTheDocument()
   })
 
+  it('offers a refund for a captured Stripe order and reports the result', async () => {
+    const original = await apiClient.get()
+    const paid = { ...original.data.orders[0], status: 'completed', reconciliation_exceptions: [],
+      payments: [{ id: 1, provider: 'stripe', provider_payment_id: 'pi_test', status: 'succeeded', amount_cents: 4700 }] }
+    apiClient.get.mockImplementation(path => Promise.resolve(path === '/admin/orders/42/refund_options'
+      ? { data: { order_id: 42, refundable_cents: 4700, event_paid_out: true, tickets: [] } }
+      : { data: { ...original.data, orders: [paid] } }))
+    apiClient.post.mockResolvedValue({ data: { refund: { id: 3, status: 'succeeded', amount_cents: 4700 }, order: { ...paid, status: 'refunded', payments: paid.payments } } })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Order 42 details' }))
+    await user.click(screen.getByRole('button', { name: 'Refund this order' }))
+    const dialog = within(screen.getByRole('dialog'))
+    await user.type(await dialog.findByLabelText('Note for the audit log'), 'Duplicate purchase')
+    await user.click(dialog.getByRole('button', { name: 'Refund $47.00' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Order #42: refund of $47.00 sent.')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refund this order' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a refund without a captured Stripe payment', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={['/admin/orders']}><AdminOrdersPage /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: 'Order 42 details' }))
+    expect(screen.queryByRole('button', { name: 'Refund this order' })).not.toBeInTheDocument()
+  })
+
   it('marks orders paid in Stripe test mode', async () => {
     const original = (await apiClient.get.getMockImplementation()?.()) || (await apiClient.get())
     apiClient.get.mockResolvedValue({ data: { ...original.data, orders: original.data.orders.map(order => ({ ...order, test_payment: true })) } })

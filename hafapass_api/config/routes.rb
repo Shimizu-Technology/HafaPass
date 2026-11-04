@@ -393,6 +393,9 @@ Rails.application.routes.draw do
         resources :orders, only: [:index] do
           # Stripe early fraud warning: cancel the tickets and refund as fraudulent.
           post :fraud_refund, on: :member
+          # An administrator's refund decision, including after an event paid out.
+          get :refund_options, on: :member
+          post :refund, on: :member
         end
         resources :connected_accounts, only: [:update] do
           member do

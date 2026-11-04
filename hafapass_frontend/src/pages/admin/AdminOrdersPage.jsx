@@ -6,6 +6,7 @@ import apiClient from '../../api/client'
 import TestPaymentBadge from '../../components/TestPaymentBadge'
 import Dialog from '../../components/Dialog'
 import AdminLayout from './AdminLayout'
+import AdminOrderRefundDialog from './AdminOrderRefundDialog'
 import { errorMessage } from './adminOperations'
 import { usePlatformIdentity, usePlatformVisit, usePlatformRequests } from '../../hooks/usePlatformContext'
 
@@ -14,6 +15,8 @@ const orderStatuses = ['', 'pending', 'completed', 'refunded', 'cancelled', 'par
 const money = (cents = 0) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
 const openFraudWarning = exception => exception.code === 'early_fraud_warning' && exception.status === 'open'
+const canOfferRefund = order => ['completed', 'partially_refunded'].includes(order.status)
+  && order.payments.some(payment => payment.provider === 'stripe' && ['succeeded', 'partially_refunded'].includes(payment.status))
 
 // Stripe early fraud warning: refund the order as fraudulent. The refund
 // cancels unadmitted tickets once Stripe confirms it.
@@ -74,6 +77,7 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState(null)
   const [fraudRefund, setFraudRefund] = useState(null)
+  const [adminRefund, setAdminRefund] = useState(null)
   const [notice, setNotice] = useState('')
 
   const fetchOrders = useCallback(() => {
@@ -116,6 +120,14 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
           setOrders(current => current.map(order => order.id === data.order.id ? data.order : order))
           setNotice(`Order #${data.order.id}: fraud refund ${data.refund.status === 'succeeded' ? 'sent' : 'requested'}.`)
           setFraudRefund(null)
+        }} />}
+      {adminRefund && <AdminOrderRefundDialog order={adminRefund} onClose={() => setAdminRefund(null)}
+        onRefunded={data => {
+          setOrders(current => current.map(order => order.id === data.order.id ? data.order : order))
+          setNotice(data.refund.status === 'pending'
+            ? `Order #${data.order.id}: refund is waiting on Stripe. Open the refund again to check it. Don't start another one.`
+            : `Order #${data.order.id}: refund of ${money(data.refund.amount_cents)} sent.`)
+          setAdminRefund(null)
         }} />}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
@@ -255,6 +267,8 @@ function AdminOrdersPageSession({ identity, resourcePath }) {
                               </div>
                             </div>
 
+                            {canOfferRefund(order) && <button type="button" onClick={() => setAdminRefund(order)}
+                              className="btn-secondary min-h-11">Refund this order</button>}
                             <div>
                             <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Tickets</p>
                             <div className="space-y-1">

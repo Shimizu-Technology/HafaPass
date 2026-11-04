@@ -125,6 +125,17 @@ After restoring the database/queue or restarting its owning service:
 - A capture after order expiry/cancellation must not issue tickets or reclaim released capacity. Review the captured charge, return it through the authorized provider/refund process, and verify the recorded return and repeated callback handling. Do not close the exception with a direct database edit or compensate by issuing tickets.
 - Keep the original operation identifiers, provider evidence, and independent finance holds until the ledger reconciles. A cleared refund queue alone does not prove that a check was issued, a provider returned money, or settlement is complete.
 
+### Refunding a card order as an administrator
+
+Use **Admin → Orders**, expand the order, then **Refund this order**. This is the path behind the "Contact HåfaPass support" message organizers see once an event has paid out, and behind the support link transfer recipients see after an event change.
+
+- **Everything left** cancels every unscanned ticket, including transferred ones. **Selected tickets** refunds each ticket's value and cancels only those. **A set amount** leaves tickets valid.
+- The money always goes to the original buyer's card, and only the buyer gets the refund email. If you refund a transferred ticket, tell its current holder yourself.
+- A note is required and is stored in the audit log (`order.admin_refund_requested`).
+- After a payout, HåfaPass's Stripe balance pays the refund. Any amount above the organizer's balance shows as a negative balance on their Finances page. The Organizer Agreement lets you deduct it from future payouts or invoice it. Nothing invoices automatically: if they have no upcoming event, send the invoice yourself.
+- If a refund comes back unconfirmed, open it again and choose **Check this refund**. That replays the same request and can't refund twice. Don't refund the same order in the Stripe Dashboard while it's unconfirmed.
+- Door-cash and other non-Stripe orders aren't refunded here. The organizer records those returns.
+
 ## Deploy order
 
 The API deploys by hand, but Netlify auto-publishes `main` as soon as a merge lands. A frontend change that needs a new API must therefore never reach `main` while the old API is still live. Every merge waits for the gate and CI to pass.

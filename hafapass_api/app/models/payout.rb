@@ -12,6 +12,8 @@ class Payout < ApplicationRecord
 
   enum :status, { pending: 0, processing: 1, paid: 2, failed: 3, reversed: 4, held: 5 }, prefix: true
 
+  MONEY_RESERVED_STATUSES = %i[pending processing held paid].freeze
+
   validates :provider, :idempotency_key, :currency, presence: true
   validates :idempotency_key, uniqueness: true
   validates :provider_payout_id, uniqueness: { scope: :provider }, allow_blank: true

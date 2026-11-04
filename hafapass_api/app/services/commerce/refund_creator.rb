@@ -55,12 +55,24 @@ module Commerce
     end
 
     PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to refund this order."
-    # Payout states that have reserved or sent the event's money to the organizer.
-    PAYOUT_RESERVED_STATUSES = %i[pending processing held paid].freeze
+
+    # What can still be returned on one captured payment: the smaller of the
+    # order's and the payment's remaining balance, with pending refunds counted.
+    def self.remaining_cents(order:, payment:)
+      payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
+        live_payments = order.payments.merge(Payment.live_or_legacy_capture)
+        live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
+        [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
+      else
+        order.refundable_cents
+      end
+      [order_remaining, payment_remaining].min
+    end
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
       provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil,
-      organizer_initiated: false)
+      organizer_initiated: false, admin_initiated: false)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -72,6 +84,7 @@ module Commerce
       @cash_return = cash_return
       @manual_card_return = manual_card_return
       @organizer_initiated = organizer_initiated
+      @admin_initiated = admin_initiated
     end
 
     def call
@@ -145,12 +158,6 @@ module Commerce
       raise RefundError, "Cash return timestamp must be ISO 8601 with an offset"
     end
 
-    def event_paid_out?
-      event = order.event
-      event.payouts.where(status: PAYOUT_RESERVED_STATUSES).exists? ||
-        event.settlements.status_finalized.where("paid_cents > 0").exists?
-    end
-
     def reserve_refund!
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
       return validate_replay!(existing) if existing
@@ -168,7 +175,7 @@ module Commerce
         # also takes. Once payout money is reserved or sent, an organizer card
         # refund would come out of the platform's balance; support handles it.
         # Organizers keep door cash, so cash returns stay theirs to record.
-        raise RefundError, PAID_OUT_MESSAGE if @organizer_initiated && order.payment_method != "door_cash" && event_paid_out?
+        raise RefundError, PAID_OUT_MESSAGE if @organizer_initiated && order.payment_method != "door_cash" && order.event.paid_out_to_organizer?
 
         ensure_financial_review_resolved! unless provider_refund
 
@@ -195,15 +202,7 @@ module Commerce
         if Rails.env.production? && (payment.provider_payment_id.to_s.start_with?("sim_") || payment.provider_payload["simulated"] == true)
           raise RefundError, "Simulated payments cannot be refunded in production"
         end
-        payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
-        order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
-          live_payments = order.payments.merge(Payment.live_or_legacy_capture)
-          live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
-          [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
-        else
-          order.refundable_cents
-        end
-        remaining = [order_remaining, payment_remaining].min
+        remaining = self.class.remaining_cents(order: order, payment: payment)
         amount = requested_amount_cents || selected_tickets&.sum(&:refundable_cents) || remaining
         if selected_tickets && requested_amount_cents && requested_amount_cents != selected_tickets.sum(&:refundable_cents)
           raise RefundError, "Ticket refunds must match the selected ticket value"
@@ -256,7 +255,7 @@ module Commerce
         # A pending organizer refund reserved before the event paid out must
         # not reach the provider afterwards. Only the final gate (mark_unknown)
         # checks it, so recovering an earlier provider result still runs first.
-        if mark_unknown && @organizer_initiated && order.payment_method != "door_cash" && event_paid_out?
+        if mark_unknown && @organizer_initiated && order.payment_method != "door_cash" && order.event.paid_out_to_organizer?
           raise RefundError, PAID_OUT_MESSAGE
         end
 
@@ -314,9 +313,10 @@ module Commerce
       raise RefundError, "Ticket not found for this order" unless selected.length == tickets.map(&:id).uniq.length
       raise RefundError, "Only unused active tickets can be refunded" if selected.any? { |ticket| ticket.cancelled? || ticket.transferred? || ticket.checked_in? }
       # An accepted transfer leaves the ticket issued with a new holder (the
-      # `transferred` status is never set). Only an event cancellation may
-      # refund the buyer for a ticket that now belongs to someone else.
-      if !reason.to_s.start_with?("event_cancel") && selected.any? { |ticket| ticket.transferred_away_from?(order) }
+      # `transferred` status is never set). Only an event cancellation or an
+      # administrator's decision may refund the buyer for a ticket that now
+      # belongs to someone else.
+      if !@admin_initiated && !reason.to_s.start_with?("event_cancel") && selected.any? { |ticket| ticket.transferred_away_from?(order) }
         raise RefundError, "Transferred tickets are controlled by their current holder"
       end
       if RefundTicket.active.where(ticket_id: selected.map(&:id)).exists?

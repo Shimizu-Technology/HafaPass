@@ -205,7 +205,8 @@ class AuditActions
       tenant: true, event_required: true,
       snapshots: %w[], metadata: %w[], actions: {
         "reconciliation_exception.resolved" => "Resolved a payment reconciliation exception.",
-        "order.fraud_refund_requested" => "Requested a fraud refund after a Stripe early fraud warning."
+        "order.fraud_refund_requested" => "Requested a fraud refund after a Stripe early fraud warning.",
+        "order.admin_refund_requested" => "Requested an administrator refund for an order."
       }
 
     # A paid late completion used a promo code past max_uses (see
