@@ -18,6 +18,7 @@
 # Verified with @netlify/config in both modes. Keep the two files in step.
 # Redirects and the SPA fallback live in hafapass_frontend/public/_redirects.
 [build]
+  ignore = "bash scripts/netlify-ignore-build.sh"
   base = "hafapass_frontend"
   command = "npm run build"
   publish = "hafapass_frontend/dist"

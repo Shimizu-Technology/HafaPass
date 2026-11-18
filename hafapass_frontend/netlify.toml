@@ -2,6 +2,7 @@
 # netlify.toml sets build.base to this directory, so Netlify reads this file and
 # resolves every path below relative to hafapass_frontend/.
 [build]
+  ignore = "bash scripts/netlify-ignore-build.sh"
   publish = "dist"
   command = "npm run build"
 
