@@ -6,13 +6,34 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: CI / Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Detect documentation-only changes
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/ci_change_scope.py
+
   release-contract:
     name: Release / Freeze contract
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       RELEASE_FREEZE: ${{ vars.RELEASE_FREEZE }}
     steps:
@@ -21,9 +42,11 @@ jobs:
         run: ruby scripts/check_release_freeze.rb
 
   backend-test:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     name: Backend / RSpec
     runs-on: ubuntu-latest
-    # Real PostgreSQL concurrency and integration coverage can exceed ten minutes.
+    # Two isolated processes share this runner; required check name stays stable.
     timeout-minutes: 20
     services:
       postgres:
@@ -54,18 +77,23 @@ jobs:
         run: bundle exec rails db:test:prepare
       - name: Run RSpec
         working-directory: hafapass_api
-        run: bundle exec rspec --format documentation --format RspecJunitFormatter --out tmp/rspec.xml
+        run: python3 ../scripts/ci_rspec.py
       - name: Upload RSpec results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: rspec-results
-          path: hafapass_api/tmp/rspec.xml
-          if-no-files-found: ignore
+          path: |
+            hafapass_api/tmp/ci-rspec/
+            hafapass_api/tmp/rspec-*.xml
+          if-no-files-found: error
 
   backend-quality:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     name: Backend / Quality and security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
@@ -73,6 +101,8 @@ jobs:
           ruby-version: "3.3.13"
           bundler-cache: true
           working-directory: hafapass_api
+      - name: CI helper regression tests
+        run: python3 -m unittest discover -s scripts -p test_ci_helpers.py
       - name: RuboCop
         working-directory: hafapass_api
         run: bundle exec rubocop --format github
@@ -89,6 +119,8 @@ jobs:
   # uid 1000 against a throwaway database. Advisory: not a required check.
   # Every secret below is a dummy that only satisfies production boot checks.
   backend-docker-smoke:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     name: Backend / Docker image smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -205,8 +237,11 @@ jobs:
         run: docker logs hafapass-smoke 2>&1 | tail -n 200 || true
 
   frontend-quality:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     name: Frontend / Test, build, and security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: hafapass_frontend
@@ -228,8 +263,11 @@ jobs:
         run: npm run audit:prod
 
   browser-smoke:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     name: Browser / Service recovery smoke tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: hafapass_frontend
@@ -242,7 +280,7 @@ jobs:
           cache-dependency-path: hafapass_frontend/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --workers=2
       - name: Production service-worker deploy and offline test
         run: npm run test:e2e:pwa
       - name: Upload browser report
@@ -260,6 +298,7 @@ jobs:
   hygiene:
     name: Repository / Secret and debug hygiene
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
