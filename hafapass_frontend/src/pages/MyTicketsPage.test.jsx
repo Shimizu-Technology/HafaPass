@@ -420,4 +420,57 @@ describe('truthful admission badges', () => {
     expect(screen.getAllByText('Entry paused')).toHaveLength(3)
     for (const reason of ['Payment dispute under review', 'Event is postponed', 'Refund pending']) expect(screen.getByText(reason)).toBeInTheDocument()
   })
+
+  it('renders PassTicketCard for multi-night passes and keeps active passes ahead of past events', async () => {
+    const pastTicket = {
+      ...ticket,
+      id: 90,
+      ticket_type: { name: 'Old Ticket' },
+      event: { id: 90, title: 'Past Concert', slug: 'past-concert', timezone: 'Pacific/Guam', starts_at: '2020-01-01T08:00:00Z' },
+    }
+    const passTicket = {
+      id: 200,
+      order_id: 55,
+      display_credential: 'pass-parent-cred',
+      status: 'issued',
+      admission_allowed: false,
+      is_pass: true,
+      pass_parent: true,
+      pass_child: false,
+      pass_nights_count: 2,
+      attendee_name: 'Tourney Fan',
+      ticket_type: { id: 12, name: 'All-Nights Pass' },
+      event: { id: 200, title: 'FD Tourney Pass', slug: 'fd-tourney-pass', timezone: 'Pacific/Guam', starts_at: '2020-02-01T08:00:00Z', status: 'published' },
+      child_tickets: [
+        {
+          id: 201,
+          parent_ticket_id: 200,
+          status: 'checked_in',
+          admission_allowed: false,
+          display_credential: 'child-past',
+          ticket_url: '/tickets/child-past',
+          event: { id: 201, title: 'Night 1', slug: 'night-1', starts_at: '2020-02-01T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+        },
+        {
+          id: 202,
+          parent_ticket_id: 200,
+          status: 'issued',
+          admission_allowed: true,
+          display_credential: 'child-upcoming',
+          ticket_url: '/tickets/child-upcoming',
+          event: { id: 202, title: 'Championship Night', slug: 'championship-night', starts_at: '2099-12-01T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+        },
+      ],
+    }
+
+    apiClient.get.mockResolvedValue({ data: { tickets: [pastTicket, passTicket] } })
+    renderPage()
+
+    expect(await screen.findByText('Multi-Night Pass · 2 nights')).toBeInTheDocument()
+    expect(screen.getByText('Championship Night')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open Door QR \/ Ticket/ })).toHaveAttribute('href', '/tickets/child-upcoming')
+
+    const headings = screen.getAllByRole('heading', { level: 2 }).map(el => el.textContent)
+    expect(headings.indexOf('FD Tourney Pass')).toBeLessThan(headings.indexOf('Past Concert'))
+  })
 })

@@ -15,7 +15,8 @@ module Api
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
             .includes(:organization, :organizer_profile, :event_seating_configuration, :pass_inclusions,
-              ticket_types: [:waitlist_offers, { pricing_tiers: [:inventory_holds, :waitlist_offers,
+              ticket_types: [:waitlist_offers, { ticket_type_included_events: :included_event },
+                { pricing_tiers: [:inventory_holds, :waitlist_offers,
                 :active_precheckout_seat_holds] }, { inventory_holds: :order }, { tickets: :order },
                 { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
@@ -798,10 +799,11 @@ module Api
 
           if include_ticket_types
             ticket_types = event.ticket_types.loaded? ? event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } :
-              event.ticket_types.order(:sort_order, :id)
+              event.ticket_types.includes(:pricing_tiers, ticket_type_included_events: :included_event).order(:sort_order, :id)
             json[:ticket_types] = ticket_types.map do |tt|
               price = tt.current_price_cents
               fee = Commerce::ServiceFee.for_event(event, price, terms: listing_fee_terms)
+              sorted_links = tt.ticket_type_included_events.sort_by { |link| [link.position, link.id] }
               {
                 id: tt.id,
                 name: tt.name,
@@ -822,7 +824,12 @@ module Api
                 max_per_order: tt.max_per_order,
                 max_per_buyer: tt.max_per_buyer,
                 sales_start_at: tt.sales_start_at,
-                sales_end_at: tt.sales_end_at
+                sales_end_at: tt.sales_end_at,
+                is_pass: tt.is_pass?,
+                included_event_ids: sorted_links.map(&:included_event_id),
+                included_events: sorted_links.filter_map do |link|
+                  link.included_event && Passes::TicketPayload.included_event_json(link.included_event)
+                end
               }
             end
           end

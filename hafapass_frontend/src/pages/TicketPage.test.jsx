@@ -277,3 +277,67 @@ describe('screen wake lock for admission', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
+
+describe('multi-night pass tickets on TicketPage', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+
+  it('renders PassTicketCard with summary banner and never renders a scannable QR for a pass_parent ticket', async () => {
+    api.get.mockResolvedValue({
+      data: {
+        id: 700,
+        status: 'issued',
+        admission_allowed: false,
+        scan_credential: null,
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: 2,
+        event: { id: 1, title: 'FD Season Pass', slug: 'fd-season-pass', status: 'published', starts_at: '2099-11-21T08:00:00Z', timezone: 'Pacific/Guam' },
+        ticket_type: { id: 9, name: 'All-Access Pass' },
+        child_tickets: [
+          {
+            id: 701,
+            parent_ticket_id: 700,
+            status: 'issued',
+            admission_allowed: true,
+            display_credential: 'night-1-cred',
+            ticket_url: '/tickets/night-1-cred',
+            event: { id: 11, title: 'Opening Night', slug: 'opening-night', starts_at: '2099-11-21T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+          },
+        ],
+      },
+    })
+
+    render(<MemoryRouter initialEntries={['/tickets/parent-cred?order=88']}><Routes>
+      <Route path="/tickets/:credential" element={<TicketPage />} />
+    </Routes></MemoryRouter>)
+
+    expect(await screen.findByText("This is your Multi-Night Pass summary. Open an individual night's ticket below to scan at the door.")).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open Door QR \/ Ticket/ })).toHaveAttribute('href', '/tickets/night-1-cred?order=88')
+    expect(screen.queryByText('Entry QR')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download PDF' })).not.toBeInTheDocument()
+  })
+
+  it('shows a Part of Pass pill above the scannable QR on a pass_child ticket', async () => {
+    api.get.mockResolvedValue({
+      data: {
+        ...usableTicket,
+        is_pass: true,
+        pass_parent: false,
+        pass_child: true,
+        parent_ticket_id: 700,
+        parent_pass: {
+          ticket_type_name: 'All-Access Pass',
+          event_title: 'FD Season Pass',
+          event_slug: 'fd-season-pass',
+          nights_count: 16,
+        },
+      },
+    })
+
+    showTicket()
+    expect(await screen.findByText('Part of All-Access Pass')).toBeInTheDocument()
+    expect(screen.getByText('Entry QR')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled()
+  })
+})
