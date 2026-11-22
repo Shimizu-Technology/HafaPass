@@ -333,16 +333,24 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       # parent retains inventory, and unused Night 2 child is cancelled.
       child_1.check_in!
       child_1.reverse_check_in!
-      Commerce::FinancialReversalInventory.call(ticket: parent_ticket, refund: create(:refund, order: pass_order))
-      child_2.update!(status: :cancelled, cancelled_at: Time.current)
 
       headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(pass_order) }
+
+      # Before parent retention, the authorized guest can download the issued child's PDF artifact.
+      get "/api/v1/tickets/#{child_1.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("application/pdf")
+
+      Commerce::FinancialReversalInventory.call(ticket: parent_ticket, refund: create(:refund, order: pass_order))
+      child_2.update!(status: :cancelled, cancelled_at: Time.current)
+      expect(pass_order.reload).to be_completed
 
       get "/api/v1/tickets/#{child_2.display_credential}", headers: headers
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include(
         "status" => "cancelled",
         "admission_allowed" => false,
+        "scan_credential" => nil,
         "admission_block_reason" => nil
       )
 
@@ -351,8 +359,13 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response.parsed_body).to include(
         "status" => "issued",
         "admission_allowed" => false,
+        "scan_credential" => nil,
         "admission_block_reason" => "Refunded or disputed admission requires organizer review"
       )
+
+      # After parent retention, downloadable? blocks the issued child's PDF artifact even though the free order is completed.
+      get "/api/v1/tickets/#{child_1.display_credential}/download", headers: headers
+      expect(response).to have_http_status(:not_found)
 
       get "/api/v1/tickets/#{parent_ticket.display_credential}", headers: headers
       expect(response).to have_http_status(:ok)

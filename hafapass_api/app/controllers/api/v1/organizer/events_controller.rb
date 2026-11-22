@@ -37,6 +37,12 @@ module Api
           )
           pass_included_ids = paginated_events.select { |ev| ev.pass_inclusions.any? }.map(&:id)
           @pass_committed_by_event_id = EventCapacity.pass_committed_by_event_ids(pass_included_ids)
+          archived_pass_night_ids = paginated_events.flat_map do |ev|
+            ev.preloaded_pass_included_events.to_a.select(&:archived?).map(&:id)
+          end.uniq
+          @sales_context = Event.sales_context.merge(
+            archive_from_statuses: Event.latest_archive_from_statuses_by_event_id(archived_pass_night_ids)
+          )
           render json: {
             events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
             meta: pagination_meta(pagy)

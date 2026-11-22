@@ -89,4 +89,32 @@ RSpec.describe CompletePastEventsJob do
     expect(described_class.perform_now(now: night_end + 6.hours)).to eq(1)
     expect(pass_event.reload).to be_completed
   end
+
+  it "re-checks the six-hour completion cutoff under the lifecycle lock when an included night is moved after selection" do
+    pass_event = create(:event, :published, organizer_profile: profile, starts_at: now - 2.days,
+      ends_at: now + 5.days, doors_open_at: now - 2.days - 1.hour)
+    completed_night = create(:event, :completed, organizer_profile: profile, starts_at: now - 11.hours,
+      ends_at: now - 8.hours, doors_open_at: now - 12.hours)
+    pass_tt = create(:ticket_type, event: pass_event, name: "Weekend Pass", price_cents: 0, quantity_available: 10)
+    TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: completed_night, position: 0)
+
+    lifecycle_invoked = false
+    allow(EventLifecycle).to receive(:call).and_wrap_original do |original, **kwargs|
+      if kwargs[:event].id == pass_event.id && !lifecycle_invoked
+        lifecycle_invoked = true
+        # Simulate the organizer moving the included night from 8h ago to 1h ago
+        # after candidate selection and before EventLifecycle acquires the lock.
+        completed_night.update_columns(starts_at: now - 4.hours, ends_at: now - 1.hour)
+      end
+      original.call(**kwargs)
+    end
+
+    expect(described_class.perform_now(now: now)).to eq(0)
+    expect(lifecycle_invoked).to be(true)
+    expect(pass_event.reload).to be_published
+
+    # Manual completion without the automatic grace-period cutoff still succeeds once the night has ended.
+    EventLifecycle.call(event: pass_event, action: :complete, actor: create(:user), at: now)
+    expect(pass_event.reload).to be_completed
+  end
 end

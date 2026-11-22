@@ -294,7 +294,7 @@ class Event < ApplicationRecord
   # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
     end_anchor = effective_ends_at
-    published? && !sales_suspended? && policy_hold_at.nil? && !all_pass_nights_cancelled? &&
+    published? && !sales_suspended? && policy_hold_at.nil? && !no_eligible_pass_nights? &&
       end_anchor.present? && end_anchor > at && organizer_sales_verified?
   end
 
@@ -359,7 +359,10 @@ class Event < ApplicationRecord
     end
     return :event_paused if policy_hold?
     return :sales_paused if sales_suspended?
-    return :pass_nights_cancelled if all_pass_nights_cancelled?
+    if no_eligible_pass_nights?
+      archive_statuses = context&.dig(:archive_from_statuses)
+      return all_pass_nights_cancelled?(archive_from_statuses: archive_statuses) ? :pass_nights_cancelled : :sales_closed
+    end
     end_anchor = effective_ends_at
     return :sales_closed if end_anchor.blank? || end_anchor <= at
 
@@ -635,6 +638,19 @@ class Event < ApplicationRecord
     cancelled? || archived_from_cancelled?
   end
 
+  # Returns { event_id => from_status } for the latest archive transition per event,
+  # preserving the (occurred_at DESC, id DESC) tie-break in a single query.
+  def self.latest_archive_from_statuses_by_event_id(event_ids)
+    ids = Array(event_ids).compact.uniq
+    return {} if ids.empty?
+
+    EventStateChange
+      .select("DISTINCT ON (event_id) event_id, from_status")
+      .where(event_id: ids, action: "archive")
+      .order(Arel.sql("event_id, occurred_at DESC, id DESC"))
+      .each_with_object({}) { |change, map| map[change.event_id] = change.from_status }
+  end
+
   def pass_only_event?
     if ticket_types.loaded?
       ticket_types.any?(&:is_pass?) && ticket_types.all?(&:is_pass?)
@@ -643,17 +659,36 @@ class Event < ApplicationRecord
     end
   end
 
-  def all_pass_nights_cancelled?
+  def no_eligible_pass_nights?
     return false unless persisted? && pass_only_event?
 
     if (included = preloaded_pass_included_events)
-      return included.any? && included.all?(&:cancelled_for_pass?)
+      return included.any? && included.none?(&:eligible_pass_night?)
+    end
+
+    pass_included_events.exists? && !pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+  end
+
+  def all_pass_nights_cancelled?(archive_from_statuses: nil)
+    return false unless persisted? && pass_only_event?
+
+    if (included = preloaded_pass_included_events)
+      return false if included.empty? || included.any?(&:eligible_pass_night?)
+
+      archived_nights = included.select(&:archived?)
+      return true if archived_nights.empty?
+
+      return archived_nights_from_cancelled?(archived_nights, archive_from_statuses: archive_from_statuses)
     end
 
     return false unless pass_included_events.exists?
     return false if pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES).exists?
 
-    pass_included_events.where(status: :archived).all?(&:archived_from_cancelled?)
+    archived_ids = pass_included_events.where(status: :archived).pluck(:id)
+    return true if archived_ids.empty?
+
+    statuses = archive_from_statuses || self.class.latest_archive_from_statuses_by_event_id(archived_ids)
+    archived_ids.all? { |night_id| statuses[night_id] == "cancelled" }
   end
 
   def active_included_pass_nights?
@@ -793,6 +828,19 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def archived_nights_from_cancelled?(archived_nights, archive_from_statuses: nil)
+    if archive_from_statuses
+      return archived_nights.all? { |night| archive_from_statuses[night.id] == "cancelled" }
+    end
+
+    loaded, unloaded = archived_nights.partition { |night| night.event_state_changes.loaded? }
+    return false unless loaded.all?(&:archived_from_cancelled?)
+    return true if unloaded.empty?
+
+    statuses = self.class.latest_archive_from_statuses_by_event_id(unloaded.map(&:id))
+    unloaded.all? { |night| statuses[night.id] == "cancelled" }
+  end
 
   def audit_sales_suspension_change
     return unless saved_change_to_sales_suspended_at?

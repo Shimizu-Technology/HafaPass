@@ -32,7 +32,7 @@ class EventLifecycle
   end
 
   def initialize(event:, action:, actor:, reason: nil, at: Time.current, expected_refund_count: nil,
-    expected_refund_total_cents: nil)
+    expected_refund_total_cents: nil, completed_before: nil)
     @event = event
     @action = action.to_sym
     @actor = actor
@@ -40,6 +40,7 @@ class EventLifecycle
     @at = at
     @expected_refund_count = expected_refund_count
     @expected_refund_total_cents = expected_refund_total_cents
+    @completed_before = completed_before
   end
 
   def call
@@ -114,7 +115,8 @@ class EventLifecycle
         raise TransitionError, "A multi-night pass event cannot be completed while included nights are still published or postponed"
       end
       end_anchor = event.pass_only_event? ? event.effective_ends_at : event.ends_at
-      if end_anchor.blank? || end_anchor > at
+      cutoff = @completed_before || at
+      if end_anchor.blank? || end_anchor > cutoff
         raise TransitionError, "An event cannot be completed before it ends"
       end
     end

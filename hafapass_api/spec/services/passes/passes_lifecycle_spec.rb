@@ -523,17 +523,35 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
     end
 
     it "still notifies the holder of an admitted (checked_in) pass child when that included night is cancelled" do
-      admitted_order, = create_paid_pass_order(email: "admitted-pass@example.com", name: "Admitted Pass Fan")
+      admitted_order, = create_paid_pass_order(email: "admitted-buyer@example.com", name: "Admitted Pass Buyer")
       admitted_child = admitted_order.tickets.find_by!(event: night_1)
+      admitted_child.update!(
+        holder_email: "admitted-holder@example.com",
+        attendee_email: "admitted-holder@example.com"
+      )
       admitted_child.check_in!
       expect(admitted_child.reload).to be_checked_in
 
       EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Mid-game power outage")
 
-      # Admitted ticket stays checked_in (not cancelled) while holder still receives the cancellation notice
+      # Admitted ticket stays checked_in (not cancelled) while both buyer and distinct holder receive cancellation notices
       expect(admitted_child.reload).to be_checked_in
-      pass_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1)
-      expect(pass_deliveries.pluck(:recipient)).to eq(["admitted-pass@example.com"])
+      deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1).index_by(&:recipient)
+      expect(deliveries.keys).to contain_exactly("admitted-buyer@example.com", "admitted-holder@example.com")
+
+      buyer_delivery = deliveries.fetch("admitted-buyer@example.com")
+      holder_delivery = deliveries.fetch("admitted-holder@example.com")
+      expect(buyer_delivery.metadata["audience"]).to eq("pass_buyer")
+      expect(holder_delivery.metadata["audience"]).to eq("pass_holder")
+
+      buyer_html = EmailService.prepare_delivery_payload(buyer_delivery).fetch("html")
+      expect(buyer_html).to include("/orders/#{admitted_order.id}/confirmation#guest_token=")
+      issued_token = buyer_html[/#guest_token=([^"&]+)/, 1]
+      expect(issued_token).to be_present
+
+      holder_html = EmailService.prepare_delivery_payload(holder_delivery).fetch("html")
+      expect(holder_html).to include("Mid-game power outage", "/my-tickets")
+      expect(holder_html).not_to include("/orders/#{admitted_order.id}", "guest_token", issued_token)
     end
 
     it "skips cancelled included nights in both Passes::SyncPassHolders and Passes::Issuance" do
@@ -1029,6 +1047,69 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(done_night.reload).to be_archived
       expect(done_pass.reload.all_pass_nights_cancelled?).to be(false)
       expect(done_pass.sales_blocker).to eq(:sales_closed)
+
+      # Completed-then-archived night before a FUTURE pass starts_at:
+      # all_pass_nights_cancelled? stays false, sales_open? closes with non-cancellation reason,
+      # and mixed-event regular GA sales remain open.
+      future_done_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Future Start Completed Night Pass", max_capacity: 50, starts_at: 3.days.from_now, ends_at: 10.days.from_now)
+      future_done_tt = create(:ticket_type, event: future_done_pass, name: "Future Done Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(future_done_tt, [done_night])
+      expect(future_done_pass.reload.all_pass_nights_cancelled?).to be(false)
+      expect(future_done_pass.no_eligible_pass_nights?).to be(true)
+      expect(future_done_pass.sales_open?).to be(false)
+      expect(future_done_pass.sales_blocker).to eq(:sales_closed)
+      expect(future_done_pass.sales_status[:reason]).to eq("sales_closed")
+      expect(Event.discoverable_base.where(id: future_done_pass.id)).not_to exist
+      expect do
+        Commerce::OrderCreator.call(
+          event: future_done_pass,
+          line_items: [{ ticket_type_id: future_done_tt.id, quantity: 1 }],
+          buyer_email: "future-done-pass@example.com",
+          buyer_name: "Future Done Buyer",
+          payment_required: false
+        )
+      end.to raise_error(Commerce::OrderCreator::CheckoutError, "This event is not currently on sale")
+
+      # Mixed event with a completed-then-archived pass night before future starts_at stays open for regular GA
+      mixed_done_ev = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Completed Archived Event", max_capacity: 50, starts_at: 3.days.from_now, ends_at: 10.days.from_now)
+      mixed_done_ga = create(:ticket_type, event: mixed_done_ev, name: "Regular GA", price_cents: 0, quantity_available: 20)
+      mixed_done_pass = create(:ticket_type, event: mixed_done_ev, name: "Mixed Completed Pass", price_cents: 0, quantity_available: 10)
+      link_nights(mixed_done_pass, [done_night])
+      expect(mixed_done_ev.reload.all_pass_nights_cancelled?).to be(false)
+      expect(mixed_done_ev.no_eligible_pass_nights?).to be(false)
+      expect(mixed_done_ev.sales_open?).to be(true)
+      expect(mixed_done_ev.sales_blocker).to be_nil
+      mixed_done_ga_order = Commerce::OrderCreator.call(
+        event: mixed_done_ev,
+        line_items: [{ ticket_type_id: mixed_done_ga.id, quantity: 1 }],
+        buyer_email: "mixed-done-ga@example.com",
+        buyer_name: "Mixed Done GA Buyer",
+        payment_required: false
+      ).order
+      expect(mixed_done_ga_order).to be_completed
+
+      # Batch archive-history lookup for multiple archived nights runs a single event_state_changes query
+      archived_night_2 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Cancelled Archived Night 2", max_capacity: 20, starts_at: 3.days.from_now, ends_at: 3.days.from_now + 3.hours)
+      EventLifecycle.call(event: archived_night_2, action: :cancel, actor: owner, reason: "Cancelled night 2")
+      Settlements::Finalizer.call(event: archived_night_2, actor: owner)
+      EventLifecycle.call(event: archived_night_2, action: :archive, actor: owner)
+      multi_archived_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Multi Archived Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+      multi_archived_tt = create(:ticket_type, event: multi_archived_pass, name: "Multi Archived TT", price_cents: 0, quantity_available: 10)
+      link_nights(multi_archived_tt, [archived_night, archived_night_2])
+
+      preloaded_pass = Event.includes(ticket_types: { ticket_type_included_events: :included_event }).find(multi_archived_pass.id)
+      archive_queries = []
+      callback = ->(_name, _start, _finish, _id, payload) do
+        archive_queries << payload[:sql] if payload[:sql].include?("event_state_changes") && payload[:name] != "SCHEMA"
+      end
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        expect(preloaded_pass.all_pass_nights_cancelled?).to be(true)
+      end
+      expect(archive_queries.length).to eq(1)
 
       # Mixed event keeps regular GA sales & discovery open when all included pass nights are cancelled & archived
       mixed_ev = create(:event, :published, organizer_profile: profile, organization: org,
