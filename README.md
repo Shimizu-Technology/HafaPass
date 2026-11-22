@@ -71,7 +71,7 @@ HåfaPass has run in production with live card payments since 2026-10-21. The Ph
 
 ### Prerequisites
 
-- Ruby 3.3.13 and Rails 8+
+- Ruby 3.3.14 and Rails 8+
 - Node.js 20.19+
 - PostgreSQL
 - Clerk account with test application
