@@ -272,7 +272,43 @@ describe('sales list controls', () => {
     const dialog = screen.getByRole('dialog', { name: 'Export this list' })
     expect(within(dialog).queryByRole('checkbox', { name: 'Phone' })).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('checkbox', { name: 'Registration answers' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox', { name: 'One column per registration question' })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Export Registrations (CSV)' })).not.toBeInTheDocument()
     expect(within(dialog).getByRole('checkbox', { name: 'Total paid' })).toBeInTheDocument()
+  })
+
+  it('exports registrations with expanded per-question columns and pricing tier via preset and toggle', async () => {
+    const csvBlob = new Blob(['Order #,Name,Team name\nHP-1,Mina,Friars'])
+    apiClient.post.mockResolvedValue({ status: 200, data: csvBlob })
+    mount({ view_attendees: true, view_finance: true })
+    await screen.findAllByText('Mina Cruz')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const dialog = screen.getByRole('dialog', { name: 'Export this list' })
+    expect(within(dialog).getByRole('checkbox', { name: 'Pricing tier' })).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Export Registrations (CSV)' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/organizer/events/37/sales_exports',
+      expect.objectContaining({
+        view: 'orders',
+        expand_questions: true,
+        columns: ['order_number', 'name', 'email', 'phone', 'ticket_type', 'pricing_tier', 'total_paid', 'status', 'purchase_date'],
+      }),
+      expect.objectContaining({ responseType: 'blob' }),
+    ))
+    expect(saveBlob).toHaveBeenCalledWith(csvBlob, 'event-37-registrations.csv')
+
+    // Custom export with expand_questions toggle checked
+    apiClient.post.mockClear()
+    await userEvent.click(screen.getByRole('button', { name: 'Export this list' }))
+    const customDialog = screen.getByRole('dialog', { name: 'Export this list' })
+    await userEvent.click(within(customDialog).getByRole('checkbox', { name: 'One column per registration question' }))
+    await userEvent.click(within(customDialog).getByRole('button', { name: 'Download CSV' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/organizer/events/37/sales_exports',
+      expect.objectContaining({ expand_questions: true }),
+      expect.objectContaining({ responseType: 'blob' }),
+    ))
   })
 
 })

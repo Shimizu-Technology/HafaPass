@@ -302,10 +302,8 @@ module Commerce
         end
       end
       unless LaunchCapabilities.enabled?(:advanced_sales_tools)
-        required_definitions = event.registration_questions.published.where(required: true).exists? ||
-          event.event_waivers.published.where(required: true).exists?
-        if catalog_items.present? || registration_answers.present? || waiver_acceptances.present? || required_definitions
-          raise CheckoutError, "Event extras and custom registration are not available in this release"
+        if catalog_items.present?
+          raise CheckoutError, "Event extras and donations are not available in this release"
         end
       end
     end

@@ -84,6 +84,71 @@ RSpec.describe "General admission launch scope", type: :request do
     expect(event.transfers_enabled).to be(true)
     expect(LaunchCapabilities.enabled?(:ticket_transfers)).to be(false)
   end
+
+  it "supports registration questions and event waivers in general admission while blocking catalog items, promoters, and campaigns" do
+    profile = create(:organizer_profile)
+    event = create(:event, :published, organizer_profile: profile)
+    ticket_type = create(:ticket_type, event: event, price_cents: 0, quantity_available: 10)
+    headers = auth_headers(profile.user)
+
+    post "/api/v1/organizer/events/#{event.id}/registration_questions",
+      params: { prompt: "Team name", kind: "short_text", required: true, position: 0 },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:created)
+    question_id = response.parsed_body.fetch("id")
+
+    patch "/api/v1/organizer/events/#{event.id}/registration_questions/#{question_id}",
+      params: { prompt: "Team / Squad name", active: true },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("prompt")).to eq("Team / Squad name")
+
+    post "/api/v1/organizer/events/#{event.id}/event_waivers",
+      params: { title: "Tournament waiver", version: "1.0", body: "Play fair and safe.", required: true },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:created)
+    waiver_id = response.parsed_body.fetch("id")
+
+    expect(LaunchCapabilities.event_supported?(event)).to be(true)
+    expect(event.publish_checklist.find { |item| item[:code] == "launch_scope" }[:complete]).to be(true)
+
+    post "/api/v1/orders", params: {
+      event_id: event.id,
+      line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_name: "Coach Maria",
+      buyer_email: "coach@example.com",
+      registration_answers: { question_id.to_s => "FD Friars 1998" },
+      waiver_acceptances: [{ event_waiver_id: waiver_id, version: "1.0" }],
+      terms_accepted: true,
+      terms_version: PolicyRegistry.buyer_terms[:version],
+      expected_total_cents: 0
+    }, as: :json
+    expect(response).to have_http_status(:created)
+    order = Order.find(response.parsed_body.fetch("id"))
+    expect(order.registration_responses.sole.answer).to eq("value" => "FD Friars 1998")
+    expect(order.waiver_acceptances.sole.event_waiver_id).to eq(waiver_id)
+
+    post "/api/v1/organizer/events/#{event.id}/catalog_items",
+      params: { name: "Donation", kind: "donation", price_cents: 1000 },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
+
+    post "/api/v1/organizer/events/#{event.id}/promoters",
+      params: { name: "Promo", code: "PROMO1", commission_bps: 500 },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
+
+    post "/api/v1/organizer/events/#{event.id}/communication_campaigns",
+      params: { name: "Blast", subject: "Hi", body: "Hello", segment: { type: "all_attendees" } },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["code"]).to eq("launch_capability_disabled")
+
+    create(:catalog_item, event: event, kind: :donation, active: true)
+    expect(LaunchCapabilities.event_supported?(event)).to be(false)
+  end
 end
 
 RSpec.describe "Per-capability launch control", type: :request do

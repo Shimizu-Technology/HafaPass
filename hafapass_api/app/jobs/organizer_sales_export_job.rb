@@ -25,7 +25,7 @@ class OrganizerSalesExportJob < ApplicationJob
     query = OrganizerSalesQuery.new(event: export_request.event, params: export_request.filters,
       attendee_access: attendees)
     builder = OrganizerSalesExport.new(query: query, columns: export_request.columns,
-      finance: finance, attendees: attendees)
+      finance: finance, attendees: attendees, expand_questions: export_request.expand_questions?)
     key = "#{OrganizerSalesExportRequest::PRIVATE_STORAGE_PREFIX}/#{org.id}/#{export_request.id}-#{SecureRandom.hex(12)}.csv"
     count = 0
     Tempfile.create(["sales-export", ".csv"]) do |file|

@@ -311,21 +311,28 @@ RSpec.describe Commerce::OrderCreator do
       expect(event.orders).to be_empty
     end
 
-    it "rejects explicit advanced input" do
-      expect { scoped_checkout(registration_answers: { "123" => "answer" }) }.to raise_error(described_class::CheckoutError, /custom registration/)
+    it "rejects catalog items (extras/donations) before creating records" do
+      catalog_item = create(:catalog_item, event: event, kind: :donation)
+      expect { scoped_checkout(catalog_items: [{ catalog_item_id: catalog_item.id, quantity: 1 }]) }
+        .to raise_error(described_class::CheckoutError, /Event extras and donations/)
       expect(event.orders).to be_empty
     end
 
-    it "rejects required active registration definitions without submitted answers" do
-      create(:registration_question, event: event, required: true)
-      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /custom registration/)
-      expect(event.orders).to be_empty
-    end
+    it "allows registration questions and waivers while still enforcing required answers and acceptances" do
+      question = create(:registration_question, event: event, required: true)
+      waiver = create(:event_waiver, event: event, required: true, version: "1.0")
 
-    it "rejects required active waivers without submitted acceptance" do
-      create(:event_waiver, event: event, required: true)
-      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /custom registration/)
-      expect(event.orders).to be_empty
+      expect { scoped_checkout }.to raise_error(described_class::CheckoutError, /Invalid answer/)
+      expect { scoped_checkout(registration_answers: { question.id.to_s => "FD Friars" }) }
+        .to raise_error(described_class::CheckoutError, /You must accept the current version/)
+
+      result = scoped_checkout(
+        registration_answers: { question.id.to_s => "FD Friars" },
+        waiver_acceptances: [{ event_waiver_id: waiver.id, version: "1.0" }]
+      )
+      expect(result.order).to be_persisted
+      expect(result.order.registration_responses.sole.answer).to eq("value" => "FD Friars")
+      expect(result.order.waiver_acceptances.sole.event_waiver_id).to eq(waiver.id)
     end
   end
 

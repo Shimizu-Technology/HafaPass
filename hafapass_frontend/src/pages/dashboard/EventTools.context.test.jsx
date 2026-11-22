@@ -8,7 +8,7 @@ import SalesToolsPage from './SalesToolsPage'
 import SeatingManagementPage from './SeatingManagementPage'
 
 const caps = vi.hoisted(() => ({ advanced_sales_tools: true, assigned_seating: true }))
-vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
+vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 vi.mock('../../hooks/useLaunchCapabilities', () => ({ default: () => caps, useLaunchCapabilityState: () => ({ capabilities: caps, status: 'ready', retry: () => {} }) }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children, event }) => <div><h1>{event?.title}</h1>{children}</div> }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
@@ -32,7 +32,7 @@ const mount = tool => render(<MemoryRouter initialEntries={[`/dashboard/events/1
 
 beforeEach(() => {
   vi.clearAllMocks()
-  for (const method of ['get', 'post', 'put', 'delete']) apiClient[method].mockReset()
+  for (const method of ['get', 'post', 'put', 'patch', 'delete']) apiClient[method].mockReset()
   window.localStorage.clear(); window.sessionStorage.clear()
   window.localStorage.setItem('hafapass_organization_id', '1'); bind()
   caps.advanced_sales_tools = true; caps.assigned_seating = true
@@ -50,7 +50,7 @@ beforeEach(() => {
   }
   apiClient.get.mockImplementation(getDefault)
   apiClient.post.mockResolvedValue({ data: { id: 51, user_id: 7, role: 'manager', status: 'active', email: 'assigned@example.test' } })
-  apiClient.put.mockResolvedValue({ data: {} }); apiClient.delete.mockResolvedValue({ data: {} })
+  apiClient.put.mockResolvedValue({ data: {} }); apiClient.patch.mockResolvedValue({ data: {} }); apiClient.delete.mockResolvedValue({ data: {} })
 })
 afterEach(() => { cleanup(); clearAuth?.(); clearAuth = null; vi.unstubAllGlobals() })
 
@@ -399,4 +399,88 @@ it('hides campaign recovery and send actions from members without marketing perm
   expect(screen.queryByRole('button', { name: 'Review and reschedule' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Send now' })).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Message')).not.toBeInTheDocument()
+})
+
+it('allows registration questions and waivers in general admission while hiding advanced sales tools', async () => {
+  caps.advanced_sales_tools = false
+  mount(tools[1])
+  await screen.findByRole('heading', { name: 'Registration & waivers', level: 2 })
+  expect(screen.queryByRole('heading', { name: 'Extras, merchandise and donations' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Promoters and referral commission' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'CRM and attendee communication' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Public languages' })).not.toBeInTheDocument()
+  expect(apiClient.get.mock.calls.map(([path]) => path)).toEqual([
+    '/organizer/events/11',
+    '/organizer/events/11/registration_questions',
+    '/organizer/events/11/event_waivers',
+  ])
+
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText('Question'), 'Team name')
+  await user.click(screen.getByLabelText('Required question'))
+  await user.click(screen.getByRole('button', { name: 'Add question' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions',
+    expect.objectContaining({ prompt: 'Team name', kind: 'short_text', required: true, position: 0 }),
+    expect.anything(),
+  ))
+})
+
+it('supports editing, reordering, pausing, and displaying delete errors for registration questions', async () => {
+  caps.advanced_sales_tools = false
+  let savedQuestions = [
+    { id: 101, prompt: 'Team name', kind: 'short_text', required: true, options: [], position: 0, active: true },
+    { id: 102, prompt: 'Division', kind: 'selection', required: false, options: ['Open', 'Masters'], position: 1, active: true },
+  ]
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/registration_questions')
+    ? Promise.resolve({ data: { registration_questions: savedQuestions } }) : getDefault(path, config))
+  apiClient.patch.mockImplementation(async (path, payload) => {
+    const id = Number(path.split('/').at(-1))
+    savedQuestions = savedQuestions.map(q => q.id === id ? { ...q, ...payload } : q).sort((a, b) => a.position - b.position)
+    return { data: savedQuestions.find(q => q.id === id) }
+  })
+
+  mount(tools[1])
+  await screen.findByText('Team name')
+  const user = userEvent.setup()
+
+  // Inline edit selection question
+  await user.click(screen.getByRole('button', { name: 'Edit Division' }))
+  const editInput = screen.getByLabelText('Edit question')
+  await user.clear(editInput)
+  await user.type(editInput, 'Tournament division')
+  const optionsInput = screen.getByLabelText('Edit choices (comma separated)')
+  await user.clear(optionsInput)
+  await user.type(optionsInput, 'Open, Co-ed, Masters')
+  await user.click(screen.getByRole('button', { name: 'Save question' }))
+  await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions/102',
+    { prompt: 'Tournament division', required: false, options: ['Open', 'Co-ed', 'Masters'] },
+    expect.anything(),
+  ))
+
+  // Reorder: move second question up
+  await user.click(await screen.findByRole('button', { name: 'Move Tournament division up' }))
+  await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions/102', { position: 0 }, expect.anything(),
+  ))
+  expect(apiClient.patch).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions/101', { position: 1 }, expect.anything(),
+  )
+
+  // Pause & Resume
+  await user.click(await screen.findByRole('button', { name: 'Pause Team name' }))
+  await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions/101', { active: false }, expect.anything(),
+  ))
+  await user.click(await screen.findByRole('button', { name: 'Resume Team name' }))
+  await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith(
+    '/organizer/events/11/registration_questions/101', { active: true }, expect.anything(),
+  ))
+
+  // Delete blocked by existing responses shows server error cleanly
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  apiClient.delete.mockRejectedValueOnce({ response: { status: 422, data: { errors: ['Cannot delete record because dependent registration responses exist'] } } })
+  await user.click(await screen.findByRole('button', { name: 'Remove Team name' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('dependent registration responses exist')
 })
