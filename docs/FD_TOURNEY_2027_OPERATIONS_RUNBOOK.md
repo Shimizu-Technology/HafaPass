@@ -184,7 +184,7 @@ Before June 1, 2027 (peak tournament window):
 - [ ] **Apply Guam CGNAT / gym Wi-Fi ceilings** from `render.tournament.yaml`:
   - `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`
   - `RACK_ATTACK_REQ_PER_IP_5M=3000`
-  - `RACK_ATTACK_ORDERS_PER_IP_1M=200`
+  - `RACK_ATTACK_ORDERS_PER_IP_1M=500`
   - `RACK_ATTACK_MARKETPLACE_LANDING_PER_IP_1M=600`
   - `RACK_ATTACK_MARKETPLACE_FUNNEL_PER_IP_1M=600`
   - `RACK_ATTACK_USERS_SYNC_PER_IP_1M=120`
@@ -198,13 +198,82 @@ Post-tournament scale-down (August 2027):
 
 ---
 
-## 5. Championship-Rush Load Test Results (Staging k6 Benchmark)
+## 5. Championship-Rush Load Test Results (k6 Benchmark)
 
-**Status:** _Pending — populate with Slot A k6 benchmark output once `main` is deployed to an isolated staging target._
+**Status:** Local production-like benchmark completed at 160–200 VUs (code revision `07a4dcd6`). Hosted staging (`hafapass-staging`) is still on `05a81ddb` until Leon deploys `main`; a hosted staging re-run is required before June 10, 2027 (see Section 5.4).
 
-### Re-Run Command (Isolated Staging Target Only)
+### 5.1 Benchmark Stack & Local Caveats
 
-`load_tests/fd_championship_rush.js` refuses production hostnames and any API reporting `payment_mode == "live"`. Seed `[LOAD TEST]` free and paid fixtures on staging first (see `load_tests/README.md`), then run:
+| Dimension | Recorded Benchmark Configuration |
+|---|---|
+| Code Revision | `07a4dcd6` (includes Slices 1, 2A-1, 3, 5, and 2B) |
+| Rails Environment | `RAILS_ENV=staging` (inherits `production.rb`, `eager_load = true`) |
+| Cache & Throttle Stores | `MemoryStore` (32 MB) + `Operations::PostgresThrottleStore` with `HAFAPASS_RUNTIME=solid_queue` |
+| App Server & DB Pool | Puma `workers 0`, `RAILS_MAX_THREADS=5`, `DB_POOL=15` |
+| Payment Mode | `payment_mode = "simulate"` |
+| Hardware & Database | Mac mini Apple M4 (10-core / 16 GB RAM), isolated PostgreSQL 16 (`hafapass_k6_bench_staging`) |
+| Load Generator | `k6 v2.4.0` |
+
+**Local caveats (why hosted staging re-measurement is still mandatory):**
+- **0 ms loopback RTT:** Localhost eliminates Guam/Singapore network latency and TLS handshakes.
+- **Local `fsync=off`:** Local Postgres writes flush faster than managed Neon storage with `fsync=on`.
+- **Single-process Puma (`workers 0`, 5 threads):** Matches current `hafapass_api/config/puma.rb` rather than the planned `WEB_CONCURRENCY=2` peak Render topology.
+- **`simulate` payment mode:** Paid holds completed immediately in `simulate` mode instead of creating Stripe `test` mode PaymentIntents and pending holds.
+
+### 5.2 Recorded Run Results
+
+#### Run 1A — `free_saturation` (Shared NAT, 160 VUs × 2 = 320 attempts vs 200 cap, default `RACK_ATTACK_ORDERS_PER_IP_1M=200`)
+
+| Metric | Recorded Value |
+|---|---|
+| Duration & Volume | 1,280 scenario requests in `12.1 s` |
+| Orders Succeeded (`201`) | `200` (`200` parent passes + `400` child night tickets) |
+| Integrity & Errors | `0` oversell, `0` deadlocks, `0` 5xx |
+| Rate-Limited (`429`) | `120` (all attempts after #200 hit the `200/min` shared-IP order ceiling) |
+| `GET /events` latency | p50 `357.94 ms` / p95 `7,124.71 ms` |
+| `POST /orders` latency | p50 `1,112.98 ms` / p95 `9,393.12 ms` |
+
+#### Run 1B — `free_saturation` (Shared NAT, 200 VUs × 2 = 400 attempts vs 200 cap, `RACK_ATTACK_ORDERS_PER_IP_1M=500`)
+
+| Metric | Recorded Value |
+|---|---|
+| Duration & Volume | 1,600 scenario requests in `8.4 s` |
+| Orders Succeeded (`201`) | `200` (`200` parent passes + `400` child night tickets) |
+| Clean Sold-Out (`422`) | `200` (`"Only 0 tickets available..."`) |
+| Integrity & Errors | `0` oversell, `0` deadlocks, `0` 429s, `0` 5xx |
+| `GET /events` latency | p50 `364.76 ms` / p95 `4,456.33 ms` / p99 `5,573.47 ms` |
+| `GET /distribution_links/:code` latency | p50 `250.98 ms` / p95 `307.54 ms` |
+| `GET /events/:slug` latency | p50 `200.40 ms` / p95 `228.48 ms` |
+| `POST /orders` latency | p50 `591.71 ms` / p95 `5,947.35 ms` / p99 `6,295.23 ms` |
+
+#### Run 2 — `paid_holds` (Shared NAT, 40 VUs × 1 = 40 attempts vs 100 cap, `simulate` mode)
+
+| Metric | Recorded Value |
+|---|---|
+| Duration & Volume | 40 scenario requests in `3.9 s` |
+| Orders Succeeded (`201`) | `40` (`40` `InventoryHold`s + `40` `CheckoutAttempt`s + `40` parent passes + `80` child tickets) |
+| Integrity & Errors | `0` oversell, `0` deadlocks, `0` 429s, `0` 5xx |
+| `POST /orders` latency | p50 `1,792.49 ms` / p95 `3,733.98 ms` / p99 `3,830.49 ms` |
+
+### 5.3 Engineering Findings
+
+1. **Zero oversell and zero deadlocks under 200-VU saturation:** `Passes::Locking` and `EventCapacity` enforced the exact `200`-pass cap across 320 (Run 1A) and 400 (Run 1B) concurrent attempts (`200` parent passes, `400` child night tickets, `0` oversell, `0` deadlocks).
+2. **k6 harness fixes (resolved in this PR):**
+   - `OrderCreator` returns `"Only 0 tickets available for ..."`, which the original `INVENTORY_EXHAUSTION_ERROR_RE` missed (`remain` only). Updated to match `only \d+ .*(?:remain|available)` so sold-out `422`s classify cleanly.
+   - Added `summaryTrendStats: ['min', 'avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max']` to `load_tests/fd_championship_rush.js` so `p99_ms` is always recorded without extra CLI flags.
+3. **Shared-NAT `RACK_ATTACK_ORDERS_PER_IP_1M` raised to `500`:** In Run 1A, the `200/min` IP ceiling throttled `120` post-cap retries with `429`. Raising the championship-rush template (`render.tournament.yaml`) to `500` eliminated all `429`s in Run 1B while keeping `orders/email` at `5/min`. Live `render.yaml` remains untouched.
+4. **Single-process Puma head-of-line queueing:** With `workers 0` and 5 threads, `86.7%` of active DB samples (`111/128`) waited on `events FOR NO KEY UPDATE` during serialized pass writes, occupying all 5 Puma threads and queueing cached `GET /events` behind checkout writes (p95 `4,456 ms` in Run 1B). Enabling multi-worker `WEB_CONCURRENCY=2` in `hafapass_api/config/puma.rb` (and re-measuring `Operations::PostgresThrottleStore` on hosted Render ↔ Neon with `fsync=on` and Stripe `test` mode pending holds) is required before June 10.
+
+### 5.4 Pre-June-10 Hosted Staging Re-Run Checklist & Command
+
+Once Leon deploys `main` (past `05a81ddb`) to `hafapass-staging` and enables `WEB_CONCURRENCY=2` in `puma.rb`:
+
+- [ ] Verify staging is running the target release SHA on Render `standard` + `hafapass-worker` (`solid_queue`) with Neon `fsync=on` and Stripe `test` mode (`payment_mode == "test"`).
+- [ ] Seed `[LOAD TEST]` free and paid fixtures on staging (see `load_tests/README.md`).
+- [ ] Execute the hosted staging k6 run below and confirm `0` oversells, `0` deadlocks, `0` 429s, `0` 5xx, and passing `p95` gates (`GET /events <= 300 ms`, `POST /orders <= 1500 ms`).
+- [ ] Verify `Operations::PostgresThrottleStore` latency under Neon `fsync=on` and confirm Stripe `test` pending holds expire cleanly (`0` stuck holds, `0` failed Solid Queue jobs) after 10+ minutes.
+
+`load_tests/fd_championship_rush.js` refuses production hostnames and any API reporting `payment_mode == "live"`. Run against the isolated staging target:
 
 ```bash
 ISOLATED_LOAD_TARGET_ACK=I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_ENVIRONMENT \
@@ -224,28 +293,13 @@ SUMMARY_OUT=fd-rush-staging-summary.json \
 k6 run load_tests/fd_championship_rush.js
 ```
 
-### Recorded Benchmark Summary
-
-| Run Metadata | Value |
-|---|---|
-| Run Date & Time (ChST / `+10:00`) | _TBD_ |
-| Candidate Commit SHA | _TBD_ |
-| Target Environment & Topology (`embedded` / `solid_queue` + plan) | _TBD_ |
-| Scenario & Concurrency (`FREE_VUS` / `PAID_VUS` / `SHARED_NAT`) | _TBD_ |
-| Summary JSON Artifact | _TBD_ |
-
-| Metric / Gate | Target Threshold | Measured Value | Pass / Fail |
+| Hosted Staging Sign-Off Gate | Target Threshold | Measured Value | Pass / Fail |
 |---|---|---|---|
-| `http_req_failed` | `0%` | _TBD_ | _TBD_ |
-| `rush_unexpected_422` | `0` | _TBD_ | _TBD_ |
-| `rush_throttled_429` | `0` | _TBD_ | _TBD_ |
-| `rush_server_errors_5xx` | `0` | _TBD_ | _TBD_ |
-| `rush_free_order_success` | `> 0` | _TBD_ | _TBD_ |
-| `rush_paid_hold_success` | `> 0` | _TBD_ | _TBD_ |
-| `rush_events_index_latency` (`p95`) | `<= 300ms` | _TBD_ | _TBD_ |
-| `rush_free_order_latency` (`p95`) | `<= 1500ms` | _TBD_ | _TBD_ |
-| `rush_paid_hold_latency` (`p95`) | `<= 1500ms` | _TBD_ | _TBD_ |
-| Render Peak CPU / RAM (`hafapass-api` / `hafapass-worker`) | Zero OOM / bounded CPU | _TBD_ | _TBD_ |
-| Neon Peak Active Connections | `< 40` (`standard` + worker) | _TBD_ | _TBD_ |
-| Zero-Oversell SQL Check (`quantity_sold <= quantity_available`) | `0` oversells | _TBD_ | _TBD_ |
-| Post-Run Hold Expiry & Solid Queue Drain (10+ min) | `0` stuck holds / `0` failed jobs | _TBD_ | _TBD_ |
+| Run Date, Staging SHA & Render Plan | `standard` + worker (`WEB_CONCURRENCY=2`) | _Pending deploy past `05a81ddb`_ | _TBD_ |
+| `http_req_failed` / `rush_server_errors_5xx` | `0%` / `0` | _TBD_ | _TBD_ |
+| `rush_unexpected_422` / `rush_throttled_429` | `0` / `0` | _TBD_ | _TBD_ |
+| `rush_events_index_latency` (`p95`) | `<= 300 ms` | _TBD_ | _TBD_ |
+| `rush_free_order_latency` (`p95`) | `<= 1500 ms` | _TBD_ | _TBD_ |
+| `rush_paid_hold_latency` (`p95`, Stripe `test`) | `<= 1500 ms` | _TBD_ | _TBD_ |
+| Neon Peak Active Connections | `< 40` | _TBD_ | _TBD_ |
+| Zero-Oversell SQL Check & Post-Run Hold Expiry (10+ min) | `0` oversells / `0` stuck holds | _TBD_ | _TBD_ |

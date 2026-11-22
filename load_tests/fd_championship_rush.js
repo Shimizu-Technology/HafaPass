@@ -50,7 +50,7 @@ const throttled429 = new Counter('rush_throttled_429')
 const serverErrors5xx = new Counter('rush_server_errors_5xx')
 const unexpectedErrors = new Rate('rush_unexpected_errors')
 
-const INVENTORY_EXHAUSTION_ERROR_RE = /sold out|only \d+ .*remain|not enough|insufficient|capacity|no tickets available/i
+const INVENTORY_EXHAUSTION_ERROR_RE = /sold out|only \d+ .*(?:remain|available)|not enough|insufficient|capacity|no tickets available/i
 const UNEXPECTED_422_CODES = new Set([
   'price_changed',
   'ACTIVE_CHECKOUT_EXISTS',
@@ -103,6 +103,7 @@ if (runPaid) {
 export const options = {
   scenarios,
   thresholds,
+  summaryTrendStats: ['min', 'avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 }
 
 function extractHost(url) {
