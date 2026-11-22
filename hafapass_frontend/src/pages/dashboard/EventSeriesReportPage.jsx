@@ -51,8 +51,8 @@ const BASE_OPTIONS = [
   },
   {
     value: 'admissions_gross',
-    label: 'Admissions gross (after discounts)',
-    description: 'Gross ticket sales minus discounts across admissions events.',
+    label: 'Admissions gross (after discounts & refunds)',
+    description: 'Gross ticket sales minus discounts and refunds across admissions events.',
   },
   {
     value: 'admissions_net_after_processing',
@@ -162,6 +162,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
   const [savingSplit, setSavingSplit] = useState(false)
   const [splitError, setSplitError] = useState(null)
   const [splitNotice, setSplitNotice] = useState(null)
+  const [refreshError, setRefreshError] = useState(null)
 
   const loadRequest = useRef(null)
 
@@ -175,12 +176,13 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
     setPrimaryLabel(report?.series?.primary_share_label || share.primary_share_label || '')
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ preserveData = false } = {}) => {
     const request = beginRequest()
     if (!request) return
     loadRequest.current?.controller.abort()
     loadRequest.current = request
     const applies = () => request.current() && loadRequest.current === request
+    setRefreshError(null)
     setState((previous) => ({ status: previous.data ? 'refreshing' : 'loading', data: previous.data, error: null }))
     try {
       const [reportRes, orgsRes] = await Promise.all([
@@ -197,6 +199,19 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
     } catch (error) {
       if (!applies() || error?.name === 'AbortError' || error?.name === 'CanceledError') return
       const status = error.response?.status
+      if (preserveData) {
+        setState((previous) => (
+          previous.data
+            ? { status: 'ready', data: previous.data, error: null }
+            : {
+                status: 'error',
+                data: null,
+                error: status === 403 ? 'denied' : status === 404 ? 'not-found' : status === 401 ? 'signed-out' : 'failed',
+              }
+        ))
+        setRefreshError('Split settings were saved, but the report could not be refreshed. Please try again.')
+        return
+      }
       setState({
         status: 'error',
         data: null,
@@ -268,7 +283,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
       if (!request.current()) return
       setEditingSplit(false)
       setSplitNotice('Revenue-share settings updated.')
-      await load()
+      await load({ preserveData: true })
     } catch (error) {
       if (!request.current()) return
       const msg = error.response?.data?.errors?.[0] || error.response?.data?.error || 'Could not update split settings.'
@@ -382,6 +397,19 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
         </div>
       )}
 
+      {refreshError && (
+        <div role="alert" className="-mt-4 mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <span>{refreshError}</span>
+          <button
+            type="button"
+            onClick={() => load({ preserveData: true })}
+            className="btn-secondary min-h-9 px-3 text-xs"
+          >
+            Retry refresh
+          </button>
+        </div>
+      )}
+
       {splitNotice && (
         <div role="status" className="-mt-4 mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           {splitNotice}
@@ -417,14 +445,49 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
               Reserves held: {money(combined.reserve_cents)}
             </p>
           </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+          <div className={`rounded-2xl border bg-white p-4 ${(combined.negative_balance_cents > 0 || combined.unresolved_buyer_liability_cents > 0) ? 'border-red-300 bg-red-50/40' : 'border-neutral-200'}`}>
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Paid / remaining owed</p>
             <p className="mt-1.5 text-2xl font-bold tabular-nums text-neutral-950">{money(combined.owed_cents)}</p>
             <p className="mt-1 text-xs text-neutral-600 tabular-nums">
               Paid out: {money(combined.paid_cents)}
             </p>
+            {combined.negative_balance_cents > 0 && (
+              <p className="mt-1 text-xs font-semibold tabular-nums text-red-700">
+                Overpaid: −{money(combined.negative_balance_cents)}
+              </p>
+            )}
+            {combined.unresolved_buyer_liability_cents > 0 && (
+              <p className="mt-0.5 text-xs font-semibold tabular-nums text-red-700">
+                Buyer liability: {money(combined.unresolved_buyer_liability_cents)}
+              </p>
+            )}
           </div>
         </section>
+
+        {(combined.negative_balance_cents > 0 || combined.unresolved_buyer_liability_cents > 0) && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900"
+          >
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-red-700" />
+            <div className="space-y-1">
+              <p className="font-semibold text-red-950">Overpayment or unresolved buyer refund liability requires reconciliation</p>
+              {combined.negative_balance_cents > 0 && (
+                <p>
+                  One or more events have a negative balance totaling{' '}
+                  <strong className="tabular-nums">−{money(combined.negative_balance_cents)}</strong>{' '}
+                  (overpaid after refunds or adjustments). This balance must be recouped or carried forward.
+                </p>
+              )}
+              {combined.unresolved_buyer_liability_cents > 0 && (
+                <p>
+                  Unresolved post-payout buyer refund liability totals{' '}
+                  <strong className="tabular-nums">{money(combined.unresolved_buyer_liability_cents)}</strong>.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Revenue-Share Worksheet & Closeout Checklist */}
         <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12">
@@ -441,6 +504,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
               {canEditSplit && (
                 <button
                   type="button"
+                  aria-expanded={editingSplit}
                   onClick={() => {
                     setSplitError(null)
                     if (!editingSplit) syncSplitForm(data)
@@ -835,11 +899,31 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                         <td className="px-3 py-3 text-right tabular-nums">
                           <span className="font-semibold text-neutral-950">{money(row.owed_cents)}</span>
                           <span className="block text-xs text-neutral-500">Paid {money(row.paid_cents)}</span>
+                          {row.negative_balance_cents > 0 && (
+                            <span className="block text-xs font-semibold text-red-700">
+                              Overpaid −{money(row.negative_balance_cents)}
+                            </span>
+                          )}
+                          {row.unresolved_buyer_liability_cents > 0 && (
+                            <span className="block text-xs font-semibold text-red-700">
+                              Liability {money(row.unresolved_buyer_liability_cents)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex flex-wrap gap-1.5">
                             <StatementBadge row={row} />
                             <PayoutStateBadge state={row.payout_state} />
+                            {row.negative_balance_cents > 0 && (
+                              <Badge tone="critical" icon={AlertTriangle}>
+                                Overpaid −{money(row.negative_balance_cents)}
+                              </Badge>
+                            )}
+                            {row.unresolved_buyer_liability_cents > 0 && (
+                              <Badge tone="critical" icon={AlertTriangle}>
+                                Liability {money(row.unresolved_buyer_liability_cents)}
+                              </Badge>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -869,6 +953,16 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                       <div className="shrink-0 text-right">
                         <p className="font-semibold tabular-nums text-neutral-950">{money(row.owed_cents)}</p>
                         <p className="text-xs text-neutral-500">owed</p>
+                        {row.negative_balance_cents > 0 && (
+                          <p className="text-xs font-semibold tabular-nums text-red-700">
+                            Overpaid −{money(row.negative_balance_cents)}
+                          </p>
+                        )}
+                        {row.unresolved_buyer_liability_cents > 0 && (
+                          <p className="text-xs font-semibold tabular-nums text-red-700">
+                            Liability {money(row.unresolved_buyer_liability_cents)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <p className="mt-2 text-xs tabular-nums text-neutral-600">
@@ -880,6 +974,16 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <StatementBadge row={row} />
                       <PayoutStateBadge state={row.payout_state} />
+                      {row.negative_balance_cents > 0 && (
+                        <Badge tone="critical" icon={AlertTriangle}>
+                          Overpaid −{money(row.negative_balance_cents)}
+                        </Badge>
+                      )}
+                      {row.unresolved_buyer_liability_cents > 0 && (
+                        <Badge tone="critical" icon={AlertTriangle}>
+                          Liability {money(row.unresolved_buyer_liability_cents)}
+                        </Badge>
+                      )}
                     </div>
                   </li>
                 ))}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,10 @@ import { saveBlob } from '../../utils/download'
 import { resetOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import EventSeriesReportPage from './EventSeriesReportPage'
 
+vi.mock('../../api/client', async (original) => ({
+  ...(await original()),
+  default: { get: vi.fn(), patch: vi.fn() },
+}))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 
 const sampleReport = {
@@ -245,7 +249,9 @@ describe('EventSeriesReportPage', () => {
   beforeEach(() => {
     resetOrganizerOrganizations()
     window.localStorage.clear()
-    vi.restoreAllMocks()
+    vi.clearAllMocks()
+    apiClient.get.mockReset()
+    apiClient.patch.mockReset()
     saveBlob.mockReset()
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
     window.localStorage.setItem('hafapass_scanner_user_id', 'finance-user')
@@ -258,13 +264,13 @@ describe('EventSeriesReportPage', () => {
   })
 
   afterEach(() => {
+    cleanup()
     clearAuth?.()
     vi.unstubAllEnvs()
-    vi.restoreAllMocks()
   })
 
   it('renders KPIs, revenue-share worksheet, closeout checklist, channels, events, and ticket types', async () => {
-    vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+    apiClient.get.mockImplementation((url) => {
       if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: sampleReport })
       if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
       return Promise.reject(new Error(`Unexpected GET ${url}`))
@@ -307,7 +313,7 @@ describe('EventSeriesReportPage', () => {
 
   it('triggers CSV export download', async () => {
     const user = userEvent.setup()
-    const getSpy = vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+    apiClient.get.mockImplementation((url) => {
       if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: sampleReport })
       if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
       if (url === '/organizer/event_series/10/report_export') {
@@ -321,7 +327,7 @@ describe('EventSeriesReportPage', () => {
     await user.click(exportBtn)
 
     await waitFor(() => {
-      expect(getSpy).toHaveBeenCalledWith(
+      expect(apiClient.get).toHaveBeenCalledWith(
         '/organizer/event_series/10/report_export',
         expect.objectContaining({ responseType: 'blob' })
       )
@@ -333,13 +339,13 @@ describe('EventSeriesReportPage', () => {
     const user = userEvent.setup()
     let currentReport = structuredClone(sampleReport)
 
-    vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+    apiClient.get.mockImplementation((url) => {
       if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: currentReport })
       if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
       return Promise.reject(new Error(`Unexpected GET ${url}`))
     })
 
-    const patchSpy = vi.spyOn(apiClient, 'patch').mockImplementation((url, payload) => {
+    apiClient.patch.mockImplementation((url, payload) => {
       if (url === '/organizer/event_series/10') {
         currentReport = {
           ...currentReport,
@@ -360,7 +366,10 @@ describe('EventSeriesReportPage', () => {
     })
 
     renderPage()
-    await user.click(await screen.findByRole('button', { name: /Edit Split Settings/i }))
+    const editBtn = await screen.findByRole('button', { name: /Edit Split Settings/i })
+    expect(editBtn).toHaveAttribute('aria-expanded', 'false')
+    await user.click(editBtn)
+    expect(screen.getByRole('button', { name: /Cancel edit/i })).toHaveAttribute('aria-expanded', 'true')
 
     const pctInput = screen.getByLabelText(/Revenue share \(%\)/i)
     await user.clear(pctInput)
@@ -370,7 +379,7 @@ describe('EventSeriesReportPage', () => {
     await user.click(screen.getByRole('button', { name: /Save Split Settings/i }))
 
     await waitFor(() => {
-      expect(patchSpy).toHaveBeenCalledWith(
+      expect(apiClient.patch).toHaveBeenCalledWith(
         '/organizer/event_series/10',
         expect.objectContaining({
           revenue_share_bps: 2000,
@@ -385,8 +394,64 @@ describe('EventSeriesReportPage', () => {
     expect(within(screen.getByTestId('revenue-share-worksheet')).getByText('$15.00')).toBeInTheDocument()
   })
 
+  it('keeps the loaded report visible with an inline error notice when refresh fails after saving split settings', async () => {
+    const user = userEvent.setup()
+    let reportLoads = 0
+
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/organizer/event_series/10/report') {
+        reportLoads += 1
+        if (reportLoads === 1) return Promise.resolve({ data: sampleReport })
+        return Promise.reject({ response: { status: 500 } })
+      }
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    apiClient.patch.mockResolvedValue({ data: { id: 10, revenue_share_bps: 2000 } })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /Edit Split Settings/i }))
+    await user.click(screen.getByRole('button', { name: /Save Split Settings/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Split settings were saved, but the report could not be refreshed/i)
+    expect(screen.getByRole('heading', { name: 'FD Alumni Tournament 2026' })).toBeInTheDocument()
+    expect(screen.getByTestId('revenue-share-worksheet')).toBeInTheDocument()
+  })
+
+  it('surfaces negative balance and unresolved buyer liability in KPIs, alert callout, and per-event breakdown', async () => {
+    const overpaidReport = structuredClone(sampleReport)
+    overpaidReport.groups.combined.owed_cents = 0
+    overpaidReport.groups.combined.negative_balance_cents = 5000
+    overpaidReport.groups.combined.unresolved_buyer_liability_cents = 1500
+    overpaidReport.events[0].owed_cents = 0
+    overpaidReport.events[0].payout_state = 'paid'
+    overpaidReport.events[0].negative_balance_cents = 5000
+    overpaidReport.events[0].unresolved_buyer_liability_cents = 1500
+
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: overpaidReport })
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'FD Alumni Tournament 2026' })).toBeInTheDocument()
+
+    const highlights = screen.getByRole('region', { name: 'Series financial highlights' })
+    expect(within(highlights).getByText(/Overpaid: −\$50\.00/)).toBeInTheDocument()
+    expect(within(highlights).getByText(/Buyer liability: \$15\.00/)).toBeInTheDocument()
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('−$50.00')
+    expect(alert).toHaveTextContent('$15.00')
+
+    const eventsSection = screen.getByRole('region', { name: 'Per-Event Breakdown' })
+    expect(within(eventsSection).getAllByText(/Overpaid −\$50\.00/).length).toBeGreaterThan(0)
+    expect(within(eventsSection).getAllByText(/Liability \$15\.00/).length).toBeGreaterThan(0)
+  })
+
   it('shows a graceful no-access notice on 403', async () => {
-    vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+    apiClient.get.mockImplementation((url) => {
       if (url === '/organizer/event_series/10/report') {
         return Promise.reject({ response: { status: 403 } })
       }

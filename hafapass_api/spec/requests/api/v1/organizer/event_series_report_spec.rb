@@ -143,6 +143,47 @@ RSpec.describe "Api::V1::Organizer::EventSeries Report & Export", type: :request
       get "/api/v1/organizer/event_series/#{other_series.id}/report_export", headers: org_headers(owner)
       expect(response).to have_http_status(:not_found)
     end
+
+    it "surfaces negative_balance_cents and unresolved_buyer_liability_cents in both JSON and CSV" do
+      order = event_night.orders.first
+      item = order.order_items.first
+      payment = order.payments.first
+      component = create(:fee_component, order: order, order_item: item, kind: "processing",
+        amount_cents: 185, estimated: false, provider_reference: "txn_#{SecureRandom.hex(6)}")
+      create(:stripe_fee_evidence, :verified, payment: payment, fee_component: component,
+        provider_balance_transaction_id: component.provider_reference)
+
+      settlement = Settlements::Finalizer.call(event: event_night, actor: owner)
+      create(:payout, organization: organization, event: event_night, settlement: settlement,
+        amount_cents: 5000, status: :paid, paid_at: 1.hour.ago, provider_payout_id: "CHK-201-E#{event_night.id}")
+
+      refund = create(:refund, :succeeded, order: order, payment: payment, amount_cents: 2500)
+      create(:refund_item, refund: refund, order_item: item, quantity: 1,
+        organizer_proceeds_cents: 2500, fee_cents: 0, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 2500)
+      order.update!(status: :partially_refunded, refund_amount_cents: 2500)
+
+      get "/api/v1/organizer/event_series/#{series.id}/report", headers: org_headers(owner)
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      expect(body.dig("groups", "combined", "owed_cents")).to eq(0)
+      expect(body.dig("groups", "combined", "negative_balance_cents")).to eq(2500)
+      expect(body.dig("events", 0, "negative_balance_cents")).to eq(2500)
+      expect(body.dig("events", 0, "unresolved_buyer_liability_cents")).to eq(0)
+
+      get "/api/v1/organizer/event_series/#{series.id}/report_export", headers: org_headers(owner)
+      expect(response).to have_http_status(:ok)
+      rows = CSV.parse(response.body.force_encoding(Encoding::UTF_8).delete_prefix("\uFEFF"))
+
+      event_section_idx = rows.index { |r| r.first == "SECTION 4: PER-EVENT BREAKDOWN" }
+      event_header = rows[event_section_idx + 1]
+      event_row = rows[event_section_idx + 2]
+      neg_idx = event_header.index("Negative Balance")
+      liability_idx = event_header.index("Unresolved Buyer Liability")
+      expect(neg_idx).not_to be_nil
+      expect(liability_idx).not_to be_nil
+      expect(event_row[neg_idx]).to eq("25.00")
+      expect(event_row[liability_idx]).to eq("0.00")
+    end
   end
 
   describe "PATCH /api/v1/organizer/event_series/:id revenue-share updates" do
@@ -186,12 +227,22 @@ RSpec.describe "Api::V1::Organizer::EventSeries Report & Export", type: :request
       expect(response).to have_http_status(:forbidden)
     end
 
-    it "forbids scanner and marketer roles from modifying revenue-share fields" do
+    it "forbids scanner and marketer roles from modifying or deleting series before loading (no ID probing)" do
+      other_series = create(:event_series, organization: create(:organization))
+
       %i[scanner box_office marketer].each do |role|
         user = member_with_role(role)
         patch "/api/v1/organizer/event_series/#{series.id}", params: {
           revenue_share_bps: 1800
         }, headers: org_headers(user), as: :json
+        expect(response).to have_http_status(:forbidden)
+
+        patch "/api/v1/organizer/event_series/#{other_series.id}", params: {
+          revenue_share_bps: 1800
+        }, headers: org_headers(user), as: :json
+        expect(response).to have_http_status(:forbidden)
+
+        delete "/api/v1/organizer/event_series/#{other_series.id}", headers: org_headers(user)
         expect(response).to have_http_status(:forbidden)
       end
     end

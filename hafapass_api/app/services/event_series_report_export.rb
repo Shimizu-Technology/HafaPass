@@ -87,7 +87,7 @@ class EventSeriesReportExport
       "Checked In", "Gross", "Discounts", "Refunds", "Platform Fees", "Processing Fees (Organizer)",
       "Processing Fees (Platform)", "Organizer Proceeds", "Door Cash Retained", "Reserves Held",
       "Other Adjustments", "Balance", "Platform Payable", "Paid Out", "In Flight", "Held",
-      "Remaining Owed", "Negative Balance", "Currency"
+      "Remaining Owed", "Negative Balance", "Unresolved Buyer Liability", "Currency"
     ]
 
     data = GROUP_LABELS.map do |key, label|
@@ -117,6 +117,7 @@ class EventSeriesReportExport
         money(row[:held_cents]),
         money(row[:owed_cents]),
         money(row[:negative_balance_cents]),
+        money(row[:unresolved_buyer_liability_cents]),
         currency
       ]
     end
@@ -157,8 +158,8 @@ class EventSeriesReportExport
       "Gross", "Discounts", "Refunds", "Platform Fees", "Processing Fees (Organizer)",
       "Processing Fees (Platform)", "Organizer Proceeds", "Door Cash Retained",
       "Reserves Held", "Other Adjustments", "Balance", "Platform Payable",
-      "Paid Out", "In Flight", "Held", "Remaining Owed",
-      "Settlement State", "Payout State", "Closeout Note", "Currency"
+      "Paid Out", "In Flight", "Held", "Remaining Owed", "Negative Balance",
+      "Unresolved Buyer Liability", "Settlement State", "Payout State", "Closeout Note", "Currency"
     ]
 
     data = report.fetch(:events).map do |row|
@@ -190,6 +191,8 @@ class EventSeriesReportExport
         money(row[:in_flight_cents]),
         money(row[:held_cents]),
         money(row[:owed_cents]),
+        money(row[:negative_balance_cents]),
+        money(row[:unresolved_buyer_liability_cents]),
         row[:settlement_state],
         row[:payout_state],
         row[:closeout_note],

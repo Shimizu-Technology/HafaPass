@@ -82,7 +82,8 @@ class EventSeriesReport
     groups = build_groups(rows)
     channels = build_channels(event_ids)
     ticket_types = build_ticket_type_breakdown(memberships)
-    revenue_share = build_revenue_share(groups)
+    admissions_event_ids = memberships.select { |m| ADMISSIONS_ROLES.include?(m.role) }.map(&:event_id).to_set
+    revenue_share = build_revenue_share(groups, admissions_event_ids)
     closeout_checklist = build_closeout_checklist(rows, groups[:combined])
 
     {
@@ -451,17 +452,26 @@ class EventSeriesReport
       next unless membership
 
       item = ticket.order_item_id ? @order_items_by_id[ticket.order_item_id] : nil
-      pricing_tier_id = ticket.pricing_tier_id || item&.pricing_tier_id
-      pricing_tier = ticket.pricing_tier || item&.pricing_tier
-      key = [ticket.event_id, ticket.ticket_type_id, pricing_tier_id]
+      if item
+        ticket_type_id = item.ticket_type_id
+        ticket_type = item.ticket_type
+        pricing_tier_id = item.pricing_tier_id
+        pricing_tier = item.pricing_tier
+      else
+        ticket_type_id = ticket.ticket_type_id
+        ticket_type = ticket.ticket_type
+        pricing_tier_id = ticket.pricing_tier_id
+        pricing_tier = ticket.pricing_tier
+      end
+      key = [ticket.event_id, ticket_type_id, pricing_tier_id]
 
       bucket = buckets[key] ||= init_ticket_type_bucket(
         membership: membership,
-        ticket_type: ticket.ticket_type,
+        ticket_type: ticket_type,
         pricing_tier: pricing_tier,
         tier_name: item&.tier_name,
-        fallback_name: ticket.ticket_type&.name || "Ticket",
-        fallback_price_cents: pricing_tier&.price_cents || item&.unit_price_cents || ticket.ticket_type&.price_cents || 0
+        fallback_name: item&.name || ticket_type&.name || "Ticket",
+        fallback_price_cents: pricing_tier&.price_cents || item&.unit_price_cents || ticket_type&.price_cents || 0
       )
 
       bucket[:tickets_issued_count] += 1
@@ -471,9 +481,10 @@ class EventSeriesReport
     buckets.values
       .sort_by { |row| [event_order_index.fetch(row[:event_id], 0), row[:ticket_type_name].to_s.downcase, row[:pricing_tier_name].to_s.downcase, row[:ticket_type_id].to_i] }
       .map do |row|
-        raw_proceeds = row.delete(:raw_proceeds_cents)
-        row[:organizer_proceeds_cents] = [raw_proceeds - row[:refunded_proceeds_cents], 0].max
-        row
+        raw_proceeds = row[:raw_proceeds_cents]
+        row.except(:raw_proceeds_cents).merge(
+          organizer_proceeds_cents: [raw_proceeds - row[:refunded_proceeds_cents], 0].max
+        )
       end
   end
 
@@ -497,7 +508,7 @@ class EventSeriesReport
     }
   end
 
-  def build_revenue_share(groups)
+  def build_revenue_share(groups, admissions_event_ids)
     bps = event_series.revenue_share_bps.nil? ? DEFAULT_REVENUE_SHARE_BPS : event_series.revenue_share_bps
     primary_bps = 10_000 - bps
     base_mode = event_series.revenue_share_base.presence || "admissions_net_proceeds"
@@ -506,19 +517,35 @@ class EventSeriesReport
     admissions = groups[:admissions]
     combined = groups[:combined]
 
-    raw_base_cents, scope_door_cash_cents = case base_mode
+    raw_base_cents, scope_door_cash_deduction_cents, scope_door_cash_retained_cents = case base_mode
     when "admissions_gross"
-      [[admissions[:gross_cents] - admissions[:discount_cents], 0].max, admissions[:door_cash_retained_cents]]
+      [
+        [admissions[:gross_cents] - admissions[:discount_cents] - admissions[:refund_cents], 0].max,
+        admissions_door_cash_gross_cents(admissions_event_ids),
+        admissions[:door_cash_retained_cents]
+      ]
     when "admissions_net_after_processing"
-      [[admissions[:organizer_proceeds_cents] - admissions[:processing_fee_cents], 0].max, admissions[:door_cash_retained_cents]]
+      [
+        [admissions[:organizer_proceeds_cents] - admissions[:processing_fee_cents], 0].max,
+        admissions[:door_cash_retained_cents],
+        admissions[:door_cash_retained_cents]
+      ]
     when "all_net_proceeds"
-      [combined[:organizer_proceeds_cents], combined[:door_cash_retained_cents]]
+      [
+        combined[:organizer_proceeds_cents],
+        combined[:door_cash_retained_cents],
+        combined[:door_cash_retained_cents]
+      ]
     else # "admissions_net_proceeds"
-      [admissions[:organizer_proceeds_cents], admissions[:door_cash_retained_cents]]
+      [
+        admissions[:organizer_proceeds_cents],
+        admissions[:door_cash_retained_cents],
+        admissions[:door_cash_retained_cents]
+      ]
     end
 
-    base_cents = includes_door_cash ? [raw_base_cents, 0].max : [raw_base_cents - scope_door_cash_cents, 0].max
-    share_cents, primary_cents = Commerce::MoneyAllocator.call(base_cents, [bps, primary_bps])
+    base_cents = includes_door_cash ? [raw_base_cents, 0].max : [raw_base_cents - scope_door_cash_deduction_cents, 0].max
+    share_cents, primary_cents = allocate_revenue_share(base_cents, bps)
 
     {
       revenue_share_bps: bps,
@@ -531,12 +558,38 @@ class EventSeriesReport
       share_cents: share_cents,
       primary_cents: primary_cents,
       door_cash_retained_cents: combined[:door_cash_retained_cents],
-      scope_door_cash_retained_cents: scope_door_cash_cents,
+      scope_door_cash_retained_cents: scope_door_cash_retained_cents,
       net_platform_payable_cents: combined[:payable_cents],
       paid_cents: combined[:paid_cents],
       owed_cents: combined[:owed_cents],
       reserve_cents: combined[:reserve_cents]
     }
+  end
+
+  def admissions_door_cash_gross_cents(admissions_event_ids)
+    return 0 if admissions_event_ids.empty?
+
+    subtotal = 0
+    discount = 0
+    refund = 0
+
+    @settled_orders.each do |order|
+      next unless admissions_event_ids.include?(order.event_id)
+      next unless @cash_order_ids.include?(order.id)
+
+      subtotal += order.subtotal_cents
+      discount += order.discount_cents
+      refund += @succeeded_refunds_by_order_id.fetch(order.id, []).sum(&:amount_cents)
+    end
+
+    [subtotal - discount - refund, 0].max
+  end
+
+  def allocate_revenue_share(base_cents, revenue_share_bps)
+    return [0, 0] if base_cents <= 0
+
+    share_cents = (base_cents * revenue_share_bps + 5_000).div(10_000)
+    [share_cents, base_cents - share_cents]
   end
 
   def build_closeout_checklist(rows, combined)

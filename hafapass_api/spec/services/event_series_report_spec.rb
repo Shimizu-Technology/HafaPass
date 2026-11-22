@@ -385,10 +385,10 @@ RSpec.describe EventSeriesReport, type: :service do
       expect(no_cash[:base_cents]).to eq(11_168 - 2000)
       expect(no_cash[:share_cents] + no_cash[:primary_cents]).to eq(no_cash[:base_cents])
 
-      # 2. admissions_gross (gross - discount across admissions)
+      # 2. admissions_gross (gross - discount - refunds across admissions)
       series.update!(revenue_share_base: "admissions_gross", revenue_share_includes_door_cash: true)
       gross_rs = described_class.call(series)[:revenue_share]
-      expected_gross_base = admissions[:gross_cents] - admissions[:discount_cents]
+      expected_gross_base = [admissions[:gross_cents] - admissions[:discount_cents] - admissions[:refund_cents], 0].max
       expect(gross_rs[:base_cents]).to eq(expected_gross_base)
       expect(gross_rs[:share_cents] + gross_rs[:primary_cents]).to eq(expected_gross_base)
 
@@ -480,6 +480,150 @@ RSpec.describe EventSeriesReport, type: :service do
         expect(report[:revenue_share][:primary_cents]).to eq(0)
         expect(report[:closeout_checklist][:events_total]).to eq(0)
       }.not_to change { [Settlement.count, Payout.count] }
+    end
+
+    it "nets refunds out of admissions_gross and excludes door cash in matching units" do
+      gross_series = create(
+        :event_series,
+        organization: organization,
+        name: "Gross Refund Check",
+        status: :active,
+        revenue_share_bps: 1600,
+        revenue_share_base: "admissions_gross",
+        revenue_share_includes_door_cash: false
+      )
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Refund Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 5000)
+      gross_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # Online order: $100 subtotal, $20 refunded -> $80 net gross
+      online_order, online_item, _tickets = create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 2,
+        unit_price_cents: 5000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0
+      )
+      online_refund = create(:refund, :succeeded, order: online_order, payment: online_order.payments.first, amount_cents: 2000)
+      create(:refund_item, refund: online_refund, order_item: online_item, quantity: 1,
+        organizer_proceeds_cents: 2000, fee_cents: 0, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 2000)
+      online_order.update!(status: :partially_refunded, refund_amount_cents: 2000)
+
+      # Fully refunded $100 door-cash order -> contributes $0 to base when door cash excluded OR included
+      cash_order, cash_item, _cash_tickets = create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 2,
+        unit_price_cents: 5000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        payment_method: "door_cash",
+        payment_provider: "door_cash"
+      )
+      cash_refund = create(:refund, :succeeded, order: cash_order, payment: cash_order.payments.first, amount_cents: 10_000)
+      create(:refund_item, refund: cash_refund, order_item: cash_item, quantity: 2,
+        organizer_proceeds_cents: 10_000, fee_cents: 0, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 10_000)
+      cash_order.update!(status: :refunded, refund_amount_cents: 10_000)
+
+      # Also a $30 non-refunded door-cash order -> excluded when revenue_share_includes_door_cash is false
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 3000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        payment_method: "door_cash",
+        payment_provider: "door_cash"
+      )
+
+      rs_excluded = described_class.call(gross_series)[:revenue_share]
+      # Only the $80 net online order remains; refunded $100 cash order contributes $0, $30 cash order is excluded
+      expect(rs_excluded[:base_cents]).to eq(8000)
+      expect(rs_excluded[:share_cents]).to eq(1280)
+      expect(rs_excluded[:primary_cents]).to eq(6720)
+
+      gross_series.update!(revenue_share_includes_door_cash: true)
+      rs_included = described_class.call(gross_series)[:revenue_share]
+      # $80 online + $30 active cash = $110; refunded $100 cash order still contributes $0
+      expect(rs_included[:base_cents]).to eq(11_000)
+      expect(rs_included[:share_cents] + rs_included[:primary_cents]).to eq(11_000)
+    end
+
+    it "uses unbiased half-up rounding for revenue share allocation with zero penny drift" do
+      rounding_series = create(
+        :event_series,
+        organization: organization,
+        name: "Rounding Check",
+        status: :active,
+        revenue_share_bps: 1600,
+        revenue_share_base: "admissions_net_proceeds",
+        revenue_share_includes_door_cash: true
+      )
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Rounding Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 10_001)
+      rounding_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # 10_001 * 1600 / 10_000 = 1600.16 -> rounds to 1600 / 8401 (not biased to 1601 / 8400)
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 10_001,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0
+      )
+      rs_low = described_class.call(rounding_series)[:revenue_share]
+      expect(rs_low[:base_cents]).to eq(10_001)
+      expect(rs_low[:share_cents]).to eq(1600)
+      expect(rs_low[:primary_cents]).to eq(8401)
+      expect(rs_low[:share_cents] + rs_low[:primary_cents]).to eq(10_001)
+
+      # Add 3 cents -> base 10_004 * 1600 / 10_000 = 1600.64 -> rounds to 1601 / 8403
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 3,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0
+      )
+      rs_high = described_class.call(rounding_series)[:revenue_share]
+      expect(rs_high[:base_cents]).to eq(10_004)
+      expect(rs_high[:share_cents]).to eq(1601)
+      expect(rs_high[:primary_cents]).to eq(8403)
+      expect(rs_high[:share_cents] + rs_high[:primary_cents]).to eq(10_004)
+    end
+
+    it "keeps upgraded tickets in the same ticket-type bucket as their order item" do
+      upgrade_series = create(:event_series, organization: organization, name: "Upgrade Check", status: :active)
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Upgrade Night")
+      ga = create(:ticket_type, event: ev, name: "GA", price_cents: 1000)
+      vip = create(:ticket_type, event: ev, name: "VIP", price_cents: 2500)
+      upgrade_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      _order, _item, tickets = create_paid_order!(
+        event: ev,
+        ticket_type: ga,
+        quantity: 1,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        checked_in_count: 1
+      )
+      # Simulate a ticket whose ticket_type was upgraded after purchase
+      tickets.first.update!(ticket_type: vip)
+
+      tt_rows = described_class.call(upgrade_series)[:ticket_types]
+      expect(tt_rows.size).to eq(1)
+      expect(tt_rows.first).to include(
+        ticket_type_id: ga.id,
+        tickets_issued_count: 1,
+        checked_in_count: 1,
+        gross_cents: 1000,
+        organizer_proceeds_cents: 1000
+      )
     end
   end
 end
