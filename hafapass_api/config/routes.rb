@@ -258,6 +258,7 @@ Rails.application.routes.draw do
           # Refunds for specific orders
           resources :orders, only: [:index] do
             member do
+              get :refund_options, to: "refunds#options"
               post :refund, to: "refunds#create"
             end
           end
