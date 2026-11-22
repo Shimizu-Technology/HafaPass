@@ -92,8 +92,8 @@ RSpec.describe "Event operational auditing", type: :model do
     start = 1.day.from_now.change(usec: 0)
     finish = 2.days.from_now.change(usec: 0)
     as_operator do
-      ticket_type.update!(sales_start_at: start, sales_end_at: finish)
       tier.update!(starts_at: start, ends_at: finish)
+      ticket_type.update!(sales_start_at: start, sales_end_at: finish)
     end
     expect(logs("ticket_type.updated", ticket_type).sole.after_data.keys).to match_array(%w[sales_start_at sales_end_at])
     expect(logs("pricing_tier.updated", tier).sole.after_data.keys).to match_array(%w[starts_at ends_at])
