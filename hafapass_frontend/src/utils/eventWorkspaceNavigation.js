@@ -24,7 +24,13 @@ export function navigationFor(event, capabilities) {
     ] },
     { label: 'Sales & messages', icon: Megaphone, links: [
       { label: 'Promo codes', to: `${base}/promo-codes`, allowed: has('manage_marketing') },
-      { label: 'Sales tools & messages', to: `${base}/sales-tools`, allowed: has('manage_marketing') && capabilities.advanced_sales_tools === true },
+      {
+        label: capabilities.advanced_sales_tools === true ? 'Sales tools & messages' : 'Registration & waivers',
+        to: `${base}/sales-tools`,
+        allowed: capabilities.advanced_sales_tools === true
+          ? (has('manage_marketing') || has('manage_events'))
+          : has('manage_events'),
+      },
     ] },
     { label: 'Team', icon: UserRoundCog, links: [{ label: 'Event team', to: `${base}/team`, allowed: has('manage_staff') }] },
     { label: 'Finances', icon: WalletCards, links: [

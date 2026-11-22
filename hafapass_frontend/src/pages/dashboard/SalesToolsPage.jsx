@@ -1,7 +1,7 @@
 import EventWorkspace from '../../components/EventWorkspace'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Download, Loader2, Plus, Send, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, Loader2, Pencil, Plus, Send, Trash2 } from 'lucide-react'
 import apiClient from '../../api/client'
 import EventAccessNotice from '../../components/EventAccessNotice'
 import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
@@ -11,6 +11,8 @@ import { LANGUAGES } from '../../utils/locale'
 
 const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
 const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '' }
+const emptyQuestionEdit = { prompt: '', required: false, options: '' }
+const QUESTION_KIND_LABELS = { short_text: 'Short text', long_text: 'Long text', selection: 'Selection', checkbox: 'Checkbox' }
 const emptyWaiver = { title: '', version: '1.0', body: '', required: true }
 const emptyPromoter = { name: '', email: '', code: '', commission: '10' }
 const emptyCampaign = { name: '', subject: '', body: '', segment: 'all_attendees', ticket_type_id: '', scheduled_at: '' }
@@ -69,10 +71,18 @@ function SalesToolsSession({ eventId, identity }) {
   const [promoterForm, setPromoterForm] = useState(emptyPromoter)
   const [campaignForm, setCampaignForm] = useState(emptyCampaign)
   const [editingCampaignId, setEditingCampaignId] = useState(null)
+  const [editingQuestionId, setEditingQuestionId] = useState(null)
+  const [editQuestionForm, setEditQuestionForm] = useState(emptyQuestionEdit)
   const campaignNameInput = useRef(null)
 
+  const advancedSalesEnabled = capabilities.advanced_sales_tools === true
   const permission = key => event?.permissions?.[key] === true
   const resourcePermissions = { catalog_items: 'manage_inventory', registration_questions: 'manage_events', event_waivers: 'manage_events', promoters: 'manage_marketing', communication_campaigns: 'manage_marketing' }
+  const resourceAllowed = resource => {
+    const hasPerm = permission(resourcePermissions[resource])
+    if (resource === 'registration_questions' || resource === 'event_waivers') return hasPerm
+    return advancedSalesEnabled && hasPerm
+  }
   const clearPending = () => {
     try { window.sessionStorage.removeItem(storageKey); pendingRef.current = null; setPending(null); return true }
     catch { setError('The saved recovery record could not be cleared. Check browser storage before another change.'); return false }
@@ -92,9 +102,16 @@ function SalesToolsSession({ eventId, identity }) {
       if (!canApply()) return
       const saved = eventRes.data
       if (String(saved.id) !== String(eventId) || (identity.organizationId != null && saved.organization_id != null && String(saved.organization_id) !== String(identity.organizationId))) throw new Error('Wrong event context')
-      const allowed = key => capabilities.advanced_sales_tools === true && saved.permissions?.[key] === true
-      const resources = [['catalog_items', 'manage_inventory'], ['registration_questions', 'manage_events'], ['event_waivers', 'manage_events'], ['promoters', 'manage_marketing'], ['communication_campaigns', 'manage_marketing'], ['crm/segments', 'view_attendees']]
-      const responses = await Promise.all(resources.map(([path, key]) => allowed(key) ? apiClient.get(`/organizer/events/${eventId}/${path}`, request.config) : Promise.resolve(null)))
+      const adv = capabilities.advanced_sales_tools === true
+      const resources = [
+        ['catalog_items', adv && saved.permissions?.manage_inventory === true],
+        ['registration_questions', saved.permissions?.manage_events === true],
+        ['event_waivers', saved.permissions?.manage_events === true],
+        ['promoters', adv && saved.permissions?.manage_marketing === true],
+        ['communication_campaigns', adv && saved.permissions?.manage_marketing === true],
+        ['crm/segments', adv && saved.permissions?.view_attendees === true],
+      ]
+      const responses = await Promise.all(resources.map(([path, canLoad]) => canLoad ? apiClient.get(`/organizer/events/${eventId}/${path}`, request.config) : Promise.resolve(null)))
       if (!canApply()) return
       setEvent(saved)
       setCatalog(responses[0]?.data.catalog_items || [])
@@ -122,7 +139,7 @@ function SalesToolsSession({ eventId, identity }) {
   useEffect(() => { load() }, [load])
 
   const mutate = async (label, allowed, send, complete = () => {}) => {
-    if (!allowed || capabilities.advanced_sales_tools !== true || !current() || busyRef.current || pendingRef.current) return
+    if (!allowed || !current() || busyRef.current || pendingRef.current) return
     const request = beginRequest()
     if (!request) return
     const record = { label, started_at: new Date().toISOString() }
@@ -148,19 +165,55 @@ function SalesToolsSession({ eventId, identity }) {
       request.release()
     }
   }
-  const create = (resource, payload, reset) => mutate('Save configuration', permission(resourcePermissions[resource]), config => apiClient.post(`/organizer/events/${eventId}/${resource}`, payload, config), reset)
+  const create = (resource, payload, reset) => mutate('Save configuration', resourceAllowed(resource), config => apiClient.post(`/organizer/events/${eventId}/${resource}`, payload, config), reset)
   const remove = (resource, itemId) => {
-    if (!current() || busyRef.current || pendingRef.current || !permission(resourcePermissions[resource])) return
+    if (!current() || busyRef.current || pendingRef.current || !resourceAllowed(resource)) return
     if (!window.confirm('Remove this configuration? Existing historical records will remain protected.')) return
     return mutate('Remove configuration', true, config => apiClient.delete(`/organizer/events/${eventId}/${resource}/${itemId}`, config))
   }
-  const saveSettings = () => {
-    return mutate('Sales settings', permission('edit_event_content'), config => apiClient.put(`/organizer/events/${eventId}`, settings, config), () => setSavedSettings(settings))
+  const startEditQuestion = item => {
+    setEditingQuestionId(item.id)
+    setEditQuestionForm({
+      prompt: item.prompt || '',
+      required: Boolean(item.required),
+      options: Array.isArray(item.options) ? item.options.join(', ') : '',
+    })
   }
-  const retranslate = () => mutate('Translation request', permission('edit_event_content'), config => apiClient.post(`/organizer/events/${eventId}/retranslate`, undefined, config))
-  const sendCampaign = item => mutate('Campaign submission', permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status), config => apiClient.post(`/organizer/events/${eventId}/communication_campaigns/${item.id}/send_now`, undefined, config))
+  const cancelEditQuestion = () => {
+    setEditingQuestionId(null)
+    setEditQuestionForm(emptyQuestionEdit)
+  }
+  const saveEditQuestion = item => {
+    const payload = {
+      prompt: editQuestionForm.prompt,
+      required: editQuestionForm.required,
+      ...(item.kind === 'selection' ? { options: editQuestionForm.options.split(',').map(value => value.trim()).filter(Boolean) } : {}),
+    }
+    return mutate('Update question', permission('manage_events'), config => apiClient.patch(`/organizer/events/${eventId}/registration_questions/${item.id}`, payload, config), cancelEditQuestion)
+  }
+  const toggleQuestionActive = item => {
+    const nextActive = item.active === false
+    return mutate(nextActive ? 'Resume question' : 'Pause question', permission('manage_events'), config => apiClient.patch(`/organizer/events/${eventId}/registration_questions/${item.id}`, { active: nextActive }, config))
+  }
+  const moveQuestion = (index, delta) => {
+    const target = index + delta
+    if (target < 0 || target >= questions.length) return
+    const reordered = [...questions]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    const updates = reordered
+      .map((item, position) => ({ item, position }))
+      .filter(({ item, position }) => item.position !== position || item.id === reordered[index].id || item.id === reordered[target].id)
+    return mutate('Reorder questions', permission('manage_events'), config => Promise.all(
+      updates.map(({ item, position }) => apiClient.patch(`/organizer/events/${eventId}/registration_questions/${item.id}`, { position }, config)),
+    ))
+  }
+  const saveSettings = () => {
+    return mutate('Sales settings', advancedSalesEnabled && permission('edit_event_content'), config => apiClient.put(`/organizer/events/${eventId}`, settings, config), () => setSavedSettings(settings))
+  }
+  const retranslate = () => mutate('Translation request', advancedSalesEnabled && permission('edit_event_content'), config => apiClient.post(`/organizer/events/${eventId}/retranslate`, undefined, config))
+  const sendCampaign = item => mutate('Campaign submission', advancedSalesEnabled && permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status), config => apiClient.post(`/organizer/events/${eventId}/communication_campaigns/${item.id}/send_now`, undefined, config))
   const reviewCampaign = item => {
-    if (!current() || busyRef.current || pendingRef.current || !permission('manage_marketing')) return
+    if (!current() || busyRef.current || pendingRef.current || !advancedSalesEnabled || !permission('manage_marketing')) return
     if (Object.keys(emptyCampaign).some(key => campaignForm[key] !== emptyCampaign[key]) &&
       !window.confirm('Replace the campaign form with this saved campaign? Unsaved campaign changes will be lost.')) return
     setEditingCampaignId(item.id)
@@ -176,7 +229,7 @@ function SalesToolsSession({ eventId, identity }) {
       scheduled_at: campaignForm.scheduled_at || null }
     const reset = () => { setCampaignForm(emptyCampaign); setEditingCampaignId(null) }
     return editingCampaignId
-      ? mutate('Campaign changes', permission('manage_marketing'), config => apiClient.put(`/organizer/events/${eventId}/communication_campaigns/${editingCampaignId}`, payload, config), reset)
+      ? mutate('Campaign changes', advancedSalesEnabled && permission('manage_marketing'), config => apiClient.put(`/organizer/events/${eventId}/communication_campaigns/${editingCampaignId}`, payload, config), reset)
       : create('communication_campaigns', payload, reset)
   }
   const downloadExport = async () => {
@@ -221,23 +274,29 @@ function SalesToolsSession({ eventId, identity }) {
   }, [translating, statusPoll, eventId, beginRequest])
   if (loading) return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
   if (!event) return <div className="mx-auto max-w-xl p-8"><p role="alert" className="text-red-700">{error || 'Sales tools could not be loaded.'}</p><button disabled={refreshing} className="btn-secondary mt-4" onClick={load}>Retry sales tools</button></div>
-  if (capabilities.advanced_sales_tools !== true && capabilityStatus === 'loading') return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
-  if (capabilities.advanced_sales_tools !== true && capabilityStatus === 'error') return <CapabilityCheckFailed feature="advanced sales tools" onRetry={retryCapabilities} />
-  if (capabilities.advanced_sales_tools !== true) return <EventAccessNotice event={event} message="Advanced sales tools are not enabled for this platform." />
-  if (!['edit_event_content', 'manage_events', 'manage_inventory', 'manage_marketing', 'view_attendees'].some(permission)) return <EventAccessNotice event={event} message="Your event access does not include sales tools or attendee communication." />
+  const canUseRegistrationTools = permission('manage_events')
+  if (!advancedSalesEnabled && !canUseRegistrationTools) {
+    if (capabilityStatus === 'loading') return <div role="status" aria-label="Loading sales tools" className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-brand-500" /></div>
+    if (capabilityStatus === 'error') return <CapabilityCheckFailed feature="advanced sales tools" onRetry={retryCapabilities} />
+    return <EventAccessNotice event={event} message="Advanced sales tools are not enabled for this platform." />
+  }
+  if (advancedSalesEnabled && !['edit_event_content', 'manage_events', 'manage_inventory', 'manage_marketing', 'view_attendees'].some(permission)) return <EventAccessNotice event={event} message="Your event access does not include sales tools or attendee communication." />
   const locked = busy || Boolean(pending)
   const contentLanguages = [...CONTENT_LANGUAGES, ...LEGACY_CONTENT_LANGUAGES.filter(({ code }) => savedSettings?.supported_locales?.includes(code))]
-  const hasDraft = Boolean(editingCampaignId) || JSON.stringify(settings) !== JSON.stringify(savedSettings) || [catalogForm.name, questionForm.prompt, waiverForm.title, waiverForm.body, promoterForm.name, campaignForm.name, campaignForm.subject, campaignForm.body].some(Boolean)
+  const hasDraft = Boolean(editingCampaignId) || Boolean(editingQuestionId) || JSON.stringify(settings) !== JSON.stringify(savedSettings) || [catalogForm.name, questionForm.prompt, waiverForm.title, waiverForm.body, promoterForm.name, campaignForm.name, campaignForm.subject, campaignForm.body].some(Boolean)
 
   return <EventWorkspace eventId={eventId} event={event} hasUnsavedChanges={hasDraft || Boolean(pending)}><div className="mx-auto max-w-5xl space-y-6">
-    <div><h2 className="text-2xl font-bold text-neutral-900">Sales, registration and audience</h2><p className="mt-1 text-sm text-neutral-500">Configure revenue extras, policies, referrals and attendee communication for {event.title}.</p></div>
+    <div>
+      <h2 className="text-2xl font-bold text-neutral-900">{advancedSalesEnabled ? 'Sales, registration and audience' : 'Registration & waivers'}</h2>
+      <p className="mt-1 text-sm text-neutral-500">{advancedSalesEnabled ? `Configure revenue extras, policies, referrals and attendee communication for ${event.title}.` : `Configure registration questions and waivers for ${event.title}.`}</p>
+    </div>
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
     {notice && <p role="status" className="text-sm text-brand-800">{notice}</p>}
     <button disabled={busy || refreshing} className="btn-secondary" onClick={load}>{refreshing ? 'Refreshing saved data…' : 'Refresh saved data'}</button>
     {pending && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{pending.label} may have completed. Review the saved configuration or campaign status before making another change.</p><button disabled={busy || refreshing || !reviewed} className="btn-secondary mt-3" onClick={acknowledge}>I verified the saved data</button></div>}
     <fieldset disabled={locked} className="min-w-0 space-y-6"><legend className="sr-only">Sales and audience tools</legend>
-    {(permission('edit_event_content')) && (<Section title="Public languages" description="HåfaPass translates your title, descriptions and ticket names automatically for buyers using another language. To use your own wording in a language, turn it on below; anything left blank uses the automatic translation.">
+    {(advancedSalesEnabled && permission('edit_event_content')) && (<Section title="Public languages" description="HåfaPass translates your title, descriptions and ticket names automatically for buyers using another language. To use your own wording in a language, turn it on below; anything left blank uses the automatic translation.">
       <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
         <p className="min-w-0 flex-1">{event.automatic_translation_available ? TRANSLATION_STATUS[event.translation_status] || TRANSLATION_STATUS.untranslated : 'Automatic translation is not set up yet, so buyers see your English text.'}</p>
         {event.automatic_translation_available && <button type="button" className="btn-secondary min-h-11 px-4 py-2 text-sm" disabled={event.translation_status === 'pending'} onClick={retranslate}>Translate again</button>}
@@ -247,25 +306,83 @@ function SalesToolsSession({ eventId, identity }) {
       <button className="btn-primary mt-4" onClick={saveSettings}>Save languages</button>
     </Section>)}
 
-    {(permission('manage_inventory')) && (<Section title="Extras, merchandise and donations" description="These items share the checkout and financial ledger with ticket revenue.">
+    {(advancedSalesEnabled && permission('manage_inventory')) && (<Section title="Extras, merchandise and donations" description="These items share the checkout and financial ledger with ticket revenue.">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Item name"><input className="input font-normal" placeholder="e.g. Event T-shirt" value={catalogForm.name} onChange={e => setCatalogForm({ ...catalogForm, name: e.target.value })} /></Field><Field label="Type"><select className="input font-normal" value={catalogForm.kind} onChange={e => setCatalogForm({ ...catalogForm, kind: e.target.value })}><option value="add_on">Add-on</option><option value="merchandise">Merchandise</option><option value="concession">Concession</option><option value="donation">Donation</option></select></Field><Field label="Price ($)"><input className="input font-normal" type="number" placeholder="e.g. 25" value={catalogForm.price} onChange={e => setCatalogForm({ ...catalogForm, price: e.target.value })} /></Field><Field label="Inventory"><input className="input font-normal" type="number" placeholder="Leave blank for unlimited" value={catalogForm.inventory} onChange={e => setCatalogForm({ ...catalogForm, inventory: e.target.value })} /></Field><button className={addButtonClass} onClick={() => create('catalog_items', { name: catalogForm.name, kind: catalogForm.kind, price_cents: Math.round(Number(catalogForm.price) * 100), minimum_price_cents: catalogForm.kind === 'donation' ? Math.round(Number(catalogForm.price) * 100) : null, inventory_quantity: catalogForm.inventory ? Number(catalogForm.inventory) : null }, () => setCatalogForm(emptyCatalog))}><Plus className="h-4 w-4" /> Add item</button></div>
       <div className="mt-4 divide-y divide-neutral-100">{catalog.map(item => <div key={item.id} className="flex items-center justify-between py-3 text-sm"><span><strong>{item.name}</strong> · {item.kind.replace('_', ' ')} · ${(item.price_cents / 100).toFixed(2)} · {item.quantity_remaining ?? 'unlimited'} left</span><button className="inline-flex min-h-11 min-w-11 items-center justify-center" aria-label={`Remove ${item.name}`} onClick={() => remove('catalog_items', item.id)}><Trash2 aria-hidden="true" className="h-4 w-4 text-red-500" /></button></div>)}</div>
     </Section>)}
 
     {(permission('manage_events')) && (<Section title="Registration and waivers" description="Required answers and exact waiver versions are snapshotted on every order.">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Question" className="sm:col-span-2"><input className="input font-normal" placeholder="e.g. T-shirt size" value={questionForm.prompt} onChange={e => setQuestionForm({ ...questionForm, prompt: e.target.value })} /></Field><Field label="Answer type"><select className="input font-normal" value={questionForm.kind} onChange={e => setQuestionForm({ ...questionForm, kind: e.target.value })}><option value="short_text">Short text</option><option value="long_text">Long text</option><option value="selection">Selection</option><option value="checkbox">Checkbox</option></select></Field><Field label="Choices (comma separated)"><input className="input font-normal" placeholder="e.g. S, M, L" disabled={questionForm.kind !== 'selection'} value={questionForm.options} onChange={e => setQuestionForm({ ...questionForm, options: e.target.value })} /></Field><button className={addButtonClass} onClick={() => create('registration_questions', { prompt: questionForm.prompt, kind: questionForm.kind, required: questionForm.required, options: questionForm.options.split(',').map(value => value.trim()).filter(Boolean) }, () => setQuestionForm(emptyQuestion))}>Add question</button></div>
-      <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={questionForm.required} onChange={e => setQuestionForm({ ...questionForm, required: e.target.checked })} /> Required question</label>
-      <div className="mt-3 flex flex-wrap gap-2">{questions.map(item => <span key={item.id} className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs">{item.prompt}{item.required ? ' *' : ''} <button onClick={() => remove('registration_questions', item.id)} className="ml-1 text-red-500">×</button></span>)}</div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Waiver title"><input className="input font-normal" placeholder="e.g. Beach activity release" value={waiverForm.title} onChange={e => setWaiverForm({ ...waiverForm, title: e.target.value })} /></Field><Field label="Version"><input className="input font-normal" placeholder="e.g. 1.0" value={waiverForm.version} onChange={e => setWaiverForm({ ...waiverForm, version: e.target.value })} /></Field><Field label="Waiver text"><textarea className="input font-normal" placeholder="Full text attendees agree to" value={waiverForm.body} onChange={e => setWaiverForm({ ...waiverForm, body: e.target.value })} /></Field><button className={addButtonClass} onClick={() => create('event_waivers', waiverForm, () => setWaiverForm(emptyWaiver))}>Add waiver</button></div>
-      <div className="mt-3 flex flex-wrap gap-2">{waivers.map(item => <span key={item.id} className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs">{item.title} v{item.version} <button onClick={() => remove('event_waivers', item.id)} className="ml-1 text-red-500">×</button></span>)}</div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Question" className="sm:col-span-2"><input className="input font-normal" placeholder="e.g. T-shirt size" value={questionForm.prompt} onChange={e => setQuestionForm({ ...questionForm, prompt: e.target.value })} /></Field><Field label="Answer type"><select className="input font-normal" value={questionForm.kind} onChange={e => setQuestionForm({ ...questionForm, kind: e.target.value })}><option value="short_text">Short text</option><option value="long_text">Long text</option><option value="selection">Selection</option><option value="checkbox">Checkbox</option></select></Field><Field label="Choices (comma separated)"><input className="input font-normal" placeholder="e.g. S, M, L" disabled={questionForm.kind !== 'selection'} value={questionForm.options} onChange={e => setQuestionForm({ ...questionForm, options: e.target.value })} /></Field><button type="button" className={addButtonClass} onClick={() => create('registration_questions', { prompt: questionForm.prompt, kind: questionForm.kind, required: questionForm.required, position: questions.length, options: questionForm.options.split(',').map(value => value.trim()).filter(Boolean) }, () => setQuestionForm(emptyQuestion))}>Add question</button></div>
+      <label className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={questionForm.required} onChange={e => setQuestionForm({ ...questionForm, required: e.target.checked })} /> Required question</label>
+      {questions.length === 0 ? (
+        <p className="mt-3 text-sm text-neutral-500">No registration questions yet. Add questions above to collect team names, divisions, or attendee details at checkout.</p>
+      ) : (
+        <ol aria-label="Registration questions" className="mt-4 divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
+          {questions.map((item, index) => {
+            const inactive = item.active === false
+            const isEditing = editingQuestionId === item.id
+            return (
+              <li key={item.id} className={`p-4 ${inactive ? 'bg-neutral-50/70' : ''}`}>
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Edit question" className={item.kind === 'selection' ? '' : 'sm:col-span-2'}>
+                        <input className="input font-normal" value={editQuestionForm.prompt} onChange={e => setEditQuestionForm({ ...editQuestionForm, prompt: e.target.value })} />
+                      </Field>
+                      {item.kind === 'selection' && (
+                        <Field label="Edit choices (comma separated)">
+                          <input className="input font-normal" value={editQuestionForm.options} onChange={e => setEditQuestionForm({ ...editQuestionForm, options: e.target.value })} />
+                        </Field>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700">
+                        <input type="checkbox" checked={editQuestionForm.required} onChange={e => setEditQuestionForm({ ...editQuestionForm, required: e.target.checked })} />
+                        Required
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button type="button" className="btn-secondary min-h-11 px-4 py-2 text-sm" onClick={cancelEditQuestion}>Cancel</button>
+                        <button type="button" className="btn-primary min-h-11 px-4 py-2 text-sm" onClick={() => saveEditQuestion(item)}>Save question</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`text-sm font-semibold ${inactive ? 'text-neutral-500 line-through' : 'text-neutral-900'}`}>{item.prompt}</span>
+                        {item.required && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">Required</span>}
+                        {inactive && <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">Paused</span>}
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-500">
+                        {QUESTION_KIND_LABELS[item.kind] || item.kind}
+                        {item.kind === 'selection' && Array.isArray(item.options) && item.options.length > 0 ? ` · Choices: ${item.options.join(', ')}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button type="button" className="btn-ghost inline-flex min-h-11 min-w-11 items-center justify-center p-2" aria-label={`Move ${item.prompt} up`} disabled={index === 0} onClick={() => moveQuestion(index, -1)}><ChevronUp aria-hidden="true" className="h-4 w-4" /></button>
+                      <button type="button" className="btn-ghost inline-flex min-h-11 min-w-11 items-center justify-center p-2" aria-label={`Move ${item.prompt} down`} disabled={index === questions.length - 1} onClick={() => moveQuestion(index, 1)}><ChevronDown aria-hidden="true" className="h-4 w-4" /></button>
+                      <button type="button" className="btn-secondary min-h-11 gap-1.5 px-3 py-2 text-sm" aria-label={`Edit ${item.prompt}`} onClick={() => startEditQuestion(item)}><Pencil aria-hidden="true" className="h-3.5 w-3.5" /> Edit</button>
+                      <button type="button" className="btn-secondary min-h-11 px-3 py-2 text-sm" aria-label={inactive ? `Resume ${item.prompt}` : `Pause ${item.prompt}`} onClick={() => toggleQuestionActive(item)}>{inactive ? 'Resume' : 'Pause'}</button>
+                      <button type="button" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50" aria-label={`Remove ${item.prompt}`} onClick={() => remove('registration_questions', item.id)}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Waiver title"><input className="input font-normal" placeholder="e.g. Beach activity release" value={waiverForm.title} onChange={e => setWaiverForm({ ...waiverForm, title: e.target.value })} /></Field><Field label="Version"><input className="input font-normal" placeholder="e.g. 1.0" value={waiverForm.version} onChange={e => setWaiverForm({ ...waiverForm, version: e.target.value })} /></Field><Field label="Waiver text"><textarea className="input font-normal" placeholder="Full text attendees agree to" value={waiverForm.body} onChange={e => setWaiverForm({ ...waiverForm, body: e.target.value })} /></Field><button type="button" className={addButtonClass} onClick={() => create('event_waivers', waiverForm, () => setWaiverForm(emptyWaiver))}>Add waiver</button></div>
+      <div className="mt-3 flex flex-wrap gap-2">{waivers.map(item => <span key={item.id} className="rounded-full bg-neutral-100 px-3 py-1.5 text-xs">{item.title} v{item.version} <button type="button" aria-label={`Remove ${item.title}`} onClick={() => remove('event_waivers', item.id)} className="ml-1 text-red-500">×</button></span>)}</div>
     </Section>)}
 
-    {(permission('manage_marketing')) && (<Section title="Promoters and referral commission" description="Referral codes attribute orders and commission entries reverse automatically with refunds.">
+    {(advancedSalesEnabled && permission('manage_marketing')) && (<Section title="Promoters and referral commission" description="Referral codes attribute orders and commission entries reverse automatically with refunds.">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Promoter name"><input className="input font-normal" placeholder="e.g. Maria Cruz" value={promoterForm.name} onChange={e => setPromoterForm({ ...promoterForm, name: e.target.value })} /></Field><Field label="Promoter email"><input className="input font-normal" type="email" placeholder="e.g. maria@example.com" value={promoterForm.email} onChange={e => setPromoterForm({ ...promoterForm, email: e.target.value })} /></Field><Field label="Referral code"><input className="input font-normal uppercase" placeholder="e.g. MARIA10" value={promoterForm.code} onChange={e => setPromoterForm({ ...promoterForm, code: e.target.value.toUpperCase() })} /></Field><Field label="Commission (%)"><input className="input font-normal" type="number" placeholder="e.g. 10" value={promoterForm.commission} onChange={e => setPromoterForm({ ...promoterForm, commission: e.target.value })} /></Field><button className={addButtonClass} onClick={() => create('promoters', { name: promoterForm.name, email: promoterForm.email, code: promoterForm.code, commission_bps: Math.round(Number(promoterForm.commission) * 100) }, () => setPromoterForm(emptyPromoter))}>Add promoter</button></div>
       <div className="mt-4 divide-y divide-neutral-100">{promoters.map(item => <div key={item.id} className="flex items-center justify-between py-3 text-sm"><span><strong>{item.name}</strong> · <code>{item.code}</code> · {item.attributed_orders} orders · ${(item.net_commission_cents / 100).toFixed(2)} net</span><button onClick={() => remove('promoters', item.id)}><Trash2 className="h-4 w-4 text-red-500" /></button></div>)}</div>
     </Section>)}
 
-    {(permission('manage_marketing') || permission('view_attendees')) && (<Section title="CRM and attendee communication" description="Export current attendee data and send a durable, suppression-aware event message to a defined segment.">
+    {(advancedSalesEnabled && (permission('manage_marketing') || permission('view_attendees'))) && (<Section title="CRM and attendee communication" description="Export current attendee data and send a durable, suppression-aware event message to a defined segment.">
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">{segments ? <><span>{segments.all_attendees || 0} active recipients</span><span>{segments.checked_in || 0} checked in</span><span>{segments.not_checked_in || 0} not checked in</span></> : <span>{permission('view_attendees') ? 'Recipient counts unavailable.' : 'Recipient counts require attendee access.'}</span>}<button disabled={!permission('view_attendees')} className="btn-secondary ml-auto inline-flex" onClick={downloadExport}><Download className="h-4 w-4" /> Export CSV</button></div>
       {permission('manage_marketing') && <><p className="mb-3 text-sm text-neutral-700">Campaigns are promotional emails. Only buyers who opted in can receive them. Use an honest subject that describes the message. The sender is your organization via HåfaPass; the owner must certify its public postal address in Organization settings before sending.</p><div className="grid gap-3 sm:grid-cols-2">{editingCampaignId && <p className="font-semibold sm:col-span-2">Review saved campaign</p>}<Field label="Internal campaign name"><input ref={campaignNameInput} className="input font-normal" placeholder="e.g. Week-before reminder" value={campaignForm.name} onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })} /></Field><Field label="Email subject"><input className="input font-normal" placeholder="e.g. See you at the beach on Saturday" value={campaignForm.subject} onChange={e => setCampaignForm({ ...campaignForm, subject: e.target.value })} /></Field><Field label="Recipients"><select className="input font-normal" value={campaignForm.segment} onChange={e => setCampaignForm({ ...campaignForm, segment: e.target.value })}><option value="all_attendees">All attendees</option><option value="checked_in">Checked in</option><option value="not_checked_in">Not checked in</option><option value="ticket_type">Ticket type</option></select></Field>{campaignForm.segment === 'ticket_type' && <Field label="Ticket type"><select className="input font-normal" value={campaignForm.ticket_type_id} onChange={e => setCampaignForm({ ...campaignForm, ticket_type_id: e.target.value })}><option value="">Choose a ticket type</option>{(event.ticket_types || []).map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></Field>}<Field label="Send at (optional)"><input className="input font-normal" type="datetime-local" value={campaignForm.scheduled_at} onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })} /></Field><Field label="Message" className="sm:col-span-2"><textarea className="input font-normal" rows="4" placeholder="Write the email attendees will receive" value={campaignForm.body} onChange={e => setCampaignForm({ ...campaignForm, body: e.target.value })} /></Field><button className="btn-primary sm:col-span-2 sm:justify-self-start" onClick={saveCampaign}>{editingCampaignId ? 'Save campaign changes' : 'Save campaign'}</button>{editingCampaignId && <button className="btn-secondary sm:justify-self-start" onClick={() => { setEditingCampaignId(null); setCampaignForm(emptyCampaign) }}>Cancel editing</button>}</div></>}
       <div className="mt-4 divide-y divide-neutral-100">{campaigns.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><strong>{item.name}</strong> · {item.status} · {item.recipient_count} sent<br />{item.last_error && <span role="status" className="my-2 block max-w-xl text-amber-900">{item.last_error}</span>}{item.audience && <small>{item.audience.opted_in} of {item.audience.attendees} attendees opted in · {item.audience.excluded} excluded by consent, unsubscribe or suppression · {item.audience.eligible} eligible</small>}</span>{permission('manage_marketing') && item.status === 'failed' && <button className="btn-secondary min-h-11 shrink-0" onClick={() => reviewCampaign(item)}>Review and reschedule</button>}{permission('manage_marketing') && ['draft', 'scheduled'].includes(item.status) && <button className="inline-flex items-center gap-1 font-semibold text-brand-600" onClick={() => sendCampaign(item)}><Send className="h-4 w-4" /> Send now</button>}</div>)}</div>
