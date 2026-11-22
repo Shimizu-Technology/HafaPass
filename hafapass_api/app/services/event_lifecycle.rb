@@ -47,19 +47,8 @@ class EventLifecycle
     buyer_change = nil
     refund_run = nil
 
-    Passes::Locking.with_lock_retry do
-      buyer_change = nil
-      refund_run = nil
-      event.organization.with_lock do
-        if action == :cancel
-          # Rank 2: lock this night event and any linked pass events in ascending
-          # event.id order (FOR NO KEY UPDATE) before Rank 3 pass order locks so
-          # recomputing linked pass ends_at stays strictly within Rank 2.
-          Passes::Locking.lock_events_for_included_event!(event)
-        else
-          event.lock!
-        end
-
+    event.organization.with_lock do
+      event.with_lock do
         unless transition[:from].include?(event.status)
           raise TransitionError, "Cannot #{action} an event with status #{event.status}"
         end
@@ -87,7 +76,6 @@ class EventLifecycle
         )
         buyer_change = record_buyer_change!(before_data) if %i[postpone cancel].include?(action)
         if action == :cancel
-          Passes::SyncPassEndDate.for_included_event!(event)
           cancel_pass_child_tickets!
           refund_run = EventCancellationRefunds.prepare!(event: event, actor: actor)
         end
@@ -122,11 +110,12 @@ class EventLifecycle
     end
 
     if action == :complete
-      if event.ends_at.blank? || event.ends_at > at
-        raise TransitionError, "An event cannot be completed before it ends"
-      end
       if event.active_included_pass_nights?
         raise TransitionError, "A multi-night pass event cannot be completed while included nights are still published or postponed"
+      end
+      end_anchor = event.all_pass_nights_cancelled? ? event.effective_ends_at : event.ends_at
+      if end_anchor.blank? || end_anchor > at
+        raise TransitionError, "An event cannot be completed before it ends"
       end
     end
 

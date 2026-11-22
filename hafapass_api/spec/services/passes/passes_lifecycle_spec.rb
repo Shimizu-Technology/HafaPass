@@ -363,6 +363,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       ).order
 
       # Reschedule Night 1 via organizer update (moving later than pass_event.ends_at!)
+      original_pass_end = pass_event.ends_at
       new_start = 15.days.from_now.change(usec: 0)
       new_end = new_start + 3.hours
       patch "/api/v1/organizer/events/#{night_1.id}",
@@ -374,8 +375,9 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         headers: owner_headers
       expect(response).to have_http_status(:ok)
 
-      # Pass Event ends_at automatically extended to match rescheduled Night 1!
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
+      # Configured pass_event.ends_at stays preserved while effective_ends_at tracks rescheduled Night 1
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(original_pass_end)
+      expect(pass_event.effective_ends_at).to be_within(1.second).of(new_end)
 
       change = night_1.event_changes.last
       expect(change.change_type).to eq("rescheduled")
@@ -413,7 +415,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(delivery.reload).to be_sent
     end
 
-    it "auto-extends pass_event.ends_at when adding a later night via TicketTypesController" do
+    it "derives effective_ends_at when adding a later night via TicketTypesController without overwriting configured ends_at" do
+      original_pass_end = pass_event.ends_at
       late_night = create(:event, :published, organizer_profile: profile, organization: org,
         title: "Playoffs Final", max_capacity: 20, starts_at: 20.days.from_now, ends_at: 20.days.from_now + 4.hours)
 
@@ -422,7 +425,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         headers: owner_headers,
         as: :json
       expect(response).to have_http_status(:ok)
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(late_night.ends_at)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(original_pass_end)
+      expect(pass_event.effective_ends_at).to be_within(1.second).of(late_night.ends_at)
     end
 
     it "cancels only active Night 1 child tickets on single-night cancel while preserving parent pass, Night 2, direct refunds, and pass notice" do
@@ -636,7 +640,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(recipients).to eq(["healthy-pass@example.com"])
     end
 
-    it "skips completed/cancelled pass events, ignores cancelled nights, and bypasses unrelated pass validations in SyncPassEndDate" do
+    it "never mutates pass_event.ends_at on night reschedule, ignores cancelled nights, and is unaffected by unrelated pass validations" do
+      original_pass_end = pass_event.ends_at
       completed_pass = create(:event, :published, organizer_profile: profile, organization: org,
         title: "Completed Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
       completed_pass_tt = create(:ticket_type, event: completed_pass, name: "Completed Pass TT", price_cents: 2000, quantity_available: 10)
@@ -659,57 +664,21 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         headers: owner_headers
       expect(response).to have_http_status(:ok)
 
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(original_pass_end)
+      expect(pass_event.effective_ends_at).to be_within(1.second).of(new_end)
       expect(completed_pass.reload.ends_at).to be_within(1.second).of(5.days.from_now)
     end
 
-    it "rechecks linked pass event IDs under lock and retries on LockSetChanged in Organizer::EventsController#update" do
-      late_linked_pass = create(:event, :published, organizer_profile: profile, organization: org,
-        title: "Newly Linked Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
-      late_linked_tt = create(:ticket_type, event: late_linked_pass, name: "Late Linked TT", price_cents: 2500, quantity_available: 10)
-      TicketTypeIncludedEvent.create!(ticket_type: late_linked_tt, included_event: night_1, position: 0)
-
-      # Simulate late_linked_pass being linked right after the first pre-lock lookup:
-      # call 1 (pre-lock) omits late_linked_pass.id; call 2 (under-lock recheck) sees it
-      # and raises LockSetChanged before saving; attempt 2 locks all three events in sorted order.
-      lookup_calls = 0
-      allow(Passes::Locking).to receive(:linked_pass_event_ids).and_wrap_original do |original, ev|
-        lookup_calls += 1
-        ids = original.call(ev)
-        lookup_calls == 1 ? (ids - [late_linked_pass.id]) : ids
-      end
-
-      lock_attempts = []
-      allow(Passes::Locking).to receive(:lock_events!).and_wrap_original do |original, events|
-        locked = original.call(events)
-        lock_attempts << locked.map(&:id)
-        locked
-      end
-
-      expect(Passes::SyncPassEndDate).to receive(:for_included_event!).once.and_call_original
-
-      new_start = 19.days.from_now.change(usec: 0)
-      new_end = new_start + 3.hours
-      patch "/api/v1/organizer/events/#{night_1.id}",
-        params: { starts_at: new_start.iso8601, ends_at: new_end.iso8601, change_reason: "Reschedule with concurrent pass link" },
-        headers: owner_headers
-      expect(response).to have_http_status(:ok)
-
-      expect(lock_attempts.length).to eq(2)
-      expect(lock_attempts.first).to eq([night_1.id, pass_event.id].sort)
-      expect(lock_attempts.second).to eq([night_1.id, pass_event.id, late_linked_pass.id].sort)
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
-      expect(late_linked_pass.reload.ends_at).to be_within(1.second).of(new_end)
-    end
-
-    it "recomputes pass_event.ends_at downward when a storm-extended night is moved earlier" do
+    it "tracks pass_event.effective_ends_at downward when a storm-extended night is moved earlier while preserving configured ends_at" do
+      original_pass_end = pass_event.ends_at
       far_start = 18.days.from_now.change(usec: 0)
       far_end = far_start + 3.hours
       patch "/api/v1/organizer/events/#{night_2.id}",
         params: { starts_at: far_start.iso8601, ends_at: far_end.iso8601, change_reason: "Typhoon delay" },
         headers: owner_headers
       expect(response).to have_http_status(:ok)
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(far_end)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(original_pass_end)
+      expect(pass_event.effective_ends_at).to be_within(1.second).of(far_end)
 
       earlier_start = 6.days.from_now.change(usec: 0)
       earlier_end = earlier_start + 3.hours
@@ -717,7 +686,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         params: { starts_at: earlier_start.iso8601, ends_at: earlier_end.iso8601, change_reason: "Moved back earlier" },
         headers: owner_headers
       expect(response).to have_http_status(:ok)
-      expect(pass_event.reload.ends_at).to be_within(1.second).of(earlier_end)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(original_pass_end)
+      expect(pass_event.effective_ends_at).to be_within(1.second).of(earlier_end)
     end
 
     it "skips an unattempted pass_event_change delivery if the pass order was fully refunded before send while preserving replays" do
@@ -994,9 +964,10 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(past_parent["upcoming"]).to be(false)
     end
 
-    it "recomputes sync-extended ends_at on latest night cancellation so sales and discovery close after surviving nights end" do
+    it "derives effective_ends_at dynamically on latest night cancellation so sales and discovery close after surviving nights end" do
+      configured_end = 5.days.from_now.change(usec: 0)
       synced_pass = create(:event, :published, organizer_profile: profile, organization: org,
-        title: "Synced Tourney Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
+        title: "Synced Tourney Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: configured_end)
       synced_night_1 = create(:event, :published, organizer_profile: profile, organization: org,
         title: "Synced Night 1", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
       synced_night_2 = create(:event, :published, organizer_profile: profile, organization: org,
@@ -1004,13 +975,15 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       synced_tt = create(:ticket_type, event: synced_pass, name: "Synced Pass TT", price_cents: 0, quantity_available: 10)
       link_nights(synced_tt, [synced_night_1, synced_night_2])
 
-      # SyncPassEndDate naturally extended synced_pass.ends_at to Night 2's end
-      expect(synced_pass.reload.ends_at).to be_within(1.second).of(synced_night_2.ends_at)
+      # Configured ends_at stays preserved while effective_ends_at tracks Night 2's end
+      expect(synced_pass.reload.ends_at).to be_within(1.second).of(configured_end)
+      expect(synced_pass.effective_ends_at).to be_within(1.second).of(synced_night_2.ends_at)
       expect(Event.discoverable_base.where(id: synced_pass.id)).to exist
 
-      # Cancel Night 2 through EventLifecycle -> synced_pass.ends_at drops back to Night 1's end
+      # Cancel Night 2 through EventLifecycle -> effective_ends_at drops back to Night 1's end
       EventLifecycle.call(event: synced_night_2, action: :cancel, actor: owner, reason: "Storm cancelled final night")
-      expect(synced_pass.reload.ends_at).to be_within(1.second).of(synced_night_1.ends_at)
+      expect(synced_pass.reload.ends_at).to be_within(1.second).of(configured_end)
+      expect(synced_pass.effective_ends_at).to be_within(1.second).of(synced_night_1.ends_at)
 
       # After Night 1 ends (and before Night 2's former end), sales and discovery are closed
       travel_to(3.days.from_now) do
@@ -1019,10 +992,11 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       end
     end
 
-    it "resets extended ends_at, closes sales/discovery, and allows completion when the final surviving included night is cancelled" do
+    it "reverts effective_ends_at, closes sales/discovery, and allows completion when the final surviving included night is cancelled" do
       pass_start = 2.days.from_now.change(usec: 0)
+      configured_end = 5.days.from_now.change(usec: 0)
       final_pass = create(:event, :published, organizer_profile: profile, organization: org,
-        title: "Final Night Pass", max_capacity: 50, starts_at: pass_start, ends_at: 5.days.from_now)
+        title: "Final Night Pass", max_capacity: 50, starts_at: pass_start, ends_at: configured_end)
       cancelled_n1 = create(:event, :cancelled, organizer_profile: profile, organization: org,
         title: "Already Cancelled Night 1", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
       surviving_n2 = create(:event, :published, organizer_profile: profile, organization: org,
@@ -1030,14 +1004,15 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       final_tt = create(:ticket_type, event: final_pass, name: "Final Pass TT", price_cents: 0, quantity_available: 10)
       link_nights(final_tt, [cancelled_n1, surviving_n2])
 
-      # Reschedule the final surviving night to day 18 so SyncPassEndDate extends final_pass.ends_at to day 18
+      # Reschedule the final surviving night to day 18: configured ends_at stays preserved, effective_ends_at extends to day 18
       day_18_start = 18.days.from_now.change(usec: 0)
       day_18_end = day_18_start + 3.hours
       patch "/api/v1/organizer/events/#{surviving_n2.id}",
         params: { starts_at: day_18_start.iso8601, ends_at: day_18_end.iso8601, change_reason: "Typhoon reschedule to day 18" },
         headers: owner_headers
       expect(response).to have_http_status(:ok)
-      expect(final_pass.reload.ends_at).to be_within(1.second).of(day_18_end)
+      expect(final_pass.reload.ends_at).to be_within(1.second).of(configured_end)
+      expect(final_pass.effective_ends_at).to be_within(1.second).of(day_18_end)
       expect(final_pass.sales_open?).to be(true)
       expect(Event.discoverable_base.where(id: final_pass.id)).to exist
 
@@ -1045,8 +1020,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       EventLifecycle.call(event: surviving_n2, action: :cancel, actor: owner, reason: "Final night cancelled")
 
       final_pass.reload
-      expect(final_pass.ends_at).to be_within(2.seconds).of(pass_start)
-      expect(final_pass.ends_at).to be < day_18_start
+      expect(final_pass.ends_at).to be_within(1.second).of(configured_end)
       expect(final_pass).to be_valid
       expect(final_pass.effective_ends_at).to be_within(1.second).of(pass_start)
       expect(final_pass.sales_open?).to be(false)
@@ -1058,6 +1032,63 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       travel_to(3.days.from_now) do
         expect { EventLifecycle.call(event: final_pass, action: :complete, actor: owner, at: Time.current) }.not_to raise_error
         expect(final_pass.reload).to be_completed
+      end
+    end
+
+    it "preserves configured ends_at on mixed events across night reschedule and cancellation without leaving a stale extension" do
+      configured_start = 2.days.from_now.change(usec: 0)
+      configured_end = 10.days.from_now.change(usec: 0)
+      mixed_event = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Festival Event", max_capacity: 100, starts_at: configured_start, ends_at: configured_end)
+      create(:ticket_type, event: mixed_event, name: "Regular GA", price_cents: 0, quantity_available: 50)
+      mixed_pass_tt = create(:ticket_type, event: mixed_event, name: "Multi-Night Pass", price_cents: 0, quantity_available: 20)
+      mixed_night_2 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Night 2", max_capacity: 50, starts_at: 8.days.from_now, ends_at: 8.days.from_now + 3.hours)
+      link_nights(mixed_pass_tt, [mixed_night_2])
+
+      expect(mixed_event.pass_only_event?).to be(false)
+
+      # Reschedule Night 2 to Day 18: configured ends_at stays Day 10, effective_ends_at extends to Day 18
+      day_18_start = 18.days.from_now.change(usec: 0)
+      day_18_end = day_18_start + 3.hours
+      patch "/api/v1/organizer/events/#{mixed_night_2.id}",
+        params: { starts_at: day_18_start.iso8601, ends_at: day_18_end.iso8601, change_reason: "Rescheduled to day 18" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      expect(mixed_event.reload.ends_at).to be_within(1.second).of(configured_end)
+      expect(mixed_event.effective_ends_at).to be_within(1.second).of(day_18_end)
+
+      # On Day 12 (after configured Day 10, while Night 2 is active on Day 18): sales & discovery stay open,
+      # and CompletePastEventsJob skips completion because Night 2 is still published
+      travel_to(12.days.from_now) do
+        expect(mixed_event.reload.sales_open?).to be(true)
+        expect(Event.discoverable_base.where(id: mixed_event.id)).to exist
+        expect(CompletePastEventsJob.perform_now(now: Time.current)).to eq(0)
+        expect(mixed_event.reload).to be_published
+      end
+
+      # Cancel Night 2 via EventLifecycle
+      EventLifecycle.call(event: mixed_night_2, action: :cancel, actor: owner, reason: "Night 2 cancelled")
+
+      # Before configured Day 10 (e.g., Day 8): mixed event stays open/discoverable for its regular GA ticket type
+      travel_to(8.days.from_now) do
+        expect(mixed_event.reload.ends_at).to be_within(1.second).of(configured_end)
+        expect(mixed_event.effective_ends_at).to be_within(1.second).of(configured_end)
+        expect(mixed_event.sales_open?).to be(true)
+        expect(Event.discoverable_base.where(id: mixed_event.id)).to exist
+      end
+
+      # On Day 12 (after configured Day 10, before cancelled Day 18): effective_ends_at reverted to Day 10,
+      # sales/discovery close immediately, and CompletePastEventsJob completes it cleanly (not delayed until Day 18)
+      travel_to(12.days.from_now) do
+        expect(mixed_event.reload.ends_at).to be_within(1.second).of(configured_end)
+        expect(mixed_event.effective_ends_at).to be_within(1.second).of(configured_end)
+        expect(mixed_event.sales_open?).to be(false)
+        expect(mixed_event.sales_blocker).to eq(:sales_closed)
+        expect(Event.discoverable_base.where(id: mixed_event.id)).not_to exist
+        expect(CompletePastEventsJob.perform_now(now: Time.current)).to eq(1)
+        expect(mixed_event.reload).to be_completed
       end
     end
 

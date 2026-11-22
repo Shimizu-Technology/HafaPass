@@ -19,10 +19,19 @@ class Api::V1::Me::TicketsController < ApplicationController
             AND inc.status != :cancelled
         )
       SQL
+      has_included_sql = <<~SQL.squish
+        EXISTS (
+          SELECT 1
+          FROM ticket_type_included_events ttie_any
+          WHERE ttie_any.ticket_type_id = tickets.ticket_type_id
+        )
+      SQL
       effective_end_sql = <<~SQL.squish
         CASE
           WHEN tickets.parent_ticket_id IS NULL AND #{included_max_sql} IS NOT NULL
             THEN GREATEST(events.starts_at, #{included_max_sql})
+          WHEN tickets.parent_ticket_id IS NULL AND #{has_included_sql}
+            THEN COALESCE(events.starts_at, events.ends_at)
           ELSE COALESCE(events.ends_at, events.starts_at)
         END
       SQL

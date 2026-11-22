@@ -137,7 +137,6 @@ class Event < ApplicationRecord
   before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
   after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
-  after_save :sync_linked_pass_end_dates, if: -> { saved_change_to_ends_at? || saved_change_to_starts_at? }
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
@@ -502,19 +501,23 @@ class Event < ApplicationRecord
     pass_included_events.where(status: [:published, :postponed]).exists?
   end
 
-  # Latest end time for this event, anchored to the latest non-cancelled
-  # included night for multi-night pass events so active passes stay upcoming
-  # and protected without letting a stale ends_at linger past surviving nights.
+  # Latest end time for this event, derived dynamically from configured ends_at
+  # and live non-cancelled included nights so configured events.ends_at is never
+  # overwritten and cancelling/moving a night never leaves a stale extension.
   def effective_ends_at
     has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
     if has_pass && persisted?
       included_max = pass_included_events.where.not(status: :cancelled)
         .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
-      return [starts_at, included_max].compact.max if included_max
-      return starts_at || ends_at if pass_only_event? && pass_included_events.exists?
+      if pass_only_event?
+        return [starts_at, included_max].compact.max if included_max
+        return starts_at || ends_at if pass_included_events.exists?
+      elsif included_max
+        return [ends_at || starts_at, included_max].compact.max
+      end
     end
 
-    [ends_at, starts_at].compact.max
+    ends_at || starts_at
   end
 
   def upcoming?(at: Time.current)
@@ -657,10 +660,6 @@ class Event < ApplicationRecord
 
   def wallet_visible_change?
     %w[status title starts_at ends_at venue_name venue_address].any? { |attribute| saved_change_to_attribute?(attribute) }
-  end
-
-  def sync_linked_pass_end_dates
-    Passes::SyncPassEndDate.for_included_event!(self)
   end
 
   def copy_venue_details

@@ -15,7 +15,6 @@ class TicketTypeIncludedEvent < ApplicationRecord
 
   before_destroy :ensure_removable
   after_create :sync_ticket_type_pass_flag
-  after_create :sync_pass_event_end_date
   after_destroy :sync_ticket_type_pass_flag
 
   private
@@ -88,11 +87,5 @@ class TicketTypeIncludedEvent < ApplicationRecord
 
     should_be_pass = ticket_type.ticket_type_included_events.exists?
     ticket_type.update_column(:is_pass, should_be_pass) if ticket_type.is_pass? != should_be_pass
-  end
-
-  def sync_pass_event_end_date
-    return if ticket_type.destroyed?
-
-    Passes::SyncPassEndDate.for_pass_event!(ticket_type.event)
   end
 end

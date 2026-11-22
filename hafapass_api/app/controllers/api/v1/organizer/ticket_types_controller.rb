@@ -224,7 +224,6 @@ module Api
 
           should_be_pass = desired_ids.any?
           ticket_type.update_column(:is_pass, should_be_pass) if ticket_type.is_pass? != should_be_pass
-          Passes::SyncPassEndDate.for_pass_event!(ticket_type.event) if should_be_pass
           true
         end
 
