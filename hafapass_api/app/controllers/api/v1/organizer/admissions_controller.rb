@@ -13,7 +13,8 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
     return render json: [] if query.length < 2
 
     escaped = ActiveRecord::Base.sanitize_sql_like(query)
-    tickets = @event.tickets.includes(:ticket_type, :order)
+    tickets = @event.tickets.scannable.preload(:ticket_type, :order, :inventory_retention, :pending_refund_tickets,
+      parent_ticket: :pending_refund_tickets)
       .where("tickets.attendee_name ILIKE :query OR CAST(tickets.id AS TEXT) = :exact",
         query: "%#{escaped}%", exact: query.delete_prefix("HP-T"))
       .order(:attendee_name, :id).limit(20)
@@ -23,7 +24,7 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
   def door_list
     return unless authorize_organization!(:manage_attendees, event: @event)
 
-    ticket_count = @event.tickets.count
+    ticket_count = @event.tickets.scannable.count
     if ticket_count > Admissions::DoorListPdf::MAX_TICKETS
       return render json: { error: "Emergency door list is limited to #{Admissions::DoorListPdf::MAX_TICKETS} tickets. Use a filtered organizer door list or contact support." }, status: :unprocessable_entity
     end

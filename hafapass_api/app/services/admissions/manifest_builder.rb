@@ -81,7 +81,8 @@ module Admissions
     attr_reader :event, :actor
 
     def manifest_tickets
-      event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets, { order: [:disputes, :refunds, :payments] },
+      event.tickets.scannable.preload(:ticket_type, :inventory_retention, :pending_refund_tickets,
+        { parent_ticket: :pending_refund_tickets }, { order: [:disputes, :refunds, :payments] },
         event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,
@@ -110,16 +111,12 @@ module Admissions
     end
 
     def admission_state(ticket)
-      return "cancelled" if ticket.cancelled?
-      return "transferred" if ticket.transferred?
-      return "inventory_retained" if ticket.inventory_retained?
-      return "payment_blocked" if ticket.order.ticket_access_blocked?
-      return "refund_pending" if ticket.refund_pending?
-      return "unfulfilled" unless ticket.order.ticket_fulfilled?(payment_mode: payment_mode)
-      return "admitted" if ticket.checked_in?
-      return "valid" if ticket.issued?
+      reason = ticket.admission_block_reason(payment_mode: payment_mode)
+      return "valid" if reason.nil?
+      return "admitted" if reason == "not_admissible" && ticket.checked_in?
+      return "invalid" if reason == "not_admissible" || reason == "event_unavailable"
 
-      "invalid"
+      reason
     end
 
     def event_payload

@@ -54,7 +54,7 @@ module Admissions
       Enumerator.new do |output|
         # Snapshot at most MAX_TICKETS + 1 IDs before rendering; new tickets
         # cannot shift a later batch and the existing cap bounds memory.
-        ids = event.tickets.order(:attendee_name, :id).limit(MAX_TICKETS + 1).pluck(:id)
+        ids = event.tickets.scannable.order(:attendee_name, :id).limit(MAX_TICKETS + 1).pluck(:id)
         raise ArgumentError, "Door list is limited to #{MAX_TICKETS} tickets" if ids.length > MAX_TICKETS
         ids.each_slice(BATCH_SIZE) do |slice|
           records = event.tickets.where(id: slice).includes(:ticket_type,

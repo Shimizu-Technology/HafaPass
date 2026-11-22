@@ -54,8 +54,12 @@ class Api::V1::TicketsController < ApplicationController
 
   def find_ticket
     ticket = TicketCredential.find_display(params[:credential] || params[:qr_code])
-    Ticket.includes(:order, :ticket_type, :event,
-      event_seat: { venue_seat: { seating_row: :seating_section } }).find_by(id: ticket&.id)
+    Ticket.includes(
+      :order, :ticket_type, :event, :inventory_retention, :pending_refund_tickets,
+      { parent_ticket: [:event, :child_tickets, :pending_refund_tickets] },
+      { child_tickets: [:event, :order, :ticket_type, :inventory_retention, :pending_refund_tickets, { parent_ticket: :pending_refund_tickets }] },
+      event_seat: { venue_seat: { seating_row: :seating_section } }
+    ).find_by(id: ticket&.id)
   end
 
   def render_not_found
@@ -63,7 +67,7 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def downloadable?(ticket)
-    ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
+    !ticket.pass_parent? && ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
       !ticket.refund_pending? && !ticket.inventory_retained?
   end
 
@@ -74,7 +78,7 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def ticket_json(ticket)
-    {
+    json = {
       id: ticket.id,
       scan_credential: downloadable?(ticket) && admission_access?(ticket) ? ticket.scan_credential : nil,
       status: ticket.status,
@@ -116,6 +120,38 @@ class Api::V1::TicketsController < ApplicationController
         view_note: ticket.event_seat.view_note
       }
     }
+
+    if ticket.pass_parent?
+      sorted_children = Passes::TicketPayload.sort_children(ticket.child_tickets)
+      expose_via_parent = parent_display_exposes_children?(ticket)
+      json.merge!(
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: sorted_children.size,
+        child_tickets: sorted_children.map { |child|
+          transferred_away = child.transferred? || child.transferred_away_from?(ticket.order)
+          Passes::TicketPayload.child_json(
+            child,
+            expose_credential: !transferred_away && (
+              admission_access?(child) ||
+              (expose_via_parent && !child.cancelled? && !child.refund_pending? && !child.inventory_retained?)
+            ),
+            transferred_away: transferred_away
+          )
+        }
+      )
+    elsif ticket.pass_child?
+      json.merge!(
+        is_pass: true,
+        pass_parent: false,
+        pass_child: true,
+        parent_ticket_id: ticket.parent_ticket_id,
+        parent_pass: Passes::TicketPayload.parent_pass_summary(ticket)
+      )
+    end
+
+    json
   end
 
   def event_change_refund_contact_support?(ticket)
@@ -126,6 +162,15 @@ class Api::V1::TicketsController < ApplicationController
     change = ticket.event.event_changes.buyer_visible.order(:occurred_at, :id).last
     eligibility = EventChangeRefundEligibility.call(order: ticket.order, change: change)
     eligibility.eligible? || eligibility.reason == "no_tickets"
+  end
+
+  def parent_display_exposes_children?(ticket)
+    !ticket.cancelled? &&
+      !ticket.refund_pending? &&
+      !ticket.inventory_retained? &&
+      !ticket.transferred? &&
+      !ticket.transferred_away_from?(ticket.order) &&
+      !ticket.order.ticket_access_blocked?
   end
 
   def admission_access?(ticket)

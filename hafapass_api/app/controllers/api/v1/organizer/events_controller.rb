@@ -14,8 +14,9 @@ module Api
 
         def index
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
-            .includes(:organization, :organizer_profile, :event_seating_configuration,
-              ticket_types: [:waitlist_offers, { pricing_tiers: [:inventory_holds, :waitlist_offers,
+            .includes(:organization, :organizer_profile, :event_seating_configuration, :pass_inclusions,
+              ticket_types: [:waitlist_offers, { ticket_type_included_events: :included_event },
+                { pricing_tiers: [:inventory_holds, :waitlist_offers,
                 :active_precheckout_seat_holds] }, { inventory_holds: :order }, { tickets: :order },
                 { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
@@ -34,6 +35,8 @@ module Api
           @event_permission_maps = OrganizationAuthorization.permissions_for_events(
             user: current_user, organization: current_organization, events: paginated_events.to_a
           )
+          pass_included_ids = paginated_events.select { |ev| ev.pass_inclusions.any? }.map(&:id)
+          @pass_committed_by_event_id = EventCapacity.pass_committed_by_event_ids(pass_included_ids)
           render json: {
             events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
             meta: pagination_meta(pagy)
@@ -71,7 +74,7 @@ module Api
           next_event = upcoming.order(:starts_at, :id).first
           json = {
             upcoming_events_count: upcoming.count,
-            tickets_sold: Ticket.where(event_id: events.select(:id)).where.not(status: :cancelled).count,
+            tickets_sold: Ticket.where(event_id: events.select(:id), parent_ticket_id: nil).where.not(status: :cancelled).count,
             next_event: next_event && {
               id: next_event.id, title: next_event.title, starts_at: next_event.starts_at, timezone: next_event.timezone
             }
@@ -373,12 +376,12 @@ module Api
           orders = @event.orders.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded])
           financials = Commerce::LedgerTotals.call(orders)
 
-          total_tickets_sold = tickets.where.not(status: :cancelled).count
+          total_tickets_sold = tickets.where(parent_ticket_id: nil).where.not(status: :cancelled).count
           total_revenue_cents = financials[:net_cents]
           tickets_checked_in = tickets.where(status: :checked_in).count
 
           tickets_by_type = @event.ticket_types.order(:sort_order, :id).map do |tt|
-            type_tickets = tickets.where(ticket_type_id: tt.id).where.not(status: :cancelled)
+            type_tickets = tickets.where(ticket_type_id: tt.id, parent_ticket_id: nil).where.not(status: :cancelled)
             {
               name: tt.name,
               sold: type_tickets.count,
@@ -387,12 +390,14 @@ module Api
             }
           end
 
+          pass_tickets = pass_tickets_summary(tickets)
+
           recent_orders = orders.order(created_at: :desc).limit(10).map do |order|
             {
               id: order.id,
               buyer_name: order.buyer_name,
               buyer_email: order.buyer_email,
-              ticket_count: order.tickets.count,
+              ticket_count: order.tickets.where(parent_ticket_id: nil).count,
               total_cents: order.total_cents,
               status: order.status,
               refunded_cents: order.refunded_cents,
@@ -408,6 +413,7 @@ module Api
             financials: financials,
             tickets_checked_in: tickets_checked_in,
             tickets_by_type: tickets_by_type,
+            pass_tickets: pass_tickets,
             recent_orders: recent_orders,
             marketplace_funnel: @event.marketplace_funnel_events.group(:stage).count,
             acquisition_sources: @event.orders.joins(:acquisition_attribution)
@@ -425,6 +431,35 @@ module Api
             .where(order_item_id: items.select(:id), refunds: { status: Refund.statuses[:succeeded] })
             .sum(:amount_cents)
           charged - refunded
+        end
+
+        def pass_tickets_summary(tickets)
+          payment_mode = SiteSetting.instance.payment_mode
+          children = tickets.where.not(parent_ticket_id: nil)
+            .includes(:ticket_type, :inventory_retention, :pending_refund_tickets,
+              { parent_ticket: :pending_refund_tickets }, { order: [:disputes, :refunds, :payments] })
+            .to_a
+          by_type = children.group_by(&:ticket_type)
+            .sort_by { |tt, _| [tt.sort_order || 0, tt.id] }
+            .map do |tt, type_children|
+              {
+                name: tt.name,
+                eligible: type_children.count { |t| pass_child_eligible?(t, payment_mode: payment_mode) },
+                checked_in: type_children.count(&:checked_in?),
+                revenue_cents: 0
+              }
+            end
+          {
+            eligible: children.count { |t| pass_child_eligible?(t, payment_mode: payment_mode) },
+            checked_in: children.count(&:checked_in?),
+            by_type: by_type
+          }
+        end
+
+        def pass_child_eligible?(ticket, payment_mode:)
+          !ticket.cancelled? && !ticket.transferred? && !ticket.inventory_retained? &&
+            !ticket.order.ticket_access_blocked? && !ticket.refund_pending? &&
+            ticket.order.ticket_fulfilled?(payment_mode: payment_mode)
         end
 
         def attendees
@@ -748,7 +783,10 @@ module Api
             updated_at: event.updated_at
           }
 
-          json[:publish_checklist] = event.publish_checklist(organizer_agreement: listing_organizer_agreement)
+          json[:publish_checklist] = event.publish_checklist(
+            organizer_agreement: listing_organizer_agreement,
+            pass_committed: @pass_committed_by_event_id ? @pass_committed_by_event_id.fetch(event.id, 0) : nil
+          )
           json[:state_history] = event.event_state_changes.order(occurred_at: :desc).limit(20).map do |change|
             {
               action: change.action,
@@ -761,10 +799,11 @@ module Api
 
           if include_ticket_types
             ticket_types = event.ticket_types.loaded? ? event.ticket_types.sort_by { |type| [type.sort_order || 0, type.id] } :
-              event.ticket_types.order(:sort_order, :id)
+              event.ticket_types.includes(:pricing_tiers, ticket_type_included_events: :included_event).order(:sort_order, :id)
             json[:ticket_types] = ticket_types.map do |tt|
               price = tt.current_price_cents
               fee = Commerce::ServiceFee.for_event(event, price, terms: listing_fee_terms)
+              sorted_links = tt.ticket_type_included_events.sort_by { |link| [link.position, link.id] }
               {
                 id: tt.id,
                 name: tt.name,
@@ -785,7 +824,12 @@ module Api
                 max_per_order: tt.max_per_order,
                 max_per_buyer: tt.max_per_buyer,
                 sales_start_at: tt.sales_start_at,
-                sales_end_at: tt.sales_end_at
+                sales_end_at: tt.sales_end_at,
+                is_pass: tt.is_pass?,
+                included_event_ids: sorted_links.map(&:included_event_id),
+                included_events: sorted_links.filter_map do |link|
+                  link.included_event && Passes::TicketPayload.included_event_json(link.included_event)
+                end
               }
             end
           end

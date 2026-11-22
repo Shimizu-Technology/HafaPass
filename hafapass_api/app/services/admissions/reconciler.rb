@@ -206,7 +206,8 @@ module Admissions
       entry = nil unless entry && secure_equal?(entry["credential_hash"], input[:credential_hash])
       return [nil, nil, "credential_not_in_manifest"] unless entry
 
-      ticket = device.event.tickets.includes(:ticket_type, order: :disputes).find_by(id: entry["ticket_id"])
+      ticket = device.event.tickets.includes(:ticket_type, :pending_refund_tickets,
+        { parent_ticket: :pending_refund_tickets }, order: :disputes).find_by(id: entry["ticket_id"])
       return [nil, entry, "ticket_not_found"] unless ticket
 
       current_hash = Digest::SHA256.hexdigest(ticket.scan_credential)
@@ -273,15 +274,7 @@ module Admissions
     end
 
     def current_block_reason(ticket)
-      return "cancelled" if ticket.cancelled?
-      return "transferred" if ticket.transferred?
-      return "inventory_retained" if ticket.inventory_retained?
-      return "payment_blocked" if ticket.order.ticket_access_blocked?
-      return "refund_pending" if ticket.refund_pending?
-      return "unfulfilled" unless ticket.order.ticket_fulfilled?
-      return "event_unavailable" unless ticket.event.published?
-
-      "not_admissible"
+      ticket.admission_block_reason || "not_admissible"
     end
 
     def validate_replay!(existing, input)

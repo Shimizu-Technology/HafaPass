@@ -13,6 +13,47 @@ RSpec.describe "Api::V1::Users", type: :request do
     expect(response.parsed_body.fetch("tickets").find { |item| item["id"] == ticket.id }.fetch("event"))
       .to include("image_asset_host" => S3Service.public_asset_host)
   end
+
+  it "groups multi-night pass child_tickets under their pass_parent in /api/v1/me/tickets" do
+    user = create(:user, :attendee)
+    profile = create(:organizer_profile)
+    org = profile.organization
+    pass_event = create(:event, :published, organization: org, organizer_profile: profile,
+      title: "Tournament Pass", starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+    night_late = create(:event, :published, organization: org, organizer_profile: profile,
+      title: "Championship Night", starts_at: 6.days.from_now, ends_at: 6.days.from_now + 3.hours)
+    night_early = create(:event, :published, organization: org, organizer_profile: profile,
+      title: "Opening Night", starts_at: 3.days.from_now, ends_at: 3.days.from_now + 3.hours)
+    pass_tt = create(:ticket_type, event: pass_event, name: "Season Pass", price_cents: 0, quantity_available: 10)
+    TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_late, position: 0)
+    TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_early, position: 1)
+
+    Commerce::OrderCreator.call(
+      event: pass_event,
+      user: user,
+      line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+      buyer_email: user.email,
+      buyer_name: "Pass Fan",
+      payment_required: false
+    )
+
+    get "/api/v1/me/tickets", headers: auth_headers(user)
+
+    expect(response).to have_http_status(:ok)
+    tickets = response.parsed_body.fetch("tickets")
+    expect(tickets.size).to eq(1)
+    parent = tickets.first
+    expect(parent).to include(
+      "is_pass" => true,
+      "pass_parent" => true,
+      "pass_child" => false,
+      "pass_nights_count" => 2
+    )
+    children = parent.fetch("child_tickets")
+    expect(children.map { |c| c.dig("event", "title") }).to eq(["Opening Night", "Championship Night"])
+    expect(children.first["display_token"]).to be_present
+    expect(children.first["ticket_url"]).to eq("/tickets/#{children.first['display_token']}")
+  end
   describe "POST /api/v1/users/sync" do
     it "requires authentication" do
       post "/api/v1/users/sync", params: { clerk_id: "attacker", email: "attacker@example.com" }.to_json,

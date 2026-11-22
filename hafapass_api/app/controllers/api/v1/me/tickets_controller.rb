@@ -2,10 +2,19 @@ class Api::V1::Me::TicketsController < ApplicationController
   include Paginatable
 
   def index
+    owned_parent_ids = Ticket.where(holder_user: current_user, parent_ticket_id: nil).select(:id)
     tickets = Ticket
       .where(holder_user: current_user)
-      .includes(:ticket_type, :event, :order, :ticket_transfers)
-      .order(created_at: :desc)
+      .where("tickets.parent_ticket_id IS NULL OR tickets.parent_ticket_id NOT IN (?)", owned_parent_ids)
+      .includes(
+        :ticket_type, :event, :order, :ticket_transfers, :parent_ticket,
+        :inventory_retention, :pending_refund_tickets,
+        child_tickets: [
+          :event, :order, :ticket_type, :inventory_retention, :pending_refund_tickets,
+          { parent_ticket: :pending_refund_tickets }
+        ]
+      )
+      .order(created_at: :desc, id: :desc)
 
     pagy, paginated_tickets = paginate(tickets)
 
@@ -18,7 +27,7 @@ class Api::V1::Me::TicketsController < ApplicationController
   private
 
   def ticket_json(ticket)
-    {
+    json = {
       id: ticket.id,
       display_credential: ticket.display_credential,
       status: ticket.status,
@@ -46,5 +55,21 @@ class Api::V1::Me::TicketsController < ApplicationController
       },
       order_id: ticket.order_id
     }
+
+    if ticket.pass_parent?
+      owned_children = ticket.child_tickets.select { |child| child.holder_user_id == current_user.id }
+      sorted_children = Passes::TicketPayload.sort_children(owned_children)
+      json.merge!(
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: sorted_children.size,
+        child_tickets: sorted_children.map { |child|
+          Passes::TicketPayload.child_json(child, expose_credential: true)
+        }
+      )
+    end
+
+    json
   end
 end

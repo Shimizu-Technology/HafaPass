@@ -145,6 +145,167 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("status" => "cancelled", "scan_credential" => nil)
     end
+
+    it "returns child_tickets with safe display credentials for pass_parent and parent_pass metadata for pass_child" do
+      org = event.organization
+      night_1 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 1", starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      night_2 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 2", starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: event, name: "Full Tourney Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 1)
+
+      buyer = create(:user)
+      pass_order = Commerce::OrderCreator.call(
+        event: event,
+        user: buyer,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: buyer.email,
+        buyer_name: "Pass Holder",
+        payment_required: false
+      ).order
+      parent_ticket = pass_order.tickets.find_by!(parent_ticket_id: nil)
+      child_1 = pass_order.tickets.find_by!(event: night_1)
+
+      # Unauthenticated guest presenting the valid signed parent.display_credential
+      # receives active untransferred children's display links, with NO scan_credential on parent or children
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "is_pass" => true,
+        "pass_parent" => true,
+        "pass_child" => false,
+        "pass_nights_count" => 2,
+        "scan_credential" => nil
+      )
+      guest_children = response.parsed_body.fetch("child_tickets")
+      expect(guest_children.map { |c| c["display_credential"] }).to eq([
+        child_1.display_credential,
+        pass_order.tickets.find_by!(event: night_2).display_credential
+      ])
+      expect(guest_children.first["display_token"]).to eq(child_1.display_credential)
+      expect(guest_children.first["ticket_url"]).to eq("/tickets/#{child_1.display_credential}")
+      expect(guest_children.first).not_to have_key("scan_credential")
+
+      # Guest can follow the exposed child link to inspect the child night ticket
+      get "/api/v1/tickets/#{guest_children.first['display_credential']}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "pass_child" => true,
+        "parent_ticket_id" => parent_ticket.id,
+        "scan_credential" => nil
+      )
+
+      # Authenticated buyer gets safe child display links, still no scan_credential on parent
+      get "/api/v1/tickets/#{parent_ticket.display_credential}", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["scan_credential"]).to be_nil
+      children = response.parsed_body.fetch("child_tickets")
+      expect(children.map { |c| c.dig("event", "title") }).to eq(["Night 1", "Night 2"])
+      expect(children.first["display_token"]).to eq(child_1.display_credential)
+      expect(children.first["ticket_url"]).to eq("/tickets/#{child_1.display_credential}")
+      expect(children.first).not_to have_key("scan_credential")
+
+      # Parent pass cannot be downloaded as a door PDF
+      get "/api/v1/tickets/#{parent_ticket.display_credential}/download", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:not_found)
+
+      # Child ticket exposes parent_pass metadata and scannable credential when authorized
+      get "/api/v1/tickets/#{child_1.display_credential}", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "is_pass" => true,
+        "pass_parent" => false,
+        "pass_child" => true,
+        "parent_ticket_id" => parent_ticket.id,
+        "scan_credential" => child_1.scan_credential,
+        "parent_pass" => {
+          "ticket_type_name" => "Full Tourney Pass",
+          "event_title" => event.title,
+          "event_slug" => event.slug,
+          "nights_count" => 2
+        }
+      )
+    end
+
+    it "exposes untransferred child display credentials to guest buyers on active passes and withholds them when cancelled, disputed, or transferred" do
+      org = event.organization
+      night_1 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 1", starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      night_2 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 2", starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: event, name: "Guest Tourney Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 1)
+
+      guest_order = Commerce::OrderCreator.call(
+        event: event,
+        user: nil,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "guest-pass@example.com",
+        buyer_name: "Guest Pass Holder",
+        payment_required: false
+      ).order
+      parent_ticket = guest_order.tickets.find_by!(parent_ticket_id: nil)
+      child_1 = guest_order.tickets.find_by!(event: night_1)
+      child_2 = guest_order.tickets.find_by!(event: night_2)
+
+      # Guest with only the signed parent.display_credential receives child links
+      # and can open the child's door QR with their GuestOrderAccess token
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      children = response.parsed_body.fetch("child_tickets")
+      expect(children.map { |c| c["display_credential"] }).to eq([child_1.display_credential, child_2.display_credential])
+      expect(children.map { |c| c["ticket_url"] }).to eq([
+        "/tickets/#{child_1.display_credential}",
+        "/tickets/#{child_2.display_credential}"
+      ])
+
+      guest_token = GuestOrderAccess.issue!(guest_order)
+      get "/api/v1/tickets/#{children.first['display_credential']}", headers: { "X-Guest-Order-Token" => guest_token }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["scan_credential"]).to eq(child_1.scan_credential)
+
+      # Transferred-away child has its credential withheld while other active children stay visible
+      recipient = create(:user)
+      child_1.update!(holder_user: recipient)
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      children = response.parsed_body.fetch("child_tickets")
+      expect(children.first).to include("status" => "transferred", "display_credential" => nil, "ticket_url" => nil)
+      expect(children.second).to include("display_credential" => child_2.display_credential, "ticket_url" => "/tickets/#{child_2.display_credential}")
+      child_1.update!(holder_user: nil)
+
+      # Disputed order withholds all child credentials on unauthenticated parent display lookup
+      dispute = Dispute.create!(
+        order: guest_order,
+        provider: "stripe",
+        provider_dispute_id: "dp_pass_test",
+        amount_cents: 100,
+        currency: "usd",
+        status: :open,
+        opened_at: Time.current
+      )
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("child_tickets").map { |c| c["display_credential"] }).to eq([nil, nil])
+      expect(response.parsed_body.fetch("child_tickets").map { |c| c["ticket_url"] }).to eq([nil, nil])
+      dispute.update!(status: :won)
+
+      # Transferred-away parent withholds all child credentials
+      parent_ticket.update!(holder_user: recipient)
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("child_tickets").map { |c| c["display_credential"] }).to eq([nil, nil])
+      parent_ticket.update!(holder_user: nil)
+
+      # Cancelled parent withholds all child credentials
+      parent_ticket.update!(status: :cancelled, cancelled_at: Time.current)
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("child_tickets").map { |c| c["display_credential"] }).to eq([nil, nil])
+    end
   end
 
   describe "GET /api/v1/tickets/:credential/download" do
