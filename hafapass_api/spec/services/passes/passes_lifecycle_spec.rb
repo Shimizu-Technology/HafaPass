@@ -182,6 +182,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       child2.reverse_check_in! # Undone check-in still counts as previously_admitted?
       child3_version_before = child3.scan_credential_version
 
+      expect(Commerce::FinancialReversalInventory).to receive(:call).once.and_call_original
+
       refund = Commerce::RefundCreator.call(
         order: order,
         reason: "requested_by_customer",
@@ -248,6 +250,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
           }
         )
       )
+      expect(Commerce::FinancialReversalInventory).to receive(:call).once.and_call_original
       StripeWebhookProcessor.call(event: dispute_event, payload: { "id" => dispute_event.id, "type" => dispute_event.type })
 
       expect(pass_tt.reload.quantity_sold).to eq(1)
@@ -376,10 +379,15 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(change.change_type).to eq("rescheduled")
 
       # Direct buyer gets event_change, pass-only buyer gets pass_event_change, shared email is deduped!
+      direct_deliveries = MessageDelivery.where(template: "event_change", event: night_1, recipient: "both@example.com")
+      expect(direct_deliveries.count).to eq(1)
+      expect(direct_deliveries.sole.order_id).to eq(direct_order.id)
+
       pass_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1)
       expect(pass_deliveries.count).to eq(1)
       delivery = pass_deliveries.sole
       expect(delivery.recipient).to eq("pass-only@example.com")
+      expect(MessageDelivery.where(template: "pass_event_change", event: night_1, recipient: "both@example.com")).to be_empty
       expected_key = "event-change/#{change.id}/pass-buyer/#{Digest::SHA256.hexdigest('pass-only@example.com')[0, 32]}"
       expect(delivery.idempotency_key).to eq(expected_key)
       expect(delivery.metadata["audience"]).to eq("pass_buyer")
@@ -461,6 +469,44 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(payload.fetch("subject")).to include("Night 1")
       expect(payload.fetch("html")).to include("remaining pass nights stay active", "Gym roof leak", "View your pass")
       expect(payload.fetch("html")).not_to match(/automatic refund|request a refund/i)
+    end
+
+    it "still notifies the holder of an admitted (checked_in) pass child when that included night is cancelled" do
+      admitted_order, = create_paid_pass_order(email: "admitted-pass@example.com", name: "Admitted Pass Fan")
+      admitted_child = admitted_order.tickets.find_by!(event: night_1)
+      admitted_child.check_in!
+      expect(admitted_child.reload).to be_checked_in
+
+      EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Mid-game power outage")
+
+      # Admitted ticket stays checked_in (not cancelled) while holder still receives the cancellation notice
+      expect(admitted_child.reload).to be_checked_in
+      pass_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1)
+      expect(pass_deliveries.pluck(:recipient)).to eq(["admitted-pass@example.com"])
+    end
+
+    it "skips cancelled included nights in both Passes::SyncPassHolders and Passes::Issuance" do
+      existing_order, = create_paid_pass_order(email: "existing-sync@example.com")
+
+      cancelled_night = create(:event, :cancelled, organizer_profile: profile, organization: org,
+        title: "Cancelled Night", max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      active_new_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Active Added Night", max_capacity: 20, starts_at: 6.days.from_now, ends_at: 6.days.from_now + 3.hours)
+
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: cancelled_night, position: 2)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: active_new_night, position: 3)
+
+      sync_result = Passes::SyncPassHolders.call(ticket_type: pass_tt, actor: owner)
+      expect(sync_result.issued_ticket_count).to eq(1)
+      expect(sync_result.included_event_ids).to contain_exactly(night_1.id, night_2.id, active_new_night.id)
+      expect(existing_order.tickets.where(event: active_new_night).count).to eq(1)
+      expect(existing_order.tickets.where(event: cancelled_night).count).to eq(0)
+
+      # New pass purchase also skips the cancelled night
+      new_order, = create_paid_pass_order(email: "new-purchase@example.com")
+      child_event_ids = new_order.tickets.where.not(parent_ticket_id: nil).pluck(:event_id)
+      expect(child_event_ids).to contain_exactly(night_1.id, night_2.id, active_new_night.id)
+      expect(child_event_ids).not_to include(cancelled_night.id)
     end
 
     it "separates buyer and attendee pass_event_change emails without leaking guest order tokens to attendees" do
@@ -695,10 +741,69 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       order.update_columns(completed_at: 8.years.ago, created_at: 8.years.ago)
       order.tickets.update_all(created_at: 8.years.ago)
 
+      # Also create a fully ended pass (> 7 years ago) to prove the purge actually ran
+      ended_night = create(:event, :completed, organizer_profile: profile, organization: org,
+        title: "Old Night", max_capacity: 20, starts_at: 8.years.ago - 2.days, ends_at: 8.years.ago - 1.day)
+      ended_pass_event = create(:event, :completed, organizer_profile: profile, organization: org,
+        title: "Old Ended Pass", max_capacity: 50, starts_at: 8.years.ago - 2.days, ends_at: 8.years.ago - 1.day)
+      ended_tt = create(:ticket_type, event: ended_pass_event, name: "Old Season Pass", price_cents: 5000, quantity_available: 10)
+      link_nights(ended_tt, [ended_night])
+      ended_order = create(:order, event: ended_pass_event, buyer_email: "old-pass@example.com", buyer_name: "Old Holder")
+      ended_item = create(:order_item, order: ended_order, ticket_type: ended_tt, quantity: 1)
+      ended_parent = create(:ticket, order: ended_order, order_item: ended_item, event: ended_pass_event, ticket_type: ended_tt)
+      Passes::Issuance.call(order: ended_order, parent_ticket: ended_parent)
+      ended_child = ended_order.tickets.find_by!(event: ended_night)
+      ended_order.update_columns(completed_at: 8.years.ago, created_at: 8.years.ago)
+      ended_order.tickets.update_all(created_at: 8.years.ago)
+
       DataRetentionPurgeJob.perform_now(at: Time.current)
       expect(order.reload.retention_anonymized_at).to be_nil
       expect(parent.reload.retention_anonymized_at).to be_nil
+      expect(n1_child.reload.retention_anonymized_at).to be_nil
       expect(n15_child.reload.retention_anonymized_at).to be_nil
+
+      expect(ended_order.reload.retention_anonymized_at).to be_present
+      expect(ended_parent.reload.retention_anonymized_at).to be_present
+      expect(ended_child.reload.retention_anonymized_at).to be_present
+    end
+
+    it "keeps a pass event open for sales via effective_ends_at while ignoring cancelled included nights" do
+      buyer = create(:user, :attendee, email: "sales-gate@example.com")
+      active_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Active Future Night", max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      cancelled_far_night = create(:event, :cancelled, organizer_profile: profile, organization: org,
+        title: "Cancelled Far Future Night", max_capacity: 20, starts_at: 30.days.from_now, ends_at: 30.days.from_now + 3.hours)
+      early_pass_event = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Early Ends Pass", max_capacity: 50, starts_at: 3.days.ago, ends_at: 1.day.ago)
+      early_pass_tt = create(:ticket_type, event: early_pass_event, name: "Early Pass", price_cents: 0, quantity_available: 10)
+      link_nights(early_pass_tt, [active_night, cancelled_far_night])
+      early_pass_event.update_columns(ends_at: 1.day.ago)
+
+      # Effective end ignores cancelled_far_night and anchors to active_night; sales stay open
+      expect(early_pass_event.effective_ends_at).to be_within(1.second).of(active_night.ends_at)
+      expect(early_pass_event.sales_open?).to be(true)
+      expect(early_pass_event.sales_blocker).to be_nil
+
+      order = create(:order, event: early_pass_event, user: buyer, buyer_email: buyer.email, buyer_name: "Sales Gate Fan")
+      item = create(:order_item, order: order, ticket_type: early_pass_tt, quantity: 1)
+      parent = create(:ticket, order: order, order_item: item, event: early_pass_event, ticket_type: early_pass_tt, holder_user: buyer)
+      Passes::Issuance.call(order: order, parent_ticket: parent)
+
+      # Once active_night is also cancelled, effective_ends_at falls back to early_pass_event.ends_at (in the past)
+      active_night.update_columns(status: Event.statuses.fetch("cancelled"))
+      expect(early_pass_event.effective_ends_at).to be_within(1.second).of(early_pass_event.ends_at)
+      expect(early_pass_event.sales_open?).to be(false)
+      expect(early_pass_event.sales_blocker).to eq(:sales_closed)
+
+      get "/api/v1/me/tickets", params: { tab: "upcoming" }, headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("tickets").pluck("id")).not_to include(parent.id)
+
+      get "/api/v1/me/tickets", params: { tab: "past" }, headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      past_parent = response.parsed_body.fetch("tickets").find { |t| t["id"] == parent.id }
+      expect(past_parent).to be_present
+      expect(past_parent["upcoming"]).to be(false)
     end
 
     it "omits pass parent PDFs, attaches <= 2 pass child PDFs, and omits per-night PDFs for > 2 active children" do

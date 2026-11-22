@@ -448,8 +448,12 @@ class StripeWebhookProcessor
   end
 
   def cancel_disputed_tickets!(order, dispute)
+    seen_pass_parent_ids = Set.new
     order.tickets.includes(:ticket_type, :pricing_tier, :inventory_retention).order(:id).lock.each do |ticket|
       next if ticket.cancelled?
+
+      pass_parent_id = Commerce::FinancialReversalInventory.pass_group_parent_id(ticket)
+      next if pass_parent_id && !seen_pass_parent_ids.add?(pass_parent_id)
 
       Commerce::FinancialReversalInventory.call(ticket: ticket, dispute: dispute, reason: "payment_dispute_lost")
     end

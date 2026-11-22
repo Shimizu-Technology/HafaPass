@@ -259,7 +259,7 @@ class EmailService
         .joins(:order)
         .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
       pass_children = if change.change_type == "cancelled"
-        pass_children.where(status: :issued)
+        pass_children.where(status: %i[issued checked_in])
           .or(pass_children.where(status: :cancelled, cancellation_reason: "event_cancelled"))
       else
         pass_children.where(status: :issued)

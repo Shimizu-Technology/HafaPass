@@ -9,6 +9,7 @@ class Api::V1::Me::TicketsController < ApplicationController
       .order(created_at: :desc)
 
     if %w[upcoming past].include?(params[:tab])
+      cancelled_status = Event.statuses.fetch("cancelled")
       effective_end_sql = <<~SQL.squish
         GREATEST(
           COALESCE(events.ends_at, events.starts_at),
@@ -18,14 +19,15 @@ class Api::V1::Me::TicketsController < ApplicationController
             INNER JOIN events inc ON inc.id = ttie.included_event_id
             WHERE ttie.ticket_type_id = tickets.ticket_type_id
               AND tickets.parent_ticket_id IS NULL
+              AND inc.status != ?
           ), COALESCE(events.ends_at, events.starts_at))
         )
       SQL
       tickets = tickets.joins(:event)
       tickets = if params[:tab] == "upcoming"
-        tickets.where("#{effective_end_sql} > ?", now)
+        tickets.where("#{effective_end_sql} > ?", cancelled_status, now)
       else
-        tickets.where("#{effective_end_sql} <= ? OR (#{effective_end_sql}) IS NULL", now)
+        tickets.where("#{effective_end_sql} <= ? OR (#{effective_end_sql}) IS NULL", cancelled_status, now, cancelled_status)
       end
     end
 
@@ -77,7 +79,7 @@ class Api::V1::Me::TicketsController < ApplicationController
   def effective_ends_at_for(ticket)
     candidates = [ticket.event.ends_at, ticket.event.starts_at].compact
     if ticket.pass_parent?
-      ticket.ticket_type.included_events.each do |included_event|
+      ticket.ticket_type.included_events.reject(&:cancelled?).each do |included_event|
         end_time = included_event.ends_at || included_event.starts_at
         candidates << end_time if end_time
       end

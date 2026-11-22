@@ -662,6 +662,7 @@ module Commerce
         return
       end
       selected_ids = refund.refund_tickets.pluck(:ticket_id)
+      seen_pass_parent_ids = Set.new
       locked = refunded_order.tickets.includes(:ticket_type, :pricing_tier, :inventory_retention).order(:id).lock.to_a
       locked.each do |ticket|
         next if ticket.cancelled?
@@ -670,6 +671,9 @@ module Commerce
         next if selected_ids.any? && selected_ids.exclude?(ticket.id) &&
           (ticket.parent_ticket_id.nil? || selected_ids.exclude?(ticket.parent_ticket_id)) &&
           ticket.transferred_away_from?(refunded_order)
+
+        pass_parent_id = FinancialReversalInventory.pass_group_parent_id(ticket)
+        next if pass_parent_id && !seen_pass_parent_ids.add?(pass_parent_id)
 
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end

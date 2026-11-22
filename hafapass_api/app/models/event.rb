@@ -262,8 +262,9 @@ class Event < ApplicationRecord
   # admin action; suspending verification pauses all of the organizer's sales).
   # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
-    published? && !sales_suspended? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
-      (ends_at || starts_at) > at && organizer_sales_verified?
+    end_anchor = effective_ends_at
+    published? && !sales_suspended? && policy_hold_at.nil? && end_anchor.present? &&
+      end_anchor > at && organizer_sales_verified?
   end
 
   def organizer_sales_verified?
@@ -327,7 +328,8 @@ class Event < ApplicationRecord
     end
     return :event_paused if policy_hold?
     return :sales_paused if sales_suspended?
-    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+    end_anchor = effective_ends_at
+    return :sales_closed if end_anchor.blank? || end_anchor <= at
 
     context ||= self.class.sales_context
     return :platform_setup unless context[:policy_approved]
@@ -474,7 +476,8 @@ class Event < ApplicationRecord
     candidates = [ends_at, starts_at].compact
     has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
     if has_pass && persisted?
-      included_max = pass_included_events.maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+      included_max = pass_included_events.where.not(status: :cancelled)
+        .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
       candidates << included_max if included_max
     end
     candidates.max

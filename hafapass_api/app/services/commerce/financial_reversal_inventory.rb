@@ -2,6 +2,13 @@
 
 module Commerce
   class FinancialReversalInventory
+    def self.pass_group_parent_id(ticket)
+      return ticket.parent_ticket_id if ticket.pass_child?
+      return ticket.id if ticket.pass_parent?
+
+      nil
+    end
+
     # Financial reversal is not evidence that an admitted guest has exited.
     # Keep both sold counters and active seat uniqueness until a separately
     # reviewed physical reconciliation; Undo and exception resolution cannot release them.

@@ -70,8 +70,10 @@ module Passes
               ticket_inventory_retentions: { id: nil }
             ).order(:id).lock("FOR UPDATE OF tickets").to_a
 
-        existing_pairs = if parent_tickets.any?
-          Ticket.where(parent_ticket_id: parent_tickets.map(&:id), event_id: included_events.map(&:id))
+          eligible_included_events = included_events.reject(&:cancelled?)
+
+        existing_pairs = if parent_tickets.any? && eligible_included_events.any?
+          Ticket.where(parent_ticket_id: parent_tickets.map(&:id), event_id: eligible_included_events.map(&:id))
             .pluck(:parent_ticket_id, :event_id)
             .to_set
         else
@@ -80,7 +82,7 @@ module Passes
 
         missing_by_event = Hash.new { |hash, key| hash[key] = [] }
         parent_tickets.each do |parent|
-          included_events.each do |included_event|
+          eligible_included_events.each do |included_event|
             next if existing_pairs.include?([parent.id, included_event.id])
 
             missing_by_event[included_event] << parent
@@ -103,7 +105,7 @@ module Passes
           created = Passes::Issuance.call(
             order: orders_by_id.fetch(parent.order_id),
             parent_ticket: parent,
-            included_events: included_events
+            included_events: eligible_included_events
           )
           issued_count += created.length
         end
@@ -119,7 +121,7 @@ module Passes
             ticket_type_id: ticket_type.id,
             parent_ticket_count: parent_tickets.length,
             issued_ticket_count: issued_count,
-            included_event_count: included_events.length
+            included_event_count: eligible_included_events.length
           },
           request: request
         )
@@ -128,7 +130,7 @@ module Passes
             ticket_type: ticket_type,
             parent_ticket_count: parent_tickets.length,
             issued_ticket_count: issued_count,
-            included_event_ids: included_events.map(&:id)
+            included_event_ids: eligible_included_events.map(&:id)
           )
         end
       end

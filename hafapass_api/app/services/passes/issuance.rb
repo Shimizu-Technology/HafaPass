@@ -15,7 +15,7 @@ module Passes
     def call
       return [] unless parent_ticket.pass_parent?
 
-      events = resolve_included_events
+      events = resolve_included_events.reject(&:cancelled?)
       return [] if events.empty?
 
       existing_event_ids = Ticket.where(parent_ticket_id: parent_ticket.id, event_id: events.map(&:id))
