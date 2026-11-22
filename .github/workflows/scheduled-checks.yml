@@ -17,6 +17,7 @@ jobs:
   dependency-audit:
     name: Dependencies / Security advisories
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
@@ -39,6 +40,7 @@ jobs:
   production-drift:
     name: Production / Matches main and is ready
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       SITE_URL: https://hafapass.shimizu-technology.com
       API_URL: https://hafapass-api.onrender.com
