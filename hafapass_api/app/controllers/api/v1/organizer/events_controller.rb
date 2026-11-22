@@ -69,8 +69,9 @@ module Api
         def summary
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
           # An event that has started but not ended still counts, so it stays
-          # on the home summary through show night.
-          upcoming = events.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current)
+          # on the home summary through show night (or through the latest live
+          # included night for a multi-night pass).
+          upcoming = events.published.effectively_ending_after(Time.current)
           next_event = upcoming.order(:starts_at, :id).first
           json = {
             upcoming_events_count: upcoming.count,

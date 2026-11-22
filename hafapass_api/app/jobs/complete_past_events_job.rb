@@ -20,7 +20,7 @@ class CompletePastEventsJob < ApplicationJob
   def perform(now: Time.current, actor: nil)
     completed = 0
     # find_each batches by primary key; an explicit order would be ignored.
-    Event.published.where(ends_at: ..(now - GRACE_PERIOD)).find_each do |event|
+    Event.published.completion_anchor_at_or_before(now - GRACE_PERIOD).find_each do |event|
       if actor
         EventLifecycle.call(event: event, action: :complete, actor: actor, reason: REASON, at: now)
       else

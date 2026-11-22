@@ -70,7 +70,7 @@ module Passes
               ticket_inventory_retentions: { id: nil }
             ).order(:id).lock("FOR UPDATE OF tickets").to_a
 
-          eligible_included_events = included_events.reject(&:cancelled?)
+          eligible_included_events = included_events.select(&:eligible_pass_night?)
 
         existing_pairs = if parent_tickets.any? && eligible_included_events.any?
           Ticket.where(parent_ticket_id: parent_tickets.map(&:id), event_id: eligible_included_events.map(&:id))

@@ -275,7 +275,7 @@ module Commerce
 
       def pass_nights_exhausted?(holds)
         holds.map(&:ticket_type).uniq(&:id).any? do |ticket_type|
-          ticket_type.pass? && !ticket_type.included_events.where.not(status: :cancelled).exists?
+          ticket_type.pass? && !ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).exists?
         end
       end
 
@@ -289,7 +289,7 @@ module Commerce
         holds.each do |hold|
           next unless hold.ticket_type.pass?
 
-          hold.ticket_type.included_events.where.not(status: :cancelled).each do |included_event|
+          hold.ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).each do |included_event|
             pass_demand[included_event] += hold.quantity
           end
         end

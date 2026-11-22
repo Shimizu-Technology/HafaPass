@@ -52,12 +52,13 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "A newer event change notice replaces this one")
         next :done
       end
-      if reversed_event_change?(delivery)
-        delivery.update!(status: :cancelled, last_error: "The event change was reversed before this notice was sent")
+      if delivery.template == "pass_event_change" && unattempted_event_change?(delivery) &&
+          !resolve_pass_event_change!(delivery)
+        delivery.update!(status: :cancelled, last_error: "Recipient no longer holds an eligible pass for this event")
         next :done
       end
-      if ineligible_pass_event_change?(delivery)
-        delivery.update!(status: :cancelled, last_error: "Recipient no longer holds an eligible pass for this event")
+      if reversed_event_change?(delivery)
+        delivery.update!(status: :cancelled, last_error: "The event change was reversed before this notice was sent")
         next :done
       end
       if obsolete_waitlist?(delivery)
@@ -368,16 +369,29 @@ class MessageDeliveryJob < ApplicationJob
     change.present? && !change.notice_needed?(delivery.order)
   end
 
-  # A buyer who refunded/cancelled their pass or lost ticket access during the
-  # coalescing window should not receive an unattempted pass change notice.
+  # A deduplicated pass_event_change delivery may have been scoped to an order
+  # that was refunded/cancelled or blocked during the coalescing window. Rebind
+  # it to another remaining eligible order/ticket for the same recipient and
+  # audience when one exists; cancel only when no eligible pass remains.
   # Already-attempted payloads keep their replay behavior untouched.
-  def ineligible_pass_event_change?(delivery)
-    return false unless delivery.template == "pass_event_change" && unattempted_event_change?(delivery)
-
+  def resolve_pass_event_change!(delivery)
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
-    return true unless change
+    return false unless change
 
-    !EmailService.pass_event_change_eligible?(delivery, change)
+    target = EmailService.resolve_pass_event_change_target(delivery, change)
+    return false unless target
+
+    target_order = target.fetch(:order)
+    target_ticket = target[:ticket]
+    if delivery.order_id != target_order.id || delivery.ticket_id != target_ticket&.id ||
+        delivery.metadata["pass_event_id"] != target_order.event_id
+      delivery.update!(
+        order: target_order,
+        ticket: target_ticket,
+        metadata: delivery.metadata.merge("pass_event_id" => target_order.event_id)
+      )
+    end
+    true
   end
 
   def mark_reminder_sent!(delivery)

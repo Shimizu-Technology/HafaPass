@@ -102,6 +102,7 @@ class Event < ApplicationRecord
   validates :recurrence_rule, inclusion: { in: RECURRENCE_RULES }, allow_nil: true
 
   enum :status, { draft: 0, published: 1, cancelled: 2, completed: 3, postponed: 4, archived: 5 }
+  INELIGIBLE_PASS_NIGHT_STATUSES = %i[cancelled archived].freeze
   enum :category, {
     nightlife: 0, concert: 1, festival: 2, dining: 3, sports: 4, other: 5,
     workshop: 6, fundraiser: 7, family: 8, business: 9
@@ -161,16 +162,31 @@ class Event < ApplicationRecord
       .without_hidden_policy_hold.with_public_organizer
   }
   scope :discoverable_base, ->(at = Time.current) {
-    cancelled_status = Event.statuses.fetch("cancelled")
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
     published
       .where(live_money_proof_candidate: false)
       .with_public_organizer
       .where(policy_hold_at: nil)
       .where(sales_suspended_at: nil, organizer_sales_suspended_at: nil)
       .joins(:ticket_types)
-      .where(<<~SQL.squish, at: at, cancelled: cancelled_status)
+      .where(<<~SQL.squish, at: at, ineligible_statuses: ineligible_statuses)
         (
-          (ticket_types.is_pass = FALSE AND COALESCE(events.ends_at, events.starts_at) > :at)
+          (
+            ticket_types.is_pass = FALSE
+            AND (
+              COALESCE(events.ends_at, events.starts_at) > :at
+              OR EXISTS (
+                SELECT 1
+                FROM ticket_types event_pass_tt
+                INNER JOIN ticket_type_included_events event_ttie ON event_ttie.ticket_type_id = event_pass_tt.id
+                INNER JOIN events event_inc ON event_inc.id = event_ttie.included_event_id
+                WHERE event_pass_tt.event_id = events.id
+                  AND event_pass_tt.is_pass = TRUE
+                  AND event_inc.status NOT IN (:ineligible_statuses)
+                  AND COALESCE(event_inc.ends_at, event_inc.starts_at) > :at
+              )
+            )
+          )
           OR (
             ticket_types.is_pass = TRUE
             AND EXISTS (
@@ -178,7 +194,7 @@ class Event < ApplicationRecord
               FROM ticket_type_included_events ttie
               INNER JOIN events inc ON inc.id = ttie.included_event_id
               WHERE ttie.ticket_type_id = ticket_types.id
-                AND inc.status <> :cancelled
+                AND inc.status NOT IN (:ineligible_statuses)
                 AND (COALESCE(inc.ends_at, inc.starts_at) > :at OR events.starts_at > :at)
             )
           )
@@ -477,10 +493,146 @@ class Event < ApplicationRecord
     EventCapacity.remaining_for(self, at: at)
   end
 
+  scope :effectively_ending_after, ->(at = Time.current) {
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
+    where(<<~SQL.squish, at: at, ineligible_statuses: ineligible_statuses)
+      (
+        CASE
+          WHEN EXISTS (SELECT 1 FROM ticket_types tt_p WHERE tt_p.event_id = events.id AND tt_p.is_pass = TRUE)
+           AND NOT EXISTS (SELECT 1 FROM ticket_types tt_r WHERE tt_r.event_id = events.id AND tt_r.is_pass = FALSE)
+          THEN
+            CASE
+              WHEN (
+                SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                FROM ticket_types tt_m
+                INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                WHERE tt_m.event_id = events.id
+                  AND tt_m.is_pass = TRUE
+                  AND inc.status NOT IN (:ineligible_statuses)
+              ) IS NOT NULL
+              THEN GREATEST(
+                events.starts_at,
+                (
+                  SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                  FROM ticket_types tt_m
+                  INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                  INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                  WHERE tt_m.event_id = events.id
+                    AND tt_m.is_pass = TRUE
+                    AND inc.status NOT IN (:ineligible_statuses)
+                )
+              )
+              WHEN EXISTS (
+                SELECT 1
+                FROM ticket_types tt_i
+                INNER JOIN ticket_type_included_events ttie_i ON ttie_i.ticket_type_id = tt_i.id
+                WHERE tt_i.event_id = events.id
+                  AND tt_i.is_pass = TRUE
+              )
+              THEN COALESCE(events.starts_at, events.ends_at)
+              ELSE COALESCE(events.ends_at, events.starts_at)
+            END
+          WHEN (
+            SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+            FROM ticket_types tt_m
+            INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+            INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+            WHERE tt_m.event_id = events.id
+              AND tt_m.is_pass = TRUE
+              AND inc.status NOT IN (:ineligible_statuses)
+          ) IS NOT NULL
+          THEN GREATEST(
+            COALESCE(events.ends_at, events.starts_at),
+            (
+              SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+              FROM ticket_types tt_m
+              INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+              INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+              WHERE tt_m.event_id = events.id
+                AND tt_m.is_pass = TRUE
+                AND inc.status NOT IN (:ineligible_statuses)
+            )
+          )
+          ELSE COALESCE(events.ends_at, events.starts_at)
+        END
+      ) > :at
+    SQL
+  }
+
+  scope :completion_anchor_at_or_before, ->(cutoff) {
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
+    where(<<~SQL.squish, cutoff: cutoff, ineligible_statuses: ineligible_statuses)
+      (
+        CASE
+          WHEN EXISTS (SELECT 1 FROM ticket_types tt_p WHERE tt_p.event_id = events.id AND tt_p.is_pass = TRUE)
+           AND NOT EXISTS (SELECT 1 FROM ticket_types tt_r WHERE tt_r.event_id = events.id AND tt_r.is_pass = FALSE)
+          THEN
+            CASE
+              WHEN (
+                SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                FROM ticket_types tt_m
+                INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                WHERE tt_m.event_id = events.id
+                  AND tt_m.is_pass = TRUE
+                  AND inc.status NOT IN (:ineligible_statuses)
+              ) IS NOT NULL
+              THEN GREATEST(
+                events.starts_at,
+                (
+                  SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                  FROM ticket_types tt_m
+                  INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                  INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                  WHERE tt_m.event_id = events.id
+                    AND tt_m.is_pass = TRUE
+                    AND inc.status NOT IN (:ineligible_statuses)
+                )
+              )
+              WHEN EXISTS (
+                SELECT 1
+                FROM ticket_types tt_i
+                INNER JOIN ticket_type_included_events ttie_i ON ttie_i.ticket_type_id = tt_i.id
+                WHERE tt_i.event_id = events.id
+                  AND tt_i.is_pass = TRUE
+              )
+              THEN COALESCE(events.starts_at, events.ends_at)
+              ELSE COALESCE(events.ends_at, events.starts_at)
+            END
+          ELSE events.ends_at
+        END
+      ) <= :cutoff
+    SQL
+  }
+
   def pass_included_events
     Event.joins(:pass_inclusions)
       .where(ticket_type_included_events: { ticket_type_id: ticket_types.select(:id) })
       .distinct
+  end
+
+  def eligible_pass_night?
+    !cancelled? && !archived?
+  end
+
+  # True when this event was cancelled and later archived via EventLifecycle.
+  # Completed-then-archived nights return false so they do not falsely trigger
+  # all_pass_nights_cancelled?.
+  def archived_from_cancelled?
+    return false unless archived? && persisted?
+
+    latest_archive = if event_state_changes.loaded?
+      event_state_changes.select { |change| change.action == "archive" }
+        .max_by { |change| [change.occurred_at || Time.at(0), change.id || 0] }
+    else
+      event_state_changes.where(action: "archive").order(:occurred_at, :id).last
+    end
+    latest_archive&.from_status == "cancelled"
+  end
+
+  def cancelled_for_pass?
+    cancelled? || archived_from_cancelled?
   end
 
   def pass_only_event?
@@ -495,10 +647,13 @@ class Event < ApplicationRecord
     return false unless persisted? && pass_only_event?
 
     if (included = preloaded_pass_included_events)
-      return included.any? && included.all?(&:cancelled?)
+      return included.any? && included.all?(&:cancelled_for_pass?)
     end
 
-    pass_included_events.exists? && pass_included_events.where.not(status: :cancelled).none?
+    return false unless pass_included_events.exists?
+    return false if pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+
+    pass_included_events.where(status: :archived).all?(&:archived_from_cancelled?)
   end
 
   def active_included_pass_nights?
@@ -506,18 +661,19 @@ class Event < ApplicationRecord
   end
 
   # Latest end time for this event, derived dynamically from configured ends_at
-  # and live non-cancelled included nights so configured events.ends_at is never
-  # overwritten and cancelling/moving a night never leaves a stale extension.
+  # and live eligible (non-cancelled, non-archived) included nights so configured
+  # events.ends_at is never overwritten and cancelling/archiving/moving a night
+  # never leaves a stale extension.
   def effective_ends_at
     has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
     if has_pass && persisted?
       if (included = preloaded_pass_included_events)
-        included_max = included.reject(&:cancelled?)
+        included_max = included.select(&:eligible_pass_night?)
           .filter_map { |event| event.ends_at || event.starts_at }
           .max
         has_included = included.any?
       else
-        included_max = pass_included_events.where.not(status: :cancelled)
+        included_max = pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES)
           .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
         has_included = pass_only_event? && included_max.nil? ? pass_included_events.exists? : false
       end

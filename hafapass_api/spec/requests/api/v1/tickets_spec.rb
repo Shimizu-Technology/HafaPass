@@ -306,6 +306,63 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.fetch("child_tickets").map { |c| c["display_credential"] }).to eq([nil, nil])
     end
+
+    it "prioritizes child cancellation over parent inventory retention on standalone and parent pass ticket responses" do
+      org = event.organization
+      night_1 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 1", starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      night_2 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 2", starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: event, name: "Retained Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 1)
+
+      pass_order = Commerce::OrderCreator.call(
+        event: event,
+        user: nil,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "retained-pass@example.com",
+        buyer_name: "Retained Pass Holder",
+        payment_required: false
+      ).order
+      parent_ticket = pass_order.tickets.find_by!(parent_ticket_id: nil)
+      child_1 = pass_order.tickets.find_by!(event: night_1)
+      child_2 = pass_order.tickets.find_by!(event: night_2)
+
+      # Simulate full refund of a used pass: Night 1 was admitted then undone (stays issued),
+      # parent retains inventory, and unused Night 2 child is cancelled.
+      child_1.check_in!
+      child_1.reverse_check_in!
+      Commerce::FinancialReversalInventory.call(ticket: parent_ticket, refund: create(:refund, order: pass_order))
+      child_2.update!(status: :cancelled, cancelled_at: Time.current)
+
+      headers = { "X-Guest-Order-Token" => GuestOrderAccess.issue!(pass_order) }
+
+      get "/api/v1/tickets/#{child_2.display_credential}", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "status" => "cancelled",
+        "admission_allowed" => false,
+        "admission_block_reason" => nil
+      )
+
+      get "/api/v1/tickets/#{child_1.display_credential}", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "status" => "issued",
+        "admission_allowed" => false,
+        "admission_block_reason" => "Refunded or disputed admission requires organizer review"
+      )
+
+      get "/api/v1/tickets/#{parent_ticket.display_credential}", headers: headers
+      expect(response).to have_http_status(:ok)
+      children_by_id = response.parsed_body.fetch("child_tickets").index_by { |c| c["id"] }
+      expect(children_by_id.fetch(child_2.id)).to include("status" => "cancelled", "admission_block_reason" => nil)
+      expect(children_by_id.fetch(child_1.id)).to include(
+        "status" => "issued",
+        "admission_block_reason" => "Refunded or disputed admission requires organizer review"
+      )
+    end
   end
 
   describe "GET /api/v1/tickets/:credential/download" do

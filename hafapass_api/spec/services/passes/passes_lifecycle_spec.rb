@@ -94,7 +94,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
     before { link_nights(pass_tt, [night_1, night_2, night_3]) }
 
     it "supports parent ticket-selected refund on an unused pass, bumping scan versions and releasing parent inventory once" do
-      order, _payment = create_paid_pass_order(quantity: 2)
+      order, payment = create_paid_pass_order(quantity: 2)
       parents = order.tickets.where(parent_ticket_id: nil).order(:id).to_a
       parent1, parent2 = parents
       p1_children = parent1.child_tickets.order(:id).to_a
@@ -102,6 +102,10 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
 
       expect(pass_tt.reload.quantity_sold).to eq(2)
       p1_versions_before = [parent1, *p1_children].map(&:scan_credential_version)
+      expected_refund_cents = parent1.refundable_cents
+      expect(order.service_fee_cents).to be > 0
+      expect(expected_refund_cents).to eq(order.order_items.sole.unit_price_cents + (order.service_fee_cents / 2))
+      expect(expected_refund_cents).to eq(order.total_cents / 2)
 
       refund = Commerce::RefundCreator.call(
         order: order,
@@ -112,7 +116,13 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       )
 
       expect(refund).to be_succeeded
+      expect(refund.amount_cents).to eq(expected_refund_cents)
+      expect(StripeService).to have_received(:refund_payment).with(
+        payment.provider_payment_id,
+        hash_including(amount_cents: expected_refund_cents)
+      )
       expect(order.reload).to be_partially_refunded
+      expect(order.refunded_cents).to eq(expected_refund_cents)
       expect(pass_tt.reload.quantity_sold).to eq(1)
 
       expect(parent1.reload).to be_cancelled
@@ -224,6 +234,41 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(Admissions::Counts.call(event: night_2)).to include(total: 1, issued: 1, eligible_unadmitted: 0)
       manifest2 = Admissions::ManifestBuilder.call(event: night_2, actor: owner)
       expect(manifest2.payload.fetch("tickets").sole["state"]).to eq("inventory_retained")
+
+      # Cancelled Night 3 child stays distinct from retained Night 2 in both OrderPresenter and TicketsController
+      guest_token = GuestOrderAccess.issue!(order)
+      get "/api/v1/orders/#{order.id}", headers: { "X-Guest-Order-Token" => guest_token }
+      expect(response).to have_http_status(:ok)
+      presented_children = response.parsed_body.fetch("tickets").sole.fetch("child_tickets").index_by { |c| c["id"] }
+      expect(presented_children.fetch(child2.id)).to include(
+        "status" => "issued",
+        "admission_allowed" => false,
+        "admission_block_reason" => "Refunded or disputed admission requires organizer review"
+      )
+      expect(presented_children.fetch(child3.id)).to include(
+        "status" => "cancelled",
+        "admission_allowed" => false,
+        "admission_block_reason" => nil
+      )
+
+      get "/api/v1/tickets/#{parent.display_credential}", headers: { "X-Guest-Order-Token" => guest_token }
+      expect(response).to have_http_status(:ok)
+      parent_children = response.parsed_body.fetch("child_tickets").index_by { |c| c["id"] }
+      expect(parent_children.fetch(child2.id)["admission_block_reason"]).to eq(
+        "Refunded or disputed admission requires organizer review"
+      )
+      expect(parent_children.fetch(child3.id)["admission_block_reason"]).to be_nil
+
+      get "/api/v1/tickets/#{child3.display_credential}", headers: { "X-Guest-Order-Token" => guest_token }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("status" => "cancelled", "admission_block_reason" => nil)
+
+      get "/api/v1/tickets/#{child2.display_credential}", headers: { "X-Guest-Order-Token" => guest_token }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "status" => "issued",
+        "admission_block_reason" => "Refunded or disputed admission requires organizer review"
+      )
     end
 
     it "handles a lost dispute on a partially used pass with ONE grouped ReconciliationException and cancels unadmitted children" do
@@ -720,6 +765,79 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(replayed.reload).to be_sent
     end
 
+    it "preserves a deduplicated pass_event_change notice by switching to another eligible order for the same recipient and audience" do
+      with_locales_enabled(%w[en ko])
+      order_a, = create_paid_pass_order(buyer: nil, email: "multi-pass-buyer@example.com", name: "Multi Pass Buyer")
+      order_b, = create_paid_pass_order(buyer: nil, email: "multi-pass-buyer@example.com", name: "Multi Pass Buyer")
+      order_b.update!(locale: "ko")
+
+      # Separate non-buyer holder across two orders purchased by another buyer
+      other_order_a, = create_paid_pass_order(buyer: nil, email: "other-buyer@example.com", name: "Other Buyer")
+      other_order_b, = create_paid_pass_order(buyer: nil, email: "other-buyer@example.com", name: "Other Buyer")
+      [other_order_a, other_order_b].each do |ord|
+        ord.tickets.update_all(
+          attendee_email: "shared-holder@example.com",
+          holder_email: "shared-holder@example.com"
+        )
+      end
+
+      # Buyer who also happens to be a non-buyer holder on a different buyer's order (must never cross audiences)
+      cross_buyer_order, = create_paid_pass_order(buyer: nil, email: "cross-audience@example.com", name: "Cross Buyer")
+      third_party_order, = create_paid_pass_order(buyer: nil, email: "third-party@example.com", name: "Third Party")
+      third_party_order.tickets.update_all(
+        attendee_email: "cross-audience@example.com",
+        holder_email: "cross-audience@example.com"
+      )
+
+      new_start = 15.days.from_now.change(usec: 0)
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: (new_start + 3.hours).iso8601, change_reason: "Weather delay" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      buyer_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1, recipient: "multi-pass-buyer@example.com")
+      expect(buyer_deliveries.count).to eq(1)
+      buyer_delivery = buyer_deliveries.sole
+      expect(buyer_delivery.order_id).to eq(order_a.id)
+
+      holder_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1, recipient: "shared-holder@example.com")
+      expect(holder_deliveries.count).to eq(1)
+      holder_delivery = holder_deliveries.sole
+      expect(holder_delivery.order_id).to eq(other_order_a.id)
+      expect(holder_delivery.metadata["audience"]).to eq("pass_holder")
+
+      cross_delivery = MessageDelivery.find_by!(template: "pass_event_change", event: night_1, recipient: "cross-audience@example.com")
+      expect(cross_delivery.order_id).to eq(cross_buyer_order.id)
+      expect(cross_delivery.metadata["audience"]).to eq("pass_buyer")
+
+      # Refund order A before MessageDeliveryJob runs -> delivery switches to order B and sends with order B's access link & locale
+      Commerce::RefundCreator.call(order: order_a, reason: "requested_by_customer", requested_by: owner, idempotency_key: "refund-multi-a")
+      MessageDeliveryJob.perform_now(buyer_delivery.id)
+      buyer_delivery.reload
+      expect(buyer_delivery).to be_sent
+      expect(buyer_delivery.order_id).to eq(order_b.id)
+      buyer_html = buyer_delivery.outbound_payload.fetch("html")
+      expect(buyer_html).to include('<html lang="ko">', "/orders/#{order_b.id}/confirmation#guest_token=")
+      expect(buyer_html).not_to include("/orders/#{order_a.id}")
+
+      # Refund other_order_a -> holder delivery switches to other_order_b, stays pass_holder with /my-tickets and NO guest token
+      Commerce::RefundCreator.call(order: other_order_a, reason: "requested_by_customer", requested_by: owner, idempotency_key: "refund-holder-a")
+      MessageDeliveryJob.perform_now(holder_delivery.id)
+      holder_delivery.reload
+      expect(holder_delivery).to be_sent
+      expect(holder_delivery.order_id).to eq(other_order_b.id)
+      expect(holder_delivery.ticket_id).to eq(other_order_b.tickets.find_by!(event: night_1).id)
+      holder_html = holder_delivery.outbound_payload.fetch("html")
+      expect(holder_html).to include('<html lang="en">', "/my-tickets")
+      expect(holder_html).not_to include("guest_token", "/orders/#{other_order_b.id}", "/orders/#{other_order_a.id}")
+
+      # Refund cross_buyer_order -> pass_buyer delivery must NOT switch to third_party_order (different buyer_email)
+      Commerce::RefundCreator.call(order: cross_buyer_order, reason: "requested_by_customer", requested_by: owner, idempotency_key: "refund-cross-buyer")
+      MessageDeliveryJob.perform_now(cross_delivery.id)
+      expect(cross_delivery.reload).to be_cancelled
+      expect(cross_delivery.outbound_payload).to be_blank
+    end
+
     it "rejects new pass checkouts with 422 when all included nights are cancelled while allowing checkouts with surviving nights" do
       EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Night 1 rained out")
 
@@ -815,6 +933,136 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(free_order.tickets.count).to eq(0)
       expect(ReconciliationException.where(order: free_order)).to be_empty
     end
+
+    it "keeps cancelled-then-archived included nights ineligible for completion, checkout, discovery, and issuance while allowing surviving published nights" do
+      # (a) Cancel then archive the final included night before payment completes -> late-capture refund recovery
+      checkout = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "archived-inflight@example.com",
+        buyer_name: "Archived Inflight",
+        payment_required: true
+      )
+      order = checkout.order
+      payment = checkout.payment
+      Payment.where(id: payment.id).update_all(provider_environment: "test", provider_payment_id: "pi_archived_final_night")
+      payment.reload
+
+      EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Storm night 1")
+      EventLifecycle.call(event: night_2, action: :cancel, actor: owner, reason: "Storm night 2")
+      Settlements::Finalizer.call(event: night_2, actor: owner)
+      EventLifecycle.call(event: night_2, action: :archive, actor: owner)
+      expect(night_2.reload).to be_archived
+
+      result = nil
+      expect do
+        result = Commerce::OrderLifecycle.complete!(
+          order,
+          payment: payment,
+          provider_amount_cents: payment.amount_cents,
+          provider_currency: payment.currency
+        )
+      end.to have_enqueued_job(LateCaptureRefundJob).with(payment.id)
+
+      expect(result).to eq(:unchanged)
+      expect(order.reload).to be_cancelled
+      expect(order.tickets.count).to eq(0)
+      expect(ReconciliationException.find_by!(order: order, payment: payment, code: "pass_all_included_nights_cancelled")).to be_open
+
+      # (c) Cancelling then archiving the only future night keeps pass sales and discovery closed
+      expect(pass_event.reload.all_pass_nights_cancelled?).to be(true)
+      expect(pass_event.sales_open?).to be(false)
+      expect(pass_event.sales_blocker).to eq(:pass_nights_cancelled)
+      expect(Event.discoverable_base.where(id: pass_event.id)).not_to exist
+      expect do
+        Commerce::OrderCreator.call(
+          event: pass_event,
+          line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+          buyer_email: "after-archive@example.com",
+          buyer_name: "After Archive",
+          payment_required: true
+        )
+      end.to raise_error(Commerce::OrderCreator::CheckoutError, "All included nights for this pass have been cancelled")
+
+      # (b) One night cancelled+archived while another published night survives -> fulfills for surviving night only
+      surviving_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Surviving Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+      archived_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Cancelled Archived Night", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      live_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Surviving Published Night", max_capacity: 20, starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      surviving_tt = create(:ticket_type, event: surviving_pass, name: "Surviving Pass TT", price_cents: 2500, quantity_available: 10)
+      link_nights(surviving_tt, [archived_night, live_night])
+
+      pending_checkout = Commerce::OrderCreator.call(
+        event: surviving_pass,
+        line_items: [{ ticket_type_id: surviving_tt.id, quantity: 1 }],
+        buyer_email: "surviving-after-archive@example.com",
+        buyer_name: "Surviving Buyer",
+        payment_required: true
+      )
+      EventLifecycle.call(event: archived_night, action: :cancel, actor: owner, reason: "Cancelled night")
+      Settlements::Finalizer.call(event: archived_night, actor: owner)
+      EventLifecycle.call(event: archived_night, action: :archive, actor: owner)
+      expect(archived_night.reload).to be_archived
+
+      completed_status = Commerce::OrderLifecycle.complete!(
+        pending_checkout.order,
+        payment: pending_checkout.payment,
+        provider_amount_cents: pending_checkout.payment.amount_cents,
+        provider_currency: pending_checkout.payment.currency
+      )
+      expect(completed_status).to eq(:completed)
+      expect(pending_checkout.order.reload).to be_completed
+      expect(pending_checkout.order.tickets.where.not(parent_ticket_id: nil).pluck(:event_id)).to eq([live_night.id])
+
+      # Completed-then-archived night does NOT falsely trigger all_pass_nights_cancelled?
+      done_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Completed Night Pass", max_capacity: 50, starts_at: 5.days.ago, ends_at: 3.days.ago)
+      done_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Completed Night", max_capacity: 20, starts_at: 4.days.ago, ends_at: 3.days.ago)
+      done_tt = create(:ticket_type, event: done_pass, name: "Completed Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(done_tt, [done_night])
+      EventLifecycle.call(event: done_night, action: :complete, actor: owner, at: Time.current)
+      Settlements::Finalizer.call(event: done_night, actor: owner)
+      EventLifecycle.call(event: done_night, action: :archive, actor: owner)
+      expect(done_night.reload).to be_archived
+      expect(done_pass.reload.all_pass_nights_cancelled?).to be(false)
+      expect(done_pass.sales_blocker).to eq(:sales_closed)
+
+      # Mixed event keeps regular GA sales & discovery open when all included pass nights are cancelled & archived
+      mixed_ev = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Archived Night Event", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+      mixed_ga = create(:ticket_type, event: mixed_ev, name: "Regular GA", price_cents: 0, quantity_available: 20)
+      mixed_pass = create(:ticket_type, event: mixed_ev, name: "Mixed Pass", price_cents: 0, quantity_available: 10)
+      mixed_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Night", max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      link_nights(mixed_pass, [mixed_night])
+      EventLifecycle.call(event: mixed_night, action: :cancel, actor: owner, reason: "Mixed night cancelled")
+      Settlements::Finalizer.call(event: mixed_night, actor: owner)
+      EventLifecycle.call(event: mixed_night, action: :archive, actor: owner)
+      expect(mixed_night.reload).to be_archived
+      expect(mixed_ev.reload.all_pass_nights_cancelled?).to be(false)
+      expect(mixed_ev.sales_open?).to be(true)
+      expect(Event.discoverable_base.where(id: mixed_ev.id)).to exist
+      expect do
+        Commerce::OrderCreator.call(
+          event: mixed_ev,
+          line_items: [{ ticket_type_id: mixed_pass.id, quantity: 1 }],
+          buyer_email: "mixed-pass-blocked@example.com",
+          buyer_name: "Mixed Pass Blocked",
+          payment_required: false
+        )
+      end.to raise_error(Commerce::OrderCreator::CheckoutError, "All included nights for this pass have been cancelled")
+      ga_order = Commerce::OrderCreator.call(
+        event: mixed_ev,
+        line_items: [{ ticket_type_id: mixed_ga.id, quantity: 1 }],
+        buyer_email: "mixed-ga-ok@example.com",
+        buyer_name: "Mixed GA Buyer",
+        payment_required: false
+      ).order
+      expect(ga_order).to be_completed
+    end
   end
 
   describe "4. Pass Event Lifecycle, Retention & Attachments" do
@@ -850,8 +1098,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         EventLifecycle.call(event: past_pass, action: :complete, actor: owner, at: Time.current)
       end.to raise_error(EventLifecycle::TransitionError, /included nights are still published or postponed/i)
 
-      # Once pub_night completes, draft & cancelled nights do NOT block pass completion
-      pub_night.update_columns(status: Event.statuses.fetch("completed"))
+      # Once pub_night ends and completes, draft & cancelled nights do NOT block pass completion
+      pub_night.update_columns(status: Event.statuses.fetch("completed"), ends_at: 1.day.ago)
       expect(CompletePastEventsJob.perform_now(now: Time.current)).to eq(1)
       expect(past_pass.reload).to be_completed
     end
@@ -1092,6 +1340,53 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         expect(CompletePastEventsJob.perform_now(now: Time.current)).to eq(1)
         expect(mixed_event.reload).to be_completed
       end
+    end
+
+    it "keeps a mixed event discoverable on Day 12 when pass sales ended on Day 10 but regular GA remains on sale through an extended included night" do
+      configured_start = 2.days.from_now.change(usec: 0)
+      configured_end = 10.days.from_now.change(usec: 0)
+      mixed_event = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Cutoff Event", max_capacity: 100, starts_at: configured_start, ends_at: configured_end)
+      regular_ga = create(:ticket_type, event: mixed_event, name: "Regular GA", price_cents: 0, quantity_available: 50)
+      pass_type = create(:ticket_type, event: mixed_event, name: "Early Pass", price_cents: 0, quantity_available: 20,
+        sales_end_at: configured_end)
+      extended_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Extended Night", max_capacity: 50, starts_at: 18.days.from_now, ends_at: 18.days.from_now + 3.hours)
+      link_nights(pass_type, [extended_night])
+
+      travel_to(12.days.from_now) do
+        expect(mixed_event.reload.sales_open?).to be(true)
+        expect(pass_type.on_sale?).to be(false)
+        expect(regular_ga.on_sale?).to be(true)
+        expect(Event.discoverable_base.where(id: mixed_event.id)).to exist
+
+        # Preserves regular ticket type's own sales window when it has closed
+        regular_ga.update_columns(sales_end_at: configured_end)
+        expect(Event.discoverable_base.where(id: mixed_event.id)).not_to exist
+      end
+    end
+
+    it "allows completing a pass-only event once all included nights complete even before configured ends_at, while keeping ends_at for non-pass-only events" do
+      pass_only = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Early Finished Pass", max_capacity: 50, starts_at: 5.days.ago, ends_at: 5.days.from_now)
+      finished_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Finished Night", max_capacity: 20, starts_at: 4.days.ago, ends_at: 2.days.ago)
+      pt = create(:ticket_type, event: pass_only, name: "Early Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(pt, [finished_night])
+      EventLifecycle.call(event: finished_night, action: :complete, actor: owner, at: Time.current)
+
+      expect { EventLifecycle.call(event: pass_only, action: :complete, actor: owner, at: Time.current) }.not_to raise_error
+      expect(pass_only.reload).to be_completed
+
+      # Non-pass-only (mixed) event still cannot complete before its configured ends_at
+      mixed_event = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Mixed Still Running", max_capacity: 50, starts_at: 5.days.ago, ends_at: 5.days.from_now)
+      create(:ticket_type, event: mixed_event, name: "Regular GA", price_cents: 0, quantity_available: 10)
+      mixed_pass_tt = create(:ticket_type, event: mixed_event, name: "Mixed Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(mixed_pass_tt, [finished_night])
+
+      expect { EventLifecycle.call(event: mixed_event, action: :complete, actor: owner, at: Time.current) }
+        .to raise_error(EventLifecycle::TransitionError, /before it ends/)
     end
 
     it "omits pass parent PDFs, attaches <= 2 pass child PDFs, and omits per-night PDFs for > 2 active children" do

@@ -73,6 +73,7 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def admission_block_reason(ticket)
+    return nil if ticket.cancelled? || (ticket.pass_child? && ticket.parent_ticket&.cancelled?)
     if ticket.inventory_retained? || (ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
       return "Refunded or disputed admission requires organizer review"
     end

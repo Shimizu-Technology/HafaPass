@@ -60,7 +60,8 @@ class EmailService
         send_event_change_notification(change, delivery.order, delivery: delivery)
       when "pass_event_change"
         change = EventChange.find(delivery.metadata.fetch("event_change_id"))
-        send_pass_event_change_notification(change, delivery.order, delivery: delivery)
+        effective_order = resolve_pass_event_change_target(delivery, change)&.fetch(:order) || delivery.order
+        send_pass_event_change_notification(change, effective_order, delivery: delivery)
       when "refund_notification"
         send_refund_notification(delivery.order, delivery: delivery)
       when "guest_list"
@@ -311,13 +312,75 @@ class EmailService
     end
 
     def pass_event_change_eligible?(delivery, change)
-      order = Order.find_by(id: delivery.order_id)
-      return false unless order && (order.completed? || order.partially_refunded?) && !order.ticket_access_blocked?
+      resolve_pass_event_change_target(delivery, change).present?
+    end
+
+    # Resolves an eligible pass order (and child ticket for pass_holder) for a
+    # deduplicated pass_event_change delivery. Prefers the delivery's current
+    # order/ticket when still eligible; otherwise falls back to another eligible
+    # pass for the same recipient email and audience so refunding order A never
+    # drops a notice owed for order B, while keeping buyer and holder audiences
+    # strictly separate so a non-buyer holder never gets another buyer's token.
+    def resolve_pass_event_change_target(delivery, change)
+      recipient = delivery.recipient.to_s.strip.downcase
+      return nil if recipient.blank?
+
+      audience = delivery.metadata.to_h["audience"].presence || (delivery.ticket_id.present? ? "pass_holder" : "pass_buyer")
+
+      current_pass_event_change_target(delivery, change, recipient: recipient, audience: audience) ||
+        fallback_pass_event_change_target(change, recipient: recipient, audience: audience)
+    end
+
+    def current_pass_event_change_target(delivery, change, recipient:, audience:)
+      order = Order.includes(:disputes).find_by(id: delivery.order_id)
+      return nil unless order && (order.completed? || order.partially_refunded?) && !order.ticket_access_blocked?
 
       scope = eligible_pass_event_change_children(change).where(order_id: order.id)
-      scope = scope.where(id: delivery.ticket_id) if delivery.ticket_id.present?
-      scope.exists?
+      if audience == "pass_holder"
+        scope = scope.where(id: delivery.ticket_id) if delivery.ticket_id.present?
+        ticket = scope.order(:id).find { |candidate| pass_holder_matches_recipient?(candidate, order, recipient) }
+        return { order: order, ticket: ticket } if ticket
+      else
+        return nil unless order.buyer_email.to_s.strip.downcase == recipient
+        return { order: order, ticket: nil } if scope.exists?
+      end
+
+      nil
     end
+    private :current_pass_event_change_target
+
+    def fallback_pass_event_change_target(change, recipient:, audience:)
+      if audience == "pass_holder"
+        candidate = eligible_pass_event_change_children(change)
+          .where("LOWER(BTRIM(tickets.holder_email)) = :email OR LOWER(BTRIM(tickets.attendee_email)) = :email", email: recipient)
+          .includes(order: :disputes)
+          .order("orders.id ASC, tickets.id ASC")
+          .find do |ticket|
+            !ticket.order.ticket_access_blocked? && pass_holder_matches_recipient?(ticket, ticket.order, recipient)
+          end
+        return { order: candidate.order, ticket: candidate } if candidate
+      else
+        candidate = eligible_pass_event_change_children(change)
+          .where("LOWER(BTRIM(orders.buyer_email)) = ?", recipient)
+          .includes(order: :disputes)
+          .order("orders.id ASC, tickets.id ASC")
+          .find { |ticket| !ticket.order.ticket_access_blocked? }
+        return { order: candidate.order, ticket: nil } if candidate
+      end
+
+      nil
+    end
+    private :fallback_pass_event_change_target
+
+    def pass_holder_matches_recipient?(ticket, order, recipient)
+      emails = if ticket.transferred_away_from?(order)
+        [ticket.holder_email]
+      else
+        [ticket.holder_email, ticket.attendee_email]
+      end
+      emails.any? { |raw| raw.to_s.strip.downcase == recipient }
+    end
+    private :pass_holder_matches_recipient?
 
     def queue_event_change_delivery(change, order:, recipient:, idempotency_key:, metadata:, wait:, ticket: nil, template: "event_change")
       delivery = nil

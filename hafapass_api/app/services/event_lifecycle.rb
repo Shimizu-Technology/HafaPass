@@ -113,7 +113,7 @@ class EventLifecycle
       if event.active_included_pass_nights?
         raise TransitionError, "A multi-night pass event cannot be completed while included nights are still published or postponed"
       end
-      end_anchor = event.all_pass_nights_cancelled? ? event.effective_ends_at : event.ends_at
+      end_anchor = event.pass_only_event? ? event.effective_ends_at : event.ends_at
       if end_anchor.blank? || end_anchor > at
         raise TransitionError, "An event cannot be completed before it ends"
       end

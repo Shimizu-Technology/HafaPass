@@ -20,14 +20,14 @@ class Api::V1::Me::TicketsController < ApplicationController
       .order(created_at: :desc, id: :desc)
 
     if %w[upcoming past].include?(params[:tab])
-      cancelled_status = Event.statuses.fetch("cancelled")
+      ineligible_statuses = Event.statuses.values_at(*Event::INELIGIBLE_PASS_NIGHT_STATUSES)
       included_max_sql = <<~SQL.squish
         (
           SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
           FROM ticket_type_included_events ttie
           INNER JOIN events inc ON inc.id = ttie.included_event_id
           WHERE ttie.ticket_type_id = tickets.ticket_type_id
-            AND inc.status != :cancelled
+            AND inc.status NOT IN (:ineligible_statuses)
         )
       SQL
       has_included_sql = <<~SQL.squish
@@ -48,9 +48,10 @@ class Api::V1::Me::TicketsController < ApplicationController
       SQL
       tickets = tickets.joins(:event)
       tickets = if params[:tab] == "upcoming"
-        tickets.where("(#{effective_end_sql}) > :now", cancelled: cancelled_status, now: now)
+        tickets.where("(#{effective_end_sql}) > :now", ineligible_statuses: ineligible_statuses, now: now)
       else
-        tickets.where("(#{effective_end_sql}) <= :now OR (#{effective_end_sql}) IS NULL", cancelled: cancelled_status, now: now)
+        tickets.where("(#{effective_end_sql}) <= :now OR (#{effective_end_sql}) IS NULL",
+          ineligible_statuses: ineligible_statuses, now: now)
       end
     end
 
@@ -118,7 +119,7 @@ class Api::V1::Me::TicketsController < ApplicationController
   def effective_ends_at_for(ticket)
     if ticket.pass_parent?
       included_max = ticket.ticket_type.included_events
-        .reject(&:cancelled?)
+        .select(&:eligible_pass_night?)
         .filter_map { |included_event| included_event.ends_at || included_event.starts_at }
         .max
       return [ticket.event.starts_at, included_max].compact.max if included_max
