@@ -129,6 +129,34 @@ function baseOptionMeta(value) {
   return BASE_OPTIONS.find((opt) => opt.value === value) || BASE_OPTIONS[0]
 }
 
+function extractSplitSettingsFromReport(report) {
+  const share = report?.revenue_share
+  if (!share) return null
+  return {
+    revenue_share_bps: share.revenue_share_bps ?? 1600,
+    revenue_share_base: share.revenue_share_base || 'admissions_net_proceeds',
+    revenue_share_includes_door_cash: Boolean(share.revenue_share_includes_door_cash),
+    revenue_share_label: report?.series?.revenue_share_label ?? share.revenue_share_label ?? '',
+    primary_share_label: report?.series?.primary_share_label ?? share.primary_share_label ?? '',
+  }
+}
+
+function extractSplitSettingsFromPatch(patchData, submittedPayload, fallbackSettings) {
+  const source = patchData && typeof patchData === 'object' ? patchData : {}
+  return {
+    revenue_share_bps: source.revenue_share_bps ?? submittedPayload.revenue_share_bps ?? fallbackSettings?.revenue_share_bps ?? 1600,
+    revenue_share_base: source.revenue_share_base ?? submittedPayload.revenue_share_base ?? fallbackSettings?.revenue_share_base ?? 'admissions_net_proceeds',
+    revenue_share_includes_door_cash:
+      typeof source.revenue_share_includes_door_cash === 'boolean'
+        ? source.revenue_share_includes_door_cash
+        : Boolean(submittedPayload.revenue_share_includes_door_cash ?? fallbackSettings?.revenue_share_includes_door_cash),
+    revenue_share_label:
+      source.revenue_share_label ?? submittedPayload.revenue_share_label ?? fallbackSettings?.revenue_share_label ?? '',
+    primary_share_label:
+      source.primary_share_label ?? submittedPayload.primary_share_label ?? fallbackSettings?.primary_share_label ?? '',
+  }
+}
+
 export default function EventSeriesReportPage() {
   const { seriesId } = useParams()
   const identity = useOrganizerIdentity()
@@ -154,6 +182,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
   const [exportError, setExportError] = useState(null)
 
   const [editingSplit, setEditingSplit] = useState(false)
+  const [savedSplitSettings, setSavedSplitSettings] = useState(null)
   const [splitPercent, setSplitPercent] = useState('16.00')
   const [splitBase, setSplitBase] = useState('admissions_net_proceeds')
   const [includeDoorCash, setIncludeDoorCash] = useState(true)
@@ -166,14 +195,13 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
 
   const loadRequest = useRef(null)
 
-  const syncSplitForm = useCallback((report) => {
-    const share = report?.revenue_share
-    if (!share) return
-    setSplitPercent(((share.revenue_share_bps ?? 1600) / 100).toFixed(2))
-    setSplitBase(share.revenue_share_base || 'admissions_net_proceeds')
-    setIncludeDoorCash(Boolean(share.revenue_share_includes_door_cash))
-    setShareLabel(report?.series?.revenue_share_label || share.revenue_share_label || '')
-    setPrimaryLabel(report?.series?.primary_share_label || share.primary_share_label || '')
+  const syncSplitForm = useCallback((settings) => {
+    if (!settings) return
+    setSplitPercent(((settings.revenue_share_bps ?? 1600) / 100).toFixed(2))
+    setSplitBase(settings.revenue_share_base || 'admissions_net_proceeds')
+    setIncludeDoorCash(Boolean(settings.revenue_share_includes_door_cash))
+    setShareLabel(settings.revenue_share_label || '')
+    setPrimaryLabel(settings.primary_share_label || '')
   }, [])
 
   const load = useCallback(async ({ preserveData = false } = {}) => {
@@ -194,7 +222,8 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
       const currentOrg = selectedOrganization(orgs, identity.organizationId)
       const perms = currentOrg?.permissions || {}
       setCanEditSplit(Boolean(perms.manage_finance))
-      syncSplitForm(reportRes.data)
+      setSavedSplitSettings(null)
+      syncSplitForm(extractSplitSettingsFromReport(reportRes.data))
       setState({ status: 'ready', data: reportRes.data, error: null })
     } catch (error) {
       if (!applies() || error?.name === 'AbortError' || error?.name === 'CanceledError') return
@@ -268,19 +297,27 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
     setSavingSplit(true)
     setSplitError(null)
     setSplitNotice(null)
+    const payload = {
+      revenue_share_bps: bps,
+      revenue_share_base: splitBase,
+      revenue_share_includes_door_cash: includeDoorCash,
+      revenue_share_label: shareLabel.trim(),
+      primary_share_label: primaryLabel.trim(),
+    }
     try {
-      await apiClient.patch(
+      const patchRes = await apiClient.patch(
         `/organizer/event_series/${seriesId}`,
-        {
-          revenue_share_bps: bps,
-          revenue_share_base: splitBase,
-          revenue_share_includes_door_cash: includeDoorCash,
-          revenue_share_label: shareLabel.trim(),
-          primary_share_label: primaryLabel.trim(),
-        },
+        payload,
         request.config
       )
       if (!request.current()) return
+      const persistedSplitSettings = extractSplitSettingsFromPatch(
+        patchRes?.data,
+        payload,
+        savedSplitSettings || extractSplitSettingsFromReport(state.data)
+      )
+      setSavedSplitSettings(persistedSplitSettings)
+      syncSplitForm(persistedSplitSettings)
       setEditingSplit(false)
       setSplitNotice('Revenue-share settings updated.')
       await load({ preserveData: true })
@@ -507,7 +544,9 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                   aria-expanded={editingSplit}
                   onClick={() => {
                     setSplitError(null)
-                    if (!editingSplit) syncSplitForm(data)
+                    if (!editingSplit) {
+                      syncSplitForm(savedSplitSettings || extractSplitSettingsFromReport(data))
+                    }
                     setEditingSplit((prev) => !prev)
                   }}
                   className="btn-secondary inline-flex min-h-10 shrink-0 items-center gap-1.5 px-3 text-sm"

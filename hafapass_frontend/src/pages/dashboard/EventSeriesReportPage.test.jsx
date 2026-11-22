@@ -448,6 +448,79 @@ describe('EventSeriesReportPage', () => {
     expect(screen.getByTestId('revenue-share-worksheet')).toBeInTheDocument()
   })
 
+  it('retains saved split settings when report refresh fails so reopening and saving a label-only edit does not revert percentage', async () => {
+    const user = userEvent.setup()
+    let reportLoads = 0
+
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/organizer/event_series/10/report') {
+        reportLoads += 1
+        if (reportLoads === 1) return Promise.resolve({ data: sampleReport })
+        return Promise.reject({ response: { status: 500 } })
+      }
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    apiClient.patch.mockImplementation((url, payload) => {
+      if (url === '/organizer/event_series/10') {
+        return Promise.resolve({
+          data: {
+            id: 10,
+            revenue_share_bps: payload.revenue_share_bps,
+            revenue_share_base: payload.revenue_share_base,
+            revenue_share_includes_door_cash: payload.revenue_share_includes_door_cash,
+            revenue_share_label: payload.revenue_share_label,
+            primary_share_label: payload.primary_share_label,
+          },
+        })
+      }
+      return Promise.reject(new Error(`Unexpected PATCH ${url}`))
+    })
+
+    renderPage()
+    // 1. Open editor, change 16% -> 20%, save (PATCH succeeds, report refresh fails)
+    await user.click(await screen.findByRole('button', { name: /Edit Split Settings/i }))
+    const pctInput = screen.getByLabelText(/Revenue share \(%\)/i)
+    expect(pctInput).toHaveValue(16)
+    await user.clear(pctInput)
+    await user.type(pctInput, '20')
+    await user.click(screen.getByRole('button', { name: /Save Split Settings/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Split settings were saved, but the report could not be refreshed/i)
+    expect(apiClient.patch).toHaveBeenNthCalledWith(
+      1,
+      '/organizer/event_series/10',
+      expect.objectContaining({
+        revenue_share_bps: 2000,
+        revenue_share_label: 'School Share',
+      }),
+      expect.any(Object)
+    )
+
+    // 2. Reopen editor while stale report data (16%) is still displayed -> must still show 20%
+    await user.click(screen.getByRole('button', { name: /Edit Split Settings/i }))
+    const reopenedPctInput = screen.getByLabelText(/Revenue share \(%\)/i)
+    expect(reopenedPctInput).toHaveValue(20)
+
+    // 3. Edit only the revenue-share label and save -> PATCH must still send 2000 bps (20%)
+    const labelInput = screen.getByLabelText(/Revenue-share label/i)
+    await user.clear(labelInput)
+    await user.type(labelInput, 'School Athletics Fund')
+    await user.click(screen.getByRole('button', { name: /Save Split Settings/i }))
+
+    await waitFor(() => {
+      expect(apiClient.patch).toHaveBeenNthCalledWith(
+        2,
+        '/organizer/event_series/10',
+        expect.objectContaining({
+          revenue_share_bps: 2000,
+          revenue_share_label: 'School Athletics Fund',
+        }),
+        expect.any(Object)
+      )
+    })
+  })
+
   it('surfaces negative balance and unresolved buyer liability in KPIs, alert callout, and per-event breakdown', async () => {
     const overpaidReport = structuredClone(sampleReport)
     overpaidReport.groups.combined.owed_cents = 0

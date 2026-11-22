@@ -385,10 +385,11 @@ RSpec.describe EventSeriesReport, type: :service do
       expect(no_cash[:base_cents]).to eq(11_168 - 2000)
       expect(no_cash[:share_cents] + no_cash[:primary_cents]).to eq(no_cash[:base_cents])
 
-      # 2. admissions_gross (gross - discount - refunds across admissions)
+      # 2. admissions_gross (gross - discount - ticket-only refunds across admissions; excludes refunded buyer fees/tax)
       series.update!(revenue_share_base: "admissions_gross", revenue_share_includes_door_cash: true)
       gross_rs = described_class.call(series)[:revenue_share]
-      expected_gross_base = [admissions[:gross_cents] - admissions[:discount_cents] - admissions[:refund_cents], 0].max
+      # Night 1: (2400 - 200 - 733) + 2000 = 3467; Champ = 3000; Pass = 5001 -> 11468
+      expected_gross_base = 11_468
       expect(gross_rs[:base_cents]).to eq(expected_gross_base)
       expect(gross_rs[:share_cents] + gross_rs[:primary_cents]).to eq(expected_gross_base)
 
@@ -721,6 +722,183 @@ RSpec.describe EventSeriesReport, type: :service do
         gross_cents: 1200,
         organizer_proceeds_cents: 1200
       )
+    end
+
+    it "subtracts only ticket consideration (not refunded buyer service fees) from admissions_gross" do
+      fee_series = create(
+        :event_series,
+        organization: organization,
+        name: "Fee-Inclusive Refund Gross Check",
+        status: :active,
+        revenue_share_bps: 1600,
+        revenue_share_base: "admissions_gross",
+        revenue_share_includes_door_cash: true
+      )
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Fee Refund Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 1000)
+      fee_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # Order 1: $10.00 admission + $1.50 buyer service fee (kept)
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 150,
+        processing_fee_cents: 0
+      )
+
+      # Order 2: $10.00 admission + $1.50 buyer service fee, fully refunded for $11.50
+      refunded_order, refunded_item, _tickets = create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 150,
+        processing_fee_cents: 0
+      )
+      refund = create(:refund, :succeeded, order: refunded_order, payment: refunded_order.payments.first, amount_cents: 1150)
+      create(:refund_item, refund: refund, order_item: refunded_item, quantity: 1,
+        organizer_proceeds_cents: 1000, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 1150)
+      refunded_order.update!(status: :refunded, refund_amount_cents: 1150)
+
+      report = described_class.call(fee_series)
+      rs = report[:revenue_share]
+
+      # Settlement totals remain intact (gross 2000, buyer-total refund 1150, net proceeds 1000)
+      expect(report[:groups][:admissions][:gross_cents]).to eq(2000)
+      expect(report[:groups][:admissions][:refund_cents]).to eq(1150)
+      expect(report[:groups][:admissions][:organizer_proceeds_cents]).to eq(1000)
+
+      # admissions_gross base is $10.00 (1000 cents), NOT $8.50 (850 cents), and 16% split is on 1000
+      expect(rs[:base_cents]).to eq(1000)
+      expect(rs[:share_cents]).to eq(160)
+      expect(rs[:primary_cents]).to eq(840)
+      expect(rs[:share_cents] + rs[:primary_cents]).to eq(1000)
+    end
+
+    it "handles partial ticket/fee refunds, organizer-absorbed fees, unallocated refunds, and clamping safely in admissions_gross" do
+      partial_series = create(
+        :event_series,
+        organization: organization,
+        name: "Partial Refund Gross Check",
+        status: :active,
+        revenue_share_bps: 1600,
+        revenue_share_base: "admissions_gross",
+        revenue_share_includes_door_cash: true
+      )
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Partial Refund Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 1000)
+      partial_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # 1) Pro-rata partial refund: 2 x $10 tickets + $3.00 buyer fee; 1 ticket ($10) + $1.50 fee refunded -> $10.00 remains
+      pro_rata_order, pro_rata_item, _t1 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 2, unit_price_cents: 1000, buyer_fee_cents: 300, processing_fee_cents: 0
+      )
+      pro_rata_refund = create(:refund, :succeeded, order: pro_rata_order, payment: pro_rata_order.payments.first, amount_cents: 1150)
+      create(:refund_item, refund: pro_rata_refund, order_item: pro_rata_item, quantity: 1,
+        organizer_proceeds_cents: 1000, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 1150)
+      pro_rata_order.update!(status: :partially_refunded, refund_amount_cents: 1150)
+
+      # 2) Ticket-only partial refund (fee not refunded): $10 ticket + $1.50 fee; $4.00 ticket-only refunded -> $6.00 remains
+      ticket_only_order, ticket_only_item, _t2 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 1, unit_price_cents: 1000, buyer_fee_cents: 150, processing_fee_cents: 0
+      )
+      ticket_only_refund = create(:refund, :succeeded, order: ticket_only_order, payment: ticket_only_order.payments.first, amount_cents: 400)
+      create(:refund_item, refund: ticket_only_refund, order_item: ticket_only_item, quantity: 0,
+        organizer_proceeds_cents: 400, fee_cents: 0, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 400)
+      ticket_only_order.update!(status: :partially_refunded, refund_amount_cents: 400)
+
+      # 3) Fee-only partial refund: $10 ticket + $1.50 fee; $1.50 fee refunded -> $10.00 remains
+      fee_only_order, fee_only_item, _t3 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 1, unit_price_cents: 1000, buyer_fee_cents: 150, processing_fee_cents: 0
+      )
+      fee_only_refund = create(:refund, :succeeded, order: fee_only_order, payment: fee_only_order.payments.first, amount_cents: 150)
+      create(:refund_item, refund: fee_only_refund, order_item: fee_only_item, quantity: 0,
+        organizer_proceeds_cents: 0, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 150)
+      fee_only_order.update!(status: :partially_refunded, refund_amount_cents: 150)
+
+      # 4) Organizer-absorbed fee order: 2 x $10 tickets, $3.00 absorbed fee (proceeds $17.00);
+      #    1 ticket refunded ($8.50 proceeds + $1.50 organizer_fee = $10.00 ticket consideration) -> $10.00 remains
+      absorbed_order, absorbed_item, _t4 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 2, unit_price_cents: 1000,
+        buyer_fee_cents: 0, organizer_fee_cents: 300, processing_fee_cents: 0
+      )
+      absorbed_refund = create(:refund, :succeeded, order: absorbed_order, payment: absorbed_order.payments.first, amount_cents: 1000)
+      create(:refund_item, refund: absorbed_refund, order_item: absorbed_item, quantity: 1,
+        organizer_proceeds_cents: 850, fee_cents: 0, organizer_fee_cents: 150, tax_cents: 0, amount_cents: 1000)
+      absorbed_order.update!(status: :partially_refunded, refund_amount_cents: 1000)
+
+      # 5) Legacy unallocated full refund (no RefundItem rows): $10 ticket + $1.50 fee, refunded $11.50 -> $0 remains (clamped cleanly)
+      legacy_order, _legacy_item, _t5 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 1, unit_price_cents: 1000, buyer_fee_cents: 150, processing_fee_cents: 0
+      )
+      create(:refund, :succeeded, order: legacy_order, payment: legacy_order.payments.first, amount_cents: 1150)
+      legacy_order.update!(status: :refunded, refund_amount_cents: 1150)
+
+      rs = described_class.call(partial_series)[:revenue_share]
+      # Remaining ticket gross: 1000 + 600 + 1000 + 1000 + 0 = 3600 cents
+      expect(rs[:base_cents]).to eq(3600)
+      expect(rs[:share_cents]).to eq(576)
+      expect(rs[:primary_cents]).to eq(3024)
+      expect(rs[:share_cents] + rs[:primary_cents]).to eq(3600)
+    end
+
+    it "subtracts ticket-only refunded amounts cleanly for door-cash refunds when include_door_cash is false" do
+      cash_series = create(
+        :event_series,
+        organization: organization,
+        name: "Door Cash Fee Refund Check",
+        status: :active,
+        revenue_share_bps: 1600,
+        revenue_share_base: "admissions_gross",
+        revenue_share_includes_door_cash: false
+      )
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Door Cash Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 1000)
+      cash_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # Online order: 2 x $10 tickets + $3.00 buyer fee; 1 ticket refunded ($11.50) -> $10.00 net online ticket gross
+      online_order, online_item, _t1 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 2, unit_price_cents: 1000, buyer_fee_cents: 300, processing_fee_cents: 0
+      )
+      online_refund = create(:refund, :succeeded, order: online_order, payment: online_order.payments.first, amount_cents: 1150)
+      create(:refund_item, refund: online_refund, order_item: online_item, quantity: 1,
+        organizer_proceeds_cents: 1000, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 1150)
+      online_order.update!(status: :partially_refunded, refund_amount_cents: 1150)
+
+      # Door-cash order 1 (fee-inclusive refund edge case): 2 x $10 tickets + $3.00 fee; 1 ticket refunded ($11.50) -> $10.00 remaining door cash
+      cash_fee_order, cash_fee_item, _t2 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 2, unit_price_cents: 1000, buyer_fee_cents: 300, processing_fee_cents: 0,
+        payment_method: "door_cash", payment_provider: "door_cash"
+      )
+      cash_fee_refund = create(:refund, :succeeded, order: cash_fee_order, payment: cash_fee_order.payments.first, amount_cents: 1150)
+      create(:refund_item, refund: cash_fee_refund, order_item: cash_fee_item, quantity: 1,
+        organizer_proceeds_cents: 1000, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 1150)
+      cash_fee_order.update!(status: :partially_refunded, refund_amount_cents: 1150)
+
+      # Door-cash order 2 (fully refunded with fee): $10 ticket + $1.50 fee refunded ($11.50) -> $0 remaining door cash
+      cash_full_order, cash_full_item, _t3 = create_paid_order!(
+        event: ev, ticket_type: tt, quantity: 1, unit_price_cents: 1000, buyer_fee_cents: 150, processing_fee_cents: 0,
+        payment_method: "door_cash", payment_provider: "door_cash"
+      )
+      cash_full_refund = create(:refund, :succeeded, order: cash_full_order, payment: cash_full_order.payments.first, amount_cents: 1150)
+      create(:refund_item, refund: cash_full_refund, order_item: cash_full_item, quantity: 1,
+        organizer_proceeds_cents: 1000, fee_cents: 150, organizer_fee_cents: 0, tax_cents: 0, amount_cents: 1150)
+      cash_full_order.update!(status: :refunded, refund_amount_cents: 1150)
+
+      rs_excluded = described_class.call(cash_series)[:revenue_share]
+      # Excluding door cash leaves ONLY the $10.00 net online order (1000 cents)
+      expect(rs_excluded[:base_cents]).to eq(1000)
+      expect(rs_excluded[:share_cents]).to eq(160)
+      expect(rs_excluded[:primary_cents]).to eq(840)
+
+      cash_series.update!(revenue_share_includes_door_cash: true)
+      rs_included = described_class.call(cash_series)[:revenue_share]
+      # Including door cash adds the $10.00 remaining door-cash ticket gross -> 2000 cents
+      expect(rs_included[:base_cents]).to eq(2000)
+      expect(rs_included[:share_cents]).to eq(320)
+      expect(rs_included[:primary_cents]).to eq(1680)
     end
   end
 end

@@ -172,6 +172,7 @@ class EventSeriesReport
     @refund_items = RefundItem.where(refund_id: @succeeded_refunds.map(&:id)).order(:id).to_a
     @refund_items_by_order_item_id = @refund_items.group_by(&:order_item_id)
     @refund_order_ids = @succeeded_refunds.to_h { |refund| [refund.id, refund.order_id] }
+    @refund_items_by_order_id = @refund_items.group_by { |item| @refund_order_ids[item.refund_id] }
 
     @non_cancelled_tickets = Ticket.where(event_id: event_ids, order_id: @settled_order_ids)
       .where.not(status: :cancelled)
@@ -544,7 +545,7 @@ class EventSeriesReport
     raw_base_cents, scope_door_cash_deduction_cents, scope_door_cash_retained_cents = case base_mode
     when "admissions_gross"
       [
-        [admissions[:gross_cents] - admissions[:discount_cents] - admissions[:refund_cents], 0].max,
+        admissions_gross_cents(admissions_event_ids),
         admissions_door_cash_gross_cents(admissions_event_ids),
         admissions[:door_cash_retained_cents]
       ]
@@ -590,23 +591,60 @@ class EventSeriesReport
     }
   end
 
-  def admissions_door_cash_gross_cents(admissions_event_ids)
+  def admissions_gross_cents(admissions_event_ids, door_cash_only: false)
     return 0 if admissions_event_ids.empty?
 
-    subtotal = 0
-    discount = 0
-    refund = 0
+    @settled_orders.sum do |order|
+      next 0 unless admissions_event_ids.include?(order.event_id)
+      next 0 if door_cash_only && !@cash_order_ids.include?(order.id)
 
-    @settled_orders.each do |order|
-      next unless admissions_event_ids.include?(order.event_id)
-      next unless @cash_order_ids.include?(order.id)
+      order_gross_after_refunds_cents(order)
+    end
+  end
 
-      subtotal += order.subtotal_cents
-      discount += order.discount_cents
-      refund += @succeeded_refunds_by_order_id.fetch(order.id, []).sum(&:amount_cents)
+  def admissions_door_cash_gross_cents(admissions_event_ids)
+    admissions_gross_cents(admissions_event_ids, door_cash_only: true)
+  end
+
+  def order_gross_after_refunds_cents(order)
+    net_subtotal = [order.subtotal_cents - order.discount_cents, 0].max
+    return 0 if net_subtotal.zero?
+
+    refunded_ticket_gross = order_gross_refund_cents(order, net_subtotal)
+    [net_subtotal - refunded_ticket_gross, 0].max
+  end
+
+  # RefundItem splits each succeeded refund into organizer proceeds, organizer-absorbed
+  # platform fee (both funded from order subtotal - discount), buyer-paid service fee,
+  # and tax. Subtracting only refunded ticket/item consideration keeps admissions_gross
+  # on the same unit scale as order.subtotal_cents - order.discount_cents.
+  def order_gross_refund_cents(order, net_subtotal)
+    refunds = @succeeded_refunds_by_order_id.fetch(order.id, [])
+    return 0 if refunds.empty?
+
+    refund_items = @refund_items_by_order_id.fetch(order.id, [])
+    allocated_total = refund_items.sum(&:amount_cents)
+    allocated_gross = refund_items.sum { |item| item.organizer_proceeds_cents + item.organizer_fee_cents }
+    allocated_non_gross = refund_items.sum { |item| item.fee_cents + item.tax_cents }
+
+    total_refunded = refunds.sum(&:amount_cents)
+    unallocated = [total_refunded - allocated_total, 0].max
+
+    unallocated_gross = if unallocated.positive?
+      order_tax = @order_items_by_order_id.fetch(order.id, []).sum(&:tax_cents)
+      remaining_gross = [net_subtotal - allocated_gross, 0].max
+      remaining_non_gross = [order.service_fee_cents + order_tax - allocated_non_gross, 0].max
+      weights = [remaining_gross, remaining_non_gross]
+      if weights.sum.positive?
+        Commerce::MoneyAllocator.call([unallocated, weights.sum].min, weights).first
+      else
+        0
+      end
+    else
+      0
     end
 
-    [subtotal - discount - refund, 0].max
+    [allocated_gross + unallocated_gross, net_subtotal].min
   end
 
   def allocate_revenue_share(base_cents, revenue_share_bps)
