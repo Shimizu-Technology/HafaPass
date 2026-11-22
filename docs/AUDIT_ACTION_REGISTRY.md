@@ -208,6 +208,11 @@ entries are described above and defined in the registry's audience variants.
 | `event_day_rehearsal.rejected` | yes | platform | A | yes | yes | — | — | Rejected event-day rehearsal evidence. |
 | `event_day_rehearsal.revoked` | yes | platform | A | yes | yes | — | — | Revoked event-day rehearsal approval. |
 | `event_day_rehearsal.submitted` | yes | platform | A | yes | yes | — | — | Submitted event-day rehearsal evidence. |
+| `event_series.created` | yes | events | O/M | yes | no | `organization_id`, `status`, `revenue_share_bps`, `revenue_share_base`, `revenue_share_includes_door_cash` | `event_series_id`, `event_title` | Created an event series. |
+| `event_series.deleted` | yes | events | O/M | yes | no | `organization_id`, `status`, `revenue_share_bps`, `revenue_share_base`, `revenue_share_includes_door_cash` | `event_series_id`, `event_title` | Deleted an event series. |
+| `event_series.event_added` | yes | events | O/M | yes | yes | `role`, `position` | `event_series_id`, `event_id`, `role`, `position`, `event_title` | Added an event to an event series. |
+| `event_series.event_removed` | yes | events | O/M | yes | yes | `role`, `position` | `event_series_id`, `event_id`, `role`, `position`, `event_title` | Removed an event from an event series. |
+| `event_series.updated` | yes | events | O/M | yes | no | `organization_id`, `status`, `revenue_share_bps`, `revenue_share_base`, `revenue_share_includes_door_cash` | `event_series_id`, `event_title` | Updated an event series. |
 | `event_staff.assigned` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Assigned event staff. |
 | `event_staff.invitation_revoked` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff invitation. |
 | `event_staff.revoked` | yes | event_staff | O/M | yes | yes | `event_id`, `role`, `status`, `expires_at`, `target_user_id`, `target_name` | `event_title`, `team_member_label`, `team_role` | Revoked an event staff assignment. |

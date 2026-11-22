@@ -45,8 +45,9 @@ module Api
       after_action { response.headers["Vary"] = [response.headers["Vary"].presence, "Accept-Language"].compact.join(", ") }
 
       def index
-        events = filtered_events.includes(
+        events = filtered_events.preload(
           :organizer_profile, :organization, :venue, :event_seating_configuration,
+          event_series_memberships: :event_series,
           ticket_types: [
             :inventory_holds,
             :waitlist_offers,
@@ -134,6 +135,14 @@ module Api
         events = events.accent_insensitive_equals(:venue_city, params[:village]) if params[:village].present?
         events = events.joins(:venue).where(venues: { slug: params[:venue] }) if params[:venue].present?
         events = events.joins(:organization).where(organizations: { slug: params[:organizer] }) if params[:organizer].present?
+        if params[:series].present?
+          raise ActionController::BadRequest, "organizer parameter is required when filtering by series" if params[:organizer].blank?
+
+          events = events.joins(:event_series)
+            .merge(EventSeries.publicly_visible)
+            .where(event_series: { slug: params[:series] })
+            .distinct
+        end
         events = filter_price(events)
         events
       end
@@ -304,6 +313,7 @@ module Api
             id: event.venue.id, name: event.venue.name, slug: event.venue.slug,
             village: event.venue.village, verified: event.venue.verified
           },
+          series: serialized_series(event),
           favorited: favorited?(event),
           reminder: reminder_for(event),
           created_at: event.created_at,
@@ -379,6 +389,25 @@ module Api
 
       def waiver_json(waiver)
         { id: waiver.id, title: waiver.title, body: waiver.body, version: waiver.version, required: waiver.required }
+      end
+
+      def serialized_series(event)
+        public_memberships = event.event_series_memberships.select { |m| m.event_series&.publicly_visible? }
+        membership = if params[:series].present?
+          public_memberships.find { |m| m.event_series.slug == params[:series].to_s } || public_memberships.first
+        else
+          public_memberships.first
+        end
+        return nil unless membership
+
+        series = membership.event_series
+
+        {
+          id: series.id,
+          slug: series.slug,
+          name: series.name,
+          role: membership.role
+        }
       end
     end
   end
