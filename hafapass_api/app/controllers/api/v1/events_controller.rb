@@ -307,6 +307,7 @@ module Api
 
       def show_json(event, at: Time.current)
         json = event_json(event, include_ticket_types: true, include_design: true, at: at)
+        json[:pricing_as_of] = at.utc.iso8601(3)
         json[:redirected_from] = params[:slug] if event.slug != params[:slug]
         json
       end

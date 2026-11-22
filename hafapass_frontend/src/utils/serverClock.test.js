@@ -16,6 +16,16 @@ it('anchors server time even when the client clock is spoofed and changes again'
   expect(getServerNow()).toBe(Date.parse('2027-05-01T13:59:00Z'))
 })
 
+it('ignores a delayed server sample older than the extrapolated server clock', () => {
+  vi.useFakeTimers({ toFake: ['Date', 'performance'] })
+  vi.setSystemTime(new Date('2027-05-01T14:00:00Z'))
+  syncServerClock('2027-05-01T14:00:00.000Z')
+  vi.advanceTimersByTime(10_000)
+  // A response stamped 1s after the first sample arriving 10s later must not move clock backward.
+  syncServerClock('2027-05-01T14:00:01.000Z')
+  expect(getServerNow()).toBe(Date.parse('2027-05-01T14:00:10Z'))
+})
+
 it.each([
   ['America/Los_Angeles', ' (6:59 AM PDT your time)'],
   ['Pacific/Guam', ''],

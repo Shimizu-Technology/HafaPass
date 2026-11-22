@@ -72,7 +72,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
           const nextTierPrice = !tt.next_tier ? null
             : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
 
-          const nextWindow = schedule?.next_tier
+          const nextWindow = activeTier?.tier_type === 'quantity_based' ? null : schedule?.next_tier
           const salesClose = schedule?.sales_end_at
           const activeEnd = activeTier?.tier_type === 'time_based' ? activeTier.ends_at : null
           const transitionAt = [activeEnd, nextWindow?.starts_at].filter(Boolean)

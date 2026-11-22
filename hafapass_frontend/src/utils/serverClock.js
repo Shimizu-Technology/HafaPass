@@ -5,7 +5,7 @@ let clockSample
 
 export function syncServerClock(serverNow) {
   const timestamp = Date.parse(serverNow)
-  if (!Number.isFinite(timestamp) || timestamp < (clockSample?.timestamp ?? -Infinity)) return
+  if (!Number.isFinite(timestamp) || (clockSample && timestamp < getServerNow())) return
   const clientNow = Date.now()
   serverClockOffsetMs = timestamp - clientNow
   // The monotonic clock keeps elapsed time stable when the device clock changes.

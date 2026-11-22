@@ -19,7 +19,7 @@ export default function usePricingScheduleRefresh(event, url, onRefresh) {
     if (!schedules.length) return
 
     const controller = new AbortController()
-    const snapshotTime = Date.parse(event.server_now)
+    const snapshotTime = Date.parse(event.pricing_as_of || event.server_now)
     const cutoff = Math.min(...schedules.flatMap(schedule => {
       const scheduledChanges = [
         schedule.active_tier?.tier_type === 'time_based' ? schedule.active_tier.ends_at : null,

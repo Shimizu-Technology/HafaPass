@@ -351,16 +351,13 @@ function CheckoutContent({ buyerId }) {
   const handlePromoValidate = async () => {
     if (!promoInput.trim()) return
 
-    const currentSubtotal = (lineItems || []).reduce((sum, item) =>
-      sum + (estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })?.lineTotal || 0), 0)
-
     setPromoLoading(true)
     setPromoError(null)
     try {
       const res = await apiClient.post('/promo_codes/validate', {
         event_id: event.id,
         code: promoInput.trim(),
-        subtotal_cents: currentSubtotal,
+        subtotal_cents: subtotalCents,
         // The pre-discount all-in total lets the server refuse a code that
         // would leave less than the minimum card charge.
         total_cents: subtotalCents + catalogSubtotalCents + serviceFeeCents,
