@@ -253,6 +253,7 @@ class OrderPresenter
     @presented_tickets ||= begin
       tickets = order.tickets
       tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
+        { parent_ticket: :pending_refund_tickets },
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

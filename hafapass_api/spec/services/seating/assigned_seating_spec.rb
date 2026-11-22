@@ -272,5 +272,31 @@ RSpec.describe "Assigned seating lifecycle" do
       expect(existing.event_seats.count).to eq(4)
       expect(ticket_type.reload.quantity_available).to eq(4)
     end
+
+    it "rejects activating seating on a pass event or a pass-included night" do
+      night_event = create(:event, :published, organization: organization, organizer_profile: profile, venue: venue,
+        starts_at: 6.days.from_now, max_capacity: 6)
+      night_ticket_type = create(:ticket_type, event: night_event, quantity_available: 6, price_cents: 1500)
+      TicketTypeIncludedEvent.create!(ticket_type: ticket_type, included_event: night_event, position: 0)
+
+      expect { activate! }.to raise_error(
+        Seating::ConfigurationActivator::ConfigurationError,
+        /multi-night pass ticket types/i
+      )
+      expect(event.reload.event_seating_configuration).to be_nil
+
+      expect do
+        Seating::ConfigurationActivator.call(
+          event: night_event,
+          venue_layout: layout,
+          zone_ticket_types: { zone.id => night_ticket_type.id },
+          actor: actor
+        )
+      end.to raise_error(
+        Seating::ConfigurationActivator::ConfigurationError,
+        /included in a multi-night pass/i
+      )
+      expect(night_event.reload.event_seating_configuration).to be_nil
+    end
   end
 end

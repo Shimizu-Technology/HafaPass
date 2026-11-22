@@ -24,32 +24,36 @@ module Commerce
       # cannot leave a completed sale without the identity needed to recover it.
       # Keep the outer reservation lock compatible with seat-release audit
       # FK checks; a nested weaker lock cannot downgrade FOR UPDATE.
-      event.with_lock("FOR NO KEY UPDATE") do
-        existing = Order.find_by(cash_sale_key: key) if key
-        next replay(existing) if existing
+      # For multi-night passes, lock all involved events in ascending ID order.
+      Passes::Locking.with_lock_retry do
+        Order.transaction do
+          Passes::Locking.lock_events_for_line_items!(event: event, line_items: parameters["line_items"])
+          existing = Order.find_by(cash_sale_key: key) if key
+          next replay(existing) if existing
 
-        order = OrderCreator.call(
-          event: event,
-          user: nil,
-          sold_by: user,
-          line_items: parameters["line_items"],
-          buyer_name: parameters["buyer_name"].presence || "Walk-in",
-          buyer_email: parameters["buyer_email"].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local",
-          buyer_phone: parameters["buyer_phone"],
-          seat_hold_token: parameters["seat_hold_token"],
-          payment_required: false,
-          service_fee: false,
-          source: "box_office",
-          payment_method: "door_cash",
-          cash_sale_key: key,
-          cash_sale_request_digest: key ? request_digest : nil,
-          expected_total_cents: parameters["expected_total_cents"]
-        ).order
-        AuditLogger.record!(action: "box_office.cash_sale_created", auditable: order, event: event,
-          actor: user, source: user ? (AuditContext.current.source.presence || "user") : "system", outcome: "succeeded",
-          after_data: order.attributes.slice("status", "subtotal_cents", "service_fee_cents", "discount_cents", "total_cents", "payment_method"),
-          metadata: { ticket_count: order.tickets.count }, deduplication_key: "cash_sale/#{order.id}")
-        Result.new(order: order, replayed: false)
+          order = OrderCreator.call(
+            event: event,
+            user: nil,
+            sold_by: user,
+            line_items: parameters["line_items"],
+            buyer_name: parameters["buyer_name"].presence || "Walk-in",
+            buyer_email: parameters["buyer_email"].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local",
+            buyer_phone: parameters["buyer_phone"],
+            seat_hold_token: parameters["seat_hold_token"],
+            payment_required: false,
+            service_fee: false,
+            source: "box_office",
+            payment_method: "door_cash",
+            cash_sale_key: key,
+            cash_sale_request_digest: key ? request_digest : nil,
+            expected_total_cents: parameters["expected_total_cents"]
+          ).order
+          AuditLogger.record!(action: "box_office.cash_sale_created", auditable: order, event: event,
+            actor: user, source: user ? (AuditContext.current.source.presence || "user") : "system", outcome: "succeeded",
+            after_data: order.attributes.slice("status", "subtotal_cents", "service_fee_cents", "discount_cents", "total_cents", "payment_method"),
+            metadata: { ticket_count: order.tickets.where(parent_ticket_id: nil).count }, deduplication_key: "cash_sale/#{order.id}")
+          Result.new(order: order, replayed: false)
+        end
       end
     rescue ActiveRecord::RecordNotUnique
       # Different events hold different row locks. The global unique index is

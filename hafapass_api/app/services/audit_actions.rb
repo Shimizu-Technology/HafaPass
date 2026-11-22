@@ -659,6 +659,12 @@ class AuditActions
 
     define registry, area: "tickets", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[ticket_type_id parent_ticket_count issued_ticket_count included_event_count], actions: {
+        "ticket_type.pass_holders_synced" => "Synced multi-night pass holder tickets."
+      }
+
+    define registry, area: "tickets", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
       snapshots: %w[ticket_type_id price_cents tier_type quantity_limit starts_at ends_at position], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "pricing_tier.created" => "Created a pricing tier.",
         "pricing_tier.updated" => "Updated a pricing tier.",

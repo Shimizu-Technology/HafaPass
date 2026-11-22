@@ -18,6 +18,8 @@ class TicketType < ApplicationRecord
   has_many :waitlist_offers, dependent: :restrict_with_error
   has_many :event_seats, dependent: :restrict_with_error
   has_many :seat_holds, through: :event_seats
+  has_many :ticket_type_included_events, -> { order(:position, :id) }, dependent: :destroy
+  has_many :included_events, through: :ticket_type_included_events
 
   # A blank per-order limit means this many for public online checkout; staff
   # sales (box office, guest list) treat blank as unlimited. See OrderCreator.
@@ -46,6 +48,10 @@ class TicketType < ApplicationRecord
     name_text, name_machine = translated_value(:name, code)
     description_text, description_machine = translated_value(:description, code)
     { name: name_text, description: description_text, machine_translated: name_machine || description_machine }
+  end
+
+  def pass?
+    is_pass?
   end
 
   def sold_out?
@@ -87,10 +93,10 @@ class TicketType < ApplicationRecord
 
   def door_sold_quantity
     if tickets.loaded? && tickets.all? { |ticket| ticket.association(:order).loaded? }
-      return tickets.count { |ticket| !ticket.cancelled? && ticket.order.source == "box_office" }
+      return tickets.count { |ticket| ticket.parent_ticket_id.nil? && !ticket.cancelled? && ticket.order.source == "box_office" }
     end
 
-    tickets.joins(:order).where(orders: { source: "box_office" }).where.not(status: :cancelled).count
+    tickets.where(parent_ticket_id: nil).joins(:order).where(orders: { source: "box_office" }).where.not(status: :cancelled).count
   end
 
   def door_held_quantity

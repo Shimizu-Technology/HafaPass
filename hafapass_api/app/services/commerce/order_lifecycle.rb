@@ -13,10 +13,12 @@ module Commerce
       # Match completion/failure's event -> order order before inspecting a
       # reservation. Recovery must never enter lifecycle code holding order first.
       def with_order_lock!(order)
-        Order.transaction do
-          lock_event_context!(order)
-          order.lock!
-          yield
+        Passes::Locking.with_lock_retry do
+          Order.transaction do
+            lock_event_context!(order)
+            order.lock!
+            yield
+          end
         end
       end
 
@@ -38,7 +40,10 @@ module Commerce
         completed_now = false
         completed_late = false
 
-        Order.transaction do
+        Passes::Locking.with_lock_retry do
+          completed_now = false
+          completed_late = false
+          Order.transaction do
           lock_event_context!(order)
           order.lock!
           payment&.lock!
@@ -130,6 +135,7 @@ module Commerce
           record_marketplace_purchase!(order)
           EmailService.send_order_confirmation_async(order)
           completed_now = true
+          end
         end
 
         completed_now ? :completed : :unchanged
@@ -138,36 +144,41 @@ module Commerce
       private :complete_with_audit!
 
       def fail!(order, payment: nil, failure_code: nil, failure_message: nil, reason: "payment_failed")
-        Order.transaction do
-          lock_event_context!(order)
-          order.lock!
-          payment&.lock!
-          payment&.update!(
-            status: :failed,
-            failed_at: Time.current,
-            failure_code: failure_code,
-            failure_message: failure_message
-          ) unless payment && (payment.succeeded? || payment.partially_refunded? || payment.refunded?)
-          if order.pending?
-            holds, catalog_holds = lock_order_holds!(order)
-            release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
-              holds: holds, catalog_holds: catalog_holds)
+        Passes::Locking.with_lock_retry do
+          Order.transaction do
+            lock_event_context!(order)
+            order.lock!
+            payment&.lock!
+            payment&.update!(
+              status: :failed,
+              failed_at: Time.current,
+              failure_code: failure_code,
+              failure_message: failure_message
+            ) unless payment && (payment.succeeded? || payment.partially_refunded? || payment.refunded?)
+            if order.pending?
+              holds, catalog_holds = lock_order_holds!(order)
+              release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
+                holds: holds, catalog_holds: catalog_holds)
+            end
           end
         end
       end
 
       def cancel!(order, reason: "buyer_cancelled")
         payments_to_cancel = []
-        Order.transaction do
-          lock_event_context!(order)
-          order.lock!
-          raise InvalidTransition, "Only pending orders can be cancelled" unless order.pending?
+        Passes::Locking.with_lock_retry do
+          payments_to_cancel = []
+          Order.transaction do
+            lock_event_context!(order)
+            order.lock!
+            raise InvalidTransition, "Only pending orders can be cancelled" unless order.pending?
 
-          holds, catalog_holds = lock_order_holds!(order)
-          payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
-          release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
-            holds: holds, catalog_holds: catalog_holds)
-          order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: Time.current)
+            holds, catalog_holds = lock_order_holds!(order)
+            payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+            release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
+              holds: holds, catalog_holds: catalog_holds)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: Time.current)
+          end
         end
         cancel_provider_payments!(order, payments_to_cancel)
       end
@@ -185,17 +196,21 @@ module Commerce
         end
         payments_to_cancel = []
         expired_now = false
-        Order.transaction do
-          lock_event_context!(order)
-          order.lock!
-          return false unless order.pending? && order.expires_at.present? && order.expires_at <= at
+        Passes::Locking.with_lock_retry do
+          payments_to_cancel = []
+          expired_now = false
+          Order.transaction do
+            lock_event_context!(order)
+            order.lock!
+            return false unless order.pending? && order.expires_at.present? && order.expires_at <= at
 
-          holds, catalog_holds = lock_order_holds!(order)
-          payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
-          release_locked_order!(order, reason: "hold_expired", expired: true, at: at,
-            claimed_offer: lock_claimed_waitlist_offer!(order), holds: holds, catalog_holds: catalog_holds)
-          order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: at)
-          expired_now = true
+            holds, catalog_holds = lock_order_holds!(order)
+            payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+            release_locked_order!(order, reason: "hold_expired", expired: true, at: at,
+              claimed_offer: lock_claimed_waitlist_offer!(order), holds: holds, catalog_holds: catalog_holds)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: at)
+            expired_now = true
+          end
         end
         cancel_provider_payments!(order, payments_to_cancel)
         expired_now
@@ -238,25 +253,31 @@ module Commerce
             tier.waitlist_offers.holding_inventory.sum(:quantity) - tier.active_seat_holds_quantity(now)
           remaining >= tier_holds.sum(&:quantity)
         end
-        types_free && tiers_free && event_capacity_free?(order.event, holds.sum(&:quantity), now)
+        types_free && tiers_free && event_capacity_free?(order.event, holds, now)
       end
 
-      def event_capacity_free?(event, quantity, now)
-        return true if event.max_capacity.blank?
+      def event_capacity_free?(event, holds, now)
+        total_quantity = holds.sum(&:quantity)
+        if event.max_capacity.present? && EventCapacity.remaining_for(event, at: now) < total_quantity
+          return false
+        end
 
-        sold = event.ticket_types.sum(:quantity_sold)
-        held = event.inventory_holds.current.sum(:quantity)
-        offered = event.waitlist_offers.holding_inventory.sum(:quantity)
-        seat_holds = SeatHold.status_active.joins(:seat_hold_session, :event_seat)
-          .where(event_seats: { event_seating_configuration_id: event.event_seating_configuration&.id })
-          .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
-          .where("seat_hold_sessions.expires_at > ?", now).count
-        event.max_capacity - sold - held - offered - seat_holds >= quantity
+        pass_demand = Hash.new(0)
+        holds.each do |hold|
+          next unless hold.ticket_type.pass?
+
+          hold.ticket_type.included_events.each do |included_event|
+            pass_demand[included_event] += hold.quantity
+          end
+        end
+        pass_demand.all? do |included_event, demand|
+          included_event.max_capacity.blank? || EventCapacity.remaining_for(included_event, at: now) >= demand
+        end
       end
 
       def lock_event_context!(order)
         order.event.organization.lock! if order.waitlist_offer&.claimed?
-        order.event.lock!
+        Passes::Locking.lock_events_for_order!(order)
       end
 
       def lock_claimed_waitlist_offer!(order)
@@ -338,6 +359,9 @@ module Commerce
           existing = order.tickets.where(order_item_id: item.id).order(:id).to_a
           assigned_holds = item.seat_holds.status_claimed.includes(:event_seat).order(:event_seat_id).to_a
           if assigned_holds.any?
+            if item.ticket_type.pass?
+              raise InvalidTransition, "Multi-night pass ticket types cannot be issued with assigned seats"
+            end
             unless assigned_holds.length == item.quantity
               raise InvalidTransition, "Assigned seats do not match the order item quantity"
             end
@@ -363,7 +387,10 @@ module Commerce
               event: order.event
             )
           end
-          existing.each(&:issue_qr_code!)
+          existing.each do |ticket|
+            ticket.issue_qr_code!
+            Passes::Issuance.call(order: order, parent_ticket: ticket) if ticket.pass_parent?
+          end
           issued.concat(existing)
         end
         issued
