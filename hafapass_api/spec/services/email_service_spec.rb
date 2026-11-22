@@ -268,6 +268,39 @@ RSpec.describe EmailService do
     expect(html).to include("Held Guest", "/tickets/#{held.display_credential}")
     expect(html).not_to include("Transferee Guest", moved.display_credential)
   end
+
+  it "uses normal confirmation wording for a multi-night pass order despite non-scannable pass parents" do
+    profile = create(:organizer_profile)
+    org = profile.organization
+    pass_event = create(:event, :published, organizer_profile: profile, organization: org, title: "FD Tournament Pass",
+      starts_at: 2.days.from_now, ends_at: 6.days.from_now)
+    night_1 = create(:event, :published, organizer_profile: profile, organization: org, title: "Night 1",
+      starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+    night_2 = create(:event, :published, organizer_profile: profile, organization: org, title: "Night 2",
+      starts_at: 3.days.from_now, ends_at: 3.days.from_now + 3.hours)
+    pass_tt = create(:ticket_type, event: pass_event, name: "Season Pass", price_cents: 0, quantity_available: 10)
+    TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
+    TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 1)
+
+    allow(described_class).to receive(:send_order_confirmation_async)
+    order = Commerce::OrderCreator.call(
+      event: pass_event,
+      line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+      buyer_email: "pass-fan@example.test",
+      buyer_name: "Pass Fan",
+      payment_required: false
+    ).order
+
+    allow(described_class).to receive(:configured?).and_return(false)
+    allow(described_class).to receive(:deliver)
+
+    described_class.send_order_confirmation(order)
+
+    expect(described_class).to have_received(:deliver).with(hash_including(
+      subject: "Your HåfaPass Tickets - FD Tournament Pass",
+      html: include("Your tickets are confirmed!")
+    ))
+  end
 end
 
 RSpec.describe EmailService, "organizer state copy" do

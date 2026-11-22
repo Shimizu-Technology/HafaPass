@@ -542,9 +542,10 @@ class EmailService
       return send_prepared_direct(delivery) if configured? && !delivery&.preparing_outbound_payload
 
       event = order.event
-      tickets = order.tickets.includes(:ticket_type).reject { |ticket| ticket.transferred_away_from?(order) }
+      tickets = order.tickets.includes(:ticket_type, :parent_ticket).reject { |ticket| ticket.transferred_away_from?(order) }
       pdfs = TicketEmailAttachments.plan(tickets)
-      current_details = delivery&.template == "fulfillment_resend" || tickets.any? { |ticket| !ticket.admission_allowed? }
+      current_details = delivery&.template == "fulfillment_resend" ||
+        tickets.reject(&:pass_parent?).any? { |ticket| !ticket.admission_allowed? }
       html, subject = in_locale(order.locale) do
         key = current_details ? "order_confirmation.current_subject" : "order_confirmation.subject"
         [build_order_confirmation_html(order, event, tickets, pdfs: pdfs, current_details: current_details),

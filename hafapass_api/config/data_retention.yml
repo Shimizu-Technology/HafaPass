@@ -1020,6 +1020,13 @@
         "token_version"
       ]
     },
+    "ticket_type_included_events": {
+      "category": "logs/audit",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "ticket_types": {
       "category": "logs/audit",
       "period": "7_years_after_year_end",
@@ -2984,12 +2991,21 @@
       "locale": "system",
       "retention_anonymized_at": "system"
     },
+    "ticket_type_included_events": {
+      "id": "system",
+      "ticket_type_id": "system",
+      "included_event_id": "system",
+      "position": "non-personal",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "ticket_types": {
       "id": "system",
       "created_at": "system",
       "description": "pii",
       "door_allocation": "non-personal",
       "event_id": "system",
+      "is_pass": "non-personal",
       "max_per_buyer": "non-personal",
       "max_per_order": "non-personal",
       "name": "pii",
@@ -3019,6 +3035,7 @@
       "holder_user_id": "pii",
       "order_id": "system",
       "order_item_id": "system",
+      "parent_ticket_id": "system",
       "pricing_tier_id": "system",
       "qr_code": "pii",
       "scan_credential_version": "system",

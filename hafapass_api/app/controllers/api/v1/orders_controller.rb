@@ -235,6 +235,10 @@ class Api::V1::OrdersController < ApplicationController
     ticket = @order.tickets.find_by(id: params[:ticket_id])
     return render json: { error: "Ticket not found" }, status: :not_found unless ticket
     return render json: { error: "Transferred tickets are controlled by their current holder" }, status: :forbidden unless controls_ticket?(ticket)
+    if ticket.pass_child?
+      return render json: { error: "Multi-night pass tickets cannot be cancelled one night at a time" },
+        status: :unprocessable_entity
+    end
     if ticket.cancelled? && (key = request.headers["Idempotency-Key"].presence)
       previous = @order.refunds.find_by(idempotency_key: key, reason: "buyer_ticket_cancellation")
       if previous && previous.refund_tickets.pluck(:ticket_id) == [ticket.id]
@@ -454,6 +458,13 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def cancel_free_ticket!(ticket, reason:)
+    if ticket.pass_child?
+      raise Commerce::RefundCreator::RefundError, "Multi-night pass tickets cannot be cancelled one night at a time"
+    end
+    if ticket.pass_parent?
+      raise Commerce::RefundCreator::RefundError, "Multi-night passes cannot be cancelled individually"
+    end
+
     ticket.with_entry_lock do
       unless controls_ticket?(ticket)
         raise Commerce::RefundCreator::RefundError, "Transferred tickets are controlled by their current holder"
