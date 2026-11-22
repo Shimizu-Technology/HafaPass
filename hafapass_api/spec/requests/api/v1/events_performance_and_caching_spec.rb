@@ -431,5 +431,72 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       night_row = response.parsed_body.fetch("events").find { |e| e["id"] == pass_full_night.id }
       expect(night_row).to include("purchasable" => false, "sold_out" => true)
     end
+
+    it "serializes public pass metadata, excludes draft nights, reflects night bottleneck capacity, and keeps queries flat" do
+      pass_event = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+        title: "Tournament Season Pass", starts_at: 2.days.from_now, max_capacity: 50)
+      pass_tt = create(:ticket_type, event: pass_event, name: "All-Nights Pass", is_pass: true, quantity_available: 20, sort_order: 0)
+      regular_tt = create(:ticket_type, event: pass_event, name: "Program Booklet", is_pass: false, quantity_available: 15, sort_order: 1)
+
+      night_a = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+        title: "Opening Night", starts_at: 3.days.from_now, max_capacity: 10)
+      night_b = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+        title: "Finals Night", starts_at: 7.days.from_now, max_capacity: 3)
+      draft_night = create(:event, organizer_profile: organizer_profile, organization: organization,
+        title: "Secret Draft Night", starts_at: 8.days.from_now, status: :draft, max_capacity: 50)
+      create(:ticket_type, event: night_b, quantity_available: 10, quantity_sold: 1)
+
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_b, position: 1)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_a, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: draft_night, position: 2)
+
+      # Show endpoint: ordered by position, excludes draft night, reflects night_b bottleneck (3 - 1 = 2)
+      SiteSetting.instance
+      show_queries = count_sql_queries { get "/api/v1/events/#{pass_event.slug}" }
+      expect(response).to have_http_status(:ok)
+      body = response.parsed_body
+      serialized_pass = body.fetch("ticket_types").find { |tt| tt["id"] == pass_tt.id }
+      serialized_regular = body.fetch("ticket_types").find { |tt| tt["id"] == regular_tt.id }
+
+      expect(serialized_pass).to include("is_pass" => true, "quantity_remaining" => 2, "sold_out" => false)
+      expect(serialized_pass.fetch("included_events").map { |e| e["id"] }).to eq([night_a.id, night_b.id])
+      expect(serialized_pass.fetch("included_events").first.keys).to contain_exactly(
+        "id", "title", "slug", "starts_at", "ends_at", "timezone", "status"
+      )
+      expect(serialized_regular).to include("is_pass" => false, "included_events" => [])
+      expect(show_queries.size).to be <= 28
+
+      # Adding more included nights keeps show query count flat (zero N+1s)
+      4.times do |idx|
+        extra_night = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+          title: "Extra Night #{idx + 1}", starts_at: (10 + idx).days.from_now, max_capacity: 25)
+        TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: extra_night, position: idx + 3)
+      end
+      more_nights_queries = count_sql_queries { get "/api/v1/events/#{pass_event.slug}" }
+      expect(response).to have_http_status(:ok)
+      expect(more_nights_queries.size).to eq(show_queries.size)
+
+      # Fill night_b to 0 remaining -> pass becomes sold_out: true and quantity_remaining: 0 on both show and index
+      night_b.ticket_types.first.update!(quantity_sold: 3)
+      regular_tt.update!(quantity_sold: 15)
+
+      get "/api/v1/events/#{pass_event.slug}"
+      expect(response).to have_http_status(:ok)
+      saturated_show = response.parsed_body
+      expect(saturated_show).to include("purchasable" => false, "sold_out" => true)
+      saturated_pass = saturated_show.fetch("ticket_types").find { |tt| tt["id"] == pass_tt.id }
+      expect(saturated_pass).to include("quantity_remaining" => 0, "sold_out" => true)
+
+      index_queries = count_sql_queries do
+        get "/api/v1/events", params: { organizer: organization.slug, include_sold_out: "true", per_page: 20 }
+      end
+      expect(response).to have_http_status(:ok)
+      index_pass_event = response.parsed_body.fetch("events").find { |e| e["id"] == pass_event.id }
+      expect(index_pass_event).to include("purchasable" => false, "sold_out" => true)
+      index_pass_tt = index_pass_event.fetch("ticket_types").find { |tt| tt["id"] == pass_tt.id }
+      expect(index_pass_tt).to include("is_pass" => true, "quantity_remaining" => 0, "sold_out" => true)
+      expect(index_pass_tt.fetch("included_events").map { |e| e["id"] }.first(2)).to eq([night_a.id, night_b.id])
+      expect(index_queries.size).to be <= 28
+    end
   end
 end

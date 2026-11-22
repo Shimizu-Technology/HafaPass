@@ -6,7 +6,7 @@ module Api
         before_action :set_ticket_type, only: [:show, :update, :destroy, :sync_pass_holders]
 
         def index
-          ticket_types = @event.ticket_types.includes(:pricing_tiers, :ticket_type_included_events).order(:sort_order, :id)
+          ticket_types = @event.ticket_types.includes(:pricing_tiers, ticket_type_included_events: :included_event).order(:sort_order, :id)
           render json: ticket_types.map { |tt| ticket_type_json(tt) }
         end
 
@@ -273,6 +273,9 @@ module Api
             sort_order: tt.sort_order,
             is_pass: tt.is_pass?,
             included_event_ids: tt.ticket_type_included_events.map(&:included_event_id),
+            included_events: tt.ticket_type_included_events.includes(:included_event).filter_map { |link|
+              link.included_event && Passes::TicketPayload.included_event_json(link.included_event)
+            },
             pricing_tiers: tt.pricing_tiers.ordered.map { |t|
               {
                 id: t.id,

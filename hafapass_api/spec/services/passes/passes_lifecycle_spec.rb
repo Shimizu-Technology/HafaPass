@@ -880,14 +880,16 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       get "/api/v1/me/tickets", params: { tab: "upcoming" }, headers: auth_headers(buyer)
       expect(response).to have_http_status(:ok)
       upcoming_ids = response.parsed_body.fetch("tickets").pluck("id")
-      expect(upcoming_ids).to include(parent.id, n15_child.id)
-      expect(upcoming_ids).not_to include(n1_child.id)
-      parent_json = response.parsed_body.fetch("tickets").find { |t| t["id"] == parent.id }
+      expect(upcoming_ids).to eq([parent.id])
+      parent_json = response.parsed_body.fetch("tickets").first
       expect(parent_json["upcoming"]).to be(true)
+      expect(parent_json["pass_parent"]).to be(true)
+      expect(parent_json.fetch("child_tickets").pluck("id")).to eq([n1_child.id, n15_child.id])
       expect(Time.zone.parse(parent_json.dig("event", "ends_at"))).to be_within(1.second).of(n15.ends_at)
 
       get "/api/v1/me/tickets", params: { tab: "past" }, headers: auth_headers(buyer)
-      expect(response.parsed_body.fetch("tickets").pluck("id")).to eq([n1_child.id])
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("tickets")).to be_empty
 
       # DataRetentionPurgeJob protects active pass order & tickets even if created > 7 years ago
       allow(ENV).to receive(:[]).and_call_original

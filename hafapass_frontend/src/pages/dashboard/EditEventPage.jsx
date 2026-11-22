@@ -914,7 +914,7 @@ function EditEventSession({ id, identity }) {
           <p>{inventoryError}</p>
           <button type="button" onClick={refreshInventory} className="mt-2 min-h-11 font-semibold underline underline-offset-2">Retry ticket list</button>
         </div>}
-        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} />
+        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} assignedSeating={Boolean(event?.assigned_seating)} />
       </section>}
 
       {/* Danger Zone — HP-28 */}

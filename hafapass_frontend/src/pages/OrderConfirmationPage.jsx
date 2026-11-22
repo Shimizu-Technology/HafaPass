@@ -13,6 +13,7 @@ import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
 import TransferTicketDialog from '../components/TransferTicketDialog'
 import PendingTransfer from '../components/PendingTransfer'
+import PassTicketCard from '../components/PassTicketCard'
 import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
@@ -248,7 +249,10 @@ function OrderConfirmationContent() {
   const isRefunded = order?.status === 'refunded'
   const isPartiallyRefunded = order?.status === 'partially_refunded'
   const ticketsAvailable = ['completed', 'partially_refunded', 'refunded', 'cancelled'].includes(order?.status) && order?.tickets?.length > 0
-  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => ticket.status === 'issued' && ticket.admission_allowed === true && !ticket.admission_block_reason) && !order?.ticket_access_blocked)
+  const usableTickets = Boolean(order?.event?.status === 'published' && order?.tickets?.some(ticket => (
+    (ticket.status === 'issued' && ticket.admission_allowed === true && !ticket.admission_block_reason) ||
+    ((ticket.pass_parent || ticket.is_pass) && ticket.child_tickets?.some(child => child.status === 'issued' && child.admission_allowed === true && !child.admission_block_reason))
+  )) && !order?.ticket_access_blocked)
   const deliveryUnconfirmed = !delivery?.simulated && delivery?.reconciliation_required === true
   const deliveryFailed = !delivery?.simulated && !deliveryUnconfirmed && ['failed', 'bounced', 'complained', 'suppressed'].includes(delivery?.status)
   const deliveryMessage = delivery?.simulated
@@ -539,8 +543,34 @@ function OrderConfirmationContent() {
             {transferTarget && <TransferTicketDialog ticketLabel={t('buyerAccount.orderConfirmationPage.transferTicketLabel', { name: transferTarget.ticket_type.name })} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
             <div className="divide-y divide-neutral-100">
               {order.tickets.map(ticket => {
-                const canOpenTicket = ticket.status === 'issued' && usableTickets && ticket.admission_allowed === true && !ticket.admission_block_reason
                 const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
+                if (ticket.pass_parent || (ticket.is_pass && !ticket.pass_child)) {
+                  const canCancelPass = (ticket.status === 'issued' && ticketRefundOpen) || refundNeedsStatusCheck(ticketRefundAttempt)
+                  return (
+                    <div key={ticket.id} className="py-3">
+                      <PassTicketCard
+                        ticket={ticket}
+                        event={event}
+                        orderId={id}
+                        actions={canCancelPass ? (
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => cancelTicket(ticket)}
+                              disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'}
+                              className="min-h-11 px-2 text-xs font-semibold text-red-600"
+                            >
+                              {cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}
+                            </button>
+                          </div>
+                        ) : null}
+                      />
+                      {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
+                      {ticketRefundAttempt?.status === 'finance_review' && <SupportLink subject={t('buyerAccount.orderConfirmationPage.refundReviewForOrder', { reference: order.reference })} fallbackHref={SUPPORT_FALLBACK_PATH} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-700 underline">{t('buyerAccount.orderConfirmationPage.contactSupport')}</SupportLink>}
+                    </div>
+                  )
+                }
+                const canOpenTicket = ticket.status === 'issued' && usableTickets && ticket.admission_allowed === true && !ticket.admission_block_reason
                 const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
                   row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
                     seat.accessibility_kind === ticket.seat?.accessibility_kind)

@@ -494,6 +494,10 @@ class Event < ApplicationRecord
   def all_pass_nights_cancelled?
     return false unless persisted? && pass_only_event?
 
+    if (included = preloaded_pass_included_events)
+      return included.any? && included.all?(&:cancelled?)
+    end
+
     pass_included_events.exists? && pass_included_events.where.not(status: :cancelled).none?
   end
 
@@ -507,17 +511,38 @@ class Event < ApplicationRecord
   def effective_ends_at
     has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
     if has_pass && persisted?
-      included_max = pass_included_events.where.not(status: :cancelled)
-        .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+      if (included = preloaded_pass_included_events)
+        included_max = included.reject(&:cancelled?)
+          .filter_map { |event| event.ends_at || event.starts_at }
+          .max
+        has_included = included.any?
+      else
+        included_max = pass_included_events.where.not(status: :cancelled)
+          .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+        has_included = pass_only_event? && included_max.nil? ? pass_included_events.exists? : false
+      end
       if pass_only_event?
         return [starts_at, included_max].compact.max if included_max
-        return starts_at || ends_at if pass_included_events.exists?
+        return starts_at || ends_at if has_included
       elsif included_max
         return [ends_at || starts_at, included_max].compact.max
       end
     end
 
     ends_at || starts_at
+  end
+
+  def preloaded_pass_included_events
+    return nil unless ticket_types.loaded?
+
+    pass_types = ticket_types.select(&:is_pass?)
+    return [] if pass_types.empty?
+    return nil unless pass_types.all? { |tt| tt.association(:ticket_type_included_events).loaded? }
+
+    links = pass_types.flat_map(&:ticket_type_included_events)
+    return nil unless links.all? { |link| link.association(:included_event).loaded? }
+
+    links.filter_map(&:included_event).uniq(&:id)
   end
 
   def upcoming?(at: Time.current)

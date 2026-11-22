@@ -553,4 +553,56 @@ RSpec.describe "Buyer order access", type: :request do
       expect(early_ticket.reload).to be_cancelled
     end
   end
+
+  describe "multi-night pass nested order tickets" do
+    it "groups pass child_tickets chronologically under pass_parent instead of flattening top-level tickets" do
+      org = event.organization
+      profile = event.organizer_profile
+      pass_event = create(:event, :published, organization: org, organizer_profile: profile,
+        title: "FD Season Pass", starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+      night_2 = create(:event, :published, organization: org, organizer_profile: profile,
+        title: "Night 2", starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      night_1 = create(:event, :published, organization: org, organizer_profile: profile,
+        title: "Night 1", starts_at: 3.days.from_now, ends_at: 3.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: pass_event, name: "All-Access Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 1)
+
+      result = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "passbuyer@example.com",
+        buyer_name: "Pass Buyer",
+        payment_required: false
+      )
+      pass_order = result.order
+      pass_token = GuestOrderAccess.issue!(pass_order)
+
+      get "/api/v1/orders/#{pass_order.id}", headers: { "X-Guest-Order-Token" => pass_token }
+
+      expect(response).to have_http_status(:ok)
+      tickets = response.parsed_body.fetch("tickets")
+      expect(tickets.size).to eq(1)
+      parent_json = tickets.first
+      expect(parent_json).to include(
+        "is_pass" => true,
+        "pass_parent" => true,
+        "pass_child" => false,
+        "pass_nights_count" => 2,
+        "admission_allowed" => false,
+        "scan_credential" => nil
+      )
+      children = parent_json.fetch("child_tickets")
+      expect(children.map { |c| c.dig("event", "title") }).to eq(["Night 1", "Night 2"])
+      expect(children.first).to include(
+        "parent_ticket_id" => parent_json["id"],
+        "status" => "issued",
+        "admission_allowed" => true,
+        "admission_block_reason" => nil
+      )
+      expect(children.first["display_token"]).to be_present
+      expect(children.first["ticket_url"]).to eq("/tickets/#{children.first['display_token']}")
+      expect(children.first).not_to have_key("scan_credential")
+    end
+  end
 end

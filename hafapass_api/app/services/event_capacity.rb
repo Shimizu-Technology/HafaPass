@@ -17,6 +17,35 @@ class EventCapacity
       [event.max_capacity - committed_for(event, at: at), 0].max
     end
 
+    def remaining_for_events(events, at: Time.current)
+      bounded = Array(events).compact.uniq(&:id).select { |ev| ev.persisted? && ev.max_capacity.present? }
+      return {} if bounded.empty?
+
+      ids = bounded.map(&:id)
+      direct_sold_map = TicketType.where(event_id: ids).group(:event_id).sum(:quantity_sold)
+      direct_holds_map = InventoryHold.active.where(event_id: ids).where("expires_at > ?", at)
+        .group(:event_id).sum(:quantity)
+      direct_waitlist_map = WaitlistOffer.holding_inventory(at).where(event_id: ids)
+        .group(:event_id).sum(:quantity)
+      direct_seat_holds_map = SeatHold.status_active
+        .joins(:seat_hold_session, event_seat: :event_seating_configuration)
+        .where(event_seating_configurations: { event_id: ids })
+        .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+        .where("seat_hold_sessions.expires_at > ?", at)
+        .group("event_seating_configurations.event_id")
+        .count
+      pass_committed_map = pass_committed_by_event_ids(ids, at: at)
+
+      bounded.each_with_object({}) do |ev, result|
+        committed = direct_sold_map.fetch(ev.id, 0) +
+          direct_holds_map.fetch(ev.id, 0) +
+          direct_waitlist_map.fetch(ev.id, 0) +
+          direct_seat_holds_map.fetch(ev.id, 0) +
+          pass_committed_map.fetch(ev.id, 0)
+        result[ev.id] = [ev.max_capacity - committed, 0].max
+      end
+    end
+
     def pass_committed_for(event, at: Time.current)
       return 0 unless event.persisted?
       return 0 if event.pass_inclusions.loaded? && event.pass_inclusions.empty?

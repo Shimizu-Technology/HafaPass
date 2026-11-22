@@ -640,4 +640,59 @@ describe('pending ticket transfer on the order page', () => {
     await screen.findByText('Started Event')
     expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
   })
+
+  it('renders PassTicketCard for multi-night pass orders without parent QR controls', async () => {
+    const order = {
+      id: 950,
+      reference: 'HP-950',
+      status: 'completed',
+      buyer_name: 'Pass Fan',
+      buyer_email: 'fan@example.invalid',
+      total_cents: 5000,
+      order_items: [{ id: 1, name: 'Season Pass', quantity: 1, subtotal_cents: 5000 }],
+      tickets: [{
+        id: 501,
+        status: 'issued',
+        admission_allowed: false,
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: 2,
+        attendee_name: 'Pass Fan',
+        display_credential: 'parent-pass-cred',
+        ticket_type: { id: 9, name: 'Season Pass' },
+        child_tickets: [
+          {
+            id: 502,
+            parent_ticket_id: 501,
+            status: 'issued',
+            admission_allowed: true,
+            display_credential: 'child-1-cred',
+            ticket_url: '/tickets/child-1-cred',
+            event: { id: 11, title: 'Opening Night', slug: 'opening-night', starts_at: '2099-11-21T08:00:00Z', timezone: 'Pacific/Guam', status: 'published', venue_name: 'FD Jungle' },
+          },
+          {
+            id: 503,
+            parent_ticket_id: 501,
+            status: 'issued',
+            admission_allowed: true,
+            display_credential: 'child-2-cred',
+            ticket_url: '/tickets/child-2-cred',
+            event: { id: 12, title: 'Finals Night', slug: 'finals-night', starts_at: '2099-11-28T08:00:00Z', timezone: 'Pacific/Guam', status: 'published', venue_name: 'FD Jungle' },
+          },
+        ],
+      }],
+      event: { id: 37, slug: 'fd-season-pass', title: 'FD Season Pass', status: 'published', starts_at: '2099-11-21T08:00:00Z', timezone: 'Pacific/Guam', venue_name: 'FD Jungle', transfers_enabled: false },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/950/confirmation']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+
+    expect(await screen.findByText('Multi-Night Pass · 2 nights')).toBeInTheDocument()
+    expect(screen.getByText('Next Included Night')).toBeInTheDocument()
+    expect(screen.getByText('Opening Night')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open Door QR \/ Ticket/ })).toHaveAttribute('href', '/tickets/child-1-cred?order=950')
+    expect(screen.queryByRole('button', { name: 'Refresh QR' })).not.toBeInTheDocument()
+  })
 })
