@@ -18,9 +18,14 @@ module Api
           ticket_type = @event.ticket_types.build(parsed_ticket_type_params)
           included_ids_param = params.key?(:included_event_ids) ? params[:included_event_ids] : nil
           saved = false
+          forbidden = false
           Event.transaction do
             included_events = resolve_included_events(ticket_type, included_ids_param)
             if ticket_type.errors.any?
+              raise ActiveRecord::Rollback
+            end
+            unless authorized_for_included_events?(included_events)
+              forbidden = true
               raise ActiveRecord::Rollback
             end
 
@@ -31,7 +36,9 @@ module Api
               raise ActiveRecord::Rollback
             end
           end
-          if saved
+          if forbidden
+            render json: { error: "You do not have permission to perform this action" }, status: :forbidden
+          elsif saved
             ticket_type.reload
             render json: ticket_type_json(ticket_type), status: :created
           else
@@ -42,23 +49,45 @@ module Api
         def update
           included_ids_param = params.key?(:included_event_ids) ? params[:included_event_ids] : nil
           updated = false
-          Event.transaction do
-            included_events = resolve_included_events(@ticket_type, included_ids_param)
-            if @ticket_type.errors.any?
-              raise ActiveRecord::Rollback
-            end
+          forbidden = false
+          Passes::Locking.with_lock_retry do
+            @ticket_type.errors.clear
+            updated = false
+            forbidden = false
+            Event.transaction do
+              included_events = resolve_included_events(@ticket_type, included_ids_param)
+              if @ticket_type.errors.any?
+                raise ActiveRecord::Rollback
+              end
 
-            existing_included = @ticket_type.included_events.to_a
-            Passes::Locking.lock_events!([@event, *existing_included, *included_events])
-            @ticket_type.lock!
-            if @ticket_type.update(parsed_ticket_type_params) &&
-                sync_included_events!(@ticket_type, included_events, included_ids_param)
-              updated = true
-            else
-              raise ActiveRecord::Rollback
+              existing_included = @ticket_type.included_events.to_a
+              locked_events = Passes::Locking.lock_events!([@event, *existing_included, *included_events])
+              locked_event_ids = locked_events.map(&:id)
+              current_existing_ids = @ticket_type.ticket_type_included_events.pluck(:included_event_id)
+              if (current_existing_ids - locked_event_ids).any?
+                raise Passes::Locking::LockSetChanged, "Included events changed while acquiring event locks"
+              end
+
+              @ticket_type.lock!
+              if !included_ids_param.nil?
+                existing_events = current_existing_ids.any? ? Event.where(id: current_existing_ids).to_a : []
+                unless authorized_for_included_events?(included_events + existing_events)
+                  forbidden = true
+                  raise ActiveRecord::Rollback
+                end
+              end
+
+              if @ticket_type.update(parsed_ticket_type_params) &&
+                  sync_included_events!(@ticket_type, included_events, included_ids_param)
+                updated = true
+              else
+                raise ActiveRecord::Rollback
+              end
             end
           end
-          if updated
+          if forbidden
+            render json: { error: "You do not have permission to perform this action" }, status: :forbidden
+          elsif updated
             @ticket_type.reload
             render json: ticket_type_json(@ticket_type)
           else
@@ -80,6 +109,10 @@ module Api
         end
 
         def sync_pass_holders
+          unless authorized_for_included_events?(@ticket_type.included_events.to_a)
+            return render json: { error: "You do not have permission to perform this action" }, status: :forbidden
+          end
+
           result = Passes::SyncPassHolders.call(ticket_type: @ticket_type, actor: current_user, request: request)
           render json: {
             ticket_type_id: result.ticket_type.id,
@@ -87,6 +120,8 @@ module Api
             issued_ticket_count: result.issued_ticket_count,
             included_event_ids: result.included_event_ids
           }, status: :ok
+        rescue Passes::SyncPassHolders::AuthorizationError => e
+          render json: { error: e.message }, status: :forbidden
         rescue Passes::SyncPassHolders::SyncError => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
@@ -132,12 +167,36 @@ module Api
           unique_ids.map { |id| events_by_id.fetch(id) }
         end
 
+        def authorized_for_included_events?(events)
+          Array(events).compact.uniq(&:id).all? do |included_event|
+            OrganizationAuthorization.allowed?(
+              user: current_user,
+              organization: current_organization,
+              permission: :manage_inventory,
+              event: included_event
+            )
+          end
+        end
+
         def sync_included_events!(ticket_type, included_events, included_ids_param)
           return true if included_ids_param.nil?
 
           desired_ids = included_events.map(&:id)
-          existing_links = ticket_type.ticket_type_included_events.to_a
+          existing_links = ticket_type.ticket_type_included_events.reload.to_a
           existing_by_event_id = existing_links.index_by(&:included_event_id)
+          added_ids = desired_ids - existing_by_event_id.keys
+
+          if added_ids.any?
+            if !ticket_type.is_pass? &&
+                (ticket_type.quantity_sold.positive? || ticket_type.tickets.exists? || ticket_type.inventory_holds.active.exists?)
+              ticket_type.errors.add(:base, "A ticket type with existing sales or active holds cannot be converted into a multi-night pass")
+              return false
+            end
+            if ticket_type.inventory_holds.active.exists?
+              ticket_type.errors.add(:base, "Included events cannot be added while pass checkouts are in progress")
+              return false
+            end
+          end
 
           removed_links = existing_links.reject { |link| desired_ids.include?(link.included_event_id) }
           removed_links.each do |link|

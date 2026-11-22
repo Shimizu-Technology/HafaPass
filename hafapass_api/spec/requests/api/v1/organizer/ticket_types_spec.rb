@@ -87,6 +87,132 @@ RSpec.describe "Organizer TicketTypes pass configuration, sync_pass_holders, sta
       expect(response).to have_http_status(:unprocessable_entity)
       expect(tt.reload.ticket_type_included_events.pluck(:included_event_id)).to eq([night_1.id, night_2.id])
     end
+
+    it "refuses converting a regular GA ticket type with existing sales or active holds into a pass" do
+      sold_ga = create(:ticket_type, event: pass_event, name: "GA Sold", price_cents: 1000, quantity_available: 10)
+      Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: sold_ga.id, quantity: 1 }],
+        buyer_email: "ga-buyer@example.com",
+        buyer_name: "GA Buyer",
+        payment_required: false
+      )
+
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{sold_ga.id}",
+        params: { included_event_ids: [night_1.id] },
+        headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(sold_ga.reload.is_pass?).to be(false)
+      expect(sold_ga.ticket_type_included_events).to be_empty
+
+      held_ga = create(:ticket_type, event: pass_event, name: "GA Held", price_cents: 1000, quantity_available: 10)
+      pending_order = create(:order, :pending, event: pass_event)
+      pending_item = create(:order_item, order: pending_order, ticket_type: held_ga)
+      InventoryHold.create!(order: pending_order, order_item: pending_item, event: pass_event, ticket_type: held_ga,
+        quantity: 1, expires_at: 10.minutes.from_now)
+
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{held_ga.id}",
+        params: { included_event_ids: [night_1.id] },
+        headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(held_ga.reload.is_pass?).to be(false)
+      expect(held_ga.ticket_type_included_events).to be_empty
+    end
+
+    it "refuses adding a new night to a pass while pass holds are active" do
+      tt = create(:ticket_type, event: pass_event, name: "Season Pass", price_cents: 5000, quantity_available: 20)
+      TicketTypeIncludedEvent.create!(ticket_type: tt, included_event: night_1, position: 0)
+      pending_order = create(:order, :pending, event: pass_event)
+      pending_item = create(:order_item, order: pending_order, ticket_type: tt)
+      InventoryHold.create!(order: pending_order, order_item: pending_item, event: pass_event, ticket_type: tt,
+        quantity: 1, expires_at: 10.minutes.from_now)
+
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{tt.id}",
+        params: { included_event_ids: [night_1.id, night_2.id] },
+        headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(tt.reload.ticket_type_included_events.pluck(:included_event_id)).to eq([night_1.id])
+    end
+
+    it "forbids an event-scoped manager from attaching or syncing an included event they do not manage" do
+      scoped_manager = create(:user)
+      create(:organization_membership, organization: org, user: scoped_manager, role: :scanner)
+      create(:event_staff_assignment, event: pass_event, organization: org, user: scoped_manager, role: :manager)
+      create(:event_staff_assignment, event: night_1, organization: org, user: scoped_manager, role: :manager)
+      manager_headers = auth_headers(scoped_manager).merge("X-Organization-Id" => org.id.to_s)
+
+      # Cannot create a pass including night_2 (not managed by scoped_manager)
+      post "/api/v1/organizer/events/#{pass_event.id}/ticket_types",
+        params: {
+          name: "Unauthorized Pass",
+          price_cents: 5000,
+          quantity_available: 20,
+          included_event_ids: [night_1.id, night_2.id]
+        },
+        headers: manager_headers
+      expect(response).to have_http_status(:forbidden)
+      expect(pass_event.ticket_types.where(name: "Unauthorized Pass")).to be_empty
+
+      # Can create a pass for night_1 (which they manage), but cannot PATCH to attach night_2
+      post "/api/v1/organizer/events/#{pass_event.id}/ticket_types",
+        params: {
+          name: "Managed Pass",
+          price_cents: 5000,
+          quantity_available: 20,
+          included_event_ids: [night_1.id]
+        },
+        headers: manager_headers
+      expect(response).to have_http_status(:created)
+      pass_id = response.parsed_body.fetch("id")
+
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{pass_id}",
+        params: { included_event_ids: [night_1.id, night_2.id] },
+        headers: manager_headers
+      expect(response).to have_http_status(:forbidden)
+      expect(TicketType.find(pass_id).ticket_type_included_events.pluck(:included_event_id)).to eq([night_1.id])
+
+      # Owner adds night_2; scoped_manager cannot run sync_pass_holders because they lack manage_inventory on night_2
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{pass_id}",
+        params: { included_event_ids: [night_1.id, night_2.id] },
+        headers: headers
+      expect(response).to have_http_status(:ok)
+
+      post "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{pass_id}/sync_pass_holders",
+        headers: manager_headers
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "retries PATCH update when existing included events change before locks are acquired" do
+      tt = create(:ticket_type, event: pass_event, name: "Season Pass", price_cents: 5000, quantity_available: 20)
+      TicketTypeIncludedEvent.create!(ticket_type: tt, included_event: night_1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: tt, included_event: night_2, position: 1)
+
+      stale_read_done = false
+      locked_batches = []
+      allow_any_instance_of(TicketType).to receive(:included_events).and_wrap_original do |original|
+        if !stale_read_done
+          stale_read_done = true
+          Event.where(id: night_1.id)
+        else
+          original.call
+        end
+      end
+      allow(Passes::Locking).to receive(:lock_events!).and_wrap_original do |original, events|
+        result = original.call(events)
+        locked_batches << result.map(&:id)
+        result
+      end
+
+      patch "/api/v1/organizer/events/#{pass_event.id}/ticket_types/#{tt.id}",
+        params: { name: "Renamed Season Pass" },
+        headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["name"]).to eq("Renamed Season Pass")
+      expect(locked_batches).to eq([
+        [pass_event.id, night_1.id].sort,
+        [pass_event.id, night_1.id, night_2.id].sort
+      ])
+    end
   end
 
   describe "POST /api/v1/organizer/events/:event_id/ticket_types/:id/sync_pass_holders" do
@@ -171,10 +297,17 @@ RSpec.describe "Organizer TicketTypes pass configuration, sync_pass_holders, sta
       ).order
       night_1_child = pass_order.tickets.find_by!(event: night_1)
 
-      # Buyer cannot cancel a single night child ticket
+      # Buyer cannot cancel a single night child ticket or a free parent pass ticket
+      parent_pass = pass_order.tickets.find_by!(parent_ticket_id: nil)
       post "/api/v1/orders/#{pass_order.id}/tickets/#{night_1_child.id}/cancel", headers: auth_headers(buyer)
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body["error"]).to eq("Multi-night pass tickets cannot be cancelled one night at a time")
+
+      post "/api/v1/orders/#{pass_order.id}/tickets/#{parent_pass.id}/cancel", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Multi-night passes cannot be cancelled individually")
+      expect(parent_pass.reload).to be_issued
+      expect(night_1_child.reload).to be_issued
 
       # Also sell 1 direct ticket on night_1 and check in the pass child
       Commerce::OrderCreator.call(

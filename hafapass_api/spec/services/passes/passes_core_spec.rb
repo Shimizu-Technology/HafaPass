@@ -71,7 +71,7 @@ RSpec.describe "Multi-night passes core behavior" do
       expect(described_class.new(ticket_type: night_3_tt, included_event: pass_event)).not_to be_valid
     end
 
-    it "refuses removal once passes have been sold or actively held" do
+    it "refuses removal once passes have been sold or actively held (including lapsed-but-active holds)" do
       link = described_class.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
       pass_tt.update!(quantity_sold: 1)
       expect(link.destroy).to be(false)
@@ -80,9 +80,39 @@ RSpec.describe "Multi-night passes core behavior" do
       pass_tt.update!(quantity_sold: 0)
       order = create(:order, :pending, event: pass_event)
       item = create(:order_item, order: order, ticket_type: pass_tt)
-      InventoryHold.create!(order: order, order_item: item, event: pass_event, ticket_type: pass_tt,
+      hold = InventoryHold.create!(order: order, order_item: item, event: pass_event, ticket_type: pass_tt,
         quantity: 1, expires_at: 10.minutes.from_now)
       expect(link.destroy).to be(false)
+
+      # Lapsed-but-still-active hold (eligible for late completion) also blocks removal and adding new nights
+      hold.update!(expires_at: 5.minutes.ago)
+      expect(link.destroy).to be(false)
+      added = described_class.new(ticket_type: pass_tt.reload, included_event: night_2, position: 1)
+      expect(added).not_to be_valid
+      expect(added.errors[:base]).to include(/in progress/i)
+    end
+
+    it "refuses converting an existing sold, ticketed, or held non-pass ticket type into a pass" do
+      regular_tt = create(:ticket_type, event: pass_event, name: "Regular GA", price_cents: 1000, quantity_available: 10)
+      regular_tt.update!(quantity_sold: 1)
+      link = described_class.new(ticket_type: regular_tt, included_event: night_1, position: 0)
+      expect(link).not_to be_valid
+      expect(link.errors[:ticket_type]).to include(/cannot be converted/i)
+
+      # Even when quantity_sold is 0, existing ticket history blocks conversion
+      regular_tt.update!(quantity_sold: 0)
+      order = create(:order, :completed, event: pass_event)
+      item = create(:order_item, order: order, ticket_type: regular_tt)
+      create(:ticket, order: order, order_item: item, event: pass_event, ticket_type: regular_tt, status: :cancelled)
+      expect(described_class.new(ticket_type: regular_tt, included_event: night_1, position: 0)).not_to be_valid
+
+      # Active hold on a fresh non-pass ticket type also blocks conversion
+      held_tt = create(:ticket_type, event: pass_event, name: "Held GA", price_cents: 1000, quantity_available: 10)
+      pending_order = create(:order, :pending, event: pass_event)
+      pending_item = create(:order_item, order: pending_order, ticket_type: held_tt)
+      InventoryHold.create!(order: pending_order, order_item: pending_item, event: pass_event, ticket_type: held_tt,
+        quantity: 1, expires_at: 10.minutes.from_now)
+      expect(described_class.new(ticket_type: held_tt, included_event: night_1, position: 0)).not_to be_valid
     end
   end
 
@@ -302,7 +332,7 @@ RSpec.describe "Multi-night passes core behavior" do
       expect(results.sole.action).to have_attributes(result: "accepted", reason_code: "admitted")
       expect(Admissions::Counts.call(event: night_1)).to include(total: 1, admitted: 1, eligible_unadmitted: 0)
 
-      # Safety fences: RefundCreator rejects pass child
+      # Safety fences: RefundCreator rejects both pass child and selected pass parent
       night_2_child = order.tickets.find_by!(event: night_2)
       expect do
         Commerce::RefundCreator.call(
@@ -312,6 +342,14 @@ RSpec.describe "Multi-night passes core behavior" do
           requested_by: owner
         )
       end.to raise_error(Commerce::RefundCreator::RefundError, "Refund the parent pass instead of a single night")
+      expect do
+        Commerce::RefundCreator.call(
+          order: order,
+          tickets: [parent],
+          reason: "requested_by_customer",
+          requested_by: owner
+        )
+      end.to raise_error(Commerce::RefundCreator::RefundError, /order level/i)
 
       # Safety fences: TicketTransfers::Manager rejects both pass parent and pass child
       pass_event.update!(transfers_enabled: true)
@@ -322,6 +360,177 @@ RSpec.describe "Multi-night passes core behavior" do
       expect do
         TicketTransfers::Manager.create!(ticket: night_2_child, recipient_email: "other@example.com")
       end.to raise_error(TicketTransfers::Manager::TransferError, "Multi-night passes cannot be transferred")
+    end
+
+    it "allows whole-order pass refund cancelling parent and all children while failing closed on orphaned children" do
+      allow(EmailService).to receive(:send_refund_notification_async)
+      allow(StripeService).to receive(:refund_payment) do |_pi, amount_cents:, **|
+        OpenStruct.new(id: "re_pass_#{SecureRandom.hex(6)}", status: "succeeded", amount: amount_cents, currency: "usd")
+      end
+
+      checkout = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "refund-pass@example.com",
+        buyer_name: "Refund Fan",
+        payment_required: true
+      )
+      order = checkout.order
+      payment = checkout.payment
+      Commerce::OrderLifecycle.complete!(order, payment: payment,
+        provider_amount_cents: payment.amount_cents, provider_currency: payment.currency)
+      order.reload
+      expect(pass_tt.reload.quantity_sold).to eq(1)
+      expect(order.tickets.count).to eq(3)
+
+      # Whole-order refund (tickets: nil) cancels parent + all children and decrements quantity_sold once
+      refund = Commerce::RefundCreator.call(
+        order: order,
+        reason: "requested_by_customer",
+        requested_by: owner
+      )
+      expect(refund).to be_succeeded
+      expect(order.reload).to be_refunded
+      expect(order.tickets.pluck(:status).uniq).to eq(["cancelled"])
+      expect(pass_tt.reload.quantity_sold).to eq(0)
+
+      # Backstop: if a parent pass is cancelled while a child stays issued, admission/scan/manifest/counts all block it
+      order2 = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "orphan@example.com",
+        buyer_name: "Orphan Fan",
+        payment_required: false
+      ).order
+      parent2 = order2.tickets.find_by!(parent_ticket_id: nil)
+      child2 = order2.tickets.find_by!(event: night_1)
+      device = Admissions::DeviceRegistrar.call(event: night_1, user: owner, identifier: "orphan-gate", name: "Gate")
+      manifest_before = Admissions::ManifestBuilder.call(event: night_1, actor: owner)
+
+      parent2.update!(status: :cancelled, cancelled_at: Time.current, cancellation_reason: "manual_backstop_test")
+
+      expect(child2.reload.admission_block_reason).to eq("cancelled")
+      expect(child2.admission_allowed?).to be(false)
+      expect { child2.check_in! }.to raise_error(Ticket::AdmissionError, "Ticket is not in issued status")
+
+      reconcile_results = Admissions::Reconciler.call(
+        device: device,
+        actor: owner,
+        actions: [{
+          action_uuid: SecureRandom.uuid,
+          sequence: 1,
+          kind: "admit",
+          source: "online",
+          ticket_id: child2.id,
+          credential_hash: Digest::SHA256.hexdigest(child2.scan_credential),
+          manifest_version: manifest_before.version,
+          occurred_at: Time.current.iso8601(6)
+        }]
+      )
+      expect(reconcile_results.sole.action).to have_attributes(result: "rejected", reason_code: "cancelled")
+
+      manifest_after = Admissions::ManifestBuilder.call(event: night_1, actor: owner)
+      child2_entry = manifest_after.payload.fetch("tickets").find { |entry| entry["ticket_id"] == child2.id }
+      expect(child2_entry["state"]).to eq("cancelled")
+
+      expect(Admissions::Counts.call(event: night_1)).to include(total: 0, issued: 0, eligible_unadmitted: 0)
+    end
+
+    it "retries and re-locks the updated sorted event set when included events change before locks are acquired" do
+      night_3 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Night 3", max_capacity: 10, starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_3, position: 2)
+      locked_batches = []
+      stale_read_done = false
+
+      allow(Passes::Locking).to receive(:included_event_ids_for_ticket_type_ids).and_wrap_original do |original, **kwargs|
+        if !stale_read_done
+          stale_read_done = true
+          [night_1.id, night_2.id]
+        else
+          original.call(**kwargs)
+        end
+      end
+      allow(Passes::Locking).to receive(:lock_events!).and_wrap_original do |original, events|
+        result = original.call(events)
+        locked_batches << result.map(&:id)
+        result
+      end
+
+      order = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "retry@example.com",
+        buyer_name: "Retry Fan",
+        payment_required: false
+      ).order
+
+      expected_full_set = [pass_event.id, night_1.id, night_2.id, night_3.id].sort
+      expect(locked_batches.first).to eq([pass_event.id, night_1.id, night_2.id].sort)
+      expect(locked_batches[1]).to eq(expected_full_set)
+      expect(order.tickets.where.not(parent_ticket_id: nil).pluck(:event_id)).to contain_exactly(
+        night_1.id, night_2.id, night_3.id
+      )
+    end
+
+    it "retries OrderLifecycle.complete! on LockSetChanged and skips extra queries for non-pass orders" do
+      pending_checkout = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "lc-retry@example.com",
+        buyer_name: "Lifecycle Fan",
+        payment_required: true
+      )
+      night_3 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Night 3", max_capacity: 10, starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      TicketTypeIncludedEvent.insert!({
+        ticket_type_id: pass_tt.id, included_event_id: night_3.id, position: 2,
+        created_at: Time.current, updated_at: Time.current
+      })
+      stale_read_done = false
+      locked_batches = []
+
+      allow(Passes::Locking).to receive(:related_event_ids_for_pass_order).and_wrap_original do |original, *args|
+        if !stale_read_done
+          stale_read_done = true
+          [night_1.id, night_2.id]
+        else
+          original.call(*args)
+        end
+      end
+      allow(Passes::Locking).to receive(:lock_events!).and_wrap_original do |original, events|
+        result = original.call(events)
+        locked_batches << result.map(&:id)
+        result
+      end
+
+      status = Commerce::OrderLifecycle.complete!(
+        pending_checkout.order,
+        payment: pending_checkout.payment,
+        provider_amount_cents: pending_checkout.payment.amount_cents,
+        provider_currency: pending_checkout.payment.currency
+      )
+      expect(status).to eq(:completed)
+      expect(locked_batches).to eq([
+        [pass_event.id, night_1.id, night_2.id].sort,
+        [pass_event.id, night_1.id, night_2.id, night_3.id].sort
+      ])
+      expect(pending_checkout.order.tickets.where.not(parent_ticket_id: nil).pluck(:event_id)).to contain_exactly(
+        night_1.id, night_2.id, night_3.id
+      )
+
+      # Non-pass order skips extra joins/queries on order_items, inventory_holds, tickets, and ticket_type_included_events
+      regular_order = create(:order, :pending, event: night_1)
+      queries = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        next if payload[:name] == "SCHEMA" || payload[:cached]
+
+        queries << payload[:sql]
+      end
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        Order.transaction { Passes::Locking.lock_events_for_order!(regular_order) }
+      end
+      expect(queries.grep(/ticket_type_included_events|inventory_holds|order_items/)).to be_empty
     end
   end
 end

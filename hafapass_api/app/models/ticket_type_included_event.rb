@@ -10,6 +10,8 @@ class TicketTypeIncludedEvent < ApplicationRecord
   validate :included_event_is_not_parent_event
   validate :events_are_general_admission
   validate :no_nested_passes
+  validate :cannot_convert_used_ticket_type_to_pass, on: :create
+  validate :no_active_holds_when_adding_included_event, on: :create
 
   before_destroy :ensure_removable
   after_create :sync_ticket_type_pass_flag
@@ -55,8 +57,26 @@ class TicketTypeIncludedEvent < ApplicationRecord
     end
   end
 
+  def cannot_convert_used_ticket_type_to_pass
+    return unless ticket_type
+    return if ticket_type.is_pass?
+    return unless ticket_type.quantity_sold.positive? ||
+      ticket_type.tickets.exists? ||
+      ticket_type.inventory_holds.active.exists?
+
+    errors.add(:ticket_type, "cannot be converted into a multi-night pass after tickets have been sold or held")
+  end
+
+  def no_active_holds_when_adding_included_event
+    return unless ticket_type
+    return unless ticket_type.is_pass?
+    return unless ticket_type.inventory_holds.active.exists?
+
+    errors.add(:base, "Included events cannot be added while pass checkouts are in progress")
+  end
+
   def ensure_removable
-    return unless ticket_type.quantity_sold.positive? || ticket_type.inventory_holds.current.exists?
+    return unless ticket_type.quantity_sold.positive? || ticket_type.inventory_holds.active.exists?
 
     errors.add(:base, "Included events cannot be removed once passes have been sold or held")
     throw(:abort)

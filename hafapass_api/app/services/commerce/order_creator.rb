@@ -115,7 +115,10 @@ module Commerce
       order = nil
       payment = nil
 
-      Order.transaction do
+      Passes::Locking.with_lock_retry do
+        order = nil
+        payment = nil
+        Order.transaction do
         if @checkout_attempt
           @checkout_attempt.lock!
           unless @checkout_attempt.checkout_key_digest == @checkout_key_digest && @checkout_attempt.request_digest == @checkout_request_digest
@@ -269,6 +272,7 @@ module Commerce
           OrderLifecycle.complete!(order)
         end
         @checkout_attempt&.reserve!(order)
+        end
       end
 
       intent = if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?

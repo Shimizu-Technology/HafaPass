@@ -314,6 +314,9 @@ module Commerce
       if selected.any?(&:pass_child?)
         raise RefundError, "Refund the parent pass instead of a single night"
       end
+      if selected.any?(&:pass_parent?)
+        raise RefundError, "Multi-night passes must be refunded at the order level rather than per ticket"
+      end
       raise RefundError, "Only unused active tickets can be refunded" if selected.any? { |ticket| ticket.cancelled? || ticket.transferred? || ticket.checked_in? }
       # An accepted transfer leaves the ticket issued with a new holder (the
       # `transferred` status is never set). Only an event cancellation or an

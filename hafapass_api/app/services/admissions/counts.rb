@@ -58,6 +58,11 @@ module Admissions
         LEFT JOIN eligible_orders eo ON eo.id = t.order_id
         WHERE t.event_id = #{@event.id.to_i}
           AND NOT (t.parent_ticket_id IS NULL AND tt.is_pass)
+          AND (t.parent_ticket_id IS NULL OR NOT EXISTS (
+            SELECT 1 FROM tickets parent_t
+            WHERE parent_t.id = t.parent_ticket_id
+              AND parent_t.status = #{Ticket.statuses.fetch('cancelled')}
+          ))
       SQL
     end
 

@@ -458,6 +458,13 @@ class Api::V1::OrdersController < ApplicationController
   end
 
   def cancel_free_ticket!(ticket, reason:)
+    if ticket.pass_child?
+      raise Commerce::RefundCreator::RefundError, "Multi-night pass tickets cannot be cancelled one night at a time"
+    end
+    if ticket.pass_parent?
+      raise Commerce::RefundCreator::RefundError, "Multi-night passes cannot be cancelled individually"
+    end
+
     ticket.with_entry_lock do
       unless controls_ticket?(ticket)
         raise Commerce::RefundCreator::RefundError, "Transferred tickets are controlled by their current holder"

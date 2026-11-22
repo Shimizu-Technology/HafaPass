@@ -4,7 +4,7 @@ class Api::V1::Me::TicketsController < ApplicationController
   def index
     tickets = Ticket
       .where(holder_user: current_user)
-      .includes(:ticket_type, :event, :order, :ticket_transfers)
+      .includes(:ticket_type, :event, :order, :ticket_transfers, :parent_ticket)
       .order(created_at: :desc)
 
     pagy, paginated_tickets = paginate(tickets)

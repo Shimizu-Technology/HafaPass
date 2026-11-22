@@ -90,7 +90,7 @@ class Ticket < ApplicationRecord
 
   def admission_block_reason(payment_mode: nil)
     return "pass_container" if pass_parent?
-    return "cancelled" if cancelled?
+    return "cancelled" if cancelled? || (pass_child? && parent_ticket&.cancelled?)
     return "transferred" if transferred?
     return "inventory_retained" if inventory_retained?
     return "payment_blocked" if order.ticket_access_blocked?
@@ -167,6 +167,7 @@ class Ticket < ApplicationRecord
         raise AdmissionError, "Scanner assignment is no longer active"
       end
       event.reload
+      association(:parent_ticket).reset if pass_child?
       if (block_reason = admission_block_reason)
         raise AdmissionError, admission_error_message(block_reason)
       end

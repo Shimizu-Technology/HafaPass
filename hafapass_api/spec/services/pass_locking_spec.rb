@@ -468,4 +468,89 @@ RSpec.describe "Multi-night pass concurrency and lock ordering", :non_transactio
       end
     end
   end
+
+  describe "Overlapping passes: two concurrent pass checkouts sharing a night" do
+    it "completes without deadlock and enforces exact shared night capacity" do
+      owner = create(:user)
+      profile = create(:organizer_profile, user: owner)
+      org = profile.organization
+
+      pass_event_1 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Pass A", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+      night_a = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Night A", max_capacity: 10, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      night_shared = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Shared Finals Night", max_capacity: 1, starts_at: 3.days.from_now, ends_at: 3.days.from_now + 3.hours)
+      night_b = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Night B", max_capacity: 10, starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      pass_event_2 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Pass B", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 10.days.from_now)
+
+      pass_tt_1 = create(:ticket_type, event: pass_event_1, name: "Pass A", price_cents: 4000, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt_1, included_event: night_a, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt_1, included_event: night_shared, position: 1)
+
+      pass_tt_2 = create(:ticket_type, event: pass_event_2, name: "Pass B", price_cents: 4000, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt_2, included_event: night_shared, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt_2, included_event: night_b, position: 1)
+
+      pass_1_locked = Queue.new
+      release_pass_1 = Queue.new
+      outcomes = Queue.new
+      connections = Queue.new
+
+      pass_1_max_id = [pass_event_1.id, night_a.id, night_shared.id].max
+      allow_any_instance_of(Event).to receive(:lock!).and_wrap_original do |original, *args|
+        result = original.call(*args)
+        if Thread.current[:pass_worker] == :pass_1 && original.receiver.id == pass_1_max_id && !Thread.current[:paused_pass_1]
+          Thread.current[:paused_pass_1] = true
+          pass_1_locked << true
+          Timeout.timeout(8) { release_pass_1.pop }
+        end
+        result
+      end
+
+      workers = [
+        worker(:pass_1, outcomes, connections) do
+          Commerce::OrderCreator.call(
+            event: Event.find(pass_event_1.id),
+            line_items: [{ ticket_type_id: pass_tt_1.id, quantity: 1 }],
+            buyer_email: "pass1@example.invalid",
+            buyer_name: "Pass 1 Buyer",
+            payment_required: false
+          )
+        end
+      ]
+
+      pass_1_pid = connections.pop.last
+      Timeout.timeout(8) { pass_1_locked.pop }
+
+      workers << worker(:pass_2, outcomes, connections) do
+        Commerce::OrderCreator.call(
+          event: Event.find(pass_event_2.id),
+          line_items: [{ ticket_type_id: pass_tt_2.id, quantity: 1 }],
+          buyer_email: "pass2@example.invalid",
+          buyer_name: "Pass 2 Buyer",
+          payment_required: false
+        )
+      end
+
+      pass_2_pid = connections.pop.last
+      expect(pass_2_pid).not_to eq(pass_1_pid)
+      await { blocked_by?(pass_2_pid, pass_1_pid) }
+
+      release_pass_1 << true
+      Timeout.timeout(12) { workers.each(&:join) }
+
+      results = 2.times.map { outcomes.pop }.to_h
+      expect(results[:pass_1]).to be_a(Commerce::OrderCreator::Result)
+      expect(results[:pass_2]).to be_a(Commerce::OrderCreator::CheckoutError)
+      expect(results[:pass_2].message).to include("Shared Finals Night")
+      expect(EventCapacity.committed_for(night_shared.reload)).to eq(1)
+    ensure
+      release_pass_1 << true if release_pass_1&.empty?
+      workers&.each { |thread| thread.kill if thread.alive? }
+      workers&.each(&:join)
+    end
+  end
 end
