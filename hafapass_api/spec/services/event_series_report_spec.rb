@@ -1,0 +1,485 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe EventSeriesReport, type: :service do
+  let(:profile) { create(:organizer_profile, :verified) }
+  let(:organization) { profile.organization }
+  let(:owner) { profile.user }
+  let(:series) do
+    create(
+      :event_series,
+      organization: organization,
+      name: "FD Alumni Tournament 2026",
+      status: :active,
+      revenue_share_bps: 1600,
+      revenue_share_base: "admissions_net_proceeds",
+      revenue_share_includes_door_cash: true,
+      revenue_share_label: "School Share (16%)",
+      primary_share_label: "Alumni Share (84%)"
+    )
+  end
+
+  def create_paid_order!(
+    event:,
+    ticket_type:,
+    pricing_tier: nil,
+    quantity: 1,
+    unit_price_cents: nil,
+    discount_cents: 0,
+    buyer_fee_cents: 150,
+    organizer_fee_cents: 0,
+    processing_fee_cents: 100,
+    processing_bearer: "organizer",
+    payment_method: "card",
+    payment_provider: "stripe",
+    provider_environment: "live",
+    checked_in_count: 0,
+    cancelled_tickets_count: 0
+  )
+    unit_price = unit_price_cents || pricing_tier&.price_cents || ticket_type.price_cents
+    subtotal = unit_price * quantity
+    proceeds = subtotal - discount_cents - organizer_fee_cents
+    total = [subtotal + buyer_fee_cents - discount_cents, 0].max
+
+    order = create(
+      :order,
+      event: event,
+      status: :completed,
+      subtotal_cents: subtotal,
+      discount_cents: discount_cents,
+      service_fee_cents: buyer_fee_cents,
+      organizer_fee_cents: organizer_fee_cents,
+      total_cents: total,
+      payment_method: payment_method,
+      processing_fee_bearer_snapshot: processing_bearer
+    )
+    item = create(
+      :order_item,
+      order: order,
+      ticket_type: ticket_type,
+      pricing_tier: pricing_tier,
+      name: ticket_type.name,
+      tier_name: pricing_tier&.name,
+      unit_price_cents: unit_price,
+      quantity: quantity,
+      subtotal_cents: subtotal,
+      discount_cents: discount_cents,
+      fee_cents: buyer_fee_cents,
+      organizer_fee_cents: organizer_fee_cents,
+      organizer_proceeds_cents: proceeds
+    )
+
+    tickets = quantity.times.map do |idx|
+      status = if idx < cancelled_tickets_count
+        :cancelled
+      elsif idx < cancelled_tickets_count + checked_in_count
+        :checked_in
+      else
+        :issued
+      end
+      create(
+        :ticket,
+        order: order,
+        order_item: item,
+        ticket_type: ticket_type,
+        pricing_tier: pricing_tier,
+        event: event,
+        status: status,
+        checked_in_at: status == :checked_in ? Time.current : nil
+      )
+    end
+
+    if buyer_fee_cents.positive? || organizer_fee_cents.positive?
+      create(:fee_component, order: order, order_item: item, kind: "platform",
+        amount_cents: buyer_fee_cents + organizer_fee_cents, estimated: true)
+    end
+
+    payment = create(
+      :payment,
+      :succeeded,
+      order: order,
+      provider: payment_provider,
+      provider_environment: provider_environment,
+      amount_cents: total
+    )
+
+    if processing_fee_cents.positive? && payment_provider == "stripe"
+      component = create(
+        :fee_component,
+        order: order,
+        order_item: item,
+        kind: "processing",
+        amount_cents: processing_fee_cents,
+        estimated: false,
+        provider_reference: "txn_#{SecureRandom.hex(6)}"
+      )
+      create(
+        :stripe_fee_evidence,
+        :verified,
+        payment: payment,
+        fee_component: component,
+        provider_balance_transaction_id: component.provider_reference
+      )
+    end
+
+    [order, item, tickets]
+  end
+
+  describe ".call" do
+    let!(:night_one) do
+      create(:event, :completed, organizer_profile: profile, organization: organization,
+        title: "Night 1 - Pool Play", starts_at: 3.days.ago, ends_at: 2.days.ago)
+    end
+    let!(:championship_night) do
+      create(:event, :published, organizer_profile: profile, organization: organization,
+        title: "Championship Night", starts_at: 5.hours.ago, ends_at: 1.hour.ago, doors_open_at: 6.hours.ago)
+    end
+    let!(:pass_event) do
+      create(:event, :completed, organizer_profile: profile, organization: organization,
+        title: "Tournament Season Pass", starts_at: 10.days.ago, ends_at: 9.days.ago)
+    end
+    let!(:registration_event) do
+      create(:event, :completed, organizer_profile: profile, organization: organization,
+        title: "Team Registration", starts_at: 14.days.ago, ends_at: 13.days.ago)
+    end
+
+    let!(:ga_night_one) { create(:ticket_type, event: night_one, name: "General Admission", price_cents: 1000) }
+    let!(:early_tier) { create(:pricing_tier, ticket_type: ga_night_one, name: "Early Bird", price_cents: 800, position: 0) }
+    let!(:comp_night_one) { create(:ticket_type, event: night_one, name: "Sponsor Comp", price_cents: 0) }
+    let!(:champ_ga) { create(:ticket_type, event: championship_night, name: "Championship GA", price_cents: 1500) }
+    let!(:pass_tt) { create(:ticket_type, event: pass_event, name: "All-Access Pass", price_cents: 5000) }
+    let!(:team_tt) { create(:ticket_type, event: registration_event, name: "Team Entry", price_cents: 30_000) }
+
+    before do
+      series.event_series_memberships.create!(event: night_one, role: :regular_night, position: 0)
+      series.event_series_memberships.create!(event: championship_night, role: :championship_night, position: 1)
+      series.event_series_memberships.create!(event: pass_event, role: :pass_sale, position: 2)
+      series.event_series_memberships.create!(event: registration_event, role: :registration, position: 3)
+
+      # Night 1:
+      # 1) Online Stripe order with discount + buyer-paid fee + organizer-borne processing + partial refund
+      order_online, item_online, _tickets_online = create_paid_order!(
+        event: night_one,
+        ticket_type: ga_night_one,
+        pricing_tier: early_tier,
+        quantity: 3,
+        unit_price_cents: 800,
+        discount_cents: 200,
+        buyer_fee_cents: 240,
+        organizer_fee_cents: 0,
+        processing_fee_cents: 120,
+        processing_bearer: "organizer",
+        checked_in_count: 1,
+        cancelled_tickets_count: 1
+      )
+      refund = create(:refund, :succeeded, order: order_online, payment: order_online.payments.first, amount_cents: 880)
+      create(:refund_item, refund: refund, order_item: item_online, quantity: 1,
+        organizer_proceeds_cents: 733, fee_cents: 80, organizer_fee_cents: 0, tax_cents: 67, amount_cents: 880)
+      order_online.update!(status: :partially_refunded, refund_amount_cents: 880)
+
+      # 2) Door cash order on Night 1 (detected via payment_method: "door_cash" + Payment provider: "door_cash")
+      create_paid_order!(
+        event: night_one,
+        ticket_type: ga_night_one,
+        quantity: 2,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 0,
+        organizer_fee_cents: 0,
+        processing_fee_cents: 0,
+        payment_method: "door_cash",
+        payment_provider: "door_cash",
+        checked_in_count: 2
+      )
+
+      # 3) Free / comp order on Night 1
+      free_order = create(:order, event: night_one, status: :completed, subtotal_cents: 0,
+        service_fee_cents: 0, discount_cents: 0, total_cents: 0, payment_method: nil)
+      free_item = create(:order_item, order: free_order, ticket_type: comp_night_one, name: comp_night_one.name,
+        unit_price_cents: 0, quantity: 2, subtotal_cents: 0, discount_cents: 0, fee_cents: 0, organizer_proceeds_cents: 0)
+      create(:ticket, :checked_in, order: free_order, order_item: free_item, ticket_type: comp_night_one, event: night_one)
+      create(:ticket, order: free_order, order_item: free_item, ticket_type: comp_night_one, event: night_one)
+
+      # 4) Reserve holdback on Night 1 ($5.00)
+      create(:balance_adjustment, organization: organization, event: night_one, kind: :reserve_hold,
+        amount_cents: -500, status: :posted, effective_at: 1.day.ago, reason: "30-day reserve holdback")
+
+      # Finalize Night 1 and pay out $5.00 partial payout
+      settlement_n1 = Settlements::Finalizer.call(event: night_one, actor: owner)
+      payout_n1 = create(:payout, organization: organization, event: night_one, settlement: settlement_n1,
+        amount_cents: 500, status: :paid, paid_at: 1.hour.ago, provider_payout_id: "CHK-101-E#{night_one.id}")
+
+      # Championship night (awaiting completion, not finalized, organizer-absorbed fee + platform-borne processing):
+      create_paid_order!(
+        event: championship_night,
+        ticket_type: champ_ga,
+        quantity: 2,
+        unit_price_cents: 1500,
+        buyer_fee_cents: 0,
+        organizer_fee_cents: 300,
+        processing_fee_cents: 117,
+        processing_bearer: "platform",
+        checked_in_count: 1
+      )
+
+      # Pass sale (finalized & ready for payout, odd-cent amount to exercise MoneyAllocator):
+      create_paid_order!(
+        event: pass_event,
+        ticket_type: pass_tt,
+        quantity: 1,
+        unit_price_cents: 5001,
+        buyer_fee_cents: 350,
+        organizer_fee_cents: 0,
+        processing_fee_cents: 185,
+        processing_bearer: "platform",
+        checked_in_count: 0
+      )
+      Settlements::Finalizer.call(event: pass_event, actor: owner)
+
+      # Team Registration (separate group, excluded from admissions revenue share by default):
+      create_paid_order!(
+        event: registration_event,
+        ticket_type: team_tt,
+        quantity: 1,
+        unit_price_cents: 30_000,
+        buyer_fee_cents: 1500,
+        organizer_fee_cents: 0,
+        processing_fee_cents: 944,
+        processing_bearer: "organizer",
+        checked_in_count: 0
+      )
+      settlement_reg = Settlements::Finalizer.call(event: registration_event, actor: owner)
+      create(:payout, organization: organization, event: registration_event, settlement: settlement_reg,
+        connected_account: payout_n1.connected_account,
+        amount_cents: settlement_reg.available_to_payout_cents, status: :paid, paid_at: 30.minutes.ago,
+        provider_payout_id: "CHK-102-E#{registration_event.id}")
+    end
+
+    it "reconciles every member event to the exact cent with Settlements::Calculator and OrganizationFinanceSummary" do
+      report = described_class.call(series)
+      org_summary = OrganizationFinanceSummary.call(organization)
+      org_rows_by_id = org_summary[:events].index_by { |row| row[:id] }
+
+      expect(report[:events].map { |row| row[:event_id] }).to eq([
+        night_one.id, championship_night.id, pass_event.id, registration_event.id
+      ])
+
+      reconciled_keys = %i[
+        gross_cents discount_cents refund_cents platform_fee_cents processing_fee_cents
+        platform_processing_fee_cents organizer_proceeds_cents sales_cents item_discount_cents
+        absorbed_fee_cents refunded_proceeds_cents buyer_fee_cents door_cash_retained_cents
+        reserve_cents other_adjustment_cents balance_cents payable_cents paid_cents
+        in_flight_cents held_cents unresolved_buyer_liability_cents owed_cents
+        negative_balance_cents awaiting_completion settlement_state payout_state
+      ]
+
+      report[:events].each do |row|
+        event = Event.find(row[:event_id])
+        calc = Settlements::Calculator.call(event).attributes
+        org_row = org_rows_by_id.fetch(event.id)
+
+        expect(row[:gross_cents]).to eq(calc[:gross_cents])
+        expect(row[:organizer_proceeds_cents]).to eq(calc[:organizer_proceeds_cents])
+        expect(row[:processing_fee_cents]).to eq(calc[:processing_fee_cents])
+        expect(row[:platform_processing_fee_cents]).to eq(calc[:platform_processing_fee_cents])
+        expect(row[:payable_cents]).to eq(calc[:payable_cents])
+
+        reconciled_keys.each do |key|
+          expect(row[key]).to eq(org_row[key]), "Expected event #{event.id} #{key} (#{row[key]}) to match OrganizationFinanceSummary (#{org_row[key]})"
+        end
+      end
+
+      # Night 1 ticket counts: 2 non-cancelled online + 2 door cash = 4 direct paid; 2 free; 0 pass child; 4 checked in
+      n1 = report[:events].first
+      expect(n1).to include(
+        tickets_issued_count: 6,
+        direct_paid_tickets_count: 4,
+        free_tickets_count: 2,
+        pass_child_tickets_count: 0,
+        checked_in_count: 4,
+        door_cash_retained_cents: 2000,
+        reserve_cents: 500
+      )
+      expect(n1[:direct_paid_tickets_count] + n1[:free_tickets_count] + n1[:pass_child_tickets_count]).to eq(n1[:tickets_issued_count])
+    end
+
+    it "computes group subtotals, channel breakdown, and ticket-type breakdown accurately" do
+      report = described_class.call(series)
+
+      admissions = report[:groups][:admissions]
+      registration = report[:groups][:registration]
+      combined = report[:groups][:combined]
+
+      expect(admissions[:events_count]).to eq(3)
+      expect(registration[:events_count]).to eq(1)
+      expect(report[:groups][:other][:events_count]).to eq(0)
+      expect(combined[:events_count]).to eq(4)
+      expect(admissions[:organizer_proceeds_cents] + registration[:organizer_proceeds_cents]).to eq(combined[:organizer_proceeds_cents])
+      expect(admissions[:gross_cents] + registration[:gross_cents]).to eq(combined[:gross_cents])
+
+      # Channel breakdown sums cleanly to combined totals
+      channels = report[:channels]
+      expect(channels[:online_stripe][:orders_count]).to eq(4)
+      expect(channels[:door_cash][:orders_count]).to eq(1)
+      expect(channels[:door_cash][:door_cash_retained_cents]).to eq(2000)
+      expect(channels[:door_cash][:organizer_proceeds_cents]).to eq(2000)
+      expect(channels[:free_comp][:orders_count]).to eq(1)
+      expect(channels[:free_comp][:tickets_issued_count]).to eq(2)
+      expect(channels[:free_comp][:checked_in_count]).to eq(1)
+      expect(channels[:free_comp][:gross_cents]).to eq(0)
+
+      channel_proceeds_sum = channels.values.sum { |c| c[:organizer_proceeds_cents] }
+      expect(channel_proceeds_sum).to eq(combined[:organizer_proceeds_cents])
+
+      channel_tickets_sum = channels.values.sum { |c| c[:tickets_issued_count] }
+      expect(channel_tickets_sum).to eq(combined[:tickets_issued_count])
+
+      # Ticket-type breakdown splits Early Bird pricing tier from base GA on Night 1
+      n1_tt_rows = report[:ticket_types].select { |r| r[:event_id] == night_one.id }
+      early_row = n1_tt_rows.find { |r| r[:pricing_tier_id] == early_tier.id }
+      door_row = n1_tt_rows.find { |r| r[:ticket_type_id] == ga_night_one.id && r[:pricing_tier_id].nil? }
+      comp_row = n1_tt_rows.find { |r| r[:ticket_type_id] == comp_night_one.id }
+
+      expect(early_row).to include(
+        pricing_tier_name: "Early Bird",
+        price_cents: 800,
+        tickets_issued_count: 2,
+        checked_in_count: 1,
+        gross_cents: 2400,
+        discount_cents: 200,
+        refunded_proceeds_cents: 733,
+        organizer_proceeds_cents: 1467
+      )
+      expect(door_row).to include(
+        tickets_issued_count: 2,
+        checked_in_count: 2,
+        gross_cents: 2000,
+        organizer_proceeds_cents: 2000
+      )
+      expect(comp_row).to include(
+        tickets_issued_count: 2,
+        checked_in_count: 1,
+        gross_cents: 0,
+        organizer_proceeds_cents: 0
+      )
+    end
+
+    it "supports all 4 revenue_share_base modes, door_cash toggle, and zero-penny-drift allocation" do
+      base_report = described_class.call(series)
+      admissions = base_report[:groups][:admissions]
+      combined = base_report[:groups][:combined]
+
+      # 1. admissions_net_proceeds with door cash included (default)
+      # Night 1 proceeds = (2200 - 733) + 2000 = 3467; Champ = 2700; Pass = 5001 -> 11168
+      expect(admissions[:organizer_proceeds_cents]).to eq(11_168)
+      rs = base_report[:revenue_share]
+      expect(rs[:base_cents]).to eq(11_168)
+      expect(rs[:share_cents] + rs[:primary_cents]).to eq(11_168)
+      expect(rs[:share_cents]).to eq(1787) # 11168 * 1600 / 10000 = 1786.88 -> allocator gives remainder penny to index 0
+      expect(rs[:primary_cents]).to eq(9381)
+      expect(rs[:door_cash_retained_cents]).to eq(2000)
+
+      # 1b. admissions_net_proceeds with door cash EXCLUDED
+      series.update!(revenue_share_includes_door_cash: false)
+      no_cash = described_class.call(series)[:revenue_share]
+      expect(no_cash[:base_cents]).to eq(11_168 - 2000)
+      expect(no_cash[:share_cents] + no_cash[:primary_cents]).to eq(no_cash[:base_cents])
+
+      # 2. admissions_gross (gross - discount across admissions)
+      series.update!(revenue_share_base: "admissions_gross", revenue_share_includes_door_cash: true)
+      gross_rs = described_class.call(series)[:revenue_share]
+      expected_gross_base = admissions[:gross_cents] - admissions[:discount_cents]
+      expect(gross_rs[:base_cents]).to eq(expected_gross_base)
+      expect(gross_rs[:share_cents] + gross_rs[:primary_cents]).to eq(expected_gross_base)
+
+      # 3. admissions_net_after_processing
+      series.update!(revenue_share_base: "admissions_net_after_processing", revenue_share_includes_door_cash: true)
+      after_proc_rs = described_class.call(series)[:revenue_share]
+      expected_after_proc = [admissions[:organizer_proceeds_cents] - admissions[:processing_fee_cents], 0].max
+      expect(after_proc_rs[:base_cents]).to eq(expected_after_proc)
+      expect(after_proc_rs[:share_cents] + after_proc_rs[:primary_cents]).to eq(expected_after_proc)
+
+      # 4. all_net_proceeds (includes Team Registration)
+      series.update!(revenue_share_base: "all_net_proceeds", revenue_share_includes_door_cash: true)
+      all_rs = described_class.call(series)[:revenue_share]
+      expect(all_rs[:base_cents]).to eq(combined[:organizer_proceeds_cents])
+      expect(all_rs[:share_cents] + all_rs[:primary_cents]).to eq(combined[:organizer_proceeds_cents])
+
+      # Odd-cent stress check across odd base values: zero penny drift
+      series.update!(revenue_share_bps: 3333)
+      odd_rs = described_class.call(series)[:revenue_share]
+      expect(odd_rs[:revenue_share_bps] + odd_rs[:primary_share_bps]).to eq(10_000)
+      expect(odd_rs[:share_cents] + odd_rs[:primary_cents]).to eq(odd_rs[:base_cents])
+    end
+
+    it "populates closeout checklist counts and payout guidance accurately" do
+      checklist = described_class.call(series)[:closeout_checklist]
+
+      expect(checklist).to include(
+        events_total: 4,
+        awaiting_completion_count: 1, # championship_night
+        not_finalized_count: 1,       # championship_night
+        changed_since_finalization_count: 0,
+        ready_for_payout_count: 1,    # pass_event
+        paid_count: 1,                # registration_event
+        active_reserve_count: 1,      # night_one
+        total_reserve_cents: 500,
+        check_reference_pattern: "CHK-<check_number>-E<event_id>"
+      )
+      expect(checklist[:total_owed_cents]).to be > 0
+      expect(checklist[:guidance]).to include("CHK-<check_number>-E<event_id>")
+    end
+
+    it "excludes Stripe test-mode payments in production across events, channels, and ticket types" do
+      create_paid_order!(
+        event: night_one,
+        ticket_type: ga_night_one,
+        quantity: 2,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 200,
+        processing_fee_cents: 90,
+        provider_environment: "test",
+        checked_in_count: 1
+      )
+
+      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+
+      report = described_class.call(series)
+      n1 = report[:events].find { |row| row[:event_id] == night_one.id }
+      calc = Settlements::Calculator.call(night_one).attributes
+
+      expect(n1[:gross_cents]).to eq(calc[:gross_cents])
+      expect(n1[:organizer_proceeds_cents]).to eq(calc[:organizer_proceeds_cents])
+      expect(n1[:tickets_issued_count]).to eq(6)
+      expect(n1[:checked_in_count]).to eq(4)
+      expect(report[:channels][:online_stripe][:orders_count]).to eq(4)
+    end
+
+    it "defaults revenue_share_bps to 1600 when nil and preserves explicit 0" do
+      series.update!(revenue_share_bps: nil)
+      defaulted = described_class.call(series)[:revenue_share]
+      expect(defaulted[:revenue_share_bps]).to eq(1600)
+      expect(defaulted[:primary_share_bps]).to eq(8400)
+
+      series.update!(revenue_share_bps: 0)
+      zeroed = described_class.call(series)[:revenue_share]
+      expect(zeroed[:revenue_share_bps]).to eq(0)
+      expect(zeroed[:share_cents]).to eq(0)
+      expect(zeroed[:primary_cents]).to eq(zeroed[:base_cents])
+    end
+
+    it "handles an empty series gracefully without mutating settlements or payouts" do
+      empty_series = create(:event_series, organization: organization, name: "Empty Series")
+      expect {
+        report = described_class.call(empty_series)
+        expect(report[:events]).to eq([])
+        expect(report[:ticket_types]).to eq([])
+        expect(report[:groups][:combined][:gross_cents]).to eq(0)
+        expect(report[:revenue_share][:base_cents]).to eq(0)
+        expect(report[:revenue_share][:share_cents]).to eq(0)
+        expect(report[:revenue_share][:primary_cents]).to eq(0)
+        expect(report[:closeout_checklist][:events_total]).to eq(0)
+      }.not_to change { [Settlement.count, Payout.count] }
+    end
+  end
+end

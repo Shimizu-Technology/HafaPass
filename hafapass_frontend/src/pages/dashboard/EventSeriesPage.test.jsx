@@ -221,6 +221,7 @@ describe('EventSeriesPage', () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'FD Tourney 2026' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /View Report/i })).toHaveAttribute('href', '/dashboard/series/10/report')
     expect(screen.queryByRole('button', { name: 'New series' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk clone nights' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
