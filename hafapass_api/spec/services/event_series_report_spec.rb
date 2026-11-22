@@ -625,5 +625,102 @@ RSpec.describe EventSeriesReport, type: :service do
         organizer_proceeds_cents: 1000
       )
     end
+
+    it "separates door_card box-office orders from online_stripe in the channel breakdown" do
+      card_series = create(:event_series, organization: organization, name: "Door Card Check", status: :active)
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Box Office Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 2000)
+      card_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 1,
+        unit_price_cents: 2000,
+        buyer_fee_cents: 150,
+        processing_fee_cents: 100,
+        payment_method: "card",
+        payment_provider: "stripe"
+      )
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        quantity: 2,
+        unit_price_cents: 2000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        payment_method: "door_card",
+        payment_provider: "stripe"
+      )
+
+      channels = described_class.call(card_series)[:channels]
+      expect(channels[:online_stripe]).to include(
+        channel: "online_stripe",
+        label: "Online (Stripe)",
+        orders_count: 1,
+        gross_cents: 2000,
+        organizer_proceeds_cents: 2000
+      )
+      expect(channels[:door_card]).to include(
+        channel: "door_card",
+        label: "Door (Card)",
+        orders_count: 1,
+        gross_cents: 4000,
+        organizer_proceeds_cents: 4000,
+        door_cash_retained_cents: 0
+      )
+    end
+
+    it "uses recorded item unit_price_cents and keeps distinct rows when a tier price changes after a sale" do
+      price_series = create(:event_series, organization: organization, name: "Price Change Check", status: :active)
+      ev = create(:event, :completed, organizer_profile: profile, organization: organization, title: "Dynamic Price Night")
+      tt = create(:ticket_type, event: ev, name: "GA", price_cents: 1500)
+      tier = create(:pricing_tier, ticket_type: tt, name: "Early Bird", price_cents: 1000, position: 0)
+      price_series.event_series_memberships.create!(event: ev, role: :regular_night, position: 0)
+
+      # Sale 1 at $10.00
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        pricing_tier: tier,
+        quantity: 2,
+        unit_price_cents: 1000,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        checked_in_count: 1
+      )
+
+      # Catalog tier price increases to $12.00 before Sale 2
+      tier.update!(price_cents: 1200)
+      create_paid_order!(
+        event: ev,
+        ticket_type: tt,
+        pricing_tier: tier,
+        quantity: 1,
+        unit_price_cents: 1200,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        checked_in_count: 1
+      )
+
+      tt_rows = described_class.call(price_series)[:ticket_types]
+      expect(tt_rows.size).to eq(2)
+      expect(tt_rows[0]).to include(
+        pricing_tier_id: tier.id,
+        price_cents: 1000,
+        tickets_issued_count: 2,
+        checked_in_count: 1,
+        gross_cents: 2000,
+        organizer_proceeds_cents: 2000
+      )
+      expect(tt_rows[1]).to include(
+        pricing_tier_id: tier.id,
+        price_cents: 1200,
+        tickets_issued_count: 1,
+        checked_in_count: 1,
+        gross_cents: 1200,
+        organizer_proceeds_cents: 1200
+      )
+    end
   end
 end

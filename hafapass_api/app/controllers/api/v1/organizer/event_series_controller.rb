@@ -164,23 +164,18 @@ module Api
 
         def authorize_series_update!(permitted)
           keys = permitted.keys.map(&:to_s)
-          if keys.any? && (keys - REVENUE_SHARE_FIELDS).empty?
-            allowed = OrganizationAuthorization.allowed?(
-              user: current_user,
-              organization: current_organization,
-              permission: :manage_finance
-            ) || OrganizationAuthorization.allowed?(
-              user: current_user,
-              organization: current_organization,
-              permission: :manage_events
-            )
-            return true if allowed
+          has_revenue_share = (keys & REVENUE_SHARE_FIELDS).any?
+          has_non_revenue_share = (keys - REVENUE_SHARE_FIELDS).any?
 
-            render json: { error: "You do not have permission to perform this action" }, status: :forbidden
-            return false
+          if has_revenue_share
+            return false unless authorize_organization!(:manage_finance)
           end
 
-          authorize_organization!(:manage_events)
+          if has_non_revenue_share || !has_revenue_share
+            return false unless authorize_organization!(:manage_events)
+          end
+
+          true
         end
 
         def authorize_org_wide_event_viewer!

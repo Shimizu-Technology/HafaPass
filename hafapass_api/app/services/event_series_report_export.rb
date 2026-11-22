@@ -16,7 +16,7 @@ class EventSeriesReportExport
     [:combined, "Combined Series Total"]
   ].freeze
 
-  CHANNEL_ORDER = %i[online_stripe door_cash free_comp].freeze
+  CHANNEL_ORDER = %i[online_stripe door_card door_cash free_comp].freeze
 
   def self.to_csv(report)
     new(report).to_csv

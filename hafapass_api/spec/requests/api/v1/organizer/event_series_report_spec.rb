@@ -227,6 +227,33 @@ RSpec.describe "Api::V1::Organizer::EventSeries Report & Export", type: :request
       expect(response).to have_http_status(:forbidden)
     end
 
+    it "forbids managers without manage_finance from modifying revenue-share fields while allowing non-finance updates" do
+      manager_user = member_with_role(:manager)
+
+      patch "/api/v1/organizer/event_series/#{series.id}", params: {
+        revenue_share_bps: 1800
+      }, headers: org_headers(manager_user), as: :json
+      expect(response).to have_http_status(:forbidden)
+
+      patch "/api/v1/organizer/event_series/#{series.id}", params: {
+        name: "Updated By Manager",
+        revenue_share_bps: 1800
+      }, headers: org_headers(manager_user), as: :json
+      expect(response).to have_http_status(:forbidden)
+
+      patch "/api/v1/organizer/event_series/#{series.id}", params: {
+        name: "Updated By Manager"
+      }, headers: org_headers(manager_user), as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["name"]).to eq("Updated By Manager")
+
+      patch "/api/v1/organizer/event_series/#{series.id}", params: {
+        revenue_share_bps: 1800
+      }, headers: org_headers(owner), as: :json
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["revenue_share_bps"]).to eq(1800)
+    end
+
     it "forbids scanner and marketer roles from modifying or deleting series before loading (no ID probing)" do
       other_series = create(:event_series, organization: create(:organization))
 

@@ -98,6 +98,16 @@ const sampleReport = {
       organizer_proceeds_cents: 37500,
       door_cash_retained_cents: 0,
     },
+    door_card: {
+      channel: 'door_card',
+      label: 'Door (Card)',
+      orders_count: 1,
+      tickets_issued_count: 1,
+      checked_in_count: 1,
+      gross_cents: 1500,
+      organizer_proceeds_cents: 1500,
+      door_cash_retained_cents: 0,
+    },
     door_cash: {
       channel: 'door_cash',
       label: 'Door Cash',
@@ -303,12 +313,32 @@ describe('EventSeriesReportPage', () => {
     // Channel & Per-Event & Ticket-Type sections
     const channelsSection = screen.getByRole('region', { name: 'Channel Breakdown' })
     expect(within(channelsSection).getByText('Online (Stripe)')).toBeInTheDocument()
+    expect(within(channelsSection).getByText('Door (Card)')).toBeInTheDocument()
     expect(within(channelsSection).getByText('Door Cash')).toBeInTheDocument()
     expect(within(channelsSection).getByText('Free / Comp')).toBeInTheDocument()
     const eventLinks = screen.getAllByRole('link', { name: 'Night 1 - Pool Play' })
     expect(eventLinks[0]).toHaveAttribute('href', '/dashboard/events/101/analytics#settlement')
     expect(screen.getAllByText(/General Admission/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Early Bird/).length).toBeGreaterThan(0)
+    // Mobile cards also display non-zero discounts
+    expect(screen.getAllByText(/Discounts −\$5\.00/).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('hides split settings editor for managers who lack manage_finance permission', async () => {
+    const managerOrg = {
+      id: 1,
+      name: 'FD Alumni Association',
+      permissions: { view_finance: true, manage_events: true, manage_finance: false },
+    }
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: sampleReport })
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [managerOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'FD Alumni Tournament 2026' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit Split Settings/i })).not.toBeInTheDocument()
   })
 
   it('triggers CSV export download', async () => {

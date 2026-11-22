@@ -193,7 +193,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
       const orgs = Array.isArray(orgsRes.data) ? orgsRes.data : []
       const currentOrg = selectedOrganization(orgs, identity.organizationId)
       const perms = currentOrg?.permissions || {}
-      setCanEditSplit(Boolean(perms.manage_finance || perms.manage_events))
+      setCanEditSplit(Boolean(perms.manage_finance))
       syncSplitForm(reportRes.data)
       setState({ status: 'ready', data: reportRes.data, error: null })
     } catch (error) {
@@ -369,7 +369,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
     { key: 'combined', label: 'Combined Series Total', subtitle: 'All events in this series', row: combined, total: true },
   ]
 
-  const channelRows = ['online_stripe', 'door_cash', 'free_comp'].map((key) => channels[key]).filter(Boolean)
+  const channelRows = ['online_stripe', 'door_card', 'door_cash', 'free_comp'].map((key) => channels[key]).filter(Boolean)
 
   return (
     <WorkspacePage>
@@ -788,7 +788,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
           <section aria-labelledby="channels-heading" className="min-w-0 rounded-2xl border border-neutral-200 bg-white">
             <div className="px-5 pt-5 sm:px-6">
               <h2 id="channels-heading" className="text-lg font-semibold text-neutral-950">Channel Breakdown</h2>
-              <p className="mt-1 text-sm text-neutral-600">Online Stripe payments, door cash retained by organizer, and free/comp tickets.</p>
+              <p className="mt-1 text-sm text-neutral-600">Online Stripe payments, door card sales, door cash retained by organizer, and free/comp tickets.</p>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm">
@@ -968,6 +968,13 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                     <p className="mt-2 text-xs tabular-nums text-neutral-600">
                       Tickets {row.tickets_issued_count} ({row.checked_in_count} in) · Gross {money(row.gross_cents)} · Proceeds {money(row.organizer_proceeds_cents)}
                     </p>
+                    {(row.discount_cents > 0 || row.refund_cents > 0) && (
+                      <p className="mt-0.5 text-xs tabular-nums text-neutral-500">
+                        {row.discount_cents > 0 ? `Discounts −${money(row.discount_cents)}` : ''}
+                        {row.discount_cents > 0 && row.refund_cents > 0 ? ' · ' : ''}
+                        {row.refund_cents > 0 ? `Refunds −${money(row.refund_cents)}` : ''}
+                      </p>
+                    )}
                     <p className="mt-0.5 text-xs tabular-nums text-neutral-600">
                       Door cash {money(row.door_cash_retained_cents)} · Payable {money(row.payable_cents)} · Paid {money(row.paid_cents)}
                     </p>
@@ -1020,7 +1027,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {ticketTypes.map((row) => (
-                      <tr key={`${row.event_id}-${row.ticket_type_id}-${row.pricing_tier_id ?? 'base'}`}>
+                      <tr key={`${row.event_id}-${row.ticket_type_id}-${row.pricing_tier_id ?? 'base'}-${row.price_cents ?? 0}`}>
                         <td className="px-5 py-3">
                           <p className="font-medium text-neutral-950">{row.event_title}</p>
                           <div className="mt-0.5"><RoleBadge role={row.role} /></div>
@@ -1045,7 +1052,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
 
               <ul className="mt-4 divide-y divide-neutral-100 border-t border-neutral-100 md:hidden">
                 {ticketTypes.map((row) => (
-                  <li key={`${row.event_id}-${row.ticket_type_id}-${row.pricing_tier_id ?? 'base'}`} className="px-5 py-4">
+                  <li key={`${row.event_id}-${row.ticket_type_id}-${row.pricing_tier_id ?? 'base'}-${row.price_cents ?? 0}`} className="px-5 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-semibold text-neutral-950">
@@ -1059,6 +1066,13 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
                     <p className="mt-1.5 text-xs tabular-nums text-neutral-600">
                       {money(row.price_cents)} ea · {row.tickets_issued_count} issued ({row.checked_in_count} in) · Gross {money(row.gross_cents)}
                     </p>
+                    {(row.discount_cents > 0 || row.refunded_proceeds_cents > 0) && (
+                      <p className="mt-0.5 text-xs tabular-nums text-neutral-500">
+                        {row.discount_cents > 0 ? `Discounts −${money(row.discount_cents)}` : ''}
+                        {row.discount_cents > 0 && row.refunded_proceeds_cents > 0 ? ' · ' : ''}
+                        {row.refunded_proceeds_cents > 0 ? `Refunded −${money(row.refunded_proceeds_cents)}` : ''}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>

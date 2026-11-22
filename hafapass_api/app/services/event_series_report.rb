@@ -58,6 +58,7 @@ class EventSeriesReport
 
   CHANNEL_DEFINITIONS = [
     [:online_stripe, "Online (Stripe)"],
+    [:door_card, "Door (Card)"],
     [:door_cash, "Door Cash"],
     [:free_comp, "Free / Comp"]
   ].freeze
@@ -72,6 +73,21 @@ class EventSeriesReport
   end
 
   def call
+    if ActiveRecord::Base.connection.open_transactions.zero?
+      ActiveRecord::Base.transaction(isolation: :repeatable_read) do
+        ActiveRecord::Base.connection.execute("SET TRANSACTION READ ONLY")
+        build_report
+      end
+    else
+      build_report
+    end
+  end
+
+  private
+
+  attr_reader :event_series, :organization
+
+  def build_report
     memberships = ordered_memberships
     events = memberships.map(&:event)
     event_ids = events.map(&:id)
@@ -117,10 +133,6 @@ class EventSeriesReport
       generated_at: Time.current
     }
   end
-
-  private
-
-  attr_reader :event_series, :organization
 
   def ordered_memberships
     event_series.event_series_memberships
@@ -410,6 +422,7 @@ class EventSeriesReport
 
   def classify_order_channel(order)
     return :door_cash if @cash_order_ids.include?(order.id)
+    return :door_card if order.payment_method == "door_card"
     return :free_comp if order.total_cents.zero?
 
     :online_stripe
@@ -430,14 +443,15 @@ class EventSeriesReport
       membership = membership_by_event_id[order.event_id]
       next unless membership
 
-      key = [order.event_id, item.ticket_type_id, item.pricing_tier_id]
+      unit_price_cents = item.unit_price_cents
+      key = [order.event_id, item.ticket_type_id, item.pricing_tier_id, unit_price_cents]
       bucket = buckets[key] ||= init_ticket_type_bucket(
         membership: membership,
         ticket_type: item.ticket_type,
         pricing_tier: item.pricing_tier,
         tier_name: item.tier_name,
         fallback_name: item.name,
-        fallback_price_cents: item.unit_price_cents
+        price_cents: unit_price_cents
       )
 
       refunded_proceeds = @refund_items_by_order_item_id.fetch(item.id, []).sum(&:organizer_proceeds_cents)
@@ -457,13 +471,15 @@ class EventSeriesReport
         ticket_type = item.ticket_type
         pricing_tier_id = item.pricing_tier_id
         pricing_tier = item.pricing_tier
+        unit_price_cents = item.unit_price_cents
       else
         ticket_type_id = ticket.ticket_type_id
         ticket_type = ticket.ticket_type
         pricing_tier_id = ticket.pricing_tier_id
         pricing_tier = ticket.pricing_tier
+        unit_price_cents = pricing_tier&.price_cents || ticket_type&.price_cents || 0
       end
-      key = [ticket.event_id, ticket_type_id, pricing_tier_id]
+      key = [ticket.event_id, ticket_type_id, pricing_tier_id, unit_price_cents]
 
       bucket = buckets[key] ||= init_ticket_type_bucket(
         membership: membership,
@@ -471,7 +487,7 @@ class EventSeriesReport
         pricing_tier: pricing_tier,
         tier_name: item&.tier_name,
         fallback_name: item&.name || ticket_type&.name || "Ticket",
-        fallback_price_cents: pricing_tier&.price_cents || item&.unit_price_cents || ticket_type&.price_cents || 0
+        price_cents: unit_price_cents
       )
 
       bucket[:tickets_issued_count] += 1
@@ -479,7 +495,15 @@ class EventSeriesReport
     end
 
     buckets.values
-      .sort_by { |row| [event_order_index.fetch(row[:event_id], 0), row[:ticket_type_name].to_s.downcase, row[:pricing_tier_name].to_s.downcase, row[:ticket_type_id].to_i] }
+      .sort_by do |row|
+        [
+          event_order_index.fetch(row[:event_id], 0),
+          row[:ticket_type_name].to_s.downcase,
+          row[:pricing_tier_name].to_s.downcase,
+          row[:ticket_type_id].to_i,
+          row[:price_cents].to_i
+        ]
+      end
       .map do |row|
         raw_proceeds = row[:raw_proceeds_cents]
         row.except(:raw_proceeds_cents).merge(
@@ -488,7 +512,7 @@ class EventSeriesReport
       end
   end
 
-  def init_ticket_type_bucket(membership:, ticket_type:, pricing_tier:, tier_name:, fallback_name:, fallback_price_cents:)
+  def init_ticket_type_bucket(membership:, ticket_type:, pricing_tier:, tier_name:, fallback_name:, price_cents:)
     {
       event_id: membership.event_id,
       event_title: membership.event.title,
@@ -497,7 +521,7 @@ class EventSeriesReport
       ticket_type_name: ticket_type&.name || fallback_name,
       pricing_tier_id: pricing_tier&.id,
       pricing_tier_name: pricing_tier&.name || tier_name,
-      price_cents: pricing_tier&.price_cents || fallback_price_cents || ticket_type&.price_cents || 0,
+      price_cents: price_cents || pricing_tier&.price_cents || ticket_type&.price_cents || 0,
       tickets_issued_count: 0,
       checked_in_count: 0,
       gross_cents: 0,
