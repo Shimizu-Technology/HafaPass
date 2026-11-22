@@ -4,11 +4,21 @@ module Api
   module V1
     module Organizer
       class EventSeriesController < BaseController
-        before_action :set_event_series, only: [:show, :update, :destroy, :add_event, :update_event, :remove_event]
+        REVENUE_SHARE_FIELDS = %w[
+          revenue_share_bps
+          revenue_share_base
+          revenue_share_includes_door_cash
+          revenue_share_label
+          primary_share_label
+        ].freeze
+
+        before_action :authorize_org_wide_event_viewer!, only: [:index, :show]
+        before_action :authorize_finance_viewer!, only: [:report, :report_export]
+        before_action :authorize_update_action!, only: [:update]
+        before_action :authorize_manage_events!, only: [:create, :destroy, :add_event, :update_event, :remove_event]
+        before_action :set_event_series, only: [:show, :update, :destroy, :add_event, :update_event, :remove_event, :report, :report_export]
 
         def index
-          return unless authorize_org_wide_event_viewer!
-
           series = current_organization.event_series
             .includes(event_series_memberships: :event)
             .order(created_at: :desc, id: :desc)
@@ -19,14 +29,10 @@ module Api
         end
 
         def show
-          return unless authorize_org_wide_event_viewer!
-
           render json: series_json(@event_series, include_events: true)
         end
 
         def create
-          return unless authorize_organization!(:manage_events)
-
           series = current_organization.event_series.build(series_params)
           if series.save
             render json: series_json(series, include_events: true), status: :created
@@ -40,9 +46,7 @@ module Api
         end
 
         def update
-          return unless authorize_organization!(:manage_events)
-
-          if @event_series.update(series_params)
+          if @event_series.update(@permitted_series_params)
             render json: series_json(@event_series.reload, include_events: true)
           else
             render json: { errors: @event_series.errors.full_messages }, status: :unprocessable_entity
@@ -53,9 +57,30 @@ module Api
           render json: { errors: ["Slug has already been taken"] }, status: :unprocessable_entity
         end
 
-        def destroy
-          return unless authorize_organization!(:manage_events)
+        def report
+          render json: EventSeriesReport.call(@event_series)
+        end
 
+        def report_export
+          report_data = EventSeriesReport.call(@event_series)
+          AuditLogger.record!(
+            action: "finance.exported",
+            auditable: @event_series,
+            actor: current_user,
+            organization: current_organization,
+            metadata: { export: "event_series_report", scope: "event_series", format: "csv" },
+            request: request
+          )
+          response.headers["Cache-Control"] = "no-store, no-cache"
+          send_data(
+            EventSeriesReportExport.to_csv(report_data),
+            filename: EventSeriesReportExport.safe_filename(@event_series),
+            type: "text/csv; charset=utf-8",
+            disposition: "attachment"
+          )
+        end
+
+        def destroy
           if @event_series.event_series_memberships.exists?
             return render json: { error: "Remove all events from this series or archive it before deleting" },
               status: :unprocessable_entity
@@ -66,8 +91,6 @@ module Api
         end
 
         def add_event
-          return unless authorize_organization!(:manage_events)
-
           event = current_organization.events.find_by(id: params[:event_id])
           return render json: { error: "Event not found" }, status: :not_found unless event
 
@@ -97,8 +120,6 @@ module Api
         end
 
         def update_event
-          return unless authorize_organization!(:manage_events)
-
           membership = @event_series.event_series_memberships.find_by(event_id: params[:event_id])
           return render json: { error: "Event is not in this series" }, status: :not_found unless membership
 
@@ -119,8 +140,6 @@ module Api
         end
 
         def remove_event
-          return unless authorize_organization!(:manage_events)
-
           membership = @event_series.event_series_memberships.find_by(event_id: params[:event_id])
           return render json: { error: "Event is not in this series" }, status: :not_found unless membership
 
@@ -129,6 +148,35 @@ module Api
         end
 
         private
+
+        def authorize_finance_viewer!
+          authorize_organization!(:view_finance)
+        end
+
+        def authorize_manage_events!
+          authorize_organization!(:manage_events)
+        end
+
+        def authorize_update_action!
+          @permitted_series_params = series_params
+          authorize_series_update!(@permitted_series_params)
+        end
+
+        def authorize_series_update!(permitted)
+          keys = permitted.keys.map(&:to_s)
+          has_revenue_share = (keys & REVENUE_SHARE_FIELDS).any?
+          has_non_revenue_share = (keys - REVENUE_SHARE_FIELDS).any?
+
+          if has_revenue_share
+            return false unless authorize_organization!(:manage_finance)
+          end
+
+          if has_non_revenue_share || !has_revenue_share
+            return false unless authorize_organization!(:manage_events)
+          end
+
+          true
+        end
 
         def authorize_org_wide_event_viewer!
           return true if OrganizationAuthorization.org_wide_event_viewer?(

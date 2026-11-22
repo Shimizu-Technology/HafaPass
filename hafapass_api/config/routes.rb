@@ -153,6 +153,8 @@ Rails.application.routes.draw do
         resources :venue_layouts, only: [:index, :show, :create, :update]
         resources :event_series, only: [:index, :show, :create, :update, :destroy] do
           member do
+            get :report
+            get :report_export
             post :events, action: :add_event
             patch "events/:event_id", action: :update_event
             delete "events/:event_id", action: :remove_event
