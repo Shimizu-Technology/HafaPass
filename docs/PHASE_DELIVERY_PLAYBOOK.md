@@ -60,7 +60,7 @@ Backend examples:
 
 ```bash
 cd hafapass_api
-RBENV_VERSION=3.3.4 rbenv exec bundle exec rspec spec/path/to/spec.rb
+RBENV_VERSION=3.3.14 rbenv exec bundle exec rspec spec/path/to/spec.rb
 ```
 
 Frontend examples after Phase 1 establishes the test runner:
@@ -96,7 +96,7 @@ Until Phase 1 merges, use the verified baseline commands:
 
 ```bash
 cd hafapass_api
-RBENV_VERSION=3.3.4 rbenv exec bundle exec rspec
+RBENV_VERSION=3.3.14 rbenv exec bundle exec rspec
 
 cd ../hafapass_frontend
 npm run lint
