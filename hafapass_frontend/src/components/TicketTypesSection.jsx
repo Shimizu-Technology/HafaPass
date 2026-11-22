@@ -78,7 +78,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     {tt.is_pass && tt.included_events?.length > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-900">
                         <Sparkles aria-hidden="true" className="h-3 w-3" />
-                        Multi-Night Pass · {tt.included_events.length} {tt.included_events.length === 1 ? 'night' : 'nights'}
+                        {t('buyer.TicketTypesSection.multiNightPass', { count: tt.included_events.length })}
                       </span>
                     )}
                     {soldOut && (
@@ -98,8 +98,8 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                       >
                         <span>
                           {expandedPasses[tt.id]
-                            ? 'Hide included nights'
-                            : `View included nights (${tt.included_events.length})`}
+                            ? t('buyer.TicketTypesSection.hideIncludedNights')
+                            : t('buyer.TicketTypesSection.viewIncludedNights', { count: tt.included_events.length })}
                         </span>
                         <ChevronDown
                           aria-hidden="true"

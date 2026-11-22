@@ -64,6 +64,7 @@ function TicketTypeForm({
   const [selectedSeriesId, setSelectedSeriesId] = useState('')
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [optionsError, setOptionsError] = useState(null)
+  const [eventsTruncated, setEventsTruncated] = useState(false)
   const optionsLoadedRef = useRef(false)
   const [error, setError] = useState(null)
 
@@ -86,7 +87,13 @@ function TicketTypeForm({
         if (!active || (request && !request.current())) return
         const currentId = Number(eventId)
         const lockedIds = new Set((editingTicketType?.included_event_ids || []).map(Number))
-        const fetched = (eventsRes.data?.events || []).filter(ev => {
+        const rawEvents = eventsRes.data?.events || []
+        const headerTotal = Number(eventsRes.headers?.['x-total-count'] ?? eventsRes.headers?.['X-Total-Count'])
+        const metaTotal = Number(eventsRes.data?.meta?.total_count ?? eventsRes.data?.meta?.total)
+        const totalEvents = Number.isFinite(headerTotal) && headerTotal > 0
+          ? headerTotal
+          : (Number.isFinite(metaTotal) && metaTotal > 0 ? metaTotal : rawEvents.length)
+        const fetched = rawEvents.filter(ev => {
           const evId = Number(ev.id)
           if (evId === currentId) return false
           if (lockedIds.has(evId)) return true
@@ -108,6 +115,7 @@ function TicketTypeForm({
           return Number(a.id) - Number(b.id)
         })
         optionsLoadedRef.current = true
+        setEventsTruncated(totalEvents > rawEvents.length)
         setEligibleEvents(merged)
         setSeriesList(seriesRes.data?.event_series || [])
         setLoadingOptions(false)
@@ -361,6 +369,11 @@ function TicketTypeForm({
                     )
                   })}
                 </div>
+                {eventsTruncated && (
+                  <p className="text-xs text-neutral-500">
+                    Showing first 100 events — use a series or search if your event isn&apos;t listed.
+                  </p>
+                )}
               </fieldset>
             )}
           </div>

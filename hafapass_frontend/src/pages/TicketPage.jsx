@@ -412,7 +412,7 @@ function TicketContent({ authContext }) {
             <div className="px-4 pt-4 text-center">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-900">
                 <Sparkles aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                Part of {ticket.parent_pass.ticket_type_name}
+                {t('buyerAccount.ticketPage.partOfPass', { name: ticket.parent_pass.ticket_type_name })}
               </span>
             </div>
           )}

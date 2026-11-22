@@ -138,7 +138,7 @@ export default function PassTicketCard({
                 </Link>
               ) : (
                 <p className="text-xs text-neutral-600">
-                  Open this pass from your secure order confirmation or account to access individual door tickets.
+                  This night&apos;s ticket link is unavailable (cancelled, transferred, or pending review). Check your confirmation email or contact the organizer.
                 </p>
               )}
 
@@ -166,7 +166,9 @@ export default function PassTicketCard({
         </div>
       ) : (
         <div className="bg-surface px-4 py-4 text-sm text-neutral-600 sm:px-5">
-          Individual night tickets will appear here once issued.
+          {ticket.status === 'cancelled' || ticket.refund_pending || (ticket.admission_block_reason || '').toLowerCase().includes('refund')
+            ? 'This pass has been cancelled and its included nights are no longer valid.'
+            : 'Included night tickets will appear here once issued.'}
         </div>
       )}
 

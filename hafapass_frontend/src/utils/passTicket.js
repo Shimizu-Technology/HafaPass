@@ -93,8 +93,10 @@ export function selectSpotlightNight(childTickets = [], now = new Date()) {
   })
   if (upcoming) return { kind: 'next', ticket: upcoming, ordered }
 
-  const activeFallback = ordered.find(child => child.status === 'issued' && child.event?.status !== 'cancelled')
-  return { kind: 'recent', ticket: activeFallback || ordered[ordered.length - 1], ordered }
+  const latestNonCancelled = [...ordered]
+    .reverse()
+    .find(child => child.status !== 'cancelled' && child.event?.status !== 'cancelled')
+  return { kind: 'recent', ticket: latestNonCancelled || ordered[ordered.length - 1], ordered }
 }
 
 export function childTicketHref(child, orderId) {

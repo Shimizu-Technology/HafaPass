@@ -202,4 +202,28 @@ describe('organizer ticket setup', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Synced 4 pass holders: issued 4 new night tickets.')
     expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/42/ticket_types/8/sync_pass_holders', {}, expect.any(Object))
   })
+
+  it('shows a helper note when organizer events are truncated beyond the first 100', async () => {
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') {
+        return Promise.resolve({
+          headers: { 'x-total-count': '145' },
+          data: {
+            events: [
+              { id: 101, title: 'Night 1', status: 'published', starts_at: '2026-11-21T08:00:00Z', assigned_seating: false, ticket_types: [] },
+            ],
+            meta: { total_count: 145 },
+          },
+        })
+      }
+      return Promise.resolve({ data: { event_series: [] } })
+    })
+
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={vi.fn()} /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
+    await user.click(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i }))
+    expect(await screen.findByText('Night 1')).toBeInTheDocument()
+    expect(screen.getByText(/Showing first 100 events — use a series or search if your event isn't listed/i)).toBeInTheDocument()
+  })
 })

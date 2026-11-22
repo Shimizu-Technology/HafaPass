@@ -163,4 +163,68 @@ describe('PassTicketCard', () => {
     expect(result.ticket.id).toBe(102)
     expect(getChildNightStatus(baseParent.child_tickets[1], guamEarlyMorning).label).toBe('Tonight')
   })
+
+  it('spotlights the most recent past non-cancelled night when all nights are in the past', () => {
+    const afterAllNights = new Date('2026-12-01T00:00:00Z')
+    render(
+      <MemoryRouter>
+        <PassTicketCard ticket={baseParent} now={afterAllNights} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Latest Included Night')).toBeInTheDocument()
+    expect(screen.getByText('Finals Night')).toBeInTheDocument()
+
+    // When the final night is cancelled, falls back to the latest non-cancelled night before it
+    const withoutFinals = {
+      ...baseParent,
+      child_tickets: baseParent.child_tickets.slice(0, 4),
+    }
+    const result = selectSpotlightNight(withoutFinals.child_tickets, afterAllNights)
+    expect(result.kind).toBe('recent')
+    expect(result.ticket.id).toBe(103)
+  })
+
+  it('distinguishes a cancelled or refund-pending pass with no child tickets from a newly issued pass', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <PassTicketCard ticket={{ ...baseParent, status: 'cancelled', child_tickets: [] }} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('This pass has been cancelled and its included nights are no longer valid.')).toBeInTheDocument()
+
+    rerender(
+      <MemoryRouter>
+        <PassTicketCard ticket={{ ...baseParent, status: 'issued', refund_pending: true, child_tickets: [] }} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('This pass has been cancelled and its included nights are no longer valid.')).toBeInTheDocument()
+
+    rerender(
+      <MemoryRouter>
+        <PassTicketCard ticket={{ ...baseParent, status: 'issued', child_tickets: [] }} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('Included night tickets will appear here once issued.')).toBeInTheDocument()
+  })
+
+  it('shows an actionable fallback message when a spotlight child ticket link is withheld', () => {
+    const guamToday = new Date('2026-11-22T05:00:00Z')
+    const withheldParent = {
+      ...baseParent,
+      child_tickets: baseParent.child_tickets.map(child => (
+        child.id === 102
+          ? { ...child, display_credential: null, display_token: null, ticket_url: null }
+          : child
+      )),
+    }
+    render(
+      <MemoryRouter>
+        <PassTicketCard ticket={withheldParent} now={guamToday} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('link', { name: /Open Door QR \/ Ticket/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/This night's ticket link is unavailable/i)).toBeInTheDocument()
+  })
 })
