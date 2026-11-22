@@ -10,8 +10,12 @@ class OrganizerSalesExportRequest < ApplicationRecord
 
   validates :status, inclusion: { in: %w[pending processing ready failed expired] }
 
+  def expand_questions?
+    ActiveModel::Type::Boolean.new.cast(filters&.dig("expand_questions")) || false
+  end
+
   def privacy_safe_artifact?
-    !columns.include?("notes_custom_answers") ||
+    !(columns.include?("notes_custom_answers") || expand_questions?) ||
       storage_key.to_s.start_with?("#{PRIVATE_STORAGE_PREFIX}/#{event.organization_id}/#{id}-")
   end
 

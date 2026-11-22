@@ -7,8 +7,8 @@ require "csv"
 class OrganizerSalesExport
   COLUMNS = {
     "name" => "Name", "email" => "Email", "phone" => "Phone", "order_number" => "Order #",
-    "ticket_type" => "Ticket type", "ticket_price" => "Ticket price", "discount" => "Discount",
-    "fee" => "Fee", "tax" => "Tax", "total_paid" => "Total paid",
+    "ticket_type" => "Ticket type", "pricing_tier" => "Pricing tier", "ticket_price" => "Ticket price",
+    "discount" => "Discount", "fee" => "Fee", "tax" => "Tax", "total_paid" => "Total paid",
     "price_paid" => "Total paid", "discount_promo" => "Discount / promo",
     "channel" => "Channel", "status" => "Status", "check_in_time" => "Check-in time",
     "transferred_to" => "Transferred to", "purchase_date" => "Purchase date",
@@ -19,29 +19,40 @@ class OrganizerSalesExport
   FINANCE_COLUMNS = %w[ticket_price discount fee tax total_paid price_paid discount_promo].freeze
   ATTENDEE_COLUMNS = %w[name email phone check_in_time transferred_to notes_custom_answers].freeze
 
-  def initialize(query:, columns:, finance:, attendees:)
+  def initialize(query:, columns:, finance:, attendees:, expand_questions: false)
     @query = query
     @finance = finance
     @attendees = attendees
+    @expand_questions = ActiveModel::Type::Boolean.new.cast(expand_questions) || false
     @columns = Array(columns).map(&:to_s).uniq.presence ||
       (attendees ? DEFAULT_COLUMNS - (finance ? [] : FINANCE_COLUMNS) : TRANSACTION_COLUMNS)
     unknown = @columns - COLUMNS.keys
     raise OrganizerSalesQuery::InvalidFilter, "Invalid columns: #{unknown.join(', ')}" if unknown.any?
     raise OrganizerSalesQuery::InvalidFilter, "Financial columns require finance access" if !finance && (@columns & FINANCE_COLUMNS).any?
     raise OrganizerSalesQuery::InvalidFilter, "Attendee columns require attendee access" if !attendees && (@columns & ATTENDEE_COLUMNS).any?
+    raise OrganizerSalesQuery::InvalidFilter, "Expanded registration columns require attendee access" if @expand_questions && !attendees
   end
 
   attr_reader :columns
 
+  def expand_questions?
+    @expand_questions
+  end
+
   def header
-    columns.map { |column| COLUMNS.fetch(column) }
+    base = columns.map { |column| COLUMNS.fetch(column) }
+    return base unless @expand_questions
+
+    base + expanded_questions.map { |question| SpreadsheetExport.safe_value(question.prompt) }
   end
 
   def each_row
     return enum_for(:each_row) unless block_given?
 
     @query.each_batch(on_batch: method(:preload_ticket_groups)) do |record|
-      yield columns.map { |column| value(record, column) }
+      row = columns.map { |column| value(record, column) }
+      row.concat(expanded_question_values(record)) if @expand_questions
+      yield row
     end
   end
 
@@ -64,6 +75,12 @@ class OrganizerSalesExport
     when "phone" then order.buyer_phone
     when "order_number" then order.reference
     when "ticket_type" then ticket ? ticket.ticket_type.name : order.tickets.map { |row| row.ticket_type.name }.uniq.join("; ")
+    when "pricing_tier"
+      if ticket
+        ticket.pricing_tier&.name || item&.tier_name
+      else
+        order.order_items.filter_map(&:tier_name).uniq.join("; ")
+      end
     when "ticket_price" then money(ticket ? allocated(item, ticket, :subtotal_cents) : order.subtotal_cents)
     when "discount" then money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents)
     when "fee" then money(ticket ? allocated(item, ticket, :fee_cents) : order.service_fee_cents)
@@ -129,7 +146,41 @@ class OrganizerSalesExport
   def registration_answers(order)
     # Keep the column key compatible with saved export requests. Internal
     # support notes have a separate audience and never belong in this export.
-    order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{answer.answer.to_json}" }.join("; ")
+    order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{format_answer(answer.answer)}" }.join("; ")
+  end
+
+  def expanded_questions
+    return [] unless @expand_questions
+
+    @expanded_questions ||= begin
+      event = @query.event
+      answered_ids = RegistrationResponse.joins(:order)
+        .where(orders: { event_id: event.id })
+        .distinct.pluck(:registration_question_id)
+      scope = event.registration_questions.where(active: true)
+      scope = scope.or(event.registration_questions.where(id: answered_ids)) if answered_ids.any?
+      scope.order(:position, :id).to_a
+    end
+  end
+
+  def expanded_question_values(record)
+    order = record.is_a?(Ticket) ? record.order : record
+    by_question = order.registration_responses.index_by(&:registration_question_id)
+    expanded_questions.map do |question|
+      response = by_question[question.id]
+      response ? format_answer(response.answer) : ""
+    end
+  end
+
+  def format_answer(raw)
+    value = raw.is_a?(Hash) && raw.key?("value") ? raw["value"] : raw
+    case value
+    when nil then ""
+    when true then "Yes"
+    when false then "No"
+    when Array then value.filter_map { |item| item.nil? ? nil : item.to_s.strip.presence }.join(", ")
+    else value.to_s
+    end
   end
 
   def transferred_to(tickets)

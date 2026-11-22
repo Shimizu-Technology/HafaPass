@@ -767,4 +767,125 @@ RSpec.describe "Organizer sales lists and exports", type: :request do
     expect(response).to have_http_status(:forbidden)
     expect(AuditLog.where(action: "sales.export_downloaded")).to be_empty
   end
+
+  it "formats registration answers cleanly without JSON quotes and preserves formula safety" do
+    order, = sale(name: "Mina")
+    q_team = create(:registration_question, event: event, prompt: "Team name", kind: :short_text, position: 0)
+    q_captain = create(:registration_question, event: event, prompt: "Team captain?", kind: :checkbox, position: 1)
+    q_formula = create(:registration_question, event: event, prompt: "Notes", kind: :short_text, position: 2)
+    RegistrationResponse.create!(order: order, registration_question: q_team,
+      prompt_snapshot: q_team.prompt, kind_snapshot: 0, required_snapshot: true,
+      answered_at: Time.current, answer: { "value" => "FD Friars 98" })
+    RegistrationResponse.create!(order: order, registration_question: q_captain,
+      prompt_snapshot: q_captain.prompt, kind_snapshot: 3, required_snapshot: false,
+      answered_at: Time.current, answer: { "value" => true })
+    RegistrationResponse.create!(order: order, registration_question: q_formula,
+      prompt_snapshot: q_formula.prompt, kind_snapshot: 0, required_snapshot: false,
+      answered_at: Time.current, answer: { "value" => "=SUM(A1:A2)" })
+
+    post "#{base}/sales_exports", params: { view: "orders", columns: %w[order_number notes_custom_answers] }, headers: headers
+    expect(response).to have_http_status(:ok)
+    row = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true).first
+    expect(row["Registration answers"]).to eq("Team name: FD Friars 98; Team captain?: Yes; Notes: =SUM(A1:A2)")
+    expect(row["Registration answers"]).not_to include('{"value"')
+    expect(row["Registration answers"]).not_to include('\"')
+  end
+
+  it "expands per-question columns (including inactive answered questions) and pricing_tier in order exports" do
+    early_tier = create(:pricing_tier, ticket_type: general, name: "Early Bird", price_cents: 15_000, position: 0)
+    late_tier = create(:pricing_tier, ticket_type: general, name: "Late Entry", price_cents: 20_000, position: 1)
+
+    order1 = create(:order, event: event, buyer_name: "Coach Maria", buyer_email: "maria@example.test",
+      buyer_phone: "671-555-0101", subtotal_cents: 15_000, service_fee_cents: 0, total_cents: 15_000, completed_at: 2.days.ago)
+    item1 = create(:order_item, order: order1, ticket_type: general, pricing_tier: early_tier, tier_name: "Early Bird")
+    create(:ticket, event: event, order: order1, order_item: item1, ticket_type: general, pricing_tier: early_tier,
+      attendee_name: "Coach Maria", holder_email: "maria@example.test")
+
+    order2 = create(:order, event: event, buyer_name: "Coach Jose", buyer_email: "jose@example.test",
+      buyer_phone: "671-555-0102", subtotal_cents: 20_000, service_fee_cents: 0, total_cents: 20_000, completed_at: 1.day.ago)
+    item2 = create(:order_item, order: order2, ticket_type: general, pricing_tier: late_tier, tier_name: "Late Entry")
+    create(:ticket, event: event, order: order2, order_item: item2, ticket_type: general, pricing_tier: late_tier,
+      attendee_name: "Coach Jose", holder_email: "jose@example.test")
+
+    q_team = create(:registration_question, event: event, prompt: "Team name", kind: :short_text, position: 0, active: true)
+    q_legacy = create(:registration_question, event: event, prompt: "Legacy division", kind: :selection, options: %w[Open Masters], position: 1, active: false)
+    create(:registration_question, event: event, prompt: "Unused inactive", kind: :short_text, position: 2, active: false)
+    q_waiver_check = create(:registration_question, event: event, prompt: "Needs golf cart?", kind: :checkbox, position: 3, active: true)
+
+    RegistrationResponse.create!(order: order1, registration_question: q_team,
+      prompt_snapshot: q_team.prompt, kind_snapshot: 0, required_snapshot: true,
+      answered_at: Time.current, answer: { "value" => "Class of 98" })
+    RegistrationResponse.create!(order: order1, registration_question: q_legacy,
+      prompt_snapshot: q_legacy.prompt, kind_snapshot: 2, required_snapshot: false, options_snapshot: %w[Open Masters],
+      answered_at: Time.current, answer: { "value" => "Masters" })
+    RegistrationResponse.create!(order: order1, registration_question: q_waiver_check,
+      prompt_snapshot: q_waiver_check.prompt, kind_snapshot: 3, required_snapshot: false,
+      answered_at: Time.current, answer: { "value" => false })
+    RegistrationResponse.create!(order: order2, registration_question: q_team,
+      prompt_snapshot: q_team.prompt, kind_snapshot: 0, required_snapshot: true,
+      answered_at: Time.current, answer: { "value" => "=HYPERLINK(\"bad\")" })
+
+    post "#{base}/sales_exports", params: {
+      view: "orders",
+      expand_questions: true,
+      columns: %w[order_number name pricing_tier total_paid]
+    }, headers: headers
+    expect(response).to have_http_status(:ok)
+
+    csv = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+    expect(csv.headers).to eq(["Order #", "Name", "Pricing tier", "Total paid", "Team name", "Legacy division", "Needs golf cart?"])
+    expect(csv.headers).not_to include("Unused inactive")
+
+    by_name = csv.index_by { |row| row["Name"] }
+    expect(by_name["Coach Maria"]["Pricing tier"]).to eq("Early Bird")
+    expect(by_name["Coach Maria"]["Team name"]).to eq("Class of 98")
+    expect(by_name["Coach Maria"]["Legacy division"]).to eq("Masters")
+    expect(by_name["Coach Maria"]["Needs golf cart?"]).to eq("No")
+
+    expect(by_name["Coach Jose"]["Pricing tier"]).to eq("Late Entry")
+    expect(by_name["Coach Jose"]["Team name"]).to eq("\t=HYPERLINK(\"bad\")")
+    expect(by_name["Coach Jose"]["Legacy division"]).to eq("")
+    expect(by_name["Coach Jose"]["Needs golf cart?"]).to eq("")
+  end
+
+  it "denies expand_questions to finance-only staff and enforces privacy-safe storage on queued expanded exports" do
+    order, = sale(name: "Mina")
+    question = create(:registration_question, event: event, prompt: "Team name", kind: :short_text, position: 0)
+    RegistrationResponse.create!(order: order, registration_question: question,
+      prompt_snapshot: question.prompt, kind_snapshot: 0, required_snapshot: true,
+      answered_at: Time.current, answer: { "value" => "Friars" })
+
+    finance = create(:user)
+    create(:organization_membership, organization: event.organization, user: finance, role: :finance)
+    post "#{base}/sales_exports", params: { view: "orders", expand_questions: true, columns: %w[order_number] },
+      headers: auth_headers(finance)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to include("attendee access")
+
+    stub_const("Api::V1::Organizer::SalesExportsController::LARGE_EXPORT_THRESHOLD", 0)
+    allow(S3Service).to receive(:configured?).and_return(true)
+    post "#{base}/sales_exports", params: { view: "orders", expand_questions: true, columns: %w[order_number name] },
+      headers: headers
+    expect(response).to have_http_status(:accepted)
+    export_request = OrganizerSalesExportRequest.last
+    expect(export_request.expand_questions?).to be(true)
+
+    export_request.update!(status: "ready", expires_at: 1.day.from_now, storage_key: "private/sales-exports/legacy.csv")
+    expect(export_request.privacy_safe_artifact?).to be(false)
+    get "#{base}/sales_exports/#{export_request.id}", headers: headers
+    expect(response).to have_http_status(:gone)
+
+    export_request.update!(status: "pending", storage_key: nil, expires_at: nil)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("AWS_BUCKET").and_return("synthetic-sales-exports")
+    client = instance_double(Aws::S3::Client)
+    allow(Aws::S3::Client).to receive(:new).and_return(client)
+    stored_bytes = nil
+    allow(client).to receive(:put_object) { |options| stored_bytes = options.fetch(:body).read }
+    OrganizerSalesExportJob.perform_now(export_request.id)
+    expect(export_request.reload).to be_privacy_safe_artifact
+    csv = CSV.parse(stored_bytes.force_encoding("UTF-8").delete_prefix("\uFEFF"), headers: true)
+    expect(csv.headers).to eq(["Order #", "Name", "Team name"])
+    expect(csv.first["Team name"]).to eq("Friars")
+  end
 end
