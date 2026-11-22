@@ -142,7 +142,13 @@ module Commerce
           next
         end
         validate_launch_scope!
-        raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
+        unless event.sales_open?
+          if event.sales_blocker == :pass_nights_cancelled
+            raise CheckoutError, "All included nights for this pass have been cancelled"
+          end
+
+          raise CheckoutError, "This event is not currently on sale"
+        end
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
         selections = locked_selections!(offer: offer)

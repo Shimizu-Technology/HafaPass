@@ -86,6 +86,7 @@ class Api::V1::Me::TicketsController < ApplicationController
         .filter_map { |included_event| included_event.ends_at || included_event.starts_at }
         .max
       return [ticket.event.starts_at, included_max].compact.max if included_max
+      return ticket.event.starts_at || ticket.event.ends_at if ticket.ticket_type.included_events.any?
     end
 
     [ticket.event.ends_at, ticket.event.starts_at].compact.max

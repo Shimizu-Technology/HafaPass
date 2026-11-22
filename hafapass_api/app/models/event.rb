@@ -279,8 +279,8 @@ class Event < ApplicationRecord
   # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
     end_anchor = effective_ends_at
-    published? && !sales_suspended? && policy_hold_at.nil? && end_anchor.present? &&
-      end_anchor > at && organizer_sales_verified?
+    published? && !sales_suspended? && policy_hold_at.nil? && !all_pass_nights_cancelled? &&
+      end_anchor.present? && end_anchor > at && organizer_sales_verified?
   end
 
   def organizer_sales_verified?
@@ -344,6 +344,7 @@ class Event < ApplicationRecord
     end
     return :event_paused if policy_hold?
     return :sales_paused if sales_suspended?
+    return :pass_nights_cancelled if all_pass_nights_cancelled?
     end_anchor = effective_ends_at
     return :sales_closed if end_anchor.blank? || end_anchor <= at
 
@@ -363,6 +364,7 @@ class Event < ApplicationRecord
   SALES_STATUS_MESSAGES = {
     not_published: "Not on sale: the event is not published.",
     event_paused: "Visible but not on sale: sales paused by HåfaPass.",
+    pass_nights_cancelled: "All included nights for this pass have been cancelled",
     sales_closed: "Not on sale: sales for this event have ended.",
     organizer_not_verified: "Private preview only: request organizer verification to go public and start selling.",
     organizer_verification_requested: "Private preview only: HåfaPass is reviewing your organizer account.",
@@ -482,6 +484,20 @@ class Event < ApplicationRecord
       .distinct
   end
 
+  def pass_only_event?
+    if ticket_types.loaded?
+      ticket_types.any?(&:is_pass?) && ticket_types.all?(&:is_pass?)
+    else
+      ticket_types.where(is_pass: true).exists? && ticket_types.where(is_pass: false).none?
+    end
+  end
+
+  def all_pass_nights_cancelled?
+    return false unless persisted? && pass_only_event?
+
+    pass_included_events.exists? && pass_included_events.where.not(status: :cancelled).none?
+  end
+
   def active_included_pass_nights?
     pass_included_events.where(status: [:published, :postponed]).exists?
   end
@@ -495,6 +511,7 @@ class Event < ApplicationRecord
       included_max = pass_included_events.where.not(status: :cancelled)
         .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
       return [starts_at, included_max].compact.max if included_max
+      return starts_at || ends_at if pass_only_event? && pass_included_events.exists?
     end
 
     [ends_at, starts_at].compact.max

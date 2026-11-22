@@ -49,9 +49,14 @@ module Passes
 
       def recompute_pass_event!(pass_event)
         latest = latest_included_end_for(pass_event)
-        return unless latest
-
-        target_end = [pass_event.starts_at, latest].compact.max
+        target_end = if latest
+          [pass_event.starts_at, latest].compact.max
+        elsif pass_event.pass_only_event?
+          # Zero non-cancelled included nights remain: drop any stale storm-extended
+          # ends_at while keeping ends_at strictly after starts_at for chronological_event_times.
+          pass_event.starts_at ? pass_event.starts_at + 1.second : Time.current
+        end
+        return unless target_end
         return if pass_event.ends_at == target_end
 
         pass_event.update_columns(ends_at: target_end, updated_at: Time.current)

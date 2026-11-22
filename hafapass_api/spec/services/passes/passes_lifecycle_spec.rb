@@ -975,11 +975,12 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       parent = create(:ticket, order: order, order_item: item, event: early_pass_event, ticket_type: early_pass_tt, holder_user: buyer)
       Passes::Issuance.call(order: order, parent_ticket: parent)
 
-      # Once active_night is also cancelled, effective_ends_at falls back to early_pass_event.ends_at (in the past)
+      # Once active_night is also cancelled, effective_ends_at falls back to starts_at (not stale ends_at)
       active_night.update_columns(status: Event.statuses.fetch("cancelled"))
-      expect(early_pass_event.effective_ends_at).to be_within(1.second).of(early_pass_event.ends_at)
+      expect(early_pass_event.effective_ends_at).to be_within(1.second).of(early_pass_event.starts_at)
       expect(early_pass_event.sales_open?).to be(false)
-      expect(early_pass_event.sales_blocker).to eq(:sales_closed)
+      expect(early_pass_event.sales_blocker).to eq(:pass_nights_cancelled)
+      expect(early_pass_event.sales_status[:message]).to eq("All included nights for this pass have been cancelled")
       expect(Event.discoverable_base.where(id: early_pass_event.id)).not_to exist
 
       get "/api/v1/me/tickets", params: { tab: "upcoming" }, headers: auth_headers(buyer)
@@ -1015,6 +1016,48 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       travel_to(3.days.from_now) do
         expect(synced_pass.reload.sales_open?).to be(false)
         expect(Event.discoverable_base.where(id: synced_pass.id)).not_to exist
+      end
+    end
+
+    it "resets extended ends_at, closes sales/discovery, and allows completion when the final surviving included night is cancelled" do
+      pass_start = 2.days.from_now.change(usec: 0)
+      final_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Final Night Pass", max_capacity: 50, starts_at: pass_start, ends_at: 5.days.from_now)
+      cancelled_n1 = create(:event, :cancelled, organizer_profile: profile, organization: org,
+        title: "Already Cancelled Night 1", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      surviving_n2 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Surviving Night 2", max_capacity: 20, starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      final_tt = create(:ticket_type, event: final_pass, name: "Final Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(final_tt, [cancelled_n1, surviving_n2])
+
+      # Reschedule the final surviving night to day 18 so SyncPassEndDate extends final_pass.ends_at to day 18
+      day_18_start = 18.days.from_now.change(usec: 0)
+      day_18_end = day_18_start + 3.hours
+      patch "/api/v1/organizer/events/#{surviving_n2.id}",
+        params: { starts_at: day_18_start.iso8601, ends_at: day_18_end.iso8601, change_reason: "Typhoon reschedule to day 18" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+      expect(final_pass.reload.ends_at).to be_within(1.second).of(day_18_end)
+      expect(final_pass.sales_open?).to be(true)
+      expect(Event.discoverable_base.where(id: final_pass.id)).to exist
+
+      # Cancel the final surviving night through EventLifecycle
+      EventLifecycle.call(event: surviving_n2, action: :cancel, actor: owner, reason: "Final night cancelled")
+
+      final_pass.reload
+      expect(final_pass.ends_at).to be_within(2.seconds).of(pass_start)
+      expect(final_pass.ends_at).to be < day_18_start
+      expect(final_pass).to be_valid
+      expect(final_pass.effective_ends_at).to be_within(1.second).of(pass_start)
+      expect(final_pass.sales_open?).to be(false)
+      expect(final_pass.sales_blocker).to eq(:pass_nights_cancelled)
+      expect(final_pass.sales_status[:message]).to eq("All included nights for this pass have been cancelled")
+      expect(Event.discoverable_base.where(id: final_pass.id)).not_to exist
+
+      # Completion is NOT blocked or delayed until day 18
+      travel_to(3.days.from_now) do
+        expect { EventLifecycle.call(event: final_pass, action: :complete, actor: owner, at: Time.current) }.not_to raise_error
+        expect(final_pass.reload).to be_completed
       end
     end
 
