@@ -56,8 +56,7 @@ class LaunchCapabilities
     return false if !enabled?(:recurring_events) && (event.recurrence_rule.present? || event.recurrence_parent_id.present?)
     return true if enabled?(:advanced_sales_tools)
 
-    !event.catalog_items.where(active: true).exists? &&
-      !event.registration_questions.where(active: true).exists? && !event.event_waivers.where(active: true).exists?
+    !event.catalog_items.where(active: true).exists?
   end
 
   def self.required_for(controller:, action:, params:)
@@ -72,8 +71,7 @@ class LaunchCapabilities
 
       :recurring_events if action == "generate_recurrences" ||
         (%w[create update].include?(action) && params[:recurrence_rule].present?)
-    when "api/v1/organizer/catalog_items", "api/v1/organizer/registration_questions",
-      "api/v1/organizer/event_waivers", "api/v1/organizer/promoters", "api/v1/organizer/communication_campaigns"
+    when "api/v1/organizer/catalog_items", "api/v1/organizer/promoters", "api/v1/organizer/communication_campaigns"
       :advanced_sales_tools unless %w[index show].include?(action)
     when "api/v1/ticket_transfers"
       :ticket_transfers unless action == "destroy"
@@ -85,8 +83,7 @@ class LaunchCapabilities
       return unless action == "create"
 
       return :assigned_seating if params[:seat_hold_token].present?
-      :advanced_sales_tools if params[:catalog_items].present? || params[:registration_answers].present? ||
-        params[:waiver_acceptances].present?
+      :advanced_sales_tools if params[:catalog_items].present?
     when "api/v1/organizer/box_office"
       :door_card if action == "create" && params[:payment_method] == "door_card"
     end

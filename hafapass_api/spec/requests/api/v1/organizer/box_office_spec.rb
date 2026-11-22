@@ -87,6 +87,17 @@ RSpec.describe "Api::V1::Organizer::BoxOffice", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
     end
 
+    it "returns 422 cleanly when the event has a required registration question" do
+      create(:registration_question, event: event, prompt: "Team name", kind: :short_text, required: true, active: true)
+
+      expect do
+        post "/api/v1/organizer/events/#{event.id}/box_office", params: valid_params, headers: headers
+      end.not_to change(Order, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("Team name")
+    end
+
     it "increments quantity_sold on ticket type" do
       expect {
         post "/api/v1/organizer/events/#{event.id}/box_office", params: valid_params, headers: headers

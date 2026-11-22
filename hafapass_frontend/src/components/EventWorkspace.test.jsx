@@ -120,11 +120,20 @@ describe('connected event workspace', () => {
     expect(tools.map(link => link.textContent)).toEqual(expected)
   })
 
-  it('hides disabled capabilities while keeping baseline promo codes and all other permitted tools', () => {
+  it('hides disabled capabilities while keeping baseline promo codes, registration & waivers, and all other permitted tools', () => {
     launch.assigned_seating = false; launch.advanced_sales_tools = false
-    mount()
+    mount({ event: { ...dto(), permissions: { ...permissions, manage_events: true } } })
     expect(screen.queryByRole('link', { name: 'Assigned seating' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Sales tools & messages' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Promo codes' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Registration & waivers' })).toHaveAttribute('href', '/dashboard/events/37/sales-tools')
+  })
+
+  it('hides registration & waivers from marketer-only members when advanced sales tools are disabled', () => {
+    launch.assigned_seating = false; launch.advanced_sales_tools = false
+    mount({ event: { ...dto(), permissions: { edit_event_content: true, manage_marketing: true } } })
+    expect(screen.queryByRole('link', { name: 'Sales tools & messages' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Registration & waivers' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Promo codes' })).toBeInTheDocument()
   })
 

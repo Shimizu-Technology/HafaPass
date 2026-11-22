@@ -12,14 +12,17 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
 
     query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: attendees?)
     columns = params[:columns].is_a?(Array) ? params[:columns] : params[:columns].to_s.split(",").reject(&:blank?)
+    expand_questions = ActiveModel::Type::Boolean.new.cast(params[:expand_questions]) || false
     builder = OrganizerSalesExport.new(query: query, columns: columns.presence || default_columns,
-      finance: finance?, attendees: attendees?)
+      finance: finance?, attendees: attendees?, expand_questions: expand_questions)
     count = query.count
     if count > LARGE_EXPORT_THRESHOLD && !S3Service.configured?
       return render json: { error: "Large export storage is unavailable" }, status: :service_unavailable
     end
 
-    metadata = { filters: query.filters, columns: builder.columns, row_count: count, view: query.view }
+    stored_filters = expand_questions ? query.filters.merge("expand_questions" => true) : query.filters
+    metadata = { filters: stored_filters, columns: builder.columns, expand_questions: expand_questions,
+      row_count: count, view: query.view }
     export_request = nil
     blocked = false
     # Lock the actor row while counting and inserting the audit record. This
@@ -29,7 +32,7 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
         blocked = true
       else
         export_request = OrganizerSalesExportRequest.create!(event: @event, actor_user: current_user,
-          filters: query.filters, columns: builder.columns, row_count: count) if count > LARGE_EXPORT_THRESHOLD
+          filters: stored_filters, columns: builder.columns, row_count: count) if count > LARGE_EXPORT_THRESHOLD
         AuditLogger.record!(action: "sales.export_requested", auditable: @event, actor: current_user,
           organization: current_organization, metadata: metadata.merge(export_request_id: export_request&.id), request: request)
       end
@@ -67,7 +70,8 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
       next if item.status == "ready" && !item.privacy_safe_artifact?
       begin
         query = OrganizerSalesQuery.new(event: @event, params: item.filters, attendee_access: attendees?)
-        OrganizerSalesExport.new(query: query, columns: item.columns, finance: finance?, attendees: attendees?)
+        OrganizerSalesExport.new(query: query, columns: item.columns, finance: finance?, attendees: attendees?,
+          expand_questions: item.expand_questions?)
       rescue OrganizerSalesQuery::InvalidFilter
         next
       end
@@ -91,7 +95,8 @@ class Api::V1::Organizer::SalesExportsController < Api::V1::Organizer::BaseContr
     end
 
     query = OrganizerSalesQuery.new(event: @event, params: export_request.filters, attendee_access: attendees?)
-    OrganizerSalesExport.new(query: query, columns: export_request.columns, finance: finance?, attendees: attendees?)
+    OrganizerSalesExport.new(query: query, columns: export_request.columns, finance: finance?, attendees: attendees?,
+      expand_questions: export_request.expand_questions?)
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
       disposition: "attachment", filename: "#{@event.slug}-sales.csv")
