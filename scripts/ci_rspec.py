@@ -51,7 +51,8 @@ def main():
     groups, totals = partition(list(map(str, Path('spec').rglob('*_spec.rb'))), timings)
     environments = []
     for index in range(2):
-        worker_url = urlunsplit(url._replace(path=f'{url.path}_worker{index + 1}'))
+        # Destructive concurrency-spec cleanup requires the final _test suffix.
+        worker_url = urlunsplit(url._replace(path=f'{url.path[:-5]}_w{index + 1}_test'))
         env = dict(os.environ, DATABASE_URL=worker_url)
         subprocess.run(['bundle', 'exec', 'rails', 'db:create', 'db:schema:load'], env=env, check=True)
         environments.append(env)

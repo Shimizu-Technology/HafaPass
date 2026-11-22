@@ -79,3 +79,37 @@ The lead should verify on the final head:
 
 The implementation worker does not watch CI or merge. The branch/worktree is
 retained for lead follow-up; no runtime-resource handoff is needed.
+
+## PR 199 fix round
+
+The failed RSpec job `137026350442` discovered and executed all 3,755 examples,
+but its worker databases ended in `_test_worker1` / `_test_worker2`. The full
+failure log contains local/isolated test-database guard errors and downstream
+count, readiness, and first-admin assertions after committed fixture cleanup
+was refused. Other guards were checked with `_test` and `current_database`
+searches across `spec/`; their safety requirements are unchanged.
+
+Worker names now put the worker identifier before the final `_test` suffix:
+`hafapass_api_w1_test` and `hafapass_api_w2_test` for the workflow's base URL.
+The URL's localhost host and connection settings are preserved. The fake-bundle
+integration test asserts these names. CodeRabbit comment `4655607846` is fixed
+with temporary-Git-repository entrypoint tests for missing/zero/unavailable
+bases, code-to-Markdown renames, docs-only changes, empty diffs, and exact
+append-only `GITHUB_OUTPUT` values. No review findings were declined.
+
+Agent-executed affected checks on the patch based on `0b089695` (Mac mini,
+Ruby 3.3.13, local PostgreSQL):
+
+- Six Python helper tests passed; `git diff --check` passed.
+- `external_message_receipts_concurrency_spec.rb`: 15 examples passed on each
+  worker database, including the safety-guard rejection scenarios.
+- All 18 previously failing spec files replayed in their original worker's
+  partition order: worker one, 53 examples passed; worker two, 45 passed.
+  The count/bootstrap/readiness assertions passed without application changes.
+- Each `DATABASE_URL` was asserted as localhost and the exact owned `_test`
+  database before creation. Existing database names were refused. Both new
+  worker databases were dropped and their absence verified afterward.
+
+The existing PostgreSQL service was borrowed and left running. No application
+servers or browser tabs were started. Full CI and required CodeRabbit review
+on the pushed head remain the lead's gates; this worker does not watch or merge.

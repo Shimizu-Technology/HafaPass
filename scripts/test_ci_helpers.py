@@ -33,6 +33,48 @@ class CiHelpersTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 verify_coverage(expected, actual)
 
+class ChangeScopeEntrypointTest(unittest.TestCase):
+    def test_git_boundaries_and_exact_output(self):
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        script = Path(__file__).resolve().with_name('ci_change_scope.py')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=root, text=True).strip()
+
+            git('init', '-q')
+            git('config', 'user.name', 'CI test')
+            git('config', 'user.email', 'ci@example.test')
+            (root / 'code.py').write_text('example')
+            git('add', '.')
+            git('commit', '-qm', 'base')
+            base = git('rev-parse', 'HEAD')
+
+            def assert_output(base_sha, expected):
+                output = root / 'github-output'
+                output.write_text('existing=value\n')
+                subprocess.run([sys.executable, str(script)], cwd=root, check=True,
+                               env=dict(os.environ, BASE_SHA=base_sha, GITHUB_OUTPUT=str(output)))
+                self.assertEqual(output.read_text(), 'existing=value\ncode=' + expected + '\n')
+
+            for unavailable in ('', '0' * 40, 'f' * 40):
+                assert_output(unavailable, 'true')
+            # --no-renames must include the deleted code path, even with identical content.
+            git('mv', 'code.py', 'README.md')
+            git('commit', '-qm', 'rename code to Markdown')
+            assert_output(base, 'true')
+            docs_base = git('rev-parse', 'HEAD')
+            (root / 'README.md').write_text('documentation update')
+            git('add', 'README.md')
+            git('commit', '-qm', 'docs only')
+            assert_output(docs_base, 'false')
+            assert_output(git('rev-parse', 'HEAD'), 'true')
+
+
 class RunnerIntegrationTest(unittest.TestCase):
     def test_runner_isolates_databases_and_propagates_test_failure(self):
         import os
@@ -73,7 +115,7 @@ class RunnerIntegrationTest(unittest.TestCase):
                 self.assertIn('2 examples, each executed exactly once', result.stdout)
             commands = [json.loads(line) for line in (root / 'commands.jsonl').read_text().splitlines()]
             self.assertEqual({url for _, url in commands},
-                             {'postgresql://localhost/ci_test_worker1', 'postgresql://localhost/ci_test_worker2'})
+                             {'postgresql://localhost/ci_w1_test', 'postgresql://localhost/ci_w2_test'})
 
 
 if __name__ == '__main__':
