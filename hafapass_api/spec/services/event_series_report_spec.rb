@@ -900,5 +900,70 @@ RSpec.describe EventSeriesReport, type: :service do
       expect(rs_included[:share_cents]).to eq(320)
       expect(rs_included[:primary_cents]).to eq(1680)
     end
+
+    it "excludes door cash from the 16% revenue-share base by default on a new series while retaining door-cash visibility" do
+      default_series = EventSeries.create!(
+        organization: organization,
+        name: "FD 2027 Default Door Cash Audit",
+        status: :active,
+        revenue_share_bps: 1600
+      )
+      expect(default_series.revenue_share_includes_door_cash).to be(false)
+
+      pass_ev = create(:event, :published, organizer_profile: profile, organization: organization, title: "FD 2027 Passes")
+      reg_ev = create(:event, :published, organizer_profile: profile, organization: organization, title: "FD 2027 Regular Night 1")
+      champ_ev = create(:event, :published, organizer_profile: profile, organization: organization, title: "FD 2027 Championship Night 1")
+
+      default_series.event_series_memberships.create!(event: pass_ev, role: :pass_sale, position: 0)
+      default_series.event_series_memberships.create!(event: reg_ev, role: :regular_night, position: 1)
+      default_series.event_series_memberships.create!(event: champ_ev, role: :championship_night, position: 2)
+
+      reg_pass_tt = create(:ticket_type, event: pass_ev, name: "Regular Season Pass", price_cents: 5000)
+      senior_pass_tt = create(:ticket_type, event: pass_ev, name: "Senior Season Pass", price_cents: 3500)
+      kid_pass_tt = create(:ticket_type, event: pass_ev, name: "Kid Season Pass", price_cents: 2500)
+      daily_tt = create(:ticket_type, event: reg_ev, name: "Paid Daily", price_cents: 1000)
+      free_reg_tt = create(:ticket_type, event: reg_ev, name: "Alumni / FD Student", price_cents: 0)
+      free_champ_tt = create(:ticket_type, event: champ_ev, name: "Alumni Championship", price_cents: 0)
+      paid_champ_tt = create(:ticket_type, event: champ_ev, name: "Paid Championship", price_cents: 1500)
+
+      # Online paid admissions = $50 + $35 + $25 + $15 = $125.00 (12500 cents)
+      create_paid_order!(event: pass_ev, ticket_type: reg_pass_tt, processing_fee_cents: 0)
+      create_paid_order!(event: pass_ev, ticket_type: senior_pass_tt, processing_fee_cents: 0)
+      create_paid_order!(event: pass_ev, ticket_type: kid_pass_tt, processing_fee_cents: 0)
+      create_paid_order!(event: champ_ev, ticket_type: paid_champ_tt, processing_fee_cents: 0)
+
+      # $0 free alumni tickets (tracked in ticket counts, $0 revenue)
+      create_paid_order!(event: reg_ev, ticket_type: free_reg_tt, unit_price_cents: 0, buyer_fee_cents: 0, processing_fee_cents: 0)
+      create_paid_order!(event: champ_ev, ticket_type: free_champ_tt, unit_price_cents: 0, buyer_fee_cents: 0, processing_fee_cents: 0)
+
+      # Box-office door_cash walk-up = $10.00 (1000 cents)
+      create_paid_order!(
+        event: reg_ev,
+        ticket_type: daily_tt,
+        buyer_fee_cents: 0,
+        processing_fee_cents: 0,
+        payment_method: "door_cash",
+        payment_provider: "door_cash"
+      )
+
+      report = described_class.call(default_series)
+      rs = report[:revenue_share]
+
+      expect(rs[:revenue_share_includes_door_cash]).to be(false)
+      expect(rs[:base_cents]).to eq(12_500)
+      expect(rs[:share_cents]).to eq(2_000)
+      expect(rs[:primary_cents]).to eq(10_500)
+      expect(rs[:door_cash_retained_cents]).to eq(1_000)
+      expect(report.dig(:channels, :free_comp, :gross_cents)).to eq(0)
+      expect(report.dig(:channels, :free_comp, :tickets_issued_count)).to eq(2)
+      expect(report.dig(:channels, :door_cash, :door_cash_retained_cents)).to eq(1_000)
+
+      # Toggling door cash inclusion on includes the $10.00 walk-up -> $135.00 base
+      default_series.update!(revenue_share_includes_door_cash: true)
+      rs_with_cash = described_class.call(default_series)[:revenue_share]
+      expect(rs_with_cash[:base_cents]).to eq(13_500)
+      expect(rs_with_cash[:share_cents]).to eq(2_160)
+      expect(rs_with_cash[:primary_cents]).to eq(11_340)
+    end
   end
 end
