@@ -4,6 +4,16 @@
 # https://github.com/rack/rack-attack
 
 class Rack::Attack
+  # Parses a positive integer rate limit from ENV, falling back safely to default
+  # when unset, blank, zero, negative, or non-numeric.
+  def self.env_limit(key, default)
+    raw = ENV[key]
+    return default if raw.nil?
+
+    value = Integer(raw.to_s.strip, 10, exception: false)
+    value&.positive? ? value : default
+  end
+
   # SQL profiles persist atomic counters in PostgreSQL; legacy profiles use Redis.
   if RuntimeConfiguration.solid_queue?
     require Rails.root.join("app/services/operations/postgres_throttle_store").to_s
@@ -77,10 +87,11 @@ class Rack::Attack
     req.get? && ticket_view_credential.call(req).present?
   end
 
-  # Throttle all requests by IP (300 requests per 5 minutes)
-  # Wallet devices and the email provider's PDF fetches share venue/carrier NAT
-  # or a small provider IP pool, so they have their own limits below.
-  throttle("req/ip", limit: 300, period: 5.minutes) do |req|
+  # Throttle all requests by IP (CGNAT-safe default: 3000 requests per 5 minutes;
+  # tunable via RACK_ATTACK_REQ_PER_IP_5M). Wallet devices and the email provider's
+  # PDF fetches share venue/carrier NAT or a small provider IP pool, so they have
+  # their own limits below.
+  throttle("req/ip", limit: proc { |_req| env_limit("RACK_ATTACK_REQ_PER_IP_5M", 3000) }, period: 5.minutes) do |req|
     req.ip unless req.path.start_with?("/assets", "/api/v1/wallet/apple/", "/api/v1/ticket_email_attachments/") ||
       provider_webhook.call(req) || ticket_view.call(req) || scanner_user.call(req)
   end
@@ -106,8 +117,9 @@ class Rack::Attack
 
   # ─── Authentication Throttles ─────────────────────────────────────────────
 
-  # Throttle user sync/auth endpoints more strictly (20 per minute)
-  throttle("users/ip", limit: 20, period: 1.minute) do |req|
+  # Throttle user sync/auth endpoints (CGNAT-safe default: 120 per minute;
+  # tunable via RACK_ATTACK_USERS_SYNC_PER_IP_1M)
+  throttle("users/ip", limit: proc { |_req| env_limit("RACK_ATTACK_USERS_SYNC_PER_IP_1M", 120) }, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/users/sync" && req.post?
   end
 
@@ -142,10 +154,12 @@ class Rack::Attack
 
   # ─── Order Creation Throttles ─────────────────────────────────────────────
 
-  # Throttle order creation by IP (30 orders per minute). Checkout itself caps
-  # live holds and free tickets per IP digest and allows one live unpaid order
-  # per buyer, so this ceiling can stay above carrier-NAT and venue Wi-Fi peaks.
-  throttle("orders/ip", limit: 30, period: 1.minute) do |req|
+  # Throttle order creation by IP (CGNAT-safe default: 200 orders per minute;
+  # tunable via RACK_ATTACK_ORDERS_PER_IP_1M). Checkout itself caps live holds
+  # and free tickets per IP digest and allows one live unpaid order per buyer,
+  # so this ceiling can stay above carrier-NAT and venue Wi-Fi peaks while
+  # orders/email stays strictly at 5/min.
+  throttle("orders/ip", limit: proc { |_req| env_limit("RACK_ATTACK_ORDERS_PER_IP_1M", 200) }, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/orders" && req.post?
   end
 
@@ -216,7 +230,7 @@ class Rack::Attack
     req.ip if req.post? && req.path == "/api/v1/organizer_profile/submit_verification"
   end
 
-  throttle("payment-resume/ip", limit: 20, period: 1.minute) do |req|
+  throttle("payment-resume/ip", limit: proc { |_req| env_limit("RACK_ATTACK_PAYMENT_RESUME_PER_IP_1M", 120) }, period: 1.minute) do |req|
     req.ip if req.path.match?(%r{\A/api/v1/orders/\d+/payment_resume\z}) && req.post?
   end
 
@@ -263,12 +277,13 @@ class Rack::Attack
     req.ip if req.path.start_with?("/api/v1/uploads/presign") && req.post?
   end
 
-  # Funnel telemetry is intentionally anonymous but still write-heavy.
-  throttle("marketplace-funnel/ip", limit: 60, period: 1.minute) do |req|
+  # Funnel telemetry is intentionally anonymous but still write-heavy
+  # (CGNAT-safe default: 600/min; tunable via RACK_ATTACK_MARKETPLACE_FUNNEL_PER_IP_1M).
+  throttle("marketplace-funnel/ip", limit: proc { |_req| env_limit("RACK_ATTACK_MARKETPLACE_FUNNEL_PER_IP_1M", 600) }, period: 1.minute) do |req|
     req.ip if req.path == "/api/v1/marketplace_funnel_events" && req.post?
   end
 
-  throttle("marketplace-landing/ip", limit: 60, period: 1.minute) do |req|
+  throttle("marketplace-landing/ip", limit: proc { |_req| env_limit("RACK_ATTACK_MARKETPLACE_LANDING_PER_IP_1M", 600) }, period: 1.minute) do |req|
     marketplace_landing = req.path.start_with?("/api/v1/distribution_links/", "/api/v1/event_referrals/")
     req.ip if marketplace_landing && req.get?
   end

@@ -30,6 +30,7 @@ class Event < ApplicationRecord
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
+  has_many :pass_inclusions, class_name: "TicketTypeIncludedEvent", foreign_key: :included_event_id, dependent: :restrict_with_error
   has_many :orders, dependent: :restrict_with_error
   has_many :tickets, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
@@ -101,6 +102,7 @@ class Event < ApplicationRecord
   validates :recurrence_rule, inclusion: { in: RECURRENCE_RULES }, allow_nil: true
 
   enum :status, { draft: 0, published: 1, cancelled: 2, completed: 3, postponed: 4, archived: 5 }
+  INELIGIBLE_PASS_NIGHT_STATUSES = %i[cancelled archived].freeze
   enum :category, {
     nightlife: 0, concert: 1, festival: 2, dining: 3, sports: 4, other: 5,
     workshop: 6, fundraiser: 7, family: 8, business: 9
@@ -159,16 +161,51 @@ class Event < ApplicationRecord
     where(status: [:published, :completed, :postponed, :cancelled], live_money_proof_candidate: false)
       .without_hidden_policy_hold.with_public_organizer
   }
-  scope :discoverable, ->(at = Time.current) {
+  scope :discoverable_base, ->(at = Time.current) {
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
     published
       .where(live_money_proof_candidate: false)
       .with_public_organizer
       .where(policy_hold_at: nil)
-      .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil, organizer_sales_suspended_at: nil)
       .joins(:ticket_types)
+      .where(<<~SQL.squish, at: at, ineligible_statuses: ineligible_statuses)
+        (
+          (
+            ticket_types.is_pass = FALSE
+            AND (
+              COALESCE(events.ends_at, events.starts_at) > :at
+              OR EXISTS (
+                SELECT 1
+                FROM ticket_types event_pass_tt
+                INNER JOIN ticket_type_included_events event_ttie ON event_ttie.ticket_type_id = event_pass_tt.id
+                INNER JOIN events event_inc ON event_inc.id = event_ttie.included_event_id
+                WHERE event_pass_tt.event_id = events.id
+                  AND event_pass_tt.is_pass = TRUE
+                  AND event_inc.status NOT IN (:ineligible_statuses)
+                  AND COALESCE(event_inc.ends_at, event_inc.starts_at) > :at
+              )
+            )
+          )
+          OR (
+            ticket_types.is_pass = TRUE
+            AND EXISTS (
+              SELECT 1
+              FROM ticket_type_included_events ttie
+              INNER JOIN events inc ON inc.id = ttie.included_event_id
+              WHERE ttie.ticket_type_id = ticket_types.id
+                AND inc.status NOT IN (:ineligible_statuses)
+                AND (COALESCE(inc.ends_at, inc.starts_at) > :at OR events.starts_at > :at)
+            )
+          )
+        )
+      SQL
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
+      .distinct
+  }
+  scope :discoverable, ->(at = Time.current) {
+    discoverable_base(at)
       .where(<<~SQL.squish, at, at, at)
         ticket_types.quantity_available - ticket_types.quantity_sold - COALESCE((
           SELECT SUM(inventory_holds.quantity)
@@ -193,7 +230,7 @@ class Event < ApplicationRecord
             AND seat_hold_sessions.expires_at > ?
         ), 0) > 0
       SQL
-      .where(<<~SQL.squish, at, at, at)
+      .where(<<~SQL.squish, at, at, at, Ticket.statuses.fetch("cancelled"), at)
         events.max_capacity IS NULL OR events.max_capacity - COALESCE((
           SELECT SUM(all_ticket_types.quantity_sold)
           FROM ticket_types all_ticket_types
@@ -223,9 +260,22 @@ class Event < ApplicationRecord
             AND capacity_seat_holds.status = 0
             AND capacity_sessions.status = 0
             AND capacity_sessions.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT COUNT(*)
+          FROM tickets pass_child_tickets
+          WHERE pass_child_tickets.event_id = events.id
+            AND pass_child_tickets.parent_ticket_id IS NOT NULL
+            AND pass_child_tickets.status <> ?
+        ), 0) - COALESCE((
+          SELECT SUM(pass_holds.quantity)
+          FROM inventory_holds pass_holds
+          INNER JOIN ticket_type_included_events pass_links
+            ON pass_links.ticket_type_id = pass_holds.ticket_type_id
+          WHERE pass_links.included_event_id = events.id
+            AND pass_holds.status = 0
+            AND pass_holds.expires_at > ?
         ), 0) > 0
       SQL
-      .distinct
   }
 
   # True once a payout has reserved or sent this event's money to the organizer.
@@ -243,8 +293,9 @@ class Event < ApplicationRecord
   # admin action; suspending verification pauses all of the organizer's sales).
   # It is not tied to deploys or event edits. Elsewhere nothing extra applies.
   def sales_open?(at: Time.current)
-    published? && !sales_suspended? && policy_hold_at.nil? && (ends_at || starts_at).present? &&
-      (ends_at || starts_at) > at && organizer_sales_verified?
+    end_anchor = effective_ends_at
+    published? && !sales_suspended? && policy_hold_at.nil? && !no_eligible_pass_nights? &&
+      end_anchor.present? && end_anchor > at && organizer_sales_verified?
   end
 
   def organizer_sales_verified?
@@ -308,7 +359,12 @@ class Event < ApplicationRecord
     end
     return :event_paused if policy_hold?
     return :sales_paused if sales_suspended?
-    return :sales_closed if (ends_at || starts_at).blank? || (ends_at || starts_at) <= at
+    if no_eligible_pass_nights?
+      archive_statuses = context&.dig(:archive_from_statuses)
+      return all_pass_nights_cancelled?(archive_from_statuses: archive_statuses) ? :pass_nights_cancelled : :sales_closed
+    end
+    end_anchor = effective_ends_at
+    return :sales_closed if end_anchor.blank? || end_anchor <= at
 
     context ||= self.class.sales_context
     return :platform_setup unless context[:policy_approved]
@@ -326,6 +382,7 @@ class Event < ApplicationRecord
   SALES_STATUS_MESSAGES = {
     not_published: "Not on sale: the event is not published.",
     event_paused: "Visible but not on sale: sales paused by HåfaPass.",
+    pass_nights_cancelled: "All included nights for this pass have been cancelled",
     sales_closed: "Not on sale: sales for this event have ended.",
     organizer_not_verified: "Private preview only: request organizer verification to go public and start selling.",
     organizer_verification_requested: "Private preview only: HåfaPass is reviewing your organizer account.",
@@ -436,20 +493,267 @@ class Event < ApplicationRecord
   end
 
   def remaining_capacity(at: Time.current)
-    return Float::INFINITY if max_capacity.blank?
+    EventCapacity.remaining_for(self, at: at)
+  end
 
-    sold = ticket_types.sum(&:quantity_sold)
-    held = inventory_holds.active.where("expires_at > ?", at).sum(:quantity) +
-      waitlist_offers.holding_inventory(at).sum(:quantity) + active_seat_holds_count(at: at)
-    [max_capacity - sold - held, 0].max
+  scope :effectively_ending_after, ->(at = Time.current) {
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
+    where(<<~SQL.squish, at: at, ineligible_statuses: ineligible_statuses)
+      (
+        CASE
+          WHEN EXISTS (SELECT 1 FROM ticket_types tt_p WHERE tt_p.event_id = events.id AND tt_p.is_pass = TRUE)
+           AND NOT EXISTS (SELECT 1 FROM ticket_types tt_r WHERE tt_r.event_id = events.id AND tt_r.is_pass = FALSE)
+          THEN
+            CASE
+              WHEN (
+                SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                FROM ticket_types tt_m
+                INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                WHERE tt_m.event_id = events.id
+                  AND tt_m.is_pass = TRUE
+                  AND inc.status NOT IN (:ineligible_statuses)
+              ) IS NOT NULL
+              THEN GREATEST(
+                events.starts_at,
+                (
+                  SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                  FROM ticket_types tt_m
+                  INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                  INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                  WHERE tt_m.event_id = events.id
+                    AND tt_m.is_pass = TRUE
+                    AND inc.status NOT IN (:ineligible_statuses)
+                )
+              )
+              WHEN EXISTS (
+                SELECT 1
+                FROM ticket_types tt_i
+                INNER JOIN ticket_type_included_events ttie_i ON ttie_i.ticket_type_id = tt_i.id
+                WHERE tt_i.event_id = events.id
+                  AND tt_i.is_pass = TRUE
+              )
+              THEN COALESCE(events.starts_at, events.ends_at)
+              ELSE COALESCE(events.ends_at, events.starts_at)
+            END
+          WHEN (
+            SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+            FROM ticket_types tt_m
+            INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+            INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+            WHERE tt_m.event_id = events.id
+              AND tt_m.is_pass = TRUE
+              AND inc.status NOT IN (:ineligible_statuses)
+          ) IS NOT NULL
+          THEN GREATEST(
+            COALESCE(events.ends_at, events.starts_at),
+            (
+              SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+              FROM ticket_types tt_m
+              INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+              INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+              WHERE tt_m.event_id = events.id
+                AND tt_m.is_pass = TRUE
+                AND inc.status NOT IN (:ineligible_statuses)
+            )
+          )
+          ELSE COALESCE(events.ends_at, events.starts_at)
+        END
+      ) > :at
+    SQL
+  }
+
+  scope :completion_anchor_at_or_before, ->(cutoff) {
+    ineligible_statuses = Event.statuses.values_at(*INELIGIBLE_PASS_NIGHT_STATUSES)
+    where(<<~SQL.squish, cutoff: cutoff, ineligible_statuses: ineligible_statuses)
+      (
+        CASE
+          WHEN EXISTS (SELECT 1 FROM ticket_types tt_p WHERE tt_p.event_id = events.id AND tt_p.is_pass = TRUE)
+           AND NOT EXISTS (SELECT 1 FROM ticket_types tt_r WHERE tt_r.event_id = events.id AND tt_r.is_pass = FALSE)
+          THEN
+            CASE
+              WHEN (
+                SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                FROM ticket_types tt_m
+                INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                WHERE tt_m.event_id = events.id
+                  AND tt_m.is_pass = TRUE
+                  AND inc.status NOT IN (:ineligible_statuses)
+              ) IS NOT NULL
+              THEN GREATEST(
+                events.starts_at,
+                (
+                  SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+                  FROM ticket_types tt_m
+                  INNER JOIN ticket_type_included_events ttie_m ON ttie_m.ticket_type_id = tt_m.id
+                  INNER JOIN events inc ON inc.id = ttie_m.included_event_id
+                  WHERE tt_m.event_id = events.id
+                    AND tt_m.is_pass = TRUE
+                    AND inc.status NOT IN (:ineligible_statuses)
+                )
+              )
+              WHEN EXISTS (
+                SELECT 1
+                FROM ticket_types tt_i
+                INNER JOIN ticket_type_included_events ttie_i ON ttie_i.ticket_type_id = tt_i.id
+                WHERE tt_i.event_id = events.id
+                  AND tt_i.is_pass = TRUE
+              )
+              THEN COALESCE(events.starts_at, events.ends_at)
+              ELSE COALESCE(events.ends_at, events.starts_at)
+            END
+          ELSE events.ends_at
+        END
+      ) <= :cutoff
+    SQL
+  }
+
+  def pass_included_events
+    Event.joins(:pass_inclusions)
+      .where(ticket_type_included_events: { ticket_type_id: ticket_types.select(:id) })
+      .distinct
+  end
+
+  def eligible_pass_night?
+    !cancelled? && !archived?
+  end
+
+  # True when this event was cancelled and later archived via EventLifecycle.
+  # Completed-then-archived nights return false so they do not falsely trigger
+  # all_pass_nights_cancelled?.
+  def archived_from_cancelled?
+    return false unless archived? && persisted?
+
+    latest_archive = if event_state_changes.loaded?
+      event_state_changes.select { |change| change.action == "archive" }
+        .max_by { |change| [change.occurred_at || Time.at(0), change.id || 0] }
+    else
+      event_state_changes.where(action: "archive").order(:occurred_at, :id).last
+    end
+    latest_archive&.from_status == "cancelled"
+  end
+
+  def cancelled_for_pass?
+    cancelled? || archived_from_cancelled?
+  end
+
+  # Returns { event_id => from_status } for the latest archive transition per event,
+  # preserving the (occurred_at DESC, id DESC) tie-break in a single query.
+  def self.latest_archive_from_statuses_by_event_id(event_ids)
+    ids = Array(event_ids).compact.uniq
+    return {} if ids.empty?
+
+    EventStateChange
+      .select("DISTINCT ON (event_id) event_id, from_status")
+      .where(event_id: ids, action: "archive")
+      .order(Arel.sql("event_id, occurred_at DESC, id DESC"))
+      .each_with_object({}) { |change, map| map[change.event_id] = change.from_status }
+  end
+
+  def pass_only_event?
+    if ticket_types.loaded?
+      ticket_types.any?(&:is_pass?) && ticket_types.all?(&:is_pass?)
+    else
+      ticket_types.where(is_pass: true).exists? && ticket_types.where(is_pass: false).none?
+    end
+  end
+
+  def no_eligible_pass_nights?
+    return false unless persisted? && pass_only_event?
+
+    if (included = preloaded_pass_included_events)
+      return included.any? && included.none?(&:eligible_pass_night?)
+    end
+
+    pass_included_events.exists? && !pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+  end
+
+  def all_pass_nights_cancelled?(archive_from_statuses: nil)
+    return false unless persisted? && pass_only_event?
+
+    if (included = preloaded_pass_included_events)
+      return false if included.empty? || included.any?(&:eligible_pass_night?)
+
+      archived_nights = included.select(&:archived?)
+      return true if archived_nights.empty?
+
+      return archived_nights_from_cancelled?(archived_nights, archive_from_statuses: archive_from_statuses)
+    end
+
+    return false unless pass_included_events.exists?
+    return false if pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+
+    archived_ids = pass_included_events.where(status: :archived).pluck(:id)
+    return true if archived_ids.empty?
+
+    statuses = archive_from_statuses || self.class.latest_archive_from_statuses_by_event_id(archived_ids)
+    archived_ids.all? { |night_id| statuses[night_id] == "cancelled" }
+  end
+
+  def active_included_pass_nights?
+    pass_included_events.where(status: [:published, :postponed]).exists?
+  end
+
+  # Latest end time for this event, derived dynamically from configured ends_at
+  # and live eligible (non-cancelled, non-archived) included nights so configured
+  # events.ends_at is never overwritten and cancelling/archiving/moving a night
+  # never leaves a stale extension.
+  def effective_ends_at
+    has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
+    if has_pass && persisted?
+      if (included = preloaded_pass_included_events)
+        included_max = included.select(&:eligible_pass_night?)
+          .filter_map { |event| event.ends_at || event.starts_at }
+          .max
+        has_included = included.any?
+      else
+        included_max = pass_included_events.where.not(status: INELIGIBLE_PASS_NIGHT_STATUSES)
+          .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+        has_included = pass_only_event? && included_max.nil? ? pass_included_events.exists? : false
+      end
+      if pass_only_event?
+        return [starts_at, included_max].compact.max if included_max
+        return starts_at || ends_at if has_included
+      elsif included_max
+        return [ends_at || starts_at, included_max].compact.max
+      end
+    end
+
+    ends_at || starts_at
+  end
+
+  def preloaded_pass_included_events
+    return nil unless ticket_types.loaded?
+
+    pass_types = ticket_types.select(&:is_pass?)
+    return [] if pass_types.empty?
+    return nil unless pass_types.all? { |tt| tt.association(:ticket_type_included_events).loaded? }
+
+    links = pass_types.flat_map(&:ticket_type_included_events)
+    return nil unless links.all? { |link| link.association(:included_event).loaded? }
+
+    links.filter_map(&:included_event).uniq(&:id)
+  end
+
+  def upcoming?(at: Time.current)
+    anchor = effective_ends_at
+    anchor.present? && anchor > at
   end
 
   # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
   # live-money proof, bounded pilot) are optional records now; they never
   # block publishing or sales. Organizer verification is the one admin step.
-  def publish_checklist(at: Time.current, organizer_agreement: nil)
+  def publish_checklist(at: Time.current, organizer_agreement: nil, pass_committed: nil)
     paid_event = paid_event?
     configured_inventory = ticket_types.sum(&:quantity_available)
+    committed_pass_units = if !pass_committed.nil?
+      pass_committed
+    elsif persisted?
+      EventCapacity.pass_committed_for(self, at: at)
+    else
+      0
+    end
     [
       checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
       # In production an unverified organizer may publish (to preview and
@@ -465,7 +769,8 @@ class Event < ApplicationRecord
       checklist_item("schedule", "Future start and valid end time added", starts_at.present? && starts_at > at && ends_at.present? && ends_at > starts_at),
       checklist_item("timezone", "Valid IANA timezone selected", timezone_valid?),
       checklist_item("tickets", "At least one ticket type added", ticket_types.any?),
-      checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
+      checklist_item("capacity", "Event capacity added and ticket inventory fits",
+        max_capacity.present? && configured_inventory.positive? && (configured_inventory + committed_pass_units) <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("live_money_candidate_scope", "Live-money proof event is hidden, single-ticket, and capped at $5",
         !live_money_proof_candidate? || live_money_proof_candidate_configured?),
@@ -523,6 +828,19 @@ class Event < ApplicationRecord
   end
 
   private
+
+  def archived_nights_from_cancelled?(archived_nights, archive_from_statuses: nil)
+    if archive_from_statuses
+      return archived_nights.all? { |night| archive_from_statuses[night.id] == "cancelled" }
+    end
+
+    loaded, unloaded = archived_nights.partition { |night| night.event_state_changes.loaded? }
+    return false unless loaded.all?(&:archived_from_cancelled?)
+    return true if unloaded.empty?
+
+    statuses = self.class.latest_archive_from_statuses_by_event_id(unloaded.map(&:id))
+    unloaded.all? { |night| statuses[night.id] == "cancelled" }
+  end
 
   def audit_sales_suspension_change
     return unless saved_change_to_sales_suspended_at?
@@ -667,8 +985,7 @@ class Event < ApplicationRecord
   def capacity_covers_committed_inventory
     return if max_capacity.blank? || !persisted?
 
-    committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity) +
-      waitlist_offers.holding_inventory.sum(:quantity) + active_seat_holds_count(at: Time.current)
+    committed = EventCapacity.committed_for(self, at: Time.current)
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 

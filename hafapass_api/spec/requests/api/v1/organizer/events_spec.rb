@@ -160,6 +160,25 @@ RSpec.describe "Api::V1::Organizer::Events", type: :request do
       expect(response.parsed_body["next_event"]).to include("id" => live.id, "title" => "Live now", "timezone" => live.timezone)
     end
 
+    it "counts a published pass event whose included night extends past its configured ends_at" do
+      configured_end = 1.day.ago.change(usec: 0)
+      pass_event = create(:event, :published, organizer_profile: organizer_profile, title: "Extended Pass",
+        starts_at: 3.days.ago, ends_at: configured_end, doors_open_at: 3.days.ago - 1.hour)
+      future_night = create(:event, :published, organizer_profile: organizer_profile, title: "Rescheduled Final Night",
+        starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: pass_event, name: "Season Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: future_night, position: 0)
+
+      get "/api/v1/organizer/events/summary", headers: org_headers
+
+      expect(response).to have_http_status(:ok)
+      # Live, Soon, Later, Extended Pass, and Rescheduled Final Night
+      expect(response.parsed_body["upcoming_events_count"]).to eq(5)
+      # Extended Pass started earliest (3 days ago) and is still active via future_night
+      expect(response.parsed_body["next_event"]).to include("id" => pass_event.id, "title" => "Extended Pass")
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(configured_end)
+    end
+
     it "gives finance members organization-wide revenue and counts" do
       _member, finance_headers = member_headers(:finance)
 

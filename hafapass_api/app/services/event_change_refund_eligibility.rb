@@ -21,6 +21,7 @@ class EventChangeRefundEligibility
 
   MESSAGES = {
     "no_change" => "This event has no change that offers a refund",
+    "wrong_event" => "This event change does not belong to this order",
     "change_not_refundable" => "Self-serve refunds are offered when an event is postponed or its start time changes. " \
       "Contact the organizer or HåfaPass support about other changes.",
     "ordered_after_change" => "This order was placed after the event changed, so it is not eligible for a change refund",
@@ -97,6 +98,7 @@ class EventChangeRefundEligibility
 
   def call
     return result(false, "no_change") unless change
+    return result(false, "wrong_event") if change.event_id != order.event_id
 
     predates = order.created_at < change.occurred_at
     deadline = deadline_at
@@ -186,7 +188,7 @@ class EventChangeRefundEligibility
     @tickets ||= begin
       issued = order.tickets.loaded? ? order.tickets.select(&:issued?) : order.tickets.where(status: :issued).to_a
       issued = issued.select { |ticket| ticket_ids.include?(ticket.id) } if ticket_ids
-      issued.sort_by(&:id).reject { |ticket| ticket.transferred_away_from?(order) }
+      issued.sort_by(&:id).reject { |ticket| ticket.pass_child? || ticket.transferred_away_from?(order) }
     end
   end
 
@@ -194,6 +196,6 @@ class EventChangeRefundEligibility
   # present the same selection to RefundCreator's idempotency check.
   def result(eligible, reason, deadline: nil, predates: false)
     Result.new(eligible: eligible, reason: reason, deadline_at: deadline,
-      tickets: change ? tickets : [], order_predates_change: predates)
+      tickets: change && change.event_id == order.event_id ? tickets : [], order_predates_change: predates)
   end
 end

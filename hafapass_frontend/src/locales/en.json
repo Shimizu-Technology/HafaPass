@@ -515,7 +515,11 @@
     "TicketTypesSection": {
       "salesUnavailable": "Sales unavailable",
       "decreaseQuantityFor": "Decrease quantity for {{value1}}",
-      "increaseQuantityFor": "Increase quantity for {{value1}}"
+      "increaseQuantityFor": "Increase quantity for {{value1}}",
+      "multiNightPass_one": "Multi-Night Pass · {{count}} night",
+      "multiNightPass_other": "Multi-Night Pass · {{count}} nights",
+      "viewIncludedNights": "View included nights ({{count}})",
+      "hideIncludedNights": "Hide included nights"
     },
     "WaitlistForm": {
       "failedToJoinWaitlist": "Failed to join waitlist",
@@ -1122,6 +1126,7 @@
       "googleWallet": "Google Wallet",
       "presentThisQRCodeAtTheDoor": "Present this QR code at the door",
       "thisTicketHasNoActiveEntryCode": "This ticket has no active entry code",
+      "partOfPass": "Part of {{name}}",
       "eventStatus": {
         "cancelled": "cancelled",
         "postponed": "postponed"

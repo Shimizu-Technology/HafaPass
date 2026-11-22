@@ -138,7 +138,10 @@ class RefundReconciliationQueue
       owed = [issue.payment.amount_cents - returned, 0].max
       next if owed.zero?
 
-      rows << row(issue, "exception", "late_capture", owed, "Card payment arrived after the ticket hold was released", nil)
+      reason = issue.code == "pass_all_included_nights_cancelled" ?
+        "Pass payment arrived after all included nights were cancelled" :
+        "Card payment arrived after the ticket hold was released"
+      rows << row(issue, "exception", "late_capture", owed, reason, nil)
     end
     unverified_order_ids = issues.map(&:order_id).to_set
     rows.each do |entry|

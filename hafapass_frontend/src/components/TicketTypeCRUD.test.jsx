@@ -68,4 +68,162 @@ describe('organizer ticket setup', () => {
       sales_start_at: '2026-10-20T18:00', sales_end_at: '2026-10-21T18:00',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
+
+  it('lets organizers build a multi-night pass using series quick-select and excludes seated/pass/self events', async () => {
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') {
+        return Promise.resolve({
+          data: {
+            events: [
+              { id: 42, title: 'Current Pass Event', status: 'published', starts_at: '2026-11-20T08:00:00Z', assigned_seating: false, ticket_types: [] },
+              { id: 101, title: 'Night 1', status: 'published', starts_at: '2026-11-21T08:00:00Z', assigned_seating: false, ticket_types: [] },
+              { id: 102, title: 'Night 2', status: 'published', starts_at: '2026-11-22T08:00:00Z', assigned_seating: false, ticket_types: [] },
+              { id: 103, title: 'Seated Gala', status: 'published', starts_at: '2026-11-23T08:00:00Z', assigned_seating: true, ticket_types: [] },
+              { id: 104, title: 'Another Pass Event', status: 'published', starts_at: '2026-11-24T08:00:00Z', assigned_seating: false, ticket_types: [{ id: 9, is_pass: true }] },
+            ],
+          },
+        })
+      }
+      if (url === '/organizer/event_series') {
+        return Promise.resolve({
+          data: {
+            event_series: [
+              { id: 5, name: 'FD Tourney 2026', events: [{ id: 101 }, { id: 102 }, { id: 42 }] },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={vi.fn()} /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
+    await user.type(screen.getByRole('textbox', { name: 'Name', exact: true }), 'Season Pass')
+    await user.clear(screen.getByRole('spinbutton', { name: 'Price ($)', exact: true }))
+    await user.type(screen.getByRole('spinbutton', { name: 'Price ($)', exact: true }), '50')
+    await user.type(screen.getByRole('spinbutton', { name: 'Tickets available', exact: true }), '100')
+
+    await user.click(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i }))
+    expect(await screen.findByText('Night 1')).toBeInTheDocument()
+    expect(screen.getByText('Night 2')).toBeInTheDocument()
+    expect(screen.queryByText('Current Pass Event')).not.toBeInTheDocument()
+    expect(screen.queryByText('Seated Gala')).not.toBeInTheDocument()
+    expect(screen.queryByText('Another Pass Event')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText(/Add all nights from series/i), '5')
+    await user.click(screen.getByRole('button', { name: 'Add series nights' }))
+    expect(screen.getByText('Included nights (2 selected)')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith(
+      '/organizer/events/42/ticket_types',
+      expect.objectContaining({
+        name: 'Season Pass',
+        price_cents: 5000,
+        quantity_available: 100,
+        included_event_ids: [101, 102],
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ))
+  })
+
+  it('disables multi-night pass on seated events and prevents converting sold non-pass tickets', async () => {
+    const { rerender } = render(<MemoryRouter><TicketTypeCRUD eventId={42} assignedSeating onRefresh={vi.fn()} /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
+    expect(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i })).toBeDisabled()
+    expect(screen.getByText('Multi-night passes are available for general admission events only.')).toBeInTheDocument()
+
+    rerender(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={vi.fn()} ticketTypes={[{
+      id: 7, name: 'Sold GA', price_cents: 1000, quantity_available: 50, quantity_sold: 3, is_pass: false,
+    }]} /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Edit Sold GA' }))
+    expect(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i })).toBeDisabled()
+    expect(screen.getByText(/cannot be converted into a multi-night pass/i)).toBeInTheDocument()
+  })
+
+  it('locks existing nights on sold passes, allows adding new nights, and syncs pass holders with 422 error display', async () => {
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') {
+        return Promise.resolve({
+          data: {
+            events: [
+              { id: 101, title: 'Night 1', status: 'published', starts_at: '2026-11-21T08:00:00Z', assigned_seating: false, ticket_types: [] },
+              { id: 102, title: 'Night 2', status: 'published', starts_at: '2026-11-22T08:00:00Z', assigned_seating: false, ticket_types: [] },
+            ],
+          },
+        })
+      }
+      return Promise.resolve({ data: { event_series: [] } })
+    })
+
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={onRefresh} ticketTypes={[{
+      id: 8,
+      name: 'Tournament Pass',
+      price_cents: 5000,
+      quantity_available: 50,
+      quantity_sold: 4,
+      is_pass: true,
+      included_event_ids: [101],
+      included_events: [{ id: 101, title: 'Night 1', starts_at: '2026-11-21T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' }],
+    }]} /></MemoryRouter>)
+
+    const user = userEvent.setup()
+    expect(screen.getByText('Multi-Night Pass · 1 night')).toBeInTheDocument()
+
+    // Edit sold pass: Night 1 is locked, Night 2 can be added
+    await user.click(screen.getByRole('button', { name: 'Edit Tournament Pass' }))
+    const night1Checkbox = await screen.findByRole('checkbox', { name: /Night 1/i })
+    const night2Checkbox = screen.getByRole('checkbox', { name: /Night 2/i })
+    expect(night1Checkbox).toBeChecked()
+    expect(night1Checkbox).toBeDisabled()
+    expect(night2Checkbox).not.toBeDisabled()
+    await user.click(night2Checkbox)
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith(
+      '/organizer/events/42/ticket_types/8',
+      expect.objectContaining({ included_event_ids: [101, 102] }),
+      expect.any(Object),
+    ))
+
+    // Sync Pass Holders: first test 422 capacity error, then success
+    apiClient.post.mockRejectedValueOnce({
+      response: { status: 422, data: { error: 'Insufficient capacity on Night 2: needs 4 additional pass tickets, only 1 remaining' } },
+    })
+    await user.click(screen.getByRole('button', { name: 'Sync Pass Holders' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm Sync' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Insufficient capacity on Night 2: needs 4 additional pass tickets, only 1 remaining')
+
+    apiClient.post.mockResolvedValueOnce({ data: { parent_ticket_count: 4, issued_ticket_count: 4 } })
+    await user.click(screen.getByRole('button', { name: 'Sync Pass Holders' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm Sync' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Synced 4 pass holders: issued 4 new night tickets.')
+    expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/42/ticket_types/8/sync_pass_holders', {}, expect.any(Object))
+  })
+
+  it('shows a helper note when organizer events are truncated beyond the first 100', async () => {
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') {
+        return Promise.resolve({
+          headers: { 'x-total-count': '145' },
+          data: {
+            events: [
+              { id: 101, title: 'Night 1', status: 'published', starts_at: '2026-11-21T08:00:00Z', assigned_seating: false, ticket_types: [] },
+            ],
+            meta: { total_count: 145 },
+          },
+        })
+      }
+      return Promise.resolve({ data: { event_series: [] } })
+    })
+
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} onRefresh={vi.fn()} /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
+    await user.click(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i }))
+    expect(await screen.findByText('Night 1')).toBeInTheDocument()
+    expect(screen.getByText(/Showing first 100 events — use a series or search if your event isn't listed/i)).toBeInTheDocument()
+  })
 })

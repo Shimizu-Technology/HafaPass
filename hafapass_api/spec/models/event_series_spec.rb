@@ -48,6 +48,11 @@ RSpec.describe EventSeries, type: :model do
       expect(build(:event_series, organization: organization, revenue_share_base: "admissions_gross")).to be_valid
       expect(build(:event_series, organization: organization, revenue_share_base: "invalid_base")).not_to be_valid
     end
+
+    it "defaults revenue_share_includes_door_cash to false" do
+      series = EventSeries.create!(organization: organization, name: "FD 2027 Defaults")
+      expect(series.revenue_share_includes_door_cash).to be(false)
+    end
   end
 
   describe "EventSeriesMembership" do

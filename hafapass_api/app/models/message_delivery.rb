@@ -29,7 +29,8 @@ class MessageDelivery < ApplicationRecord
   EMAIL_TEMPLATE_CLASSIFICATION = {
     "order_confirmation" => :transactional, "fulfillment_resend" => :transactional,
     "ticket_delivery" => :transactional, "order_recovery" => :transactional,
-    "event_change" => :transactional, "refund_notification" => :transactional,
+    "event_change" => :transactional, "pass_event_change" => :transactional,
+    "refund_notification" => :transactional,
     "refund_reconciliation_digest" => :transactional, "guest_list" => :transactional,
     "ticket_transfer" => :transactional, "event_reminder" => :transactional,
     "verification_request" => :transactional, "verification_decision" => :transactional,

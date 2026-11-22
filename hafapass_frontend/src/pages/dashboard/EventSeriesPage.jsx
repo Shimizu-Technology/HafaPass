@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Archive, Calendar, Copy, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Archive, BarChart3, Calendar, Copy, Layers, Pencil, Plus, Trash2, X } from 'lucide-react'
 import apiClient from '../../api/client'
 import Dialog from '../../components/Dialog'
 import NoAccessNotice from '../../components/NoAccessNotice'
@@ -8,7 +8,12 @@ import PageLoading from '../../components/PageLoading'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { formatEventDate } from '../../utils/eventTime'
-import { canViewOrganizationSeries, loadOrganizerOrganizations, selectedOrganization } from '../../utils/organizerOrganizations'
+import {
+  canViewOrganizationFinances,
+  canViewOrganizationSeries,
+  loadOrganizerOrganizations,
+  selectedOrganization,
+} from '../../utils/organizerOrganizations'
 
 const SERIES_STATUSES = [
   { value: 'draft', label: 'Draft' },
@@ -584,6 +589,7 @@ export default function EventSeriesPage() {
 
   const canViewSeries = canViewOrganizationSeries(organization)
   const canManageEvents = Boolean(organization?.permissions?.manage_events)
+  const canViewFinances = canViewOrganizationFinances(organization)
 
   const availableEventsToAdd = useMemo(() => {
     if (!selectedSeries) return []
@@ -849,47 +855,60 @@ export default function EventSeriesPage() {
                     )}
                   </div>
 
-                  {canManageEvents && (
+                  {(canViewFinances || canManageEvents) && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowBulkCloneDialog(true)}
-                        disabled={mutating || orgEvents.length === 0}
-                        className="btn-primary inline-flex min-h-10 items-center gap-1.5 px-3.5 text-sm"
-                      >
-                        <Copy className="h-4 w-4" />
-                        Bulk clone nights
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setEditingSeries(selectedSeries); setShowSeriesDialog(true) }}
-                        disabled={mutating}
-                        className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3 text-sm"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </button>
-                      {selectedSeries.status !== 'archived' && (
-                        <button
-                          type="button"
-                          onClick={() => setPendingConfirm({ type: 'archive', series: selectedSeries })}
-                          disabled={mutating}
-                          className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3 text-sm"
+                      {canViewFinances && (
+                        <Link
+                          to={`/dashboard/series/${selectedSeries.id}/report`}
+                          className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3.5 text-sm"
                         >
-                          <Archive className="h-4 w-4" />
-                          Archive
-                        </button>
+                          <BarChart3 aria-hidden="true" className="h-4 w-4" />
+                          View Report
+                        </Link>
                       )}
-                      {selectedSeries.events_count === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setPendingConfirm({ type: 'delete', series: selectedSeries })}
-                          disabled={mutating}
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </button>
+                      {canManageEvents && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowBulkCloneDialog(true)}
+                            disabled={mutating || orgEvents.length === 0}
+                            className="btn-primary inline-flex min-h-10 items-center gap-1.5 px-3.5 text-sm"
+                          >
+                            <Copy className="h-4 w-4" />
+                            Bulk clone nights
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingSeries(selectedSeries); setShowSeriesDialog(true) }}
+                            disabled={mutating}
+                            className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3 text-sm"
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </button>
+                          {selectedSeries.status !== 'archived' && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingConfirm({ type: 'archive', series: selectedSeries })}
+                              disabled={mutating}
+                              className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3 text-sm"
+                            >
+                              <Archive className="h-4 w-4" />
+                              Archive
+                            </button>
+                          )}
+                          {selectedSeries.events_count === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingConfirm({ type: 'delete', series: selectedSeries })}
+                              disabled={mutating}
+                              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   )}

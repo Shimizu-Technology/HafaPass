@@ -3,12 +3,22 @@ require "rails_helper"
 RSpec.describe "Provider webhook and ticket page throttles", type: :request do
   include ActiveSupport::Testing::TimeHelpers
 
-  # Keep each burst inside one fixed throttle window.
+  # Keep each burst inside one fixed throttle window, and pin the visitor budget
+  # below the 600/min webhook and ticket-view ceilings so separation stays fast
+  # and directly observable.
   around do |example|
+    original_req_limit = ENV["RACK_ATTACK_REQ_PER_IP_5M"]
+    ENV["RACK_ATTACK_REQ_PER_IP_5M"] = "50"
     freeze_time { example.run }
+  ensure
+    if original_req_limit.nil?
+      ENV.delete("RACK_ATTACK_REQ_PER_IP_5M")
+    else
+      ENV["RACK_ATTACK_REQ_PER_IP_5M"] = original_req_limit
+    end
   end
 
-  let(:visitor_budget) { Rack::Attack.throttles.fetch("req/ip").limit }
+  let(:visitor_budget) { Rack::Attack.throttles.fetch("req/ip").limit.call(nil) }
 
   def stripe_delivery
     post "/webhooks/stripe", params: "{}", headers: { "CONTENT_TYPE" => "application/json", "Stripe-Signature" => "t=1,v1=bad" }

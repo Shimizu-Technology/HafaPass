@@ -62,6 +62,13 @@ module Seating
         raise ConfigurationError, "The layout must belong to this event's venue and organization"
       end
       raise ConfigurationError, "A venue layout needs at least one active seat" unless venue_layout.venue_seats.where(active: true).exists?
+      if event.ticket_types.where(is_pass: true).exists? ||
+          TicketTypeIncludedEvent.where(ticket_type_id: event.ticket_types.select(:id)).exists?
+        raise ConfigurationError, "Assigned seating cannot be activated on an event with multi-night pass ticket types"
+      end
+      if TicketTypeIncludedEvent.where(included_event_id: event.id).exists?
+        raise ConfigurationError, "Assigned seating cannot be activated on an event included in a multi-night pass"
+      end
 
       validate_companion_pairs!
     end

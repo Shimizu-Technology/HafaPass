@@ -74,7 +74,12 @@ class OrganizerSalesExport
     when "email" then ticket&.holder_email.presence || ticket&.attendee_email.presence || order.buyer_email
     when "phone" then order.buyer_phone
     when "order_number" then order.reference
-    when "ticket_type" then ticket ? ticket.ticket_type.name : order.tickets.map { |row| row.ticket_type.name }.uniq.join("; ")
+    when "ticket_type"
+      if ticket
+        ticket.pass_child? ? "#{ticket.ticket_type.name} (Pass)" : ticket.ticket_type.name
+      else
+        order.tickets.map { |row| row.ticket_type.name }.uniq.join("; ")
+      end
     when "pricing_tier"
       if ticket
         ticket.pricing_tier&.name || item&.tier_name
@@ -86,7 +91,12 @@ class OrganizerSalesExport
     when "fee" then money(ticket ? allocated(item, ticket, :fee_cents) : order.service_fee_cents)
     when "tax" then money(ticket ? allocated(item, ticket, :tax_cents) : order.order_items.sum(&:tax_cents))
     when "total_paid", "price_paid" then money(ticket ? ticket_total(item, ticket) : order.total_cents)
-    when "discount_promo" then [money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents), order.promo_code&.code].compact.join(" / ")
+    when "discount_promo"
+      if ticket&.pass_child?
+        money(0)
+      else
+        [money(ticket ? allocated(item, ticket, :discount_cents) : order.discount_cents), order.promo_code&.code].compact.join(" / ")
+      end
     when "channel" then FinanceExports.channel(order)
     when "status" then OrganizerTicketSalesStatus.label(ticket ?
       OrganizerTicketSalesStatus.for(ticket, event_cancelled: @query.event.cancelled?) : order.status)
@@ -98,6 +108,8 @@ class OrganizerSalesExport
   end
 
   def allocated(item, ticket, component)
+    return 0 if ticket.pass_child?
+
     order = ticket.order
     key = [order.id, item&.id, component]
     allocations = @allocation_cache[key] ||= begin
@@ -109,6 +121,8 @@ class OrganizerSalesExport
   end
 
   def ticket_total(item, ticket)
+    return 0 if ticket.pass_child?
+
     allocated(item, ticket, :subtotal_cents) - allocated(item, ticket, :discount_cents) +
       allocated(item, ticket, :fee_cents) + allocated(item, ticket, :tax_cents)
   end
@@ -120,7 +134,7 @@ class OrganizerSalesExport
   def preload_ticket_groups(batch)
     @allocation_cache = {}
     order_ids = batch.map { |record| record.is_a?(Ticket) ? record.order_id : record.id }.uniq
-    groups = Ticket.where(order_id: order_ids).order(:id).pluck(:order_id, :id, :order_item_id)
+    groups = Ticket.where(order_id: order_ids, parent_ticket_id: nil).order(:id).pluck(:order_id, :id, :order_item_id)
       .group_by(&:first)
     order_ids.each do |order_id|
       @allocation_cache[[order_id, :ticket_groups]] = Array(groups[order_id]).group_by(&:last)

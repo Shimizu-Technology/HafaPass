@@ -42,6 +42,13 @@ emails:
       context: The ticket remains usable for the event's new date once the organizer sets it.
     organizer_reason:
       context: "%{reason} is the organizer's own explanation, inserted as written."
+  pass_event_change:
+    cancelled_body:
+      context: Informational notice sent to a multi-night pass holder when one included night is cancelled. Other nights remain active; no single-night refund is offered.
+    intro:
+      context: Informational notice sent to a multi-night pass holder when one included night changes schedule or venue.
+    informational_note:
+      context: Informational notice only; do not suggest or offer a self-serve refund button.
   refund:
     returned:
       context: "%{amount} is a US dollar amount such as $25.00."

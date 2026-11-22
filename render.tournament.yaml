@@ -1,0 +1,272 @@
+# =============================================================================
+# REFERENCE TEMPLATE — LEON-GATED (DO NOT AUTO-APPLY)
+# =============================================================================
+# June–July Tournament Peak Topology for HåfaPass (FD Alumni Championship Rush)
+#
+# Live production uses `render.yaml` (single-service `embedded` profile on
+# 0.5c-512mb). DO NOT edit `render.yaml` or apply this blueprint without
+# explicit operator approval from Leon.
+#
+# Peak topology changes vs `render.yaml`:
+#   1. Web service `hafapass-api`: upgraded to `standard` (1 CPU / 2 GB RAM;
+#      note `pro` is 2 CPU / 4 GB RAM if staging k6 indicates CPU saturation),
+#      `HAFAPASS_RUNTIME=solid_queue`, `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`,
+#      `DB_POOL=15`, `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`, plus explicit
+#      Guam CGNAT-safe `RACK_ATTACK_*` env vars.
+#      Note: `hafapass_api/config/puma.rb` currently pins `workers 0` for the
+#      512 MB single-process plan; before switching `WEB_CONCURRENCY=2` live,
+#      enable `workers ENV.fetch("WEB_CONCURRENCY", 0).to_i` in `puma.rb` and
+#      confirm Neon pool headroom (`2 * 15 + 10 = 40` max connections across
+#      web + worker).
+#   2. Dedicated background worker `hafapass-worker`: `starter` (`0.5c-512mb`),
+#      `startCommand: bundle exec bin/jobs`, `HAFAPASS_RUNTIME=solid_queue`,
+#      `DB_POOL=10`, isolating Solid Queue job execution (emails, PDFs,
+#      hold expiry, webhooks) from web request threads.
+#   3. Post-tournament (August): scale back down and return to `render.yaml`
+#      single-service `embedded` (`0.5c-512mb`) to restore baseline cost.
+# =============================================================================
+previews:
+  generation: 'off'
+services:
+- type: web
+  name: hafapass-api
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  # The live service deploys this branch, fast-forwarded to main for each API
+  # release (docs/OPERATIONS_RUNBOOK.md, "Deploy order").
+  branch: hafapass-staging
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  dockerCommand: bundle exec puma -C config/puma.rb
+  healthCheckPath: /up
+  preDeployCommand: bin/release-migrate
+  plan: standard
+  envVars:
+  - fromGroup: hafapass-tournament-runtime
+  - key: WEB_CONCURRENCY
+    value: '2'
+  - key: RAILS_MAX_THREADS
+    value: '5'
+  - key: DB_POOL
+    value: '15'
+  - key: DATABASE_URL
+    sync: false
+  - key: SECRET_KEY_BASE
+    sync: false
+  - key: CLERK_SECRET_KEY
+    sync: false
+  - key: CLERK_PUBLISHABLE_KEY
+    sync: false
+  - key: CLERK_ISSUER
+    sync: false
+  - key: CLERK_AUTHORIZED_PARTIES
+    sync: false
+  - key: ALLOWED_ORIGINS
+    sync: false
+  - key: FRONTEND_URL
+    sync: false
+  - key: PUBLIC_WEB_URL
+    sync: false
+  - key: SENTRY_DSN
+    sync: false
+  - key: AWS_ACCESS_KEY_ID
+    sync: false
+  - key: AWS_SECRET_ACCESS_KEY
+    sync: false
+  - key: AWS_BUCKET
+    sync: false
+  - key: AWS_REGION
+    sync: false
+  - key: RESEND_API_KEY
+    sync: false
+  - key: RESEND_WEBHOOK_SECRET
+    sync: false
+  - key: MAILER_FROM_EMAIL
+    sync: false
+  - key: PROVIDER_CONFIGURATION_REVISION
+    sync: false
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    sync: false
+  - key: ADMIN_EMAILS
+    sync: false
+  - key: DATABASE_MIGRATION_URL
+    sync: false
+  - key: STRIPE_TEST_SECRET_KEY
+    sync: false
+  - key: STRIPE_TEST_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_TEST_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_WEBHOOK_SECRET
+    sync: false
+  - key: STRIPE_LIVE_SECRET_KEY
+    sync: false
+  - key: STRIPE_LIVE_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_LIVE_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_LIVE_WEBHOOK_SECRET
+    sync: false
+  # TIN/W-9 encryption keys. Production refuses to boot without them; custody
+  # is in docs/OPERATIONS_RUNBOOK.md. Never rotate by editing these values.
+  - key: ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
+    sync: false
+  - key: MAILER_REPLY_TO
+    sync: false
+  - key: HAFAPASS_LAUNCH_CAPABILITIES
+    sync: false
+  # Optional. When set, X-Readiness-Token unlocks /api/v1/readiness detail.
+  - key: READINESS_TOKEN
+    sync: false
+  - key: APPLE_PASS_TYPE_IDENTIFIER
+    sync: false
+  - key: APPLE_TEAM_IDENTIFIER
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_PASSWORD
+    sync: false
+  - key: APPLE_WWDR_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_ICON_PATH
+    sync: false
+
+- type: worker
+  name: hafapass-worker
+  runtime: docker
+  repo: https://github.com/Shimizu-Technology/HafaPass
+  branch: hafapass-staging
+  region: singapore
+  rootDir: hafapass_api
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  autoDeployTrigger: 'off'
+  numInstances: 1
+  maxShutdownDelaySeconds: 120
+  # Render background worker command (maps to Dockerfile CMD override).
+  startCommand: bundle exec bin/jobs
+  plan: starter
+  envVars:
+  - fromGroup: hafapass-tournament-runtime
+  - key: DB_POOL
+    value: '10'
+  - key: DATABASE_URL
+    sync: false
+  - key: SECRET_KEY_BASE
+    sync: false
+  - key: CLERK_SECRET_KEY
+    sync: false
+  - key: CLERK_PUBLISHABLE_KEY
+    sync: false
+  - key: CLERK_ISSUER
+    sync: false
+  - key: CLERK_AUTHORIZED_PARTIES
+    sync: false
+  - key: ALLOWED_ORIGINS
+    sync: false
+  - key: FRONTEND_URL
+    sync: false
+  - key: PUBLIC_WEB_URL
+    sync: false
+  - key: SENTRY_DSN
+    sync: false
+  - key: AWS_ACCESS_KEY_ID
+    sync: false
+  - key: AWS_SECRET_ACCESS_KEY
+    sync: false
+  - key: AWS_BUCKET
+    sync: false
+  - key: AWS_REGION
+    sync: false
+  - key: RESEND_API_KEY
+    sync: false
+  - key: RESEND_WEBHOOK_SECRET
+    sync: false
+  - key: MAILER_FROM_EMAIL
+    sync: false
+  - key: PROVIDER_CONFIGURATION_REVISION
+    sync: false
+  - key: ADMISSION_MANIFEST_PRIVATE_KEY_PEM
+    sync: false
+  - key: ADMIN_EMAILS
+    sync: false
+  - key: STRIPE_TEST_SECRET_KEY
+    sync: false
+  - key: STRIPE_TEST_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_TEST_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_WEBHOOK_SECRET
+    sync: false
+  - key: STRIPE_LIVE_SECRET_KEY
+    sync: false
+  - key: STRIPE_LIVE_PUBLISHABLE_KEY
+    sync: false
+  - key: STRIPE_LIVE_PLATFORM_ACCOUNT_ID
+    sync: false
+  - key: STRIPE_LIVE_WEBHOOK_SECRET
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+    sync: false
+  - key: ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
+    sync: false
+  - key: MAILER_REPLY_TO
+    sync: false
+  - key: HAFAPASS_LAUNCH_CAPABILITIES
+    sync: false
+  - key: APPLE_PASS_TYPE_IDENTIFIER
+    sync: false
+  - key: APPLE_TEAM_IDENTIFIER
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_CERTIFICATE_PASSWORD
+    sync: false
+  - key: APPLE_WWDR_CERTIFICATE_BASE64
+    sync: false
+  - key: APPLE_PASS_ICON_PATH
+    sync: false
+
+envVarGroups:
+- name: hafapass-tournament-runtime
+  envVars:
+  - key: RAILS_ENV
+    value: production
+  - key: HAFAPASS_RUNTIME
+    value: solid_queue
+  - key: HAFAPASS_LAUNCH_SCOPE
+    value: general_admission
+  - key: HAFAPASS_PROVIDER_REHEARSAL
+    value: 'false'
+  - key: ENABLE_FIRST_USER_ADMIN_BOOTSTRAP
+    value: 'false'
+  - key: PUBLIC_API_URL
+    value: https://hafapass-api.onrender.com
+  # Per-IP checkout hold cap raised for Guam carrier-NAT / FD gym Wi-Fi peaks.
+  - key: HAFAPASS_MAX_HELD_TICKETS_PER_IP
+    value: '250'
+  # Guam CGNAT-safe Rack::Attack public IP ceilings (orders/email stays 5/min).
+  - key: RACK_ATTACK_REQ_PER_IP_5M
+    value: '3000'
+  # Raised from 200 after 160/200-VU shared-NAT k6 runs hit 120 429s during sold-out retries (orders/email stays 5/min).
+  - key: RACK_ATTACK_ORDERS_PER_IP_1M
+    value: '500'
+  - key: RACK_ATTACK_MARKETPLACE_LANDING_PER_IP_1M
+    value: '600'
+  - key: RACK_ATTACK_MARKETPLACE_FUNNEL_PER_IP_1M
+    value: '600'
+  - key: RACK_ATTACK_USERS_SYNC_PER_IP_1M
+    value: '120'
+  - key: RACK_ATTACK_PAYMENT_RESUME_PER_IP_1M
+    value: '120'

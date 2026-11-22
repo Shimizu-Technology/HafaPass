@@ -24,7 +24,10 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
     allow(ClerkAuthenticator).to receive(:verify).and_return(nil)
   end
 
-  it "allows six verified gate staff behind one NAT to send 600 scans without the generic 300 budget" do
+  it "allows six verified gate staff behind one NAT to send 600 scans without consuming the generic req/ip budget" do
+    original_req_limit = ENV["RACK_ATTACK_REQ_PER_IP_5M"]
+    ENV["RACK_ATTACK_REQ_PER_IP_5M"] = "50"
+
     users = create_list(:user, 6)
     users.each_with_index do |user, index|
       allow(ClerkAuthenticator).to receive(:verify).with("gate-#{index}").and_return({ "sub" => user.clerk_id })
@@ -32,9 +35,11 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
     users.each_index do |index|
       100.times { expect(hit(token: "gate-#{index}").first).to eq(204) }
     end
-    # Other paths still hit their original budget under the same IP.
-    300.times { expect(hit(path: "/api/v1/events", method: "GET").first).to eq(204) }
+    # Other paths still hit their configured req/ip budget under the same IP.
+    50.times { expect(hit(path: "/api/v1/events", method: "GET").first).to eq(204) }
     expect(hit(path: "/api/v1/events", method: "GET").first).to eq(429)
+  ensure
+    original_req_limit.nil? ? ENV.delete("RACK_ATTACK_REQ_PER_IP_5M") : ENV["RACK_ATTACK_REQ_PER_IP_5M"] = original_req_limit
   end
 
   it "binds the user budget to verified identity across changing IPs/device IDs" do

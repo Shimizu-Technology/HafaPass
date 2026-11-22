@@ -54,7 +54,7 @@ class OrderPresenter
       latest_event_change: latest_event_change_json,
       cancellation_refund: cancellation_refund_json,
       order_items: ordered_order_items.map { |item| order_item_json(item) },
-      tickets: include_tickets ? presented_tickets.map { |ticket| ticket_json(ticket) } : []
+      tickets: include_tickets ? top_level_tickets.map { |ticket| ticket_json(ticket) } : []
     }.compact
   end
 
@@ -162,14 +162,13 @@ class OrderPresenter
 
   def ticket_json(ticket)
     transferred_away = ticket.transferred_away_from?(order)
-    {
+    json = {
       id: ticket.id,
       display_credential: transferred_away ? nil : ticket.display_credential,
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: transferred_away ? "transferred" : ticket.status,
       admission_allowed: !transferred_away && ticket.admission_allowed?,
-      admission_block_reason: ticket.inventory_retained? ? "Refunded or disputed admission requires organizer review" :
-        (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
+      admission_block_reason: ticket_admission_block_reason(ticket),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
       pending_transfer: !transferred_away && ticket.issued? ? ticket.pending_transfer_summary : nil,
@@ -181,6 +180,30 @@ class OrderPresenter
       },
       seat: seat_json(ticket)
     }
+
+    if ticket.pass_parent?
+      children = Passes::TicketPayload.sort_children(pass_children_by_parent_id.fetch(ticket.id, []))
+      json.merge!(
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: children.size,
+        child_tickets: children.map { |child|
+          child_transferred = transferred_away || child.transferred_away_from?(order)
+          Passes::TicketPayload.child_json(child, expose_credential: !child_transferred, transferred_away: child_transferred)
+        }
+      )
+    end
+
+    json
+  end
+
+  def ticket_admission_block_reason(ticket)
+    return nil if ticket.cancelled? || (ticket.pass_child? && ticket.parent_ticket&.cancelled?)
+    if ticket.inventory_retained? || (ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
+      return "Refunded or disputed admission requires organizer review"
+    end
+    "Ticket access is paused while its refund is pending" if ticket.refund_pending?
   end
 
   def seat_json(ticket)
@@ -251,10 +274,29 @@ class OrderPresenter
 
   def presented_tickets
     @presented_tickets ||= begin
-      tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
-        event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
-      tickets.to_a.sort_by(&:id)
+      tickets = order.tickets.to_a
+      if tickets.any?
+        ActiveRecord::Associations::Preloader.new(
+          records: tickets,
+          associations: [
+            :event, :ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
+            { parent_ticket: [:pending_refund_tickets, :inventory_retention] },
+            { event_seat: { venue_seat: { seating_row: :seating_section } } }
+          ]
+        ).call
+      end
+      tickets.sort_by(&:id)
+    end
+  end
+
+  def pass_children_by_parent_id
+    @pass_children_by_parent_id ||= presented_tickets.select(&:pass_child?).group_by(&:parent_ticket_id)
+  end
+
+  def top_level_tickets
+    @top_level_tickets ||= begin
+      parent_ids = presented_tickets.select(&:pass_parent?).map(&:id).to_set
+      presented_tickets.reject { |ticket| ticket.pass_child? && parent_ids.include?(ticket.parent_ticket_id) }
     end
   end
 
