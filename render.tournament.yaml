@@ -259,8 +259,9 @@ envVarGroups:
   # Guam CGNAT-safe Rack::Attack public IP ceilings (orders/email stays 5/min).
   - key: RACK_ATTACK_REQ_PER_IP_5M
     value: '3000'
+  # Raised from 200 after 160/200-VU shared-NAT k6 runs hit 120 429s during sold-out retries (orders/email stays 5/min).
   - key: RACK_ATTACK_ORDERS_PER_IP_1M
-    value: '200'
+    value: '500'
   - key: RACK_ATTACK_MARKETPLACE_LANDING_PER_IP_1M
     value: '600'
   - key: RACK_ATTACK_MARKETPLACE_FUNNEL_PER_IP_1M
