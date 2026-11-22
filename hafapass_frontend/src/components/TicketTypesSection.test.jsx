@@ -100,3 +100,30 @@ it.each([1, 2])('labels the next tier and uses the correct day plural (%s)', day
   expect(screen.getByText('Next price: $20.00')).toBeInTheDocument()
   expect(screen.getByText(`Ends in ${days} ${days === 1 ? 'day' : 'days'}`)).toBeInTheDocument()
 })
+
+it('shows a Multi-Night Pass badge and expandable included nights schedule on pass tiers', async () => {
+  render(<TicketTypesSection ticketTypes={[{
+    id: 9,
+    name: 'All-Tournament Pass',
+    price_cents: 5000,
+    all_in_price_cents: 5000,
+    service_fee_cents: 0,
+    quantity_remaining: 10,
+    on_sale: true,
+    is_pass: true,
+    included_events: [
+      { id: 101, title: 'Opening Night', starts_at: '2026-11-21T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+      { id: 102, title: 'Championship Night', starts_at: '2026-11-28T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+    ],
+  }]} onCheckout={vi.fn()} />)
+
+  expect(screen.getByText('Multi-Night Pass · 2 nights')).toBeInTheDocument()
+  const toggle = screen.getByRole('button', { name: 'View included nights (2)' })
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByText('Opening Night')).not.toBeInTheDocument()
+
+  await userEvent.setup().click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByText('Opening Night')).toBeInTheDocument()
+  expect(screen.getByText('Championship Night')).toBeInTheDocument()
+})

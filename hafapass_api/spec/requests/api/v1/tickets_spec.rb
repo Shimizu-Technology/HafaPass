@@ -145,6 +145,72 @@ RSpec.describe "Api::V1::Tickets", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("status" => "cancelled", "scan_credential" => nil)
     end
+
+    it "returns child_tickets with safe display credentials for pass_parent and parent_pass metadata for pass_child" do
+      org = event.organization
+      night_1 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 1", starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      night_2 = create(:event, :published, organization: org, organizer_profile: organizer_profile,
+        title: "Night 2", starts_at: 4.days.from_now, ends_at: 4.days.from_now + 3.hours)
+      pass_tt = create(:ticket_type, event: event, name: "Full Tourney Pass", price_cents: 0, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_2, position: 1)
+
+      buyer = create(:user)
+      pass_order = Commerce::OrderCreator.call(
+        event: event,
+        user: buyer,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: buyer.email,
+        buyer_name: "Pass Holder",
+        payment_required: false
+      ).order
+      parent_ticket = pass_order.tickets.find_by!(parent_ticket_id: nil)
+      child_1 = pass_order.tickets.find_by!(event: night_1)
+
+      # Unauthenticated caller sees schedule metadata, but NO child credentials and NO scan_credential
+      get "/api/v1/tickets/#{parent_ticket.display_credential}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "is_pass" => true,
+        "pass_parent" => true,
+        "pass_child" => false,
+        "pass_nights_count" => 2,
+        "scan_credential" => nil
+      )
+      expect(response.parsed_body.fetch("child_tickets").map { |c| c["display_token"] }).to eq([nil, nil])
+
+      # Authenticated buyer gets safe child display links, still no scan_credential on parent
+      get "/api/v1/tickets/#{parent_ticket.display_credential}", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["scan_credential"]).to be_nil
+      children = response.parsed_body.fetch("child_tickets")
+      expect(children.map { |c| c.dig("event", "title") }).to eq(["Night 1", "Night 2"])
+      expect(children.first["display_token"]).to eq(child_1.display_credential)
+      expect(children.first["ticket_url"]).to eq("/tickets/#{child_1.display_credential}")
+      expect(children.first).not_to have_key("scan_credential")
+
+      # Parent pass cannot be downloaded as a door PDF
+      get "/api/v1/tickets/#{parent_ticket.display_credential}/download", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:not_found)
+
+      # Child ticket exposes parent_pass metadata and scannable credential when authorized
+      get "/api/v1/tickets/#{child_1.display_credential}", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "is_pass" => true,
+        "pass_parent" => false,
+        "pass_child" => true,
+        "parent_ticket_id" => parent_ticket.id,
+        "scan_credential" => child_1.scan_credential,
+        "parent_pass" => {
+          "ticket_type_name" => "Full Tourney Pass",
+          "event_title" => event.title,
+          "event_slug" => event.slug,
+          "nights_count" => 2
+        }
+      )
+    end
   end
 
   describe "GET /api/v1/tickets/:credential/download" do

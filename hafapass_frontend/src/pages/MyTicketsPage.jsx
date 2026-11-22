@@ -8,6 +8,7 @@ import SEO from '../components/SEO'
 import TicketStock from '../components/Ticket'
 import BuyerTitleBand from '../components/BuyerTitleBand'
 import BuyerTicketPass from '../components/BuyerTicketPass'
+import PassTicketCard from '../components/PassTicketCard'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatMoneyCents } from '../utils/money'
 import { signInDestination } from '../utils/authDestination'
@@ -222,16 +223,27 @@ function MyTicketsContent({ refreshSession, signOut }) {
     })
   })
 
-  // Sort events: upcoming first (by starts_at), then past
+  // Sort events: upcoming first (by starts_at, or next/latest night for multi-night passes), then past
   const now = new Date()
+  const groupSchedule = (group) => {
+    const passChildDates = group.tickets
+      .filter(ticket => (ticket.pass_parent || ticket.is_pass) && ticket.child_tickets?.length > 0)
+      .flatMap(ticket => ticket.child_tickets.map(child => child.event?.ends_at || child.event?.starts_at).filter(Boolean).map(value => new Date(value)))
+    if (passChildDates.length > 0) {
+      const upcomingDates = passChildDates.filter(date => date >= now).sort((a, b) => a - b)
+      if (upcomingDates.length > 0) return { date: upcomingDates[0], upcoming: true }
+      const latestPast = passChildDates.sort((a, b) => b - a)[0]
+      return { date: latestPast, upcoming: false }
+    }
+    const eventDate = new Date(group.event.starts_at)
+    return { date: eventDate, upcoming: eventDate >= now }
+  }
   const eventGroups = Object.values(ticketsByEvent).sort((a, b) => {
-    const aDate = new Date(a.event.starts_at)
-    const bDate = new Date(b.event.starts_at)
-    const aUpcoming = aDate >= now
-    const bUpcoming = bDate >= now
-    if (aUpcoming && !bUpcoming) return -1
-    if (!aUpcoming && bUpcoming) return 1
-    return aUpcoming ? aDate - bDate : bDate - aDate
+    const aInfo = groupSchedule(a)
+    const bInfo = groupSchedule(b)
+    if (aInfo.upcoming && !bInfo.upcoming) return -1
+    if (!aInfo.upcoming && bInfo.upcoming) return 1
+    return aInfo.upcoming ? aInfo.date - bInfo.date : bInfo.date - aInfo.date
   })
 
   function getStatusBadge(ticket) {
@@ -335,11 +347,15 @@ function MyTicketsContent({ refreshSession, signOut }) {
           </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="space-y-4">
             {eventGroups.flatMap(({ event, tickets }) => {
               const isPast = new Date(event.starts_at) < now
-              return tickets.map(ticket => <BuyerTicketPass key={ticket.id} event={event} ticket={ticket} isPast={isPast} status={getStatusBadge(ticket)}
-                canTransfer={ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast}
-                onTransfer={() => setTransferTarget({ ticket, event })}
-                onCancelTransfer={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
-                onTransferSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />)
+              return tickets.map(ticket => (
+                (ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
+                  ? <PassTicketCard key={ticket.id} ticket={ticket} event={event} />
+                  : <BuyerTicketPass key={ticket.id} event={event} ticket={ticket} isPast={isPast} status={getStatusBadge(ticket)}
+                    canTransfer={ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast}
+                    onTransfer={() => setTransferTarget({ ticket, event })}
+                    onCancelTransfer={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
+                    onTransferSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />
+              ))
             })}
           </div>}
         </div>

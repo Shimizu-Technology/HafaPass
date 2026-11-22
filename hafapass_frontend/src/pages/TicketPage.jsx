@@ -6,10 +6,11 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
-import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp } from 'lucide-react'
+import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
+import PassTicketCard from '../components/PassTicketCard'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
@@ -332,6 +333,19 @@ function TicketContent({ authContext }) {
   }
 
   const { event, ticket_type } = ticket
+  const isPassParent = Boolean(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
+
+  if (isPassParent) {
+    return (
+      <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+        <SEO title={t('pageTitles.ticket')} noIndex />
+        <div className="w-full max-w-md">
+          <PassTicketCard ticket={ticket} event={event} orderId={orderId} showSummaryBanner />
+          <AddToHomeScreenInstructions />
+        </div>
+      </div>
+    )
+  }
 
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'long', month: 'long' })
   const formatTime = (dateStr) => formatEventTime(dateStr, event?.timezone)
@@ -393,6 +407,15 @@ function TicketContent({ authContext }) {
               <span className={`block text-xs ${status.text} opacity-75 mt-0.5`}>{t('buyerAccount.ticketPage.checkedInAt', { time: formatTime(ticket.checked_in_at) })}</span>
             )}
           </div>
+
+          {ticket.pass_child && ticket.parent_pass?.ticket_type_name && (
+            <div className="px-4 pt-4 text-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-900">
+                <Sparkles aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                Part of {ticket.parent_pass.ticket_type_name}
+              </span>
+            </div>
+          )}
 
           {/* QR Code Section */}
           {showCredential ? <motion.div

@@ -25,7 +25,7 @@ class Api::V1::Me::OrdersController < ApplicationController
     response.headers["Cache-Control"] = "private, no-store"
     order = current_user.orders
       .includes(:payments, :refunds, :disputes, :order_items, :promo_code,
-        event: { event_changes: :event_change_responses }, tickets: [:ticket_type, :order_item])
+        event: { event_changes: :event_change_responses }, tickets: [:event, :ticket_type, :order_item])
       .find_by(id: params[:id])
 
     unless order

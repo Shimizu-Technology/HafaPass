@@ -421,6 +421,8 @@ module Api
       def preload_event_stats(events, at: Time.current)
         @active_ticket_counts = Hash.new(0)
         @pass_committed_counts = {}
+        @preloaded_events_by_id = events.index_by(&:id)
+        @extra_included_event_remaining = {}
         @event_hold_counts = Hash.new(0)
         @ticket_type_hold_counts = Hash.new(0)
         @pricing_tier_hold_counts = Hash.new(0)
@@ -450,6 +452,22 @@ module Api
             at: at,
             child_counts: pass_child_ticket_counts
           )
+        end
+
+        pass_ticket_types = events.flat_map { |event| event.ticket_types.select(&:is_pass?) }
+        if pass_ticket_types.any?
+          ActiveRecord::Associations::Preloader.new(
+            records: pass_ticket_types,
+            associations: { ticket_type_included_events: :included_event }
+          ).call
+
+          extra_included_events = pass_ticket_types
+            .flat_map { |tt| tt.ticket_type_included_events.filter_map(&:included_event) }
+            .reject { |included| included.max_capacity.blank? || @preloaded_events_by_id.key?(included.id) }
+            .uniq(&:id)
+          if extra_included_events.any?
+            @extra_included_event_remaining = EventCapacity.remaining_for_events(extra_included_events, at: at)
+          end
         end
 
         InventoryHold.active.where(event_id: event_ids).where("expires_at > ?", at)
@@ -521,7 +539,45 @@ module Api
         held = @ticket_type_hold_counts[ticket_type.id] +
           @ticket_type_waitlist_counts[ticket_type.id] +
           @ticket_type_seat_hold_counts[ticket_type.id]
-        [ticket_type.quantity_available - ticket_type.quantity_sold - held, 0].max
+        remaining = [ticket_type.quantity_available - ticket_type.quantity_sold - held, 0].max
+        return remaining unless ticket_type.is_pass?
+
+        bottleneck = pass_included_events_bottleneck(ticket_type)
+        bottleneck ? [remaining, bottleneck].min : remaining
+      end
+
+      def pass_included_events_bottleneck(ticket_type)
+        links = ticket_type.ticket_type_included_events
+        return nil if links.empty?
+
+        remaining_values = links.filter_map do |link|
+          included = link.included_event
+          next unless included&.max_capacity.present?
+
+          if (page_event = @preloaded_events_by_id&.[](included.id))
+            event_remaining_capacity(page_event)
+          else
+            @extra_included_event_remaining&.fetch(included.id, Float::INFINITY)
+          end
+        end
+        remaining_values.min
+      end
+
+      def serialized_included_events(ticket_type)
+        return [] unless ticket_type.is_pass?
+
+        ticket_type.ticket_type_included_events
+          .sort_by { |link| [link.position, link.id] }
+          .filter_map do |link|
+            included = link.included_event
+            next unless included
+            next if included.draft? || included.archived? || included.policy_hold_scope == "hidden"
+
+            Passes::TicketPayload.included_event_json(
+              included,
+              title: included.content_for(request_locale)[:title]
+            )
+          end
       end
 
       def pricing_tier_committed_quantity(tier)
@@ -645,6 +701,7 @@ module Api
             tt_content = tt.content_for(request_locale)
             current_price_cents = active_tier ? active_tier.price_cents : tt.price_cents
             fee = Commerce::ServiceFee.for_event(event, current_price_cents, terms: listing_fee_terms)
+            quantity_remaining = ticket_type_available_quantity(tt)
             tt_json = {
               id: tt.id,
               name: tt_content[:name],
@@ -663,12 +720,15 @@ module Api
               regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
-              quantity_remaining: ticket_type_available_quantity(tt),
+              quantity_remaining: quantity_remaining,
+              sold_out: quantity_remaining.zero?,
               on_sale: sales_open && tt.on_sale?(at: at),
               max_per_order: tt.max_per_order,
               max_per_buyer: tt.max_per_buyer,
               sales_start_at: tt.sales_start_at,
-              sales_end_at: tt.sales_end_at
+              sales_end_at: tt.sales_end_at,
+              is_pass: tt.is_pass?,
+              included_events: serialized_included_events(tt)
             }
             if active_tier
               tt_json[:active_tier] = {

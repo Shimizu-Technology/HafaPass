@@ -54,7 +54,7 @@ class OrderPresenter
       latest_event_change: latest_event_change_json,
       cancellation_refund: cancellation_refund_json,
       order_items: ordered_order_items.map { |item| order_item_json(item) },
-      tickets: include_tickets ? presented_tickets.map { |ticket| ticket_json(ticket) } : []
+      tickets: include_tickets ? top_level_tickets.map { |ticket| ticket_json(ticket) } : []
     }.compact
   end
 
@@ -162,7 +162,7 @@ class OrderPresenter
 
   def ticket_json(ticket)
     transferred_away = ticket.transferred_away_from?(order)
-    {
+    json = {
       id: ticket.id,
       display_credential: transferred_away ? nil : ticket.display_credential,
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
@@ -181,6 +181,22 @@ class OrderPresenter
       },
       seat: seat_json(ticket)
     }
+
+    if ticket.pass_parent?
+      children = Passes::TicketPayload.sort_children(pass_children_by_parent_id.fetch(ticket.id, []))
+      json.merge!(
+        is_pass: true,
+        pass_parent: true,
+        pass_child: false,
+        pass_nights_count: children.size,
+        child_tickets: children.map { |child|
+          child_transferred = transferred_away || child.transferred_away_from?(order)
+          Passes::TicketPayload.child_json(child, expose_credential: !child_transferred, transferred_away: child_transferred)
+        }
+      )
+    end
+
+    json
   end
 
   def seat_json(ticket)
@@ -251,11 +267,29 @@ class OrderPresenter
 
   def presented_tickets
     @presented_tickets ||= begin
-      tickets = order.tickets
-      tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
-        { parent_ticket: :pending_refund_tickets },
-        event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
-      tickets.to_a.sort_by(&:id)
+      tickets = order.tickets.to_a
+      if tickets.any?
+        ActiveRecord::Associations::Preloader.new(
+          records: tickets,
+          associations: [
+            :event, :ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
+            { parent_ticket: :pending_refund_tickets },
+            { event_seat: { venue_seat: { seating_row: :seating_section } } }
+          ]
+        ).call
+      end
+      tickets.sort_by(&:id)
+    end
+  end
+
+  def pass_children_by_parent_id
+    @pass_children_by_parent_id ||= presented_tickets.select(&:pass_child?).group_by(&:parent_ticket_id)
+  end
+
+  def top_level_tickets
+    @top_level_tickets ||= begin
+      parent_ids = presented_tickets.select(&:pass_parent?).map(&:id).to_set
+      presented_tickets.reject { |ticket| ticket.pass_child? && parent_ids.include?(ticket.parent_ticket_id) }
     end
   end
 

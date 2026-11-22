@@ -2,10 +2,11 @@ import TranslatedTicketContent from './TranslatedTicketContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Minus, Plus, ShoppingCart, Clock, Zap } from 'lucide-react'
+import { Minus, Plus, ShoppingCart, Clock, Zap, ChevronDown, Sparkles } from 'lucide-react'
 import PaidCheckoutGate from './PaidCheckoutGate'
 import usePaidCheckoutAdminOnly from '../hooks/usePaidCheckoutAdminOnly'
 import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
+import { DEFAULT_EVENT_TIME_ZONE, formatEventDate } from '../utils/eventTime'
 
 // Rows and the buy button lead with all-in prices (ticket + the buyer's
 // service fee), with the breakdown as a smaller secondary line.
@@ -16,6 +17,9 @@ import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFee
 export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
+  const [expandedPasses, setExpandedPasses] = useState({})
+
+  const togglePassSchedule = (id) => setExpandedPasses(prev => ({ ...prev, [id]: !prev[id] }))
 
   const setQty = (id, qty) => setQuantities(prev => ({ ...prev, [id]: Math.max(0, qty) }))
   const getQty = (id) => quantities[id] || 0
@@ -71,11 +75,53 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium text-neutral-900 break-words max-w-full">{content.name}</h3>
+                    {tt.is_pass && tt.included_events?.length > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-900">
+                        <Sparkles aria-hidden="true" className="h-3 w-3" />
+                        Multi-Night Pass · {tt.included_events.length} {tt.included_events.length === 1 ? 'night' : 'nights'}
+                      </span>
+                    )}
                     {soldOut && (
                       <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : t('buyer.TicketTypesSection.salesUnavailable')}</span>
                     )}
                   </div>
                   {content.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{content.description}</p>}
+
+                  {tt.is_pass && tt.included_events?.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-neutral-200/80 bg-neutral-50/70 px-3 py-2">
+                      <button
+                        type="button"
+                        aria-expanded={Boolean(expandedPasses[tt.id])}
+                        aria-controls={`pass-nights-${tt.id}`}
+                        onClick={() => togglePassSchedule(tt.id)}
+                        className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
+                      >
+                        <span>
+                          {expandedPasses[tt.id]
+                            ? 'Hide included nights'
+                            : `View included nights (${tt.included_events.length})`}
+                        </span>
+                        <ChevronDown
+                          aria-hidden="true"
+                          className={`h-3.5 w-3.5 shrink-0 transition-transform ${expandedPasses[tt.id] ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                      {expandedPasses[tt.id] && (
+                        <ul id={`pass-nights-${tt.id}`} className="mt-2 space-y-1.5 border-t border-neutral-200/80 pt-2 text-xs text-neutral-700">
+                          {tt.included_events.map(night => (
+                            <li key={night.id} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                              <span className="font-medium text-neutral-900 [overflow-wrap:anywhere]">{night.title}</span>
+                              {night.starts_at && (
+                                <span className="shrink-0 text-neutral-600">
+                                  {formatEventDate(night.starts_at, night.timezone || DEFAULT_EVENT_TIME_ZONE, { weekday: 'short', year: undefined })}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
 
                   {showTranslationNotice && content.notice && <MachineTranslationNotice {...content.notice} />}
 

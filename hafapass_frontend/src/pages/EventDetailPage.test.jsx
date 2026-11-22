@@ -286,3 +286,30 @@ it.each([
   expect(seo.props.jsonLd).toMatchObject({ eventStatus: schemaStatus })
   expect(seo.props.jsonLd).not.toHaveProperty('offers')
 })
+
+it('shows Multi-Night Pass tier badge and included nights schedule on EventDetailPage', async () => {
+  vi.clearAllMocks()
+  window.IntersectionObserver = FakeIntersectionObserver
+  mount({
+    ...baseEvent,
+    ticket_types: [
+      {
+        id: 50,
+        name: 'Season Pass',
+        price_cents: 6000,
+        all_in_price_cents: 6000,
+        service_fee_cents: 0,
+        on_sale: true,
+        quantity_remaining: 15,
+        is_pass: true,
+        included_events: [
+          { id: 101, title: 'Opening Night', starts_at: '2099-11-21T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+          { id: 102, title: 'Semifinals', starts_at: '2099-11-27T08:00:00Z', timezone: 'Pacific/Guam', status: 'published' },
+        ],
+      },
+    ],
+  })
+  await screen.findByRole('heading', { name: 'Reef Night' })
+  expect(screen.getByText('Multi-Night Pass · 2 nights')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'View included nights (2)' })).toBeInTheDocument()
+})
