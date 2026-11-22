@@ -12,7 +12,7 @@ module Passes
         begin
           yield
         rescue LockSetChanged
-          raise if attempts >= max_retries
+          raise if attempts >= max_retries || inside_application_transaction?
 
           attempts += 1
           retry
@@ -82,6 +82,15 @@ module Passes
       end
 
       private
+
+      def inside_application_transaction?
+        connection = ActiveRecord::Base.connection
+        return false if connection.open_transactions.zero?
+        return true unless Rails.env.test?
+
+        # Transactional RSpec fixtures hold one outer non-joinable transaction.
+        connection.open_transactions > 1 || connection.current_transaction.joinable?
+      end
 
       def extract_ticket_type_ids(line_items)
         return [] unless line_items.is_a?(Array) && line_items.any?

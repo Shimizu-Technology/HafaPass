@@ -331,15 +331,21 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   def obsolete_event_change?(delivery)
-    return false unless delivery.template == "event_change"
+    return false unless %w[event_change pass_event_change].include?(delivery.template)
 
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
-    !change || !EventChange::TYPES.include?(change.change_type) || change.event_id != delivery.order&.event_id
+    return true if !change || !EventChange::TYPES.include?(change.change_type)
+
+    if delivery.template == "pass_event_change"
+      change.event_id != delivery.event_id
+    else
+      change.event_id != delivery.order&.event_id
+    end
   end
 
   # Never withdraw a notice once a provider attempt may have happened.
   def unattempted_event_change?(delivery)
-    delivery.template == "event_change" && delivery.attempts.zero? &&
+    %w[event_change pass_event_change].include?(delivery.template) && delivery.attempts.zero? &&
       delivery.outbound_payload.blank? && delivery.provider_attempted_at.nil?
   end
 

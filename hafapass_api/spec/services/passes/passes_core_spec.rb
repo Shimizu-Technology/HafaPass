@@ -349,7 +349,7 @@ RSpec.describe "Multi-night passes core behavior" do
           reason: "requested_by_customer",
           requested_by: owner
         )
-      end.to raise_error(Commerce::RefundCreator::RefundError, /order level/i)
+      end.to raise_error(Commerce::RefundCreator::RefundError, /already been used on one or more nights/i)
 
       # Safety fences: TicketTransfers::Manager rejects both pass parent and pass child
       pass_event.update!(transfers_enabled: true)

@@ -126,6 +126,14 @@ emails:
     no_refund: "Open your order to review the details. If you have questions about this change, contact HåfaPass support with your order number."
     review_order: "Review order %{reference}"
     view_tickets: "View your tickets"
+  pass_event_change:
+    cancelled_subject: "Pass night cancelled: %{event}"
+    cancelled_heading: "%{event} was cancelled"
+    cancelled_body: "%{event}, included in your %{pass_event} pass, was cancelled. Your remaining pass nights stay active."
+    intro: "An event included in your %{pass_event} pass was updated. Here is what changed."
+    postponed_note: "Your pass ticket for this night stays valid once the organizer sets a new date."
+    informational_note: "Your %{pass_event} pass remains active for this updated night and your other included nights."
+    view_pass: "View your pass"
   refund:
     cancelled_subject: "Event cancelled — your refund of %{amount} is on its way"
     cancelled_heading: "Event cancelled — refund on its way"

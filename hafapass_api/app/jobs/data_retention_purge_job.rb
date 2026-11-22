@@ -27,8 +27,8 @@ class DataRetentionPurgeJob < ApplicationJob
         dry_run = DataRetention.dry_run?
         batch.each do |record|
           next if RetentionGuard.protected?(record)
-          next if record.is_a?(Order) && record.tickets.exists? && record.event.starts_at&.after?(at)
-          next if record.is_a?(Ticket) && record.event.starts_at&.after?(at)
+          next if record.is_a?(Order) && record.tickets.exists? && event_active_at?(record.event, at)
+          next if record.is_a?(Ticket) && ticket_active_at?(record, at)
           next if record.is_a?(PrivacyRequest) && record.executed_at.nil?
           next if record.is_a?(MessageDelivery) && (record.queued? || record.delayed?)
           related_order = record.order if record.respond_to?(:order)
@@ -91,6 +91,19 @@ class DataRetentionPurgeJob < ApplicationJob
   end
 
   private
+
+  def event_active_at?(event, at)
+    return false unless event
+
+    event.starts_at&.after?(at) || event.effective_ends_at&.after?(at)
+  end
+
+  def ticket_active_at?(ticket, at)
+    return true if event_active_at?(ticket.event, at)
+    return true if ticket.pass_child? && event_active_at?(ticket.order&.event, at)
+
+    false
+  end
 
   def with_ranked_record_lock(record, &block)
     if record.is_a?(Payout)

@@ -168,7 +168,8 @@ class OrderPresenter
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: transferred_away ? "transferred" : ticket.status,
       admission_allowed: !transferred_away && ticket.admission_allowed?,
-      admission_block_reason: ticket.inventory_retained? ? "Refunded or disputed admission requires organizer review" :
+      admission_block_reason: (ticket.inventory_retained? || (ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)) ?
+        "Refunded or disputed admission requires organizer review" :
         (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
@@ -253,7 +254,7 @@ class OrderPresenter
     @presented_tickets ||= begin
       tickets = order.tickets
       tickets = tickets.includes(:ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
-        { parent_ticket: :pending_refund_tickets },
+        { parent_ticket: [:pending_refund_tickets, :inventory_retention] },
         event_seat: { venue_seat: { seating_row: :seating_section } }) unless tickets.loaded?
       tickets.to_a.sort_by(&:id)
     end

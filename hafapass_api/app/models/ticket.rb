@@ -92,7 +92,7 @@ class Ticket < ApplicationRecord
     return "pass_container" if pass_parent?
     return "cancelled" if cancelled? || (pass_child? && parent_ticket&.cancelled?)
     return "transferred" if transferred?
-    return "inventory_retained" if inventory_retained?
+    return "inventory_retained" if inventory_retained? || (pass_child? && parent_ticket&.inventory_retained?)
     return "payment_blocked" if order.ticket_access_blocked?
     return "refund_pending" if refund_pending?
     return "unfulfilled" unless order.ticket_fulfilled?(payment_mode: payment_mode)

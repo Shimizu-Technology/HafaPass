@@ -82,7 +82,7 @@ module Admissions
 
     def manifest_tickets
       event.tickets.scannable.preload(:ticket_type, :inventory_retention, :pending_refund_tickets,
-        { parent_ticket: :pending_refund_tickets }, { order: [:disputes, :refunds, :payments] },
+        { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, { order: [:disputes, :refunds, :payments] },
         event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,

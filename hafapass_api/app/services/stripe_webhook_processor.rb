@@ -349,7 +349,7 @@ class StripeWebhookProcessor
     end
 
     Dispute.transaction do
-      payment.order.event.organization.lock!
+      payment.order.event.organization.lock!("FOR NO KEY UPDATE")
       payment.order.event.lock!
       payment.order.lock!
       provider_id = value(object, :id)
@@ -448,7 +448,9 @@ class StripeWebhookProcessor
   end
 
   def cancel_disputed_tickets!(order, dispute)
-    order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
+    order.tickets.includes(:ticket_type, :pricing_tier, :inventory_retention).order(:id).lock.each do |ticket|
+      next if ticket.cancelled?
+
       Commerce::FinancialReversalInventory.call(ticket: ticket, dispute: dispute, reason: "payment_dispute_lost")
     end
     order.event.notify_waitlist_if_available

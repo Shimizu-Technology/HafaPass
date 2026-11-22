@@ -58,6 +58,9 @@ class EmailService
       when "event_change"
         change = EventChange.find(delivery.metadata.fetch("event_change_id"))
         send_event_change_notification(change, delivery.order, delivery: delivery)
+      when "pass_event_change"
+        change = EventChange.find(delivery.metadata.fetch("event_change_id"))
+        send_pass_event_change_notification(change, delivery.order, delivery: delivery)
       when "refund_notification"
         send_refund_notification(delivery.order, delivery: delivery)
       when "guest_list"
@@ -239,11 +242,36 @@ class EmailService
           idempotency_key: "event-change/#{change.id}/holder/#{Digest::SHA256.hexdigest(email).first(32)}",
           metadata: { event_change_id: change.id, audience: "holder" }, wait: wait)
       end
+
+      # Pass holders with active child tickets on this included night receive an
+      # informational notice without single-night refund/accept CTAs, deduped
+      # against direct night buyers/holders above.
+      pass_children = change.event.tickets
+        .where.not(parent_ticket_id: nil)
+        .where(parent_ticket_id: Ticket.where.not(status: :cancelled).select(:id))
+        .joins(:order)
+        .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
+      pass_children = if change.change_type == "cancelled"
+        pass_children.where(status: :issued)
+          .or(pass_children.where(status: :cancelled, cancellation_reason: "event_cancelled"))
+      else
+        pass_children.where(status: :issued)
+      end
+      pass_children.includes(:order).order(:id).find_each do |ticket|
+        email = (ticket.holder_email.presence || ticket.attendee_email.presence || ticket.order.buyer_email).to_s.strip.downcase
+        next if email.blank? || notified.include?(email)
+
+        notified << email
+        queue_event_change_delivery(change, order: ticket.order, ticket: ticket, recipient: email,
+          template: "pass_event_change",
+          idempotency_key: "event-change/#{change.id}/pass-holder/#{Digest::SHA256.hexdigest(email)[0, 32]}",
+          metadata: { event_change_id: change.id, audience: "pass_holder", pass_event_id: ticket.order.event_id }, wait: wait)
+      end
     end
 
-    def queue_event_change_delivery(change, order:, recipient:, idempotency_key:, metadata:, wait:, ticket: nil)
+    def queue_event_change_delivery(change, order:, recipient:, idempotency_key:, metadata:, wait:, ticket: nil, template: "event_change")
       delivery = nil
-      delivery = create_delivery(order: order, ticket: ticket, event: change.event, template: "event_change",
+      delivery = create_delivery(order: order, ticket: ticket, event: change.event, template: template,
         recipient: recipient, metadata: metadata, idempotency_key: idempotency_key)
       (wait ? MessageDeliveryJob.set(wait: wait) : MessageDeliveryJob).perform_later(delivery.id)
     rescue StandardError => e
@@ -584,6 +612,20 @@ class EmailService
         end
       end
       deliver(to: recipient, subject: subject, html: html, tag: "event_change", delivery: delivery, order_id: order.id)
+    end
+
+    def send_pass_event_change_notification(change, order, delivery: nil)
+      return unless change && EventChange::TYPES.include?(change.change_type)
+
+      recipient = delivery&.recipient.presence || order.buyer_email
+      html, subject = in_locale(order.locale) do
+        if change.change_type == "cancelled"
+          build_pass_event_cancelled_html(change, order)
+        else
+          build_pass_event_change_html(change, order)
+        end
+      end
+      deliver(to: recipient, subject: subject, html: html, tag: "pass_event_change", delivery: delivery, order_id: order.id)
     end
 
     # ── Individual Ticket Email ─────────────────────────────────────
@@ -1083,6 +1125,58 @@ class EmailService
           #{event_change_reasons_html(burst)}
           #{notes.map { |note| %(<p style="color: #374151; margin: 0 0 16px;">#{note}</p>) }.join}
           <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{cta}</a>
+        HTML
+      end
+      [body, safe_subject(t("event_change.subject.#{kind}", event: title))]
+    end
+
+    def build_pass_event_cancelled_html(change, order)
+      title = event_title(change.event)
+      pass_title = event_title(order.event)
+      heading = t("pass_event_change.cancelled_heading", event: title)
+      link = order_access_url(order)
+      body = email_wrapper(heading) do
+        <<~HTML
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
+          <p style="color: #374151; margin: 0 0 16px;">#{ht('pass_event_change.cancelled_body', event: title, pass_event: pass_title)}</p>
+          #{event_change_reasons_html([change])}
+          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{ht('pass_event_change.view_pass')}</a>
+        HTML
+      end
+      [body, safe_subject(t("pass_event_change.cancelled_subject", event: title))]
+    end
+
+    def build_pass_event_change_html(change, order)
+      event = change.event
+      title = event_title(event)
+      pass_title = event_title(order.event)
+      burst = change.notice_burst_for(order)
+      before = burst.first.before_data.to_h.stringify_keys
+      after = change.after_data.to_h.stringify_keys
+      rows = event_change_rows(before, after, event.timezone)
+      start_moved = rows.any? { |row| row[:key] == "starts_at" }
+      kind = if change.change_type == "postponed" then "postponed"
+      elsif start_moved then "new_date"
+      elsif rows.any? { |row| row[:key] == "venue" } then "venue"
+      else "updated"
+      end
+      heading = t("event_change.heading.#{kind}", event: title)
+      original_start = parse_change_time(before["starts_at"])
+      notes = []
+      if kind == "postponed" || after["status"] == "postponed"
+        notes << ht("pass_event_change.postponed_note")
+        notes << ht("event_change.original_date", date: format_local_datetime(original_start, event.timezone)) if original_start && !start_moved
+      end
+      notes << ht("pass_event_change.informational_note", pass_event: pass_title)
+      link = order_access_url(order)
+      body = email_wrapper(heading) do
+        <<~HTML
+          <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
+          <p style="color: #6b7280; margin: 0 0 20px;">#{ht('pass_event_change.intro', pass_event: pass_title)}</p>
+          #{event_change_table_html(rows)}
+          #{event_change_reasons_html(burst)}
+          #{notes.map { |note| %(<p style="color: #374151; margin: 0 0 16px;">#{note}</p>) }.join}
+          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{ht('pass_event_change.view_pass')}</a>
         HTML
       end
       [body, safe_subject(t("event_change.subject.#{kind}", event: title))]

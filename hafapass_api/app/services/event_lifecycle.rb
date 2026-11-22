@@ -75,7 +75,10 @@ class EventLifecycle
           occurred_at: at
         )
         buyer_change = record_buyer_change!(before_data) if %i[postpone cancel].include?(action)
-        refund_run = EventCancellationRefunds.prepare!(event: event, actor: actor) if action == :cancel
+        if action == :cancel
+          cancel_pass_child_tickets!
+          refund_run = EventCancellationRefunds.prepare!(event: event, actor: actor)
+        end
         EmailService.send_event_change_notifications_async(buyer_change) if buyer_change
       end
     end
@@ -106,8 +109,13 @@ class EventLifecycle
       raise TransitionError, "Keep the reason under #{UNARCHIVE_REASON_LIMIT} characters"
     end
 
-    if action == :complete && (event.ends_at.blank? || event.ends_at > at)
-      raise TransitionError, "An event cannot be completed before it ends"
+    if action == :complete
+      if event.ends_at.blank? || event.ends_at > at
+        raise TransitionError, "An event cannot be completed before it ends"
+      end
+      if event.active_included_pass_nights?
+        raise TransitionError, "A multi-night pass event cannot be completed while included nights are still published or postponed"
+      end
     end
 
     if action == :archive && !event.draft? && (problem = archive_blocker)
@@ -156,6 +164,25 @@ class EventLifecycle
     end
 
     previous
+  end
+
+  def cancel_pass_child_tickets!
+    child_scope = event.tickets.where.not(parent_ticket_id: nil).where(status: :issued)
+    order_ids = child_scope.distinct.pluck(:order_id).sort
+    return if order_ids.empty?
+
+    # ORG (FOR UPDATE) and this night event (FOR UPDATE) are already held.
+    # Lock affected pass orders then active Night N child tickets in ascending
+    # ID order without cancelling parent passes or sibling nights.
+    Order.where(id: order_ids).order(:id).lock.load
+    child_scope.order(:id).lock.each do |child|
+      child.update!(
+        status: :cancelled,
+        cancelled_at: at,
+        cancellation_reason: "event_cancelled",
+        scan_credential_version: child.scan_credential_version + 1
+      )
+    end
   end
 
   def record_buyer_change!(before_data)

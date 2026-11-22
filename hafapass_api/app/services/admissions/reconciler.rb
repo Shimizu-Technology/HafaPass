@@ -206,8 +206,8 @@ module Admissions
       entry = nil unless entry && secure_equal?(entry["credential_hash"], input[:credential_hash])
       return [nil, nil, "credential_not_in_manifest"] unless entry
 
-      ticket = device.event.tickets.includes(:ticket_type, :pending_refund_tickets,
-        { parent_ticket: :pending_refund_tickets }, order: :disputes).find_by(id: entry["ticket_id"])
+      ticket = device.event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets,
+        { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, order: :disputes).find_by(id: entry["ticket_id"])
       return [nil, entry, "ticket_not_found"] unless ticket
 
       current_hash = Digest::SHA256.hexdigest(ticket.scan_credential)

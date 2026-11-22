@@ -11,6 +11,7 @@ Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its emai
 | `ticket_delivery` | Transactional | Delivers an issued ticket. |
 | `order_recovery` | Transactional | Restores access to an existing order. |
 | `event_change` | Transactional | Reports a material change to a purchased event. |
+| `pass_event_change` | Transactional | Notifies multi-night pass holders of a schedule, venue, or cancellation change to an included night. |
 | `refund_notification` | Transactional | Reports an actual refund. |
 | `refund_reconciliation_digest` | Transactional/relationship | Gives platform staff a refund operations digest. |
 | `guest_list` | Transactional/relationship | Confirms a specific guest-list admission. |

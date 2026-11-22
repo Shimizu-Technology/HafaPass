@@ -461,9 +461,7 @@ class Api::V1::OrdersController < ApplicationController
     if ticket.pass_child?
       raise Commerce::RefundCreator::RefundError, "Multi-night pass tickets cannot be cancelled one night at a time"
     end
-    if ticket.pass_parent?
-      raise Commerce::RefundCreator::RefundError, "Multi-night passes cannot be cancelled individually"
-    end
+    return cancel_free_pass!(ticket, reason: reason) if ticket.pass_parent?
 
     ticket.with_entry_lock do
       unless controls_ticket?(ticket)
@@ -484,6 +482,59 @@ class Api::V1::OrdersController < ApplicationController
           organization: ticket.event.organization, event: ticket.event, outcome: "succeeded",
           deduplication_key: "order:#{ticket.order_id}:cancelled",
           after_data: { status: "cancelled" }, metadata: { reason: reason }, request: request)
+      end
+    end
+    ticket.event.notify_waitlist_if_available
+  end
+
+  def cancel_free_pass!(ticket, reason:)
+    Ticket.transaction do
+      ticket.event.organization.lock!("FOR NO KEY UPDATE")
+      ticket.event.lock!
+      ticket.order.with_lock do
+        group = ticket.order.tickets
+          .where(id: ticket.id)
+          .or(ticket.order.tickets.where(parent_ticket_id: ticket.id))
+          .order(:id)
+          .lock
+          .to_a
+        locked_parent = group.find { |item| item.id == ticket.id }
+        children = group.reject { |item| item.id == ticket.id }
+
+        unless controls_ticket?(locked_parent)
+          raise Commerce::RefundCreator::RefundError, "Transferred tickets are controlled by their current holder"
+        end
+        raise Commerce::RefundCreator::RefundError, "Only unused active tickets can be cancelled" unless locked_parent.issued?
+        if locked_parent.previously_admitted? || children.any?(&:previously_admitted?)
+          raise Commerce::RefundCreator::RefundError, "Pass has already been used on one or more nights and cannot be cancelled"
+        end
+
+        now = Time.current
+        locked_parent.release_inventory!
+        locked_parent.update!(
+          status: :cancelled,
+          cancelled_at: now,
+          cancellation_reason: reason,
+          scan_credential_version: locked_parent.scan_credential_version + 1
+        )
+        children.each do |child|
+          next if child.cancelled?
+
+          child.update!(
+            status: :cancelled,
+            cancelled_at: now,
+            cancellation_reason: reason,
+            scan_credential_version: child.scan_credential_version + 1
+          )
+        end
+        cancelled_ids = group.map(&:id)
+        unless locked_parent.order.tickets.where.not(id: cancelled_ids).where.not(status: :cancelled).exists?
+          locked_parent.order.update!(status: :cancelled)
+          AuditLogger.record!(action: "order.cancelled", auditable: locked_parent.order, actor: @current_user,
+            organization: locked_parent.event.organization, event: locked_parent.event, outcome: "succeeded",
+            deduplication_key: "order:#{locked_parent.order_id}:cancelled",
+            after_data: { status: "cancelled" }, metadata: { reason: reason }, request: request)
+        end
       end
     end
     ticket.event.notify_waitlist_if_available

@@ -47,7 +47,8 @@ module Admissions
           COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('cancelled')}) AS cancelled,
           COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('issued')} AND eo.id IS NOT NULL
             AND #{@event.published? ? 'TRUE' : 'FALSE'}
-            AND NOT EXISTS (SELECT 1 FROM ticket_inventory_retentions ir WHERE ir.ticket_id = t.id)
+            AND NOT EXISTS (SELECT 1 FROM ticket_inventory_retentions ir
+              WHERE ir.ticket_id = t.id OR (t.parent_ticket_id IS NOT NULL AND ir.ticket_id = t.parent_ticket_id))
             AND NOT EXISTS (SELECT 1 FROM refund_tickets rt JOIN refunds r ON r.id = rt.refund_id
               WHERE (rt.ticket_id = t.id OR (t.parent_ticket_id IS NOT NULL AND rt.ticket_id = t.parent_ticket_id))
                 AND rt.released_at IS NULL AND r.status = #{Refund.statuses.fetch('pending')})) AS eligible_unadmitted,

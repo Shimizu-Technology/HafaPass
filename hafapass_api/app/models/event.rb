@@ -137,6 +137,7 @@ class Event < ApplicationRecord
   before_save :record_localized_content_sources, if: :will_save_change_to_localized_content?
   before_validation :copy_venue_details, if: -> { venue_id_changed? && venue.present? }
   after_update -> { Wallet::PassSync.event_changed(self) }, if: :wallet_visible_change?
+  after_save :sync_linked_pass_end_dates, if: -> { saved_change_to_ends_at? || saved_change_to_starts_at? }
 
   scope :published, -> { where(status: :published) }
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
@@ -454,6 +455,33 @@ class Event < ApplicationRecord
     EventCapacity.remaining_for(self, at: at)
   end
 
+  def pass_included_events
+    Event.joins(:pass_inclusions)
+      .where(ticket_type_included_events: { ticket_type_id: ticket_types.select(:id) })
+      .distinct
+  end
+
+  def active_included_pass_nights?
+    pass_included_events.where(status: [:published, :postponed]).exists?
+  end
+
+  # Latest end time for this event, anchored to the latest included night for
+  # multi-night pass events so active passes stay upcoming and protected.
+  def effective_ends_at
+    candidates = [ends_at, starts_at].compact
+    has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
+    if has_pass && persisted?
+      included_max = pass_included_events.maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+      candidates << included_max if included_max
+    end
+    candidates.max
+  end
+
+  def upcoming?(at: Time.current)
+    anchor = effective_ends_at
+    anchor.present? && anchor > at
+  end
+
   # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
   # live-money proof, bounded pilot) are optional records now; they never
   # block publishing or sales. Organizer verification is the one admin step.
@@ -589,6 +617,10 @@ class Event < ApplicationRecord
 
   def wallet_visible_change?
     %w[status title starts_at ends_at venue_name venue_address].any? { |attribute| saved_change_to_attribute?(attribute) }
+  end
+
+  def sync_linked_pass_end_dates
+    Passes::SyncPassEndDate.for_included_event!(self)
   end
 
   def copy_venue_details

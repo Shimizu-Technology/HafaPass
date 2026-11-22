@@ -102,10 +102,16 @@ module Api
         def update
           updated = false
           Event.transaction do
-            # Checkout takes the event before ticket types. NO KEY UPDATE also
-            # permits foreign-key checks from payment finalization while it
-            # finishes consuming a hold under the ticket-type lock.
-            @event.lock!("FOR NO KEY UPDATE")
+            # Lock this event together with any linked pass events in ascending
+            # event.id order (FOR NO KEY UPDATE) so extending a linked pass
+            # event's ends_at during a night reschedule never cycles with pass
+            # checkout. Ticket types follow after all Rank 2 event locks.
+            linked_pass_events = Event.where(
+              id: TicketType.joins(:ticket_type_included_events)
+                .where(ticket_type_included_events: { included_event_id: @event.id })
+                .select(:event_id)
+            ).to_a
+            Passes::Locking.lock_events!([@event, *linked_pass_events])
             @event.ticket_types.order(:id).lock.load
             attributes = parsed_event_params
             can_manage = OrganizationAuthorization.allowed?(
@@ -436,7 +442,7 @@ module Api
           payment_mode = SiteSetting.instance.payment_mode
           children = tickets.where.not(parent_ticket_id: nil)
             .includes(:ticket_type, :inventory_retention, :pending_refund_tickets,
-              { parent_ticket: :pending_refund_tickets }, { order: [:disputes, :refunds, :payments] })
+              { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, { order: [:disputes, :refunds, :payments] })
             .to_a
           by_type = children.group_by(&:ticket_type)
             .sort_by { |tt, _| [tt.sort_order || 0, tt.id] }
@@ -457,6 +463,7 @@ module Api
 
         def pass_child_eligible?(ticket, payment_mode:)
           !ticket.cancelled? && !ticket.transferred? && !ticket.inventory_retained? &&
+            !ticket.parent_ticket&.inventory_retained? && !ticket.parent_ticket&.cancelled? &&
             !ticket.order.ticket_access_blocked? && !ticket.refund_pending? &&
             ticket.order.ticket_fulfilled?(payment_mode: payment_mode)
         end
