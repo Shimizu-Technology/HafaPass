@@ -10,24 +10,27 @@ class Api::V1::Me::TicketsController < ApplicationController
 
     if %w[upcoming past].include?(params[:tab])
       cancelled_status = Event.statuses.fetch("cancelled")
-      effective_end_sql = <<~SQL.squish
-        GREATEST(
-          COALESCE(events.ends_at, events.starts_at),
-          COALESCE((
-            SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
-            FROM ticket_type_included_events ttie
-            INNER JOIN events inc ON inc.id = ttie.included_event_id
-            WHERE ttie.ticket_type_id = tickets.ticket_type_id
-              AND tickets.parent_ticket_id IS NULL
-              AND inc.status != ?
-          ), COALESCE(events.ends_at, events.starts_at))
+      included_max_sql = <<~SQL.squish
+        (
+          SELECT MAX(COALESCE(inc.ends_at, inc.starts_at))
+          FROM ticket_type_included_events ttie
+          INNER JOIN events inc ON inc.id = ttie.included_event_id
+          WHERE ttie.ticket_type_id = tickets.ticket_type_id
+            AND inc.status != :cancelled
         )
+      SQL
+      effective_end_sql = <<~SQL.squish
+        CASE
+          WHEN tickets.parent_ticket_id IS NULL AND #{included_max_sql} IS NOT NULL
+            THEN GREATEST(events.starts_at, #{included_max_sql})
+          ELSE COALESCE(events.ends_at, events.starts_at)
+        END
       SQL
       tickets = tickets.joins(:event)
       tickets = if params[:tab] == "upcoming"
-        tickets.where("#{effective_end_sql} > ?", cancelled_status, now)
+        tickets.where("(#{effective_end_sql}) > :now", cancelled: cancelled_status, now: now)
       else
-        tickets.where("#{effective_end_sql} <= ? OR (#{effective_end_sql}) IS NULL", cancelled_status, now, cancelled_status)
+        tickets.where("(#{effective_end_sql}) <= :now OR (#{effective_end_sql}) IS NULL", cancelled: cancelled_status, now: now)
       end
     end
 
@@ -77,13 +80,14 @@ class Api::V1::Me::TicketsController < ApplicationController
   end
 
   def effective_ends_at_for(ticket)
-    candidates = [ticket.event.ends_at, ticket.event.starts_at].compact
     if ticket.pass_parent?
-      ticket.ticket_type.included_events.reject(&:cancelled?).each do |included_event|
-        end_time = included_event.ends_at || included_event.starts_at
-        candidates << end_time if end_time
-      end
+      included_max = ticket.ticket_type.included_events
+        .reject(&:cancelled?)
+        .filter_map { |included_event| included_event.ends_at || included_event.starts_at }
+        .max
+      return [ticket.event.starts_at, included_max].compact.max if included_max
     end
-    candidates.max
+
+    [ticket.event.ends_at, ticket.event.starts_at].compact.max
   end
 end

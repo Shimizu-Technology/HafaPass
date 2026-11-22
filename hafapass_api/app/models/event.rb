@@ -162,13 +162,29 @@ class Event < ApplicationRecord
       .without_hidden_policy_hold.with_public_organizer
   }
   scope :discoverable_base, ->(at = Time.current) {
+    cancelled_status = Event.statuses.fetch("cancelled")
     published
       .where(live_money_proof_candidate: false)
       .with_public_organizer
       .where(policy_hold_at: nil)
-      .where("COALESCE(events.ends_at, events.starts_at) > ?", at)
       .where(sales_suspended_at: nil, organizer_sales_suspended_at: nil)
       .joins(:ticket_types)
+      .where(<<~SQL.squish, at: at, cancelled: cancelled_status)
+        (
+          (ticket_types.is_pass = FALSE AND COALESCE(events.ends_at, events.starts_at) > :at)
+          OR (
+            ticket_types.is_pass = TRUE
+            AND EXISTS (
+              SELECT 1
+              FROM ticket_type_included_events ttie
+              INNER JOIN events inc ON inc.id = ttie.included_event_id
+              WHERE ttie.ticket_type_id = ticket_types.id
+                AND inc.status <> :cancelled
+                AND (COALESCE(inc.ends_at, inc.starts_at) > :at OR events.starts_at > :at)
+            )
+          )
+        )
+      SQL
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
       .distinct
@@ -470,17 +486,18 @@ class Event < ApplicationRecord
     pass_included_events.where(status: [:published, :postponed]).exists?
   end
 
-  # Latest end time for this event, anchored to the latest included night for
-  # multi-night pass events so active passes stay upcoming and protected.
+  # Latest end time for this event, anchored to the latest non-cancelled
+  # included night for multi-night pass events so active passes stay upcoming
+  # and protected without letting a stale ends_at linger past surviving nights.
   def effective_ends_at
-    candidates = [ends_at, starts_at].compact
     has_pass = ticket_types.loaded? ? ticket_types.any?(&:is_pass?) : ticket_types.where(is_pass: true).exists?
     if has_pass && persisted?
       included_max = pass_included_events.where.not(status: :cancelled)
         .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
-      candidates << included_max if included_max
+      return [starts_at, included_max].compact.max if included_max
     end
-    candidates.max
+
+    [ends_at, starts_at].compact.max
   end
 
   def upcoming?(at: Time.current)

@@ -101,51 +101,51 @@ module Api
 
         def update
           updated = false
-          Event.transaction do
-            # Lock this event together with any linked pass events in ascending
-            # event.id order (FOR NO KEY UPDATE) so extending a linked pass
-            # event's ends_at during a night reschedule never cycles with pass
-            # checkout. Ticket types follow after all Rank 2 event locks.
-            linked_pass_events = Event.where(
-              id: TicketType.joins(:ticket_type_included_events)
-                .where(ticket_type_included_events: { included_event_id: @event.id })
-                .select(:event_id)
-            ).to_a
-            Passes::Locking.lock_events!([@event, *linked_pass_events])
-            @event.ticket_types.order(:id).lock.load
-            attributes = parsed_event_params
-            can_manage = OrganizationAuthorization.allowed?(
-              user: current_user, organization: current_organization, permission: :manage_events, event: @event
-            )
-            unless can_manage
-              attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
-            end
-            attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
-            change_type = buyer_visible_change(attributes)
-            change_reason = params[:change_reason].to_s.strip.presence
-            if change_type && change_reason.blank?
-              return render json: { error: "A reason is required when changing the schedule or venue of a published or postponed event" },
-                status: :unprocessable_entity
-            end
-
-            before_data = event_change_snapshot(@event) if change_type
-            previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
-            updated = @event.update(attributes)
-            if updated && previous_design && previous_design != @event.page_customization
-              AuditLogger.record!(action: "event.page_customized", auditable: @event, actor: current_user,
-                before_data: { page_customization: previous_design },
-                after_data: { page_customization: @event.page_customization }, request: request)
-            end
-            if updated && change_type
-              event_change = @event.event_changes.create!(
-                actor_user: current_user,
-                change_type: change_type,
-                reason: change_reason,
-                before_data: before_data,
-                after_data: event_change_snapshot(@event),
-                occurred_at: Time.current
+          Passes::Locking.with_lock_retry do
+            @event.errors.clear
+            updated = false
+            Event.transaction do
+              # Lock this event together with any linked pass events in ascending
+              # event.id order (FOR NO KEY UPDATE) and recheck linked pass IDs
+              # under lock so recomputing a linked pass event's ends_at during a
+              # night reschedule never writes an unlocked pass event or cycles
+              # with pass checkout. Ticket types follow after all Rank 2 event locks.
+              Passes::Locking.lock_events_for_included_event!(@event)
+              @event.ticket_types.order(:id).lock.load
+              attributes = parsed_event_params
+              can_manage = OrganizationAuthorization.allowed?(
+                user: current_user, organization: current_organization, permission: :manage_events, event: @event
               )
-              EmailService.send_event_change_notifications_async(event_change)
+              unless can_manage
+                attributes.slice!("title", "slug", "description", "short_description", "cover_image_url", "category", "page_customization")
+              end
+              attributes["transfers_enabled"] = false if can_manage && !LaunchCapabilities.enabled?(:ticket_transfers)
+              change_type = buyer_visible_change(attributes)
+              change_reason = params[:change_reason].to_s.strip.presence
+              if change_type && change_reason.blank?
+                return render json: { error: "A reason is required when changing the schedule or venue of a published or postponed event" },
+                  status: :unprocessable_entity
+              end
+
+              before_data = event_change_snapshot(@event) if change_type
+              previous_design = @event.page_customization.deep_dup if attributes.key?("page_customization")
+              updated = @event.update(attributes)
+              if updated && previous_design && previous_design != @event.page_customization
+                AuditLogger.record!(action: "event.page_customized", auditable: @event, actor: current_user,
+                  before_data: { page_customization: previous_design },
+                  after_data: { page_customization: @event.page_customization }, request: request)
+              end
+              if updated && change_type
+                event_change = @event.event_changes.create!(
+                  actor_user: current_user,
+                  change_type: change_type,
+                  reason: change_reason,
+                  before_data: before_data,
+                  after_data: event_change_snapshot(@event),
+                  occurred_at: Time.current
+                )
+                EmailService.send_event_change_notifications_async(event_change)
+              end
             end
           end
           if updated

@@ -247,23 +247,7 @@ class EmailService
       # on this included night receive an informational notice without single-night
       # refund/accept CTAs, deduped against direct night buyers/holders above.
       # Skip lost-dispute / retained passes and orders whose ticket access is blocked.
-      eligible_parent_ids = Ticket.left_outer_joins(:inventory_retention)
-        .where.not(status: :cancelled)
-        .where(ticket_inventory_retentions: { id: nil })
-        .select(:id)
-      pass_children = change.event.tickets
-        .left_outer_joins(:inventory_retention)
-        .where.not(parent_ticket_id: nil)
-        .where(parent_ticket_id: eligible_parent_ids)
-        .where(ticket_inventory_retentions: { id: nil })
-        .joins(:order)
-        .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
-      pass_children = if change.change_type == "cancelled"
-        pass_children.where(status: %i[issued checked_in])
-          .or(pass_children.where(status: :cancelled, cancellation_reason: "event_cancelled"))
-      else
-        pass_children.where(status: :issued)
-      end
+      pass_children = eligible_pass_event_change_children(change)
       eligible_pass_tickets = []
       pass_children.includes(order: :disputes).order(:id).find_each do |ticket|
         next if ticket.order.ticket_access_blocked?
@@ -304,6 +288,35 @@ class EmailService
             metadata: { event_change_id: change.id, audience: "pass_holder", pass_event_id: order.event_id }, wait: wait)
         end
       end
+    end
+
+    def eligible_pass_event_change_children(change)
+      eligible_parent_ids = Ticket.left_outer_joins(:inventory_retention)
+        .where.not(status: :cancelled)
+        .where(ticket_inventory_retentions: { id: nil })
+        .select(:id)
+      pass_children = change.event.tickets
+        .left_outer_joins(:inventory_retention)
+        .where.not(parent_ticket_id: nil)
+        .where(parent_ticket_id: eligible_parent_ids)
+        .where(ticket_inventory_retentions: { id: nil })
+        .joins(:order)
+        .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
+      if change.change_type == "cancelled"
+        pass_children.where(status: %i[issued checked_in])
+          .or(pass_children.where(status: :cancelled, cancellation_reason: "event_cancelled"))
+      else
+        pass_children.where(status: :issued)
+      end
+    end
+
+    def pass_event_change_eligible?(delivery, change)
+      order = Order.find_by(id: delivery.order_id)
+      return false unless order && (order.completed? || order.partially_refunded?) && !order.ticket_access_blocked?
+
+      scope = eligible_pass_event_change_children(change).where(order_id: order.id)
+      scope = scope.where(id: delivery.ticket_id) if delivery.ticket_id.present?
+      scope.exists?
     end
 
     def queue_event_change_delivery(change, order:, recipient:, idempotency_key:, metadata:, wait:, ticket: nil, template: "event_change")

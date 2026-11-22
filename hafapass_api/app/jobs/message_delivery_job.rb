@@ -56,6 +56,10 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "The event change was reversed before this notice was sent")
         next :done
       end
+      if ineligible_pass_event_change?(delivery)
+        delivery.update!(status: :cancelled, last_error: "Recipient no longer holds an eligible pass for this event")
+        next :done
+      end
       if obsolete_waitlist?(delivery)
         delivery.update!(status: :cancelled, last_error: "Waitlist request or offer is no longer active")
         next :done
@@ -362,6 +366,18 @@ class MessageDeliveryJob < ApplicationJob
 
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
     change.present? && !change.notice_needed?(delivery.order)
+  end
+
+  # A buyer who refunded/cancelled their pass or lost ticket access during the
+  # coalescing window should not receive an unattempted pass change notice.
+  # Already-attempted payloads keep their replay behavior untouched.
+  def ineligible_pass_event_change?(delivery)
+    return false unless delivery.template == "pass_event_change" && unattempted_event_change?(delivery)
+
+    change = EventChange.find_by(id: delivery.metadata["event_change_id"])
+    return true unless change
+
+    !EmailService.pass_event_change_eligible?(delivery, change)
   end
 
   def mark_reminder_sent!(delivery)

@@ -18,10 +18,6 @@ module Passes
 
       def for_included_event!(night_event)
         return unless night_event&.persisted?
-        return if night_event.cancelled?
-
-        night_end = night_event.ends_at || night_event.starts_at
-        return unless night_end
 
         pass_event_ids = TicketType
           .joins(:ticket_type_included_events)
@@ -31,8 +27,7 @@ module Passes
         return if pass_event_ids.empty?
 
         Event.where(id: pass_event_ids).where.not(status: SKIPPED_PASS_STATUSES).order(:id).each do |pass_event|
-          latest = [night_end, latest_included_end_for(pass_event)].compact.max
-          extend_pass_event!(pass_event, latest)
+          recompute_pass_event!(pass_event)
         end
       end
 
@@ -48,6 +43,16 @@ module Passes
         return unless target_end
         return if pass_event.ends_at.present? && target_end <= pass_event.ends_at
         return if pass_event.starts_at.present? && target_end <= pass_event.starts_at
+
+        pass_event.update_columns(ends_at: target_end, updated_at: Time.current)
+      end
+
+      def recompute_pass_event!(pass_event)
+        latest = latest_included_end_for(pass_event)
+        return unless latest
+
+        target_end = [pass_event.starts_at, latest].compact.max
+        return if pass_event.ends_at == target_end
 
         pass_event.update_columns(ends_at: target_end, updated_at: Time.current)
       end

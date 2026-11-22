@@ -66,6 +66,28 @@ module Passes
         locked
       end
 
+      def lock_events_for_included_event!(event)
+        linked_ids = linked_pass_event_ids(event)
+        linked_events = linked_ids.any? ? Event.where(id: linked_ids).to_a : []
+        locked = lock_events!([event, *linked_events])
+
+        locked_ids = locked.map(&:id)
+        rechecked_ids = linked_pass_event_ids(event)
+        if (rechecked_ids - locked_ids).any?
+          raise LockSetChanged, "Linked pass events changed while acquiring event locks"
+        end
+
+        locked
+      end
+
+      def linked_pass_event_ids(event)
+        TicketType
+          .joins(:ticket_type_included_events)
+          .where(ticket_type_included_events: { included_event_id: event.id })
+          .distinct
+          .pluck(:event_id)
+      end
+
       def included_events_for_line_items(event:, line_items:)
         ticket_type_ids = extract_ticket_type_ids(line_items)
         included_events_for_ticket_type_ids(event: event, ticket_type_ids: ticket_type_ids)

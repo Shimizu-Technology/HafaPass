@@ -430,6 +430,9 @@ module Commerce
       quantities.map do |ticket_type_id, quantity|
         ticket_type = ticket_types.fetch(ticket_type_id)
         raise CheckoutError, "#{ticket_type.name} is not currently on sale" unless ticket_type.on_sale?
+        if ticket_type.pass? && !ticket_type.included_events.where.not(status: :cancelled).exists?
+          raise CheckoutError, "All included nights for this pass have been cancelled"
+        end
         seat_holds = seat_hold_selection(ticket_type.id)
         if seat_holds.map(&:id).sort != provisional_holds.select { |hold| hold.event_seat.ticket_type_id == ticket_type_id }.map(&:id).sort ||
             (!complimentary && seat_holds.any? && seat_holds.first.pricing_tier_id != tiers[ticket_type_id]&.id)
@@ -652,7 +655,7 @@ module Commerce
         ticket_type = selection[:ticket_type]
         next unless ticket_type.pass?
 
-        ticket_type.included_events.each do |included_event|
+        ticket_type.included_events.where.not(status: :cancelled).each do |included_event|
           pass_demand_by_event[included_event] += selection[:quantity]
         end
       end

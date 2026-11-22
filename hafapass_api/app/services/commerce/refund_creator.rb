@@ -658,7 +658,7 @@ module Commerce
       refunded_order = refund.order
       if refunded_order.completed_at.nil? && refunded_order.tickets.empty? &&
           ReconciliationException.where(order: refunded_order, payment: refund.payment,
-            code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
+            code: LateCaptureRefund::CODES).exists?
         return
       end
       selected_ids = refund.refund_tickets.pluck(:ticket_id)

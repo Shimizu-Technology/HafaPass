@@ -89,6 +89,22 @@ module Commerce
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
           unusable = holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? }
+          if !holds.empty? && pass_nights_exhausted?(holds)
+            release_locked_order!(order, reason: "pass_all_included_nights_cancelled", expired: false,
+              claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
+            if payment.present?
+              mark_payment_succeeded!(payment)
+              ReconciliationException.create!(
+                order: order,
+                payment: payment,
+                webhook_event: webhook_event,
+                code: "pass_all_included_nights_cancelled",
+                details: { reason: "All included nights for a pass in this order were cancelled before completion" }
+              )
+              LateCaptureRefundJob.perform_later(payment.id)
+            end
+            next
+          end
           lapsed = (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
           completed_late = lapsed && !unusable && late_completion && payment.present? &&
             late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
@@ -241,6 +257,7 @@ module Commerce
       # released and refunded instead.
       def late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
         return false if claimed_offer || seat_session || catalog_holds.any? || !order.event.published?
+        return false if pass_nights_exhausted?(holds)
 
         now = Time.current
         types_free = holds.group_by(&:ticket_type).all? do |ticket_type, type_holds|
@@ -256,6 +273,12 @@ module Commerce
         types_free && tiers_free && event_capacity_free?(order.event, holds, now)
       end
 
+      def pass_nights_exhausted?(holds)
+        holds.map(&:ticket_type).uniq(&:id).any? do |ticket_type|
+          ticket_type.pass? && !ticket_type.included_events.where.not(status: :cancelled).exists?
+        end
+      end
+
       def event_capacity_free?(event, holds, now)
         total_quantity = holds.sum(&:quantity)
         if event.max_capacity.present? && EventCapacity.remaining_for(event, at: now) < total_quantity
@@ -266,7 +289,7 @@ module Commerce
         holds.each do |hold|
           next unless hold.ticket_type.pass?
 
-          hold.ticket_type.included_events.each do |included_event|
+          hold.ticket_type.included_events.where.not(status: :cancelled).each do |included_event|
             pass_demand[included_event] += hold.quantity
           end
         end

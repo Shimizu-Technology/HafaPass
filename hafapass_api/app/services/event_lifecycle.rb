@@ -47,8 +47,19 @@ class EventLifecycle
     buyer_change = nil
     refund_run = nil
 
-    event.organization.with_lock do
-      event.with_lock do
+    Passes::Locking.with_lock_retry do
+      buyer_change = nil
+      refund_run = nil
+      event.organization.with_lock do
+        if action == :cancel
+          # Rank 2: lock this night event and any linked pass events in ascending
+          # event.id order (FOR NO KEY UPDATE) before Rank 3 pass order locks so
+          # recomputing linked pass ends_at stays strictly within Rank 2.
+          Passes::Locking.lock_events_for_included_event!(event)
+        else
+          event.lock!
+        end
+
         unless transition[:from].include?(event.status)
           raise TransitionError, "Cannot #{action} an event with status #{event.status}"
         end
@@ -76,6 +87,7 @@ class EventLifecycle
         )
         buyer_change = record_buyer_change!(before_data) if %i[postpone cancel].include?(action)
         if action == :cancel
+          Passes::SyncPassEndDate.for_included_event!(event)
           cancel_pass_child_tickets!
           refund_run = EventCancellationRefunds.prepare!(event: event, actor: actor)
         end

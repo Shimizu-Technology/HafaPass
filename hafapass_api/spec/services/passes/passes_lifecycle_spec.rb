@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedules, retention & exports", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:owner) { create(:user) }
   let(:profile) { create(:organizer_profile, user: owner) }
   let(:org) { profile.organization }
@@ -660,6 +662,189 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
       expect(completed_pass.reload.ends_at).to be_within(1.second).of(5.days.from_now)
     end
+
+    it "rechecks linked pass event IDs under lock and retries on LockSetChanged in Organizer::EventsController#update" do
+      late_linked_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Newly Linked Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
+      late_linked_tt = create(:ticket_type, event: late_linked_pass, name: "Late Linked TT", price_cents: 2500, quantity_available: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: late_linked_tt, included_event: night_1, position: 0)
+
+      # Simulate late_linked_pass being linked right after the first pre-lock lookup:
+      # call 1 (pre-lock) omits late_linked_pass.id; call 2 (under-lock recheck) sees it
+      # and raises LockSetChanged before saving; attempt 2 locks all three events in sorted order.
+      lookup_calls = 0
+      allow(Passes::Locking).to receive(:linked_pass_event_ids).and_wrap_original do |original, ev|
+        lookup_calls += 1
+        ids = original.call(ev)
+        lookup_calls == 1 ? (ids - [late_linked_pass.id]) : ids
+      end
+
+      lock_attempts = []
+      allow(Passes::Locking).to receive(:lock_events!).and_wrap_original do |original, events|
+        locked = original.call(events)
+        lock_attempts << locked.map(&:id)
+        locked
+      end
+
+      expect(Passes::SyncPassEndDate).to receive(:for_included_event!).once.and_call_original
+
+      new_start = 19.days.from_now.change(usec: 0)
+      new_end = new_start + 3.hours
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: new_end.iso8601, change_reason: "Reschedule with concurrent pass link" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      expect(lock_attempts.length).to eq(2)
+      expect(lock_attempts.first).to eq([night_1.id, pass_event.id].sort)
+      expect(lock_attempts.second).to eq([night_1.id, pass_event.id, late_linked_pass.id].sort)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
+      expect(late_linked_pass.reload.ends_at).to be_within(1.second).of(new_end)
+    end
+
+    it "recomputes pass_event.ends_at downward when a storm-extended night is moved earlier" do
+      far_start = 18.days.from_now.change(usec: 0)
+      far_end = far_start + 3.hours
+      patch "/api/v1/organizer/events/#{night_2.id}",
+        params: { starts_at: far_start.iso8601, ends_at: far_end.iso8601, change_reason: "Typhoon delay" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(far_end)
+
+      earlier_start = 6.days.from_now.change(usec: 0)
+      earlier_end = earlier_start + 3.hours
+      patch "/api/v1/organizer/events/#{night_2.id}",
+        params: { starts_at: earlier_start.iso8601, ends_at: earlier_end.iso8601, change_reason: "Moved back earlier" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(earlier_end)
+    end
+
+    it "skips an unattempted pass_event_change delivery if the pass order was fully refunded before send while preserving replays" do
+      refunded_order, = create_paid_pass_order(email: "refunded-in-window@example.com", name: "Refunded Fan")
+      replayed_order, = create_paid_pass_order(email: "replayed-fan@example.com", name: "Replayed Fan")
+
+      new_start = 15.days.from_now.change(usec: 0)
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: (new_start + 3.hours).iso8601, change_reason: "Schedule shift" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      unattempted = MessageDelivery.find_by!(template: "pass_event_change", event: night_1, recipient: "refunded-in-window@example.com")
+      replayed = MessageDelivery.find_by!(template: "pass_event_change", event: night_1, recipient: "replayed-fan@example.com")
+      # Simulate an already-attempted delivery whose payload was captured before the refund
+      frozen_payload = EmailService.prepare_delivery_payload(replayed)
+      replayed.update!(outbound_payload: frozen_payload, attempts: 1, provider: "simulated")
+
+      Commerce::RefundCreator.call(order: refunded_order, reason: "requested_by_customer", requested_by: owner, idempotency_key: "refund-before-send-1")
+      Commerce::RefundCreator.call(order: replayed_order, reason: "requested_by_customer", requested_by: owner, idempotency_key: "refund-before-replay-2")
+
+      MessageDeliveryJob.perform_now(unattempted.id)
+      expect(unattempted.reload).to be_cancelled
+      expect(unattempted.attempts).to eq(0)
+      expect(unattempted.outbound_payload).to be_blank
+      expect(unattempted.sent_at).to be_nil
+
+      # Already-attempted replay is not cancelled by the unattempted eligibility check
+      MessageDeliveryJob.perform_now(replayed.id)
+      expect(replayed.reload).to be_sent
+    end
+
+    it "rejects new pass checkouts with 422 when all included nights are cancelled while allowing checkouts with surviving nights" do
+      EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Night 1 rained out")
+
+      # Night 2 still survives -> checkout succeeds and issues 1 child for Night 2
+      partial_order, = create_paid_pass_order(email: "surviving-night@example.com")
+      expect(partial_order.tickets.where.not(parent_ticket_id: nil).pluck(:event_id)).to eq([night_2.id])
+
+      # Cancel the final surviving night -> new pass checkout rejected (422)
+      EventLifecycle.call(event: night_2, action: :cancel, actor: owner, reason: "Night 2 rained out")
+
+      expect do
+        Commerce::OrderCreator.call(
+          event: pass_event,
+          line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+          buyer_email: "all-cancelled@example.com",
+          buyer_name: "Late Buyer",
+          payment_required: true
+        )
+      end.to raise_error(Commerce::OrderCreator::CheckoutError, "All included nights for this pass have been cancelled")
+
+      post "/api/v1/orders",
+        params: {
+          event_id: pass_event.id,
+          buyer_email: "http-all-cancelled@example.com",
+          buyer_name: "HTTP Buyer",
+          terms_accepted: true,
+          terms_version: PolicyRegistry.buyer_terms[:version],
+          line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }]
+        },
+        as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to eq("All included nights for this pass have been cancelled")
+    end
+
+    it "routes an in-flight paid pass order to refund recovery instead of completing with 0 children when all nights are cancelled" do
+      checkout = Commerce::OrderCreator.call(
+        event: pass_event,
+        line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
+        buyer_email: "inflight-pass@example.com",
+        buyer_name: "Inflight Fan",
+        payment_required: true
+      )
+      order = checkout.order
+      payment = checkout.payment
+      Payment.where(id: payment.id).update_all(provider_environment: "test", provider_payment_id: "pi_inflight_all_cancelled")
+      payment.reload
+
+      EventLifecycle.call(event: night_1, action: :cancel, actor: owner, reason: "Storm night 1")
+      EventLifecycle.call(event: night_2, action: :cancel, actor: owner, reason: "Storm night 2")
+
+      result = nil
+      expect do
+        result = Commerce::OrderLifecycle.complete!(
+          order,
+          payment: payment,
+          provider_amount_cents: payment.amount_cents,
+          provider_currency: payment.currency
+        )
+      end.to have_enqueued_job(LateCaptureRefundJob).with(payment.id)
+
+      expect(result).to eq(:unchanged)
+      expect(order.reload).to be_cancelled
+      expect(order.completed_at).to be_nil
+      expect(order.tickets.count).to eq(0)
+      expect(order.inventory_holds.sole).to be_released
+      expect(pass_tt.reload.quantity_sold).to eq(0)
+      expect(payment.reload).to be_succeeded
+      expect(EmailService).not_to have_received(:send_order_confirmation_async)
+
+      issue = ReconciliationException.find_by!(order: order, payment: payment, code: "pass_all_included_nights_cancelled")
+      expect(issue).to be_open
+
+      # Running the enqueued LateCaptureRefundJob refunds the captured payment and resolves the exception
+      LateCaptureRefundJob.perform_now(payment.id)
+      expect(order.reload).to be_refunded
+      expect(payment.reload).to be_refunded
+      expect(issue.reload).to be_resolved
+
+      # A pending free pass order whose nights are all cancelled also cancels cleanly without completing
+      free_pass_tt_local = create(:ticket_type, event: pass_event, name: "Free Storm Pass", price_cents: 0, quantity_available: 10)
+      surviving_night = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Temporary Night", max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      link_nights(free_pass_tt_local, [surviving_night])
+      free_order = create(:order, :pending, event: pass_event, total_cents: 0, subtotal_cents: 0, service_fee_cents: 0,
+        buyer_email: "free-inflight@example.com", buyer_name: "Free Inflight", expires_at: 10.minutes.from_now)
+      free_item = create(:order_item, order: free_order, ticket_type: free_pass_tt_local, quantity: 1, unit_price_cents: 0, subtotal_cents: 0)
+      create(:inventory_hold, order: free_order, order_item: free_item, event: pass_event, ticket_type: free_pass_tt_local,
+        quantity: 1, expires_at: 10.minutes.from_now)
+      EventLifecycle.call(event: surviving_night, action: :cancel, actor: owner, reason: "Cancelled before completion")
+
+      expect(Commerce::OrderLifecycle.complete!(free_order)).to eq(:unchanged)
+      expect(free_order.reload).to be_cancelled
+      expect(free_order.tickets.count).to eq(0)
+      expect(ReconciliationException.where(order: free_order)).to be_empty
+    end
   end
 
   describe "4. Pass Event Lifecycle, Retention & Attachments" do
@@ -779,10 +964,11 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       link_nights(early_pass_tt, [active_night, cancelled_far_night])
       early_pass_event.update_columns(ends_at: 1.day.ago)
 
-      # Effective end ignores cancelled_far_night and anchors to active_night; sales stay open
+      # Effective end ignores cancelled_far_night and anchors to active_night; sales & discovery stay open
       expect(early_pass_event.effective_ends_at).to be_within(1.second).of(active_night.ends_at)
       expect(early_pass_event.sales_open?).to be(true)
       expect(early_pass_event.sales_blocker).to be_nil
+      expect(Event.discoverable_base.where(id: early_pass_event.id)).to exist
 
       order = create(:order, event: early_pass_event, user: buyer, buyer_email: buyer.email, buyer_name: "Sales Gate Fan")
       item = create(:order_item, order: order, ticket_type: early_pass_tt, quantity: 1)
@@ -794,6 +980,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(early_pass_event.effective_ends_at).to be_within(1.second).of(early_pass_event.ends_at)
       expect(early_pass_event.sales_open?).to be(false)
       expect(early_pass_event.sales_blocker).to eq(:sales_closed)
+      expect(Event.discoverable_base.where(id: early_pass_event.id)).not_to exist
 
       get "/api/v1/me/tickets", params: { tab: "upcoming" }, headers: auth_headers(buyer)
       expect(response).to have_http_status(:ok)
@@ -804,6 +991,31 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       past_parent = response.parsed_body.fetch("tickets").find { |t| t["id"] == parent.id }
       expect(past_parent).to be_present
       expect(past_parent["upcoming"]).to be(false)
+    end
+
+    it "recomputes sync-extended ends_at on latest night cancellation so sales and discovery close after surviving nights end" do
+      synced_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Synced Tourney Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
+      synced_night_1 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Synced Night 1", max_capacity: 20, starts_at: 2.days.from_now, ends_at: 2.days.from_now + 3.hours)
+      synced_night_2 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Synced Night 2", max_capacity: 20, starts_at: 10.days.from_now, ends_at: 10.days.from_now + 3.hours)
+      synced_tt = create(:ticket_type, event: synced_pass, name: "Synced Pass TT", price_cents: 0, quantity_available: 10)
+      link_nights(synced_tt, [synced_night_1, synced_night_2])
+
+      # SyncPassEndDate naturally extended synced_pass.ends_at to Night 2's end
+      expect(synced_pass.reload.ends_at).to be_within(1.second).of(synced_night_2.ends_at)
+      expect(Event.discoverable_base.where(id: synced_pass.id)).to exist
+
+      # Cancel Night 2 through EventLifecycle -> synced_pass.ends_at drops back to Night 1's end
+      EventLifecycle.call(event: synced_night_2, action: :cancel, actor: owner, reason: "Storm cancelled final night")
+      expect(synced_pass.reload.ends_at).to be_within(1.second).of(synced_night_1.ends_at)
+
+      # After Night 1 ends (and before Night 2's former end), sales and discovery are closed
+      travel_to(3.days.from_now) do
+        expect(synced_pass.reload.sales_open?).to be(false)
+        expect(Event.discoverable_base.where(id: synced_pass.id)).not_to exist
+      end
     end
 
     it "omits pass parent PDFs, attaches <= 2 pass child PDFs, and omits per-night PDFs for > 2 active children" do
