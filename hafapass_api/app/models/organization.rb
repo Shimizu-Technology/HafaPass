@@ -7,6 +7,7 @@ class Organization < ApplicationRecord
   has_many :organization_memberships, dependent: :restrict_with_error
   has_many :members, through: :organization_memberships, source: :user
   has_many :events, dependent: :restrict_with_error
+  has_many :event_series, dependent: :restrict_with_error
   has_many :event_staff_assignments, dependent: :restrict_with_error
   has_many :connected_accounts, dependent: :restrict_with_error
   belongs_to :payout_connected_account, class_name: "ConnectedAccount", optional: true

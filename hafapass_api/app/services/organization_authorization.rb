@@ -41,6 +41,15 @@ class OrganizationAuthorization
     new(**).allowed?
   end
 
+  def self.org_wide_event_viewer?(user:, organization:)
+    return true if user.admin?
+
+    membership = organization.organization_memberships.effective.find_by(user: user)
+    return false unless membership
+
+    !ASSIGNMENT_REQUIRED_ROLES.include?(membership.role)
+  end
+
   def self.accessible_events(user:, organization:)
     return organization.events.all if user.admin?
 

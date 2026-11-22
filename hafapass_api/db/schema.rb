@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -352,7 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type"=>"all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -620,6 +620,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.index ["ticket_type_id"], name: "index_event_seats_on_ticket_type_id"
     t.index ["venue_seat_id"], name: "index_event_seats_on_venue_seat_id"
     t.check_constraint "operational_status = ANY (ARRAY[0, 1, 2])", name: "event_seats_status_valid"
+  end
+
+  create_table "event_series", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.text "description"
+    t.integer "status", default: 0, null: false
+    t.integer "revenue_share_bps"
+    t.string "revenue_share_base", default: "admissions_net_proceeds", null: false
+    t.boolean "revenue_share_includes_door_cash", default: true, null: false
+    t.string "revenue_share_label"
+    t.string "primary_share_label"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "slug"], name: "index_event_series_on_organization_id_and_slug", unique: true
+    t.index ["organization_id"], name: "index_event_series_on_organization_id"
+    t.check_constraint "revenue_share_base::text = ANY (ARRAY['admissions_net_proceeds'::character varying, 'admissions_gross'::character varying, 'admissions_net_after_processing'::character varying, 'all_net_proceeds'::character varying]::text[])", name: "chk_event_series_revenue_share_base"
+    t.check_constraint "revenue_share_bps IS NULL OR revenue_share_bps >= 0 AND revenue_share_bps <= 10000", name: "chk_event_series_revenue_share_bps"
+    t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "chk_event_series_status"
+  end
+
+  create_table "event_series_memberships", force: :cascade do |t|
+    t.bigint "event_series_id", null: false
+    t.bigint "event_id", null: false
+    t.integer "role", default: 0, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["event_id"], name: "index_event_series_memberships_on_event_id"
+    t.index ["event_series_id", "event_id"], name: "index_event_series_memberships_on_event_series_id_and_event_id", unique: true
+    t.check_constraint "\"position\" >= 0", name: "chk_event_series_memberships_position"
+    t.check_constraint "role = ANY (ARRAY[0, 1, 2, 3, 4])", name: "chk_event_series_memberships_role"
   end
 
   create_table "event_slug_redirects", force: :cascade do |t|
@@ -2291,7 +2324,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.integer "fee_notice_days", default: 30, null: false
     t.string "backup_withholding_mode", default: "block", null: false
     t.integer "backup_withholding_rate_bps", default: 2400, null: false
-    t.jsonb "tax_reporting_thresholds", default: { "1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000 }, null: false
+    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
@@ -2869,6 +2902,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
   add_foreign_key "event_seats", "event_seating_configurations", on_delete: :restrict
   add_foreign_key "event_seats", "ticket_types", on_delete: :restrict
   add_foreign_key "event_seats", "venue_seats", on_delete: :restrict
+  add_foreign_key "event_series", "organizations"
+  add_foreign_key "event_series_memberships", "event_series", on_delete: :cascade
+  add_foreign_key "event_series_memberships", "events", on_delete: :cascade
   add_foreign_key "event_slug_redirects", "events"
   add_foreign_key "event_staff_assignments", "events", on_delete: :restrict
   add_foreign_key "event_staff_assignments", "organizations", on_delete: :restrict
@@ -3137,4 +3173,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
   SQL
+
 end

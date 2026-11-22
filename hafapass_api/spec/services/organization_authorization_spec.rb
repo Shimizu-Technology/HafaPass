@@ -48,4 +48,27 @@ RSpec.describe OrganizationAuthorization do
     expect(described_class.allowed?(user: user, organization: organization, permission: :manage_events,
       event: other_event)).to be(false)
   end
+
+  describe ".org_wide_event_viewer?" do
+    it "allows admin and org-wide roles while excluding assignment-scoped roles and expired memberships" do
+      admin = create(:user, :admin)
+      expect(described_class.org_wide_event_viewer?(user: admin, organization: organization)).to be(true)
+
+      %i[owner manager finance marketer].each do |role|
+        user = create(:user)
+        create(:organization_membership, organization: organization, user: user, role: role)
+        expect(described_class.org_wide_event_viewer?(user: user, organization: organization)).to be(true)
+      end
+
+      %i[scanner box_office].each do |role|
+        user = create(:user)
+        create(:organization_membership, organization: organization, user: user, role: role)
+        expect(described_class.org_wide_event_viewer?(user: user, organization: organization)).to be(false)
+      end
+
+      expired_user = create(:user)
+      create(:organization_membership, organization: organization, user: expired_user, role: :finance, expires_at: 1.minute.ago)
+      expect(described_class.org_wide_event_viewer?(user: expired_user, organization: organization)).to be(false)
+    end
+  end
 end
