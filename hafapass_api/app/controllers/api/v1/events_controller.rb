@@ -39,30 +39,46 @@ module Api
         ), ticket_types.price_cents)
       SQL
 
+      PUBLIC_CACHE_TTL = 15.seconds
+      EVENT_SERIALIZATION_PRELOADS = [
+        :organizer_profile, :organization, :venue, :event_seating_configuration,
+        :catalog_items, :registration_questions, :event_waivers,
+        { event_series_memberships: :event_series, ticket_types: :pricing_tiers }
+      ].freeze
+      INDEX_CACHE_PARAMS = %w[
+        category date_from date_to featured include_sold_out locale organizer
+        page per_page price q series venue village window
+      ].freeze
+      SHOW_CACHE_PARAMS = %w[locale].freeze
+      ATTENDEES_PREVIEW_SQL = <<~SQL.squish.freeze
+        SELECT event_id, attendee_name
+        FROM (
+          SELECT event_id, attendee_name,
+                 ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY id ASC) AS rn
+          FROM tickets
+          WHERE event_id IN (?) AND status <> ?
+        ) ranked_tickets
+        WHERE rn <= 10
+        ORDER BY event_id ASC, rn ASC
+      SQL
+
       skip_before_action :authenticate_user!
       before_action :optional_authenticate!, only: [:index, :show]
-      # Event text depends on the visitor's language.
-      after_action { response.headers["Vary"] = [response.headers["Vary"].presence, "Accept-Language"].compact.join(", ") }
+      before_action :set_public_cache_headers, only: [:index, :show]
+      # Event text depends on the visitor's language; index/show also vary by auth state.
+      after_action :set_vary_headers
 
       def index
-        events = filtered_events.preload(
-          :organizer_profile, :organization, :venue, :event_seating_configuration,
-          event_series_memberships: :event_series,
-          ticket_types: [
-            :inventory_holds,
-            :waitlist_offers,
-            { event_seats: :active_precheckout_seat_holds },
-            { pricing_tiers: [:inventory_holds, :waitlist_offers, :active_precheckout_seat_holds] }
-          ]
-        )
-          .order(starts_at: :asc)
-        pagy, paginated_events = paginate(events)
-        preload_viewer_state(paginated_events)
+        payload = if public_cacheable_request?
+          Rails.cache.fetch(index_cache_key, expires_in: PUBLIC_CACHE_TTL) do
+            build_index_payload
+          end
+        else
+          build_index_payload
+        end
 
-        render json: {
-          events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
-          meta: pagination_meta(pagy)
-        }
+        set_pagination_headers_from_meta(payload[:meta])
+        render json: payload
       end
 
       def categories
@@ -77,7 +93,7 @@ module Api
       def show
         if params[:live_money_proof] == "true" && @current_user&.admin?
           event = Event.find_by_public_slug!(params[:slug], scope: Event.where(live_money_proof_candidate: true))
-          render json: show_json(event)
+          render json: prepare_show_json(event)
           return
         end
         # Allow organizers to preview their own draft events
@@ -85,13 +101,22 @@ module Api
           event = Event.find_by_public_slug!(params[:slug])
           organizer_profile = @current_user.organizer_profile
           if organizer_profile && event.organizer_profile_id == organizer_profile.id
-            render json: show_json(event)
+            render json: prepare_show_json(event)
             return
           end
         end
 
-        event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
-        render json: show_json(event)
+        payload = if public_cacheable_request?
+          Rails.cache.fetch(show_cache_key, expires_in: PUBLIC_CACHE_TTL) do
+            event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
+            prepare_show_json(event)
+          end
+        else
+          event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
+          prepare_show_json(event)
+        end
+
+        render json: payload
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
@@ -107,7 +132,7 @@ module Api
         if event.publicly_visible?
           render json: { redirect_to: event.slug }
         else
-          render json: show_json(event).merge(private_preview: true, purchasable: false)
+          render json: prepare_show_json(event).merge(private_preview: true, purchasable: false)
         end
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
@@ -115,14 +140,106 @@ module Api
 
       private
 
-      def show_json(event)
-        json = event_json(event, include_ticket_types: true, include_design: true)
+      def set_public_cache_headers
+        response.headers["Cache-Control"] = "private, no-store"
+      end
+
+      def set_vary_headers
+        values = %w[index show].include?(action_name) ? %w[Accept-Language Authorization] : %w[Accept-Language]
+        existing = response.headers["Vary"].to_s.split(",").map(&:strip).reject(&:empty?)
+        values.each do |value|
+          existing << value unless existing.any? { |entry| entry.casecmp?(value) }
+        end
+        response.headers["Vary"] = existing.join(", ")
+      end
+
+      def public_cacheable_request?
+        @current_user.nil? &&
+          request.authorization.blank? &&
+          params[:preview] != "true" &&
+          params[:live_money_proof] != "true"
+      end
+
+      def site_setting_cache_version
+        updated_at = SiteSetting.pick(:updated_at) || listing_settings.updated_at
+        updated_at&.utc&.iso8601(6).to_s
+      end
+
+      def normalized_index_cache_params
+        INDEX_CACHE_PARAMS.each_with_object({}) do |key, hash|
+          value = params[key]
+          hash[key] = value.to_s if value.present?
+        end
+      end
+
+      def normalized_show_cache_params
+        SHOW_CACHE_PARAMS.each_with_object({}) do |key, hash|
+          value = params[key]
+          hash[key] = value.to_s if value.present?
+        end
+      end
+
+      def index_cache_key
+        [
+          "public_events/v1/index",
+          request_locale.to_s,
+          I18n.locale.to_s,
+          site_setting_cache_version,
+          normalized_index_cache_params
+        ]
+      end
+
+      def show_cache_key
+        [
+          "public_events/v1/show",
+          params[:slug].to_s,
+          request_locale.to_s,
+          I18n.locale.to_s,
+          site_setting_cache_version,
+          normalized_show_cache_params
+        ]
+      end
+
+      def build_index_payload
+        events = filtered_events.preload(*EVENT_SERIALIZATION_PRELOADS).order(starts_at: :asc)
+        pagy, paginated_events = paginate(events)
+        records = paginated_events.to_a
+        at = Time.current
+        preload_event_stats(records, at: at)
+        preload_viewer_state(records)
+
+        {
+          events: records.map { |event| event_json(event, include_ticket_types: true, at: at) },
+          meta: pagination_meta(pagy)
+        }
+      end
+
+      def set_pagination_headers_from_meta(meta)
+        response.set_header("X-Total-Count", meta[:total_count].to_s)
+        response.set_header("X-Total-Pages", meta[:total_pages].to_s)
+        response.set_header("X-Page", meta[:current_page].to_s)
+        response.set_header("X-Per-Page", meta[:per_page].to_s)
+      end
+
+      def prepare_show_json(event)
+        ActiveRecord::Associations::Preloader.new(records: [event], associations: EVENT_SERIALIZATION_PRELOADS).call
+        at = Time.current
+        preload_event_stats([event], at: at)
+        show_json(event, at: at)
+      end
+
+      def show_json(event, at: Time.current)
+        json = event_json(event, include_ticket_types: true, include_design: true, at: at)
         json[:redirected_from] = params[:slug] if event.slug != params[:slug]
         json
       end
 
+      def include_sold_out?
+        params[:include_sold_out] == "true" && (params[:organizer].present? || params[:series].present?)
+      end
+
       def filtered_events
-        events = Event.discoverable
+        events = include_sold_out? ? Event.discoverable_base : Event.discoverable
         if params[:q].present?
           events = events.accent_insensitive_search(params[:q], :title, :description, :short_description,
             :venue_name, :venue_city)
@@ -253,10 +370,139 @@ module Api
         end
       end
 
-      def event_json(event, include_ticket_types: false, include_design: false)
+      def preload_event_stats(events, at: Time.current)
+        @active_ticket_counts = {}
+        @event_hold_counts = Hash.new(0)
+        @ticket_type_hold_counts = Hash.new(0)
+        @pricing_tier_hold_counts = Hash.new(0)
+        @event_waitlist_counts = Hash.new(0)
+        @ticket_type_waitlist_counts = Hash.new(0)
+        @pricing_tier_waitlist_counts = Hash.new(0)
+        @event_seat_hold_counts = Hash.new(0)
+        @ticket_type_seat_hold_counts = Hash.new(0)
+        @pricing_tier_seat_hold_counts = Hash.new(0)
+        @catalog_item_hold_counts = {}
+        @attendees_preview_by_event = Hash.new { |hash, key| hash[key] = [] }
+        return if events.empty?
+
+        event_ids = events.map(&:id)
+        @active_ticket_counts = Ticket.where(event_id: event_ids).where.not(status: :cancelled).group(:event_id).count
+
+        InventoryHold.active.where(event_id: event_ids).where("expires_at > ?", at)
+          .group(:event_id, :ticket_type_id, :pricing_tier_id).sum(:quantity)
+          .each do |(event_id, ticket_type_id, pricing_tier_id), qty|
+            @event_hold_counts[event_id] += qty
+            @ticket_type_hold_counts[ticket_type_id] += qty
+            @pricing_tier_hold_counts[pricing_tier_id] += qty if pricing_tier_id
+          end
+
+        WaitlistOffer.holding_inventory(at).where(event_id: event_ids)
+          .group(:event_id, :ticket_type_id, :pricing_tier_id).sum(:quantity)
+          .each do |(event_id, ticket_type_id, pricing_tier_id), qty|
+            @event_waitlist_counts[event_id] += qty
+            @ticket_type_waitlist_counts[ticket_type_id] += qty
+            @pricing_tier_waitlist_counts[pricing_tier_id] += qty if pricing_tier_id
+          end
+
+        event_id_by_seating_config = events.each_with_object({}) do |event, map|
+          config = event.event_seating_configuration
+          map[config.id] = event.id if config
+        end
+        if event_id_by_seating_config.any?
+          SeatHold.status_active.joins(:seat_hold_session, :event_seat)
+            .where(event_seats: { event_seating_configuration_id: event_id_by_seating_config.keys })
+            .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
+            .where("seat_hold_sessions.expires_at > ?", at)
+            .group("event_seats.event_seating_configuration_id", "event_seats.ticket_type_id", "seat_holds.pricing_tier_id")
+            .count
+            .each do |(seating_config_id, ticket_type_id, pricing_tier_id), qty|
+              event_id = event_id_by_seating_config[seating_config_id]
+              @event_seat_hold_counts[event_id] += qty if event_id
+              @ticket_type_seat_hold_counts[ticket_type_id] += qty
+              @pricing_tier_seat_hold_counts[pricing_tier_id] += qty if pricing_tier_id
+            end
+        end
+
+        tracked_catalog_item_ids = events.flat_map do |event|
+          event.catalog_items.select { |item| item.active? && item.inventory_quantity.present? }.map(&:id)
+        end
+        if tracked_catalog_item_ids.any?
+          @catalog_item_hold_counts = CatalogItemHold.current
+            .where(catalog_item_id: tracked_catalog_item_ids).group(:catalog_item_id).sum(:quantity)
+        end
+
+        show_attendee_event_ids = events.select(&:show_attendees?).map(&:id)
+        return if show_attendee_event_ids.empty?
+
+        sanitized_sql = ActiveRecord::Base.sanitize_sql_array([
+          ATTENDEES_PREVIEW_SQL,
+          show_attendee_event_ids,
+          Ticket.statuses.fetch("cancelled")
+        ])
+        Ticket.connection.select_rows(sanitized_sql).each do |event_id, attendee_name|
+          @attendees_preview_by_event[event_id.to_i] << anonymize_name(attendee_name)
+        end
+      end
+
+      def event_remaining_capacity(event)
+        return Float::INFINITY if event.max_capacity.blank?
+
+        sold = event.ticket_types.sum(&:quantity_sold)
+        held = @event_hold_counts[event.id] + @event_waitlist_counts[event.id] + @event_seat_hold_counts[event.id]
+        [event.max_capacity - sold - held, 0].max
+      end
+
+      def ticket_type_available_quantity(ticket_type)
+        held = @ticket_type_hold_counts[ticket_type.id] +
+          @ticket_type_waitlist_counts[ticket_type.id] +
+          @ticket_type_seat_hold_counts[ticket_type.id]
+        [ticket_type.quantity_available - ticket_type.quantity_sold - held, 0].max
+      end
+
+      def pricing_tier_committed_quantity(tier)
+        tier.quantity_sold +
+          @pricing_tier_hold_counts[tier.id] +
+          @pricing_tier_waitlist_counts[tier.id] +
+          @pricing_tier_seat_hold_counts[tier.id]
+      end
+
+      def pricing_tier_active?(tier, at: Time.current)
+        case tier.tier_type
+        when "quantity_based"
+          pricing_tier_committed_quantity(tier) < tier.quantity_limit
+        when "time_based"
+          if tier.starts_at.present? && tier.ends_at.present?
+            at.between?(tier.starts_at, tier.ends_at)
+          elsif tier.starts_at.present?
+            at >= tier.starts_at
+          elsif tier.ends_at.present?
+            at < tier.ends_at
+          else
+            false
+          end
+        else
+          false
+        end
+      end
+
+      def pricing_tier_remaining_quantity(tier)
+        return unless tier.quantity_based?
+
+        [tier.quantity_limit - pricing_tier_committed_quantity(tier), 0].max
+      end
+
+      def event_json(event, include_ticket_types: false, include_design: false, at: Time.current)
         content = event.content_for(request_locale)
-        active_tickets = event.tickets.where.not(status: :cancelled)
-        attendee_count = active_tickets.count
+        attendee_count = @active_ticket_counts.fetch(event.id, 0)
+        sorted_ticket_types = event.ticket_types.sort_by { |tt| [tt.sort_order.nil? ? 1 : 0, tt.sort_order.to_i, tt.id] }
+        sales_open = event.sales_open?(at: at)
+        on_sale_ticket_types = sorted_ticket_types.select { |tt| tt.on_sale?(at: at) }
+        has_available_inventory = sales_open && event_remaining_capacity(event).positive? &&
+          on_sale_ticket_types.any? { |tt| ticket_type_available_quantity(tt).positive? }
+        sold_out = sales_open && on_sale_ticket_types.any? && !has_available_inventory
+        available_catalog_items = event.catalog_items.select(&:active?).sort_by { |item| [item.position, item.id] }
+        published_questions = event.registration_questions.select(&:active?).sort_by { |question| [question.position, question.id] }
+        published_waivers = event.event_waivers.select(&:active?).sort_by(&:id)
 
         json = {
           id: event.id,
@@ -295,11 +541,12 @@ module Api
           assigned_seating: event.assigned_seating?,
           supported_locales: event.supported_locales,
           localized_content: event.localized_content,
-          catalog_items: event.catalog_items.available.map { |item| catalog_item_json(item) },
-          registration_questions: event.registration_questions.published.map { |question| registration_question_json(question) },
-          waivers: event.event_waivers.published.map { |waiver| waiver_json(waiver) },
-          attendees_preview: event.show_attendees ? active_tickets.limit(10).pluck(:attendee_name).map { |name| anonymize_name(name) } : [],
-          purchasable: event.sales_open? && event.has_available_inventory?,
+          catalog_items: available_catalog_items.map { |item| catalog_item_json(item) },
+          registration_questions: published_questions.map { |question| registration_question_json(question) },
+          waivers: published_waivers.map { |waiver| waiver_json(waiver) },
+          attendees_preview: event.show_attendees? ? @attendees_preview_by_event[event.id] : [],
+          purchasable: has_available_inventory,
+          sold_out: sold_out,
           organizer: {
             id: event.organization_id,
             business_name: event.organizer_profile.business_name,
@@ -321,11 +568,17 @@ module Api
         }
 
         if include_ticket_types
-          json[:ticket_types] = event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id).map do |tt|
-            active_tier = tt.active_pricing_tier
-            next_tier = tt.next_pricing_tier
+          json[:ticket_types] = sorted_ticket_types.map do |tt|
+            tiers = tt.pricing_tiers.sort_by { |tier| [tier.position, tier.id] }
+            active_index = tiers.index { |tier| pricing_tier_active?(tier, at: at) }
+            active_tier = active_index ? tiers[active_index] : nil
+            next_tier = if active_index
+              tiers[active_index + 1]
+            else
+              tiers.find { |tier| tier.time_based? && tier.starts_at.present? && tier.starts_at > at }
+            end
             tt_content = tt.content_for(request_locale)
-            current_price_cents = tt.current_price_cents
+            current_price_cents = active_tier ? active_tier.price_cents : tt.price_cents
             fee = Commerce::ServiceFee.for_event(event, current_price_cents, terms: listing_fee_terms)
             tt_json = {
               id: tt.id,
@@ -345,8 +598,8 @@ module Api
               regular_all_in_price_cents: Commerce::ServiceFee.for_event(event, tt.price_cents, terms: listing_fee_terms).all_in_price_cents,
               quantity_available: tt.quantity_available,
               quantity_sold: tt.quantity_sold,
-              quantity_remaining: tt.available_quantity,
-              on_sale: event.sales_open? && tt.on_sale?,
+              quantity_remaining: ticket_type_available_quantity(tt),
+              on_sale: sales_open && tt.on_sale?(at: at),
               max_per_order: tt.max_per_order,
               max_per_buyer: tt.max_per_buyer,
               sales_start_at: tt.sales_start_at,
@@ -356,7 +609,7 @@ module Api
               tt_json[:active_tier] = {
                 name: active_tier.name,
                 tier_type: active_tier.tier_type,
-                remaining: active_tier.remaining_quantity,
+                remaining: pricing_tier_remaining_quantity(active_tier),
                 ends_at: active_tier.ends_at
               }
             end
@@ -375,11 +628,15 @@ module Api
       end
 
       def catalog_item_json(item)
+        quantity_remaining = if item.inventory_quantity
+          held = @catalog_item_hold_counts.fetch(item.id, 0)
+          [item.inventory_quantity - item.quantity_sold - held, 0].max
+        end
         {
           id: item.id, name: item.name, description: item.description, kind: item.kind,
           price_cents: item.price_cents, minimum_price_cents: item.minimum_price_cents,
           maximum_price_cents: item.maximum_price_cents,
-          quantity_remaining: item.inventory_quantity ? item.available_quantity : nil
+          quantity_remaining: quantity_remaining
         }
       end
 
