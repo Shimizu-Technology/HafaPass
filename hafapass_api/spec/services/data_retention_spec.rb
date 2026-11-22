@@ -134,6 +134,20 @@ RSpec.describe DataRetention do
       .to eq(Time.zone.parse("2019-01-01"))
   end
 
+  it "clears per-ticket attendee details kept on order items once the order is anonymized" do
+    order = create(:order, completed_at: 8.years.ago, buyer_email: "buyer@example.com")
+    ticket_type = create(:ticket_type, event: order.event, attendee_info_mode: "name_only")
+    item = create(:order_item, order: order, ticket_type: ticket_type,
+      metadata: { "attendees" => [{ "attendee_name" => "Maria Cruz", "attendee_email" => nil, "answers" => [] }] })
+    create(:ticket, order: order, ticket_type: ticket_type, order_item: item, attendee_name: "Maria Cruz",
+      holder_email: "buyer@example.com")
+
+    described_class.anonymize_order!(order)
+
+    expect(item.reload.metadata).to eq({})
+    expect(item.subtotal_cents).to eq(item.unit_price_cents * item.quantity)
+  end
+
   it "removes buyer and attendee details while preserving money rows and amounts" do
     user = create(:user)
     order = create(:order, user: user, completed_at: 8.years.ago, buyer_email: "buyer@example.com")

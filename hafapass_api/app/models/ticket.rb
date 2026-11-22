@@ -25,6 +25,7 @@ class Ticket < ApplicationRecord
   has_many :admission_actions, dependent: :restrict_with_error
   has_many :ticket_transfers, dependent: :restrict_with_error
   has_many :wallet_passes, dependent: :restrict_with_error
+  has_many :registration_responses, dependent: :restrict_with_error
   has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }

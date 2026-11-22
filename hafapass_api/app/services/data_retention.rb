@@ -96,6 +96,7 @@ class DataRetention
       ticket_ids = Array(eligible_ticket_ids)
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
         user_id: privacy_user_id, buyer_owned: false)
+      scrub_issued_attendee_details!(order)
       raise Protected if RetentionGuard.protected?(order)
 
       order.update_columns(user_id: nil, updated_at: Time.current)
@@ -126,6 +127,7 @@ class DataRetention
       update_unheld(RegistrationResponse.where(order_id: order.id), answer: {}, retention_anonymized_at: Time.current,
         updated_at: Time.current)
     end
+    scrub_issued_attendee_details!(order)
     transfers = TicketTransfer.where(ticket_id: ticket_ids)
     transfers = transfers.where("lower(recipient_email) IN (?)", privacy_emails) if privacy_emails
     update_unheld(transfers, recipient_email: replacement,
@@ -246,6 +248,15 @@ class DataRetention
         Ticket.where(id: ticket.id).update_all(attrs)
       end
     end
+  end
+
+  # Checkout keeps per-ticket attendee details on order items only until the
+  # tickets are issued; once tickets exist they hold the durable copy.
+  def self.scrub_issued_attendee_details!(order)
+    return unless order.tickets.exists?
+
+    update_unheld(OrderItem.where(order_id: order.id).where("metadata ? 'attendees'"), metadata: {},
+      updated_at: Time.current)
   end
 
   def self.update_unheld(scope, **attributes)

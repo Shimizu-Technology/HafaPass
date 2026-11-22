@@ -4,7 +4,7 @@ class Api::V1::OrdersController < ApplicationController
   prepend_before_action :ensure_public_checkout_event, only: :create
   CHECKOUT_DIGEST_FIELDS = %w[event_id buyer_email buyer_name buyer_phone line_items promo_code_id promo_code catalog_items
     registration_answers waiver_acceptances referral_code attribution waitlist_offer_token seat_hold_token
-    terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents].freeze
+    terms_accepted terms_version live_money_proof marketing_opt_in expected_total_cents attendee_assignments].freeze
   skip_before_action :authenticate_user!, only: [
     :create, :show, :receipt, :payment_resume, :cancel, :resend, :event_change_response, :rotate_scan, :cancel_ticket,
     :create_transfer, :cancel_transfer, :exchange_seat
@@ -90,6 +90,8 @@ class Api::V1::OrdersController < ApplicationController
       promo_code: params[:promo_code],
       catalog_items: params[:catalog_items],
       registration_answers: params[:registration_answers],
+      attendee_assignments: params[:attendee_assignments],
+      require_attendee_details: true,
       waiver_acceptances: params[:waiver_acceptances],
       referral_code: params[:referral_code],
       attribution: params[:attribution],

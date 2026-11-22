@@ -103,7 +103,7 @@ class OrganizerSalesExport
     when "check_in_time" then self.class.local_time(ticket ? ticket.checked_in_at : order.tickets.filter_map(&:checked_in_at).max, @query.event)
     when "transferred_to" then transferred_to(ticket ? [ticket] : order.tickets)
     when "purchase_date" then self.class.local_time(order.completed_at || order.created_at, @query.event)
-    when "notes_custom_answers" then registration_answers(order)
+    when "notes_custom_answers" then registration_answers(order, ticket)
     end
   end
 
@@ -157,10 +157,22 @@ class OrganizerSalesExport
     FinanceExports.money(cents)
   end
 
-  def registration_answers(order)
+  def registration_answers(order, ticket = nil)
     # Keep the column key compatible with saved export requests. Internal
     # support notes have a separate audience and never belong in this export.
-    order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{format_answer(answer.answer)}" }.join("; ")
+    # A ticket row shows the order's answers plus its own per-ticket answers;
+    # an order row labels each per-ticket answer with its ticket code.
+    responses = ticket ? responses_for_ticket(order, ticket) : order.registration_responses
+    responses.map do |answer|
+      prompt = ticket || answer.ticket_id.nil? ? answer.prompt_snapshot : "#{answer.prompt_snapshot} (HP-T#{answer.ticket_id})"
+      "#{prompt}: #{format_answer(answer.answer)}"
+    end.join("; ")
+  end
+
+  # Pass night tickets share the answers given for their pass.
+  def responses_for_ticket(order, ticket)
+    answered_ticket_id = ticket.parent_ticket_id || ticket.id
+    order.registration_responses.select { |answer| answer.ticket_id.nil? || answer.ticket_id == answered_ticket_id }
   end
 
   def expanded_questions
@@ -178,11 +190,14 @@ class OrganizerSalesExport
   end
 
   def expanded_question_values(record)
-    order = record.is_a?(Ticket) ? record.order : record
-    by_question = order.registration_responses.index_by(&:registration_question_id)
+    ticket = record.is_a?(Ticket) ? record : nil
+    order = ticket ? ticket.order : record
+    responses = ticket ? responses_for_ticket(order, ticket) : order.registration_responses
+    by_question = responses.group_by(&:registration_question_id)
     expanded_questions.map do |question|
-      response = by_question[question.id]
-      response ? format_answer(response.answer) : ""
+      # An order row joins the per-ticket answers in ticket order.
+      Array(by_question[question.id]).sort_by { |response| response.ticket_id.to_i }
+        .map { |response| format_answer(response.answer) }.join("; ")
     end
   end
 

@@ -380,6 +380,8 @@ module Commerce
         issued = []
         order.order_items.item_ticket.each do |item|
           existing = order.tickets.where(order_item_id: item.id).order(:id).to_a
+          # Attendee details validated at checkout, in ticket order.
+          attendees = Array(item.metadata.to_h["attendees"])
           assigned_holds = item.seat_holds.status_claimed.includes(:event_seat).order(:event_seat_id).to_a
           if assigned_holds.any?
             if item.ticket_type.pass?
@@ -388,16 +390,18 @@ module Commerce
             unless assigned_holds.length == item.quantity
               raise InvalidTransition, "Assigned seats do not match the order item quantity"
             end
-            assigned_holds.each do |hold|
+            assigned_holds.each_with_index do |hold, index|
               ticket = existing.find { |candidate| candidate.event_seat_id == hold.event_seat_id }
               ticket ||= order.tickets.create!(
                 order_item: item,
                 ticket_type: item.ticket_type,
                 pricing_tier: item.pricing_tier,
                 event: order.event,
-                event_seat: hold.event_seat
+                event_seat: hold.event_seat,
+                **attendee_attributes(order, attendees[index])
               )
               ticket.issue_qr_code!
+              record_ticket_responses!(order, item, ticket, attendees[index])
               issued << ticket
             end
             next
@@ -407,16 +411,54 @@ module Commerce
               order_item: item,
               ticket_type: item.ticket_type,
               pricing_tier: item.pricing_tier,
-              event: order.event
+              event: order.event,
+              **attendee_attributes(order, attendees[existing.length])
             )
           end
-          existing.each do |ticket|
+          existing.each_with_index do |ticket, index|
             ticket.issue_qr_code!
+            record_ticket_responses!(order, item, ticket, attendees[index])
+            # Night tickets copy the pass holder's attendee name and email.
             Passes::Issuance.call(order: order, parent_ticket: ticket) if ticket.pass_parent?
           end
           issued.concat(existing)
         end
         issued
+      end
+
+      # The buyer stays the ticket holder; only the name (and email, when
+      # collected) printed on the ticket and shown at the door change.
+      def attendee_attributes(order, attendee)
+        name = attendee.to_h["attendee_name"].presence
+        return {} unless name
+
+        { attendee_name: name, attendee_email: attendee["attendee_email"].presence || order.buyer_email,
+          holder_email: order.buyer_email }
+      end
+
+      # Idempotent: a retried issuance never duplicates a ticket's answers. A
+      # question deleted after checkout is skipped rather than blocking tickets.
+      def record_ticket_responses!(order, item, ticket, attendee)
+        answers = Array(attendee.to_h["answers"])
+        return if answers.empty?
+
+        answered = ticket.registration_responses.pluck(:registration_question_id).to_set
+        questions = order.event.registration_questions.where(id: answers.map { |answer| answer["question_id"] }).index_by(&:id)
+        answers.each do |answer|
+          question = questions[answer["question_id"]]
+          next if question.nil? || answered.include?(question.id)
+
+          ticket.registration_responses.create!(
+            order: order,
+            registration_question: question,
+            prompt_snapshot: answer["prompt"],
+            kind_snapshot: RegistrationQuestion.kinds.fetch(answer["kind"]),
+            required_snapshot: answer["required"] == true,
+            options_snapshot: Array(answer["options"]),
+            answer: { "value" => answer["value"] },
+            answered_at: item.created_at
+          )
+        end
       end
 
       def finalize_waitlist_offer!(offer)

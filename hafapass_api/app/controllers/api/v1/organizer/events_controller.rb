@@ -674,6 +674,7 @@ module Api
                 quantity_sold: 0,
                 max_per_order: tt.max_per_order,
                 max_per_buyer: tt.max_per_buyer,
+                attendee_info_mode: tt.attendee_info_mode,
                 sort_order: tt.sort_order,
                 sales_start_at: shifted_relative_time(tt.sales_start_at, source, new_event),
                 sales_end_at: shifted_relative_time(tt.sales_end_at, source, new_event)
@@ -827,6 +828,7 @@ module Api
                 door_available_quantity: tt.door_available_quantity,
                 max_per_order: tt.max_per_order,
                 max_per_buyer: tt.max_per_buyer,
+                attendee_info_mode: tt.attendee_info_mode,
                 sales_start_at: tt.sales_start_at,
                 sales_end_at: tt.sales_end_at,
                 is_pass: tt.is_pass?,

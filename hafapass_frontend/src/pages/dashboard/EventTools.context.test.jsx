@@ -455,7 +455,8 @@ it('supports editing, reordering, pausing, and displaying delete errors for regi
   await user.click(screen.getByRole('button', { name: 'Save question' }))
   await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith(
     '/organizer/events/11/registration_questions/102',
-    { prompt: 'Tournament division', required: false, options: ['Open', 'Co-ed', 'Masters'] },
+    { prompt: 'Tournament division', kind: 'selection', required: false, options: ['Open', 'Co-ed', 'Masters'], help_text: null,
+      scope: 'order', ticket_type_ids: [], show_on_scanner: false, validation_rules: {} },
     expect.anything(),
   ))
 
@@ -483,4 +484,86 @@ it('supports editing, reordering, pausing, and displaying delete errors for regi
   apiClient.delete.mockRejectedValueOnce({ response: { status: 422, data: { errors: ['Cannot delete record because dependent registration responses exist'] } } })
   await user.click(await screen.findByRole('button', { name: 'Remove Team name' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('dependent registration responses exist')
+})
+
+it('builds scoped questions with plain controls: field type, help text, number limits, each ticket and door scanner', async () => {
+  caps.advanced_sales_tools = false
+  rows[11] = { ...rows[11], ticket_types: [{ id: 17, name: 'General', price_cents: 1000 }, { id: 18, name: 'Free Alumni', price_cents: 0 }] }
+  mount(tools[1])
+  await screen.findByRole('heading', { name: 'Registration & waivers', level: 2 })
+  const user = userEvent.setup()
+  const kinds = within(screen.getByLabelText('Answer type')).getAllByRole('option').map(option => option.value)
+  expect(kinds).toEqual(['short_text', 'long_text', 'selection', 'multi_select', 'checkbox', 'number', 'phone', 'email'])
+
+  await user.type(screen.getByLabelText('Question'), 'Graduation Year')
+  await user.selectOptions(screen.getByLabelText('Answer type'), 'number')
+  await user.type(screen.getByLabelText('Help text (optional)'), '4-digit year')
+  await user.type(screen.getByLabelText('Lowest number allowed'), '1950')
+  await user.type(screen.getByLabelText('Highest number allowed'), '2035')
+  await user.click(screen.getByRole('radio', { name: 'For each ticket' }))
+  const tickets = screen.getByRole('group', { name: 'Which tickets?' })
+  expect(within(tickets).getByRole('checkbox', { name: 'All ticket types' })).toBeChecked()
+  await user.click(within(tickets).getByRole('checkbox', { name: 'Free Alumni' }))
+  expect(within(tickets).getByRole('checkbox', { name: 'All ticket types' })).not.toBeChecked()
+  await user.click(screen.getByLabelText('Required question'))
+  await user.click(screen.getByLabelText('Show on door scanner'))
+  await user.click(screen.getByRole('button', { name: 'Add question' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions', {
+    prompt: 'Graduation Year', kind: 'number', required: true, help_text: '4-digit year', scope: 'ticket', ticket_type_ids: [18],
+    show_on_scanner: true, options: [], validation_rules: { min: 1950, max: 2035 }, position: 0,
+  }, expect.anything()))
+})
+
+it('adds one-click starter templates, scoping alumni door verification to the chosen ticket type', async () => {
+  caps.advanced_sales_tools = false
+  rows[11] = { ...rows[11], ticket_types: [{ id: 17, name: 'General', price_cents: 1000 }, { id: 18, name: 'Free Alumni', price_cents: 0 }] }
+  apiClient.post.mockResolvedValue({ data: { registration_questions: [], skipped_prompts: [] } })
+  mount(tools[1])
+  await screen.findByRole('heading', { name: 'Start from a template' })
+  const user = userEvent.setup()
+
+  await user.click(screen.getByRole('button', { name: 'Add FD Team Registration template' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions/apply_template',
+    { template: 'fd_team_registration', ticket_type_id: null }, expect.anything()))
+  await screen.findByText(/FD Team Registration template confirmed/)
+
+  apiClient.post.mockClear()
+  await user.click(screen.getByRole('button', { name: 'Add Alumni Door Verification template' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Choose the alumni ticket type')
+  expect(apiClient.post).not.toHaveBeenCalled()
+  await user.selectOptions(screen.getByLabelText('Ask these questions for'), 'Free Alumni')
+  await user.click(screen.getByRole('button', { name: 'Add Alumni Door Verification template' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions/apply_template',
+    { template: 'alumni_door_verification', ticket_type_id: 18 }, expect.anything()))
+  await screen.findByText(/Alumni Door Verification template confirmed/)
+
+  await user.click(screen.getByRole('button', { name: 'Add Merch / T-Shirt Size template' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions/apply_template',
+    { template: 'merch_shirt_size', ticket_type_id: 18 }, expect.anything()))
+})
+
+it('shows scope, ticket types, number limits and door scanner on saved questions and edits them', async () => {
+  caps.advanced_sales_tools = false
+  rows[11] = { ...rows[11], ticket_types: [{ id: 17, name: 'General', price_cents: 1000 }, { id: 18, name: 'Free Alumni', price_cents: 0 }] }
+  const saved = [{ id: 201, prompt: 'Graduation Year', kind: 'number', required: true, options: [], position: 0, active: true, scope: 'ticket',
+    ticket_type_ids: [18], show_on_scanner: true, help_text: '4-digit year', validation_rules: { min: 1950, max: 2035 } }]
+  apiClient.get.mockImplementation((path, config) => path.endsWith('/registration_questions')
+    ? Promise.resolve({ data: { registration_questions: saved } }) : getDefault(path, config))
+  mount(tools[1])
+  const item = (await screen.findByText('Graduation Year')).closest('li')
+  expect(item).toHaveTextContent('Number · 1950 to 2035 · For each ticket · Free Alumni')
+  expect(item).toHaveTextContent('Door scanner')
+  expect(item).toHaveTextContent('Hint: 4-digit year')
+  const user = userEvent.setup()
+  await user.click(within(item).getByRole('button', { name: 'Edit Graduation Year' }))
+  const editor = within(screen.getByRole('button', { name: 'Save question' }).closest('li'))
+  expect(editor.getByLabelText('Edit question')).toHaveValue('Graduation Year')
+  expect(editor.getByLabelText('Highest number allowed')).toHaveValue(2035)
+  expect(editor.getByRole('radio', { name: 'For each ticket' })).toBeChecked()
+  await user.click(editor.getByRole('radio', { name: 'Once per order' }))
+  await user.click(within(editor.getByRole('group', { name: 'Which tickets?' })).getByRole('checkbox', { name: 'All ticket types' }))
+  await user.click(screen.getByRole('button', { name: 'Save question' }))
+  await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/organizer/events/11/registration_questions/201', expect.objectContaining({
+    scope: 'order', ticket_type_ids: [], show_on_scanner: true, validation_rules: { min: 1950, max: 2035 },
+  }), expect.anything()))
 })

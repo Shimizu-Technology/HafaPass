@@ -10,9 +10,71 @@ import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } fro
 import { LANGUAGES } from '../../utils/locale'
 
 const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
-const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '' }
-const emptyQuestionEdit = { prompt: '', required: false, options: '' }
-const QUESTION_KIND_LABELS = { short_text: 'Short text', long_text: 'Long text', selection: 'Selection', checkbox: 'Checkbox' }
+const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '', help_text: '', scope: 'order', ticket_type_ids: [], min: '', max: '', show_on_scanner: false }
+const emptyQuestionEdit = emptyQuestion
+const QUESTION_KIND_LABELS = { short_text: 'Short text', long_text: 'Long text', selection: 'Choose one', multi_select: 'Choose several', checkbox: 'Checkbox', number: 'Number', phone: 'Phone number', email: 'Email address' }
+const OPTION_KINDS = ['selection', 'multi_select']
+// Server-defined starter sets (RegistrationQuestionsController::TEMPLATES).
+const QUESTION_TEMPLATES = [
+  { key: 'fd_team_registration', title: 'FD Team Registration', description: 'Class Name, Graduation Year (1950–2035), Division and Team Captain Phone.' },
+  { key: 'alumni_door_verification', title: 'Alumni Door Verification', description: "Asks each alumni ticket for the attendee's name and Graduation Year, marked for door staff.", needsTicketType: true },
+  { key: 'merch_shirt_size', title: 'Merch / T-Shirt Size', description: 'Shirt Size: S, M, L, XL or 2XL.' },
+]
+
+function formFromQuestion(item) {
+  return {
+    prompt: item.prompt || '', kind: item.kind || 'short_text', required: Boolean(item.required),
+    options: Array.isArray(item.options) ? item.options.join(', ') : '', help_text: item.help_text || '',
+    scope: item.scope || 'order', ticket_type_ids: (item.ticket_type_ids || []).map(Number),
+    min: item.validation_rules?.min ?? '', max: item.validation_rules?.max ?? '', show_on_scanner: Boolean(item.show_on_scanner),
+  }
+}
+
+function questionPayload(form) {
+  const rules = form.kind === 'number' ? Object.fromEntries([['min', form.min], ['max', form.max]].filter(([, value]) => value !== '' && value != null).map(([key, value]) => [key, Number(value)])) : {}
+  return {
+    prompt: form.prompt.trim(), kind: form.kind, required: form.required, help_text: form.help_text.trim() || null,
+    scope: form.scope, ticket_type_ids: form.ticket_type_ids, show_on_scanner: form.show_on_scanner,
+    options: OPTION_KINDS.includes(form.kind) ? form.options.split(',').map(value => value.trim()).filter(Boolean) : [],
+    validation_rules: rules,
+  }
+}
+
+// Plain controls shared by the add and edit question forms.
+function QuestionControls({ form, onChange, ticketTypes, idPrefix, editing = false }) {
+  const set = changes => onChange({ ...form, ...changes })
+  const optionKind = OPTION_KINDS.includes(form.kind)
+  const allTypes = form.ticket_type_ids.length === 0
+  const toggleType = id => set({ ticket_type_ids: form.ticket_type_ids.includes(id) ? form.ticket_type_ids.filter(value => value !== id) : [...form.ticket_type_ids, id] })
+  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <Field label={editing ? 'Edit question' : 'Question'} className="sm:col-span-2"><input className="input font-normal" placeholder="e.g. Graduation year" value={form.prompt} onChange={e => set({ prompt: e.target.value })} /></Field>
+    <Field label={editing ? 'Edit answer type' : 'Answer type'}><select className="input font-normal" value={form.kind} onChange={e => set({ kind: e.target.value })}>{Object.entries(QUESTION_KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+    {(optionKind || !editing) && <Field label={editing ? 'Edit choices (comma separated)' : 'Choices (comma separated)'}><input className="input font-normal" placeholder="e.g. S, M, L" disabled={!optionKind} value={form.options} onChange={e => set({ options: e.target.value })} /></Field>}
+    <Field label="Help text (optional)" className="sm:col-span-2"><input className="input font-normal" maxLength={250} placeholder="e.g. 4-digit year, for example 1998" value={form.help_text} onChange={e => set({ help_text: e.target.value })} /></Field>
+    {form.kind === 'number' && <>
+      <Field label="Lowest number allowed"><input className="input font-normal" type="number" inputMode="numeric" placeholder="e.g. 1950" value={form.min} onChange={e => set({ min: e.target.value })} /></Field>
+      <Field label="Highest number allowed"><input className="input font-normal" type="number" inputMode="numeric" placeholder="e.g. 2035" value={form.max} onChange={e => set({ max: e.target.value })} /></Field>
+    </>}
+    <fieldset className="min-w-0 sm:col-span-2"><legend className="text-sm font-medium text-neutral-700">Ask this question</legend>
+      <div className="mt-1 flex flex-wrap gap-x-5">{[['order', 'Once per order'], ['ticket', 'For each ticket']].map(([value, label]) => <label key={value} className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="radio" name={`${idPrefix}-scope`} value={value} checked={form.scope === value} onChange={() => set({ scope: value })} />{label}</label>)}</div>
+    </fieldset>
+    <fieldset className="min-w-0 sm:col-span-2"><legend className="text-sm font-medium text-neutral-700">Which tickets?</legend>
+      <div className="mt-1 flex flex-wrap gap-x-5">
+        <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={allTypes} onChange={() => set({ ticket_type_ids: [] })} />All ticket types</label>
+        {ticketTypes.map(type => <label key={type.id} className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={form.ticket_type_ids.includes(Number(type.id))} onChange={() => toggleType(Number(type.id))} />{type.name}</label>)}
+      </div>
+    </fieldset>
+    <div className="flex flex-wrap gap-x-5 sm:col-span-2 lg:col-span-4">
+      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={form.required} onChange={e => set({ required: e.target.checked })} /> {editing ? 'Required' : 'Required question'}</label>
+      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={form.show_on_scanner} onChange={e => set({ show_on_scanner: e.target.checked })} /> Show on door scanner</label>
+    </div>
+  </div>
+}
+
+function questionScopeSummary(item, ticketTypes) {
+  const names = (item.ticket_type_ids || []).map(id => ticketTypes.find(type => Number(type.id) === Number(id))?.name).filter(Boolean)
+  return [item.scope === 'ticket' ? 'For each ticket' : 'Once per order', names.length ? names.join(', ') : 'All ticket types'].join(' · ')
+}
 const emptyWaiver = { title: '', version: '1.0', body: '', required: true }
 const emptyPromoter = { name: '', email: '', code: '', commission: '10' }
 const emptyCampaign = { name: '', subject: '', body: '', segment: 'all_attendees', ticket_type_id: '', scheduled_at: '' }
@@ -73,6 +135,7 @@ function SalesToolsSession({ eventId, identity }) {
   const [editingCampaignId, setEditingCampaignId] = useState(null)
   const [editingQuestionId, setEditingQuestionId] = useState(null)
   const [editQuestionForm, setEditQuestionForm] = useState(emptyQuestionEdit)
+  const [templateTicketTypeId, setTemplateTicketTypeId] = useState('')
   const campaignNameInput = useRef(null)
 
   const advancedSalesEnabled = capabilities.advanced_sales_tools === true
@@ -173,23 +236,23 @@ function SalesToolsSession({ eventId, identity }) {
   }
   const startEditQuestion = item => {
     setEditingQuestionId(item.id)
-    setEditQuestionForm({
-      prompt: item.prompt || '',
-      required: Boolean(item.required),
-      options: Array.isArray(item.options) ? item.options.join(', ') : '',
-    })
+    setEditQuestionForm(formFromQuestion(item))
   }
   const cancelEditQuestion = () => {
     setEditingQuestionId(null)
     setEditQuestionForm(emptyQuestionEdit)
   }
   const saveEditQuestion = item => {
-    const payload = {
-      prompt: editQuestionForm.prompt,
-      required: editQuestionForm.required,
-      ...(item.kind === 'selection' ? { options: editQuestionForm.options.split(',').map(value => value.trim()).filter(Boolean) } : {}),
-    }
+    const payload = questionPayload(editQuestionForm)
     return mutate('Update question', permission('manage_events'), config => apiClient.patch(`/organizer/events/${eventId}/registration_questions/${item.id}`, payload, config), cancelEditQuestion)
+  }
+  const applyTemplate = template => {
+    if (template.needsTicketType && !templateTicketTypeId) {
+      setError('Choose the alumni ticket type in "Ask these questions for" first, so other tickets are not asked.')
+      return
+    }
+    return mutate(`${template.title} template`, permission('manage_events'), config => apiClient.post(`/organizer/events/${eventId}/registration_questions/apply_template`,
+      { template: template.key, ticket_type_id: templateTicketTypeId ? Number(templateTicketTypeId) : null }, config))
   }
   const toggleQuestionActive = item => {
     const nextActive = item.active === false
@@ -312,8 +375,18 @@ function SalesToolsSession({ eventId, identity }) {
     </Section>)}
 
     {(permission('manage_events')) && (<Section title="Registration and waivers" description="Required answers and exact waiver versions are snapshotted on every order.">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Question" className="sm:col-span-2"><input className="input font-normal" placeholder="e.g. T-shirt size" value={questionForm.prompt} onChange={e => setQuestionForm({ ...questionForm, prompt: e.target.value })} /></Field><Field label="Answer type"><select className="input font-normal" value={questionForm.kind} onChange={e => setQuestionForm({ ...questionForm, kind: e.target.value })}><option value="short_text">Short text</option><option value="long_text">Long text</option><option value="selection">Selection</option><option value="checkbox">Checkbox</option></select></Field><Field label="Choices (comma separated)"><input className="input font-normal" placeholder="e.g. S, M, L" disabled={questionForm.kind !== 'selection'} value={questionForm.options} onChange={e => setQuestionForm({ ...questionForm, options: e.target.value })} /></Field><button type="button" className={addButtonClass} onClick={() => create('registration_questions', { prompt: questionForm.prompt, kind: questionForm.kind, required: questionForm.required, position: questions.length, options: questionForm.options.split(',').map(value => value.trim()).filter(Boolean) }, () => setQuestionForm(emptyQuestion))}>Add question</button></div>
-      <label className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="checkbox" checked={questionForm.required} onChange={e => setQuestionForm({ ...questionForm, required: e.target.checked })} /> Required question</label>
+      <div className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <h3 className="text-base font-semibold text-neutral-900">Start from a template</h3>
+        <p className="mt-1 text-sm text-neutral-600">One click adds a ready-made set of questions. You can edit, pause or remove any of them afterwards.</p>
+        <Field label="Ask these questions for" className="mt-3 max-w-sm"><select className="input font-normal" value={templateTicketTypeId} onChange={e => setTemplateTicketTypeId(e.target.value)}><option value="">All ticket types</option>{(event.ticket_types || []).map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></Field>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-3">{QUESTION_TEMPLATES.map(template => <li key={template.key} className="flex flex-col rounded-lg border border-neutral-200 bg-white p-3">
+          <p className="text-sm font-semibold text-neutral-900">{template.title}</p>
+          <p className="mt-1 flex-1 text-sm text-neutral-600">{template.description}</p>
+          <button type="button" className="btn-secondary mt-3 min-h-11 px-4 py-2 text-sm" aria-label={`Add ${template.title} template`} onClick={() => applyTemplate(template)}><Plus aria-hidden="true" className="h-4 w-4" /> Add template</button>
+        </li>)}</ul>
+      </div>
+      <QuestionControls form={questionForm} onChange={setQuestionForm} ticketTypes={event.ticket_types || []} idPrefix="new-question" />
+      <button type="button" className={`${addButtonClass} mt-3`} onClick={() => create('registration_questions', { ...questionPayload(questionForm), position: questions.length }, () => setQuestionForm(emptyQuestion))}>Add question</button>
       {questions.length === 0 ? (
         <p className="mt-3 text-sm text-neutral-500">No registration questions yet. Add questions above to collect team names, divisions, or attendee details at checkout.</p>
       ) : (
@@ -325,21 +398,8 @@ function SalesToolsSession({ eventId, identity }) {
               <li key={item.id} className={`p-4 ${inactive ? 'bg-neutral-50/70' : ''}`}>
                 {isEditing ? (
                   <div className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Edit question" className={item.kind === 'selection' ? '' : 'sm:col-span-2'}>
-                        <input className="input font-normal" value={editQuestionForm.prompt} onChange={e => setEditQuestionForm({ ...editQuestionForm, prompt: e.target.value })} />
-                      </Field>
-                      {item.kind === 'selection' && (
-                        <Field label="Edit choices (comma separated)">
-                          <input className="input font-normal" value={editQuestionForm.options} onChange={e => setEditQuestionForm({ ...editQuestionForm, options: e.target.value })} />
-                        </Field>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700">
-                        <input type="checkbox" checked={editQuestionForm.required} onChange={e => setEditQuestionForm({ ...editQuestionForm, required: e.target.checked })} />
-                        Required
-                      </label>
+                    <QuestionControls form={editQuestionForm} onChange={setEditQuestionForm} ticketTypes={event.ticket_types || []} idPrefix={`edit-question-${item.id}`} editing />
+                    <div className="flex flex-wrap items-center justify-end gap-3">
                       <div className="flex items-center gap-2">
                         <button type="button" className="btn-secondary min-h-11 px-4 py-2 text-sm" onClick={cancelEditQuestion}>Cancel</button>
                         <button type="button" className="btn-primary min-h-11 px-4 py-2 text-sm" onClick={() => saveEditQuestion(item)}>Save question</button>
@@ -353,11 +413,15 @@ function SalesToolsSession({ eventId, identity }) {
                         <span className={`text-sm font-semibold ${inactive ? 'text-neutral-500 line-through' : 'text-neutral-900'}`}>{item.prompt}</span>
                         {item.required && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">Required</span>}
                         {inactive && <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">Paused</span>}
+                        {item.show_on_scanner && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">Door scanner</span>}
                       </div>
                       <p className="mt-1 text-xs text-neutral-500">
                         {QUESTION_KIND_LABELS[item.kind] || item.kind}
-                        {item.kind === 'selection' && Array.isArray(item.options) && item.options.length > 0 ? ` · Choices: ${item.options.join(', ')}` : ''}
+                        {OPTION_KINDS.includes(item.kind) && Array.isArray(item.options) && item.options.length > 0 ? ` · Choices: ${item.options.join(', ')}` : ''}
+                        {item.kind === 'number' && (item.validation_rules?.min != null || item.validation_rules?.max != null) ? ` · ${item.validation_rules?.min ?? 'any'} to ${item.validation_rules?.max ?? 'any'}` : ''}
+                        {` · ${questionScopeSummary(item, event.ticket_types || [])}`}
                       </p>
+                      {item.help_text && <p className="mt-1 text-xs text-neutral-500">Hint: {item.help_text}</p>}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <button type="button" className="btn-ghost inline-flex min-h-11 min-w-11 items-center justify-center p-2" aria-label={`Move ${item.prompt} up`} disabled={index === 0} onClick={() => moveQuestion(index, -1)}><ChevronUp aria-hidden="true" className="h-4 w-4" /></button>

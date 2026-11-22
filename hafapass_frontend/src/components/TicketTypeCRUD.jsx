@@ -37,7 +37,13 @@ function useInventoryRequests(identity, resourcePath, parentBeginRequest) {
   return { current, beginRequest }
 }
 
-const EMPTY_FORM = { name: '', description: '', price: '0.00', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', sales_start_at: '', sales_end_at: '' }
+// Plain-English choices for what checkout asks about each ticket's attendee.
+const ATTENDEE_INFO_OPTIONS = [
+  ['none', 'None — buyer name only'],
+  ['name_only', "Ask for each attendee's name"],
+  ['name_and_email', "Ask for each attendee's name and email"],
+]
+const EMPTY_FORM = { name: '', description: '', price: '0.00', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', attendee_info_mode: 'none', sales_start_at: '', sales_end_at: '' }
 
 function TicketTypeForm({
   initial,
@@ -206,6 +212,7 @@ function TicketTypeForm({
       door_allocation: form.door_allocation === '' ? null : parseInt(form.door_allocation, 10),
       max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
       max_per_buyer: form.max_per_buyer ? parseInt(form.max_per_buyer, 10) : null,
+      attendee_info_mode: form.attendee_info_mode || 'none',
       sales_start_at: form.sales_start_at || null,
       sales_end_at: form.sales_end_at || null
     }
@@ -388,6 +395,13 @@ function TicketTypeForm({
             <input id="ticket-type-description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="Optional description" disabled={saving} />
           </div>
           <div>
+            <label htmlFor="ticket-type-attendee-info" className="block text-sm font-medium text-neutral-700 mb-1">Attendee info at checkout</label>
+            <select id="ticket-type-attendee-info" aria-describedby="ticket-type-attendee-info-help" value={form.attendee_info_mode || 'none'} onChange={e => setForm(f => ({ ...f, attendee_info_mode: e.target.value }))} className="input" disabled={saving}>
+              {ATTENDEE_INFO_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <p id="ticket-type-attendee-info-help" className="mt-1 text-xs text-neutral-500">Asking for names prints each attendee&apos;s name on their own ticket, so door staff can see who each ticket is for.</p>
+          </div>
+          <div>
             <label htmlFor="ticket-type-door-allocation" className="block text-sm font-medium text-neutral-700 mb-1">Door allocation</label>
             <input id="ticket-type-door-allocation" type="number" min="0" step="1" value={form.door_allocation} onChange={e => setForm(f => ({ ...f, door_allocation: e.target.value }))} className="input" placeholder="No separate cap" disabled={saving} />
             <p className="mt-1 text-xs text-neutral-500">Optional cap for sales at the venue. Leave blank to use the remaining ticket inventory.</p>
@@ -412,7 +426,8 @@ function TicketTypeForm({
             </div>
             <div>
               <label htmlFor="ticket-type-max-buyer" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per buyer</label>
-              <input id="ticket-type-max-buyer" type="number" min="1" step="1" value={form.max_per_buyer} onChange={e => setForm(f => ({ ...f, max_per_buyer: e.target.value }))} className="input" placeholder="No additional limit" disabled={saving} />
+              <input id="ticket-type-max-buyer" type="number" min="1" step="1" value={form.max_per_buyer} onChange={e => setForm(f => ({ ...f, max_per_buyer: e.target.value }))} className="input" placeholder="Leave blank for unlimited" aria-describedby="ticket-type-max-buyer-help" disabled={saving} />
+              <p id="ticket-type-max-buyer-help" className="mt-1 text-xs text-neutral-500">Leave blank for unlimited. Free tickets can then be mixed with paid tickets in one checkout.</p>
             </div>
           </div>
           <p className="text-xs text-neutral-500">Blank purchase limits add no separate cap; event capacity and remaining ticket inventory still apply.</p>
@@ -593,6 +608,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                     door_allocation: tt.door_allocation == null ? '' : String(tt.door_allocation),
                     max_per_order: tt.max_per_order ? String(tt.max_per_order) : '',
                     max_per_buyer: tt.max_per_buyer ? String(tt.max_per_buyer) : '',
+                    attendee_info_mode: tt.attendee_info_mode || 'none',
                     sales_start_at: toEventLocalInput(tt.sales_start_at, eventTimezone),
                     sales_end_at: toEventLocalInput(tt.sales_end_at, eventTimezone)
                   }}
