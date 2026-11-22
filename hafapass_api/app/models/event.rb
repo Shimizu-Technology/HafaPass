@@ -56,6 +56,8 @@ class Event < ApplicationRecord
   has_many :communication_campaigns, dependent: :restrict_with_error
   has_many :marketplace_collection_events, dependent: :restrict_with_error
   has_many :marketplace_collections, through: :marketplace_collection_events
+  has_many :event_series_memberships, -> { order(:position, :id) }, dependent: :destroy
+  has_many :event_series, through: :event_series_memberships
   has_many :event_favorites, dependent: :destroy
   has_many :event_reminders, dependent: :destroy
   has_many :distribution_links, dependent: :restrict_with_error

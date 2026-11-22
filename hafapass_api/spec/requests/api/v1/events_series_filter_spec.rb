@@ -1,0 +1,122 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe "Api::V1::Events series contract", type: :request do
+  let!(:organizer_profile) { create(:organizer_profile) }
+  let(:organization) { organizer_profile.organization }
+  let!(:series_a) { create(:event_series, organization: organization, name: "FD Tourney 2026", slug: "fd-tourney-2026", status: :active) }
+  let!(:series_b) { create(:event_series, organization: organization, name: "Guam Hoops", slug: "guam-hoops", status: :active) }
+
+  let!(:night_1) { create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Night 1", starts_at: 2.days.from_now) }
+  let!(:championship) { create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Championship", starts_at: 4.days.from_now) }
+  let!(:standalone) { create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Standalone", starts_at: 3.days.from_now) }
+
+  before do
+    [night_1, championship, standalone].each { |event| create(:ticket_type, event: event) }
+    series_a.event_series_memberships.create!(event: night_1, role: :regular_night, position: 0)
+    series_a.event_series_memberships.create!(event: championship, role: :championship_night, position: 1)
+    series_b.event_series_memberships.create!(event: championship, role: :other, position: 0)
+  end
+
+  it "filters GET /api/v1/events by ?organizer=<org>&series=<slug> without duplicating multi-series events" do
+    get "/api/v1/events", params: { organizer: organization.slug, series: "fd-tourney-2026" }
+
+    expect(response).to have_http_status(:ok)
+    events = response.parsed_body.fetch("events")
+    expect(events.map { |e| e["id"] }).to eq([night_1.id, championship.id])
+    expect(events.first.fetch("series")).to eq(
+      "id" => series_a.id,
+      "slug" => "fd-tourney-2026",
+      "name" => "FD Tourney 2026",
+      "role" => "regular_night"
+    )
+    expect(events.last.fetch("series")).to eq(
+      "id" => series_a.id,
+      "slug" => "fd-tourney-2026",
+      "name" => "FD Tourney 2026",
+      "role" => "championship_night"
+    )
+  end
+
+  it "returns 400 when ?series=<slug> is provided without ?organizer=" do
+    get "/api/v1/events", params: { series: "fd-tourney-2026" }
+
+    expect(response).to have_http_status(:bad_request)
+    expect(response.parsed_body.fetch("error")).to include("organizer")
+  end
+
+  it "scopes ?organizer=<org>&series=<shared-slug> to that organization even when another org shares the slug" do
+    other_profile = create(:organizer_profile)
+    other_org = other_profile.organization
+    other_series = create(:event_series, organization: other_org, name: "Other FD Tourney", slug: "fd-tourney-2026", status: :active)
+    other_event = create(:event, :published, organizer_profile: other_profile, organization: other_org, title: "Other Org Night", starts_at: 5.days.from_now)
+    create(:ticket_type, event: other_event)
+    other_series.event_series_memberships.create!(event: other_event, role: :regular_night, position: 0)
+
+    get "/api/v1/events", params: { organizer: organization.slug, series: "fd-tourney-2026" }
+
+    expect(response).to have_http_status(:ok)
+    ids = response.parsed_body.fetch("events").map { |e| e["id"] }
+    expect(ids).to eq([night_1.id, championship.id])
+    expect(ids).not_to include(other_event.id)
+  end
+
+  it "hides draft and archived series from ?series= filtering and event JSON, preferring public series" do
+    draft_series = create(:event_series, organization: organization, name: "Secret Draft", slug: "secret-draft", status: :draft)
+    archived_series = create(:event_series, organization: organization, name: "Old Archive", slug: "old-archive", status: :archived)
+    completed_series = create(:event_series, organization: organization, name: "Completed Cup", slug: "completed-cup", status: :completed)
+
+    draft_only_event = create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Draft Only", starts_at: 5.days.from_now)
+    archived_only_event = create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Archived Only", starts_at: 6.days.from_now)
+    mixed_event = create(:event, :published, organizer_profile: organizer_profile, organization: organization, title: "Mixed Event", starts_at: 7.days.from_now)
+    [draft_only_event, archived_only_event, mixed_event].each { |event| create(:ticket_type, event: event) }
+
+    draft_series.event_series_memberships.create!(event: draft_only_event, role: :regular_night, position: 0)
+    archived_series.event_series_memberships.create!(event: archived_only_event, role: :regular_night, position: 0)
+    # Mixed event belongs to draft first (lower position) and completed/active second
+    draft_series.event_series_memberships.create!(event: mixed_event, role: :other, position: 0)
+    completed_series.event_series_memberships.create!(event: mixed_event, role: :championship_night, position: 1)
+
+    get "/api/v1/events", params: { organizer: organization.slug, series: "secret-draft" }
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("events")).to be_empty
+
+    get "/api/v1/events", params: { organizer: organization.slug, series: "old-archive" }
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("events")).to be_empty
+
+    get "/api/v1/events", params: { organizer: organization.slug, series: "completed-cup" }
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("events").map { |e| e["id"] }).to eq([mixed_event.id])
+    expect(response.parsed_body.fetch("events").first.fetch("series")).to include("slug" => "completed-cup", "role" => "championship_night")
+
+    get "/api/v1/events"
+    expect(response).to have_http_status(:ok)
+    by_id = response.parsed_body.fetch("events").index_by { |e| e["id"] }
+    expect(by_id.fetch(draft_only_event.id).fetch("series")).to be_nil
+    expect(by_id.fetch(archived_only_event.id).fetch("series")).to be_nil
+    expect(by_id.fetch(mixed_event.id).fetch("series")).to include("slug" => "completed-cup", "role" => "championship_night")
+  end
+
+  it "returns series metadata on unfiltered index and show, and nil for standalone events, without N+1 queries" do
+    queries = []
+    callback = ->(_name, _started, _finished, _id, payload) {
+      queries << payload[:sql] if payload[:sql]&.match?(/FROM "(?:event_series|event_series_memberships)"/)
+    }
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      get "/api/v1/events"
+    end
+
+    expect(response).to have_http_status(:ok)
+    by_id = response.parsed_body.fetch("events").index_by { |e| e["id"] }
+    expect(by_id.fetch(night_1.id).fetch("series")).to include("slug" => "fd-tourney-2026", "role" => "regular_night")
+    expect(by_id.fetch(standalone.id).fetch("series")).to be_nil
+    expect(queries.size).to be <= 2
+
+    get "/api/v1/events/#{night_1.slug}"
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("series")).to include("slug" => "fd-tourney-2026", "role" => "regular_night")
+  end
+end

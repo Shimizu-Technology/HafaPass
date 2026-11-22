@@ -151,6 +151,13 @@ Rails.application.routes.draw do
         end
         resources :connected_accounts, only: [:index, :create, :update]
         resources :venue_layouts, only: [:index, :show, :create, :update]
+        resources :event_series, only: [:index, :show, :create, :update, :destroy] do
+          member do
+            post :events, action: :add_event
+            patch "events/:event_id", action: :update_event
+            delete "events/:event_id", action: :remove_event
+          end
+        end
         resource :card_present_account, only: [:show]
         resources :events, only: [:index, :show, :create, :update, :destroy] do
           member do
@@ -171,6 +178,7 @@ Rails.application.routes.draw do
             post :complete
             post :archive
             post :clone
+            post :bulk_clone
             post :generate_recurrences
             get :stats
             get :attendees

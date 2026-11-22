@@ -3,12 +3,12 @@ import HafaPassMark from './HafaPassMark'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { UserButton, SignedIn, useAuth } from '@clerk/clerk-react'
-import { Menu, X, Ticket, LayoutDashboard, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe, CalendarPlus, WalletCards } from 'lucide-react'
+import { Menu, X, Ticket, LayoutDashboard, Layers, ScanLine, CalendarDays, Shield, Search, Compass, Heart, Settings, LifeBuoy, Globe, CalendarPlus, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import LanguageSwitcher from './LanguageSwitcher'
 import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
-import { useCanManageOrganizationSettings, useCanViewOrganizationFinances, useCanViewOrganizationActivity } from '../utils/organizerOrganizations'
+import { useCanManageOrganizationSettings, useCanViewOrganizationSeries, useCanViewOrganizationFinances, useCanViewOrganizationActivity } from '../utils/organizerOrganizations'
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -366,12 +366,14 @@ function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, 
   const { t } = useTranslation()
   const { pathname } = location
   const canManageSettings = useCanManageOrganizationSettings(authContext, Boolean(authContext))
+  const canViewSeries = useCanViewOrganizationSeries(authContext, Boolean(authContext))
   const canViewFinances = useCanViewOrganizationFinances(authContext, Boolean(authContext))
   const canViewActivity = useCanViewOrganizationActivity(authContext, Boolean(authContext))
   const showDashboard = !workspace || workspace.organizer === true || role === 'admin'
   const links = [
     ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') }] : []),
+    ...(canViewSeries ? [{ to: '/dashboard/series', label: t('nav.series'), icon: Layers }] : []),
     ...(!workspace || workspace.scanner === true ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
     ...(canViewFinances ? [{ to: '/dashboard/finances', label: t('nav.finances'), icon: WalletCards }] : []),
     ...(canManageSettings || canViewActivity ? [{ to: canManageSettings ? '/dashboard/settings' : '/dashboard/settings/activity', label: t('nav.settings'), icon: Settings,

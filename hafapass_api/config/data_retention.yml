@@ -288,6 +288,22 @@
         "status_reason"
       ]
     },
+    "event_series": {
+      "category": "logs/audit",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "description"
+      ]
+    },
+    "event_series_memberships": {
+      "category": "logs/audit",
+      "period": "account_lifetime",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "event_slug_redirects": {
       "category": "logs/audit",
       "period": "7_years_after_year_end",
@@ -1589,6 +1605,30 @@
       "ticket_type_id": "system",
       "updated_at": "system",
       "venue_seat_id": "system"
+    },
+    "event_series": {
+      "id": "system",
+      "created_at": "system",
+      "description": "pii",
+      "name": "pii",
+      "organization_id": "system",
+      "primary_share_label": "non-personal",
+      "revenue_share_base": "financial",
+      "revenue_share_bps": "financial",
+      "revenue_share_includes_door_cash": "financial",
+      "revenue_share_label": "non-personal",
+      "slug": "pii",
+      "status": "system",
+      "updated_at": "system"
+    },
+    "event_series_memberships": {
+      "id": "system",
+      "created_at": "system",
+      "event_id": "system",
+      "event_series_id": "system",
+      "position": "non-personal",
+      "role": "non-personal",
+      "updated_at": "system"
     },
     "event_slug_redirects": {
       "id": "system",

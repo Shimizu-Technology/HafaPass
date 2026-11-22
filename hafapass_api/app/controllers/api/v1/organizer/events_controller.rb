@@ -7,7 +7,7 @@ module Api
 
         before_action :set_event, only: [
           :show, :update, :destroy, :publish, :postpone, :resume, :cancel, :complete, :archive,
-          :clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate,
+          :clone, :bulk_clone, :generate_recurrences, :stats, :attendees, :slug_availability, :retranslate,
           :cancellation_refunds, :retry_cancellation_refunds, :mark_cash_refunded,
           :preview_link, :rotate_preview_link
         ]
@@ -219,6 +219,99 @@ module Api
           else
             render json: { errors: cloned.errors.full_messages }, status: :unprocessable_entity
           end
+        end
+
+        MAX_BULK_CLONE_OCCURRENCES = 25
+
+        def bulk_clone
+          return unless authorize_organization!(:manage_events)
+          return render_policy_hold_refusal("copied") if @event.policy_hold?
+
+          raw_occurrences = params[:occurrences]
+          unless raw_occurrences.is_a?(Array) && raw_occurrences.any?
+            return render json: { error: "occurrences must be a non-empty array" }, status: :unprocessable_entity
+          end
+          if raw_occurrences.size > MAX_BULK_CLONE_OCCURRENCES
+            return render json: { error: "Cannot bulk clone more than #{MAX_BULK_CLONE_OCCURRENCES} occurrences at once" },
+              status: :unprocessable_entity
+          end
+
+          series = nil
+          if params[:event_series_id].present?
+            series = current_organization.event_series.find_by(id: params[:event_series_id])
+            return render json: { error: "Event series not found" }, status: :not_found unless series
+          end
+
+          series_role = params[:series_role].presence || "regular_night"
+          unless EventSeriesMembership.roles.key?(series_role.to_s)
+            return render json: { error: "Invalid series_role" }, status: :unprocessable_entity
+          end
+
+          timezone = @event.timezone.presence || "Pacific/Guam"
+          parsed_occurrences = []
+          raw_occurrences.each_with_index do |occ, index|
+            unless occ.is_a?(ActionController::Parameters) || occ.is_a?(Hash)
+              return render json: { error: "Occurrence #{index + 1} must be an object" }, status: :unprocessable_entity
+            end
+            occ_hash = occ.respond_to?(:to_unsafe_h) ? occ.to_unsafe_h : occ.to_h
+            occ_hash = occ_hash.stringify_keys
+            parsed_occurrences << {
+              title: occ_hash["title"],
+              starts_at: EventTimeParser.call(occ_hash["starts_at"], timezone: timezone),
+              ends_at: EventTimeParser.call(occ_hash["ends_at"], timezone: timezone),
+              doors_open_at: occ_hash["doors_open_at"].present? ? EventTimeParser.call(occ_hash["doors_open_at"], timezone: timezone) : nil
+            }
+          rescue EventTimeParser::ParseError => e
+            return render json: { error: "Occurrence #{index + 1}: #{e.message}" }, status: :unprocessable_entity
+          end
+
+          created = []
+          validation_errors = []
+
+          Event.transaction do
+            next_position = series ? ((series.event_series_memberships.maximum(:position) || -1) + 1) : 0
+            parsed_occurrences.each_with_index do |occ, index|
+              cloned = clone_event(@event, occ)
+              unless cloned.persisted?
+                validation_errors << "Occurrence #{index + 1}: #{cloned.errors.full_messages.join(', ')}"
+                raise ActiveRecord::Rollback
+              end
+
+              if series
+                membership = series.event_series_memberships.build(
+                  event: cloned,
+                  role: series_role,
+                  position: next_position
+                )
+                unless membership.save
+                  validation_errors << "Occurrence #{index + 1}: #{membership.errors.full_messages.join(', ')}"
+                  raise ActiveRecord::Rollback
+                end
+                next_position += 1
+              end
+
+              created << cloned
+            end
+          end
+
+          if validation_errors.any?
+            return render json: { error: validation_errors.first, errors: validation_errors },
+              status: :unprocessable_entity
+          end
+
+          render json: {
+            created_count: created.size,
+            events: created.map { |e| event_json(e, include_ticket_types: true) }
+          }, status: :created
+        rescue ActiveRecord::RecordNotUnique => e
+          if PublicSlug.conflict?(e)
+            render_link_conflict(e)
+          else
+            render json: { error: "Duplicate event or series membership conflict" }, status: :unprocessable_entity
+          end
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { error: e.record.errors.full_messages.first, errors: e.record.errors.full_messages },
+            status: :unprocessable_entity
         end
 
         def generate_recurrences
@@ -550,15 +643,17 @@ module Api
         def clone_event(source, overrides = {})
           attrs = source.attributes.slice(
             "title", "description", "short_description", "cover_image_url", "page_customization",
-            "venue_name", "venue_address", "venue_city", "timezone",
+            "venue_id", "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
+            "fee_policy", "buyer_fee_percent", "transfers_enabled",
             "show_attendees"
           ).merge(
             "organizer_profile_id" => source.organizer_profile_id,
             "organization_id" => source.organization_id,
             "status" => "draft",
             "slug" => nil,
-            "published_at" => nil
+            "published_at" => nil,
+            "transfers_enabled" => LaunchCapabilities.enabled?(:ticket_transfers) ? source.transfers_enabled : false
           ).merge(overrides.stringify_keys)
 
           new_event = Event.new(attrs)

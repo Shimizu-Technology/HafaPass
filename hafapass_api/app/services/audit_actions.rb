@@ -860,6 +860,24 @@ class AuditActions
         "order.partially_refunded" => "Partially refunded an order."
       }
 
+    define registry, area: "events", audience: %w[org_owner org_manager],
+      tenant: true, event_required: false,
+      snapshots: %w[organization_id status revenue_share_bps revenue_share_base revenue_share_includes_door_cash],
+      manager_snapshots: %w[organization_id status],
+      metadata: %w[event_series_id], actions: {
+        "event_series.created" => "Created an event series.",
+        "event_series.updated" => "Updated an event series.",
+        "event_series.deleted" => "Deleted an event series."
+      }
+
+    define registry, area: "events", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[role position],
+      metadata: %w[event_series_id event_id role position], actions: {
+        "event_series.event_added" => "Added an event to an event series.",
+        "event_series.event_removed" => "Removed an event from an event series."
+      }
+
     define registry, area: "fees", audience: %w[org_owner org_finance],
       tenant: true, event_required: false,
       snapshots: %w[service_fee_percent service_fee_flat_cents], metadata: %w[], actions: {
