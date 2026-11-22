@@ -273,26 +273,28 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(json["error"]).to include("Maximum")
       end
 
-      it "returns 422 before sales start" do
+      it "returns 409 before sales start" do
         ga_ticket.update!(sales_start_at: 1.day.from_now)
 
         post_json "/api/v1/orders", params: valid_params.merge(
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }]
         )
 
-        expect(response).to have_http_status(:unprocessable_entity)
-        expect(JSON.parse(response.body)["error"]).to include("not currently on sale")
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body).to include("code" => "sales_closed", "server_now" => a_string_matching(/Z$/))
+        expect(response.parsed_body["error"]).to include("not currently on sale")
       end
 
-      it "returns 422 after sales end" do
+      it "returns 409 after sales end" do
         ga_ticket.update!(sales_end_at: 1.minute.ago)
 
         post_json "/api/v1/orders", params: valid_params.merge(
           line_items: [{ ticket_type_id: ga_ticket.id, quantity: 1 }]
         )
 
-        expect(response).to have_http_status(:unprocessable_entity)
-        expect(JSON.parse(response.body)["error"]).to include("not currently on sale")
+        expect(response).to have_http_status(:conflict)
+        expect(response.parsed_body).to include("code" => "sales_closed", "server_now" => a_string_matching(/Z$/))
+        expect(response.parsed_body["error"]).to include("not currently on sale")
       end
 
       it "combines duplicate line items before checking limits" do

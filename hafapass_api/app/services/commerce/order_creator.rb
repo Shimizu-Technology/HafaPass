@@ -28,7 +28,16 @@ module Commerce
     @cap_alerts = {}
     @cap_alert_mutex = Mutex.new
     class CheckoutError < StandardError; end
-    class PriceChanged < CheckoutError; end
+    class PricingConflict < CheckoutError
+      attr_reader :details
+
+      def initialize(message, at:, **details)
+        super(message)
+        @details = { server_now: at.utc.iso8601(3) }.merge(details)
+      end
+    end
+    class PriceChanged < PricingConflict; end
+    class SalesClosed < PricingConflict; end
     class RefreshRequired < PriceChanged; end
     LEGACY_REFRESH_WINDOW_DAYS = Integer(ENV.fetch("FEE_CHANGE_LEGACY_REFRESH_DAYS", "7"))
 
@@ -144,16 +153,17 @@ module Commerce
           next
         end
         validate_launch_scope!
-        unless event.sales_open?
-          if event.sales_blocker == :pass_nights_cancelled
+        at = Time.current.utc
+        unless event.sales_open?(at: at)
+          if event.sales_blocker(at: at) == :pass_nights_cancelled
             raise CheckoutError, "All included nights for this pass have been cancelled"
           end
 
-          raise CheckoutError, "This event is not currently on sale"
+          raise SalesClosed.new("This event is not currently on sale", at: at)
         end
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
-        selections = locked_selections!(offer: offer)
+        selections, at = locked_selections!(offer: offer)
         LivePilot.enforce_inventory_cap!(
           event: event, requested_quantity: selections.sum { |selection| selection[:quantity] }
         )
@@ -167,10 +177,12 @@ module Commerce
         # callers such as guest list redemption never send a displayed total.
         if @client_quote_required && @expected_total_cents.blank? && FeeChange.where.not(activated_at: nil)
             .where("activated_at >= ?", LEGACY_REFRESH_WINDOW_DAYS.days.ago).exists?
-          raise RefreshRequired, "Prices were updated — please refresh the page to see the current total."
+          raise RefreshRequired.new("Prices were updated — please refresh the page to see the current total.", at: at,
+            **pricing_quote(selections, totals))
         end
         if @expected_total_cents.present? && @expected_total_cents.to_s != totals[:total_cents].to_s
-          raise PriceChanged, "Ticket price changed. Review the updated total before paying."
+          raise PriceChanged.new("Ticket price changed. Review the updated total before paying.", at: at,
+            **pricing_quote(selections, totals))
         end
         # Free orders never contact a payment provider and must remain usable
         # even when paid checkout is unavailable.
@@ -420,6 +432,10 @@ module Commerce
       end
       provisional_session = Seating::Credential.find_session(seat_hold_token) if seat_hold_token.present?
       provisional_holds = provisional_session&.seat_holds&.status_active&.includes(:pricing_tier)&.to_a || []
+      at = Time.current.utc
+      unless event.sales_open?(at: at)
+        raise SalesClosed.new("This event is not currently on sale", at: at)
+      end
       tiers = quantities.to_h do |ticket_type_id, _quantity|
         ticket_type = ticket_types.fetch(ticket_type_id)
         seat_hold = provisional_holds.find { |hold| hold.event_seat.ticket_type_id == ticket_type_id }
@@ -428,16 +444,18 @@ module Commerce
         elsif seat_hold
           seat_hold.pricing_tier
         else
-          ticket_type.active_pricing_tier
+          ticket_type.active_pricing_tier(at: at)
         end
         [ticket_type_id, tier]
       end
       tiers.values.compact.uniq(&:id).sort_by(&:id).each(&:lock!)
       seat_hold_session_for_checkout if seat_hold_token.present?
 
-      quantities.map do |ticket_type_id, quantity|
+      selections = quantities.map do |ticket_type_id, quantity|
         ticket_type = ticket_types.fetch(ticket_type_id)
-        raise CheckoutError, "#{ticket_type.name} is not currently on sale" unless ticket_type.on_sale?
+        unless ticket_type.on_sale?(at: at)
+          raise SalesClosed.new("#{ticket_type.name} is not currently on sale", at: at)
+        end
         if ticket_type.pass? && !ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).exists?
           raise CheckoutError, "All included nights for this pass have been cancelled"
         end
@@ -475,6 +493,27 @@ module Commerce
         end
         selection
       end
+      [selections, at]
+    end
+
+    def pricing_quote(selections, totals)
+      {
+        current_total_cents: totals[:total_cents],
+        subtotal_cents: totals[:subtotal_cents],
+        service_fee_cents: totals[:service_fee_cents],
+        discount_cents: totals[:discount_cents],
+        items: selections.map do |selection|
+          ticket_type = selection.fetch(:ticket_type)
+          unit_price = selection.fetch(:unit_price_cents)
+          {
+            ticket_type_id: ticket_type.id,
+            name: ticket_type.name,
+            active_tier_name: selection[:pricing_tier]&.name,
+            unit_price_cents: unit_price,
+            all_in_price_cents: unit_price + selection.fetch(:fee_quote).buyer_fee_cents
+          }
+        end
+      }
     end
 
     def seat_hold_selection(ticket_type_id)

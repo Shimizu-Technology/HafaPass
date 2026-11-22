@@ -118,10 +118,10 @@ class Api::V1::OrdersController < ApplicationController
     end
 
     render json: response_payload, status: :created
-  rescue Commerce::OrderCreator::RefreshRequired => e
-    render_checkout_rejection(e.message, status: :conflict, code: "price_changed")
   rescue Commerce::OrderCreator::PriceChanged => e
-    render_checkout_rejection(e.message, status: :unprocessable_entity, code: "price_changed")
+    render_checkout_rejection(e.message, status: :conflict, code: "price_changed", **e.details)
+  rescue Commerce::OrderCreator::SalesClosed => e
+    render_checkout_rejection(e.message, status: :conflict, code: "sales_closed", **e.details)
   rescue Commerce::OrderCreator::CheckoutError, Commerce::PaymentRecovery::RecoveryError => e
     render_checkout_rejection(e.message, status: :unprocessable_entity)
   rescue CheckoutAttempt::Conflict => e
@@ -132,8 +132,8 @@ class Api::V1::OrdersController < ApplicationController
     render_checkout_rejection(e.message, status: :unprocessable_entity)
   end
 
-  def render_checkout_rejection(message, status:, code: nil)
-    payload = { error: message }
+  def render_checkout_rejection(message, status:, code: nil, **details)
+    payload = { error: message }.merge(details)
     payload[:code] = code if code
     if @checkout_claim
       fenced = @checkout_claim.attempt.reject!(@checkout_claim.lease_token)

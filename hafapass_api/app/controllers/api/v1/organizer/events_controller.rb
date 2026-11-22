@@ -223,6 +223,8 @@ module Api
           else
             render json: { errors: cloned.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { errors: e.record.errors.full_messages }, status: :unprocessable_content
         end
 
         MAX_BULK_CLONE_OCCURRENCES = 25
@@ -663,7 +665,9 @@ module Api
 
           new_event = Event.new(attrs)
           new_event.audit_clone_source = source
-          if new_event.save
+          Event.transaction(requires_new: true) do
+            next unless new_event.save
+
             source.ticket_types.each do |tt|
               cloned_ticket_type = new_event.ticket_types.create!(
                 name: tt.name,
@@ -679,14 +683,19 @@ module Api
                 sales_end_at: shifted_relative_time(tt.sales_end_at, source, new_event)
               )
               tt.pricing_tiers.each do |tier|
+                starts_at = shifted_relative_time(tier.starts_at, source, new_event)
+                ends_at = shifted_relative_time(tier.ends_at, source, new_event)
+                # An undated draft has no anchor for copying a price window.
+                next if tier.time_based? && starts_at.nil? && ends_at.nil?
+
                 cloned_ticket_type.pricing_tiers.create!(
                   name: tier.name,
                   price_cents: tier.price_cents,
                   tier_type: tier.tier_type,
                   quantity_limit: tier.quantity_limit,
                   quantity_sold: 0,
-                  starts_at: shifted_relative_time(tier.starts_at, source, new_event),
-                  ends_at: shifted_relative_time(tier.ends_at, source, new_event),
+                  starts_at: starts_at,
+                  ends_at: ends_at,
                   position: tier.position
                 )
               end

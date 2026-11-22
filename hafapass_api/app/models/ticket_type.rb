@@ -14,7 +14,7 @@ class TicketType < ApplicationRecord
   has_many :tickets, dependent: :restrict_with_error
   has_many :order_items, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
-  has_many :pricing_tiers, -> { order(:position) }, dependent: :destroy
+  has_many :pricing_tiers, -> { order(:position, :id) }, dependent: :destroy
   has_many :waitlist_offers, dependent: :restrict_with_error
   has_many :event_seats, dependent: :restrict_with_error
   has_many :seat_holds, through: :event_seats
@@ -122,38 +122,23 @@ class TicketType < ApplicationRecord
 
   # Evaluates pricing tiers in order and returns the current effective price.
   def current_price_cents(at: Time.current)
-    pricing_tiers.each do |tier|
-      case tier.tier_type
-      when "quantity_based"
-        return tier.price_cents if tier.active?(at: at)
-      when "time_based"
-        if tier.starts_at.present? && tier.ends_at.present?
-          return tier.price_cents if at.between?(tier.starts_at, tier.ends_at)
-        elsif tier.starts_at.present?
-          return tier.price_cents if at >= tier.starts_at
-        elsif tier.ends_at.present?
-          return tier.price_cents if at < tier.ends_at
-        end
-      end
-    end
-    price_cents
+    active_pricing_tier(at: at)&.price_cents || price_cents
   end
 
-  # Returns the currently active pricing tier, or nil if using base price.
   def active_pricing_tier(at: Time.current)
-    pricing_tiers.each do |tier|
-      return tier if tier.active?(at: at)
-    end
-    nil
+    pricing_tiers.find { |tier| tier.active?(at: at) }
   end
 
-  # Returns the next tier that will become active after the current one.
-  def next_pricing_tier
+  def next_pricing_tier(at: Time.current)
     tiers = pricing_tiers.to_a
-    active_index = tiers.index(&:active?)
+    active_index = tiers.index { |tier| tier.active?(at: at) }
     return tiers[active_index + 1] if active_index
 
-    tiers.find { |tier| tier.time_based? && tier.starts_at.present? && tier.starts_at > Time.current }
+    tiers.select { |tier| tier.time_based? && tier.starts_at && tier.starts_at > at }.min_by(&:starts_at)
+  end
+
+  def with_inventory_lock(&block)
+    with_lock(&block)
   end
 
   private

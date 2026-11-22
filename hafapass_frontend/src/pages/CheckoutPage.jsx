@@ -9,6 +9,8 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { Trans, useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, Tag, X, Loader2, Calendar, MapPin, Timer } from 'lucide-react'
 import apiClient from '../api/client'
+import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
+import { formatScheduleTime } from '../utils/serverClock'
 import { apiErrorMessage, isTimeoutError, slowConnectionMessage } from '../api/errors'
 import StripeProvider from '../components/StripeProvider'
 import PaymentForm from '../components/PaymentForm'
@@ -39,6 +41,14 @@ function selectionMatchesEvent(event, lineItems, slug) {
   return event?.slug === slug && Array.isArray(lineItems) && lineItems.length > 0
     && lineItems.every(item => Number.isInteger(item.quantity) && item.quantity > 0
       && selectedTicketType(event, item.ticket_type_id))
+}
+
+function checkoutPricingConflict(error) {
+  const { status, data } = error.response || {}
+  if (status !== 409 || data?.checkout_recovery_required === true) return null
+  if (data?.code === 'sales_closed') return data
+  if (data?.code === 'price_changed' && Number.isSafeInteger(data.current_total_cents) && Array.isArray(data.items)) return data
+  return null
 }
 
 function AuthenticatedCheckout() {
@@ -109,6 +119,11 @@ function CheckoutContent({ buyerId }) {
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [pricingConflict, setPricingConflict] = useState(null)
+  const pricingConflictRef = useRef(null)
+  useEffect(() => {
+    if (pricingConflict) pricingConflictRef.current?.focus()
+  }, [pricingConflict])
   const [cancelledCleanupRequired, setCancelledCleanupRequired] = useState(false)
   const [canStartNewCheckout, setCanStartNewCheckout] = useState(false)
   const [checkoutNeedsRecovery, setCheckoutNeedsRecovery] = useState(false)
@@ -128,6 +143,9 @@ function CheckoutContent({ buyerId }) {
   const [recovering, setRecovering] = useState(false)
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
+  const refreshEventUrl = `/events/${slug}${liveMoneyProof ? '?live_money_proof=true' : ''}`
+  usePricingScheduleRefresh(event, !orderData && !submitting && !recovering ? refreshEventUrl : null, setEvent)
+
   useEffect(() => {
     if (loadedLanguage.current === contentLanguage) return undefined
     loadedLanguage.current = contentLanguage
@@ -378,6 +396,7 @@ function CheckoutContent({ buyerId }) {
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
+    if (pricingConflict?.code === 'sales_closed') return
     if (!selectionMatchesEvent(event, lineItems, slug)) {
       if (getActiveCheckout(slug) || getCheckoutAttempt(slug)) retrySavedCheckout()
       else navigate(`/events/${slug}`, { replace: true })
@@ -461,6 +480,15 @@ function CheckoutContent({ buyerId }) {
       if (!current()) return
       let needsRecovery = false
       if (attempt && checkoutDefinitelyRejected(err) && clearCheckoutAttempt(slug, attempt.payload.checkout_key, context.buyerId)) {
+        const conflict = checkoutPricingConflict(err)
+        if (conflict) {
+          const endedTier = conflict.items?.map(item => {
+            const tier = selectedTicketType(event, item.ticket_type_id)?.pricing_schedule?.active_tier
+            return tier?.name !== item.active_tier_name && Date.parse(tier?.ends_at) <= Date.parse(conflict.server_now) ? tier : null
+          }).find(Boolean)
+          setPricingConflict({ ...conflict, endedTier, catalogSelections, promoData })
+          return
+        }
         rejectionContext.current = context
         setCanStartNewCheckout(true)
       } else if (err instanceof CheckoutAttemptConflict || getCheckoutAttempt(slug)) {
@@ -528,9 +556,17 @@ function CheckoutContent({ buyerId }) {
   // code checkout charges with), so this summary equals the all-in prices the
   // event page advertised. Missing fee data is an error, not a $0 fee.
   const feeTerms = parseFeeTerms(config)
+  const refreshedQuote = pricingConflict?.code === 'price_changed' ? pricingConflict : null
   const orderLines = orderData ? (orderData.order_items || []).map(item => ({
     ...item, price_cents: item.unit_price_cents, lineTotal: item.subtotal_cents, feeCents: item.fee_cents || 0,
-  })) : lineItems.map(item => estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })).filter(Boolean)
+  })) : lineItems.map(item => {
+    const line = estimateCheckoutLine(event, item, { waitlistOffer, seats: selectedSeats })
+    const fresh = refreshedQuote?.items.find(quote => String(quote.ticket_type_id) === String(item.ticket_type_id))
+    return line && fresh ? {
+      ...line, lineTotal: fresh.unit_price_cents * item.quantity,
+      feeCents: (fresh.all_in_price_cents - fresh.unit_price_cents) * item.quantity,
+    } : line
+  }).filter(Boolean)
   const feeDataMissing = !orderData && orderLines.some(line => line.feeCents === null)
 
   // A stale event snapshot without fee data is reloaded from the API.
@@ -556,18 +592,19 @@ function CheckoutContent({ buyerId }) {
     return sum + (item.kind === 'donation' ? (selection.amount_cents || 0) : item.price_cents) * selection.quantity
   }, 0)
   const serviceFeeCents = orderData ? 0 : orderLines.reduce((sum, line) => sum + line.feeCents, 0)
-  const discountCents = promoData?.discount_cents || 0
+  const sameQuote = refreshedQuote && refreshedQuote.catalogSelections === catalogSelections && refreshedQuote.promoData === promoData
+  const discountCents = (refreshedQuote && refreshedQuote.promoData === promoData ? refreshedQuote.discount_cents : promoData?.discount_cents) || 0
   const totalCents = Math.max(subtotalCents + catalogSubtotalCents + serviceFeeCents - discountCents, 0)
-  const displayedSubtotal = orderData?.subtotal_cents ?? (subtotalCents + catalogSubtotalCents)
+  const displayedSubtotal = orderData?.subtotal_cents ?? (sameQuote ? refreshedQuote.subtotal_cents : null) ?? (subtotalCents + catalogSubtotalCents)
   const displayedFee = orderData?.service_fee_cents ?? serviceFeeCents
   // A created order carries its own bearer snapshot; legacy orders omit it.
   const feeBearer = orderData ? orderData.processing_fee_bearer : feeTerms?.bearer
   const feeIncludesProcessing = feeBearer === 'platform' && displayedFee > 0
   const displayedDiscount = orderData?.discount_cents ?? discountCents
-  const displayedTotal = orderData?.total_cents ?? totalCents
+  const displayedTotal = orderData?.total_cents ?? (sameQuote ? refreshedQuote.current_total_cents : totalCents)
   // While production payments are in Stripe test mode only platform admins may
   // buy paid tickets; the API refuses everyone else. Free orders stay open.
-  const paidCheckoutAdminOnly = config?.paid_checkout_admin_only === true && totalCents > 0
+  const paidCheckoutAdminOnly = config?.paid_checkout_admin_only === true && displayedTotal > 0
   const checkoutExpired = secondsRemaining === 0
   const countdownLabel = secondsRemaining === null
     ? null
@@ -627,6 +664,33 @@ function CheckoutContent({ buyerId }) {
             <SellerLine seller={orderData?.seller || event.seller} className="mt-1" />
           </div>
         </div>
+
+        {step === 'info' && pricingConflict && (
+          <div ref={pricingConflictRef} tabIndex={-1} role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            {refreshedQuote ? <>
+              <p className="font-semibold">
+                {refreshedQuote.endedTier
+                  ? t('buyer.Checkout.priceWindowEnded', { tier: refreshedQuote.endedTier.name,
+                    date: formatScheduleTime(refreshedQuote.endedTier.ends_at, event.timezone) })
+                  : t('buyer.Checkout.priceChanged')}
+              </p>
+              <p className="mt-1">
+                {t('buyer.Checkout.reviewUpdatedTotal', { total: formatPrice(displayedTotal) })}
+              </p>
+              {refreshedQuote.items.some(item => item.active_tier_name) && (
+                <ul className="mt-1 space-y-1">
+                  {refreshedQuote.items.filter(item => item.active_tier_name).map(item => (
+                    <li key={item.ticket_type_id}>{t('buyer.Checkout.updatedTierPrice', { ticket: item.name,
+                      tier: item.active_tier_name, price: formatPrice(item.all_in_price_cents) })}</li>
+                  ))}
+                </ul>
+              )}
+            </> : <>
+              <p className="font-semibold">{t('buyer.Checkout.salesClosed')}</p>
+              <Link to={`/events/${slug}`} className="mt-1 inline-flex min-h-11 items-center underline">{t('buyer.Checkout.returnToEvent')}</Link>
+            </>}
+          </div>
+        )}
 
         {/* Order Summary */}
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
@@ -839,7 +903,7 @@ function CheckoutContent({ buyerId }) {
                 </div>
               </div>
               <PaidCheckoutGate active={paidCheckoutAdminOnly}>
-              <button type="submit" disabled={submitting || checkoutExpired} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
+              <button type="submit" disabled={submitting || checkoutExpired || pricingConflict?.code === 'sales_closed'} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
                 {submitting
                   ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
                   : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}

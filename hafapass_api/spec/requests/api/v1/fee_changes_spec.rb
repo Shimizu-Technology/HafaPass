@@ -100,8 +100,8 @@ RSpec.describe "Scheduled fee changes", type: :request do
       post "/api/v1/orders", params: { event_id: event.id, buyer_email: "stale@example.test",
         buyer_name: "Stale Buyer", terms_accepted: true, terms_version: PolicyRegistry.buyer_terms[:version],
         line_items: [{ ticket_type_id: ticket.id, quantity: 1 }], expected_total_cents: before_price }
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body).to include("code" => "price_changed")
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include("code" => "price_changed", "current_total_cents" => after_price)
       expect(Order.where(buyer_email: "stale@example.test")).not_to exist
       order = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket.id, quantity: 2 }],
         buyer_email: "fee@example.test", buyer_name: "Fee Buyer", payment_required: false,

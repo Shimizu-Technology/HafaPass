@@ -60,7 +60,7 @@ export function formatEventTimeRange(start, end, timeZone = DEFAULT_EVENT_TIME_Z
   return `${startLabel} – ${endLabel}`.replaceAll('Guam time', 'Guam\u00a0time')
 }
 
-export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE, { includeSeconds = false } = {}) {
   const date = validDate(value)
   if (!date) return ''
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -70,10 +70,11 @@ export function toEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    ...(includeSeconds ? { second: '2-digit' } : {}),
     hourCycle: 'h23',
   }).formatToParts(date)
   const part = (type) => parts.find(item => item.type === type)?.value
-  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}${includeSeconds ? `:${part('second')}` : ''}`
 }
 
 export function fromEventLocalInput(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {

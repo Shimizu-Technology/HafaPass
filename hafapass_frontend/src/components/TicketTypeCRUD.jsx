@@ -711,7 +711,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                     )}
                   </div>
                 </div>
-                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} eventTimezone={eventTimezone} beginRequest={beginRequest} onRefresh={onRefresh} blocked={locked} />
+                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} eventTimezone={eventTimezone} salesEndAt={tt.sales_end_at} basePriceCents={tt.price_cents} beginRequest={beginRequest} onRefresh={onRefresh} blocked={locked} />
                 </div>
               )}
             </div>

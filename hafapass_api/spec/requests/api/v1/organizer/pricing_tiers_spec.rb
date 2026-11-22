@@ -59,6 +59,25 @@ RSpec.describe "Api::V1::Organizer::PricingTiers", type: :request do
       expect(json["tier_type"]).to eq("time_based")
     end
 
+    it "uses the event timezone, accepts a shared cutoff, and rejects an overlapping edit" do
+      event.update!(timezone: "Pacific/Guam")
+      attributes = { name: "Early Bird", price_cents: 1000, tier_type: "time_based", ends_at: "2027-05-01T23:59:01" }
+      post base_path, params: attributes, headers: headers, as: :json
+
+      expect(response).to have_http_status(:created)
+      cutoff = response.parsed_body.fetch("ends_at")
+      expect(Time.iso8601(cutoff)).to eq(Time.utc(2027, 5, 1, 13, 59, 1))
+
+      post base_path, params: attributes.except(:ends_at).merge(name: "Regular", starts_at: "2027-05-01T23:59:01"),
+        headers: headers, as: :json
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body.fetch("starts_at")).to eq(cutoff)
+
+      put "#{base_path}/#{response.parsed_body.fetch('id')}", params: { starts_at: "2027-05-01T23:59:00" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors")).to include("This price window overlaps another price window")
+    end
+
     it "returns errors for invalid params" do
       params = { name: "", price_cents: -1, tier_type: "quantity_based", position: 0 }
       post base_path, params: params.to_json, headers: headers.merge("Content-Type" => "application/json")
@@ -76,6 +95,18 @@ RSpec.describe "Api::V1::Organizer::PricingTiers", type: :request do
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       expect(json["name"]).to eq("Super Early Bird")
+    end
+  end
+
+  describe "PATCH /pricing_tiers/:id/move" do
+    it "moves a quantity cap ahead of the previous cap even when positions are tied" do
+      first = create(:pricing_tier, ticket_type: ticket_type, name: "First", position: 0)
+      window = create(:pricing_tier, :time_based, ticket_type: ticket_type, position: 0)
+      second = create(:pricing_tier, ticket_type: ticket_type, name: "Second", position: 0)
+
+      patch "#{base_path}/#{second.id}/move", params: { direction: "up" }, headers: headers, as: :json
+      expect(response).to have_http_status(:no_content)
+      expect(ticket_type.pricing_tiers.pluck(:id)).to eq([second.id, window.id, first.id])
     end
   end
 

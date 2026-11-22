@@ -6,6 +6,7 @@ import { Minus, Plus, ShoppingCart, Clock, Zap, ChevronDown, Sparkles } from 'lu
 import PaidCheckoutGate from './PaidCheckoutGate'
 import usePaidCheckoutAdminOnly from '../hooks/usePaidCheckoutAdminOnly'
 import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
+import { formatScheduleTime, getServerNow } from '../utils/serverClock'
 import { DEFAULT_EVENT_TIME_ZONE, formatEventDate } from '../utils/eventTime'
 
 // Rows and the buy button lead with all-in prices (ticket + the buyer's
@@ -46,7 +47,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
   const daysUntil = (dateStr) => {
     if (!dateStr) return null
-    const diff = new Date(dateStr) - new Date()
+    const diff = Date.parse(dateStr) - getServerNow()
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
   }
 
@@ -63,11 +64,31 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
           const currentPrice = ticketAllInCents(tt)
           const feeCents = ticketServiceFeeCents(tt)
           const regularPrice = Number.isSafeInteger(tt.regular_all_in_price_cents) ? tt.regular_all_in_price_cents : tt.price_cents
-          const hasDiscount = tt.active_tier && basePrice < tt.price_cents
+          const schedule = tt.pricing_schedule
+          const activeTier = schedule ? schedule.active_tier : tt.active_tier
+          const hasDiscount = activeTier && basePrice < tt.price_cents
           // The struck-through regular price already says what comes next when
           // the next tier returns to it; don't repeat the same price twice.
           const nextTierPrice = !tt.next_tier ? null
             : Number.isSafeInteger(tt.next_tier.all_in_price_cents) ? tt.next_tier.all_in_price_cents : tt.next_tier.price_cents
+
+          const nextWindow = schedule?.next_tier
+          const salesClose = schedule?.sales_end_at
+          const activeEnd = activeTier?.tier_type === 'time_based' ? activeTier.ends_at : null
+          const transitionAt = [activeEnd, nextWindow?.starts_at].filter(Boolean)
+            .map(value => [value, Date.parse(value)]).sort((a, b) => a[1] - b[1])[0]
+          const showTransition = schedule && transitionAt && (!salesClose || transitionAt[1] < Date.parse(salesClose))
+          const activeWindowEnds = activeEnd && transitionAt?.[1] === Date.parse(activeEnd)
+          const changesToNext = transitionAt && transitionAt[1] === Date.parse(nextWindow?.starts_at)
+          const upcomingTier = changesToNext ? nextWindow : null
+          const followingTier = (activeWindowEnds ? tt.next_tier : null) || upcomingTier
+          const followingPrice = followingTier ? `${followingTier.name} ${formatPrice(followingTier.all_in_price_cents)}`
+            : activeWindowEnds ? t('pricing.basePrice', { price: formatPrice(regularPrice) }) : ''
+          const transitionDate = showTransition ? formatScheduleTime(transitionAt[0], schedule.timezone) : null
+          const transitionKey = activeWindowEnds
+            ? (followingPrice ? 'pricing.scheduleEndsThen' : 'pricing.scheduleEnds')
+            : 'pricing.nextWindowStarts'
+
 
           return (
             <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-soft' : ''}`}>
@@ -127,10 +148,10 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
                   {/* Pricing with tier info */}
                   <div className="mt-1">
-                    {tt.active_tier ? (
+                    {activeTier ? (
                       <div>
-                        <p className="text-sm font-semibold text-neutral-900">
-                          {tt.active_tier.name} — {formatPrice(currentPrice)}
+                        <p className={schedule ? "inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-sm font-semibold text-brand-900" : "text-sm font-semibold text-neutral-900"}>
+                          {t(schedule ? 'pricing.scheduledPrice' : 'pricing.currentPrice', { name: activeTier.name, price: formatPrice(currentPrice) })}
                         </p>
                         {hasDiscount && (
                           <p className="text-xs text-neutral-600 line-through">{formatPrice(regularPrice)}</p>
@@ -155,7 +176,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                           {t('pricing.onlyLeft', { count: tt.active_tier.remaining })}
                         </p>
                       )}
-                      {tt.active_tier.tier_type === 'time_based' && tt.active_tier.ends_at && daysUntil(tt.active_tier.ends_at) <= 7 && (
+                      {!schedule && tt.active_tier.tier_type === 'time_based' && tt.active_tier.ends_at && daysUntil(tt.active_tier.ends_at) <= 7 && (
                         <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {t('pricing.endsIn', { count: daysUntil(tt.active_tier.ends_at) })}
@@ -165,11 +186,17 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                   )}
 
                   {/* Next tier info */}
-                  {nextTierPrice !== null && !(hasDiscount && nextTierPrice === regularPrice) && (
+                  {(!schedule || (activeTier?.tier_type === 'quantity_based' && !nextWindow)) && nextTierPrice !== null && !(hasDiscount && nextTierPrice === regularPrice) && (
                     <p className="text-xs text-neutral-600 mt-1">
                       {t('pricing.regularPrice', { price: formatPrice(nextTierPrice) })}
                     </p>
                   )}
+                  {transitionDate && <p className="mt-1 text-xs text-neutral-700">
+                    {t(transitionKey, { date: transitionDate, price: followingPrice })}
+                  </p>}
+                  {salesClose && <p className="mt-1 text-xs text-neutral-700">
+                    {t('pricing.salesClose', { date: formatScheduleTime(salesClose, schedule.timezone) })}
+                  </p>}
                 </div>
 
                 {!soldOut && (

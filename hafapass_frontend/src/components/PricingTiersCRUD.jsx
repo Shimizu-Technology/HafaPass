@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useLayoutEffect, useRef, useId } from 'react'
-import { Plus, Pencil, Trash2, Loader2, Clock, Hash } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Clock, Hash, ArrowUp, ArrowDown } from 'lucide-react'
 import apiClient from '../api/client'
 import { useLocation } from 'react-router-dom'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import SupportLink from './SupportLink'
 import { toEventLocalInput } from '../utils/eventTime'
+import { formatScheduleTime, scheduleTimezoneLabel } from '../utils/serverClock'
+import { formatMoneyCents } from '../utils/money'
 
 const readPendingInventory = key => {
   try {
@@ -39,14 +41,30 @@ function useInventoryRequests(identity, resourcePath, parentBeginRequest) {
 const EMPTY_FORM = {
   name: '',
   price: '',
-  tier_type: 'quantity_based',
+  tier_type: 'time_based',
   quantity_limit: '',
   starts_at: '',
-  ends_at: '',
-  position: '0'
+  ends_at: ''
 }
 
-function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
+function localBoundary(value, timezone) {
+  return toEventLocalInput(value, timezone, { includeSeconds: true })
+}
+
+function ScheduleBoundary({ field, label, value, onChange }) {
+  const [date = '', time = ''] = value.split('T')
+  return (
+    <fieldset className="min-w-0 space-y-1">
+      <legend className="text-sm font-medium text-neutral-700">{label}</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input type="date" aria-label={`${label} date`} className="input min-w-0" value={date} onChange={e => onChange(field, `${e.target.value}T${time}`)} />
+        <input type="time" step="1" aria-label={`${label} time`} className="input min-w-0" value={time} onChange={e => onChange(field, `${date}T${e.target.value}`)} />
+      </div>
+    </fieldset>
+  )
+}
+
+function TierForm({ initial, editing = false, onSave, onCancel, saving, eventTimezone }) {
   const formId = useId()
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [error, setError] = useState(null)
@@ -59,15 +77,25 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
     const data = {
       name: form.name.trim(),
       price_cents: Math.round(parseFloat(form.price || '0') * 100),
-      tier_type: form.tier_type,
-      position: parseInt(form.position || '0', 10)
+      tier_type: form.tier_type
     }
 
     if (form.tier_type === 'quantity_based') {
       data.quantity_limit = form.quantity_limit ? parseInt(form.quantity_limit, 10) : null
     } else {
-      data.starts_at = form.starts_at || null
-      data.ends_at = form.ends_at || null
+      for (const field of ['starts_at', 'ends_at']) {
+        const [date, time] = form[field].split('T')
+        if (Boolean(date) !== Boolean(time)) {
+          setError(`Enter both the date and time for ${field === 'starts_at' ? 'Starts at' : 'Ends at'}.`)
+          return
+        }
+        // Keep the exact instant on edit or chain, including seconds and DST folds.
+        data[field] = date ? (form[field] === initial?.[field] ? initial.instants?.[field] || form[field] : form[field]) : null
+      }
+      if (!data.starts_at && !data.ends_at) {
+        setError('Enter a start or end for the price window.')
+        return
+      }
     }
 
     onSave(data)
@@ -75,7 +103,7 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-neutral-700 mb-1">Name <span className="text-red-500">*</span></label>
@@ -86,19 +114,18 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
           <input type="number" step="0.01" min="0" id={`${formId}-price`} value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} className="input" placeholder="0.00" disabled={saving} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor={`${formId}-tier_type`} className="block text-sm font-medium text-neutral-700 mb-1">Type</label>
-          <select id={`${formId}-tier_type`} value={form.tier_type} onChange={e => setForm(f => ({...f, tier_type: e.target.value}))} className="input" disabled={saving}>
-            <option value="quantity_based">Quantity based</option>
-            <option value="time_based">Time based</option>
-          </select>
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-neutral-700">Price applies by</legend>
+        <div className="flex flex-wrap gap-2">
+          {[['time_based', 'Date & Time window'], ['quantity_based', 'Quantity cap']].map(([type, label]) => (
+            <label key={type} className="flex min-h-11 items-center gap-2 rounded-lg border border-neutral-200 px-3 text-sm">
+              <input type="radio" name={`${formId}-type`} checked={form.tier_type === type}
+                onChange={() => setForm(f => ({ ...f, tier_type: type }))} disabled={saving} />
+              {label}
+            </label>
+          ))}
         </div>
-        <div>
-          <label htmlFor={`${formId}-position`} className="block text-sm font-medium text-neutral-700 mb-1">Position</label>
-          <input type="number" min="0" id={`${formId}-position`} value={form.position} onChange={e => setForm(f => ({...f, position: e.target.value}))} className="input" disabled={saving} />
-        </div>
-      </div>
+      </fieldset>
       {form.tier_type === 'quantity_based' && (
         <div>
           <label htmlFor={`${formId}-quantity_limit`} className="block text-sm font-medium text-neutral-700 mb-1">Quantity limit</label>
@@ -106,28 +133,23 @@ function TierForm({ initial, onSave, onCancel, saving, eventTimezone }) {
         </div>
       )}
       {form.tier_type === 'time_based' && (
-        <div><p className="text-xs text-neutral-500 mb-2">Times use {eventTimezone || 'Pacific/Guam'}.</p><div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor={`${formId}-starts_at`} className="block text-sm font-medium text-neutral-700 mb-1">Starts at</label>
-            <input type="datetime-local" id={`${formId}-starts_at`} value={form.starts_at} onChange={e => setForm(f => ({...f, starts_at: e.target.value}))} className="input" disabled={saving} />
-          </div>
-          <div>
-            <label htmlFor={`${formId}-ends_at`} className="block text-sm font-medium text-neutral-700 mb-1">Ends at</label>
-            <input type="datetime-local" id={`${formId}-ends_at`} value={form.ends_at} onChange={e => setForm(f => ({...f, ends_at: e.target.value}))} className="input" disabled={saving} />
-          </div>
-        </div></div>
+        <fieldset disabled={saving} className="space-y-3">
+          <legend className="text-xs font-semibold text-neutral-600">Dates and times use {scheduleTimezoneLabel(eventTimezone)}</legend>
+          <ScheduleBoundary field="starts_at" label="Starts at" value={form.starts_at} onChange={(field, value) => setForm(f => ({ ...f, [field]: value }))} />
+          <ScheduleBoundary field="ends_at" label="Ends at" value={form.ends_at} onChange={(field, value) => setForm(f => ({ ...f, [field]: value }))} />
+        </fieldset>
       )}
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 rounded px-3 py-1.5 text-sm text-content-muted hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-focus">Cancel</button>
         <button type="submit" disabled={saving} className="btn-primary text-sm px-4 py-1.5">
-          {saving ? 'Saving...' : initial ? 'Update' : 'Add tier'}
+          {saving ? 'Saving...' : editing ? 'Update' : 'Add price'}
         </button>
       </div>
     </form>
   )
 }
 
-function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/Guam', beginRequest: parentBeginRequest, onRefresh, blocked = false, identity, resourcePath }) {
+function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/Guam', salesEndAt, basePriceCents, beginRequest: parentBeginRequest, onRefresh, blocked = false, identity, resourcePath }) {
   const { current, beginRequest } = useInventoryRequests(identity, resourcePath, parentBeginRequest)
   const busy = useRef(false)
   const pendingLoad = useRef(null)
@@ -138,7 +160,7 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
   const [loadError, setLoadError] = useState(null)
   const [tiers, setTiers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
@@ -217,15 +239,23 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
   }
   const handleDelete = tierId => mutate('delete', config => apiClient.delete(`${basePath}/${tierId}`, config), () => {}, tierId)
 
+  const windows = tiers.filter(tier => tier.tier_type === 'time_based')
+    .sort((a, b) => (a.starts_at ? Date.parse(a.starts_at) : -Infinity) - (b.starts_at ? Date.parse(b.starts_at) : -Infinity) || a.id - b.id)
+  const quantityCaps = tiers.filter(tier => tier.tier_type === 'quantity_based')
+  const previousEnd = windows.at(-1)?.ends_at
+  const scheduleTime = value => formatScheduleTime(value, eventTimezone, { includeLocal: false })
+  const handleMove = (id, direction) => mutate('reorder', config =>
+    apiClient.patch(`${basePath}/${id}/move`, { direction }, config), () => {})
+
   if (loading) return <div className="text-sm text-neutral-600 py-2"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading tiers...</div>
 
   return (
-    <div className="mt-3 ml-4 border-l-2 border-brand-200 pl-4">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-medium text-neutral-700">Pricing tiers</h4>
+    <div className="mt-3 border-l-2 border-brand-200 pl-3 sm:ml-4 sm:pl-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2">
+        <h4 className="text-sm font-semibold text-neutral-900">Pricing Schedule</h4>
         {!showForm && !editingId && (
-          <button disabled={locked} onClick={() => setShowForm(true)} className="min-h-11 rounded px-2 text-sm text-brand-800 hover:text-brand-900 font-medium flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-focus">
-            <Plus className="w-3 h-3" /> Add tier
+          <button disabled={locked} onClick={() => setShowForm(EMPTY_FORM)} className="min-h-11 rounded px-2 text-sm text-brand-800 hover:text-brand-900 font-medium flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-focus">
+            <Plus className="w-3 h-3" /> Add price
           </button>
         )}
       </div>
@@ -236,17 +266,27 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
 
       {showForm && (
         <div className="mb-3">
-          <TierForm onSave={handleCreate} onCancel={() => setShowForm(false)} saving={locked} eventTimezone={eventTimezone} />
+          <TierForm initial={showForm} onSave={handleCreate} onCancel={() => setShowForm(false)} saving={locked} eventTimezone={eventTimezone} />
         </div>
       )}
 
       {tiers.length === 0 && !showForm && !loadError && (
-        <p className="text-xs text-content-muted">No pricing tiers. Base price will be used.</p>
+        <p className="text-xs text-content-muted">The base price applies outside price windows and quantity caps.</p>
       )}
 
+      {(windows.length > 0 || salesEndAt) && <h5 className="mb-2 text-xs font-semibold text-neutral-600">Schedule Timeline Preview</h5>}
       <div className="space-y-2">
-        {tiers.map(tier => (
-          <div key={tier.id}>
+        {[...windows, ...quantityCaps].map((tier, index) => {
+          const previous = index > 0 ? windows[index - 1] : null
+          const gap = tier.tier_type === 'time_based' && previous?.ends_at && tier.starts_at
+            && Date.parse(previous.ends_at) < Date.parse(tier.starts_at)
+          const capIndex = quantityCaps.indexOf(tier)
+          return <div key={tier.id}>
+            {gap && <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Gap from {scheduleTime(previous.ends_at)} to {scheduleTime(tier.starts_at)}.
+              {basePriceCents != null ? ` The base price of ${formatMoneyCents(basePriceCents)} applies if no quantity cap is active.`
+                : ' The base price applies if no quantity cap is active.'}
+            </p>}
             {editingId === tier.id ? (
               <TierForm
                 initial={{
@@ -254,10 +294,11 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
                   price: (tier.price_cents / 100).toFixed(2),
                   tier_type: tier.tier_type,
                   quantity_limit: tier.quantity_limit ? String(tier.quantity_limit) : '',
-                  starts_at: toEventLocalInput(tier.starts_at, eventTimezone),
-                  ends_at: toEventLocalInput(tier.ends_at, eventTimezone),
-                  position: String(tier.position)
+                  starts_at: localBoundary(tier.starts_at, eventTimezone),
+                  ends_at: localBoundary(tier.ends_at, eventTimezone),
+                  instants: tier
                 }}
+                editing
                 onSave={handleUpdate}
                 onCancel={() => setEditingId(null)}
                 saving={locked}
@@ -276,11 +317,19 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
                   {tier.active && (
                     <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium">Active</span>
                   )}
-                  {tier.tier_type === 'quantity_based' && (
-                    <span className="text-xs text-content-muted">{tier.quantity_sold}/{tier.quantity_limit} sold</span>
-                  )}
+                  {tier.tier_type === 'time_based' ? (
+                    <span className="w-full text-xs text-neutral-600">
+                      {tier.starts_at ? `Starts ${scheduleTime(tier.starts_at)}` : 'No start'} · {tier.ends_at ? `Ends ${scheduleTime(tier.ends_at)}` : 'No end'}
+                    </span>
+                  ) : <span className="text-xs text-neutral-600">{tier.quantity_sold}/{tier.quantity_limit} sold</span>}
                 </div>
-                <div className="flex items-center justify-end gap-1">
+                <div className="flex shrink-0 items-center">
+                  {capIndex >= 0 && <>
+                    <button type="button" aria-label={`Move ${tier.name} up`} disabled={locked || capIndex === 0} onClick={() => handleMove(tier.id, 'up')}
+                      className="grid min-h-11 min-w-11 place-items-center rounded text-neutral-600 focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40"><ArrowUp className="h-4 w-4" /></button>
+                    <button type="button" aria-label={`Move ${tier.name} down`} disabled={locked || capIndex === quantityCaps.length - 1} onClick={() => handleMove(tier.id, 'down')}
+                      className="grid min-h-11 min-w-11 place-items-center rounded text-neutral-600 focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40"><ArrowDown className="h-4 w-4" /></button>
+                  </>}
                   <button disabled={locked} aria-label={`Edit pricing tier ${tier.name}`} onClick={() => { setEditingId(tier.id); setShowForm(false) }} className="min-h-11 min-w-11 grid place-items-center rounded text-content-muted hover:text-brand-800 focus-visible:ring-2 focus-visible:ring-focus">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
@@ -291,8 +340,17 @@ function PricingTiersSession({ eventId, ticketTypeId, eventTimezone = 'Pacific/G
               </div>
             )}
           </div>
-        ))}
+        })}
       </div>
+      {previousEnd && !showForm && !editingId && (!salesEndAt || Date.parse(previousEnd) < Date.parse(salesEndAt)) && (
+        <button type="button" disabled={locked} className="mt-1 flex min-h-11 items-center gap-1 text-sm font-semibold text-brand-800"
+          onClick={() => setShowForm({ ...EMPTY_FORM, starts_at: localBoundary(previousEnd, eventTimezone), instants: { starts_at: previousEnd } })}>
+          <Plus aria-hidden="true" className="h-4 w-4" /> Add next price window
+        </button>
+      )}
+      {salesEndAt && <p className="mt-2 flex items-center gap-2 text-xs font-semibold text-neutral-700">
+        <Clock aria-hidden="true" className="h-4 w-4 shrink-0" /> Sales close {scheduleTime(salesEndAt)}
+      </p>}
     </div>
   )
 }

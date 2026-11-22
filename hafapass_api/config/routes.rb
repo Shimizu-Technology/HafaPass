@@ -189,7 +189,9 @@ Rails.application.routes.draw do
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
             post :sync_pass_holders, on: :member
-            resources :pricing_tiers, only: [:index, :create, :update, :destroy]
+            resources :pricing_tiers, only: [:index, :create, :update, :destroy] do
+              patch :move, on: :member
+            end
           end
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]
           resources :staff_assignments, only: [:index, :create, :update, :destroy],

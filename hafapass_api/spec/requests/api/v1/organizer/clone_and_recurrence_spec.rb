@@ -32,6 +32,17 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
       expect(cloned_tt["quantity_sold"]).to eq(0)
     end
 
+    it "keeps quantity caps on an undated draft without copying a price window with no anchor" do
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Scheduled price")
+      create(:pricing_tier, ticket_type: ticket_type, name: "First 50")
+
+      post "/api/v1/organizer/events/#{event.id}/clone", headers: headers
+
+      expect(response).to have_http_status(:created)
+      cloned_event = Event.find(response.parsed_body.fetch("id"))
+      expect(cloned_event.ticket_types.sole.pricing_tiers.pluck(:name)).to eq(["First 50"])
+    end
+
     it "clones promo codes with current_uses reset to 0" do
       post "/api/v1/organizer/events/#{event.id}/clone", headers: headers
 

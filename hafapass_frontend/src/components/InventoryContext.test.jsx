@@ -8,7 +8,7 @@ import TicketTypeCRUD from './TicketTypeCRUD'
 import PricingTiersCRUD from './PricingTiersCRUD'
 import { useOrganizerIdentity, useOrganizerRequests } from '../hooks/useOrganizerContext'
 
-vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
+vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const ticket = id => ({ id: 7, name: `Ticket ${id}`, price_cents: 1200, quantity_available: 20 })
 const tier = id => ({ id: 9, name: `Tier ${id}`, price_cents: 800, position: 0, tier_type: 'quantity_based', quantity_limit: 10 })
@@ -22,7 +22,7 @@ function Page({ kind, parent = false }) {
   const identity = useOrganizerIdentity()
   const { beginRequest } = useOrganizerRequests(identity, `/inventory/${id}`)
   return kind === 'ticket' ? <TicketTypeCRUD eventId={id} ticketTypes={[ticket(id)]} remainingCapacity={30} onRefresh={refresh} beginRequest={parent ? beginRequest : undefined} />
-    : <PricingTiersCRUD eventId={id} ticketTypeId={7} onRefresh={refresh} beginRequest={parent ? beginRequest : undefined} />
+    : <PricingTiersCRUD eventId={id} ticketTypeId={7} basePriceCents={5000} salesEndAt="2027-05-02T14:00:00Z" onRefresh={refresh} beginRequest={parent ? beginRequest : undefined} />
 }
 const mount = (kind, parent = false) => render(<MemoryRouter initialEntries={['/inventory/11']}>
   <Link to="/inventory/11">Open Alpha</Link><Link to="/inventory/22">Open Beta</Link>
@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
   window.localStorage.setItem('hafapass_organization_id', '1'); bind()
   refresh = vi.fn()
-  for (const method of ['get', 'post', 'put', 'delete']) apiClient[method].mockReset()
+  for (const method of ['get', 'post', 'put', 'patch', 'delete']) apiClient[method].mockReset()
   apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/pricing_tiers') ? [tier(path.split('/')[3])] : {} }))
   apiClient.post.mockResolvedValue({ data: {} }); apiClient.put.mockResolvedValue({ data: {} }); apiClient.delete.mockResolvedValue({})
 })
@@ -179,4 +179,45 @@ it('discards earlier pricing loads when selecting another ticket type', async ()
   await screen.findByText('Tier new')
   await act(async () => old.resolve({ data: [tier('old-private')] }))
   expect(screen.queryByText('Tier old-private')).not.toBeInTheDocument()
+})
+
+
+it('orders price windows, shows the gap and sales close, and chains the exact previous end', async () => {
+  const end = '2027-05-01T13:59:01.445600Z'
+  apiClient.get.mockResolvedValue({ data: [
+    { id: 12, name: 'Regular', price_cents: 3500, tier_type: 'time_based', starts_at: '2027-05-01T10:00:00Z', ends_at: end },
+    { id: 11, name: 'Early Bird', price_cents: 2000, tier_type: 'time_based', ends_at: '2027-05-01T09:59:00Z' },
+  ] })
+  mount('tier')
+  await screen.findByRole('heading', { name: 'Pricing Schedule' })
+  expect(screen.getAllByRole('button', { name: /Edit pricing tier/ }).map(button => button.getAttribute('aria-label')))
+    .toEqual(['Edit pricing tier Early Bird', 'Edit pricing tier Regular'])
+  expect(screen.getByText(/Gap from/)).toHaveTextContent('The base price of $50.00 applies')
+  expect(screen.getByText(/Sales close/)).toHaveTextContent('Guam time (ChST)')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Add next price window/ }))
+  expect(screen.getByRole('radio', { name: 'Date & Time window' })).toBeChecked()
+  expect(screen.getByText(/Dates and times use/)).toHaveTextContent('Guam time (ChST, UTC+10)')
+  expect(screen.getByLabelText('Starts at date')).toHaveValue('2027-05-01')
+  expect(screen.getByLabelText('Starts at time')).toHaveValue('23:59:01')
+  await user.type(screen.getByLabelText(/^Name/), 'Last chance')
+  await user.click(screen.getByRole('button', { name: 'Add price', exact: true }))
+  expect(apiClient.post.mock.calls[0][1]).toMatchObject({ starts_at: end, ends_at: null, tier_type: 'time_based' })
+})
+
+it('moves quantity caps up and down and reads back their saved order', async () => {
+  const first = { ...tier('first'), id: 11, name: 'First cap' }
+  const second = { ...tier('second'), id: 12, name: 'Second cap' }
+  apiClient.get.mockResolvedValueOnce({ data: [first, second] }).mockResolvedValueOnce({ data: [second, first] })
+    .mockResolvedValueOnce({ data: [first, second] })
+  apiClient.patch.mockResolvedValue({})
+  mount('tier')
+  expect(await screen.findByRole('button', { name: 'Move First cap up' })).toBeDisabled()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Move Second cap up' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Move Second cap down' })).toBeEnabled())
+  expect(apiClient.patch.mock.calls[0].slice(0, 2)).toEqual(['/organizer/events/11/ticket_types/7/pricing_tiers/12/move', { direction: 'up' }])
+  await user.click(screen.getByRole('button', { name: 'Move Second cap down' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Move Second cap down' })).toBeDisabled())
+  expect(apiClient.patch.mock.calls[1][1]).toEqual({ direction: 'down' })
 })
