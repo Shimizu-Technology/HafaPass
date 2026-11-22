@@ -14,17 +14,19 @@ RSpec.describe "Order creation rate-limit contract", type: :request do
 
   it "throttles by the Cloudflare client address, not the shared edge address" do
     edge = "172.70.1.1"
-    30.times do |index|
+    limit = Rack::Attack.throttles.fetch("orders/ip").limit.call(nil)
+    expect(limit).to eq(200)
+    limit.times do |index|
       expect(place_order(email: "cf-#{index}@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.40" })).to eq(201)
     end
-    expect(place_order(email: "cf-31@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.40" })).to eq(429)
-    expect(place_order(email: "cf-32@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.41" })).to eq(201)
+    expect(place_order(email: "cf-over@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.40" })).to eq(429)
+    expect(place_order(email: "cf-other@example.com", ip: edge, headers: { "HTTP_CF_CONNECTING_IP" => "203.0.113.41" })).to eq(201)
   end
 
-  it "allows 30 orders a minute from one shared network address, then throttles" do
-    30.times { |index| expect(place_order(email: "guest-#{index}@example.com")).to eq(201) }
-    expect(place_order(email: "guest-31@example.com")).to eq(429)
-    expect(place_order(email: "guest-31@example.com", ip: "203.0.113.91")).to eq(201)
+  it "allows 200 orders a minute from one shared network address, then throttles" do
+    200.times { |index| expect(place_order(email: "guest-#{index}@example.com")).to eq(201) }
+    expect(place_order(email: "guest-201@example.com")).to eq(429)
+    expect(place_order(email: "guest-201@example.com", ip: "203.0.113.91")).to eq(201)
   end
 
   it "throttles one buyer email at 5 orders a minute across addresses, ignoring case and spacing" do

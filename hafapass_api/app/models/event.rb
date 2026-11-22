@@ -160,7 +160,7 @@ class Event < ApplicationRecord
     where(status: [:published, :completed, :postponed, :cancelled], live_money_proof_candidate: false)
       .without_hidden_policy_hold.with_public_organizer
   }
-  scope :discoverable, ->(at = Time.current) {
+  scope :discoverable_base, ->(at = Time.current) {
     published
       .where(live_money_proof_candidate: false)
       .with_public_organizer
@@ -170,6 +170,10 @@ class Event < ApplicationRecord
       .joins(:ticket_types)
       .where("ticket_types.sales_start_at IS NULL OR ticket_types.sales_start_at <= ?", at)
       .where("ticket_types.sales_end_at IS NULL OR ticket_types.sales_end_at > ?", at)
+      .distinct
+  }
+  scope :discoverable, ->(at = Time.current) {
+    discoverable_base(at)
       .where(<<~SQL.squish, at, at, at)
         ticket_types.quantity_available - ticket_types.quantity_sold - COALESCE((
           SELECT SUM(inventory_holds.quantity)
@@ -240,7 +244,6 @@ class Event < ApplicationRecord
             AND pass_holds.expires_at > ?
         ), 0) > 0
       SQL
-      .distinct
   }
 
   # True once a payout has reserved or sent this event's money to the organizer.

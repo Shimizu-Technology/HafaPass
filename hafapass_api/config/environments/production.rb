@@ -9,6 +9,9 @@ Rails.application.configure do
   config.enable_reloading = false
   config.eager_load = true
   config.consider_all_requests_local = false
+  # Bounded per-worker in-memory cache for short-lived (15s) public event listing/detail caching.
+  # Checkout always reads live locked DB rows; staging.rb inherits this configuration.
+  config.cache_store = :memory_store, { size: 32 * 1024 * 1024 }
   config.public_file_server.headers = { "cache-control" => "public, max-age=#{1.year.to_i}" }
 
   config.log_tags = [:request_id]
