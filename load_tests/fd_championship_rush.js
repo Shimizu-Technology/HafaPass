@@ -44,10 +44,19 @@ const freeOrderSuccess = new Counter('rush_free_order_success')
 const freeOrderClean422 = new Counter('rush_free_order_clean_422')
 const paidHoldSuccess = new Counter('rush_paid_hold_success')
 const paidHoldClean422 = new Counter('rush_paid_hold_clean_422')
+const unexpected422 = new Counter('rush_unexpected_422')
 const paymentResumeSuccess = new Counter('rush_payment_resume_success')
 const throttled429 = new Counter('rush_throttled_429')
 const serverErrors5xx = new Counter('rush_server_errors_5xx')
 const unexpectedErrors = new Rate('rush_unexpected_errors')
+
+const INVENTORY_EXHAUSTION_ERROR_RE = /sold out|only \d+ .*remain|not enough|insufficient|capacity|no tickets available/i
+const UNEXPECTED_422_CODES = new Set([
+  'price_changed',
+  'ACTIVE_CHECKOUT_EXISTS',
+  'NETWORK_HOLD_LIMIT',
+  'NETWORK_FREE_LIMIT',
+])
 
 const validScenarios = ['free_saturation', 'paid_holds', 'both']
 const runFree = scenarioMode === 'free_saturation' || scenarioMode === 'both'
@@ -77,15 +86,18 @@ if (runPaid) {
 const thresholds = {
   http_req_failed: ['rate==0'],
   rush_unexpected_errors: ['rate==0'],
+  rush_unexpected_422: ['count==0'],
   rush_throttled_429: ['count==0'],
   rush_server_errors_5xx: ['count==0'],
 }
 if (runFree) {
   thresholds.rush_events_index_latency = ['p(95)<=300']
   thresholds.rush_free_order_latency = ['p(95)<=1500']
+  thresholds.rush_free_order_success = ['count>0']
 }
 if (runPaid) {
   thresholds.rush_paid_hold_latency = ['p(95)<=1500']
+  thresholds.rush_paid_hold_success = ['count>0']
 }
 
 export const options = {
@@ -94,8 +106,29 @@ export const options = {
 }
 
 function extractHost(url) {
-  const match = String(url).match(/^https?:\/\/([^/:?#]+)/i)
-  return match ? match[1].toLowerCase() : ''
+  const match = String(url).trim().match(/^https?:\/\/([^/?#]+)/i)
+  if (!match) return ''
+  const authority = match[1]
+  const hostPort = authority.includes('@') ? authority.slice(authority.lastIndexOf('@') + 1) : authority
+  const host = hostPort.startsWith('[')
+    ? hostPort.slice(0, hostPort.indexOf(']') + 1)
+    : hostPort.split(':')[0]
+  return host.replace(/\.+$/, '').toLowerCase()
+}
+
+function isCleanSoldOut422(response) {
+  if (response.status !== 422) return false
+  let body = null
+  try {
+    body = response.json()
+  } catch (_err) {
+    return false
+  }
+  if (!body || typeof body !== 'object') return false
+  const code = String(body.code || '').trim()
+  if (code && UNEXPECTED_422_CODES.has(code)) return false
+  const message = String(body.error || body.message || '').trim()
+  return INVENTORY_EXHAUSTION_ERROR_RE.test(message)
 }
 
 function buildRequestHeaders(baseHeaders = {}) {
@@ -266,9 +299,23 @@ export function freeSaturation(data) {
     responseCallback: http.expectedStatuses(201, 422),
   })
   freeOrderLatency.add(orderRes.timings.duration)
-  if (orderRes.status === 201) freeOrderSuccess.add(1)
-  if (orderRes.status === 422) freeOrderClean422.add(1)
-  const orderOk = recordHttpStatus(orderRes, [201, 422])
+  let orderOk = false
+  if (orderRes.status === 201) {
+    freeOrderSuccess.add(1)
+    orderOk = true
+    unexpectedErrors.add(false)
+  } else if (orderRes.status === 422) {
+    if (isCleanSoldOut422(orderRes)) {
+      freeOrderClean422.add(1)
+      orderOk = true
+      unexpectedErrors.add(false)
+    } else {
+      unexpected422.add(1)
+      unexpectedErrors.add(true)
+    }
+  } else {
+    orderOk = recordHttpStatus(orderRes, [201])
+  }
   check(orderRes, { 'free order created (201) or clean sold-out (422)': () => orderOk })
 }
 
@@ -290,10 +337,24 @@ export function paidHolds(data) {
     responseCallback: http.expectedStatuses(201, 422),
   })
   paidHoldLatency.add(holdRes.timings.duration)
-  if (holdRes.status === 201) paidHoldSuccess.add(1)
-  if (holdRes.status === 422) paidHoldClean422.add(1)
-  const holdOk = recordHttpStatus(holdRes, [201, 422])
-  check(holdRes, { 'paid hold created (201) or clean cap/sold-out (422)': () => holdOk })
+  let holdOk = false
+  if (holdRes.status === 201) {
+    paidHoldSuccess.add(1)
+    holdOk = true
+    unexpectedErrors.add(false)
+  } else if (holdRes.status === 422) {
+    if (isCleanSoldOut422(holdRes)) {
+      paidHoldClean422.add(1)
+      holdOk = true
+      unexpectedErrors.add(false)
+    } else {
+      unexpected422.add(1)
+      unexpectedErrors.add(true)
+    }
+  } else {
+    holdOk = recordHttpStatus(holdRes, [201])
+  }
+  check(holdRes, { 'paid hold created (201) or clean sold-out (422)': () => holdOk })
 
   if (holdRes.status !== 201) return
 
@@ -346,6 +407,7 @@ export function handleSummary(data) {
       free_order_clean_422: metricCount(data, 'rush_free_order_clean_422'),
       paid_hold_success: metricCount(data, 'rush_paid_hold_success'),
       paid_hold_clean_422: metricCount(data, 'rush_paid_hold_clean_422'),
+      unexpected_422: metricCount(data, 'rush_unexpected_422'),
       payment_resume_success: metricCount(data, 'rush_payment_resume_success'),
       throttled_429: metricCount(data, 'rush_throttled_429'),
       server_errors_5xx: metricCount(data, 'rush_server_errors_5xx'),

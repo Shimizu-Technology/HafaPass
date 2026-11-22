@@ -40,16 +40,17 @@ module Api
       SQL
 
       PUBLIC_CACHE_TTL = 15.seconds
+      PUBLIC_CACHE_RACE_TTL = 5.seconds
+      MAX_SHOW_SLUG_LENGTH = 120
+      MAX_CACHE_FILTER_SLUG_LENGTH = 100
+      ALLOWED_PRICE_FILTERS = %w[free under_25 under_50].freeze
+      ALLOWED_WINDOW_FILTERS = %w[tonight weekend].freeze
+      CACHEABLE_SLUG_FORMAT = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
       EVENT_SERIALIZATION_PRELOADS = [
         :organizer_profile, :organization, :venue, :event_seating_configuration,
         :catalog_items, :registration_questions, :event_waivers,
         { event_series_memberships: :event_series, ticket_types: :pricing_tiers }
       ].freeze
-      INDEX_CACHE_PARAMS = %w[
-        category date_from date_to featured include_sold_out locale organizer
-        page per_page price q series venue village window
-      ].freeze
-      SHOW_CACHE_PARAMS = %w[locale].freeze
       ATTENDEES_PREVIEW_SQL = <<~SQL.squish.freeze
         SELECT event_id, attendee_name
         FROM (
@@ -63,14 +64,14 @@ module Api
       SQL
 
       skip_before_action :authenticate_user!
+      # Set cache and Vary headers before auth/action execution so early exits (400/503) also include them.
+      prepend_before_action :set_vary_headers
+      prepend_before_action :set_public_cache_headers, only: [:index, :show]
       before_action :optional_authenticate!, only: [:index, :show]
-      before_action :set_public_cache_headers, only: [:index, :show]
-      # Event text depends on the visitor's language; index/show also vary by auth state.
-      after_action :set_vary_headers
 
       def index
-        payload = if public_cacheable_request?
-          Rails.cache.fetch(index_cache_key, expires_in: PUBLIC_CACHE_TTL) do
+        payload = if index_cacheable_request?
+          Rails.cache.fetch(index_cache_key, expires_in: PUBLIC_CACHE_TTL, race_condition_ttl: PUBLIC_CACHE_RACE_TTL) do
             build_index_payload
           end
         else
@@ -106,8 +107,8 @@ module Api
           end
         end
 
-        payload = if public_cacheable_request?
-          Rails.cache.fetch(show_cache_key, expires_in: PUBLIC_CACHE_TTL) do
+        payload = if show_cacheable_request?
+          Rails.cache.fetch(show_cache_key, expires_in: PUBLIC_CACHE_TTL, race_condition_ttl: PUBLIC_CACHE_RACE_TTL) do
             event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
             prepare_show_json(event)
           end
@@ -160,23 +161,70 @@ module Api
           params[:live_money_proof] != "true"
       end
 
+      def index_cacheable_request?
+        return false unless public_cacheable_request?
+        return false if params[:q].present?
+        return false if %i[organizer series venue village].any? { |key| params[key].to_s.length > MAX_CACHE_FILTER_SLUG_LENGTH }
+
+        true
+      end
+
+      def show_cacheable_request?
+        return false unless public_cacheable_request?
+
+        raw_slug = params[:slug].to_s
+        return false if raw_slug.blank? || raw_slug.length > MAX_SHOW_SLUG_LENGTH
+        return false unless raw_slug == Event.normalize_public_slug(raw_slug)
+
+        raw_series = params[:series]
+        if raw_series.present?
+          series_str = raw_series.to_s
+          return false if series_str.length > MAX_CACHE_FILTER_SLUG_LENGTH || !CACHEABLE_SLUG_FORMAT.match?(series_str)
+        end
+
+        true
+      end
+
       def site_setting_cache_version
         updated_at = SiteSetting.pick(:updated_at) || listing_settings.updated_at
         updated_at&.utc&.iso8601(6).to_s
       end
 
+      def normalized_page_param
+        page = params[:page].to_i
+        page.positive? ? page : 1
+      end
+
+      def normalized_per_page_param
+        per_page = params[:per_page].to_i
+        return Pagy::DEFAULT[:limit] unless per_page.positive?
+
+        per_page.clamp(1, Pagy::DEFAULT[:max_limit])
+      end
+
       def normalized_index_cache_params
-        INDEX_CACHE_PARAMS.each_with_object({}) do |key, hash|
-          value = params[key]
-          hash[key] = value.to_s if value.present?
-        end
+        {
+          "category" => Event.categories.key?(params[:category].to_s) ? params[:category].to_s : nil,
+          "date_from" => params[:date_from].to_s.presence,
+          "date_to" => params[:date_to].to_s.presence,
+          "featured" => ActiveModel::Type::Boolean.new.cast(params[:featured]) ? true : nil,
+          "include_sold_out" => include_sold_out? ? true : nil,
+          "organizer" => params[:organizer].to_s.presence,
+          "page" => normalized_page_param,
+          "per_page" => normalized_per_page_param,
+          "price" => ALLOWED_PRICE_FILTERS.include?(params[:price].to_s) ? params[:price].to_s : nil,
+          "series" => params[:series].to_s.presence,
+          "venue" => params[:venue].to_s.presence,
+          "village" => params[:village].to_s.presence,
+          "window" => ALLOWED_WINDOW_FILTERS.include?(params[:window].to_s) ? params[:window].to_s : nil
+        }.compact
       end
 
       def normalized_show_cache_params
-        SHOW_CACHE_PARAMS.each_with_object({}) do |key, hash|
-          value = params[key]
-          hash[key] = value.to_s if value.present?
-        end
+        raw_series = params[:series]
+        return {} if raw_series.blank?
+
+        { "series" => raw_series.to_s }
       end
 
       def index_cache_key
@@ -202,7 +250,7 @@ module Api
 
       def build_index_payload
         events = filtered_events.preload(*EVENT_SERIALIZATION_PRELOADS).order(starts_at: :asc)
-        pagy, paginated_events = paginate(events)
+        pagy, paginated_events = paginate(events, items: normalized_per_page_param)
         records = paginated_events.to_a
         at = Time.current
         preload_event_stats(records, at: at)
@@ -372,8 +420,7 @@ module Api
 
       def preload_event_stats(events, at: Time.current)
         @active_ticket_counts = Hash.new(0)
-        @pass_child_ticket_counts = Hash.new(0)
-        @pass_hold_counts = Hash.new(0)
+        @pass_committed_counts = {}
         @event_hold_counts = Hash.new(0)
         @ticket_type_hold_counts = Hash.new(0)
         @pricing_tier_hold_counts = Hash.new(0)
@@ -388,22 +435,21 @@ module Api
         return if events.empty?
 
         event_ids = events.map(&:id)
+        pass_child_ticket_counts = Hash.new(0)
         Ticket.where(event_id: event_ids).where.not(status: :cancelled)
           .group(:event_id, Arel.sql("parent_ticket_id IS NOT NULL")).count
           .each do |(event_id, is_pass_child), count|
             @active_ticket_counts[event_id] += count
-            @pass_child_ticket_counts[event_id] += count if is_pass_child
+            pass_child_ticket_counts[event_id] += count if is_pass_child
           end
 
         capacity_event_ids = events.select { |event| event.max_capacity.present? }.map(&:id)
         if capacity_event_ids.any?
-          InventoryHold.active
-            .where("inventory_holds.expires_at > ?", at)
-            .joins("INNER JOIN ticket_type_included_events ON ticket_type_included_events.ticket_type_id = inventory_holds.ticket_type_id")
-            .where(ticket_type_included_events: { included_event_id: capacity_event_ids })
-            .group("ticket_type_included_events.included_event_id")
-            .sum(:quantity)
-            .each { |included_event_id, qty| @pass_hold_counts[included_event_id] = qty }
+          @pass_committed_counts = EventCapacity.pass_committed_by_event_ids(
+            capacity_event_ids,
+            at: at,
+            child_counts: pass_child_ticket_counts
+          )
         end
 
         InventoryHold.active.where(event_id: event_ids).where("expires_at > ?", at)
@@ -467,7 +513,7 @@ module Api
 
         sold = event.ticket_types.sum(&:quantity_sold)
         held = @event_hold_counts[event.id] + @event_waitlist_counts[event.id] + @event_seat_hold_counts[event.id]
-        pass_committed = @pass_child_ticket_counts[event.id] + @pass_hold_counts[event.id]
+        pass_committed = @pass_committed_counts.fetch(event.id, 0)
         [event.max_capacity - sold - held - pass_committed, 0].max
       end
 

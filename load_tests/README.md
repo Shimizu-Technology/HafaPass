@@ -5,11 +5,18 @@ This directory contains k6 load-rehearsal scripts for HåfaPass:
 - `fd_championship_rush.js`: FD Alumni Championship rush rehearsal (cached public events browse + optional distribution link + free checkout saturation and/or paid hold creation + payment resume).
 - `gate_f_onsale.js`: Gate F general-admission on-sale and assigned-seat contention harness (see `docs/GATE_F_VALIDATION_EVIDENCE.md`).
 
-## Safety Rails (Enforced by Both Scripts)
+## Safety Rails
 
-1. **Staging / isolated target only.** `fd_championship_rush.js` hard-refuses production hostnames (`*.hafapass.com`, `hafapass-api.onrender.com`) and any API whose `/api/v1/config` reports `payment_mode == "live"`.
-2. **Explicit acknowledgement.** You must pass `ISOLATED_LOAD_TARGET_ACK=I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_ENVIRONMENT`.
-3. **`[LOAD TEST]` fixture guard.** Target event titles must start with `[LOAD TEST]`, be `published`, general admission, and have no required registration questions or waivers.
+**Enforced by both `fd_championship_rush.js` and `gate_f_onsale.js`:**
+
+1. **Explicit acknowledgement.** You must pass `ISOLATED_LOAD_TARGET_ACK=I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_ENVIRONMENT`.
+2. **`[LOAD TEST]` fixture guard.** Target event titles must start with `[LOAD TEST]`, be `published`, general admission (for GA checkout), and have no required registration questions or waivers.
+
+**Enforced additionally by `fd_championship_rush.js`:**
+
+1. **Production host denylist.** Hard-refuses production hostnames (`*.hafapass.com`, `hafapass-api.onrender.com`, after stripping any `userinfo@` prefix and trailing dot).
+2. **Non-live payment mode check.** Queries `/api/v1/config` and hard-refuses any API reporting `payment_mode == "live"`.
+3. **Strict `422` validation & non-zero success gates.** Only genuine inventory-exhaustion `422` responses count as clean sold-outs; all other `422` responses fail `rush_unexpected_422 == 0`, and enabled scenarios must create at least one order (`count > 0`).
 
 ---
 
@@ -92,7 +99,10 @@ k6 run load_tests/fd_championship_rush.js
 
 ### Pass/Fail Thresholds
 
-- `http_req_failed`: `0%` (clean `422` sold-out / cap rejections on `POST /api/v1/orders` are marked expected and do not fail this threshold)
+- `http_req_failed`: `0%` (`422` on `POST /api/v1/orders` is inspected by body; only genuine inventory-exhaustion responses are accepted)
+- `rush_unexpected_422`: `0` (any non-inventory `422` such as `price_changed`, `NETWORK_HOLD_LIMIT`, `NETWORK_FREE_LIMIT`, `ACTIVE_CHECKOUT_EXISTS`, or terms mismatch fails the run)
+- `rush_free_order_success`: `> 0` (when `free_saturation` runs)
+- `rush_paid_hold_success`: `> 0` (when `paid_holds` runs)
 - `rush_throttled_429`: `0`
 - `rush_server_errors_5xx`: `0`
 - `rush_events_index_latency`: `p(95) <= 300ms`

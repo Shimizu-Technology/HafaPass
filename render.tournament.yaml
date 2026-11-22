@@ -8,7 +8,8 @@
 # explicit operator approval from Leon.
 #
 # Peak topology changes vs `render.yaml`:
-#   1. Web service `hafapass-api`: upgraded to `standard` (2 CPU / 2 GB RAM),
+#   1. Web service `hafapass-api`: upgraded to `standard` (1 CPU / 2 GB RAM;
+#      note `pro` is 2 CPU / 4 GB RAM if staging k6 indicates CPU saturation),
 #      `HAFAPASS_RUNTIME=solid_queue`, `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`,
 #      `DB_POOL=15`, `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`, plus explicit
 #      Guam CGNAT-safe `RACK_ATTACK_*` env vars.

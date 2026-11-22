@@ -256,14 +256,90 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       expect(response.parsed_body.fetch("title")).to eq("FD Championship Night Updated")
     end
 
-    it "does not cache 404 or 400 error responses" do
+    it "does not cache 404 or 400 error responses and still sets safe cache/Vary headers on 400" do
       get "/api/v1/events/does-not-exist-yet"
       expect(response).to have_http_status(:not_found)
       expect(memory_cache.instance_variable_get(:@data)).to be_empty
 
       get "/api/v1/events", params: { series: "fd-tourney-2026" }
       expect(response).to have_http_status(:bad_request)
+      expect(response.headers["Cache-Control"]).to eq("private, no-store")
+      expect(response.headers["Vary"].split(",").map(&:strip)).to include("Accept-Language", "Authorization")
       expect(memory_cache.instance_variable_get(:@data)).to be_empty
+    end
+
+    it "prevents show cache poisoning when an event belongs to multiple public series" do
+      second_series = create(:event_series, organization: organization, name: "Guam Hoops Showcase", slug: "guam-hoops-showcase", status: :active)
+      second_series.event_series_memberships.create!(event: event, role: :regular_night, position: 1)
+
+      # Requesting with ?series=B first must not poison default GET or ?series=A
+      get "/api/v1/events/#{event.slug}", params: { series: second_series.slug }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("series", "slug")).to eq(second_series.slug)
+
+      get "/api/v1/events/#{event.slug}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("series", "slug")).to eq(series.slug)
+
+      get "/api/v1/events/#{event.slug}", params: { series: series.slug }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("series", "slug")).to eq(series.slug)
+
+      # Second request with ?series=B serves from cache with series B intact
+      cached_queries = count_sql_queries { get "/api/v1/events/#{event.slug}", params: { series: second_series.slug } }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("series", "slug")).to eq(second_series.slug)
+      expect(cached_queries.grep(/FROM "(?:events|ticket_types|event_series)"/)).to be_empty
+
+      # Malformed or overly long ?series= bypasses cache without adding keys
+      keys_before = memory_cache.instance_variable_get(:@data).size
+      get "/api/v1/events/#{event.slug}", params: { series: "BAD_SERIES!" }
+      expect(response).to have_http_status(:ok)
+      get "/api/v1/events/#{event.slug}", params: { series: "a" * 101 }
+      expect(response).to have_http_status(:ok)
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(keys_before)
+    end
+
+    it "bounds cache-key cardinality for unrecognized params, raw locale, search queries, and non-canonical slugs" do
+      get "/api/v1/events"
+      expect(response).to have_http_status(:ok)
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+
+      # Unrecognized locale and allowlist-invalid price collapse to the same cache key
+      noisy_queries = count_sql_queries do
+        get "/api/v1/events", params: { locale: "random-xx", price: "zzz", window: "bogus", category: "nonexistent" }
+      end
+      expect(response).to have_http_status(:ok)
+      expect(noisy_queries.grep(/FROM "(?:events|ticket_types)"/)).to be_empty
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+
+      # Free-text ?q= bypasses cache without minting new keys
+      search_queries = count_sql_queries { get "/api/v1/events", params: { q: "Championship" } }
+      expect(response).to have_http_status(:ok)
+      expect(search_queries.any? { |sql| sql.include?('"events"') }).to be(true)
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+
+      # Show: canonical slug populates 1 key; locale=random hits the same key; non-canonical casing bypasses cache
+      memory_cache.clear
+      get "/api/v1/events/#{event.slug}"
+      expect(response).to have_http_status(:ok)
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+
+      show_noisy_queries = count_sql_queries { get "/api/v1/events/#{event.slug}", params: { locale: "random-xx" } }
+      expect(response).to have_http_status(:ok)
+      expect(show_noisy_queries.grep(/FROM "(?:events|ticket_types)"/)).to be_empty
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+
+      get "/api/v1/events/#{event.slug.upcase}"
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("slug" => event.slug, "redirected_from" => event.slug.upcase)
+      expect(memory_cache.instance_variable_get(:@data).size).to eq(1)
+    end
+
+    it "configures production memory_store size without relying on Integer#megabytes" do
+      production_config = Rails.root.join("config/environments/production.rb").read
+      expect(production_config).not_to match(/\.megabytes\b/)
+      expect(production_config).to include("config.cache_store = :memory_store, { size: 32 * 1024 * 1024 }")
     end
   end
 

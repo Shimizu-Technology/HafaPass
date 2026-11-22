@@ -24,11 +24,11 @@ class EventCapacity
       pass_child_tickets(event) + pass_holds_targeting(event, at: at)
     end
 
-    def pass_committed_by_event_ids(event_ids, at: Time.current)
+    def pass_committed_by_event_ids(event_ids, at: Time.current, child_counts: nil)
       ids = Array(event_ids).compact.uniq
       return {} if ids.empty?
 
-      child_counts = Ticket.where(event_id: ids).where.not(parent_ticket_id: nil).where.not(status: :cancelled)
+      child_counts ||= Ticket.where(event_id: ids).where.not(parent_ticket_id: nil).where.not(status: :cancelled)
         .group(:event_id).count
       hold_counts = InventoryHold.active
         .where("inventory_holds.expires_at > ?", at)
