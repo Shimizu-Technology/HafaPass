@@ -16,7 +16,11 @@ module Commerce
   # and exact captured amount. On success RefundCreator resolves the open
   # late-capture exceptions with an audit entry and emails the buyer.
   class LateCaptureRefund
-    CODES = %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry].freeze
+    CODES = %w[
+      late_payment_success_after_inventory_release
+      late_payment_success_after_hold_expiry
+      pass_all_included_nights_cancelled
+    ].freeze
     REASON = "late_capture_refund"
 
     class NotApplicable < StandardError; end

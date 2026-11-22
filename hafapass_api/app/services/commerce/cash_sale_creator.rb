@@ -22,11 +22,14 @@ module Commerce
 
       # The receipt, capture, inventory and tickets commit together. A crash
       # cannot leave a completed sale without the identity needed to recover it.
-      # Keep the outer reservation lock compatible with seat-release audit
-      # FK checks; a nested weaker lock cannot downgrade FOR UPDATE.
+      # Acquire the organization FOR KEY SHARE lock before event locks, matching
+      # OrderCreator and EventLifecycle#call, and keep the outer reservation lock
+      # compatible with seat-release audit FK checks; a nested weaker lock cannot
+      # downgrade FOR UPDATE.
       # For multi-night passes, lock all involved events in ascending ID order.
       Passes::Locking.with_lock_retry do
         Order.transaction do
+          event.organization.lock!("FOR KEY SHARE")
           Passes::Locking.lock_events_for_line_items!(event: event, line_items: parameters["line_items"])
           existing = Order.find_by(cash_sale_key: key) if key
           next replay(existing) if existing

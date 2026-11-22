@@ -12,7 +12,7 @@ module Passes
         begin
           yield
         rescue LockSetChanged
-          raise if attempts >= max_retries
+          raise if attempts >= max_retries || inside_application_transaction?
 
           attempts += 1
           retry
@@ -82,6 +82,10 @@ module Passes
       end
 
       private
+
+      def inside_application_transaction?
+        ActiveRecord::Base.connection.current_transaction.joinable?
+      end
 
       def extract_ticket_type_ids(line_items)
         return [] unless line_items.is_a?(Array) && line_items.any?

@@ -168,8 +168,7 @@ class OrderPresenter
       scan_credential: !transferred_away && ticket.admission_allowed? ? ticket.scan_credential : nil,
       status: transferred_away ? "transferred" : ticket.status,
       admission_allowed: !transferred_away && ticket.admission_allowed?,
-      admission_block_reason: ticket.inventory_retained? ? "Refunded or disputed admission requires organizer review" :
-        (ticket.refund_pending? ? "Ticket access is paused while its refund is pending" : nil),
+      admission_block_reason: ticket_admission_block_reason(ticket),
       attendee_name: transferred_away ? nil : ticket.attendee_name,
       checked_in_at: ticket.checked_in_at,
       pending_transfer: !transferred_away && ticket.issued? ? ticket.pending_transfer_summary : nil,
@@ -197,6 +196,14 @@ class OrderPresenter
     end
 
     json
+  end
+
+  def ticket_admission_block_reason(ticket)
+    return nil if ticket.cancelled? || (ticket.pass_child? && ticket.parent_ticket&.cancelled?)
+    if ticket.inventory_retained? || (ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
+      return "Refunded or disputed admission requires organizer review"
+    end
+    "Ticket access is paused while its refund is pending" if ticket.refund_pending?
   end
 
   def seat_json(ticket)
@@ -273,7 +280,7 @@ class OrderPresenter
           records: tickets,
           associations: [
             :event, :ticket_type, :order_item, :inventory_retention, :pending_refund_tickets, :ticket_transfers,
-            { parent_ticket: :pending_refund_tickets },
+            { parent_ticket: [:pending_refund_tickets, :inventory_retention] },
             { event_seat: { venue_seat: { seating_row: :seating_section } } }
           ]
         ).call

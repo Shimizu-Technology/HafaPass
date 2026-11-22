@@ -8,6 +8,7 @@ class TicketEmailAttachments
   NAMESPACE = "ticket_email_attachment"
   ROUTE = "/api/v1/ticket_email_attachments"
   MAX_ATTACHMENTS = 10
+  MAX_PASS_CHILD_ATTACHMENTS = 2
   # Longer than the provider replay window, so a retried send still resolves.
   TTL = 3.days
 
@@ -32,11 +33,16 @@ class TicketEmailAttachments
     def plan(tickets)
       tickets = Array(tickets)
       base = api_base
-      attachable = base ? tickets.select { |ticket| attachable?(ticket) } : []
+      non_parent_tickets = tickets.reject(&:pass_parent?)
+      attachable = base ? non_parent_tickets.select { |ticket| attachable?(ticket) } : []
+      active_pass_children = attachable.select(&:pass_child?)
+      if active_pass_children.length > MAX_PASS_CHILD_ATTACHMENTS
+        attachable -= active_pass_children
+      end
       attachments = attachable.first(MAX_ATTACHMENTS).map do |ticket|
         { filename: "hafapass-ticket-#{ticket.id}.pdf", path: "#{base}#{ROUTE}/#{token(ticket)}" }
       end
-      Plan.new(attachments: attachments, attachable_count: attachable.length, ticket_count: tickets.length)
+      Plan.new(attachments: attachments, attachable_count: attachable.length, ticket_count: non_parent_tickets.length)
     end
 
     def for(tickets)
@@ -44,10 +50,10 @@ class TicketEmailAttachments
     end
 
     # Exactly the tickets that admit right now (Ticket#admission_allowed?), so
-    # the two never drift: blocked, refunded, disputed, cancelled, transferred
-    # and unpublished-event tickets never get a PDF.
+    # the two never drift: pass parents, blocked, refunded, disputed, cancelled,
+    # transferred and unpublished-event tickets never get a PDF.
     def attachable?(ticket)
-      ticket.admission_allowed?
+      !ticket.pass_parent? && ticket.admission_allowed?
     end
 
     # Returns [ticket, still_valid] for a signed URL, or nil when unknown/expired.

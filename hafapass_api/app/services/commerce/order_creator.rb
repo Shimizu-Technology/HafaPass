@@ -126,8 +126,10 @@ module Commerce
           end
           @checkout_attempt.verify_owner!(@checkout_lease_token) unless @checkout_attempt.order_id
         end
-        # Only offer claims need the organization rank before the event.
-        event.organization.lock! if waitlist_offer_token.present?
+        # Organization rank precedes event locks, matching EventLifecycle#call.
+        # Offer claims lock FOR UPDATE; other checkouts take FOR KEY SHARE, which
+        # audit_logs inserts require and which stays compatible with FOR NO KEY UPDATE.
+        event.organization.lock!(waitlist_offer_token.present? ? "FOR UPDATE" : "FOR KEY SHARE")
         # Serialize capacity decisions across this event and any pass-included
         # night events in ascending event.id order (FOR NO KEY UPDATE).
         Passes::Locking.lock_events_for_line_items!(event: event, line_items: line_items)
@@ -142,7 +144,13 @@ module Commerce
           next
         end
         validate_launch_scope!
-        raise CheckoutError, "This event is not currently on sale" unless event.sales_open?
+        unless event.sales_open?
+          if event.sales_blocker == :pass_nights_cancelled
+            raise CheckoutError, "All included nights for this pass have been cancelled"
+          end
+
+          raise CheckoutError, "This event is not currently on sale"
+        end
         offer = claimable_waitlist_offer!
         offer&.update!(status: :claimed, claimed_at: Time.current)
         selections = locked_selections!(offer: offer)
@@ -430,6 +438,9 @@ module Commerce
       quantities.map do |ticket_type_id, quantity|
         ticket_type = ticket_types.fetch(ticket_type_id)
         raise CheckoutError, "#{ticket_type.name} is not currently on sale" unless ticket_type.on_sale?
+        if ticket_type.pass? && !ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+          raise CheckoutError, "All included nights for this pass have been cancelled"
+        end
         seat_holds = seat_hold_selection(ticket_type.id)
         if seat_holds.map(&:id).sort != provisional_holds.select { |hold| hold.event_seat.ticket_type_id == ticket_type_id }.map(&:id).sort ||
             (!complimentary && seat_holds.any? && seat_holds.first.pricing_tier_id != tiers[ticket_type_id]&.id)
@@ -652,7 +663,7 @@ module Commerce
         ticket_type = selection[:ticket_type]
         next unless ticket_type.pass?
 
-        ticket_type.included_events.each do |included_event|
+        ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).each do |included_event|
           pass_demand_by_event[included_event] += selection[:quantity]
         end
       end

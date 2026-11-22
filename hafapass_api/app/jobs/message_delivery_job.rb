@@ -52,6 +52,11 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "A newer event change notice replaces this one")
         next :done
       end
+      if delivery.template == "pass_event_change" && unattempted_event_change?(delivery) &&
+          !resolve_pass_event_change!(delivery)
+        delivery.update!(status: :cancelled, last_error: "Recipient no longer holds an eligible pass for this event")
+        next :done
+      end
       if reversed_event_change?(delivery)
         delivery.update!(status: :cancelled, last_error: "The event change was reversed before this notice was sent")
         next :done
@@ -331,15 +336,21 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   def obsolete_event_change?(delivery)
-    return false unless delivery.template == "event_change"
+    return false unless %w[event_change pass_event_change].include?(delivery.template)
 
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
-    !change || !EventChange::TYPES.include?(change.change_type) || change.event_id != delivery.order&.event_id
+    return true if !change || !EventChange::TYPES.include?(change.change_type)
+
+    if delivery.template == "pass_event_change"
+      change.event_id != delivery.event_id
+    else
+      change.event_id != delivery.order&.event_id
+    end
   end
 
   # Never withdraw a notice once a provider attempt may have happened.
   def unattempted_event_change?(delivery)
-    delivery.template == "event_change" && delivery.attempts.zero? &&
+    %w[event_change pass_event_change].include?(delivery.template) && delivery.attempts.zero? &&
       delivery.outbound_payload.blank? && delivery.provider_attempted_at.nil?
   end
 
@@ -356,6 +367,31 @@ class MessageDeliveryJob < ApplicationJob
 
     change = EventChange.find_by(id: delivery.metadata["event_change_id"])
     change.present? && !change.notice_needed?(delivery.order)
+  end
+
+  # A deduplicated pass_event_change delivery may have been scoped to an order
+  # that was refunded/cancelled or blocked during the coalescing window. Rebind
+  # it to another remaining eligible order/ticket for the same recipient and
+  # audience when one exists; cancel only when no eligible pass remains.
+  # Already-attempted payloads keep their replay behavior untouched.
+  def resolve_pass_event_change!(delivery)
+    change = EventChange.find_by(id: delivery.metadata["event_change_id"])
+    return false unless change
+
+    target = EmailService.resolve_pass_event_change_target(delivery, change)
+    return false unless target
+
+    target_order = target.fetch(:order)
+    target_ticket = target[:ticket]
+    if delivery.order_id != target_order.id || delivery.ticket_id != target_ticket&.id ||
+        delivery.metadata["pass_event_id"] != target_order.event_id
+      delivery.update!(
+        order: target_order,
+        ticket: target_ticket,
+        metadata: delivery.metadata.merge("pass_event_id" => target_order.event_id)
+      )
+    end
+    true
   end
 
   def mark_reminder_sent!(delivery)

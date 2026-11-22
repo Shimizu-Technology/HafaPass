@@ -163,7 +163,7 @@ module Commerce
       return validate_replay!(existing) if existing
 
       Order.transaction do
-        order.event.organization.lock!
+        order.event.organization.lock!("FOR NO KEY UPDATE")
         order.event.lock!
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
@@ -247,7 +247,7 @@ module Commerce
 
     def provider_submission_allowed?(refund, mark_unknown: false)
       Refund.transaction do
-        order.event.organization.lock!
+        order.event.organization.lock!("FOR NO KEY UPDATE")
         order.event.lock!
         order.lock!
         refund.lock!
@@ -309,13 +309,24 @@ module Commerce
       return if tickets.nil?
       raise RefundError, "At least one ticket is required" if tickets.empty?
 
-      selected = order.tickets.where(id: tickets.map(&:id)).order(:id).lock.to_a
-      raise RefundError, "Ticket not found for this order" unless selected.length == tickets.map(&:id).uniq.length
+      requested_ids = tickets.map(&:id).uniq
+      # Lock selected tickets and any pass child tickets together in strict
+      # ascending ticket.id order (never locking night events).
+      locked_tickets = order.tickets
+        .where(id: requested_ids)
+        .or(order.tickets.where(parent_ticket_id: requested_ids))
+        .includes(:ticket_type)
+        .order(:id)
+        .lock
+        .to_a
+      selected = locked_tickets.select { |ticket| requested_ids.include?(ticket.id) }
+      raise RefundError, "Ticket not found for this order" unless selected.length == requested_ids.length
       if selected.any?(&:pass_child?)
         raise RefundError, "Refund the parent pass instead of a single night"
       end
-      if selected.any?(&:pass_parent?)
-        raise RefundError, "Multi-night passes must be refunded at the order level rather than per ticket"
+      children_by_parent = locked_tickets.select(&:pass_child?).group_by(&:parent_ticket_id)
+      if selected.any? { |ticket| ticket.pass_parent? && (ticket.previously_admitted? || Array(children_by_parent[ticket.id]).any?(&:previously_admitted?)) }
+        raise RefundError, "Pass has already been used on one or more nights; use an organizer custom-amount refund or contact support"
       end
       raise RefundError, "Only unused active tickets can be refunded" if selected.any? { |ticket| ticket.cancelled? || ticket.transferred? || ticket.checked_in? }
       # An accepted transfer leaves the ticket issued with a new holder (the
@@ -445,7 +456,7 @@ module Commerce
       provider_status = provider_refund.respond_to?(:status) ? provider_refund.status.to_s : ""
 
       Refund.transaction do
-        refund.order.event.organization.lock!
+        refund.order.event.organization.lock!("FOR NO KEY UPDATE")
         refund.order.event.lock!
         refund.order.lock!
         refund.lock!
@@ -647,14 +658,22 @@ module Commerce
       refunded_order = refund.order
       if refunded_order.completed_at.nil? && refunded_order.tickets.empty? &&
           ReconciliationException.where(order: refunded_order, payment: refund.payment,
-            code: %w[late_payment_success_after_inventory_release late_payment_success_after_hold_expiry]).exists?
+            code: LateCaptureRefund::CODES).exists?
         return
       end
       selected_ids = refund.refund_tickets.pluck(:ticket_id)
-      refunded_order.tickets.includes(:ticket_type, :pricing_tier).where.not(status: :cancelled).order(:id).lock.each do |ticket|
+      seen_pass_parent_ids = Set.new
+      locked = refunded_order.tickets.includes(:ticket_type, :pricing_tier, :inventory_retention).order(:id).lock.to_a
+      locked.each do |ticket|
+        next if ticket.cancelled?
         # A ticket-selected refund can reach the order total when the rest are
         # free; it must not take back a ticket that now belongs to someone else.
-        next if selected_ids.any? && selected_ids.exclude?(ticket.id) && ticket.transferred_away_from?(refunded_order)
+        next if selected_ids.any? && selected_ids.exclude?(ticket.id) &&
+          (ticket.parent_ticket_id.nil? || selected_ids.exclude?(ticket.parent_ticket_id)) &&
+          ticket.transferred_away_from?(refunded_order)
+
+        pass_parent_id = FinancialReversalInventory.pass_group_parent_id(ticket)
+        next if pass_parent_id && !seen_pass_parent_ids.add?(pass_parent_id)
 
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
@@ -668,7 +687,17 @@ module Commerce
     end
 
     def release_refunded_tickets!(refund)
-      refund.tickets.includes(:ticket_type, :pricing_tier).order(:id).lock.each do |ticket|
+      selected_ids = refund.refund_tickets.pluck(:ticket_id)
+      return if selected_ids.empty?
+
+      locked = refund.order.tickets
+        .where(id: selected_ids)
+        .or(refund.order.tickets.where(parent_ticket_id: selected_ids))
+        .includes(:ticket_type, :pricing_tier, :inventory_retention)
+        .order(:id)
+        .lock
+        .to_a
+      locked.select { |ticket| selected_ids.include?(ticket.id) }.each do |ticket|
         FinancialReversalInventory.call(ticket: ticket, refund: refund, reason: reason)
       end
     end

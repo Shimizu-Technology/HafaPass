@@ -19,13 +19,14 @@ class CompletePastEventsJob < ApplicationJob
 
   def perform(now: Time.current, actor: nil)
     completed = 0
+    cutoff = now - GRACE_PERIOD
     # find_each batches by primary key; an explicit order would be ignored.
-    Event.published.where(ends_at: ..(now - GRACE_PERIOD)).find_each do |event|
+    Event.published.completion_anchor_at_or_before(cutoff).find_each do |event|
       if actor
-        EventLifecycle.call(event: event, action: :complete, actor: actor, reason: REASON, at: now)
+        EventLifecycle.call(event: event, action: :complete, actor: actor, reason: REASON, at: now, completed_before: cutoff)
       else
         AuditContext.set(source: "system") do
-          EventLifecycle.call(event: event, action: :complete, actor: nil, reason: REASON, at: now)
+          EventLifecycle.call(event: event, action: :complete, actor: nil, reason: REASON, at: now, completed_before: cutoff)
         end
       end
       completed += 1

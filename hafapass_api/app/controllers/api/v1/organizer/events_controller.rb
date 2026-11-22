@@ -37,6 +37,12 @@ module Api
           )
           pass_included_ids = paginated_events.select { |ev| ev.pass_inclusions.any? }.map(&:id)
           @pass_committed_by_event_id = EventCapacity.pass_committed_by_event_ids(pass_included_ids)
+          archived_pass_night_ids = paginated_events.flat_map do |ev|
+            ev.preloaded_pass_included_events.to_a.select(&:archived?).map(&:id)
+          end.uniq
+          @sales_context = Event.sales_context.merge(
+            archive_from_statuses: Event.latest_archive_from_statuses_by_event_id(archived_pass_night_ids)
+          )
           render json: {
             events: paginated_events.map { |event| event_json(event, include_ticket_types: true) },
             meta: pagination_meta(pagy)
@@ -69,8 +75,9 @@ module Api
         def summary
           events = OrganizationAuthorization.accessible_events(user: current_user, organization: current_organization)
           # An event that has started but not ended still counts, so it stays
-          # on the home summary through show night.
-          upcoming = events.published.where("COALESCE(events.ends_at, events.starts_at) > ?", Time.current)
+          # on the home summary through show night (or through the latest live
+          # included night for a multi-night pass).
+          upcoming = events.published.effectively_ending_after(Time.current)
           next_event = upcoming.order(:starts_at, :id).first
           json = {
             upcoming_events_count: upcoming.count,
@@ -102,11 +109,7 @@ module Api
 
         def update
           updated = false
-          Event.transaction do
-            # Checkout takes the event before ticket types. NO KEY UPDATE also
-            # permits foreign-key checks from payment finalization while it
-            # finishes consuming a hold under the ticket-type lock.
-            @event.lock!("FOR NO KEY UPDATE")
+          @event.with_lock("FOR NO KEY UPDATE") do
             @event.ticket_types.order(:id).lock.load
             attributes = parsed_event_params
             can_manage = OrganizationAuthorization.allowed?(
@@ -437,7 +440,7 @@ module Api
           payment_mode = SiteSetting.instance.payment_mode
           children = tickets.where.not(parent_ticket_id: nil)
             .includes(:ticket_type, :inventory_retention, :pending_refund_tickets,
-              { parent_ticket: :pending_refund_tickets }, { order: [:disputes, :refunds, :payments] })
+              { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, { order: [:disputes, :refunds, :payments] })
             .to_a
           by_type = children.group_by(&:ticket_type)
             .sort_by { |tt, _| [tt.sort_order || 0, tt.id] }
@@ -458,6 +461,7 @@ module Api
 
         def pass_child_eligible?(ticket, payment_mode:)
           !ticket.cancelled? && !ticket.transferred? && !ticket.inventory_retained? &&
+            !ticket.parent_ticket&.inventory_retained? && !ticket.parent_ticket&.cancelled? &&
             !ticket.order.ticket_access_blocked? && !ticket.refund_pending? &&
             ticket.order.ticket_fulfilled?(payment_mode: payment_mode)
         end

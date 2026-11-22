@@ -297,15 +297,11 @@ RSpec.describe "Organizer TicketTypes pass configuration, sync_pass_holders, sta
       ).order
       night_1_child = pass_order.tickets.find_by!(event: night_1)
 
-      # Buyer cannot cancel a single night child ticket or a free parent pass ticket
+      # Buyer cannot cancel a single night child ticket
       parent_pass = pass_order.tickets.find_by!(parent_ticket_id: nil)
       post "/api/v1/orders/#{pass_order.id}/tickets/#{night_1_child.id}/cancel", headers: auth_headers(buyer)
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body["error"]).to eq("Multi-night pass tickets cannot be cancelled one night at a time")
-
-      post "/api/v1/orders/#{pass_order.id}/tickets/#{parent_pass.id}/cancel", headers: auth_headers(buyer)
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to eq("Multi-night passes cannot be cancelled individually")
       expect(parent_pass.reload).to be_issued
       expect(night_1_child.reload).to be_issued
 
@@ -318,6 +314,12 @@ RSpec.describe "Organizer TicketTypes pass configuration, sync_pass_holders, sta
         payment_required: false
       )
       night_1_child.check_in!
+
+      # Once any night has been admitted, cancelling the free parent pass is rejected
+      post "/api/v1/orders/#{pass_order.id}/tickets/#{parent_pass.id}/cancel", headers: auth_headers(buyer)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to match(/already been used/i)
+      expect(parent_pass.reload).to be_issued
 
       # Admissions search hides pass parent on pass_event, shows pass child on night_1
       get "/api/v1/organizer/events/#{pass_event.id}/admissions/search", params: { q: "Pass Holder" }, headers: headers

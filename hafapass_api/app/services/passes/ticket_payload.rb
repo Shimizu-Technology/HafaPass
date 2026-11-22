@@ -9,7 +9,8 @@ module Passes
     end
 
     def child_admission_block_reason(child)
-      return "Refunded or disputed admission requires organizer review" if child.inventory_retained?
+      return nil if child.cancelled? || child.parent_ticket&.cancelled?
+      return "Refunded or disputed admission requires organizer review" if child.inventory_retained? || child.parent_ticket&.inventory_retained?
       return "Payment dispute under review" if child.order.ticket_access_blocked?
       return "Ticket access is paused while its refund is pending" if child.refund_pending?
       return "Event is #{child.event.status}" if child.issued? && child.event && !child.event.published?

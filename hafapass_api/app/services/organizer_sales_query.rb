@@ -82,11 +82,17 @@ class OrganizerSalesQuery
     raise InvalidFilter, "Invalid payment environment" if filters["payment_environment"] && !%w[live test all].include?(filters["payment_environment"])
     raise InvalidFilter, "Search is too long" if filters["search"]&.length.to_i > 200
     %w[purchased_from purchased_to].each { |key| Date.iso8601(filters[key]) if filters[key] }
-    if filters["ticket_type"] && !@event.ticket_types.where(id: filters["ticket_type"]).exists?
+    if filters["ticket_type"] && !allowed_ticket_type?(filters["ticket_type"])
       raise InvalidFilter, "Invalid ticket type"
     end
   rescue Date::Error
     raise InvalidFilter, "Invalid purchase date"
+  end
+
+  def allowed_ticket_type?(ticket_type_id)
+    return true if @event.ticket_types.where(id: ticket_type_id).exists?
+
+    @event.pass_inclusions.where(ticket_type_id: ticket_type_id).exists?
   end
 
   def apply_filters(tickets)

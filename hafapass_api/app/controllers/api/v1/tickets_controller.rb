@@ -56,8 +56,9 @@ class Api::V1::TicketsController < ApplicationController
     ticket = TicketCredential.find_display(params[:credential] || params[:qr_code])
     Ticket.includes(
       :order, :ticket_type, :event, :inventory_retention, :pending_refund_tickets,
-      { parent_ticket: [:event, :child_tickets, :pending_refund_tickets] },
-      { child_tickets: [:event, :order, :ticket_type, :inventory_retention, :pending_refund_tickets, { parent_ticket: :pending_refund_tickets }] },
+      { parent_ticket: [:event, :child_tickets, :pending_refund_tickets, :inventory_retention] },
+      { child_tickets: [:event, :order, :ticket_type, :inventory_retention, :pending_refund_tickets,
+        { parent_ticket: [:pending_refund_tickets, :inventory_retention] }] },
       event_seat: { venue_seat: { seating_row: :seating_section } }
     ).find_by(id: ticket&.id)
   end
@@ -68,11 +69,14 @@ class Api::V1::TicketsController < ApplicationController
 
   def downloadable?(ticket)
     !ticket.pass_parent? && ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
-      !ticket.refund_pending? && !ticket.inventory_retained?
+      !ticket.refund_pending? && !ticket.inventory_retained? && !(ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
   end
 
   def admission_block_reason(ticket)
-    return "Refunded or disputed admission requires organizer review" if ticket.inventory_retained?
+    return nil if ticket.cancelled? || (ticket.pass_child? && ticket.parent_ticket&.cancelled?)
+    if ticket.inventory_retained? || (ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
+      return "Refunded or disputed admission requires organizer review"
+    end
     return "Payment dispute under review" if ticket.order.ticket_access_blocked?
     "Ticket access is paused while its refund is pending" if ticket.refund_pending?
   end
