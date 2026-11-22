@@ -45,7 +45,7 @@ module Api
       after_action { response.headers["Vary"] = [response.headers["Vary"].presence, "Accept-Language"].compact.join(", ") }
 
       def index
-        events = filtered_events.includes(
+        events = filtered_events.preload(
           :organizer_profile, :organization, :venue, :event_seating_configuration,
           event_series_memberships: :event_series,
           ticket_types: [
@@ -136,7 +136,12 @@ module Api
         events = events.joins(:venue).where(venues: { slug: params[:venue] }) if params[:venue].present?
         events = events.joins(:organization).where(organizations: { slug: params[:organizer] }) if params[:organizer].present?
         if params[:series].present?
-          events = events.joins(:event_series).where(event_series: { slug: params[:series] }).distinct
+          raise ActionController::BadRequest, "organizer parameter is required when filtering by series" if params[:organizer].blank?
+
+          events = events.joins(:event_series)
+            .merge(EventSeries.publicly_visible)
+            .where(event_series: { slug: params[:series] })
+            .distinct
         end
         events = filter_price(events)
         events
@@ -387,14 +392,15 @@ module Api
       end
 
       def serialized_series(event)
-        memberships = event.event_series_memberships
+        public_memberships = event.event_series_memberships.select { |m| m.event_series&.publicly_visible? }
         membership = if params[:series].present?
-          memberships.find { |m| m.event_series&.slug == params[:series].to_s } || memberships.first
+          public_memberships.find { |m| m.event_series.slug == params[:series].to_s } || public_memberships.first
         else
-          memberships.first
+          public_memberships.first
         end
-        series = membership&.event_series
-        return nil unless series
+        return nil unless membership
+
+        series = membership.event_series
 
         {
           id: series.id,

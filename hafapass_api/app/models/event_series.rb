@@ -20,6 +20,8 @@ class EventSeries < ApplicationRecord
 
   enum :status, { draft: 0, active: 1, completed: 2, archived: 3 }
 
+  scope :publicly_visible, -> { where(status: [:active, :completed]) }
+
   validates :name, presence: true, length: { maximum: 200 }
   validates :slug, presence: true,
     uniqueness: { scope: :organization_id },
@@ -28,6 +30,10 @@ class EventSeries < ApplicationRecord
   validates :revenue_share_base, inclusion: { in: REVENUE_SHARE_BASES }
 
   before_validation :normalize_or_generate_slug
+
+  def publicly_visible?
+    active? || completed?
+  end
 
   private
 

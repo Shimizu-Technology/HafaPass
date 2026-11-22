@@ -86,7 +86,7 @@ RSpec.describe "Api::V1::Organizer::EventSeries", type: :request do
   describe "authorization and cross-organization isolation" do
     let!(:series) { create(:event_series, organization: organization) }
 
-    it "allows view_events members to read but forbids mutations" do
+    it "allows finance members to read but forbids mutations" do
       finance_user = create(:user)
       create(:organization_membership, organization: organization, user: finance_user, role: :finance)
       finance_headers = auth_headers(finance_user).merge("X-Organization-Id" => organization.id.to_s)
@@ -105,6 +105,51 @@ RSpec.describe "Api::V1::Organizer::EventSeries", type: :request do
 
       delete "/api/v1/organizer/event_series/#{series.id}", headers: finance_headers
       expect(response).to have_http_status(:forbidden)
+    end
+
+    %i[scanner box_office].each do |role|
+      it "forbids assignment-scoped #{role} staff from reading event series" do
+        staff_user = create(:user)
+        create(:organization_membership, organization: organization, user: staff_user, role: role)
+        assigned_event = create(:event, organizer_profile: organizer_profile, organization: organization)
+        create(:event_staff_assignment, organization: organization, event: assigned_event, user: staff_user, role: role)
+        staff_headers = auth_headers(staff_user).merge("X-Organization-Id" => organization.id.to_s)
+
+        get "/api/v1/organizer/event_series", headers: staff_headers
+        expect(response).to have_http_status(:forbidden)
+
+        get "/api/v1/organizer/event_series/#{series.id}", headers: staff_headers
+        expect(response).to have_http_status(:forbidden)
+      end
+    end
+
+    it "returns 422 on duplicate slug and duplicate membership (including RecordNotUnique races)" do
+      existing = create(:event_series, organization: organization, name: "Existing", slug: "taken-slug")
+
+      post "/api/v1/organizer/event_series", params: { name: "Another", slug: "taken-slug" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+
+      allow_any_instance_of(EventSeries).to receive(:save).and_raise(ActiveRecord::RecordNotUnique.new("duplicate key"))
+      post "/api/v1/organizer/event_series", params: { name: "Race Series", slug: "race-slug" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("errors")).to include("Slug has already been taken")
+
+      allow_any_instance_of(EventSeries).to receive(:update).and_raise(ActiveRecord::RecordNotUnique.new("duplicate key"))
+      patch "/api/v1/organizer/event_series/#{existing.id}", params: { slug: "other-slug" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("errors")).to include("Slug has already been taken")
+
+      event = create(:event, organizer_profile: organizer_profile, organization: organization)
+      series.event_series_memberships.create!(event: event, role: :regular_night, position: 0)
+
+      post "/api/v1/organizer/event_series/#{series.id}/events", params: { event_id: event.id, role: "regular_night" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+
+      other_event = create(:event, organizer_profile: organizer_profile, organization: organization)
+      allow_any_instance_of(EventSeriesMembership).to receive(:save).and_raise(ActiveRecord::RecordNotUnique.new("duplicate key"))
+      post "/api/v1/organizer/event_series/#{series.id}/events", params: { event_id: other_event.id, role: "regular_night" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to eq("Event is already in this series")
     end
 
     it "prevents adding an event from another organization" do

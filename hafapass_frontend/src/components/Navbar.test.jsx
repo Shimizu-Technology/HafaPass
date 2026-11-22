@@ -412,4 +412,24 @@ describe('account-bound navbar with the real API authentication interceptor', ()
     expect(within(primary).queryByRole('link', { name: "Dashboard" })).not.toBeInTheDocument()
     expect(within(primary).queryByRole('link', { name: "Scanner" })).not.toBeInTheDocument()
   })
+
+  it.each([
+    { label: 'manager', org: { id: 7, role: 'manager', permissions: { view_events: true, manage_events: true } }, visible: true },
+    { label: 'finance', org: { id: 7, role: 'finance', permissions: { view_events: true, view_finance: true } }, visible: true },
+    { label: 'marketer', org: { id: 7, role: 'marketer', permissions: { view_events: true, manage_marketing: true } }, visible: true },
+    { label: 'scanner', org: { id: 7, role: 'scanner', permissions: { view_events: true, scan: true } }, visible: false },
+    { label: 'box_office', org: { id: 7, role: 'box_office', permissions: { view_events: true, box_office: true, scan: true } }, visible: false },
+  ])('gates the Series nav link for $label role', async ({ org, visible }) => {
+    window.localStorage.setItem('hafapass_organization_id', '7')
+    serve([org], 'attendee')
+    render(view(true, '/dashboard'))
+    await waitFor(() => expect(organizationCalls()).toHaveLength(1))
+    await waitFor(() => expect(workspace.getAccountRole().role).toBe('attendee'))
+    const primary = screen.getByRole('navigation', { name: 'Primary navigation' })
+    if (visible) {
+      expect(within(primary).getByRole('link', { name: 'Series' })).toHaveAttribute('href', '/dashboard/series')
+    } else {
+      expect(within(primary).queryByRole('link', { name: 'Series' })).not.toBeInTheDocument()
+    }
+  })
 })

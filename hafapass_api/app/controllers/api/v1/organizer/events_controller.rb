@@ -301,6 +301,15 @@ module Api
             created_count: created.size,
             events: created.map { |e| event_json(e, include_ticket_types: true) }
           }, status: :created
+        rescue ActiveRecord::RecordNotUnique => e
+          if PublicSlug.conflict?(e)
+            render_link_conflict(e)
+          else
+            render json: { error: "Duplicate event or series membership conflict" }, status: :unprocessable_entity
+          end
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { error: e.record.errors.full_messages.first, errors: e.record.errors.full_messages },
+            status: :unprocessable_entity
         end
 
         def generate_recurrences

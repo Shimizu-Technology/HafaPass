@@ -8,7 +8,7 @@ import PageLoading from '../../components/PageLoading'
 import { BackLink, PageHeader, WorkspacePage } from '../../components/WorkspacePage'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { formatEventDate } from '../../utils/eventTime'
-import { loadOrganizerOrganizations, selectedOrganization } from '../../utils/organizerOrganizations'
+import { canViewOrganizationSeries, loadOrganizerOrganizations, selectedOrganization } from '../../utils/organizerOrganizations'
 
 const SERIES_STATUSES = [
   { value: 'draft', label: 'Draft' },
@@ -446,6 +446,68 @@ function BulkCloneDialog({ series, allEvents, onClose, onCloned, beginRequest })
   )
 }
 
+function SeriesActionConfirmDialog({ type, series, busy, onClose, onConfirm }) {
+  const titleId = useId()
+  const cancelRef = useRef(null)
+  const isDelete = type === 'delete'
+
+  return (
+    <Dialog labelledBy={titleId} onClose={onClose} busy={busy} initialFocusRef={cancelRef} className="max-w-md">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 id={titleId} className="text-lg font-bold text-neutral-950">
+            {isDelete ? 'Delete event series?' : 'Archive event series?'}
+          </h2>
+          <p className="mt-2 text-sm text-neutral-600">
+            {isDelete ? (
+              <>
+                Permanently delete <span className="font-semibold text-neutral-900">{series.name}</span>? This cannot be undone.
+              </>
+            ) : (
+              <>
+                Archive <span className="font-semibold text-neutral-900">{series.name}</span>? Archived series are hidden from public listings while keeping all linked events intact.
+              </>
+            )}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close dialog"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <button
+          ref={cancelRef}
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="btn-secondary min-h-11 px-4 text-sm"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className={isDelete
+            ? 'inline-flex min-h-11 items-center justify-center rounded-xl bg-red-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50'
+            : 'btn-primary min-h-11 px-5 text-sm'}
+        >
+          {busy
+            ? (isDelete ? 'Deleting…' : 'Archiving…')
+            : (isDelete ? 'Delete series' : 'Archive series')}
+        </button>
+      </div>
+    </Dialog>
+  )
+}
+
 export default function EventSeriesPage() {
   const identity = useOrganizerIdentity()
   const { authContext, organizationId, ready } = identity
@@ -463,6 +525,7 @@ export default function EventSeriesPage() {
   const [showSeriesDialog, setShowSeriesDialog] = useState(false)
   const [editingSeries, setEditingSeries] = useState(null)
   const [showBulkCloneDialog, setShowBulkCloneDialog] = useState(false)
+  const [pendingConfirm, setPendingConfirm] = useState(null)
 
   const [addEventId, setAddEventId] = useState('')
   const [addEventRole, setAddEventRole] = useState('regular_night')
@@ -480,7 +543,7 @@ export default function EventSeriesPage() {
       const currentOrg = selectedOrganization(orgs, organizationId)
       setOrganization(currentOrg)
 
-      const canView = Boolean(currentOrg?.permissions?.view_events || currentOrg?.permissions?.manage_events)
+      const canView = canViewOrganizationSeries(currentOrg)
       if (!currentOrg || !canView) {
         setSeriesList([])
         setOrgEvents([])
@@ -519,7 +582,7 @@ export default function EventSeriesPage() {
     [seriesList, selectedSeriesId]
   )
 
-  const canViewEvents = Boolean(organization?.permissions?.view_events || organization?.permissions?.manage_events)
+  const canViewSeries = canViewOrganizationSeries(organization)
   const canManageEvents = Boolean(organization?.permissions?.manage_events)
 
   const availableEventsToAdd = useMemo(() => {
@@ -555,9 +618,11 @@ export default function EventSeriesPage() {
       const res = await apiClient.patch(`/organizer/event_series/${series.id}`, { status: 'archived' }, request.config)
       if (!request.current()) return
       replaceSeriesInList(res.data)
+      setPendingConfirm(null)
       setNotice(`Archived "${res.data.name}".`)
     } catch (err) {
       if (!request.current()) return
+      setPendingConfirm(null)
       setError(err.response?.data?.error || 'Could not archive event series.')
     } finally {
       request.release()
@@ -574,14 +639,14 @@ export default function EventSeriesPage() {
     try {
       await apiClient.delete(`/organizer/event_series/${series.id}`, request.config)
       if (!request.current()) return
-      setSeriesList((prev) => {
-        const next = prev.filter((item) => item.id !== series.id)
-        setSelectedSeriesId(next[0]?.id ?? null)
-        return next
-      })
+      const nextSeriesList = seriesList.filter((item) => item.id !== series.id)
+      setSeriesList(nextSeriesList)
+      setSelectedSeriesId((prev) => (prev === series.id ? (nextSeriesList[0]?.id ?? null) : prev))
+      setPendingConfirm(null)
       setNotice(`Deleted "${series.name}".`)
     } catch (err) {
       if (!request.current()) return
+      setPendingConfirm(null)
       setError(err.response?.data?.error || 'Could not delete event series.')
     } finally {
       request.release()
@@ -674,7 +739,7 @@ export default function EventSeriesPage() {
     )
   }
 
-  if (!canViewEvents) {
+  if (!canViewSeries) {
     return (
       <WorkspacePage>
         <PageHeader
@@ -807,7 +872,7 @@ export default function EventSeriesPage() {
                       {selectedSeries.status !== 'archived' && (
                         <button
                           type="button"
-                          onClick={() => handleArchiveSeries(selectedSeries)}
+                          onClick={() => setPendingConfirm({ type: 'archive', series: selectedSeries })}
                           disabled={mutating}
                           className="btn-secondary inline-flex min-h-10 items-center gap-1.5 px-3 text-sm"
                         >
@@ -818,7 +883,7 @@ export default function EventSeriesPage() {
                       {selectedSeries.events_count === 0 && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteSeries(selectedSeries)}
+                          onClick={() => setPendingConfirm({ type: 'delete', series: selectedSeries })}
                           disabled={mutating}
                           className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                         >
@@ -980,6 +1045,20 @@ export default function EventSeriesPage() {
             loadData()
           }}
           beginRequest={beginRequest}
+        />
+      )}
+
+      {pendingConfirm && (
+        <SeriesActionConfirmDialog
+          type={pendingConfirm.type}
+          series={pendingConfirm.series}
+          busy={mutating}
+          onClose={() => setPendingConfirm(null)}
+          onConfirm={() => (
+            pendingConfirm.type === 'delete'
+              ? handleDeleteSeries(pendingConfirm.series)
+              : handleArchiveSeries(pendingConfirm.series)
+          )}
         />
       )}
     </WorkspacePage>

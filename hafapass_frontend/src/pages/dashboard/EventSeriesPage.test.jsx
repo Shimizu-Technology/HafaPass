@@ -24,7 +24,13 @@ describe('EventSeriesPage', () => {
   const readOnlyOrg = {
     id: 1,
     name: 'FD Alumni Association',
-    permissions: { view_events: true, manage_events: false },
+    permissions: { view_events: true, view_finance: true, manage_events: false },
+  }
+
+  const scannerOrg = {
+    id: 1,
+    name: 'FD Alumni Association',
+    permissions: { view_events: true, scan: true },
   }
 
   const initialSeries = [
@@ -204,7 +210,7 @@ describe('EventSeriesPage', () => {
     expect(await screen.findByRole('heading', { name: 'Summer League 2026' })).toBeInTheDocument()
   })
 
-  it('hides mutation controls for read-only view_events members', async () => {
+  it('hides mutation controls for read-only finance members', async () => {
     vi.spyOn(apiClient, 'get').mockImplementation((url) => {
       if (url === '/organizer/organizations') return Promise.resolve({ data: [readOnlyOrg] })
       if (url === '/organizer/event_series') return Promise.resolve({ data: { event_series: initialSeries } })
@@ -218,5 +224,83 @@ describe('EventSeriesPage', () => {
     expect(screen.queryByRole('button', { name: 'New series' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bulk clone nights' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+  })
+
+  it('denies access to assignment-scoped scanner staff without fetching event series', async () => {
+    const getSpy = vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [scannerOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('You don’t have access to event series')).toBeInTheDocument()
+    expect(getSpy).toHaveBeenCalledTimes(1)
+    expect(getSpy).toHaveBeenCalledWith('/organizer/organizations', expect.any(Object))
+  })
+
+  it('requires confirmation before archiving or deleting a series', async () => {
+    const user = userEvent.setup()
+    const emptySeries = [
+      {
+        id: 30,
+        name: 'Empty Draft Series',
+        slug: 'empty-draft-series',
+        description: '',
+        status: 'draft',
+        events_count: 0,
+        events: [],
+      },
+      ...initialSeries,
+    ]
+
+    vi.spyOn(apiClient, 'get').mockImplementation((url) => {
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [managerOrg] })
+      if (url === '/organizer/event_series') return Promise.resolve({ data: { event_series: emptySeries } })
+      if (url.startsWith('/organizer/events')) return Promise.resolve({ data: { events: orgEvents } })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+
+    const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue({
+      data: { ...emptySeries[0], status: 'archived' },
+    })
+    const deleteSpy = vi.spyOn(apiClient, 'delete').mockResolvedValue({ data: null })
+
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Empty Draft Series' })).toBeInTheDocument()
+
+    // Archive requires confirmation; cancel does not mutate
+    await user.click(screen.getByRole('button', { name: 'Archive' }))
+    const archiveDialog = screen.getByRole('dialog')
+    expect(within(archiveDialog).getByRole('heading', { name: 'Archive event series?' })).toBeInTheDocument()
+    expect(patchSpy).not.toHaveBeenCalled()
+    await user.click(within(archiveDialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(patchSpy).not.toHaveBeenCalled()
+
+    // Confirm archive
+    await user.click(screen.getByRole('button', { name: 'Archive' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive series' }))
+    await waitFor(() => {
+      expect(patchSpy).toHaveBeenCalledWith('/organizer/event_series/30', { status: 'archived' }, expect.any(Object))
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('Archived "Empty Draft Series".')
+
+    // Delete requires confirmation; cancel does not mutate
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const deleteDialog = screen.getByRole('dialog')
+    expect(within(deleteDialog).getByRole('heading', { name: 'Delete event series?' })).toBeInTheDocument()
+    expect(deleteSpy).not.toHaveBeenCalled()
+    await user.click(within(deleteDialog).getByRole('button', { name: 'Cancel' }))
+    expect(deleteSpy).not.toHaveBeenCalled()
+
+    // Confirm delete selects the next remaining series
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete series' }))
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith('/organizer/event_series/30', expect.any(Object))
+    })
+    expect(await screen.findByRole('status')).toHaveTextContent('Deleted "Empty Draft Series".')
+    expect(screen.getByRole('heading', { name: 'FD Tourney 2026' })).toBeInTheDocument()
   })
 })

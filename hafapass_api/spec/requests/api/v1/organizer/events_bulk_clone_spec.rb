@@ -149,5 +149,42 @@ RSpec.describe "Api::V1::Organizer::Events clone & bulk_clone", type: :request d
       }, headers: finance_headers, as: :json
       expect(response).to have_http_status(:forbidden)
     end
+
+    it "returns 422 for invalid series_role and non-array occurrences" do
+      post "/api/v1/organizer/events/#{source_event.id}/bulk_clone", params: {
+        event_series_id: series.id,
+        series_role: "invalid_role",
+        occurrences: [{ title: "Night 1", starts_at: "2026-12-01T18:00", ends_at: "2026-12-01T22:00" }]
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("Invalid series_role")
+
+      post "/api/v1/organizer/events/#{source_event.id}/bulk_clone", params: {
+        occurrences: "not-an-array"
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("error")).to include("non-empty array")
+    end
+
+    it "returns 422 instead of 500 on RecordNotUnique and RecordInvalid during bulk_clone" do
+      allow_any_instance_of(EventSeriesMembership).to receive(:save).and_raise(ActiveRecord::RecordNotUnique.new("duplicate membership"))
+
+      post "/api/v1/organizer/events/#{source_event.id}/bulk_clone", params: {
+        event_series_id: series.id,
+        occurrences: [{ title: "Night 1", starts_at: "2026-12-01T18:00", ends_at: "2026-12-01T22:00" }]
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+
+      invalid_ticket = TicketType.new
+      invalid_ticket.errors.add(:name, "can't be blank")
+      allow_any_instance_of(EventSeriesMembership).to receive(:save).and_call_original
+      allow_any_instance_of(ActiveRecord::Associations::CollectionProxy).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(invalid_ticket))
+
+      post "/api/v1/organizer/events/#{source_event.id}/bulk_clone", params: {
+        occurrences: [{ title: "Night 2", starts_at: "2026-12-02T18:00", ends_at: "2026-12-02T22:00" }]
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body.fetch("errors")).to include("Name can't be blank")
+    end
   end
 end

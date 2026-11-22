@@ -7,7 +7,7 @@ module Api
         before_action :set_event_series, only: [:show, :update, :destroy, :add_event, :update_event, :remove_event]
 
         def index
-          return unless authorize_organization!(:view_events)
+          return unless authorize_org_wide_event_viewer!
 
           series = current_organization.event_series
             .includes(event_series_memberships: :event)
@@ -19,7 +19,7 @@ module Api
         end
 
         def show
-          return unless authorize_organization!(:view_events)
+          return unless authorize_org_wide_event_viewer!
 
           render json: series_json(@event_series, include_events: true)
         end
@@ -35,6 +35,8 @@ module Api
           end
         rescue ArgumentError => e
           render json: { error: e.message }, status: :unprocessable_entity
+        rescue ActiveRecord::RecordNotUnique
+          render json: { errors: ["Slug has already been taken"] }, status: :unprocessable_entity
         end
 
         def update
@@ -47,6 +49,8 @@ module Api
           end
         rescue ArgumentError => e
           render json: { error: e.message }, status: :unprocessable_entity
+        rescue ActiveRecord::RecordNotUnique
+          render json: { errors: ["Slug has already been taken"] }, status: :unprocessable_entity
         end
 
         def destroy
@@ -88,6 +92,8 @@ module Api
           else
             render json: { errors: membership.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordNotUnique
+          render json: { error: "Event is already in this series" }, status: :unprocessable_entity
         end
 
         def update_event
@@ -123,6 +129,16 @@ module Api
         end
 
         private
+
+        def authorize_org_wide_event_viewer!
+          return true if OrganizationAuthorization.org_wide_event_viewer?(
+            user: current_user,
+            organization: current_organization
+          )
+
+          render json: { error: "You do not have permission to perform this action" }, status: :forbidden
+          false
+        end
 
         def set_event_series
           @event_series = current_organization.event_series
