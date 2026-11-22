@@ -411,9 +411,11 @@ describe('complete operational discovery', () => {
   })
 
   it('finds older refund orders, preserves search across reload, and retries a pending operation after it leaves the result page', async () => {
-    apiClient.get.mockImplementation((url, config) => Promise.resolve({ data: url.endsWith('/orders')
-      ? { orders: config?.params?.q ? [] : [order(config?.params?.page === 2 ? 1 : 21)], meta: meta(config?.params?.page || 1) }
-      : url === '/organizer/organizations' ? [organization] : event(1) }))
+    apiClient.get.mockImplementation(async (url, config) => {
+      if (url.endsWith('/orders')) return { data: { orders: config?.params?.q ? [] : [order(config?.params?.page === 2 ? 1 : 21)], meta: meta(config?.params?.page || 1) } }
+      if (url.endsWith('/orders/1/refund_options')) return { data: { order_id: 1, refundable_cents: order(1).refundable_cents, tickets: [] } }
+      return { data: url === '/organizer/organizations' ? [organization] : event(1) }
+    })
     apiClient.post.mockResolvedValue({ data: { status: 'pending' } })
     const mounted = view(RefundsPage, '/dashboard/events/1/refunds')
     const user = userEvent.setup()

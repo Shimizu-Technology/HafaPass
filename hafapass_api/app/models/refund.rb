@@ -11,6 +11,14 @@ class Refund < ApplicationRecord
 
   enum :status, { pending: 0, succeeded: 1, failed: 2, cancelled: 3 }
 
+  def organizer_ticket_selection?
+    provider_payload["organizer_ticket_selection"] == true
+  end
+
+  def preserves_tickets?
+    provider_payload["preserve_tickets"] == true
+  end
+
   validates :provider, :idempotency_key, :currency, presence: true
   validates :idempotency_key, uniqueness: true
   validates :provider_refund_id, uniqueness: { scope: :provider }, allow_nil: true

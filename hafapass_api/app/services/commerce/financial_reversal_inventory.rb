@@ -36,9 +36,7 @@ module Commerce
             ticket.create_inventory_retention!(refund: refund, dispute: dispute,
               reconciliation_exception: exception, retained_at: Time.current)
           else
-            ticket.release_inventory!
-            ticket.update!(status: :cancelled, cancelled_at: Time.current,
-              cancellation_reason: reason, scan_credential_version: ticket.scan_credential_version + 1)
+            ticket.cancel_unused_and_release_inventory!(reason: reason)
           end
         end
       end
@@ -100,13 +98,7 @@ module Commerce
         )
       else
         unless locked_parent.cancelled?
-          locked_parent.release_inventory!
-          locked_parent.update!(
-            status: :cancelled,
-            cancelled_at: now,
-            cancellation_reason: reason,
-            scan_credential_version: locked_parent.scan_credential_version + 1
-          )
+          locked_parent.cancel_unused_and_release_inventory!(reason: reason)
         end
         children.each do |child|
           next if child.cancelled?

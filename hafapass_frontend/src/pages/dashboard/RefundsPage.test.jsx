@@ -13,12 +13,27 @@ function mountRefunds() { return render(<MemoryRouter initialEntries={['/dashboa
 // A retry keeps the operation fixed but receives its own cancellable transport.
 const operation = ([url, payload, { signal: _signal, ...config }]) => [url, payload, config]
 
+const event = { id: 37, organization_id: 1, timezone: 'Pacific/Guam', permissions: { refund: true, view_finance: true } }
+const choices = /How would you like to handle this order/
+const journalKey = 'hafapass:pending-refund:v2:local-preview:default:37'
+const optionsFor = (order, tickets = []) => ({
+  order_id: order.id, currency: 'usd', refundable_cents: order.refundable_cents,
+  is_free_order: order.total_cents === 0, is_cash_order: order.payment_provider === 'door_cash', tickets,
+})
+const mockOrders = ({ data }, tickets = []) => {
+  apiClient.get.mockImplementation(async path => {
+    const orderId = Number(path.match(/orders\/(\d+)\/refund_options$/)?.[1])
+    if (orderId) return { data: optionsFor(data.orders.find(order => order.id === orderId), tickets) }
+    return { data }
+  })
+}
+
 describe('refund outcome and recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
     window.sessionStorage.clear()
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Guest', buyer_email: 'guest@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 }] } })
+    mockOrders({ data: { ...event, orders: [{ id: 922, buyer_name: 'Guest', buyer_email: 'guest@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 }] } })
   })
 
   it('keeps pending refunds truthful and retries the same request across reload', async () => {
@@ -29,7 +44,7 @@ describe('refund outcome and recovery', () => {
     await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     await screen.findByText(/Refund pending — waiting/)
     const original = apiClient.post.mock.calls[0]
-    expect(screen.getByLabelText('Type')).toBeDisabled()
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     expect(screen.queryByText('Refund confirmed by the payment provider.')).not.toBeInTheDocument()
     first.unmount()
     apiClient.post.mockResolvedValueOnce({ data: { id: 81, status: 'succeeded' } })
@@ -52,7 +67,7 @@ describe('refund outcome and recovery', () => {
     await user.click(screen.getByRole('button', { name: 'Retry saved refund' }))
     await screen.findByText('Refund failed. No refund has been confirmed.')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
-    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+    expect(window.localStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
   })
   it('labels a completed simulation without claiming actual provider money was returned', async () => {
     apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', refund_simulated: true } })
@@ -71,7 +86,7 @@ describe('refund outcome and recovery', () => {
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
     await user.click(screen.getByRole('button', { name: /^Refund \$\d/ }))
     expect(await screen.findByText(/Cash repayment requires a manager/)).toHaveTextContent('No new refund was confirmed')
-    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+    expect(window.localStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Retry saved refund' })).not.toBeInTheDocument()
   })
   it.each(['positive', 'error'])('persists finance-review identity for %s outcomes and does not free the form until review is explicitly cleared', async kind => {
@@ -86,7 +101,7 @@ describe('refund outcome and recovery', () => {
     await screen.findByText(notice)
     const original = apiClient.post.mock.calls[0]
     const key = 'hafapass:pending-refund:v2:local-preview:default:37'
-    expect(JSON.parse(window.sessionStorage.getItem(key))).toMatchObject({ financeReview: true })
+    expect(JSON.parse(window.localStorage.getItem(key))).toMatchObject({ financeReview: true })
     first.unmount()
     mountRefunds()
     await screen.findByText(notice)
@@ -95,23 +110,23 @@ describe('refund outcome and recovery', () => {
     await user.click(screen.getByRole('button', { name: 'Check saved refund status' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
-    expect(screen.getByLabelText('Type')).toBeDisabled()
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     expect(screen.queryByText('Refund failed. No refund has been confirmed.')).not.toBeInTheDocument()
     apiClient.post.mockResolvedValueOnce({ data: { status: 'pending', finance_review_required: false, reconciliation_required: true } })
     await user.click(screen.getByRole('button', { name: 'Check saved refund status' }))
     await screen.findByText(/Refund pending — waiting for the payment provider/)
     expect(screen.queryByText(notice)).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Type')).toBeDisabled()
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     expect(operation(apiClient.post.mock.calls[2])).toEqual(operation(original))
     apiClient.post.mockResolvedValueOnce({ data: { status: 'failed', finance_review_required: false, reconciliation_required: false } })
     await user.click(screen.getByRole('button', { name: 'Retry saved refund' }))
     await screen.findByText('Refund failed. No refund has been confirmed.')
     expect(operation(apiClient.post.mock.calls[3])).toEqual(operation(original))
-    expect(window.sessionStorage.getItem(key)).toBeNull()
+    expect(window.localStorage.getItem(key)).toBeNull()
     expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
   })
   it('records cash already returned only with required evidence and preserves the exact record on uncertain retries', async () => {
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Cash buyer', buyer_email: 'cash@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at: '2026-01-01T00:00:00Z' }] } })
+    mockOrders({ data: { ...event, orders: [{ id: 922, buyer_name: 'Cash buyer', buyer_email: 'cash@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at: '2026-01-01T00:00:00Z' }] } })
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     const first = mountRefunds()
     const user = userEvent.setup()
@@ -128,7 +143,7 @@ describe('refund outcome and recovery', () => {
     await screen.findByRole('button', { name: 'Retry saved cash return record' })
     const original = apiClient.post.mock.calls[0]
     expect(original[1]).toMatchObject({ reason: 'Cash returned at door', cash_return: { reference: 'receipt-671', returned_at: new Date('2026-01-02T12:30').toISOString() } })
-    expect(screen.getByLabelText('Cash return reference')).toBeDisabled()
+    expect(screen.queryByLabelText('Cash return reference')).not.toBeInTheDocument()
     first.unmount()
     apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded', provider: 'door_cash', manual_record: true } })
     mountRefunds()
@@ -141,7 +156,7 @@ describe('refund outcome and recovery', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-18T12:03:55'))
     const created_at = new Date('2026-10-18T12:03:40').toISOString()
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Same minute buyer', total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at }] } })
+    mockOrders({ data: { ...event, orders: [{ id: 922, buyer_name: 'Same minute buyer', total_cents: 500, refundable_cents: 500, payment_method: 'door_cash', payment_provider: 'door_cash', created_at }] } })
     apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
     mountRefunds()
     const user = userEvent.setup()
@@ -165,7 +180,7 @@ describe('refund outcome and recovery', () => {
   })
 
   it.each([['online', 'stripe'], ['door_cash', 'boh_clover'], ['online', 'door_cash']])('does not expose manual cash controls for %s / %s', async (payment_method, payment_provider) => {
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [{ id: 922, buyer_name: 'Buyer', total_cents: 500, refundable_cents: 500, payment_method, payment_provider }] } })
+    mockOrders({ data: { ...event, orders: [{ id: 922, buyer_name: 'Buyer', total_cents: 500, refundable_cents: 500, payment_method, payment_provider }] } })
     mountRefunds()
     await userEvent.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
     expect(screen.queryByLabelText('Cash return reference')).not.toBeInTheDocument()
@@ -177,7 +192,7 @@ describe('refund outcome and recovery', () => {
 describe('refund labels', () => {
   beforeEach(() => {
     vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
-    apiClient.get.mockResolvedValue({ data: { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: [
+    mockOrders({ data: { ...event, orders: [
       { id: 922, buyer_name: 'Single', buyer_email: 'one@example.invalid', ticket_count: 1, total_cents: 500, refundable_cents: 500 },
       { id: 923, buyer_name: 'Group', buyer_email: 'group@example.invalid', ticket_count: 3, total_cents: 10500, refundable_cents: 10500 },
     ] } })
@@ -194,7 +209,7 @@ describe('refund labels', () => {
     await user.click(triggers[1])
     const confirm = screen.getByRole('button', { name: 'Refund $105.00' })
     expect(confirm).toHaveClass('btn-danger')
-    await user.selectOptions(screen.getByLabelText('Type'), 'partial')
+    await user.click(screen.getByRole('radio', { name: 'Custom dollar amount' }))
     expect(screen.getByRole('button', { name: 'Process Refund' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Process Refund' })).toHaveAccessibleDescription('Enter the amount to refund.')
     const amount = screen.getByLabelText('Amount ($)')
@@ -209,7 +224,10 @@ describe('refund labels', () => {
     await user.clear(amount); await user.type(amount, '105.01')
     const over = screen.getByRole('button', { name: 'Process Refund' })
     expect(over).toBeDisabled()
-    expect(over).toHaveAccessibleDescription('Enter no more than $105.00.')
+    expect(over).toHaveAccessibleDescription('Enter no more than $104.99.')
+    await user.clear(amount); await user.type(amount, '105.00')
+    expect(screen.getByRole('button', { name: 'Process Refund' })).toBeDisabled()
+    expect(screen.getByText(/Returns money without cancelling any QR tickets/)).toBeInTheDocument()
     await user.clear(amount); await user.type(amount, '20')
     expect(screen.getByRole('button', { name: 'Refund $20.00' })).toBeEnabled()
     expect(apiClient.post).not.toHaveBeenCalled()
@@ -218,7 +236,106 @@ describe('refund labels', () => {
     await user.click(screen.getByRole('button', { name: 'Refund $0.01' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1))
     expect(apiClient.post.mock.calls[0][0]).toBe('/organizer/events/37/orders/923/refund')
-    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ amount_cents: 1 })
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ amount_cents: 1, preserve_tickets: true })
+  })
+})
+
+describe('ticket selections', () => {
+  const cardOrder = { id: 922, buyer_name: 'Demo buyer', ticket_count: 6, total_cents: 10680, refundable_cents: 10680 }
+  const ticket = (id, overrides) => ({
+    id, ticket_type_name: 'Adult', attendee_name: `Guest ${id}`, code: `DEMO-${id}`, status: 'issued',
+    refundable_cents: 1780, selectable: true, ...overrides,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+  })
+
+  it('defaults to specific tickets and retries the exact selection and key after a lost response', async () => {
+    mockOrders({ data: { ...event, orders: [cardOrder] } }, [
+      ...[1, 2, 3, 4, 5].map(id => ticket(id)),
+      ticket(6, { checked_in: true, checked_in_at: '2026-11-23T08:42:00Z', selectable: false, unavailable_reason: 'Already used' }),
+    ])
+    apiClient.post.mockRejectedValueOnce(new Error('Response lost'))
+    const user = userEvent.setup()
+    const view = mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    expect(await screen.findByRole('radio', { name: 'Refund specific tickets' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /DEMO-6.*Used at 6:42 PM/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Refund selected tickets' })).toBeDisabled()
+    for (const id of [3, 1, 2]) await user.click(screen.getByRole('checkbox', { name: new RegExp(`DEMO-${id}`) }))
+    expect(screen.getByText('3 of 5 selected → $53.40')).toBeInTheDocument()
+    const confirm = screen.getByRole('button', { name: 'Refund $53.40' })
+    expect(confirm).toHaveAccessibleDescription("Cancels the 3 selected QR codes and refunds $53.40 to the buyer's card.")
+    await user.click(confirm)
+    expect(await screen.findByText('3 tickets in this saved request.')).toBeInTheDocument()
+    const original = apiClient.post.mock.calls[0]
+    expect(original[1]).toEqual({ reason: null, ticket_ids: [1, 2, 3] })
+    expect(JSON.parse(window.localStorage.getItem(journalKey))).toMatchObject({ key: original[2].headers['Idempotency-Key'], payload: original[1] })
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    view.unmount()
+    window.sessionStorage.clear()
+
+    apiClient.post.mockResolvedValueOnce({ data: { status: 'succeeded' } })
+    mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Retry saved refund' }))
+    await screen.findByText('Refund confirmed by the payment provider.')
+    expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
+    expect(window.localStorage.getItem(journalKey)).toBeNull()
+  })
+
+  it('cancels selected free tickets, refreshes the order and gives a changed selection a new key', async () => {
+    const freeOrder = { ...cardOrder, ticket_count: 4, total_cents: 0, refundable_cents: 0 }
+    const tickets = [1, 2, 3, 4].map(id => ticket(id, { ticket_type_name: 'Alumni', refundable_cents: 0 }))
+    mockOrders({ data: { ...event, orders: [freeOrder] } }, tickets)
+    apiClient.post.mockRejectedValueOnce({ response: { status: 422, data: { reconciliation_required: false, error: 'A ticket changed' } } })
+    const user = userEvent.setup()
+    mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Cancel free tickets' }))
+    expect(await screen.findByRole('radio', { name: 'Cancel specific free tickets' })).toBeChecked()
+    expect(screen.queryByRole('radio', { name: 'Custom dollar amount' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /DEMO-1/ }))
+    await user.click(screen.getByRole('checkbox', { name: /DEMO-2/ }))
+    expect(screen.getByText('2 of 4 free tickets selected')).toBeInTheDocument()
+    const firstConfirm = screen.getByRole('button', { name: 'Cancel selected free tickets' })
+    expect(firstConfirm).toHaveAccessibleDescription('Cancels the 2 selected free QR codes and returns them to inventory.')
+    await user.click(firstConfirm)
+    await screen.findByText(/A ticket changed/)
+    expect(window.localStorage.getItem(journalKey)).toBeNull()
+
+    apiClient.post.mockImplementationOnce(async () => {
+      tickets[2].selectable = false
+      tickets[2].unavailable_reason = 'Already cancelled'
+      return { data: { status: 'succeeded', free_ticket_cancellation: true } }
+    })
+    await user.click(screen.getByRole('button', { name: 'Cancel free tickets' }))
+    await user.click(await screen.findByRole('checkbox', { name: /DEMO-3/ }))
+    await user.click(screen.getByRole('button', { name: 'Cancel selected free tickets' }))
+    await screen.findByText('Cancelled 1 free ticket and returned it to inventory.')
+    const [first, second] = apiClient.post.mock.calls
+    expect(first[1].ticket_ids).toEqual([1, 2])
+    expect(second[1]).toEqual({ reason: null, ticket_ids: [3] })
+    expect(second[2].headers['Idempotency-Key']).not.toBe(first[2].headers['Idempotency-Key'])
+    await user.click(await screen.findByRole('button', { name: 'Cancel free tickets' }))
+    expect(await screen.findByRole('checkbox', { name: /DEMO-3.*Already cancelled/ })).toBeDisabled()
+  })
+
+  it('explains that refunding a pass also cancels its included nights', async () => {
+    mockOrders({ data: { ...event, orders: [cardOrder] } }, [
+      ticket(1, { ticket_type_name: 'Season Pass', is_pass_parent: true, included_nights_count: 2 }),
+      ticket(2, { selectable: false, refundable_cents: 0, unavailable_reason: 'Choose the multi-night pass to cancel its nights' }),
+    ])
+    const user = userEvent.setup()
+    mountRefunds()
+    await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
+    await user.click(await screen.findByRole('radio', { name: 'Refund specific tickets' }))
+    await user.click(screen.getByRole('checkbox', { name: /Season Pass.*2 nights/ }))
+    expect(screen.getByRole('checkbox', { name: /DEMO-2.*Choose the multi-night pass/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Refund $17.80' })).toHaveAccessibleDescription(
+      "Cancels the QR codes for the selected tickets and their pass nights and refunds $17.80 to the buyer's card.",
+    )
   })
 })
 
@@ -296,9 +413,12 @@ describe('external refund verification on order rows', () => {
   beforeEach(() => {
     vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear()
     currentOrders = [order]
-    apiClient.get.mockImplementation(path => Promise.resolve({ data: path === '/organizer/refund_reconciliation'
-      ? { items: [], meta: { page: 1, total_pages: 1, total: 0 } }
-      : { id: 37, organization_id: 1, permissions: { refund: true, view_finance: true }, orders: currentOrders } }))
+    apiClient.get.mockImplementation(async path => {
+      if (path === '/organizer/refund_reconciliation') return { data: { items: [], meta: { page: 1, total_pages: 1, total: 0 } } }
+      const orderId = Number(path.match(/orders\/(\d+)\/refund_options$/)?.[1])
+      if (orderId) return { data: optionsFor(currentOrders.find(order => order.id === orderId)) }
+      return { data: { ...event, orders: currentOrders } }
+    })
   })
 
   it('blocks a new return from authoritative order data even when the queue page is empty, while another order stays available', async () => {
@@ -311,17 +431,17 @@ describe('external refund verification on order rows', () => {
     const normal = screen.getByText(/Normal buyer/).closest('.card')
     expect(within(blocked).getByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
     expect(within(blocked).getByRole('button', { name: 'Refund', exact: true }))
-      .toHaveAccessibleDescription(/External Stripe refunds need verification/)
+      .toHaveAccessibleDescription(/Refunds made outside HåfaPass need verification/)
     expect(within(blocked).getByRole('link', { name: 'Contact support to verify refunds' }))
       .toHaveAttribute('href', 'mailto:operator@example.test?subject=Verify%20external%20refunds%20for%20order%20922')
     await user.click(within(blocked).getByRole('button', { name: 'Refund', exact: true }))
-    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     expect(screen.queryByText('These buyers are still owed a refund. Record a cash or card return only after you have returned the money.')).not.toBeInTheDocument()
     expect(within(normal).getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
     await user.click(within(normal).getByRole('button', { name: 'Refund', exact: true }))
-    expect(within(normal).getByLabelText('Type')).toBeInTheDocument()
+    expect(within(normal).getByRole('group', { name: choices })).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
-    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+    expect(window.localStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
   })
 
   it('restores an ordinary new-return form after verified server data clears the flag on reload', async () => {
@@ -335,7 +455,7 @@ describe('external refund verification on order rows', () => {
     expect(trigger).toBeEnabled()
     await user.click(trigger)
     expect(screen.getByRole('button', { name: 'Refund $42.50' })).toBeEnabled()
-    expect(screen.queryByText(/External Stripe refunds need verification/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Refunds made outside HåfaPass need verification/)).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 
@@ -344,15 +464,15 @@ describe('external refund verification on order rows', () => {
     const user = userEvent.setup()
     mountRefunds()
     await user.click(await screen.findByRole('button', { name: 'Refund', exact: true }))
-    expect(screen.getByLabelText('Type')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: choices })).toBeInTheDocument()
     currentOrders = [order]
     await user.type(screen.getByRole('searchbox', { name: 'Find an order' }), 'review')
     await user.click(screen.getByRole('button', { name: 'Search orders' }))
-    await screen.findByText(/External Stripe refunds need verification/)
+    await screen.findByText(/Refunds made outside HåfaPass need verification/)
     expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeDisabled()
-    expect(screen.queryByLabelText('Type')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
-    expect(window.sessionStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
+    expect(window.localStorage.getItem('hafapass:pending-refund:v2:local-preview:default:37')).toBeNull()
   })
 
   it('preserves an uncertain saved operation and its exact request while verification blocks new returns', async () => {
@@ -368,25 +488,25 @@ describe('external refund verification on order rows', () => {
     await screen.findByRole('button', { name: 'Retry saved refund' })
     const original = apiClient.post.mock.calls[0]
     const key = 'hafapass:pending-refund:v2:local-preview:default:37'
-    const saved = window.sessionStorage.getItem(key)
-    expect(screen.getByLabelText('Type')).toBeDisabled()
+    const saved = window.localStorage.getItem(key)
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     first.unmount()
     mountRefunds()
     const check = await screen.findByRole('button', { name: 'Check saved refund status' })
     expect(check).toBeEnabled()
-    expect(window.sessionStorage.getItem(key)).toBe(saved)
+    expect(window.localStorage.getItem(key)).toBe(saved)
     apiClient.post.mockResolvedValueOnce({ data: { status: 'pending', finance_review_required: true, reconciliation_required: true } })
     await user.click(check)
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
-    expect(JSON.parse(window.sessionStorage.getItem(key))).toMatchObject({ key: JSON.parse(saved).key, payload: JSON.parse(saved).payload, financeReview: true })
-    expect(screen.getByLabelText('Type')).toBeDisabled()
+    expect(JSON.parse(window.localStorage.getItem(key))).toMatchObject({ key: JSON.parse(saved).key, payload: JSON.parse(saved).payload, financeReview: true })
+    expect(screen.queryByRole('group', { name: choices })).not.toBeInTheDocument()
     currentOrders = [{ ...order, external_refund_verification_required: false }]
     apiClient.post.mockResolvedValueOnce({ data: { status: 'failed', finance_review_required: false, reconciliation_required: false } })
     await user.click(screen.getByRole('button', { name: 'Check saved refund status' }))
     await screen.findByText('Refund failed. No refund has been confirmed.')
     expect(operation(apiClient.post.mock.calls[2])).toEqual(operation(original))
-    expect(window.sessionStorage.getItem(key)).toBeNull()
+    expect(window.localStorage.getItem(key)).toBeNull()
     expect(screen.getByRole('button', { name: 'Refund', exact: true })).toBeEnabled()
   })
 })
