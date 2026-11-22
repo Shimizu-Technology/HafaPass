@@ -216,16 +216,17 @@ for (const [Page, tool, kind] of [[BoxOfficePage, 'box-office', 'box-office'], [
       : { key: 'legacy-alpha-refund', orderId: 370, payload: { reason: 'Private Alpha reason' } }
     const legacyKey = `hafapass:pending-${kind}:actor-a:37`
     const alphaKey = `hafapass:pending-${kind}:v2:actor-a:1:37`
+    const scopedStorage = kind === 'refund' ? window.localStorage : window.sessionStorage
     window.sessionStorage.setItem(legacyKey, JSON.stringify(saved))
     apiClient.get.mockImplementation((url, config) => config?.organizationId === '2' ? Promise.reject({ response: { status: 403 } }) : Promise.resolve({ data: fixtures(url, config) }))
     mount(Page, tool)
     await screen.findByRole('button', { name: kind === 'box-office' ? /Retry saved sale/ : 'Retry saved refund' })
-    expect(JSON.parse(window.sessionStorage.getItem(alphaKey))).toEqual(saved)
+    expect(JSON.parse(scopedStorage.getItem(alphaKey))).toEqual(saved)
     await act(async () => selectOrganization(2))
     await screen.findByRole('alert')
     expect(screen.queryByRole('button', { name: /Retry saved (sale|refund)/ })).not.toBeInTheDocument()
     expect(screen.queryByText(/Private Alpha/)).not.toBeInTheDocument()
-    expect(window.sessionStorage.getItem(`hafapass:pending-${kind}:v2:actor-a:2:37`)).toBeNull()
+    expect(scopedStorage.getItem(`hafapass:pending-${kind}:v2:actor-a:2:37`)).toBeNull()
     expect(JSON.parse(window.sessionStorage.getItem(legacyKey))).toEqual(saved)
     expect(apiClient.post).not.toHaveBeenCalled()
     await act(async () => selectOrganization(1))

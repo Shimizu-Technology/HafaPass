@@ -860,6 +860,12 @@ class AuditActions
         "order.partially_refunded" => "Partially refunded an order."
       }
 
+    define registry, area: "orders", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[status], metadata: %w[ticket_count], actions: {
+        "order.free_tickets_cancelled" => "Cancelled free tickets."
+      }
+
     define registry, area: "events", audience: %w[org_owner org_manager],
       tenant: true, event_required: false,
       snapshots: %w[organization_id status revenue_share_bps revenue_share_base revenue_share_includes_door_cash],

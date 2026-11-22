@@ -55,6 +55,8 @@ module Commerce
     end
 
     PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to refund this order."
+    FREE_PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to cancel these tickets."
+    DISPUTE_MESSAGE = "Contact support about the payment dispute before continuing."
 
     # What can still be returned on one captured payment: the smaller of the
     # order's and the payment's remaining balance, with pending refunds counted.
@@ -72,7 +74,7 @@ module Commerce
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
       provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil,
-      organizer_initiated: false, admin_initiated: false)
+      organizer_initiated: false, admin_initiated: false, preserve_tickets: false)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
@@ -85,6 +87,7 @@ module Commerce
       @manual_card_return = manual_card_return
       @organizer_initiated = organizer_initiated
       @admin_initiated = admin_initiated
+      @preserve_tickets = preserve_tickets
     end
 
     def call
@@ -178,6 +181,7 @@ module Commerce
         raise RefundError, PAID_OUT_MESSAGE if @organizer_initiated && order.payment_method != "door_cash" && order.event.paid_out_to_organizer?
 
         ensure_financial_review_resolved! unless provider_refund
+        raise RefundError, DISPUTE_MESSAGE if organizer_ticket_selection? && order.ticket_access_blocked?
 
         selected_tickets = lock_selected_tickets!
         captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
@@ -209,6 +213,14 @@ module Commerce
         end
         raise RefundError, "Refund amount must be positive" unless amount.positive?
         raise RefundError, "Refund amount exceeds refundable balance" if amount > remaining
+        if @preserve_tickets
+          if requested_amount_cents.nil? || selected_tickets
+            raise RefundError, "Enter a custom amount to keep all tickets active"
+          end
+          if amount >= order.refundable_cents
+            raise RefundError, "Choose Full order refund to return the whole remaining balance"
+          end
+        end
         validate_selected_allocations!(selected_tickets) if selected_tickets
 
         refund = order.refunds.create!(
@@ -220,9 +232,7 @@ module Commerce
           currency: order.currency,
           status: :pending,
           reason: reason,
-          provider_payload: cash_return || manual_card_return ? {
-            (manual_card_return ? :manual_card_return : :cash_return) => @cash_return_evidence, manual_record: true
-          } : {}
+          provider_payload: reservation_payload
         )
         selected_tickets&.each do |ticket|
           refund.refund_tickets.create!(ticket: ticket, amount_cents: ticket.refundable_cents)
@@ -232,17 +242,34 @@ module Commerce
       end
     rescue ActiveRecord::RecordNotUnique
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
-      return existing if existing
+      return validate_replay!(existing) if existing
 
       raise RefundError, "A selected ticket already has a refund"
     rescue ActiveRecord::RecordInvalid => e
       existing = order.refunds.find_by(idempotency_key: idempotency_key)
-      return existing if existing
+      return validate_replay!(existing) if existing
       if e.record.is_a?(RefundTicket) && e.record.errors[:ticket_id].any?
         raise RefundError, "A selected ticket already has a refund"
       end
+      if organizer_ticket_selection? && e.record.is_a?(Refund) && e.record.errors[:idempotency_key].any?
+        raise RefundError, "Idempotency-Key was already used for a different refund request"
+      end
 
       raise
+    end
+
+    def organizer_ticket_selection?
+      @organizer_initiated && !tickets.nil?
+    end
+
+    def reservation_payload
+      payload = organizer_ticket_selection? ? { organizer_ticket_selection: true } : {}
+      payload[:preserve_tickets] = true if @preserve_tickets
+      if cash_return || manual_card_return
+        payload[:manual_record] = true
+        payload[manual_card_return ? :manual_card_return : :cash_return] = @cash_return_evidence
+      end
+      payload
     end
 
     def provider_submission_allowed?(refund, mark_unknown: false)
@@ -257,6 +284,9 @@ module Commerce
         # checks it, so recovering an earlier provider result still runs first.
         if mark_unknown && @organizer_initiated && order.payment_method != "door_cash" && order.event.paid_out_to_organizer?
           raise RefundError, PAID_OUT_MESSAGE
+        end
+        if mark_unknown && refund.organizer_ticket_selection? && order.ticket_access_blocked?
+          raise RefundError, DISPUTE_MESSAGE
         end
 
         ensure_financial_review_resolved!
@@ -321,10 +351,19 @@ module Commerce
         .to_a
       selected = locked_tickets.select { |ticket| requested_ids.include?(ticket.id) }
       raise RefundError, "Ticket not found for this order" unless selected.length == requested_ids.length
+      children_by_parent = locked_tickets.select(&:pass_child?).group_by(&:parent_ticket_id)
+      if organizer_ticket_selection?
+        selected.each do |ticket|
+          blocked = OrganizerRefundOptions.ticket_unavailable_reason(order, ticket,
+            children: children_by_parent.fetch(ticket.id, []), refund_pending: ticket.refund_pending?, amount: ticket.refundable_cents)
+          raise RefundError, blocked if blocked
+        end
+        return selected
+      end
+
       if selected.any?(&:pass_child?)
         raise RefundError, "Refund the parent pass instead of a single night"
       end
-      children_by_parent = locked_tickets.select(&:pass_child?).group_by(&:parent_ticket_id)
       if selected.any? { |ticket| ticket.pass_parent? && (ticket.previously_admitted? || Array(children_by_parent[ticket.id]).any?(&:previously_admitted?)) }
         raise RefundError, "Pass has already been used on one or more nights; use an organizer custom-amount refund or contact support"
       end
@@ -391,6 +430,10 @@ module Commerce
     end
 
     def validate_replay!(refund)
+      if (@organizer_initiated && tickets.nil? && refund.refund_tickets.exists?) ||
+          (@preserve_tickets && refund.pending? && !refund.preserves_tickets?)
+        raise RefundError, "Idempotency-Key was already used for a different refund request"
+      end
       unless (requested_amount_cents.nil? || requested_amount_cents == refund.amount_cents) &&
           (tickets.nil? || tickets.map(&:id).sort == refund.refund_tickets.pluck(:ticket_id).sort) &&
           (!cash_return || (refund.provider == "door_cash" && refund.provider_payload["cash_return"] == @cash_return_evidence)) &&
@@ -534,7 +577,7 @@ module Commerce
         retained_transfer = full_refund && refund.refund_tickets.any? &&
           refund.order.tickets.where.not(status: :cancelled).where.not(id: refund.refund_tickets.select(:ticket_id))
             .any? { |ticket| ticket.transferred_away_from?(refund.order) }
-        order_refunded = full_refund && !retained_transfer
+        order_refunded = full_refund && !retained_transfer && !tickets_remain_after_refund?(refund)
         refund.order.update!(
           status: order_refunded ? :refunded : :partially_refunded,
           refund_amount_cents: succeeded_total,
@@ -554,7 +597,9 @@ module Commerce
           metadata: { refund_id: refund.id, amount_cents: refund.amount_cents },
           **(cash_return || manual_card_return ? {} : { source: "provider" }))
         StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
-        if full_refund
+        if refund.organizer_ticket_selection?
+          release_refunded_tickets!(refund)
+        elsif full_refund && !refund.preserves_tickets?
           release_fully_refunded_inventory!(refund)
         elsif refund.refund_tickets.any?
           release_refunded_tickets!(refund)
@@ -566,8 +611,20 @@ module Commerce
 
       raise RefundError, validation_error if validation_error
 
-      refund.order.event.notify_waitlist_if_available if full_refund || refund.refund_tickets.any?
+      if !refund.preserves_tickets? && (full_refund || refund.refund_tickets.any?)
+        refund.order.event.notify_waitlist_if_available
+      end
       refund.reload
+    end
+
+    def tickets_remain_after_refund?(refund)
+      return refund.order.tickets.where.not(status: :cancelled).exists? if refund.preserves_tickets?
+      return false unless refund.organizer_ticket_selection?
+
+      selected_ids = refund.refund_tickets.pluck(:ticket_id).to_set
+      refund.order.tickets.where.not(status: :cancelled).any? do |ticket|
+        !selected_ids.include?(ticket.id) && !selected_ids.include?(ticket.parent_ticket_id)
+      end
     end
 
     def allocate_items!(refund)
