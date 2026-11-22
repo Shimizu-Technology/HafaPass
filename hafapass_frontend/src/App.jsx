@@ -20,6 +20,7 @@ const PolicyPage = lazy(() => import('./pages/PolicyPage'))
 const UnsubscribePage = lazy(() => import('./pages/UnsubscribePage'))
 const MyTicketsPage = lazy(() => import('./pages/MyTicketsPage'))
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
+const EventSeriesPage = lazy(() => import('./pages/dashboard/EventSeriesPage'))
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
 const EditEventPage = lazy(() => import('./pages/dashboard/EditEventPage'))
 const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage'))
@@ -102,6 +103,7 @@ function App() {
           <Route path="/saved" element={<ProtectedRoute><SavedPage /></ProtectedRoute>} />
           <Route path="/ticket-transfers/accept" element={<ProtectedRoute><TicketTransferAcceptPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/dashboard/series" element={<ProtectedRoute><EventSeriesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id" element={<ProtectedRoute><EventOverviewPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />

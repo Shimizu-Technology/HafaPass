@@ -53,6 +53,9 @@ function subscribeStoredOrganization(listener) {
 
 export const canViewOrganizationFinances = organization => organization?.permissions?.view_finance === true
 
+export const canViewOrganizationEvents = organization =>
+  organization?.permissions?.view_events === true || organization?.permissions?.manage_events === true
+
 export const canViewOrganizationActivity = organization => organization?.activity_access === true
   || ['view_activity_all', 'view_activity_events', 'view_activity_finance'].some(permission => organization?.permissions?.[permission] === true)
 
@@ -76,6 +79,9 @@ export const useCanManageOrganizationSettings = (authContext, enabled) =>
 // Whether the current account may open organization-wide Finances.
 export const useCanViewOrganizationFinances = (authContext, enabled) =>
   useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationFinances)
+
+export const useCanViewOrganizationEvents = (authContext, enabled) =>
+  useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationEvents)
 
 export const useCanViewOrganizationActivity = (authContext, enabled) =>
   useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationActivity)
