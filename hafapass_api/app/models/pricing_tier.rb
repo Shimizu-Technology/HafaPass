@@ -19,6 +19,8 @@ class PricingTier < ApplicationRecord
 
   enum :tier_type, { time_based: 0, quantity_based: 1 }
 
+  before_validation :clear_irrelevant_schedule_fields
+
   validates :name, presence: true
   validates :price_cents, presence: true, numericality: { greater_than_or_equal_to: 0 }
   validates :tier_type, presence: true
@@ -63,6 +65,13 @@ class PricingTier < ApplicationRecord
 
   def operational_audit_event
     ticket_type.event
+  end
+
+  def clear_irrelevant_schedule_fields
+    return unless quantity_based?
+
+    self.starts_at = nil
+    self.ends_at = nil
   end
 
   def active_holds_quantity(at)

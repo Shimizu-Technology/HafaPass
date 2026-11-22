@@ -96,6 +96,44 @@ RSpec.describe "Api::V1::Organizer::PricingTiers", type: :request do
       json = JSON.parse(response.body)
       expect(json["name"]).to eq("Super Early Bird")
     end
+
+    it "clears starts_at and ends_at when changing a time-based tier to quantity-based" do
+      window = create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Early Bird",
+        starts_at: 1.day.from_now, ends_at: 3.days.from_now)
+
+      put "#{base_path}/#{window.id}", params: { tier_type: "quantity_based", quantity_limit: 25 },
+        headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(window.reload.starts_at).to be_nil
+      expect(window.ends_at).to be_nil
+    end
+  end
+
+  describe "PUT /ticket_types/:id sales window invariant" do
+    let(:ticket_type_path) { "/api/v1/organizer/events/#{event.id}/ticket_types/#{ticket_type.id}" }
+
+    it "rejects narrowing sales_start_at or sales_end_at past existing time-based tiers and allows exact boundaries" do
+      event.update!(timezone: "Pacific/Guam", starts_at: Time.utc(2027, 6, 1, 8, 0), ends_at: Time.utc(2027, 6, 2, 8, 0))
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Early Bird",
+        starts_at: Time.utc(2027, 5, 1, 0, 0), ends_at: Time.utc(2027, 5, 10, 0, 0))
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Regular",
+        starts_at: Time.utc(2027, 5, 10, 0, 0), ends_at: Time.utc(2027, 5, 20, 0, 0))
+
+      put ticket_type_path, params: { sales_end_at: "2027-05-15T10:00" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").join(" ")).to include("Regular")
+
+      put ticket_type_path, params: { sales_start_at: "2027-05-02T10:00" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").join(" ")).to include("Early Bird")
+
+      put ticket_type_path, params: {
+        sales_start_at: "2027-05-01T10:00",
+        sales_end_at: "2027-05-20T10:00"
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe "PATCH /pricing_tiers/:id/move" do

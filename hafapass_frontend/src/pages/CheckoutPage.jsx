@@ -144,7 +144,14 @@ function CheckoutContent({ buyerId }) {
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
   const refreshEventUrl = `/events/${slug}${liveMoneyProof ? '?live_money_proof=true' : ''}`
-  usePricingScheduleRefresh(event, !orderData && !submitting && !recovering ? refreshEventUrl : null, setEvent)
+  const handleScheduleRefresh = useCallback((nextEvent) => {
+    setEvent(nextEvent)
+    setPricingConflict((current) => {
+      if (!current?.server_now || !nextEvent?.server_now) return current
+      return Date.parse(nextEvent.server_now) > Date.parse(current.server_now) ? null : current
+    })
+  }, [])
+  usePricingScheduleRefresh(event, !orderData && !submitting && !recovering ? refreshEventUrl : null, handleScheduleRefresh)
 
   useEffect(() => {
     if (loadedLanguage.current === contentLanguage) return undefined

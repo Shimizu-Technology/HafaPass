@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import apiClient from '../api/client'
 import { getServerNow } from '../utils/serverClock'
 
-const MAX_TIMER_MS = 2_147_483_647
+// Re-check every 60s so laptop sleep or late clock syncs never miss a cutoff.
+const MAX_TIMER_MS = 60_000
 
 function cutoffMilliseconds(value) {
   const millis = Date.parse(value)

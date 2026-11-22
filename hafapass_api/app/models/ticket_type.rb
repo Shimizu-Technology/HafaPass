@@ -37,6 +37,7 @@ class TicketType < ApplicationRecord
   validate :sold_quantity_within_capacity
   validate :door_allocation_within_capacity
   validate :chronological_sales_window
+  validate :sales_window_contains_pricing_tiers, if: -> { persisted? && (will_save_change_to_sales_start_at? || will_save_change_to_sales_end_at?) }
   validate :buyer_total_meets_card_minimum, if: -> { will_save_change_to_price_cents? }
 
   delegate :machine_translation_eligible?, to: :event
@@ -147,6 +148,22 @@ class TicketType < ApplicationRecord
     errors.add(:sales_end_at, "must be after sales start") if sales_start_at && sales_end_at && sales_end_at <= sales_start_at
     errors.add(:sales_start_at, "must be before the event ends") if sales_start_at && event&.ends_at && sales_start_at >= event.ends_at
     errors.add(:sales_end_at, "must be at or before the event end") if sales_end_at && event&.ends_at && sales_end_at > event.ends_at
+  end
+
+  def sales_window_contains_pricing_tiers
+    tiers = pricing_tiers.time_based.to_a
+    if sales_start_at
+      offender = tiers.find { |tier| tier.starts_at && tier.starts_at < sales_start_at }
+      if offender
+        errors.add(:sales_start_at, "cannot open after the \"#{offender.name}\" price window starts")
+      end
+    end
+    if sales_end_at
+      offender = tiers.find { |tier| tier.ends_at && tier.ends_at > sales_end_at }
+      if offender
+        errors.add(:sales_end_at, "cannot close before the \"#{offender.name}\" price window ends")
+      end
+    end
   end
 
   def sold_quantity_within_capacity

@@ -361,6 +361,8 @@ module Api
             generated_count: generated.size,
             events: generated.map { |e| event_json(e) }
           }, status: :created
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
         end
 
         # Lets the edit form check a link name as the organizer types, using the
