@@ -553,6 +553,55 @@ describe('EventSeriesReportPage', () => {
     expect(within(eventsSection).getAllByText(/Liability \$15\.00/).length).toBeGreaterThan(0)
   })
 
+  it('shows Excludes door cash badge by default when revenue_share_includes_door_cash is false and keeps door cash retained visible', async () => {
+    const user = userEvent.setup()
+    const excludedReport = structuredClone(sampleReport)
+    excludedReport.series.revenue_share_includes_door_cash = false
+    excludedReport.revenue_share.revenue_share_includes_door_cash = false
+    excludedReport.revenue_share.base_cents = 12500
+    excludedReport.revenue_share.share_cents = 2000
+    excludedReport.revenue_share.primary_cents = 10500
+    excludedReport.revenue_share.door_cash_retained_cents = 1000
+    excludedReport.groups.combined.door_cash_retained_cents = 1000
+
+    const includedReport = structuredClone(excludedReport)
+    includedReport.series.revenue_share_includes_door_cash = true
+    includedReport.revenue_share.revenue_share_includes_door_cash = true
+    includedReport.revenue_share.base_cents = 13500
+    includedReport.revenue_share.share_cents = 2160
+    includedReport.revenue_share.primary_cents = 11340
+
+    let currentReport = excludedReport
+    apiClient.get.mockImplementation((url) => {
+      if (url === '/organizer/event_series/10/report') return Promise.resolve({ data: currentReport })
+      if (url === '/organizer/organizations') return Promise.resolve({ data: [financeOrg] })
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+    apiClient.patch.mockImplementation((_url, payload) => {
+      currentReport = payload.revenue_share_includes_door_cash ? includedReport : excludedReport
+      return Promise.resolve({ data: { ...currentReport.series } })
+    })
+
+    renderPage()
+    expect(await screen.findByText('Excludes door cash')).toBeInTheDocument()
+    const worksheet = screen.getByTestId('revenue-share-worksheet')
+    expect(within(worksheet).getAllByText('$125.00')).toHaveLength(2)
+    expect(within(worksheet).getByText('$20.00')).toBeInTheDocument()
+    expect(within(worksheet).getByText('$105.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: /Edit Split Settings/i }))
+    const checkbox = screen.getByRole('checkbox', { name: /Include door cash sales in revenue-share base/i })
+    expect(checkbox).not.toBeChecked()
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: /Save Split Settings/i }))
+
+    expect(await screen.findByText('Includes door cash')).toBeInTheDocument()
+    expect(within(screen.getByTestId('revenue-share-worksheet')).getAllByText('$135.00')).toHaveLength(2)
+    expect(within(screen.getByTestId('revenue-share-worksheet')).getByText('$21.60')).toBeInTheDocument()
+    expect(within(screen.getByTestId('revenue-share-worksheet')).getByText('$113.40')).toBeInTheDocument()
+  })
+
   it('shows a graceful no-access notice on 403', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/organizer/event_series/10/report') {

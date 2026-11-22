@@ -12,11 +12,74 @@ Related contracts:
 
 ---
 
-## 1. 3-Phone Offline Gate Drill Script (Pre-June 1 Physical Rehearsal at The Jungle)
+## 1. FD 2027 Ticket Setup
+
+Canonical ticketing configuration for the **FD Alumni Basketball Tournament 2027** under `CO2017` using shipped HåfaPass Event Series, Multi-Night Passes, per-buyer purchase limits, `ScannerPage`, and `BoxOfficePage`.
+
+### 1.1 Event Series Structure (`FD Alumni Basketball Tournament 2027`)
+
+Create one `EventSeries` (`FD Alumni Basketball Tournament 2027`, slug `fd-tourney-2027`, status `active`, `revenue_share_bps: 1600`) and attach all tournament events with their exact series roles:
+
+#### Pass Event — `FD 2027 Tournament Passes` (`role: pass_sale`)
+
+| Ticket Type | `is_pass` | Included Nights | Price | Recommended Limits | Sales Window |
+|---|---|---|---|---|---|
+| **Regular Season Pass** | `true` | ~15 Regular Nights **only** *(explicitly excludes the 2 Championship nights)* | `$TBD` *(until FDMSAA confirms 2027 pricing)* | `max_per_order: 6`, `max_per_buyer: blank` | Pre-tournament open through ~Night 3–4 of regular play |
+| **Senior Season Pass** | `true` | ~15 Regular Nights **only** *(explicitly excludes the 2 Championship nights)* | `$TBD` | `max_per_order: 6`, `max_per_buyer: blank` | Pre-tournament open through ~Night 3–4 of regular play |
+| **Kid Season Pass** | `true` | ~15 Regular Nights **only** *(explicitly excludes the 2 Championship nights)* | `$TBD` | `max_per_order: 6`, `max_per_buyer: blank` | Pre-tournament open through ~Night 3–4 of regular play |
+| **2-Night Championship Pass** | `true` | **2 Championship Nights only** *(Semifinals + Finals)* | `$TBD` | `max_per_order: 4`, `max_per_buyer: blank` | Pre-tournament / playoff week open through Semifinals tip-off |
+
+- Each Season Pass issues one non-scannable parent pass summary plus one scannable child QR ticket per included regular night (zero child tickets for Championship nights).
+- Scanning either a Season Pass parent container code or a Regular-Night child QR at a Championship Night gate is rejected at the door.
+
+#### Regular Night Events — ~15 Nights (`role: regular_night`)
+
+Create one template Regular Night event and generate the remaining regular nights via **Bulk Clone** (`POST /api/v1/organizer/events/:id/bulk_clone`):
+
+| Ticket Type | Price | Recommended Limits | Sales Window | Notes |
+|---|---|---|---|---|
+| **Regular Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Standard single-night admission |
+| **Senior Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Senior single-night admission |
+| **Kid Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Youth single-night admission |
+| **Alumni / FD Student** | `$0.00` | `max_per_order: 4`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Free regular-night admission; alumni / student ID checked at the door |
+
+> **Open question for FDMSAA:** Confirm whether free alumni and current FD students need a `$0` QR ticket on regular nights (for attendance tracking and faster gate flow) or can walk in by showing ID at the door without a ticket.
+
+#### Championship Nights — 2 Nights: Semifinals + Finals (`role: championship_night`)
+
+Everyone needs a ticket on Championship nights, alumni included. Season Passes do **not** include these 2 nights.
+
+| Ticket Type | Price | Recommended Limits | Quantity Cap | Sales Window & Door Handling |
+|---|---|---|---|---|
+| **Free Alumni Championship** | `$0.00` | `max_per_buyer: 1`, `max_per_order: 1` | `TBD` *(hard cap set before opening)* | Released on the championship-rush schedule; scanned at the door for a wristband just like paid tickets; duplicate buyer email claims are blocked server-side (`Purchase limit is 1...`) |
+| **Paid Championship** *(Regular / Senior / Kid daily tiers as confirmed)* | `$TBD` | `max_per_order: 4`, `max_per_buyer: blank` | Remaining gym capacity after pass + free alumni allocations | Sits cleanly alongside **Free Alumni Championship** and the **2-Night Championship Pass** |
+
+#### Door Operations
+
+- **Phone scanning (`ScannerPage`, `/dashboard/scanner`):** Run across multiple gates using individual staff accounts with pre-downloaded signed offline manifests (`Ticket list ready · N tickets`). Offline scans queue locally and reconcile append-only when connectivity returns.
+- **Walk-up sales (`BoxOfficePage`, `/dashboard/events/:id/box-office`):** Process cash walk-ups via `door_cash` (and `door_card` only if BOH/Clover is verified and `payment_ready`). Walk-up QRs issue immediately and scan cleanly at the gate.
+
+### 1.2 16% Revenue-Share Report Behavior & Open Questions for FDMSAA
+
+`EventSeriesReport` (`GET /api/v1/organizer/event_series/:id/report`, CSV `GET /api/v1/organizer/event_series/:id/report_export`, UI `/dashboard/series/:id/report`) is a read-only tournament worksheet reconciled to per-event settlements:
+
+- **Current defaults on `main`:**
+  - `revenue_share_includes_door_cash: false` — `door_cash` walk-ups are **excluded** from the 16% shareable base by default unless toggled on in **Edit Split Settings** (`door_cash_retained_cents` and the `Door Cash` channel row remain visible in the UI and CSV either way, and door cash is always excluded from platform check payouts).
+  - **`$0` tickets:** Free `$0` tickets (e.g., *Alumni / FD Student* and *Free Alumni Championship*) contribute `$0.00` to gross/proceeds while remaining tracked in `tickets_issued_count`, `free_tickets_count`, `checked_in_count`, and the `Free / Comp` channel row.
+  - **Base formula modes:** Defaults to `admissions_net_proceeds` (ticket/pass admissions organizer proceeds net of discounts, organizer-absorbed fees, and refunded proceeds; excludes team registration). Also supports `admissions_gross` (ticket-only gross sales minus discounts and ticket-only refunds), `admissions_net_after_processing`, and `all_net_proceeds`.
+
+**Open Questions for FDMSAA (must be confirmed before opening paid sales):**
+1. **Direction of the 16% split:** Which way does the 16% flow — **FDAA → CO2017** or **CO2017 → FDAA**?
+2. **Calculation base:** Is the 16% computed on **gross ticket sales** (`admissions_gross`) or **net of fees** (`admissions_net_proceeds` / `admissions_net_after_processing`)?
+3. **Door cash treatment:** Does walk-up **door cash** (`door_cash`) count toward the 16% shareable base (`revenue_share_includes_door_cash: true`) or remain excluded (`revenue_share_includes_door_cash: false`)?
+
+---
+
+## 2. 3-Phone Offline Gate Drill Script (Pre-June 1 Physical Rehearsal at The Jungle)
 
 Run this physical rehearsal at Father Dueñas Memorial School ("The Jungle") before June 1, 2027 using the staging/rehearsal environment and real venue Wi-Fi / Guam cellular networks. Automated tests do not substitute for this drill.
 
-### 1.1 Hardware and Network Setup
+### 2.1 Hardware and Network Setup
 
 | Device | Role | Network Mode | Account & Registration |
 |---|---|---|---|
@@ -28,7 +91,7 @@ Device prep on all three phones:
 - Never share one browser profile or Clerk login across staff accounts.
 - Open `/dashboard/scanner` (`ScannerPage`), verify camera permission, tap **Start camera**, confirm **Sound** is unmuted and audible at gym volume, and set Auto-Lock (iPhone) / Screen timeout (Android) to **Never** for the drill.
 
-### 1.2 Pre-Drill Checklist
+### 2.2 Pre-Drill Checklist
 
 - [ ] Create rehearsal **Pass Event** with a **Season Pass** (multi-night) and a **2-Night Championship Pass**.
 - [ ] Create rehearsal **Daily Night** events (at least Night N and Night N+1) with **Adult Daily**, **Student Daily**, and **Free `$0` Alumni/Kids QR** ticket types.
@@ -40,7 +103,7 @@ Device prep on all three phones:
   - Eligible unadmitted ticket count: `____________`
   - Queued local scans on Phones A / B / C: `0 / 0 / 0`
 
-### 1.3 Step-by-Step Timed Drill
+### 2.3 Step-by-Step Timed Drill
 
 | Step | Est. Time | Action | Expected Result (Pass Criteria) | Result |
 |---|---|---|---|---|
@@ -56,7 +119,7 @@ Device prep on all three phones:
 Post-drill verification:
 - Confirm all three phones show `0` queued scans, download a fresh manifest, and verify final confirmed check-ins, conflicts, and rejections on the Admissions dashboard match the drill tally.
 
-### 1.4 Printable Go / No-Go Sign-Off Scorecard
+### 2.4 Printable Go / No-Go Sign-Off Scorecard
 
 | Field | Recorded Value |
 |---|---|
@@ -67,13 +130,13 @@ Post-drill verification:
 | Mandatory Steps Passed (Steps 1–7) | ____ / 7 *(7/7 required for Go)* |
 | Optional Step 8 (Storm Delay) | [ ] Pass / [ ] Fail / [ ] Deferred |
 | Open Issues / Follow-Ups | |
-| **Final Decision** | **[ ] GO** &nbsp;&nbsp;&nbsp; **[ ] NO-GO** *(If NO-GO, invoke Section 3 Fallback or schedule re-test)* |
+| **Final Decision** | **[ ] GO** &nbsp;&nbsp;&nbsp; **[ ] NO-GO** *(If NO-GO, invoke Section 4 Fallback or schedule re-test)* |
 | **Leon (Shimizu Technology) Sign-Off** | Name/Signature: ____________________________ Date: ____________ |
 | **CO2017 Gate Lead Sign-Off** | Name/Signature: ____________________________ Date: ____________ |
 
 ---
 
-## 2. Sat Mar 6, 2027 — Bryan Ho 5K / Beer Mile Pilot Runbook (First Live CO2017 Event)
+## 3. Sat Mar 6, 2027 — Bryan Ho 5K / Beer Mile Pilot Runbook (First Live CO2017 Event)
 
 **Why this pilot matters:** The Bryan Ho 5K / Beer Mile is the first live Class of 2017 event on HåfaPass. Running it end-to-end 3.5 months before June tip-off proves live Shimizu Stripe collection, custom registration questions and waivers (Slice 3), expanded CSV export (`expand_questions=true`), door cash, QR check-in, and the Shimizu-to-CO2017 Bank of Guam check payout before tournament traffic arrives.
 
@@ -115,9 +178,9 @@ Post-drill verification:
 
 ---
 
-## 3. Zero-Code Fallback Playbook (Daily + Championship Tickets on HåfaPass, Physical Season Passes at the Door)
+## 4. Zero-Code Fallback Playbook (Daily + Championship Tickets on HåfaPass, Physical Season Passes at the Door)
 
-### 3.1 Trigger Criteria
+### 4.1 Trigger Criteria
 
 Invoke this fallback **before June 1, 2027** if either of the following holds:
 1. FDMSAA / CO2017 leadership decides they prefer physical Season Pass wristbands/cards sold at the door instead of digital multi-night passes; or
@@ -125,7 +188,7 @@ Invoke this fallback **before June 1, 2027** if either of the following holds:
 
 This playbook requires **zero code changes** and uses only shipped HåfaPass features.
 
-### 3.2 Zero-Code Setup Steps
+### 4.2 Zero-Code Setup Steps
 
 1. **Create the tournament series and bulk-clone all nights:**
    - Create the `EventSeries` (`slug: fd-tourney-2027`) in `/dashboard/series` with the agreed 16% FDAA revenue-share settings (`revenue_share_bps`, `revenue_share_base`, `revenue_share_includes_door_cash`).
@@ -146,11 +209,11 @@ This playbook requires **zero code changes** and uses only shipped HåfaPass fea
 
 ---
 
-## 4. Production Activation & Release Checklist (Leon-Gated Handoff)
+## 5. Production Activation & Release Checklist (Leon-Gated Handoff)
 
 > **LEON-GATED ONLY — NEVER RUN AUTOMATICALLY.** Every deployment, production database change, environment variable change, Render tier upgrade, and Netlify publish below requires explicit execution or approval by Leon.
 
-### 4.1 Deploy Order (`docs/OPERATIONS_RUNBOOK.md`)
+### 5.1 Deploy Order (`docs/OPERATIONS_RUNBOOK.md`)
 
 1. **Fast-forward staging/deploy branch:** Push the target `main` release SHA to `hafapass-staging` (fast-forward only from `05a81ddb`):
    ```bash
@@ -160,14 +223,14 @@ This playbook requires **zero code changes** and uses only shipped HåfaPass fea
    - Confirm pre-deploy `bin/release-migrate` succeeds cleanly.
    - Verify `GET /up` returns `200`, `GET /api/v1/health` reports the new `revision`, and `GET /api/v1/readiness` returns `200` (check full detail with `-H "X-Readiness-Token: $READINESS_TOKEN"`).
 3. **Run staging championship-rush load test:**
-   - Execute `load_tests/fd_championship_rush.js` against the isolated staging target (see Section 5) and confirm all thresholds pass with zero oversells.
+   - Execute `load_tests/fd_championship_rush.js` against the isolated staging target (see Section 6) and confirm all thresholds pass with zero oversells.
 4. **Deploy production API (`hafapass-api` on Render):**
    - Pre-deploy `bin/release-migrate` applies the `event_series` and `multi_night_passes` migrations while the previous release continues serving.
    - Confirm `GET /api/v1/health` reports the new `revision` and `GET /api/v1/readiness` returns `200`.
 5. **Publish matching Netlify frontend:**
    - In Netlify → Deploys (currently locked at `3c348b06`), publish the build matching the deployed API commit, confirm `/release.json`, and **unlock auto-publishing**.
 
-### 4.2 Organization & Event Activation
+### 5.2 Organization & Event Activation
 
 - [ ] **Unpause HåfaPass** before mid-Feb 2027.
 - [ ] **By Feb 2027 (for Sat Mar 6 pilot):** Create/verify the `CO2017` organization, owner/manager memberships, and Bank of Guam manual-check payout setup.
@@ -175,11 +238,11 @@ This playbook requires **zero code changes** and uses only shipped HåfaPass fea
 - [ ] **Providers & auth:** Verify Stripe live mode (`STRIPE_LIVE_*` + live webhook), Clerk production domains (`CLERK_AUTHORIZED_PARTIES`), and Resend delivery/webhook approvals.
 - [ ] **FDAA 16% revenue share:** Confirm `revenue_share_bps` (`1600`), `revenue_share_base` (`admissions_net_proceeds` / `admissions_gross` / `admissions_net_after_processing` / `all_net_proceeds`), `revenue_share_includes_door_cash`, and payout direction with FDAA/CO2017 treasurers before opening sales.
 
-### 4.3 June–July Peak Topology & August Scale-Down (`render.tournament.yaml`)
+### 5.3 June–July Peak Topology & August Scale-Down (`render.tournament.yaml`)
 
 Before June 1, 2027 (peak tournament window):
 - [ ] **Enable multi-worker Puma if using `WEB_CONCURRENCY=2`:** Update `hafapass_api/config/puma.rb` from pinned `workers 0` to `workers ENV.fetch("WEB_CONCURRENCY", 0).to_i` before setting `WEB_CONCURRENCY=2` live.
-- [ ] **Scale `hafapass-api`:** Upgrade plan to `standard` (1 CPU / 2 GB RAM; use `pro` 2 CPU / 4 GB RAM if Section 5 k6 results show CPU saturation). Set `HAFAPASS_RUNTIME=solid_queue`, `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`, `DB_POOL=15`.
+- [ ] **Scale `hafapass-api`:** Upgrade plan to `standard` (1 CPU / 2 GB RAM; use `pro` 2 CPU / 4 GB RAM if Section 6 k6 results show CPU saturation). Set `HAFAPASS_RUNTIME=solid_queue`, `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`, `DB_POOL=15`.
 - [ ] **Add dedicated `hafapass-worker`:** Create `starter` (`0.5c-512mb`) background worker running `bundle exec bin/jobs` with `HAFAPASS_RUNTIME=solid_queue` and `DB_POOL=10`. Confirm Neon pool headroom covers `2 * 15 + 10 = 40` max connections across web + worker.
 - [ ] **Apply Guam CGNAT / gym Wi-Fi ceilings** from `render.tournament.yaml`:
   - `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`
@@ -198,11 +261,11 @@ Post-tournament scale-down (August 2027):
 
 ---
 
-## 5. Championship-Rush Load Test Results (k6 Benchmark)
+## 6. Championship-Rush Load Test Results (k6 Benchmark)
 
-**Status:** Local production-like benchmark completed at 160–200 VUs (code revision `07a4dcd6`). Hosted staging (`hafapass-staging`) is still on `05a81ddb` until Leon deploys `main`; a hosted staging re-run is required before June 10, 2027 (see Section 5.4).
+**Status:** Local production-like benchmark completed at 160–200 VUs (code revision `07a4dcd6`). Hosted staging (`hafapass-staging`) is still on `05a81ddb` until Leon deploys `main`; a hosted staging re-run is required before June 10, 2027 (see Section 6.4).
 
-### 5.1 Benchmark Stack & Local Caveats
+### 6.1 Benchmark Stack & Local Caveats
 
 | Dimension | Recorded Benchmark Configuration |
 |---|---|
@@ -220,7 +283,7 @@ Post-tournament scale-down (August 2027):
 - **Single-process Puma (`workers 0`, 5 threads):** Matches current `hafapass_api/config/puma.rb` rather than the planned `WEB_CONCURRENCY=2` peak Render topology.
 - **`simulate` payment mode:** Paid holds completed immediately in `simulate` mode instead of creating Stripe `test` mode PaymentIntents and pending holds.
 
-### 5.2 Recorded Run Results
+### 6.2 Recorded Run Results
 
 #### Run 1A — `free_saturation` (Shared NAT, 160 VUs × 2 = 320 attempts vs 200 cap, default `RACK_ATTACK_ORDERS_PER_IP_1M=200`)
 
@@ -255,7 +318,7 @@ Post-tournament scale-down (August 2027):
 | Integrity & Errors | `0` oversell, `0` deadlocks, `0` 429s, `0` 5xx |
 | `POST /orders` latency | p50 `1,792.49 ms` / p95 `3,733.98 ms` / p99 `3,830.49 ms` |
 
-### 5.3 Engineering Findings
+### 6.3 Engineering Findings
 
 1. **Zero oversell and zero deadlocks under 200-VU saturation:** `Passes::Locking` and `EventCapacity` enforced the exact `200`-pass cap across 320 (Run 1A) and 400 (Run 1B) concurrent attempts (`200` parent passes, `400` child night tickets, `0` oversell, `0` deadlocks).
 2. **k6 harness fixes (resolved in this PR):**
@@ -264,7 +327,7 @@ Post-tournament scale-down (August 2027):
 3. **Shared-NAT `RACK_ATTACK_ORDERS_PER_IP_1M` raised to `500`:** In Run 1A, the `200/min` IP ceiling throttled `120` post-cap retries with `429`. Raising the championship-rush template (`render.tournament.yaml`) to `500` eliminated all `429`s in Run 1B while keeping `orders/email` at `5/min`. Live `render.yaml` remains untouched.
 4. **Single-process Puma head-of-line queueing:** With `workers 0` and 5 threads, `86.7%` of active DB samples (`111/128`) waited on `events FOR NO KEY UPDATE` during serialized pass writes, occupying all 5 Puma threads and queueing cached `GET /events` behind checkout writes (p95 `4,456 ms` in Run 1B). Enabling multi-worker `WEB_CONCURRENCY=2` in `hafapass_api/config/puma.rb` (and re-measuring `Operations::PostgresThrottleStore` on hosted Render ↔ Neon with `fsync=on` and Stripe `test` mode pending holds) is required before June 10.
 
-### 5.4 Pre-June-10 Hosted Staging Re-Run Checklist & Command
+### 6.4 Pre-June-10 Hosted Staging Re-Run Checklist & Command
 
 Once Leon deploys `main` (past `05a81ddb`) to `hafapass-staging` and enables `WEB_CONCURRENCY=2` in `puma.rb`:
 

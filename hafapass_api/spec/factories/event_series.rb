@@ -8,7 +8,7 @@ FactoryBot.define do
     status { :draft }
     revenue_share_bps { nil }
     revenue_share_base { "admissions_net_proceeds" }
-    revenue_share_includes_door_cash { true }
+    revenue_share_includes_door_cash { false }
   end
 
   factory :event_series_membership do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -630,14 +630,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
     t.integer "status", default: 0, null: false
     t.integer "revenue_share_bps"
     t.string "revenue_share_base", default: "admissions_net_proceeds", null: false
-    t.boolean "revenue_share_includes_door_cash", default: true, null: false
+    t.boolean "revenue_share_includes_door_cash", default: false, null: false
     t.string "revenue_share_label"
     t.string "primary_share_label"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["organization_id", "slug"], name: "index_event_series_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_event_series_on_organization_id"
-    t.check_constraint "revenue_share_base::text = ANY (ARRAY['admissions_net_proceeds'::character varying, 'admissions_gross'::character varying, 'admissions_net_after_processing'::character varying, 'all_net_proceeds'::character varying]::text[])", name: "chk_event_series_revenue_share_base"
+    t.check_constraint "revenue_share_base::text = ANY (ARRAY['admissions_net_proceeds'::character varying::text, 'admissions_gross'::character varying::text, 'admissions_net_after_processing'::character varying::text, 'all_net_proceeds'::character varying::text])", name: "chk_event_series_revenue_share_base"
     t.check_constraint "revenue_share_bps IS NULL OR revenue_share_bps >= 0 AND revenue_share_bps <= 10000", name: "chk_event_series_revenue_share_bps"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3])", name: "chk_event_series_status"
   end

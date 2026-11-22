@@ -185,7 +185,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
   const [savedSplitSettings, setSavedSplitSettings] = useState(null)
   const [splitPercent, setSplitPercent] = useState('16.00')
   const [splitBase, setSplitBase] = useState('admissions_net_proceeds')
-  const [includeDoorCash, setIncludeDoorCash] = useState(true)
+  const [includeDoorCash, setIncludeDoorCash] = useState(false)
   const [shareLabel, setShareLabel] = useState('')
   const [primaryLabel, setPrimaryLabel] = useState('')
   const [savingSplit, setSavingSplit] = useState(false)
