@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -352,7 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.string "name", null: false
     t.integer "recipient_count", default: 0, null: false
     t.datetime "scheduled_at"
-    t.jsonb "segment", default: { "type"=>"all_attendees" }, null: false
+    t.jsonb "segment", default: {"type"=>"all_attendees"}, null: false
     t.datetime "sent_at"
     t.datetime "started_at"
     t.integer "status", default: 0, null: false
@@ -2291,7 +2291,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.integer "fee_notice_days", default: 30, null: false
     t.string "backup_withholding_mode", default: "block", null: false
     t.integer "backup_withholding_rate_bps", default: 2400, null: false
-    t.jsonb "tax_reporting_thresholds", default: { "1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000 }, null: false
+    t.jsonb "tax_reporting_thresholds", default: {"1099-k"=>2000000, "1099-nec"=>200000, "1099-misc"=>200000}, null: false
     t.index ["singleton_guard"], name: "index_site_settings_on_singleton_guard", unique: true
     t.check_constraint "backup_withholding_mode::text = ANY (ARRAY['block'::character varying::text, 'withhold'::character varying::text])", name: "site_settings_backup_withholding_mode_valid"
     t.check_constraint "processing_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])", name: "site_settings_processing_fee_bearer_valid"
@@ -2530,6 +2530,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "ticket_transfers_status_valid"
   end
 
+  create_table "ticket_type_included_events", force: :cascade do |t|
+    t.bigint "ticket_type_id", null: false
+    t.bigint "included_event_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["included_event_id"], name: "index_ticket_type_included_events_on_included_event_id"
+    t.index ["ticket_type_id", "included_event_id"], name: "index_ticket_type_included_events_uniqueness", unique: true
+    t.check_constraint "\"position\" >= 0", name: "chk_ticket_type_included_events_position_nonnegative"
+  end
+
   create_table "ticket_types", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "description"
@@ -2548,6 +2559,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.jsonb "translations", default: {}, null: false
     t.string "translation_status", default: "untranslated", null: false
     t.datetime "translation_requested_at"
+    t.boolean "is_pass", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
@@ -2580,6 +2592,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.datetime "updated_at", null: false
     t.datetime "first_admitted_at"
     t.datetime "retention_anonymized_at"
+    t.bigint "parent_ticket_id"
     t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
     t.index ["event_id"], name: "index_tickets_on_event_id"
     t.index ["event_seat_id"], name: "index_tickets_on_event_seat_id"
@@ -2587,11 +2600,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     t.index ["holder_user_id"], name: "index_tickets_on_holder_user_id"
     t.index ["order_id"], name: "index_tickets_on_order_id"
     t.index ["order_item_id"], name: "index_tickets_on_order_item_id"
+    t.index ["parent_ticket_id", "event_id"], name: "index_tickets_on_parent_ticket_id_and_event_id", unique: true, where: "(parent_ticket_id IS NOT NULL)"
+    t.index ["parent_ticket_id"], name: "index_tickets_on_parent_ticket_id"
     t.index ["pricing_tier_id"], name: "index_tickets_on_pricing_tier_id"
     t.index ["qr_code"], name: "index_tickets_on_qr_code", unique: true
     t.index ["retention_anonymized_at"], name: "index_tickets_on_retention_anonymized_at"
     t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
     t.check_constraint "display_credential_version > 0", name: "tickets_display_version_positive"
+    t.check_constraint "parent_ticket_id IS NULL OR order_item_id IS NULL", name: "chk_tickets_pass_child_no_order_item"
     t.check_constraint "scan_credential_version > 0", name: "tickets_scan_version_positive"
   end
 
@@ -3079,6 +3095,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
   add_foreign_key "ticket_transfers", "tickets", on_delete: :restrict
   add_foreign_key "ticket_transfers", "users", column: "accepted_by_user_id", on_delete: :restrict
   add_foreign_key "ticket_transfers", "users", column: "initiated_by_user_id", on_delete: :restrict
+  add_foreign_key "ticket_type_included_events", "events", column: "included_event_id", on_delete: :restrict
+  add_foreign_key "ticket_type_included_events", "ticket_types", on_delete: :cascade
   add_foreign_key "ticket_types", "events"
   add_foreign_key "tickets", "event_seats", on_delete: :restrict
   add_foreign_key "tickets", "events"
@@ -3086,6 +3104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
   add_foreign_key "tickets", "orders"
   add_foreign_key "tickets", "pricing_tiers"
   add_foreign_key "tickets", "ticket_types"
+  add_foreign_key "tickets", "tickets", column: "parent_ticket_id", on_delete: :restrict
   add_foreign_key "tickets", "users", column: "holder_user_id", on_delete: :restrict
   add_foreign_key "tin_match_requests", "organizer_tax_informations"
   add_foreign_key "venue_layouts", "organizations", on_delete: :restrict
@@ -3137,4 +3156,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_000100) do
     CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
   SQL
+
 end

@@ -178,6 +178,7 @@ Rails.application.routes.draw do
             post :retranslate
           end
           resources :ticket_types, only: [:index, :show, :create, :update, :destroy] do
+            post :sync_pass_holders, on: :member
             resources :pricing_tiers, only: [:index, :create, :update, :destroy]
           end
           resources :promo_codes, only: [:index, :show, :create, :update, :destroy]

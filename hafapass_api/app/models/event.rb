@@ -30,6 +30,7 @@ class Event < ApplicationRecord
   belongs_to :recurrence_parent, class_name: "Event", optional: true
   has_many :recurrence_children, class_name: "Event", foreign_key: "recurrence_parent_id", dependent: :nullify
   has_many :ticket_types, dependent: :destroy
+  has_many :pass_inclusions, class_name: "TicketTypeIncludedEvent", foreign_key: :included_event_id, dependent: :restrict_with_error
   has_many :orders, dependent: :restrict_with_error
   has_many :tickets, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
@@ -191,7 +192,7 @@ class Event < ApplicationRecord
             AND seat_hold_sessions.expires_at > ?
         ), 0) > 0
       SQL
-      .where(<<~SQL.squish, at, at, at)
+      .where(<<~SQL.squish, at, at, at, Ticket.statuses.fetch("cancelled"), at)
         events.max_capacity IS NULL OR events.max_capacity - COALESCE((
           SELECT SUM(all_ticket_types.quantity_sold)
           FROM ticket_types all_ticket_types
@@ -221,6 +222,20 @@ class Event < ApplicationRecord
             AND capacity_seat_holds.status = 0
             AND capacity_sessions.status = 0
             AND capacity_sessions.expires_at > ?
+        ), 0) - COALESCE((
+          SELECT COUNT(*)
+          FROM tickets pass_child_tickets
+          WHERE pass_child_tickets.event_id = events.id
+            AND pass_child_tickets.parent_ticket_id IS NOT NULL
+            AND pass_child_tickets.status <> ?
+        ), 0) - COALESCE((
+          SELECT SUM(pass_holds.quantity)
+          FROM inventory_holds pass_holds
+          INNER JOIN ticket_type_included_events pass_links
+            ON pass_links.ticket_type_id = pass_holds.ticket_type_id
+          WHERE pass_links.included_event_id = events.id
+            AND pass_holds.status = 0
+            AND pass_holds.expires_at > ?
         ), 0) > 0
       SQL
       .distinct
@@ -434,20 +449,22 @@ class Event < ApplicationRecord
   end
 
   def remaining_capacity(at: Time.current)
-    return Float::INFINITY if max_capacity.blank?
-
-    sold = ticket_types.sum(&:quantity_sold)
-    held = inventory_holds.active.where("expires_at > ?", at).sum(:quantity) +
-      waitlist_offers.holding_inventory(at).sum(:quantity) + active_seat_holds_count(at: at)
-    [max_capacity - sold - held, 0].max
+    EventCapacity.remaining_for(self, at: at)
   end
 
   # The detailed launch-gate reviews (pilot readiness, validation, rehearsal,
   # live-money proof, bounded pilot) are optional records now; they never
   # block publishing or sales. Organizer verification is the one admin step.
-  def publish_checklist(at: Time.current, organizer_agreement: nil)
+  def publish_checklist(at: Time.current, organizer_agreement: nil, pass_committed: nil)
     paid_event = paid_event?
     configured_inventory = ticket_types.sum(&:quantity_available)
+    committed_pass_units = if !pass_committed.nil?
+      pass_committed
+    elsif persisted?
+      EventCapacity.pass_committed_for(self, at: at)
+    else
+      0
+    end
     [
       checklist_item("launch_scope", "Event features supported for this release", LaunchCapabilities.event_supported?(self)),
       # In production an unverified organizer may publish (to preview and
@@ -463,7 +480,8 @@ class Event < ApplicationRecord
       checklist_item("schedule", "Future start and valid end time added", starts_at.present? && starts_at > at && ends_at.present? && ends_at > starts_at),
       checklist_item("timezone", "Valid IANA timezone selected", timezone_valid?),
       checklist_item("tickets", "At least one ticket type added", ticket_types.any?),
-      checklist_item("capacity", "Event capacity added and ticket inventory fits", max_capacity.present? && configured_inventory.positive? && configured_inventory <= max_capacity),
+      checklist_item("capacity", "Event capacity added and ticket inventory fits",
+        max_capacity.present? && configured_inventory.positive? && (configured_inventory + committed_pass_units) <= max_capacity),
       checklist_item("sales_window", "Ticket sales windows are valid", valid_ticket_sales_windows?(at: at)),
       checklist_item("live_money_candidate_scope", "Live-money proof event is hidden, single-ticket, and capped at $5",
         !live_money_proof_candidate? || live_money_proof_candidate_configured?),
@@ -665,8 +683,7 @@ class Event < ApplicationRecord
   def capacity_covers_committed_inventory
     return if max_capacity.blank? || !persisted?
 
-    committed = ticket_types.sum(:quantity_sold) + inventory_holds.current.sum(:quantity) +
-      waitlist_offers.holding_inventory.sum(:quantity) + active_seat_holds_count(at: Time.current)
+    committed = EventCapacity.committed_for(self, at: Time.current)
     errors.add(:max_capacity, "cannot be less than sold and actively held inventory") if max_capacity < committed
   end
 

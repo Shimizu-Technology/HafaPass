@@ -125,9 +125,9 @@ module Commerce
         end
         # Only offer claims need the organization rank before the event.
         event.organization.lock! if waitlist_offer_token.present?
-        # Serialize capacity decisions while permitting FK key-share checks in
-        # an independent seat-release transaction waiting on this checkout.
-        event.lock!("FOR NO KEY UPDATE")
+        # Serialize capacity decisions across this event and any pass-included
+        # night events in ascending event.id order (FOR NO KEY UPDATE).
+        Passes::Locking.lock_events_for_line_items!(event: event, line_items: line_items)
         if @checkout_key_digest && (previous = @checkout_attempt&.order || Order.find_by(checkout_key_digest: @checkout_key_digest))
           unless previous.checkout_key_digest == @checkout_key_digest && previous.event_id == event.id && previous.checkout_request_digest == @checkout_request_digest &&
               previous.checkout_recovery_expires_at&.future?
@@ -148,7 +148,7 @@ module Commerce
         )
         validate_seating_selection!(selections)
         catalog_selections = locked_catalog_selections!
-        enforce_event_capacity!(selections.sum { |selection| selection[:quantity] }, offer: offer)
+        enforce_event_capacity!(selections, offer: offer)
         validate_registration!
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
@@ -550,7 +550,7 @@ module Commerce
 
       normalized_email = buyer_email.to_s.strip.downcase
       completed_quantity = Ticket.joins(:order)
-        .where(ticket_type: ticket_type, status: [:issued, :checked_in])
+        .where(ticket_type: ticket_type, parent_ticket_id: nil, status: [:issued, :checked_in])
         .where("LOWER(orders.buyer_email) = ?", normalized_email)
         .count
       held_quantity = InventoryHold.joins(:order).current
@@ -590,7 +590,7 @@ module Commerce
       free_cap = per_ip_cap("HAFAPASS_MAX_FREE_TICKETS_PER_IP", DEFAULT_MAX_FREE_TICKETS_PER_IP)
       return unless free_cap && totals[:total_cents].zero?
 
-      issued = Ticket.joins(:order).where(event_id: event.id, status: [:issued, :checked_in])
+      issued = Ticket.joins(:order).where(event_id: event.id, parent_ticket_id: nil, status: [:issued, :checked_in])
         .where("tickets.created_at > ?", FREE_TICKET_WINDOW.ago)
         .where(orders: { checkout_ip_digest: @checkout_ip_digest, total_cents: 0 }).count
       return unless issued + requested > free_cap
@@ -633,19 +633,34 @@ module Commerce
       raise CheckoutError, "Only #{remaining} #{noun} #{verb} at the #{tier.name} price"
     end
 
-    def enforce_event_capacity!(requested_quantity, offer: nil)
-      return if event.max_capacity.blank?
+    def enforce_event_capacity!(selections, offer: nil)
+      now = Time.current
+      requested_quantity = selections.sum { |selection| selection[:quantity] }
+      if event.max_capacity.present?
+        committed = EventCapacity.committed_for(event, at: now) - (offer&.quantity || 0)
+        reserved_seats = seat_hold_token.present? ? seat_hold_session_for_checkout.seat_holds.status_active.count : 0
+        remaining = [event.max_capacity - committed + reserved_seats, 0].max
+        raise CheckoutError, "Only #{remaining} tickets remain within event capacity" if requested_quantity > remaining
+      end
 
-      sold = event.ticket_types.sum(:quantity_sold)
-      held = event.inventory_holds.current.sum(:quantity)
-      offered = event.waitlist_offers.holding_inventory.sum(:quantity) - (offer&.quantity || 0)
-      active_seat_holds = SeatHold.status_active.joins(:seat_hold_session, :event_seat)
-        .where(event_seats: { event_seating_configuration_id: event.event_seating_configuration&.id })
-        .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
-        .where("seat_hold_sessions.expires_at > ?", Time.current).count
-      reserved_seats = seat_hold_token.present? ? seat_hold_session_for_checkout.seat_holds.status_active.count : 0
-      remaining = [event.max_capacity - sold - held - offered - active_seat_holds + reserved_seats, 0].max
-      raise CheckoutError, "Only #{remaining} tickets remain within event capacity" if requested_quantity > remaining
+      pass_demand_by_event = Hash.new(0)
+      selections.each do |selection|
+        ticket_type = selection[:ticket_type]
+        next unless ticket_type.pass?
+
+        ticket_type.included_events.each do |included_event|
+          pass_demand_by_event[included_event] += selection[:quantity]
+        end
+      end
+
+      pass_demand_by_event.each do |included_event, demand|
+        next if included_event.max_capacity.blank?
+
+        remaining = EventCapacity.remaining_for(included_event, at: now)
+        if demand > remaining
+          raise CheckoutError, "Only #{remaining} spots remain for #{included_event.title}"
+        end
+      end
     end
 
     def calculate_totals(selections, catalog_selections)

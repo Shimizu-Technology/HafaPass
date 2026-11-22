@@ -25,14 +25,17 @@ module Admissions
 
     def sql
       <<~SQL
-        WITH refund_totals AS (
+        WITH event_orders AS (
+          SELECT DISTINCT order_id FROM tickets WHERE event_id = #{@event.id.to_i}
+        ), refund_totals AS (
           SELECT r.order_id, SUM(r.amount_cents) AS reserved, BOOL_OR(r.status = #{Refund.statuses.fetch('pending')}) AS pending
           FROM refunds r JOIN orders o ON o.id = r.order_id
-          WHERE o.event_id = #{@event.id.to_i} AND r.status IN (#{Refund.statuses.values_at('pending', 'succeeded').join(',')})
+          WHERE o.id IN (SELECT order_id FROM event_orders)
+            AND r.status IN (#{Refund.statuses.values_at('pending', 'succeeded').join(',')})
           GROUP BY r.order_id
         ), eligible_orders AS (
           SELECT o.id FROM orders o LEFT JOIN refund_totals rf ON rf.order_id = o.id
-          WHERE o.event_id = #{@event.id.to_i}
+          WHERE o.id IN (SELECT order_id FROM event_orders)
             AND o.status IN (#{Order.statuses.values_at('completed', 'partially_refunded').join(',')})
             AND NOT (o.total_cents > 0 AND COALESCE(rf.pending, FALSE) AND rf.reserved >= o.total_cents)
             AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.order_id = o.id AND d.status IN (#{Dispute.statuses.values_at('open', 'lost').join(',')}))
@@ -46,10 +49,15 @@ module Admissions
             AND #{@event.published? ? 'TRUE' : 'FALSE'}
             AND NOT EXISTS (SELECT 1 FROM ticket_inventory_retentions ir WHERE ir.ticket_id = t.id)
             AND NOT EXISTS (SELECT 1 FROM refund_tickets rt JOIN refunds r ON r.id = rt.refund_id
-              WHERE rt.ticket_id = t.id AND rt.released_at IS NULL AND r.status = #{Refund.statuses.fetch('pending')})) AS eligible_unadmitted,
+              WHERE (rt.ticket_id = t.id OR (t.parent_ticket_id IS NOT NULL AND rt.ticket_id = t.parent_ticket_id))
+                AND rt.released_at IS NULL AND r.status = #{Refund.statuses.fetch('pending')})) AS eligible_unadmitted,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('conflict')}) AS conflicts,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected
-        FROM tickets t LEFT JOIN eligible_orders eo ON eo.id = t.order_id WHERE t.event_id = #{@event.id.to_i}
+        FROM tickets t
+        JOIN ticket_types tt ON tt.id = t.ticket_type_id
+        LEFT JOIN eligible_orders eo ON eo.id = t.order_id
+        WHERE t.event_id = #{@event.id.to_i}
+          AND NOT (t.parent_ticket_id IS NULL AND tt.is_pass)
       SQL
     end
 

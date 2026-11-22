@@ -3,10 +3,10 @@ module Api
     module Organizer
       class TicketTypesController < BaseController
         before_action :set_event
-        before_action :set_ticket_type, only: [:show, :update, :destroy]
+        before_action :set_ticket_type, only: [:show, :update, :destroy, :sync_pass_holders]
 
         def index
-          ticket_types = @event.ticket_types.includes(:pricing_tiers).order(:sort_order, :id)
+          ticket_types = @event.ticket_types.includes(:pricing_tiers, :ticket_type_included_events).order(:sort_order, :id)
           render json: ticket_types.map { |tt| ticket_type_json(tt) }
         end
 
@@ -16,8 +16,23 @@ module Api
 
         def create
           ticket_type = @event.ticket_types.build(parsed_ticket_type_params)
-          saved = @event.with_lock("FOR NO KEY UPDATE") { ticket_type.save }
+          included_ids_param = params.key?(:included_event_ids) ? params[:included_event_ids] : nil
+          saved = false
+          Event.transaction do
+            included_events = resolve_included_events(ticket_type, included_ids_param)
+            if ticket_type.errors.any?
+              raise ActiveRecord::Rollback
+            end
+
+            Passes::Locking.lock_events!([@event, *included_events])
+            if ticket_type.save && sync_included_events!(ticket_type, included_events, included_ids_param)
+              saved = true
+            else
+              raise ActiveRecord::Rollback
+            end
+          end
           if saved
+            ticket_type.reload
             render json: ticket_type_json(ticket_type), status: :created
           else
             render json: { errors: ticket_type.errors.full_messages }, status: :unprocessable_entity
@@ -25,11 +40,26 @@ module Api
         end
 
         def update
-          updated = @event.with_lock("FOR NO KEY UPDATE") do
+          included_ids_param = params.key?(:included_event_ids) ? params[:included_event_ids] : nil
+          updated = false
+          Event.transaction do
+            included_events = resolve_included_events(@ticket_type, included_ids_param)
+            if @ticket_type.errors.any?
+              raise ActiveRecord::Rollback
+            end
+
+            existing_included = @ticket_type.included_events.to_a
+            Passes::Locking.lock_events!([@event, *existing_included, *included_events])
             @ticket_type.lock!
-            @ticket_type.update(parsed_ticket_type_params)
+            if @ticket_type.update(parsed_ticket_type_params) &&
+                sync_included_events!(@ticket_type, included_events, included_ids_param)
+              updated = true
+            else
+              raise ActiveRecord::Rollback
+            end
           end
           if updated
+            @ticket_type.reload
             render json: ticket_type_json(@ticket_type)
           else
             render json: { errors: @ticket_type.errors.full_messages }, status: :unprocessable_entity
@@ -49,11 +79,93 @@ module Api
           end
         end
 
+        def sync_pass_holders
+          result = Passes::SyncPassHolders.call(ticket_type: @ticket_type, actor: current_user, request: request)
+          render json: {
+            ticket_type_id: result.ticket_type.id,
+            parent_ticket_count: result.parent_ticket_count,
+            issued_ticket_count: result.issued_ticket_count,
+            included_event_ids: result.included_event_ids
+          }, status: :ok
+        rescue Passes::SyncPassHolders::SyncError => e
+          render json: { error: e.message }, status: :unprocessable_entity
+        end
+
         private
 
         def set_event
           @event = find_organization_event(params[:event_id])
-          authorize_organization!(:manage_inventory, event: @event) if @event
+          return unless @event
+
+          if action_name == "sync_pass_holders"
+            allowed = %i[manage_inventory manage_events].any? do |permission|
+              OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+                permission: permission, event: @event)
+            end
+            render json: { error: "You do not have permission to perform this action" }, status: :forbidden unless allowed
+          else
+            authorize_organization!(:manage_inventory, event: @event)
+          end
+        end
+
+        def resolve_included_events(ticket_type, included_ids_param)
+          return [] if included_ids_param.nil?
+
+          unless included_ids_param.is_a?(Array)
+            ticket_type.errors.add(:base, "included_event_ids must be an array")
+            return []
+          end
+
+          parsed_ids = included_ids_param.map { |value| Integer(value, exception: false) }
+          if parsed_ids.any? { |value| value.nil? || !value.positive? }
+            ticket_type.errors.add(:base, "Included event IDs must be valid event IDs")
+            return []
+          end
+
+          unique_ids = parsed_ids.uniq
+          events_by_id = current_organization.events.where(id: unique_ids).index_by(&:id)
+          if events_by_id.size != unique_ids.size
+            ticket_type.errors.add(:base, "Included events must belong to this organization")
+            return []
+          end
+
+          unique_ids.map { |id| events_by_id.fetch(id) }
+        end
+
+        def sync_included_events!(ticket_type, included_events, included_ids_param)
+          return true if included_ids_param.nil?
+
+          desired_ids = included_events.map(&:id)
+          existing_links = ticket_type.ticket_type_included_events.to_a
+          existing_by_event_id = existing_links.index_by(&:included_event_id)
+
+          removed_links = existing_links.reject { |link| desired_ids.include?(link.included_event_id) }
+          removed_links.each do |link|
+            next if link.destroy
+
+            link.errors.full_messages.each { |msg| ticket_type.errors.add(:base, msg) }
+            return false
+          end
+
+          desired_ids.each_with_index do |event_id, position|
+            if (existing = existing_by_event_id[event_id])
+              next if existing.position == position
+              next if existing.update(position: position)
+
+              existing.errors.full_messages.each { |msg| ticket_type.errors.add(:base, msg) }
+              return false
+            else
+              link = ticket_type.ticket_type_included_events.build(included_event_id: event_id, position: position)
+              next if link.save
+
+              link.errors.full_messages.each { |msg| ticket_type.errors.add(:base, msg) }
+              return false
+            end
+          end
+
+          should_be_pass = desired_ids.any?
+          ticket_type.update_column(:is_pass, should_be_pass) if ticket_type.is_pass? != should_be_pass
+          true
         end
 
         def set_ticket_type
@@ -100,6 +212,8 @@ module Api
             sales_start_at: tt.sales_start_at,
             sales_end_at: tt.sales_end_at,
             sort_order: tt.sort_order,
+            is_pass: tt.is_pass?,
+            included_event_ids: tt.ticket_type_included_events.map(&:included_event_id),
             pricing_tiers: tt.pricing_tiers.ordered.map { |t|
               {
                 id: t.id,

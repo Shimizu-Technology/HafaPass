@@ -120,6 +120,9 @@ module TicketTransfers
       end
 
       def validate_transferable!(ticket)
+        if ticket.pass_child? || ticket.pass_parent?
+          raise TransferError, "Multi-night passes cannot be transferred"
+        end
         raise TransferError, "Only unused active tickets can be transferred" unless ticket.issued?
         raise TransferError, "Transfers are disabled for this event" unless ticket.event.transfers_available?
         raise TransferError, "Transfers close when the event starts" unless ticket.event.starts_at&.future?

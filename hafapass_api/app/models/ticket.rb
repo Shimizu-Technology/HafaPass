@@ -11,8 +11,10 @@ class Ticket < ApplicationRecord
   belongs_to :event
   belongs_to :pricing_tier, optional: true
   belongs_to :order_item, optional: true
+  belongs_to :parent_ticket, class_name: "Ticket", optional: true
   belongs_to :holder_user, class_name: "User", optional: true
   belongs_to :event_seat, optional: true
+  has_many :child_tickets, class_name: "Ticket", foreign_key: :parent_ticket_id, dependent: :restrict_with_error
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :pending_refund_tickets, -> {
     active.joins(:refund).where(refunds: { status: Refund.statuses[:pending] })
@@ -26,6 +28,10 @@ class Ticket < ApplicationRecord
   has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
+
+  scope :scannable, -> {
+    where.not(parent_ticket_id: nil, ticket_type_id: TicketType.where(is_pass: true).select(:id))
+  }
 
   before_create :generate_qr_code_if_order_completed
   before_create :set_attendee_info
@@ -74,13 +80,35 @@ class Ticket < ApplicationRecord
     end
   end
 
-  def admission_allowed?
-    issued? && order.ticket_fulfilled? && !order.ticket_access_blocked? && !refund_pending? &&
-      !inventory_retained? && event.published?
+  def pass_child?
+    parent_ticket_id.present?
+  end
+
+  def pass_parent?
+    parent_ticket_id.nil? && ticket_type.is_pass?
+  end
+
+  def admission_block_reason(payment_mode: nil)
+    return "pass_container" if pass_parent?
+    return "cancelled" if cancelled?
+    return "transferred" if transferred?
+    return "inventory_retained" if inventory_retained?
+    return "payment_blocked" if order.ticket_access_blocked?
+    return "refund_pending" if refund_pending?
+    return "unfulfilled" unless order.ticket_fulfilled?(payment_mode: payment_mode)
+    return "event_unavailable" unless event.published?
+    return "not_admissible" unless issued?
+
+    nil
+  end
+
+  def admission_allowed?(payment_mode: nil)
+    admission_block_reason(payment_mode: payment_mode).nil?
   end
 
   def refund_pending?
-    order.full_refund_pending? || pending_refund_tickets.any?
+    order.full_refund_pending? || pending_refund_tickets.any? ||
+      (parent_ticket&.pending_refund_tickets&.any? || false)
   end
 
   def inventory_retained?
@@ -138,14 +166,10 @@ class Ticket < ApplicationRecord
           permission: :scan, event: event)
         raise AdmissionError, "Scanner assignment is no longer active"
       end
-      raise AdmissionError, "Ticket is not in issued status" unless issued?
-      raise AdmissionError, "Ticket order is not fulfilled" unless order.ticket_fulfilled?
-      if order.ticket_access_blocked?
-        raise AdmissionError, "Ticket access is suspended while a payment dispute is reviewed"
+      event.reload
+      if (block_reason = admission_block_reason)
+        raise AdmissionError, admission_error_message(block_reason)
       end
-      raise AdmissionError, "Ticket access is paused while its refund is pending" if refund_pending?
-      raise AdmissionError, "Refunded or disputed admission requires organizer review" if inventory_retained?
-      raise AdmissionError, "Event is #{event.status}; check-in is unavailable" unless event.reload.published?
       if credential && !TicketCredential.valid_scan_for?(self, credential)
         raise AdmissionError, "Ticket credential has been replaced"
       end
@@ -169,6 +193,7 @@ class Ticket < ApplicationRecord
   end
 
   def release_inventory!
+    return if pass_child?
     raise AdmissionError, "Occupied inventory requires organizer review" if inventory_retained?
 
     ticket_type.with_lock do
@@ -185,6 +210,27 @@ class Ticket < ApplicationRecord
   end
 
   private
+
+  def admission_error_message(block_reason)
+    case block_reason
+    when "pass_container"
+      "Multi-night pass containers cannot be scanned directly; scan the ticket for tonight's event"
+    when "cancelled", "transferred", "not_admissible"
+      "Ticket is not in issued status"
+    when "unfulfilled"
+      "Ticket order is not fulfilled"
+    when "payment_blocked"
+      "Ticket access is suspended while a payment dispute is reviewed"
+    when "refund_pending"
+      "Ticket access is paused while its refund is pending"
+    when "inventory_retained"
+      "Refunded or disputed admission requires organizer review"
+    when "event_unavailable"
+      "Event is #{event.status}; check-in is unavailable"
+    else
+      "Ticket is not eligible for admission"
+    end
+  end
 
   def operational_audit_action(operation)
     return unless operation == :update

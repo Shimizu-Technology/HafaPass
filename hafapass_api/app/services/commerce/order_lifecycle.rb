@@ -238,25 +238,31 @@ module Commerce
             tier.waitlist_offers.holding_inventory.sum(:quantity) - tier.active_seat_holds_quantity(now)
           remaining >= tier_holds.sum(&:quantity)
         end
-        types_free && tiers_free && event_capacity_free?(order.event, holds.sum(&:quantity), now)
+        types_free && tiers_free && event_capacity_free?(order.event, holds, now)
       end
 
-      def event_capacity_free?(event, quantity, now)
-        return true if event.max_capacity.blank?
+      def event_capacity_free?(event, holds, now)
+        total_quantity = holds.sum(&:quantity)
+        if event.max_capacity.present? && EventCapacity.remaining_for(event, at: now) < total_quantity
+          return false
+        end
 
-        sold = event.ticket_types.sum(:quantity_sold)
-        held = event.inventory_holds.current.sum(:quantity)
-        offered = event.waitlist_offers.holding_inventory.sum(:quantity)
-        seat_holds = SeatHold.status_active.joins(:seat_hold_session, :event_seat)
-          .where(event_seats: { event_seating_configuration_id: event.event_seating_configuration&.id })
-          .where(seat_hold_sessions: { status: SeatHoldSession.statuses[:active] })
-          .where("seat_hold_sessions.expires_at > ?", now).count
-        event.max_capacity - sold - held - offered - seat_holds >= quantity
+        pass_demand = Hash.new(0)
+        holds.each do |hold|
+          next unless hold.ticket_type.pass?
+
+          hold.ticket_type.included_events.each do |included_event|
+            pass_demand[included_event] += hold.quantity
+          end
+        end
+        pass_demand.all? do |included_event, demand|
+          included_event.max_capacity.blank? || EventCapacity.remaining_for(included_event, at: now) >= demand
+        end
       end
 
       def lock_event_context!(order)
         order.event.organization.lock! if order.waitlist_offer&.claimed?
-        order.event.lock!
+        Passes::Locking.lock_events_for_order!(order)
       end
 
       def lock_claimed_waitlist_offer!(order)
@@ -363,7 +369,10 @@ module Commerce
               event: order.event
             )
           end
-          existing.each(&:issue_qr_code!)
+          existing.each do |ticket|
+            ticket.issue_qr_code!
+            Passes::Issuance.call(order: order, parent_ticket: ticket) if ticket.pass_parent?
+          end
           issued.concat(existing)
         end
         issued
