@@ -84,12 +84,7 @@ module Passes
       private
 
       def inside_application_transaction?
-        connection = ActiveRecord::Base.connection
-        return false if connection.open_transactions.zero?
-        return true unless Rails.env.test?
-
-        # Transactional RSpec fixtures hold one outer non-joinable transaction.
-        connection.open_transactions > 1 || connection.current_transaction.joinable?
+        ActiveRecord::Base.connection.current_transaction.joinable?
       end
 
       def extract_ticket_type_ids(line_items)

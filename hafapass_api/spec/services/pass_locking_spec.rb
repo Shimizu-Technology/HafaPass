@@ -716,11 +716,21 @@ RSpec.describe "Multi-night pass concurrency and lock ordering", :non_transactio
 
         competitor_pid = connections.pop.last
         expect(competitor_pid).not_to eq(refund_pid)
+
+        # Competing night checkout/cash sale (including its AuditLog FK insert on
+        # Organization) must finish while Pass Refund is still paused holding
+        # ORG FOR NO KEY UPDATE!
+        first_done_name, first_done_result = Timeout.timeout(8) { outcomes.pop }
+        expect(first_done_name).to eq(:competitor)
+        expect(first_done_result).not_to be_a(Exception), first_done_result.inspect
+
         release_refund << true
         Timeout.timeout(12) { workers.each(&:join) }
 
-        results = 2.times.map { outcomes.pop }.to_h
-        expect(results.values.grep(Exception)).to be_empty, results.inspect
+        second_done_name, second_done_result = Timeout.timeout(8) { outcomes.pop }
+        expect(second_done_name).to eq(:refund)
+        expect(second_done_result).to be_a(Refund)
+        expect(second_done_result).to be_succeeded
         expect(pass_order.reload).to be_refunded
         expect(AuditWriteFailure.count).to eq(0)
       ensure

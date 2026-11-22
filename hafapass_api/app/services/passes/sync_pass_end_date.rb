@@ -5,10 +5,12 @@ module Passes
   # so storm reschedules or newly added playoff nights never cause an active
   # multi-night pass to look past, close sales early, or complete prematurely.
   class SyncPassEndDate
+    SKIPPED_PASS_STATUSES = [:completed, :cancelled, :archived].freeze
+
     class << self
       def for_pass_event!(pass_event)
         return unless pass_event&.persisted?
-        return if pass_event.cancelled? || pass_event.archived?
+        return if pass_event.completed? || pass_event.cancelled? || pass_event.archived?
 
         latest = latest_included_end_for(pass_event)
         extend_pass_event!(pass_event, latest)
@@ -16,6 +18,7 @@ module Passes
 
       def for_included_event!(night_event)
         return unless night_event&.persisted?
+        return if night_event.cancelled?
 
         night_end = night_event.ends_at || night_event.starts_at
         return unless night_end
@@ -27,7 +30,7 @@ module Passes
           .pluck(:event_id)
         return if pass_event_ids.empty?
 
-        Event.where(id: pass_event_ids).where.not(status: [:cancelled, :archived]).order(:id).each do |pass_event|
+        Event.where(id: pass_event_ids).where.not(status: SKIPPED_PASS_STATUSES).order(:id).each do |pass_event|
           latest = [night_end, latest_included_end_for(pass_event)].compact.max
           extend_pass_event!(pass_event, latest)
         end
@@ -36,7 +39,9 @@ module Passes
       private
 
       def latest_included_end_for(pass_event)
-        pass_event.pass_included_events.maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
+        pass_event.pass_included_events
+          .where.not(status: :cancelled)
+          .maximum(Arel.sql("COALESCE(events.ends_at, events.starts_at)"))
       end
 
       def extend_pass_event!(pass_event, target_end)
@@ -44,7 +49,7 @@ module Passes
         return if pass_event.ends_at.present? && target_end <= pass_event.ends_at
         return if pass_event.starts_at.present? && target_end <= pass_event.starts_at
 
-        pass_event.update!(ends_at: target_end)
+        pass_event.update_columns(ends_at: target_end, updated_at: Time.current)
       end
     end
   end

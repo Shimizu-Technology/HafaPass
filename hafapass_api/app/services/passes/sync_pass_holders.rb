@@ -46,23 +46,29 @@ module Passes
             raise AuthorizationError, "You do not have permission to perform this action"
           end
 
-        # Rank 3: active pass orders sorted by id
-        candidate_order_ids = Ticket.joins(:order)
-          .where(ticket_type_id: ticket_type.id, parent_ticket_id: nil, status: :issued)
-          .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
-          .distinct
-          .pluck(:order_id)
-          .sort
-        orders_by_id = Order.where(id: candidate_order_ids).order(:id).lock.index_by(&:id)
-        active_order_ids = orders_by_id.values.select { |o| o.completed? || o.partially_refunded? }.map(&:id)
+          # Rank 3: active pass orders sorted by id (skip retained parents and disputed orders)
+          candidate_order_ids = Ticket.joins(:order)
+            .left_outer_joins(:inventory_retention)
+            .where(ticket_type_id: ticket_type.id, parent_ticket_id: nil, status: :issued)
+            .where(ticket_inventory_retentions: { id: nil })
+            .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
+            .distinct
+            .pluck(:order_id)
+            .sort
+          orders_by_id = Order.where(id: candidate_order_ids).includes(:disputes).order(:id).lock.index_by(&:id)
+          active_order_ids = orders_by_id.values
+            .select { |o| (o.completed? || o.partially_refunded?) && !o.ticket_access_blocked? }
+            .map(&:id)
 
-        # Rank 3a: active (issued) parent tickets sorted by id
-        parent_tickets = Ticket.where(
-          ticket_type_id: ticket_type.id,
-          parent_ticket_id: nil,
-          status: :issued,
-          order_id: active_order_ids
-        ).order(:id).lock.to_a
+          # Rank 3a: active (issued, non-retained) parent tickets sorted by id
+          parent_tickets = Ticket.left_outer_joins(:inventory_retention)
+            .where(
+              ticket_type_id: ticket_type.id,
+              parent_ticket_id: nil,
+              status: :issued,
+              order_id: active_order_ids,
+              ticket_inventory_retentions: { id: nil }
+            ).order(:id).lock("FOR UPDATE OF tickets").to_a
 
         existing_pairs = if parent_tickets.any?
           Ticket.where(parent_ticket_id: parent_tickets.map(&:id), event_id: included_events.map(&:id))

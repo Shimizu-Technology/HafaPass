@@ -243,12 +243,19 @@ class EmailService
           metadata: { event_change_id: change.id, audience: "holder" }, wait: wait)
       end
 
-      # Pass holders with active child tickets on this included night receive an
-      # informational notice without single-night refund/accept CTAs, deduped
-      # against direct night buyers/holders above.
+      # Pass buyers and distinct pass holders/attendees with active child tickets
+      # on this included night receive an informational notice without single-night
+      # refund/accept CTAs, deduped against direct night buyers/holders above.
+      # Skip lost-dispute / retained passes and orders whose ticket access is blocked.
+      eligible_parent_ids = Ticket.left_outer_joins(:inventory_retention)
+        .where.not(status: :cancelled)
+        .where(ticket_inventory_retentions: { id: nil })
+        .select(:id)
       pass_children = change.event.tickets
+        .left_outer_joins(:inventory_retention)
         .where.not(parent_ticket_id: nil)
-        .where(parent_ticket_id: Ticket.where.not(status: :cancelled).select(:id))
+        .where(parent_ticket_id: eligible_parent_ids)
+        .where(ticket_inventory_retentions: { id: nil })
         .joins(:order)
         .where(orders: { status: Order.statuses.values_at("completed", "partially_refunded") })
       pass_children = if change.change_type == "cancelled"
@@ -257,15 +264,45 @@ class EmailService
       else
         pass_children.where(status: :issued)
       end
-      pass_children.includes(:order).order(:id).find_each do |ticket|
-        email = (ticket.holder_email.presence || ticket.attendee_email.presence || ticket.order.buyer_email).to_s.strip.downcase
-        next if email.blank? || notified.include?(email)
+      eligible_pass_tickets = []
+      pass_children.includes(order: :disputes).order(:id).find_each do |ticket|
+        next if ticket.order.ticket_access_blocked?
 
-        notified << email
-        queue_event_change_delivery(change, order: ticket.order, ticket: ticket, recipient: email,
+        eligible_pass_tickets << ticket
+      end
+
+      # Always notify the pass buyer with their order access link (in buyer locale).
+      eligible_pass_tickets.each do |ticket|
+        order = ticket.order
+        buyer_email = order.buyer_email.to_s.strip.downcase
+        next if buyer_email.blank? || notified.include?(buyer_email)
+
+        notified << buyer_email
+        queue_event_change_delivery(change, order: order, recipient: buyer_email,
           template: "pass_event_change",
-          idempotency_key: "event-change/#{change.id}/pass-holder/#{Digest::SHA256.hexdigest(email)[0, 32]}",
-          metadata: { event_change_id: change.id, audience: "pass_holder", pass_event_id: ticket.order.event_id }, wait: wait)
+          idempotency_key: "event-change/#{change.id}/pass-buyer/#{Digest::SHA256.hexdigest(buyer_email)[0, 32]}",
+          metadata: { event_change_id: change.id, audience: "pass_buyer", pass_event_id: order.event_id }, wait: wait)
+      end
+
+      # Notify each distinct pass holder / attendee whose email differs from the
+      # buyer without any order access URL or guest token (in English).
+      eligible_pass_tickets.each do |ticket|
+        order = ticket.order
+        candidate_emails = if ticket.transferred_away_from?(order)
+          [ticket.holder_email]
+        else
+          [ticket.holder_email, ticket.attendee_email]
+        end
+        candidate_emails.each do |raw_email|
+          email = raw_email.to_s.strip.downcase
+          next if email.blank? || notified.include?(email)
+
+          notified << email
+          queue_event_change_delivery(change, order: order, ticket: ticket, recipient: email,
+            template: "pass_event_change",
+            idempotency_key: "event-change/#{change.id}/pass-holder/#{Digest::SHA256.hexdigest(email)[0, 32]}",
+            metadata: { event_change_id: change.id, audience: "pass_holder", pass_event_id: order.event_id }, wait: wait)
+        end
       end
     end
 
@@ -617,12 +654,15 @@ class EmailService
     def send_pass_event_change_notification(change, order, delivery: nil)
       return unless change && EventChange::TYPES.include?(change.change_type)
 
-      recipient = delivery&.recipient.presence || order.buyer_email
-      html, subject = in_locale(order.locale) do
+      # A pass holder/attendee distinct from the buyer never receives the buyer's
+      # order access URL or guest token, and their language is unknown, so English.
+      holder = delivery&.metadata.to_h["audience"] == "pass_holder"
+      recipient = holder ? delivery.recipient : (delivery&.recipient.presence || order.buyer_email)
+      html, subject = in_locale(holder ? AppLocale::DEFAULT : order.locale) do
         if change.change_type == "cancelled"
-          build_pass_event_cancelled_html(change, order)
+          build_pass_event_cancelled_html(change, order, holder: holder)
         else
-          build_pass_event_change_html(change, order)
+          build_pass_event_change_html(change, order, holder: holder)
         end
       end
       deliver(to: recipient, subject: subject, html: html, tag: "pass_event_change", delivery: delivery, order_id: order.id)
@@ -1130,23 +1170,24 @@ class EmailService
       [body, safe_subject(t("event_change.subject.#{kind}", event: title))]
     end
 
-    def build_pass_event_cancelled_html(change, order)
+    def build_pass_event_cancelled_html(change, order, holder: false)
       title = event_title(change.event)
       pass_title = event_title(order.event)
       heading = t("pass_event_change.cancelled_heading", event: title)
-      link = order_access_url(order)
+      link = holder ? "#{frontend_url}/my-tickets" : order_access_url(order)
+      cta = ht(holder ? "event_change.view_tickets" : "pass_event_change.view_pass")
       body = email_wrapper(heading) do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
           <p style="color: #374151; margin: 0 0 16px;">#{ht('pass_event_change.cancelled_body', event: title, pass_event: pass_title)}</p>
           #{event_change_reasons_html([change])}
-          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{ht('pass_event_change.view_pass')}</a>
+          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{cta}</a>
         HTML
       end
       [body, safe_subject(t("pass_event_change.cancelled_subject", event: title))]
     end
 
-    def build_pass_event_change_html(change, order)
+    def build_pass_event_change_html(change, order, holder: false)
       event = change.event
       title = event_title(event)
       pass_title = event_title(order.event)
@@ -1168,7 +1209,8 @@ class EmailService
         notes << ht("event_change.original_date", date: format_local_datetime(original_start, event.timezone)) if original_start && !start_moved
       end
       notes << ht("pass_event_change.informational_note", pass_event: pass_title)
-      link = order_access_url(order)
+      link = holder ? "#{frontend_url}/my-tickets" : order_access_url(order)
+      cta = ht(holder ? "event_change.view_tickets" : "pass_event_change.view_pass")
       body = email_wrapper(heading) do
         <<~HTML
           <h2 style="color: #1f2937; margin: 0 0 8px; font-size: 22px;">#{h(heading)}</h2>
@@ -1176,7 +1218,7 @@ class EmailService
           #{event_change_table_html(rows)}
           #{event_change_reasons_html(burst)}
           #{notes.map { |note| %(<p style="color: #374151; margin: 0 0 16px;">#{note}</p>) }.join}
-          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{ht('pass_event_change.view_pass')}</a>
+          <a href="#{h(link)}" style="display: inline-block; background: #0e7c7b; color: white; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 600;">#{cta}</a>
         HTML
       end
       [body, safe_subject(t("event_change.subject.#{kind}", event: title))]

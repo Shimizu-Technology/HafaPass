@@ -375,13 +375,14 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       change = night_1.event_changes.last
       expect(change.change_type).to eq("rescheduled")
 
-      # Direct buyer gets event_change, pass-only holder gets pass_event_change, shared email is deduped!
+      # Direct buyer gets event_change, pass-only buyer gets pass_event_change, shared email is deduped!
       pass_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1)
       expect(pass_deliveries.count).to eq(1)
       delivery = pass_deliveries.sole
       expect(delivery.recipient).to eq("pass-only@example.com")
-      expected_key = "event-change/#{change.id}/pass-holder/#{Digest::SHA256.hexdigest('pass-only@example.com')[0, 32]}"
+      expected_key = "event-change/#{change.id}/pass-buyer/#{Digest::SHA256.hexdigest('pass-only@example.com')[0, 32]}"
       expect(delivery.idempotency_key).to eq(expected_key)
+      expect(delivery.metadata["audience"]).to eq("pass_buyer")
 
       # Prepare email payload: informational only, NO Accept / Request Refund CTAs
       payload = EmailService.prepare_delivery_payload(delivery)
@@ -453,13 +454,165 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(night_2_child.reload).to be_issued
       expect(pass_order.reload).to be_completed
 
-      # Only the active pass holder receives pass_event_change (not the already-refunded pass holder!)
+      # Only the active pass buyer receives pass_event_change (not the already-refunded pass buyer!)
       pass_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1)
       expect(pass_deliveries.pluck(:recipient)).to eq(["active-pass@example.com"])
       payload = EmailService.prepare_delivery_payload(pass_deliveries.sole)
       expect(payload.fetch("subject")).to include("Night 1")
       expect(payload.fetch("html")).to include("remaining pass nights stay active", "Gym roof leak", "View your pass")
       expect(payload.fetch("html")).not_to match(/automatic refund|request a refund/i)
+    end
+
+    it "separates buyer and attendee pass_event_change emails without leaking guest order tokens to attendees" do
+      with_locales_enabled(%w[en ko])
+      guest_order, = create_paid_pass_order(buyer: nil, email: "guest-buyer@example.com", name: "Guest Buyer")
+      guest_order.update!(locale: "ko")
+      guest_order.tickets.update_all(
+        attendee_email: "guest-attendee@example.com",
+        holder_email: "guest-attendee@example.com"
+      )
+
+      new_start = 16.days.from_now.change(usec: 0)
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: (new_start + 3.hours).iso8601, change_reason: "Rain delay" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      change = night_1.event_changes.last
+      deliveries = MessageDelivery.where(template: "pass_event_change", event: night_1).index_by(&:recipient)
+      expect(deliveries.keys).to contain_exactly("guest-buyer@example.com", "guest-attendee@example.com")
+
+      buyer_delivery = deliveries.fetch("guest-buyer@example.com")
+      attendee_delivery = deliveries.fetch("guest-attendee@example.com")
+      expect(buyer_delivery.metadata["audience"]).to eq("pass_buyer")
+      expect(buyer_delivery.idempotency_key).to eq(
+        "event-change/#{change.id}/pass-buyer/#{Digest::SHA256.hexdigest('guest-buyer@example.com')[0, 32]}"
+      )
+      expect(attendee_delivery.metadata["audience"]).to eq("pass_holder")
+      expect(attendee_delivery.idempotency_key).to eq(
+        "event-change/#{change.id}/pass-holder/#{Digest::SHA256.hexdigest('guest-attendee@example.com')[0, 32]}"
+      )
+
+      buyer_html = EmailService.prepare_delivery_payload(buyer_delivery).fetch("html")
+      expect(buyer_html).to include('<html lang="ko">', "제공: HåfaPass · Shimizu Technology")
+      expect(buyer_html).to include("/orders/#{guest_order.id}/confirmation#guest_token=")
+      issued_token = buyer_html[/#guest_token=([^"&]+)/, 1]
+      expect(issued_token).to be_present
+
+      attendee_html = EmailService.prepare_delivery_payload(attendee_delivery).fetch("html")
+      expect(attendee_html).to include('<html lang="en">', "View your tickets", "/my-tickets")
+      expect(attendee_html).not_to include("/orders/#{guest_order.id}")
+      expect(attendee_html).not_to include("guest_token")
+      expect(attendee_html).not_to include(issued_token)
+
+      # Single-night cancel also keeps guest order token strictly on the buyer email
+      EventLifecycle.call(event: night_2, action: :cancel, actor: owner, reason: "Power outage")
+      cancel_deliveries = MessageDelivery.where(template: "pass_event_change", event: night_2).index_by(&:recipient)
+      expect(cancel_deliveries.keys).to contain_exactly("guest-buyer@example.com", "guest-attendee@example.com")
+
+      cancel_buyer_html = EmailService.prepare_delivery_payload(cancel_deliveries.fetch("guest-buyer@example.com")).fetch("html")
+      cancel_token = cancel_buyer_html[/#guest_token=([^"&]+)/, 1]
+      expect(cancel_token).to be_present
+
+      cancel_attendee_html = EmailService.prepare_delivery_payload(cancel_deliveries.fetch("guest-attendee@example.com")).fetch("html")
+      expect(cancel_attendee_html).to include('<html lang="en">', "/my-tickets")
+      expect(cancel_attendee_html).not_to include("/orders/#{guest_order.id}", "guest_token", cancel_token)
+    end
+
+    it "excludes lost-dispute retained passes and open-dispute passes from SyncPassHolders and pass_event_change emails" do
+      lost_order, lost_payment = create_paid_pass_order(email: "lost-dispute@example.com", name: "Lost Dispute Fan")
+      open_order, open_payment = create_paid_pass_order(email: "open-dispute@example.com", name: "Open Dispute Fan")
+      healthy_order, = create_paid_pass_order(email: "healthy-pass@example.com", name: "Healthy Fan")
+
+      # Lost dispute on a partly used pass: parent remains issued + inventory_retained, order stays completed + blocked
+      lost_parent = lost_order.tickets.find_by!(parent_ticket_id: nil)
+      lost_child_1 = lost_order.tickets.find_by!(event: night_1)
+      lost_child_1.check_in!
+      lost_dispute_event = OpenStruct.new(
+        id: "evt_lost_pass_exclude",
+        type: "charge.dispute.closed",
+        created: Time.current.to_i,
+        data: OpenStruct.new(
+          object: {
+            "id" => "dp_lost_pass_exclude",
+            "payment_intent" => lost_payment.provider_payment_id,
+            "amount" => lost_order.total_cents,
+            "currency" => lost_order.currency,
+            "reason" => "fraudulent",
+            "status" => "lost"
+          }
+        )
+      )
+      StripeWebhookProcessor.call(event: lost_dispute_event, payload: { "id" => lost_dispute_event.id, "type" => lost_dispute_event.type })
+      expect(lost_order.reload).to be_completed
+      expect(lost_order).to be_ticket_access_blocked
+      expect(lost_parent.reload).to be_issued
+      expect(lost_parent).to be_inventory_retained
+
+      # Open dispute on another pass order: child tickets stay issued, order is ticket_access_blocked
+      Dispute.create!(
+        order: open_order,
+        payment: open_payment,
+        provider_dispute_id: "dp_open_pass_exclude",
+        status: :open,
+        reason: "general",
+        amount_cents: open_order.total_cents,
+        currency: open_order.currency,
+        opened_at: Time.current
+      )
+      expect(open_order.reload).to be_ticket_access_blocked
+
+      # Add a new night and run SyncPassHolders: 0 children issued for lost/open dispute orders, 1 for healthy order
+      night_4 = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Night 4 Finals", max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: night_4, position: 2)
+
+      sync_result = Passes::SyncPassHolders.call(ticket_type: pass_tt, actor: owner)
+      expect(sync_result.parent_ticket_count).to eq(1)
+      expect(sync_result.issued_ticket_count).to eq(1)
+      expect(lost_order.tickets.where(event: night_4).count).to eq(0)
+      expect(open_order.tickets.where(event: night_4).count).to eq(0)
+      expect(healthy_order.tickets.where(event: night_4).count).to eq(1)
+
+      # Even if an admitted/undone child on the lost-dispute pass is in issued status, rescheduling sends 0 emails
+      lost_child_1.reverse_check_in!
+      expect(lost_child_1.reload).to be_issued
+
+      new_start = 17.days.from_now.change(usec: 0)
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: (new_start + 3.hours).iso8601, change_reason: "Weather shift" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      recipients = MessageDelivery.where(template: "pass_event_change", event: night_1).pluck(:recipient)
+      expect(recipients).to eq(["healthy-pass@example.com"])
+    end
+
+    it "skips completed/cancelled pass events, ignores cancelled nights, and bypasses unrelated pass validations in SyncPassEndDate" do
+      completed_pass = create(:event, :published, organizer_profile: profile, organization: org,
+        title: "Completed Pass", max_capacity: 50, starts_at: 2.days.from_now, ends_at: 5.days.from_now)
+      completed_pass_tt = create(:ticket_type, event: completed_pass, name: "Completed Pass TT", price_cents: 2000, quantity_available: 10)
+      link_nights(completed_pass_tt, [night_1])
+      completed_pass.update_columns(status: Event.statuses.fetch("completed"))
+
+      # Unrelated validation error on active pass_event must NOT block rescheduling Night 1
+      pass_event.update_columns(title: "")
+      expect(pass_event.reload).not_to be_valid
+
+      # Cancelled included night with a far-future end date must be ignored
+      cancelled_night = create(:event, :cancelled, organizer_profile: profile, organization: org,
+        title: "Cancelled Far Night", max_capacity: 20, starts_at: 40.days.from_now, ends_at: 40.days.from_now + 3.hours)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: cancelled_night, position: 2)
+
+      new_start = 18.days.from_now.change(usec: 0)
+      new_end = new_start + 3.hours
+      patch "/api/v1/organizer/events/#{night_1.id}",
+        params: { starts_at: new_start.iso8601, ends_at: new_end.iso8601, change_reason: "Storm move" },
+        headers: owner_headers
+      expect(response).to have_http_status(:ok)
+
+      expect(pass_event.reload.ends_at).to be_within(1.second).of(new_end)
+      expect(completed_pass.reload.ends_at).to be_within(1.second).of(5.days.from_now)
     end
   end
 
