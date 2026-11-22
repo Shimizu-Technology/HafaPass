@@ -371,7 +371,9 @@ module Api
       end
 
       def preload_event_stats(events, at: Time.current)
-        @active_ticket_counts = {}
+        @active_ticket_counts = Hash.new(0)
+        @pass_child_ticket_counts = Hash.new(0)
+        @pass_hold_counts = Hash.new(0)
         @event_hold_counts = Hash.new(0)
         @ticket_type_hold_counts = Hash.new(0)
         @pricing_tier_hold_counts = Hash.new(0)
@@ -386,7 +388,23 @@ module Api
         return if events.empty?
 
         event_ids = events.map(&:id)
-        @active_ticket_counts = Ticket.where(event_id: event_ids).where.not(status: :cancelled).group(:event_id).count
+        Ticket.where(event_id: event_ids).where.not(status: :cancelled)
+          .group(:event_id, Arel.sql("parent_ticket_id IS NOT NULL")).count
+          .each do |(event_id, is_pass_child), count|
+            @active_ticket_counts[event_id] += count
+            @pass_child_ticket_counts[event_id] += count if is_pass_child
+          end
+
+        capacity_event_ids = events.select { |event| event.max_capacity.present? }.map(&:id)
+        if capacity_event_ids.any?
+          InventoryHold.active
+            .where("inventory_holds.expires_at > ?", at)
+            .joins("INNER JOIN ticket_type_included_events ON ticket_type_included_events.ticket_type_id = inventory_holds.ticket_type_id")
+            .where(ticket_type_included_events: { included_event_id: capacity_event_ids })
+            .group("ticket_type_included_events.included_event_id")
+            .sum(:quantity)
+            .each { |included_event_id, qty| @pass_hold_counts[included_event_id] = qty }
+        end
 
         InventoryHold.active.where(event_id: event_ids).where("expires_at > ?", at)
           .group(:event_id, :ticket_type_id, :pricing_tier_id).sum(:quantity)
@@ -449,7 +467,8 @@ module Api
 
         sold = event.ticket_types.sum(&:quantity_sold)
         held = @event_hold_counts[event.id] + @event_waitlist_counts[event.id] + @event_seat_hold_counts[event.id]
-        [event.max_capacity - sold - held, 0].max
+        pass_committed = @pass_child_ticket_counts[event.id] + @pass_hold_counts[event.id]
+        [event.max_capacity - sold - held - pass_committed, 0].max
       end
 
       def ticket_type_available_quantity(ticket_type)

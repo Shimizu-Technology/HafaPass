@@ -323,5 +323,37 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       expect(by_id.fetch(sold_out_event.id)).to include("purchasable" => false, "sold_out" => true)
       expect(by_id.fetch(capacity_full_event.id)).to include("purchasable" => false, "sold_out" => true)
     end
+
+    it "counts pass child tickets and active pass holds toward included event capacity without N+1 queries" do
+      pass_event = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+        title: "Championship Pass Container", starts_at: 2.days.from_now, max_capacity: 50)
+      pass_tt = create(:ticket_type, event: pass_event, name: "All-Access Pass", is_pass: true, quantity_available: 20)
+
+      pass_full_night = create(:event, :published, organizer_profile: organizer_profile, organization: organization,
+        title: "Pass-Filled Night", starts_at: 6.days.from_now, max_capacity: 2)
+      create(:ticket_type, event: pass_full_night, quantity_available: 10, quantity_sold: 0)
+      series.event_series_memberships.create!(event: pass_full_night, role: :championship_night, position: 10)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_tt, included_event: pass_full_night, position: 0)
+
+      # 1 issued pass child ticket + 1 active pass hold fills pass_full_night's max_capacity of 2
+      pass_order = create(:order, :completed, event: pass_event)
+      parent_ticket = create(:ticket, order: pass_order, ticket_type: pass_tt, event: pass_event, status: :issued)
+      create(:ticket, order: pass_order, ticket_type: pass_tt, event: pass_full_night, parent_ticket: parent_ticket, status: :issued)
+
+      pending_pass_order = create(:order, :pending, event: pass_event)
+      pending_item = create(:order_item, order: pending_pass_order, ticket_type: pass_tt, quantity: 1)
+      create(:inventory_hold, order: pending_pass_order, order_item: pending_item, event: pass_event, ticket_type: pass_tt, quantity: 1)
+
+      # Default discovery excludes the pass-filled night (matches Event.discoverable)
+      get "/api/v1/events", params: { organizer: organization.slug, series: series.slug }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("events").map { |e| e["id"] }).not_to include(pass_full_night.id)
+
+      # include_sold_out=true surfaces it with sold_out: true and purchasable: false
+      get "/api/v1/events", params: { organizer: organization.slug, series: series.slug, include_sold_out: "true" }
+      expect(response).to have_http_status(:ok)
+      night_row = response.parsed_body.fetch("events").find { |e| e["id"] == pass_full_night.id }
+      expect(night_row).to include("purchasable" => false, "sold_out" => true)
+    end
   end
 end
