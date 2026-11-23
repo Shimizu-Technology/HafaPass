@@ -20,10 +20,11 @@ RSpec.describe "Selecting the payout destination", type: :request do
       expect(organization.reload.payout_account).to eq(accounts.fetch("check"))
       expect(organization).to be_payout_ready
       patch "/api/v1/organizer/connected_accounts/#{accounts.fetch('manual').id}", headers: headers
-      expect(response).to have_http_status(:unprocessable_entity)
-      expect(organization.reload.payout_account).to eq(accounts.fetch("check"))
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("selected" => true, "payout_ready" => false)
+      expect(organization.reload.payout_account).to be_nil
       get "/api/v1/organizer/connected_accounts", headers: headers
-      expect(response.parsed_body.select { |account| account["selected"] }.pluck("id")).to eq([accounts.fetch("check").id])
+      expect(response.parsed_body.select { |account| account["selected"] }.pluck("id")).to eq([accounts.fetch("manual").id])
     end
   end
 

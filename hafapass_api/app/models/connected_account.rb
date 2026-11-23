@@ -2,7 +2,7 @@
 
 class ConnectedAccount < ApplicationRecord
   PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
-  BANK_TRANSFERS_ENABLED = false
+  BANK_TRANSFERS_ENABLED = true
   BANK_UNAVAILABLE_REASON = "Bank transfer is not available yet — HåfaPass currently pays by check"
   CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
   MANUAL_PROVIDERS = %w[check manual].freeze
@@ -30,10 +30,12 @@ class ConnectedAccount < ApplicationRecord
   end
 
   def payout_supported?
-    !%w[manual legacy_manual].include?(provider) || BANK_TRANSFERS_ENABLED
+    provider != "legacy_manual" && (provider != "manual" || BANK_TRANSFERS_ENABLED)
   end
 
   def externally_ready?
+    return false if provider == "manual" && !bank_details_complete?
+
     !status_disabled? && charges_enabled? && payouts_enabled? && details_submitted? && provider_requirements_due.blank?
   end
 
@@ -90,7 +92,18 @@ class ConnectedAccount < ApplicationRecord
     # Where money goes is part of what an approval covers. Accounts without
     # payee details (every account before checks existed) keep their digest.
     payload[:payout_details] = canonicalize_readiness_value(payout_details) if payout_details.present?
+    payload[:bank_destination] = bank_destination_digest if provider == "manual" && bank_account_number.present?
     Digest::SHA256.hexdigest(payload.to_json)
+  end
+
+  def bank_destination_digest
+    key = Rails.application.key_generator.generate_key("hafapass/bank-destination/v1", 32)
+    details = [payout_details.to_h.values_at("bank_name", "account_holder_name"), bank_account_number]
+    OpenSSL::HMAC.hexdigest("SHA256", key, details.to_json)
+  end
+
+  def serializable_hash(options = nil)
+    super((options || {}).merge(except: Array(options&.dig(:except)) + ["bank_account_number"]))
   end
 
   def check_payee
@@ -126,7 +139,7 @@ class ConnectedAccount < ApplicationRecord
       check_payee["payee_name"].present? && CHECK_DELIVERY_METHODS.include?(check_payee["delivery_method"]) &&
         (check_payee["delivery_method"] == "pickup" || check_payee["mailing_address"].present?)
     elsif provider == "manual"
-      payout_details.to_h.values_at("bank_name", "account_holder_name").all?(&:present?) && bank_account_number.present?
+      bank_details_complete?
     end
     missing << "Payout details incomplete" unless complete
     missing << "Payout method is disabled" if status_disabled?
@@ -134,6 +147,10 @@ class ConnectedAccount < ApplicationRecord
   end
 
   private
+
+  def bank_details_complete?
+    payout_details.to_h.values_at("bank_name", "account_holder_name").all?(&:present?) && bank_account_number.present?
+  end
 
   def check_payee_details
     unless payout_details.is_a?(Hash)

@@ -121,7 +121,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def payout_list_json(payout, audits, liability)
     reconciliation = audits.reverse.find { |audit| audit.action == "payout.reconciled" }
     # Compared in memory (snapshot vs. details on file), once per payout.
-    payee_changed = payout.provider == "check" && !payout.payee_matches_approval?
+    payee_changed = %w[check manual].include?(payout.provider) && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
     hold_available = if payout.status_held?
       current_payable = (@payable_cents_by_event ||= {}).fetch(payout.event_id) do
@@ -147,7 +147,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       settlement: { id: payout.settlement_id, version: payout.settlement.version },
       # For checks, who to write it to; the check number is the transfer ID
       # and the date on the check is the confirmation time.
-      payee: payout.provider == "check" ? payout.payee_snapshot : nil,
+      payee: payout.payee_snapshot.presence,
       payee_changed: payee_changed,
       tax_approval_changed: !payout.tax_approval_matches?,
       tax_information_snapshot: payout.tax_information_snapshot,
@@ -155,7 +155,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       cancellation_refunds_unresolved: liability[:unresolved],
       held_from_status: payout.held_from_status,
       hold_available_cents: hold_available,
-      current_payee: payee_changed ? payout.connected_account.check_payee : nil,
+      current_payee: payee_changed ? payout.connected_account.safe_payout_details : nil,
       allowed_outcomes: %w[paid failed reversed].select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {

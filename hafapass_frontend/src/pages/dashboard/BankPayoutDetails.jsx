@@ -28,7 +28,7 @@ export default function BankPayoutDetails({ account, busy, onSave }) {
     <p className="mt-2 text-xs text-content-muted">Changing bank details needs a fresh HåfaPass review before the next payout.</p>
   </div>
   return <form onSubmit={save} noValidate className="space-y-4">
-    <p className="text-sm text-neutral-700">Enter bank details here. Never email your account number or ID documents.</p>
+    <p className="text-sm text-neutral-700">Saving selects this account for payouts. Paid ticket sales require an approved payout method. Enter bank details here and keep your account number out of email.</p>
     {[
       ['bank_name', 'Bank name', 200], ['account_holder_name', 'Account holder name', 200], ['account_number', existingNumber ? 'Account number (leave blank to keep the saved number)' : 'Account number', 100],
     ].map(([key, label, maxLength]) => <div key={key}><label className="block text-sm font-medium text-neutral-900">{label}<input type={key === 'account_number' ? 'password' : 'text'} autoComplete="off" spellCheck={false} disabled={busy} value={details[key]} onChange={event => setDetails(value => ({ ...value, [key]: event.target.value }))} maxLength={maxLength} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `bank-${key}-error` : undefined} className="input mt-1" /></label>{errors[key] && <p id={`bank-${key}-error`} className="mt-1 text-sm text-red-700">{errors[key]}</p>}</div>)}

@@ -42,7 +42,7 @@ const placeholderReference = value => !value || value.startsWith('sim_') || valu
 function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const titleId = useId()
   const [outcome, setOutcome] = useState(payout.allowed_outcomes[0])
-  const [transferId, setTransferId] = useState(payout.provider === 'check' && payout.disbursement_cents === 0
+  const [transferId, setTransferId] = useState(['check', 'manual'].includes(payout.provider) && payout.disbursement_cents === 0
     ? `withholding_only_${payout.id}` : placeholderReference(payout.provider_payout_id) ? '' : payout.provider_payout_id)
   const [reference, setReference] = useState('')
   const [confirmedAt, setConfirmedAt] = useState(nowForInput)
@@ -58,10 +58,11 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const keepsTransferId = payout.status === 'paid'
   // Zero-net check payouts settle withholding without issuing a check.
   const isCheck = payout.provider === 'check'
-  const withholdingOnly = isCheck && payout.disbursement_cents === 0
+  const isBank = payout.provider === 'manual'
+  const withholdingOnly = (isCheck || isBank) && payout.disbursement_cents === 0
   // The payee shown is the one this payout was approved for. If the organizer
   // changed it since, the API refuses "Paid" until the change is approved.
-  const payeeChanged = isCheck && payout.payee_changed === true
+  const payeeChanged = (isCheck || isBank) && payout.payee_changed === true
   const [payeeConfirmed, setPayeeConfirmed] = useState(false)
   const taxApprovalChanged = payout.tax_approval_changed === true
   const legacyTaxPayee = (!payout.tax_information_snapshot || Object.keys(payout.tax_information_snapshot).length === 0) && !(payout.withheld_cents > 0)
@@ -74,7 +75,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [recordedCheckAmount, setRecordedCheckAmount] = useState(payout.confirmed_check_amount_cents ?? payout.disbursement_cents)
   const [adjustmentNotice, setAdjustmentNotice] = useState('')
   const [legacyPayeeConfirmed, setLegacyPayeeConfirmed] = useState(false)
-  const describePayee = payee => payee ? `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}` : ''
+  const describePayee = payee => !payee ? '' : isBank ? [payee.account_holder_name, payee.bank_name, payee.masked_account].filter(Boolean).join(' · ') : `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}`
 
   const checkCents = () => /^\d+(?:\.\d{1,2})?$/.test(actualCheckAmount.trim())
     ? Math.round(Number(actualCheckAmount.trim()) * 100) : null
@@ -113,7 +114,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       if (!cancellationReason.trim()) found.cancellationReason = 'Explain why you are recording this payout while buyer refunds remain outstanding.'
     }
     if (payout.conflict && !acknowledged) found.conflict = 'Confirm you reviewed the provider conflict.'
-    if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = withholdingOnly ? 'Confirm the withholding was allocated to the approved payee shown above.' : 'Confirm you wrote this check to the approved payee shown above.'
+    if (outcome === 'paid' && payeeChanged && !payeeConfirmed) found.payee = withholdingOnly ? 'Confirm the withholding was allocated to the approved payee shown above.' : isBank ? 'Confirm you sent this payout to the approved payee shown above.' : 'Confirm you wrote this check to the approved payee shown above.'
     if (outcome === 'paid' && isCheck && (checkCents() === null || (withholdingOnly && checkCents() !== 0))) found.actualCheckAmount = withholdingOnly ? 'Enter 0.00 to confirm no money was sent to the payee.' : 'Enter the actual check amount in dollars and cents.'
     if (outcome === 'paid' && legacyTaxPayee) {
       if (!legacyPayeeName.trim()) found.legacyPayeeName = 'Enter the payee who was actually paid.'
@@ -157,13 +158,13 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             <label className="mt-3 block">Reason for recording an already sent payout<textarea value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} maxLength={1000} className="input mt-1" /></label>{fieldError('cancellationReason')}</>}
         </div>}
         {nonCancellationLiability && <p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900">Buyer refunds remain unresolved. Resolve them before recording this payout as paid.</p>}
-        {isCheck && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
+        {(isCheck || isBank) && payout.payee && <p className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800 [overflow-wrap:anywhere]">Approved payee: <strong>{describePayee(payout.payee)}</strong></p>}
         {payeeChanged && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [overflow-wrap:anywhere]">
           <p className="font-semibold">The payee on file is different from the approved payee above.</p>
-          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. {withholdingOnly ? 'Record withholding only for the approved payee.' : 'Write and record this check only to the approved payee.'}</p>}
+          {payout.current_payee && <p className="mt-1">Now on file: {describePayee(payout.current_payee)}. {withholdingOnly ? 'Record withholding only for the approved payee.' : isBank ? 'Send and record this payout only to the approved payee.' : 'Write and record this check only to the approved payee.'}</p>}
           {outcome === 'paid' && <label className="mt-2 flex min-h-11 items-start gap-2 font-medium">
             <input type="checkbox" checked={payeeConfirmed} onChange={event => setPayeeConfirmed(event.target.checked)} aria-describedby={errors.payee ? 'reconcile-payee-error' : undefined} className="mt-0.5 h-4 w-4 accent-brand-700" />
-            {withholdingOnly ? 'I confirmed the withholding was allocated to the approved payee shown above' : 'I wrote this check to the approved payee shown above'}
+            {withholdingOnly ? 'I confirmed the withholding was allocated to the approved payee shown above' : isBank ? 'I sent this payout to the approved payee shown above' : 'I wrote this check to the approved payee shown above'}
           </label>}
           {fieldError('payee')}
         </div>}
@@ -217,7 +218,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-neutral-900">
-              {isCheck ? withholdingOnly ? 'Withholding-only reference' : 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
+              {withholdingOnly ? 'Withholding-only reference' : isCheck ? 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
               <input value={transferId} disabled={keepsTransferId || withholdingOnly} onChange={event => setTransferId(event.target.value)} maxLength={255} aria-invalid={!!errors.transfer} aria-describedby={errors.transfer ? 'reconcile-transfer-error' : undefined} className={`input mt-1 ${errors.transfer ? 'input-error' : ''}`} />
             </label>
             {keepsTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original {withholdingOnly ? 'withholding-only reference' : isCheck ? 'check number' : 'transfer ID'}.</p>}
@@ -450,7 +451,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
       if (payoutForm.amount_cents) body.amount_cents = Number(payoutForm.amount_cents)
       if (payoutForm.withholding_override_reason.trim()) body.withholding_override_reason = payoutForm.withholding_override_reason.trim()
       await apiClient.post('/admin/payouts', body, { ...request.config, headers: { 'Idempotency-Key': window.crypto.randomUUID() } })
-      if (request.current()) { setPayoutForm({ settlement_id: '', amount_cents: '', withholding_override_reason: '' }); onNotice('Payout requested. Review the net check amount and record its outcome.'); list.reload() }
+      if (request.current()) { setPayoutForm({ settlement_id: '', amount_cents: '', withholding_override_reason: '' }); onNotice('Payout requested. Review the net disbursement and record its outcome.'); list.reload() }
     } catch (error) { if (request.current() && !request.handleError(error)) setCreateError(error.response?.data?.error || 'Payout could not be requested.') }
     finally { request.release(); setCreating(false) }
   }
@@ -460,7 +461,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
   return <>
     <form onSubmit={createPayout} className="mb-5 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
       <h2 className="font-semibold">Request payout from finalized settlement</h2>
-      <p className="mt-1 text-sm text-neutral-700">A tax hold blocks the request by default. An override requires an admin reason and is audited. Enter a gross amount; the saved payout shows any withholding and net check amount.</p>
+      <p className="mt-1 text-sm text-neutral-700">A tax hold blocks the request by default. An override requires an admin reason and is audited. Enter a gross amount; the saved payout shows any withholding and net amount to send.</p>
       {createError && <p role="alert" className="mt-2 text-sm text-red-800">{createError}</p>}
       <div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-medium">Settlement ID<input className="input mt-1" required inputMode="numeric" pattern="[0-9]+" value={payoutForm.settlement_id} onChange={e => setPayoutForm(prev => ({ ...prev, settlement_id: e.target.value }))} /></label>
         <label className="text-sm font-medium">Gross amount (cents, optional)<input className="input mt-1" type="number" min="1" step="1" value={payoutForm.amount_cents} onChange={e => setPayoutForm(prev => ({ ...prev, amount_cents: e.target.value }))} /></label>
