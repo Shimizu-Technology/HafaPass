@@ -308,7 +308,8 @@ describe('EventSeriesReportPage', () => {
     // Closeout checklist & check reference pattern
     const checklist = screen.getByRole('region', { name: 'Closeout & Payout Checklist' })
     expect(within(checklist).getByText('CHK-<check_number>-E<event_id>')).toBeInTheDocument()
-    expect(within(checklist).getByText(/30-day reserve holdback reminder/i)).toBeInTheDocument()
+    expect(within(checklist).getByText('Payout check reference:')).toContainElement(within(checklist).getByText('CHK-<check_number>-E<event_id>'))
+    expect(within(checklist).queryByText(/30-day|approved check exceptions/i)).not.toBeInTheDocument()
 
     // Channel & Per-Event & Ticket-Type sections
     const channelsSection = screen.getByRole('region', { name: 'Channel Breakdown' })

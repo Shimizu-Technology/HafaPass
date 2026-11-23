@@ -6,11 +6,18 @@ import { usePlatformIdentity, usePlatformRequests, usePlatformVisit } from '../.
 import { taxClassificationLabel } from '../../utils/taxInformation'
 import { saveBlob } from '../../utils/download'
 
+const guamCalendar = new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit' })
+const monthLabels = Array.from({ length: 12 }, (_, index) =>
+  new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long' }).format(Date.UTC(2000, index, 1)),
+)
 const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
 
 function TaxReportsSession({ identity }) {
   const { beginRequest } = usePlatformRequests(identity, '/admin/tax-reports')
-  const [year, setYear] = useState(String(new Date().getFullYear()))
+  const today = guamCalendar.formatToParts(new Date())
+  const currentYear = today.find(part => part.type === 'year').value
+  const [year, setYear] = useState(currentYear)
+  const [month, setMonth] = useState(() => today.find(part => part.type === 'month').value)
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -41,12 +48,16 @@ function TaxReportsSession({ identity }) {
     setBusy(true); setError(null)
     try {
       const isSensitive = kind === 'preparation_export'
+      const isBpt = kind === 'bpt_events_export'
       const path = `/admin/tax_reports/${kind}`
       const response = isSensitive
         ? await apiClient.post(path, { year: report.year, include_full_tins: true, purpose }, { ...request.config, ...(isSensitive ? { responseType: 'blob' } : {}) })
-        : await apiClient.get(path, { ...request.config, params: { year: report.year }, responseType: 'blob' })
+        : await apiClient.get(path, { ...request.config, params: { year: report.year, ...(isBpt ? { month } : {}) }, responseType: 'blob' })
       if (!request.current() || epoch !== generation.current) return
-      saveBlob(response.data, `hafapass-${kind}-${report.year}${isSensitive ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv`)
+      const filename = isBpt
+        ? `hafapass-bpt-events-${report.year}-${month}.csv`
+        : `hafapass-${kind}-${report.year}${isSensitive ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv`
+      saveBlob(response.data, filename)
     } catch (e) {
       if (request.current() && epoch === generation.current && !request.handleError(e)) setError('The action failed. Please retry.')
     } finally { if (request.current()) setBusy(false); request.release() }
@@ -54,7 +65,7 @@ function TaxReportsSession({ identity }) {
   return <AdminLayout>
     <div className="space-y-6">
       <p className="text-sm text-neutral-700">Live-mode USD payments only. Calendar periods use Guam time. Cash retained by organizers and test payments are excluded. Reports help preparation; your accountant determines reporting and filing duties.</p>
-      <label className="block max-w-xs text-sm font-medium">Calendar year<select value={year} disabled={busy} onChange={e => setYear(e.target.value)} className="input mt-1">{Array.from({ length: 12 }, (_, i) => new Date().getFullYear() + 1 - i).map(value => <option key={value}>{value}</option>)}</select></label>
+      <label className="block max-w-xs text-sm font-medium">Calendar year<select value={year} disabled={busy} onChange={e => setYear(e.target.value)} className="input mt-1">{Array.from({ length: 12 }, (_, i) => Number(currentYear) + 1 - i).map(value => <option key={value}>{value}</option>)}</select></label>
       {error && <p role="alert" className="text-red-800">{error} <button type="button" className="min-h-11 underline" onClick={load}>Retry reports</button></p>}
       {!report && !error && <p role="status">Loading tax reports…</p>}
       {report && <>
@@ -87,6 +98,18 @@ function TaxReportsSession({ identity }) {
           <p className="mt-2 text-sm text-neutral-700">Actual card costs are shown separately against the collection month and may update when provider evidence arrives. They are not deducted from gross receipts.</p>
           <button disabled={busy} className="btn-secondary my-4" onClick={() => action('receipts_export')}>Export gross receipts CSV</button>
           <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly gross receipts table"><table className="w-full text-left text-sm"><caption className="sr-only">Monthly service fees and card costs for {report.year} in USD</caption><thead><tr>{['Month', 'Fees collected', 'Fees refunded', 'Gross receipts', 'Card costs'].map(label => <th key={label} scope="col" className="whitespace-nowrap p-2">{label}</th>)}</tr></thead><tbody>{report.months.map(row => <tr key={row.month} className="border-t border-neutral-200"><th scope="row" className="p-2">{String(row.month).padStart(2, '0')}</th>{['fees_collected_cents', 'fees_refunded_cents', 'gross_receipts_cents', 'card_processing_costs_cents'].map(key => <td key={key} className="whitespace-nowrap p-2">{money(row[key])}</td>)}</tr>)}</tbody></table></div>
+          <div className="mt-5 border-t border-neutral-200 pt-4">
+            <h3 className="font-semibold">Monthly BPT detail by event</h3>
+            <p className="mt-1 text-sm text-neutral-700">The CPA export includes service fees, fee refunds, ticket face value and paid organizer payouts. It identifies events and organizations by ID. Stripe processing costs are informational and do not reduce net service fees.</p>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="block text-sm font-medium">Guam calendar month
+                <select className="input mt-1" value={month} disabled={busy} onChange={e => setMonth(e.target.value)}>
+                  {monthLabels.map((label, index) => <option key={label} value={String(index + 1).padStart(2, '0')}>{label}</option>)}
+                </select>
+              </label>
+              <button disabled={busy} className="btn-secondary" onClick={() => action('bpt_events_export')}>Export monthly BPT detail CSV</button>
+            </div>
+          </div>
         </section>
       </>}
     </div>

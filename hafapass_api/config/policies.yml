@@ -432,3 +432,44 @@ documents:
       - heading: Get help or report a barrier
         body: |-
           If something on {{platform_name}} is hard to use, or you need help buying tickets, contact us {{support_contact}}. Tell us the page and what happened, and include the event name if you need tickets for a specific date.
+
+# Review-only proposed amendments. PolicyRegistry serves only the top-level
+# documents above. Requires Leon + CPA sign-off before the register is approved.
+draft:
+  version: "2026-11-24-copa-draft"
+  status: draft
+  effective_date: null
+  proposed_material_terms:
+    payout_schedule_text: "within 2–3 business days after your event"
+  replacement_sections:
+    organizer-agreement:
+      - heading: Our role as your limited agent
+        body: |-
+          You are the seller of the tickets to your event. You appoint {{operator_name}}, operating {{platform_name}}, as your limited agent solely to accept buyer payments for your tickets. A buyer's payment to {{platform_name}} is payment to you and fully discharges the buyer's payment obligation to you. Your ticket contract is between you and the buyer; {{operator_name}} is not a party to it.
+
+          {{operator_name}} sells its ticketing service to buyers and to you, and charges the service fee for that service. Receipts and tickets will name you as the seller ("Sold by" followed by your organizer name, then "Tickets by {{platform_name}}").
+
+          Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We hold collected ticket proceeds for you in a custodial capacity and record them separately from our service fees. The ticket face value belongs to you. {{operator_name}} has no claim of right to the face value. We remit your available balance under the Payouts section. We may withhold or offset amounts for refunds, chargebacks, cancelled or postponed events, and suspected fraud. You remain responsible for refunds beyond the funds we hold, including after a payout.
+      - heading: Payouts
+        payout_terms: bank_transfer_with_reserve
+        body: |-
+          We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes and receive required tax information. Bank transfer to your approved account is the standard payout method. We pay by check only as an approved exception recorded for your organization.
+
+          Your available balance is your ticket proceeds minus any service fees you absorb, refunds, chargebacks, adjustments, any reserve or other hold, and amounts already paid to you.
+
+          We hold about 10% of eligible organizer proceeds as a chargeback reserve. We release the remaining reserve 30 days after your event, subject to outstanding refunds, disputes, and other documented holds below.
+
+          We may delay or hold some or all of a payout while refunds or disputes are open, if an event is cancelled or changed, or during a documented risk or compliance review. We will give you a reason and review the hold when the underlying issue is resolved. A hold does not remove your responsibility for refunds or chargebacks.
+      - heading: Tax information
+        body: |-
+          Before any paid payout, you must provide accurate tax information, a completed W-9 or other form we require for your status, and accurate payee details. You must update them when they change. We may request corrections or pause a payout while required tax details are missing. We will arrange any legally required withholding or information reporting through a separate reviewed process. The tax reports in {{platform_name}} are preparation tools; they are not filed returns.
+
+          You are responsible for determining and paying taxes on your ticket sales, including any Guam Business Privilege Tax or event-specific levy that applies to you. {{operator_name}} is responsible for its own taxes on ticketing revenue. The service fee is not a government tax, and you must not describe it as one.
+
+          If you claim Guam Business Privilege Tax exemption for event receipts, provide your Guam Department of Revenue and Taxation (DRT) exemption certificate and, where applicable, a copy of your filed Specific Event Exemption Application.
+    buyer-terms:
+      - heading: Prices and the service fee
+        body: |-
+          The price we advertise for a ticket is the total you will pay for it, including the mandatory service fee. The checkout total matches the advertised price. If you choose an optional add-on such as merchandise or a donation, we show that amount separately before you pay. Guam Business Privilege Tax is handled by the business that owes it and is not charged as a separate line at checkout.
+
+          The service fee pays for the ticketing service: online sales, payment handling, ticket delivery, transfers, entry scanning, and buyer support. It is not a tax. The current fee schedule is {{fee_schedule}}. Each organizer decides whether buyers pay the fee, the organizer absorbs it, or the two share it. Either way, the total you see is the total you pay.

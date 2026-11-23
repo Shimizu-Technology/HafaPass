@@ -1,5 +1,7 @@
 # Settlement and Payout Operations
 
+Bank transfer to the organizer’s approved account is the standard. Send the available balance within 2–3 business days after the event once reconciliation and approval are complete. Hold about 10% of eligible proceeds for chargebacks and release the remaining reserve 30 days after the event, subject to open refunds, disputes and documented holds. Record check payouts only for approved exceptions.
+
 ## Statement lifecycle
 
 1. Complete or cancel the event. The hourly `CompletePastEventsJob` completes published events 6 hours after their end time (system actor, audited as `event.completed` with source `system`); an organizer manager can complete earlier. Events without an end time are not completed automatically.

@@ -3,7 +3,7 @@
 class ConnectedAccount < ApplicationRecord
   PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
   BANK_TRANSFERS_ENABLED = true
-  BANK_UNAVAILABLE_REASON = "Bank transfer is not available yet — HåfaPass currently pays by check"
+  BANK_UNAVAILABLE_REASON = "Bank transfer is unavailable. Contact HåfaPass about an approved check exception."
   CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
   MANUAL_PROVIDERS = %w[check manual].freeze
   encrypts :bank_account_number

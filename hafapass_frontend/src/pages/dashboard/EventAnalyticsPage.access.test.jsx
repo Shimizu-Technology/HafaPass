@@ -45,7 +45,7 @@ it('explains that HåfaPass covers card processing and shows payout timing', asy
     : url.endsWith('/stats') ? stats : { ...event, fee_policy: 'buyer_pays', buyer_fee_percent: 100 } }))
   mount()
   expect(await screen.findByText(/which includes card processing\. You receive the full ticket price\./)).toBeInTheDocument()
-  expect(screen.getByText('Payouts by check within 3 to 5 business days after your event.')).toBeInTheDocument()
+  expect(screen.getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
   expect(screen.getByText('HåfaPass covered $1.85')).toBeInTheDocument()
   expect(screen.getByText('Processing costs to you').nextSibling).toHaveTextContent('$0.00')
 })

@@ -428,7 +428,16 @@ RSpec.describe EventSeriesReport, type: :service do
         check_reference_pattern: "CHK-<check_number>-E<event_id>"
       )
       expect(checklist[:total_owed_cents]).to be > 0
-      expect(checklist[:guidance]).to include("CHK-<check_number>-E<event_id>")
+      expect(checklist[:guidance]).to include("For check payouts, use CHK-<check_number>-E<event_id>")
+      expect(checklist[:guidance]).not_to match(/30 days|bank transfer/i)
+    end
+
+    it "describes bank transfer closeout and reserve release under effective Copa terms" do
+      allow(PolicyRegistry).to receive(:organizer_payout_terms).and_return("bank_transfer_with_reserve")
+
+      guidance = described_class.call(series).dig(:closeout_checklist, :guidance)
+      expect(guidance).to include("confirmed bank transfer reference", "chargeback reserve 30 days after the event",
+        "For check payouts, use CHK-<check_number>-E<event_id>")
     end
 
     it "excludes Stripe test-mode payments in production across events, channels, and ticket types" do

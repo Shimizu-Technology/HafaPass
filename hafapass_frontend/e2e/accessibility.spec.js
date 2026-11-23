@@ -62,9 +62,9 @@ async function scan(page, journey) {
 
 async function tabTo(page, locator) {
   await expect(locator).toHaveCount(1)
-  for (let index = 0; index < 100; index += 1) {
+  for (let tabs = 0; tabs <= 100; tabs += 1) {
     if (await locator.evaluate(element => element === document.activeElement)) return
-    await page.keyboard.press('Tab')
+    if (tabs < 100) await page.keyboard.press('Tab')
   }
   throw new Error('Keyboard focus did not reach the expected control')
 }

@@ -114,6 +114,20 @@ class PolicyRegistry
       snapshot(["organizer-agreement"])
     end
 
+    def organizer_payout_terms
+      # The payout section carries the copy variant through promotion to any
+      # approved version. The register digest covers the section and its terms.
+      section = templates.fetch("organizer-agreement").fetch("sections")
+        .find { |item| item["heading"] == "Payouts" }
+      terms = section&.fetch("payout_terms", nil)
+      return if terms.blank? || draft? || effective_date.blank?
+      return if Date.iso8601(effective_date) > Time.current.in_time_zone("Pacific/Guam").to_date
+
+      terms if production_approved?
+    rescue Date::Error
+      nil
+    end
+
     def public_documents
       documents.deep_dup
     end

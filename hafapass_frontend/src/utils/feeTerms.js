@@ -9,7 +9,23 @@ export function parseFeeTerms(config) {
   if (!Number.isFinite(percent) || percent < 0 || !Number.isInteger(flatCents) || flatCents < 0) return null
   const bearer = ['platform', 'organizer'].includes(config.processing_fee_bearer) ? config.processing_fee_bearer : null
   const payoutScheduleText = typeof config.payout_schedule_text === 'string' ? config.payout_schedule_text.trim() || null : null
-  return { percent, flatCents, bearer, payoutScheduleText }
+  return { percent, flatCents, bearer, payoutScheduleText, organizerPayoutTerms: config.organizer_payout_terms }
+}
+
+export function organizerPayoutCopy(t, terms) {
+  if (!terms) return { bankTransfer: false, summary: t('buyerDiscovery.host.payoutTermsUnavailable'), detail: '' }
+
+  const bankTransfer = terms.organizerPayoutTerms === 'bank_transfer_with_reserve'
+  if (!bankTransfer) return { bankTransfer, summary: t('buyerDiscovery.host.checkPayouts'), detail: '' }
+
+  const schedule = terms.payoutScheduleText?.replace(/\.$/, '')
+  return {
+    bankTransfer,
+    summary: schedule
+      ? t('buyerDiscovery.host.scheduledBankTransferPayouts', { schedule })
+      : t('buyerDiscovery.host.bankTransferPayouts'),
+    detail: t('buyerDiscovery.host.bankTransferPayoutTerms'),
+  }
 }
 
 // Aggregate illustration for organizer screens. Mixed-price carts use the
@@ -67,12 +83,4 @@ export function organizerFeeExplanation(terms, feePolicy, buyerFeePercent) {
     sentences = [`Buyers pay a service fee of ${rate}.`, processing]
   }
   return [...sentences, 'Free tickets have no fee.'].filter(Boolean).join(' ')
-}
-
-
-// Display-only punctuation: never change the saved or policy-approved schedule.
-export function formatPayoutSchedule(value) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (!/[\p{L}\p{N}]/u.test(text)) return ''
-  return /[.!?…。！？]$/u.test(text) ? text : `${text}.`
 }

@@ -41,7 +41,6 @@ export function parseHostPricing(config) {
     basisPoints,
     flatCents,
     processingIncluded: bearer ? bearer === 'platform' : null,
-    payoutScheduleText: cleanText(config.payout_schedule_text),
   }
 }
 

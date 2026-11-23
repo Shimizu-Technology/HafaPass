@@ -289,6 +289,7 @@ Rails.application.routes.draw do
         resource :tax_reports, only: [:show] do
           get :organizers_export
           get :receipts_export
+          get :bpt_events_export
           post :preparation_export
         end
         get "tin_matching", to: "tin_matching#index"

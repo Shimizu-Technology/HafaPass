@@ -23,7 +23,8 @@ RSpec.describe "Admin tax reporting", type: :request do
 
   it "requires admin for reports and exports" do
     headers = auth_headers(create(:user))
-    ["/api/v1/admin/tax_reports", "/api/v1/admin/tax_reports/organizers_export", "/api/v1/admin/tax_reports/receipts_export"].each do |path|
+    ["/api/v1/admin/tax_reports", "/api/v1/admin/tax_reports/organizers_export", "/api/v1/admin/tax_reports/receipts_export",
+      "/api/v1/admin/tax_reports/bpt_events_export"].each do |path|
       get path, params: { year: 2026 }, headers: headers
       expect(response).to have_http_status(:forbidden)
     end

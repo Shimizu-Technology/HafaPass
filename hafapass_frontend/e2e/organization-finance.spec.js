@@ -10,6 +10,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('owner can review team roles, choose check payouts, and create an invitation', async ({ page }) => {
+  await page.route('**/api/v1/config', route => json(route, {
+    payment_mode: 'simulate', service_fee_percent: '5.0', service_fee_flat_cents: 100, organizer_payout_terms: null,
+  }))
   await page.route('**/api/v1/organizer/organization', route => json(route, {
     id: 7, name: 'Island Events', role: 'owner', payout_ready: false, timezone: 'Pacific/Guam'
   }))

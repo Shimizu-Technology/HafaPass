@@ -69,7 +69,7 @@ describe('host page pricing', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
-    expect(within(section).getByText('Payouts by check within 3 to 5 business days after your event')).toBeInTheDocument()
+    expect(within(section).getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
     expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
     expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
@@ -86,7 +86,7 @@ describe('host page pricing', () => {
     expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$6.00')
     expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$74.00')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket, with card processing included/)).toBeInTheDocument()
-    expect(screen.getByText(/Payouts are sent by check within 3 to 5 business days after your event/)).toBeInTheDocument()
+    expect(screen.queryByText(/Standard payout target|remaining reserve/)).not.toBeInTheDocument()
   })
 
   it.each([
@@ -136,13 +136,24 @@ describe('host page pricing', () => {
     expect(screen.getAllByText(/automatically start eligible card refunds, including the service fee/)).toHaveLength(2)
   })
 
-  it('shows payout timing only when the API provides it', async () => {
+  it('uses the agreement schedule when the fee config has no saved payout terms', async () => {
     apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
     await load()
     await screen.findByTestId('host-fee-summary')
-    expect(screen.queryByText(/Payouts within/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Payouts are sent/)).not.toBeInTheDocument()
-    expect(screen.getByText(/your dashboard shows a settlement statement/)).toBeInTheDocument()
+    expect(within(pricing()).getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
+    expect(screen.getByText(/Your dashboard shows a settlement statement/)).toBeInTheDocument()
+  })
+
+  it('shows the saved bank transfer schedule and reserve terms once the Copa terms take effect', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...platformConfig, organizer_payout_terms: 'bank_transfer_with_reserve', payout_schedule_text: 'within 2–3 business days after your event' } })
+    await load()
+    const timing = 'Standard payout target: bank transfer within 2–3 business days after your event.'
+    expect(await within(pricing()).findByText(timing)).toBeInTheDocument()
+    const payoutQuestion = screen.getByText('When do I get paid?')
+    await user().click(payoutQuestion)
+    const answer = within(payoutQuestion.closest('details'))
+    expect(answer.getByText(/hold about 10% of eligible proceeds.*reserve 30 days after your event/)).toBeVisible()
+    expect(answer.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
   })
 
   it('handles free tickets, a fee larger than the ticket and invalid prices', async () => {
@@ -182,11 +193,28 @@ describe('host page pricing', () => {
     expect(await screen.findByTestId('host-fee-summary')).toHaveTextContent('5% + $1.00 per paid ticket')
   })
 
-  it('treats a failed config request the same way', async () => {
+  it('keeps payout guidance neutral while config is loading', async () => {
+    apiClient.get.mockReturnValue(new Promise(() => {}))
+    await load()
+    await userEvent.click(screen.getByText('When do I get paid?'))
+    const faq = within(screen.getByText('When do I get paid?').closest('details'))
+    expect(faq.getByText(/Payout method and timing are set in your Organizer Agreement/)).toBeVisible()
+    expect(faq.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+    expect(within(pricing()).getByText('Payout method and timing are set in your Organizer Agreement.')).toBeVisible()
+    expect(screen.queryByText(/Payouts are made by check|Standard payout target|remaining reserve/)).not.toBeInTheDocument()
+  })
+
+  it('keeps payout guidance neutral when the config request fails', async () => {
     apiClient.get.mockRejectedValue(new Error('Network unavailable'))
     await load()
     expect(await screen.findByText('Current rates aren’t available right now')).toBeInTheDocument()
     expect(screen.queryByTestId('host-fee-summary')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('When do I get paid?'))
+    const faq = within(screen.getByText('When do I get paid?').closest('details'))
+    expect(faq.getByText(/Payout method and timing are set in your Organizer Agreement/)).toBeVisible()
+    expect(faq.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+    expect(within(pricing()).getByText('Payout method and timing are set in your Organizer Agreement.')).toBeVisible()
+    expect(screen.queryByText(/Payouts are made by check|Standard payout target|remaining reserve/)).not.toBeInTheDocument()
   })
 })
 

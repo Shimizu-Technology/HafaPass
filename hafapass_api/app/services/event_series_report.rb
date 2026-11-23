@@ -301,7 +301,6 @@ class EventSeriesReport
       settlement_state: s_state,
       payout_state: p_state,
       closeout_note: closeout_note_for_event(
-        event_id: event.id,
         awaiting_completion: awaiting_completion,
         settlement_state: s_state,
         payout_state: p_state,
@@ -655,6 +654,12 @@ class EventSeriesReport
   end
 
   def build_closeout_checklist(rows, combined)
+    payout_guidance = if PolicyRegistry.organizer_payout_terms == "bank_transfer_with_reserve"
+      "Record the confirmed bank transfer reference. Release the remaining chargeback reserve 30 days after the event, subject to open refunds, disputes and other documented holds. "
+    else
+      "Record the reference for the payout method used. "
+    end
+
     {
       events_total: rows.size,
       awaiting_completion_count: rows.count { |row| row[:awaiting_completion] },
@@ -666,23 +671,23 @@ class EventSeriesReport
       total_reserve_cents: combined[:reserve_cents],
       total_owed_cents: combined[:owed_cents],
       check_reference_pattern: CHECK_REFERENCE_PATTERN,
-      guidance: "Finalize each completed event's settlement statement individually, issue check payouts using " \
-        "#{CHECK_REFERENCE_PATTERN}, and release any 30-day reserve holdbacks after the dispute window closes. " \
+      guidance: "Finalize each completed event's settlement statement individually. #{payout_guidance}" \
+        "For check payouts, use #{CHECK_REFERENCE_PATTERN}. " \
         "Door cash stays in organizer custody and is excluded from platform payouts."
     }
   end
 
-  def closeout_note_for_event(event_id:, awaiting_completion:, settlement_state:, payout_state:, reserve_cents:, owed_cents:)
+  def closeout_note_for_event(awaiting_completion:, settlement_state:, payout_state:, reserve_cents:, owed_cents:)
     return "Mark event completed so its settlement statement can be finalized." if awaiting_completion
     return "Finalize a new settlement version to capture recent activity before requesting payout." if settlement_state == "changed"
-    return "Settlement finalized and ready for payout (use reference CHK-<num>-E#{event_id})." if payout_state == "ready"
-    return "Payout in progress; confirm check clearance and reference CHK-<num>-E#{event_id}." if payout_state == "in_progress"
+    return "Settlement finalized and ready for payout to the approved destination." if payout_state == "ready"
+    return "Payout in progress. Confirm the payout using the recorded reference." if payout_state == "in_progress"
     return "Payout on hold while cancellation refunds are being resolved." if payout_state == "on_hold"
     if payout_state == "paid"
-      return reserve_cents.positive? ? "Paid out; reserve holdback remains pending 30-day release." : "Settled and paid in full."
+      return reserve_cents.positive? ? "Paid out; a reserve remains on hold." : "Settled and paid in full."
     end
     return "Finalize statement once the event concludes to unlock payout." if settlement_state == "not_finalized" && owed_cents.positive?
-    return "Reserve holdback active; release after 30-day post-event window." if reserve_cents.positive?
+    return "A reserve remains on hold." if reserve_cents.positive?
 
     "No payout balance currently owed."
   end
