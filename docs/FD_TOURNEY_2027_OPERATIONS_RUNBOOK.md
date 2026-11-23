@@ -171,12 +171,12 @@ Post-drill verification:
 ### First 2–3 business days after the pilot
 - [ ] Confirm the event status is `completed` (manual complete in dashboard, or automatic 6 hours after `ends_at` via `CompletePastEventsJob`).
 - [ ] Resolve any pending refunds, open disputes, or reconciliation exceptions (`/admin/reconciliation_exceptions`).
-- [ ] Finalize the settlement statement (`POST /api/v1/organizer/events/:id/finance/finalize`) and export the sales and finance reports (`orders_export`, `statement_export`).
+- [ ] Record a `reserve_hold` of about 10% of eligible proceeds for chargebacks. Finalize the settlement statement (`POST /api/v1/organizer/events/:id/finance/finalize`) and export the sales and finance reports (`orders_export`, `statement_export`).
 - [ ] Transfer the available balance to the approved **Class of 2017 Bank of Guam** account and record the confirmed payout via `PATCH /api/v1/admin/payouts/:id` with:
   - `status`: `"paid"`
   - `provider_payout_id`: the actual bank transfer identifier
   - `evidence`: `{ reference, confirmed_at, reason }` (matching exact cents)
-- [ ] Hold about 10% of eligible proceeds for chargebacks and reconcile the remaining reserve release 30 days after the pilot.
+- [ ] After 30 days, reconcile outstanding liabilities, record `reserve_release`, re-finalize the statement and reconcile the final transfer.
 - [ ] Write a short post-pilot notes list (any check-in, export, registration-form, or payout friction) and resolve items before **April 15, 2027** team registration opens.
 
 ---
