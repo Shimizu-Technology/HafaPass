@@ -771,6 +771,7 @@ module Api
               on_sale: sales_open && tt.on_sale?(at: at),
               max_per_order: tt.max_per_order,
               max_per_buyer: tt.max_per_buyer,
+              attendee_info_mode: tt.attendee_info_mode,
               sales_start_at: tt.sales_start_at,
               sales_end_at: tt.sales_end_at,
               is_pass: tt.is_pass?,
@@ -815,7 +816,9 @@ module Api
       end
 
       def registration_question_json(question)
-        { id: question.id, prompt: question.prompt, kind: question.kind, required: question.required, options: question.options }
+        { id: question.id, prompt: question.prompt, kind: question.kind, required: question.required, options: question.options,
+          scope: question.scope, ticket_type_ids: question.ticket_type_ids, show_on_scanner: question.show_on_scanner,
+          help_text: question.help_text, validation_rules: question.validation_rules }
       end
 
       def waiver_json(waiver)

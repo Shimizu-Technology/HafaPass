@@ -243,7 +243,9 @@ Rails.application.routes.draw do
             end
           end
           resources :catalog_items, except: [:show]
-          resources :registration_questions, except: [:show]
+          resources :registration_questions, except: [:show] do
+            collection { post :apply_template }
+          end
           resources :event_waivers, except: [:show]
           resources :promoters, except: [:show]
           resources :communication_campaigns, only: [:index, :create, :update, :destroy] do

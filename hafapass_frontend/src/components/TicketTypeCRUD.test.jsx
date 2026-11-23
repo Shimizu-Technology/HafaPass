@@ -45,14 +45,14 @@ describe('organizer ticket setup', () => {
     await user.click(screen.getByRole('button', { name: 'Add ticket type' }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/42/ticket_types', {
       name: 'General Admission', description: null, price_cents: 0, quantity_available: 18,
-      door_allocation: null, max_per_order: null, max_per_buyer: null, sales_start_at: null, sales_end_at: null,
+      door_allocation: null, max_per_order: null, max_per_buyer: null, attendee_info_mode: 'none', sales_start_at: null, sales_end_at: null,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
   it('retains the configured quantity and optional limits when editing an existing type', async () => {
     render(<MemoryRouter><TicketTypeCRUD eventId={42} remainingCapacity={5} onRefresh={vi.fn()} ticketTypes={[{
       id: 7, name: 'Early admission', description: 'Existing terms', price_cents: 3995, quantity_available: 25,
-      quantity_sold: 10, door_allocation: 0, max_per_order: 3, max_per_buyer: 6,
+      quantity_sold: 10, door_allocation: 0, max_per_order: 3, max_per_buyer: 6, attendee_info_mode: 'name_only',
       sales_start_at: '2026-10-20T08:00:00Z', sales_end_at: '2026-10-21T08:00:00Z',
     }]} /></MemoryRouter>)
     const user = userEvent.setup()
@@ -61,10 +61,15 @@ describe('organizer ticket setup', () => {
     await user.click(screen.getByText('More ticket options'))
     expect(screen.getByText('More ticket options').closest('details')).toHaveAttribute('open')
     expect(screen.getByLabelText('Tickets per order')).toHaveValue(3)
+    expect(screen.getByLabelText('Tickets per buyer')).toHaveAccessibleDescription(/Leave blank for unlimited/)
+    const attendeeInfo = screen.getByLabelText('Attendee info at checkout')
+    expect(attendeeInfo).toHaveValue('name_only')
+    expect(screen.getByRole('option', { name: 'None — buyer name only' })).toBeInTheDocument()
+    await user.selectOptions(attendeeInfo, "Ask for each attendee's name and email")
     await user.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/42/ticket_types/7', {
       name: 'Early admission', description: 'Existing terms', price_cents: 3995, quantity_available: 25,
-      door_allocation: 0, max_per_order: 3, max_per_buyer: 6,
+      door_allocation: 0, max_per_order: 3, max_per_buyer: 6, attendee_info_mode: 'name_and_email',
       sales_start_at: '2026-10-20T18:00', sales_end_at: '2026-10-21T18:00',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })

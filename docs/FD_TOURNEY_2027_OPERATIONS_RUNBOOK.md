@@ -41,7 +41,9 @@ Create one template Regular Night event and generate the remaining regular night
 | **Regular Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Standard single-night admission |
 | **Senior Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Senior single-night admission |
 | **Kid Daily** | `$TBD` | `max_per_order: 10`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Youth single-night admission |
-| **Alumni / FD Student** | `$0.00` | `max_per_order: 4`, `max_per_buyer: blank` | Pre-sale open through night `ends_at` | Free regular-night admission; alumni / student ID checked at the door |
+| **Alumni / FD Student** | `$0.00` | `max_per_order: 4`, `max_per_buyer: blank`, `attendee_info_mode: name_only` | Pre-sale open through night `ends_at` | Free regular-night admission; each free ticket carries its attendee's name and Graduation Year for the door check |
+
+> **Mixed carts and alumni names:** Leave `max_per_buyer` blank on the free alumni ticket so a family can buy paid Daily tickets and several free alumni tickets in one checkout. In **Registration & waivers**, choose the alumni ticket type under *Ask these questions for* and click **Alumni Door Verification**: it sets *Attendee info at checkout* to *Ask for each attendee's name* on that ticket type and adds a per-ticket **Graduation Year** (1950–2035, marked *Show on door scanner*). Checkout then shows one card per alumni ticket (*Alumni / FD Student Ticket #1*, *#2*, ...) while Daily tickets stay card-free. Event cloning copies the attendee setting on ticket types but not registration questions, so apply the template on each cloned night.
 
 > **Open question for FDMSAA:** Confirm whether free alumni and current FD students need a `$0` QR ticket on regular nights (for attendance tracking and faster gate flow) or can walk in by showing ID at the door without a ticket.
 

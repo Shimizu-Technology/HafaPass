@@ -564,6 +564,7 @@
       "trigger": "created_at",
       "action": "keep",
       "pii_columns": [
+        "metadata",
         "name",
         "tier_name"
       ]
@@ -2083,7 +2084,8 @@
       "ticket_type_id": "system",
       "tier_name": "pii",
       "unit_price_cents": "financial",
-      "updated_at": "system"
+      "updated_at": "system",
+      "metadata": "pii"
     },
     "orders": {
       "id": "non-personal",
@@ -2631,7 +2633,12 @@
       "position": "non-personal",
       "prompt": "pii",
       "required": "non-personal",
-      "updated_at": "system"
+      "updated_at": "system",
+      "scope": "non-personal",
+      "ticket_type_ids": "system",
+      "show_on_scanner": "non-personal",
+      "help_text": "pii",
+      "validation_rules": "non-personal"
     },
     "registration_responses": {
       "id": "system",
@@ -2645,7 +2652,8 @@
       "registration_question_id": "system",
       "required_snapshot": "non-personal",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "ticket_id": "system"
     },
     "runtime_alert_states": {
       "signal": "system",
@@ -3018,7 +3026,8 @@
       "updated_at": "system",
       "translations": "pii",
       "translation_status": "system",
-      "translation_requested_at": "system"
+      "translation_requested_at": "system",
+      "attendee_info_mode": "non-personal"
     },
     "tickets": {
       "id": "system",

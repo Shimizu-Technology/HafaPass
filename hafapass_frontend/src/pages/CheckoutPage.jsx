@@ -24,6 +24,8 @@ import { SellerLine } from '../components/PriceDisclosure'
 import { estimateCheckoutLine } from '../utils/checkoutEstimate'
 import PaidCheckoutGate from '../components/PaidCheckoutGate'
 import { useSupportContact } from '../utils/supportContact'
+import RegistrationQuestionField from '../components/checkout/RegistrationQuestionField'
+import { answersPayload, questionAnswerError } from '../utils/registrationAnswers'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
@@ -36,6 +38,35 @@ export default function CheckoutPage() {
 function selectedTicketType(event, ticketTypeId) {
   return event?.ticket_types?.find(type => String(type.id) === String(ticketTypeId))
 }
+
+// Empty ticket_type_ids means a question applies to every ticket type.
+function questionAppliesTo(question, ticketTypeIds) {
+  const scoped = (question.ticket_type_ids || []).map(String)
+  return scoped.length === 0 || ticketTypeIds.some(id => scoped.includes(String(id)))
+}
+
+function orderQuestionsFor(event, lineItems) {
+  const ticketTypeIds = (lineItems || []).map(item => item.ticket_type_id)
+  return (event?.registration_questions || []).filter(question => question.scope !== 'ticket' && questionAppliesTo(question, ticketTypeIds))
+}
+
+// One card per ticket whose type asks for attendee details or has per-ticket
+// questions; every other ticket keeps the buyer's name and stays card-free.
+function attendeeSlotsFor(event, lineItems) {
+  const ticketQuestions = (event?.registration_questions || []).filter(question => question.scope === 'ticket')
+  const quantities = new Map()
+  ;(lineItems || []).forEach(item => quantities.set(String(item.ticket_type_id), (quantities.get(String(item.ticket_type_id)) || 0) + item.quantity))
+  return [...quantities].flatMap(([ticketTypeId, quantity]) => {
+    const ticketType = selectedTicketType(event, ticketTypeId)
+    if (!ticketType) return []
+    const mode = ticketType.attendee_info_mode || 'none'
+    const questions = ticketQuestions.filter(question => questionAppliesTo(question, [ticketTypeId]))
+    if (mode === 'none' && questions.length === 0) return []
+    return Array.from({ length: quantity }, (_, index) => ({ key: `${ticketType.id}_${index}`, ticketType, index, mode, questions }))
+  })
+}
+
+const BUYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function selectionMatchesEvent(event, lineItems, slug) {
   return event?.slug === slug && Array.isArray(lineItems) && lineItems.length > 0
@@ -115,6 +146,7 @@ function CheckoutContent({ buyerId }) {
   const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [catalogSelections, setCatalogSelections] = useState({})
   const [registrationAnswers, setRegistrationAnswers] = useState({})
+  const [attendees, setAttendees] = useState({})
   const [acceptedWaivers, setAcceptedWaivers] = useState({})
   const [formErrors, setFormErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -388,15 +420,64 @@ function CheckoutContent({ buyerId }) {
     setPromoError(null)
   }
 
+  const orderQuestions = orderQuestionsFor(event, lineItems)
+  const attendeeSlots = attendeeSlotsFor(event, lineItems)
+  const slotTitle = slot => t('buyer.Checkout.ticketNumber', { name: slot.ticketType.name, number: slot.index + 1 })
+  const errorTarget = field => ({ name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' })[field]
+    || (field.startsWith('attendee_') ? field.replaceAll('_', '-') : field.replace('question_', 'question-').replace('waiver_', 'waiver-'))
+  const errorLabel = field => {
+    const attendeeField = field.match(/^attendee_([^_]+_\d+)_(.+)$/)
+    if (attendeeField) {
+      const slot = attendeeSlots.find(candidate => candidate.key === attendeeField[1])
+      const part = attendeeField[2]
+      const partLabel = part === 'name' ? t('checkout.fullName') : part === 'email' ? t('checkout.emailAddress')
+        : slot?.questions.find(question => `question_${question.id}` === part)?.prompt
+      return slot ? `${slotTitle(slot)} · ${partLabel}` : partLabel
+    }
+    if (field.startsWith('question_')) return event.registration_questions?.find(question => String(question.id) === field.slice(9))?.prompt
+    if (field.startsWith('waiver_')) return event.waivers?.find(waiver => String(waiver.id) === field.slice(7))?.title
+    return { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: t('buyer.Checkout.termsLabel') }[field]
+  }
+  const updateAttendee = (slot, changes, part) => {
+    setAttendees(previous => {
+      const current = previous[slot.key] || {}
+      return { ...previous, [slot.key]: { ...current, ...changes, ...(changes.answers ? { answers: { ...current.answers, ...changes.answers } } : {}) } }
+    })
+    setFormErrors(previous => ({ ...previous, [`attendee_${slot.key}_${part}`]: null }))
+  }
+  // "Use my info" copies the buyer's name (and email) onto this ticket.
+  const copyBuyerInfo = slot => {
+    if (!buyerName.trim()) {
+      setFormErrors(previous => ({ ...previous, name: t('buyer.Checkout.nameIsRequired') }))
+      document.getElementById('buyerName')?.focus()
+      return
+    }
+    updateAttendee(slot, { name: buyerName.trim(), ...(slot.mode === 'name_and_email' ? { email: buyerEmail.trim() } : {}) }, 'name')
+    if (slot.mode === 'name_and_email') setFormErrors(previous => ({ ...previous, [`attendee_${slot.key}_email`]: null }))
+  }
+
   const validateForm = () => {
     const errors = {}
     if (!buyerName.trim()) errors.name = t('buyer.Checkout.nameIsRequired')
     if (!buyerEmail.trim()) errors.email = t('buyer.Checkout.emailIsRequired')
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail.trim())) errors.email = t('buyer.Checkout.pleaseEnterAValidEmail')
+    else if (!BUYER_EMAIL_PATTERN.test(buyerEmail.trim())) errors.email = t('buyer.Checkout.pleaseEnterAValidEmail')
     if (!termsAccepted) errors.terms = t('buyer.Checkout.youMustAcceptTheBuyerTermsToContinue')
-    event?.registration_questions?.forEach(question => {
-      const answer = registrationAnswers[question.id]
-      if (question.required && (answer === undefined || answer === null || (typeof answer === 'string' && !answer.trim()))) errors[`question_${question.id}`] = t('buyer.Checkout.answerRequired')
+    attendeeSlots.forEach(slot => {
+      const details = attendees[slot.key] || {}
+      const base = `attendee_${slot.key}`
+      if (slot.mode !== 'none' && !details.name?.trim()) errors[`${base}_name`] = t('buyer.Checkout.enterTheAttendeesFullName')
+      if (slot.mode === 'name_and_email') {
+        if (!details.email?.trim()) errors[`${base}_email`] = t('buyer.Checkout.enterTheAttendeesEmail')
+        else if (!BUYER_EMAIL_PATTERN.test(details.email.trim())) errors[`${base}_email`] = t('buyer.Checkout.pleaseEnterAValidEmail')
+      }
+      slot.questions.forEach(question => {
+        const message = questionAnswerError(question, details.answers?.[question.id], t)
+        if (message) errors[`${base}_question_${question.id}`] = message
+      })
+    })
+    orderQuestions.forEach(question => {
+      const message = questionAnswerError(question, registrationAnswers[question.id], t)
+      if (message) errors[`question_${question.id}`] = message
     })
     event?.waivers?.forEach(waiver => {
       if (waiver.required && !acceptedWaivers[waiver.id]) errors[`waiver_${waiver.id}`] = t('buyer.Checkout.waiverRequired')
@@ -418,9 +499,7 @@ function CheckoutContent({ buyerId }) {
     const errors = validateForm()
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
-      const firstError = Object.keys(errors)[0]
-      const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[firstError]
-        || firstError.replace('question_', 'question-').replace('waiver_', 'waiver-')
+      const target = errorTarget(Object.keys(errors)[0])
       requestAnimationFrame(() => document.getElementById(target)?.focus())
       return
     }
@@ -448,7 +527,17 @@ function CheckoutContent({ buyerId }) {
           catalog_item_id: Number(id), quantity: value.quantity,
           amount_cents: event.catalog_items?.find(item => item.id === Number(id))?.kind === 'donation' ? (value.amount_cents || null) : null,
         })),
-        registration_answers: registrationAnswers,
+        registration_answers: answersPayload(orderQuestions, registrationAnswers),
+        ...(attendeeSlots.length > 0 ? { attendee_assignments: attendeeSlots.map(slot => {
+          const details = attendees[slot.key] || {}
+          return {
+            ticket_type_id: slot.ticketType.id,
+            index: slot.index,
+            ...(slot.mode !== 'none' ? { attendee_name: (details.name || '').trim() } : {}),
+            ...(slot.mode === 'name_and_email' ? { attendee_email: (details.email || '').trim() } : {}),
+            registration_answers: answersPayload(slot.questions, details.answers || {}),
+          }
+        }) } : {}),
         waiver_acceptances: (event.waivers || []).filter(waiver => acceptedWaivers[waiver.id]).map(waiver => ({ event_waiver_id: waiver.id, version: waiver.version })),
         referral_code: new URLSearchParams(location.search).get('ref'),
         attribution: {
@@ -810,11 +899,8 @@ function CheckoutContent({ buyerId }) {
                 <p className="font-semibold">{t('buyer.Checkout.checkYourInformationBeforeContinuing')}</p>
                 <ul className="mt-2 space-y-1">
                   {Object.entries(formErrors).filter(([, message]) => message).map(([field, message]) => {
-                    const target = { name: 'buyerName', email: 'buyerEmail', terms: 'termsAccepted' }[field]
-                      || field.replace('question_', 'question-').replace('waiver_', 'waiver-')
-                    const label = field.startsWith('question_') ? event.registration_questions.find(question => String(question.id) === field.slice(9))?.prompt
-                      : field.startsWith('waiver_') ? event.waivers.find(waiver => String(waiver.id) === field.slice(7))?.title
-                        : { name: t('checkout.fullName'), email: t('checkout.emailAddress'), terms: t('buyer.Checkout.termsLabel') }[field]
+                    const target = errorTarget(field)
+                    const label = errorLabel(field)
                     return <li key={field}><a href={`#${target}`} className="underline underline-offset-2" onClick={() => document.getElementById(target)?.focus()}>{label}: {message}</a></li>
                   })}
                 </ul>
@@ -844,6 +930,46 @@ function CheckoutContent({ buyerId }) {
                     onChange={(e) => setBuyerPhone(e.target.value)}
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
                 </div>
+                {attendeeSlots.length > 0 && (
+                  <fieldset className="rounded-xl border border-neutral-200 p-4">
+                    <legend className="px-1 text-sm font-semibold text-neutral-900">{t('buyer.Checkout.ticketDetails')}</legend>
+                    <p className="mb-3 text-base text-neutral-600">{t('buyer.Checkout.tellUsWhoEachTicketIsFor')}</p>
+                    <div className="space-y-4">
+                      {attendeeSlots.map(slot => {
+                        const details = attendees[slot.key] || {}
+                        const base = `attendee-${slot.key.replace('_', '-')}`
+                        const errorKey = part => `attendee_${slot.key}_${part}`
+                        return <section key={slot.key} aria-labelledby={`${base}-title`} className="rounded-xl bg-neutral-50 p-4">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <h3 id={`${base}-title`} className="min-w-0 break-words text-base font-semibold text-neutral-900">{slotTitle(slot)}</h3>
+                            {slot.index === 0 && slot.mode !== 'none' && <button type="button" disabled={submitting} onClick={() => copyBuyerInfo(slot)}
+                              aria-label={t('buyer.Checkout.useMyInfoFor', { ticket: slotTitle(slot) })}
+                              className="btn-secondary min-h-11 px-4 py-2 text-base">{t('buyer.Checkout.useMyInfo')}</button>}
+                          </div>
+                          <div className="space-y-4">
+                            {slot.mode !== 'none' && <div>
+                              <label htmlFor={`${base}-name`} className="mb-1 block text-base font-medium text-neutral-800">{t('checkout.fullName')} *</label>
+                              <input id={`${base}-name`} type="text" autoComplete="off" value={details.name || ''} disabled={submitting}
+                                aria-invalid={Boolean(formErrors[errorKey('name')])} aria-describedby={formErrors[errorKey('name')] ? `${base}-name-error` : undefined}
+                                onChange={e => updateAttendee(slot, { name: e.target.value }, 'name')} className={`input text-base ${formErrors[errorKey('name')] ? 'input-error' : ''}`} />
+                              {formErrors[errorKey('name')] && <p id={`${base}-name-error`} className="mt-1 text-base text-danger-700">{formErrors[errorKey('name')]}</p>}
+                            </div>}
+                            {slot.mode === 'name_and_email' && <div>
+                              <label htmlFor={`${base}-email`} className="mb-1 block text-base font-medium text-neutral-800">{t('checkout.emailAddress')} *</label>
+                              <input id={`${base}-email`} type="email" inputMode="email" autoComplete="off" value={details.email || ''} disabled={submitting}
+                                aria-invalid={Boolean(formErrors[errorKey('email')])} aria-describedby={formErrors[errorKey('email')] ? `${base}-email-error` : undefined}
+                                onChange={e => updateAttendee(slot, { email: e.target.value }, 'email')} className={`input text-base ${formErrors[errorKey('email')] ? 'input-error' : ''}`} />
+                              {formErrors[errorKey('email')] && <p id={`${base}-email-error`} className="mt-1 text-base text-danger-700">{formErrors[errorKey('email')]}</p>}
+                            </div>}
+                            {slot.questions.map(question => <RegistrationQuestionField key={question.id} question={question} id={`${base}-question-${question.id}`}
+                              value={details.answers?.[question.id]} error={formErrors[errorKey(`question_${question.id}`)]} disabled={submitting}
+                              onChange={value => updateAttendee(slot, { answers: { [question.id]: value } }, `question_${question.id}`)} />)}
+                          </div>
+                        </section>
+                      })}
+                    </div>
+                  </fieldset>
+                )}
                 {event.catalog_items?.length > 0 && (
                   <fieldset className="rounded-xl border border-neutral-200 p-4">
                     <legend className="px-1 text-sm font-semibold text-neutral-900">{t('buyer.Checkout.extrasAndSupport')}</legend>
@@ -861,18 +987,13 @@ function CheckoutContent({ buyerId }) {
                     </div>
                   </fieldset>
                 )}
-                {event.registration_questions?.length > 0 && (
+                {orderQuestions.length > 0 && (
                   <fieldset className="rounded-xl border border-neutral-200 p-4">
                     <legend className="px-1 text-sm font-semibold text-neutral-900">{t('buyer.Checkout.registration')}</legend>
                     <div className="space-y-4">
-                      {event.registration_questions.map(question => <div key={question.id}>
-                        <label className="mb-1 block text-sm font-medium text-neutral-700" htmlFor={`question-${question.id}`}>{question.prompt}{question.required && ' *'}</label>
-                        {question.kind === 'selection' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.selectOne')}</option>{question.options.map(option => <option key={option} value={option}>{option}</option>)}</select>
-                          : question.kind === 'checkbox' ? <select id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] == null ? '' : String(registrationAnswers[question.id])} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value === '' ? undefined : e.target.value === 'true' })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }}><option value="">{t('buyer.Checkout.chooseAnAnswer')}</option><option value="true">{t('buyer.Checkout.yes')}</option><option value="false">{t('buyer.Checkout.no')}</option></select>
-                            : question.kind === 'long_text' ? <textarea id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" rows="3" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />
-                              : <input id={`question-${question.id}`} required={question.required} aria-invalid={Boolean(formErrors[`question_${question.id}`])} aria-describedby={formErrors[`question_${question.id}`] ? `question-${question.id}-error` : undefined} disabled={submitting} className="input" value={registrationAnswers[question.id] || ''} onChange={e => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: e.target.value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />}
-                        {formErrors[`question_${question.id}`] && <p id={`question-${question.id}-error`} className="mt-1 text-sm text-danger-700">{formErrors[`question_${question.id}`]}</p>}
-                      </div>)}
+                      {orderQuestions.map(question => <RegistrationQuestionField key={question.id} question={question} id={`question-${question.id}`}
+                        value={registrationAnswers[question.id]} error={formErrors[`question_${question.id}`]} disabled={submitting}
+                        onChange={value => { setRegistrationAnswers(previous => ({ ...previous, [question.id]: value })); setFormErrors(previous => ({ ...previous, [`question_${question.id}`]: null })) }} />)}
                     </div>
                   </fieldset>
                 )}
