@@ -4,7 +4,7 @@ export const pluralize = (count, singular, plural = `${singular}s`) => `${count}
 
 export const ticketCountLabel = count => pluralize(count, 'ticket')
 
-const formatDollars = cents => `$${(cents / 100).toFixed(2)}`
+export const formatDollars = cents => `$${(cents / 100).toFixed(2)}`
 
 // Partial refunds must be a whole number of cents between 1 cent and the
 // refundable amount; rounding would otherwise turn 0.004 into a $0.00 refund.

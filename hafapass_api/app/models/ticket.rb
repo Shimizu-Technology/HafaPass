@@ -215,6 +215,13 @@ class Ticket < ApplicationRecord
     end
   end
 
+  # The caller holds the order and ticket locks and has checked admission.
+  def cancel_unused_and_release_inventory!(reason:)
+    release_inventory!
+    update!(status: :cancelled, cancelled_at: Time.current, cancellation_reason: reason,
+      scan_credential_version: scan_credential_version + 1)
+  end
+
   def seat_label
     event_seat&.display_label
   end

@@ -114,7 +114,8 @@ class Order < ApplicationRecord
 
     reserved = refunds.loaded? ? refunds.select { |refund| refund.pending? || refund.succeeded? } :
       refunds.where(status: [:pending, :succeeded]).to_a
-    reserved.any?(&:pending?) && reserved.sum(&:amount_cents) >= total_cents
+    reserved.any? { |refund| refund.pending? && !refund.organizer_ticket_selection? && !refund.preserves_tickets? } &&
+      reserved.sum(&:amount_cents) >= total_cents
   end
 
   # payment_mode lets bulk callers (scanner manifests) read the setting once.
@@ -122,8 +123,12 @@ class Order < ApplicationRecord
     return false unless completed? || partially_refunded?
     return true unless Rails.env.production? && total_cents.positive?
 
-    captured = payments.loaded? ? payments.select { |payment| payment.succeeded? || payment.partially_refunded? } :
-      payments.where(status: [:succeeded, :partially_refunded]).to_a
+    # A partially refunded order may have already returned the entire payment
+    # while other tickets (for example free tickets in the same cart) still
+    # belong to the buyer. Enforce the original capture requirements.
+    capture_statuses = partially_refunded? ? %w[succeeded partially_refunded refunded] : %w[succeeded partially_refunded]
+    captured = payments.loaded? ? payments.select { |payment| capture_statuses.include?(payment.status) } :
+      payments.where(status: capture_statuses).to_a
     # Stripe test-mode tickets admit people only while the platform itself is
     # in test mode (production QA). Once payments are live they stop working.
     admissible_environments = (payment_mode || SiteSetting.instance.payment_mode) == "test" ? %w[live test] : %w[live]

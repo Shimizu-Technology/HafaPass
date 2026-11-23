@@ -164,7 +164,7 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         )
       end.to raise_error(
         Commerce::RefundCreator::RefundError,
-        "Pass has already been used on one or more nights; use an organizer custom-amount refund or contact support"
+        "Pass already used on one or more nights. Choose a custom amount to return money."
       )
 
       # Buyer self-serve cancel_ticket on postponed pass event also refused with 422
@@ -328,6 +328,58 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
         end
       end.to raise_error(Passes::Locking::LockSetChanged)
       expect(attempts).to eq(1)
+    end
+  end
+
+  describe "Organizer ticket selections" do
+    let(:headers) { owner_headers.merge("Idempotency-Key" => "organizer-pass-selection") }
+
+    it "cancels an unused paid pass atomically and blocks any pass that has been scanned" do
+      link_nights(pass_tt, [night_1, night_2])
+      order, _payment = create_paid_pass_order(quantity: 2)
+      unused, used = order.tickets.where(parent_ticket_id: nil).order(:id)
+      used.child_tickets.first.check_in!
+      path = "/api/v1/organizer/events/#{pass_event.id}/orders/#{order.id}"
+
+      get "#{path}/refund_options", headers: headers
+      expect(response).to have_http_status(:ok), response.body
+      options = response.parsed_body.fetch("tickets").index_by { |ticket| ticket.fetch("id") }
+      expect(options.fetch(unused.id)).to include("is_pass_parent" => true, "included_nights_count" => 2, "selectable" => true)
+      expect(options.fetch(used.id)).to include("selectable" => false,
+        "unavailable_reason" => "Pass already used on one or more nights. Choose a custom amount to return money.")
+      expect(options.fetch(unused.child_tickets.first.id)).to include("selectable" => false,
+        "unavailable_reason" => "Choose the multi-night pass to cancel its nights")
+
+      post "#{path}/refund", params: { ticket_ids: [unused.id, used.id] }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(StripeService).not_to have_received(:refund_payment)
+
+      expect do
+        post "#{path}/refund", params: { ticket_ids: [unused.id] }, headers: headers, as: :json
+      end.to change { pass_tt.reload.quantity_sold }.from(2).to(1)
+        .and change { EventCapacity.remaining_for(night_2) }.by(1)
+      expect(response).to have_http_status(:created), response.body
+      expect(unused.reload).to be_cancelled
+      expect(unused.child_tickets.pluck(:status)).to all(eq("cancelled"))
+      expect(used.reload).to be_issued
+      expect(used.child_tickets.pluck(:status)).to contain_exactly("checked_in", "issued")
+    end
+
+    it "releases an unused free pass and its nights while keeping the remaining pass active" do
+      link_nights(free_pass_tt, [night_1, night_2])
+      order = create_free_pass_order(quantity: 2)
+      selected, retained = order.tickets.where(parent_ticket_id: nil).order(:id)
+
+      expect do
+        post "/api/v1/organizer/events/#{pass_event.id}/orders/#{order.id}/refund",
+          params: { ticket_ids: [selected.id] }, headers: headers, as: :json
+      end.to change { free_pass_tt.reload.quantity_sold }.from(2).to(1)
+        .and change { EventCapacity.remaining_for(night_2) }.by(1)
+      expect(response).to have_http_status(:created), response.body
+      expect(selected.reload).to be_cancelled
+      expect(selected.child_tickets.pluck(:status)).to eq(%w[cancelled cancelled])
+      expect(retained.child_tickets.to_a).to all(be_admission_allowed)
+      expect(StripeService).not_to have_received(:refund_payment)
     end
   end
 

@@ -256,6 +256,7 @@ entries are described above and defined in the registry's audience variants.
 | `order.cancelled` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Cancelled an order. |
 | `order.completed` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Completed an order. |
 | `order.expired` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Expired an unpaid order. |
+| `order.free_tickets_cancelled` | yes | orders | O/F | yes | yes | `status` | `ticket_count` | Cancelled free tickets. |
 | `order.fulfillment_resent` | yes | messaging | O/M | yes | yes | — | `message_delivery_id`, `event_title` | Resent ticket fulfillment. |
 | `order.partially_refunded` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Partially refunded an order. |
 | `order.refunded` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Refunded an order. |
