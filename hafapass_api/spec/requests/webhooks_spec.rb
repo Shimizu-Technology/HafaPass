@@ -23,6 +23,18 @@ RSpec.describe "Stripe webhooks", type: :request do
     }.to_json, headers: { "Content-Type" => "application/json" }
   end
 
+  it "tags processing failures for the webhook alert and returns a retryable response" do
+    error = StripeWebhookProcessor::ProcessingError.new("Processing failed")
+    allow(StripeWebhookProcessor).to receive(:call).and_raise(error)
+    allow(Sentry).to receive(:capture_exception)
+
+    post_stripe_event("payment_intent.succeeded", { id: "pi_retry" })
+
+    expect(response).to have_http_status(:internal_server_error)
+    expect(Sentry).to have_received(:capture_exception).with(error,
+      tags: { integration: "stripe_webhook", operation: "webhook_processing" })
+  end
+
   def create_pending_checkout(intent_id: "pi_checkout", quantity: 1)
     allow(StripeService).to receive(:payment_enabled?).and_return(true)
     allow(StripeService).to receive(:create_payment_intent).and_return(
