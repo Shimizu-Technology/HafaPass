@@ -13,7 +13,9 @@ export function parseFeeTerms(config) {
 }
 
 export function organizerPayoutCopy(t, terms) {
-  const bankTransfer = terms?.organizerPayoutTerms === 'bank_transfer_with_reserve'
+  if (!terms) return { bankTransfer: false, summary: t('buyerDiscovery.host.payoutTermsUnavailable'), detail: '' }
+
+  const bankTransfer = terms.organizerPayoutTerms === 'bank_transfer_with_reserve'
   if (!bankTransfer) return { bankTransfer, summary: t('buyerDiscovery.host.checkPayouts'), detail: '' }
 
   const schedule = terms.payoutScheduleText?.replace(/\.$/, '')

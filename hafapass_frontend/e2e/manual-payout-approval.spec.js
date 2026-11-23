@@ -13,7 +13,8 @@ async function base(page) {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.route('**/api/v1/**', route => json(route, {}))
   await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-  await page.route('**/api/v1/config', route => json(route, { launch_capabilities: {}, payment_mode: 'simulate' }))
+  await page.route('**/api/v1/config', route => json(route, { launch_capabilities: {}, payment_mode: 'simulate',
+    service_fee_percent: '5.0', service_fee_flat_cents: 100, organizer_payout_terms: null }))
 }
 async function accessible(page, width) {
   const result = await new AxeBuilder({ page }).analyze()
@@ -102,7 +103,7 @@ for (const width of [375, 1280]) {
     const payouts = page.getByRole('region', { name: 'How you get paid' })
     await payouts.getByRole('radio', { name: /Bank transfer/ }).check()
     await expect(payouts.getByLabel('Account number', { exact: true })).toBeVisible()
-    await payouts.getByRole('radio', { name: /^Check A check/ }).check()
+    await payouts.getByRole('radio', { name: /^Check\b/ }).check()
     await payouts.getByRole('button', { name: 'Use this check payout method' }).click()
     await expect(payouts.getByText('Selected payout method')).toBeVisible()
     await page.reload()

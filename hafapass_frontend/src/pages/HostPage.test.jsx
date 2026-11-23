@@ -193,11 +193,28 @@ describe('host page pricing', () => {
     expect(await screen.findByTestId('host-fee-summary')).toHaveTextContent('5% + $1.00 per paid ticket')
   })
 
-  it('treats a failed config request the same way', async () => {
+  it('keeps payout guidance neutral while config is loading', async () => {
+    apiClient.get.mockReturnValue(new Promise(() => {}))
+    await load()
+    await userEvent.click(screen.getByText('When do I get paid?'))
+    const faq = within(screen.getByText('When do I get paid?').closest('details'))
+    expect(faq.getByText(/Payout method and timing are set in your Organizer Agreement/)).toBeVisible()
+    expect(faq.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+    expect(within(pricing()).getByText('Payout method and timing are set in your Organizer Agreement.')).toBeVisible()
+    expect(screen.queryByText(/Payouts are made by check|Standard payout target|remaining reserve/)).not.toBeInTheDocument()
+  })
+
+  it('keeps payout guidance neutral when the config request fails', async () => {
     apiClient.get.mockRejectedValue(new Error('Network unavailable'))
     await load()
     expect(await screen.findByText('Current rates aren’t available right now')).toBeInTheDocument()
     expect(screen.queryByTestId('host-fee-summary')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('When do I get paid?'))
+    const faq = within(screen.getByText('When do I get paid?').closest('details'))
+    expect(faq.getByText(/Payout method and timing are set in your Organizer Agreement/)).toBeVisible()
+    expect(faq.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+    expect(within(pricing()).getByText('Payout method and timing are set in your Organizer Agreement.')).toBeVisible()
+    expect(screen.queryByText(/Payouts are made by check|Standard payout target|remaining reserve/)).not.toBeInTheDocument()
   })
 })
 

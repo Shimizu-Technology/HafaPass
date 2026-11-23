@@ -1337,6 +1337,9 @@
       "generalAdmission1Ticket": {
         "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
       },
+      "payoutTermsUnavailable": {
+        "context": "Shown while current organizer payout terms are loading or unavailable. The Organizer Agreement determines how and when organizers get paid."
+      },
       "checkPayouts": {
         "context": "Organizer payouts default to check. Another method is available only when approved and recorded for that organizer."
       },

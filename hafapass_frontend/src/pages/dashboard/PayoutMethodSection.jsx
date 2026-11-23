@@ -41,8 +41,9 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
   const bankAccount = accounts.find(item => item.provider === 'manual')
   const selectedMethod = accounts.find(item => item.selected && ['check', 'manual'].includes(item.provider))?.provider
   const [viewedMethod, setViewedMethod] = useState(null)
+  const termsReady = feeTerms.status === 'ready'
   const defaultMethod = payout.bankTransfer ? 'manual' : 'check'
-  const method = viewedMethod || selectedMethod || (feeTerms.status === 'loading' ? null : defaultMethod)
+  const method = viewedMethod || selectedMethod || (termsReady ? defaultMethod : null)
   const [details, setDetails] = useState(() => ({ ...emptyCheck, ...(checkAccount?.payout_details || {}) }))
   const [errors, setErrors] = useState({})
   const [editing, setEditing] = useState(!checkAccount)
@@ -71,7 +72,7 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
         <div className="grid gap-2 sm:grid-cols-2">
           {[
             { value: 'manual', icon: Landmark, title: 'Bank transfer', body: payout.bankTransfer
-              ? 'HåfaPass sends the payout to your approved bank account.' : 'Available when approved and recorded for your organization.' },
+              ? 'HåfaPass sends the payout to your approved bank account.' : termsReady ? 'Available when approved and recorded for your organization.' : 'Sent to your bank account.' },
             { value: 'check', icon: Mail, title: 'Check', body: payout.bankTransfer
               ? 'For approved exceptions. Mailed to you or ready for pickup.' : 'Mailed to you or ready for pickup.' },
           ].map(option => (

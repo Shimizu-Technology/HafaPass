@@ -4,23 +4,41 @@ import AxeBuilder from '@axe-core/playwright'
 const json = (route, data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
 const config = { payment_mode: 'live', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event', support_email: 'public-pages-qa@example.test' }
 
+const checkPayout = 'Payouts are made by check on the schedule in your Organizer Agreement, unless another method is approved and recorded for you.'
+const bankPayout = 'Standard payout target: bank transfer within 2–3 business days after your event.'
+
 for (const width of [390, 1440]) {
-  test(`host payout schedule and reserve at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 })
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
-    await page.route('**/api/v1/config', route => json(route, config))
-    await page.goto('/host')
-    await expect(page.getByText('Standard payout target: bank transfer within 2–3 business days after your event.', { exact: true })).toBeVisible()
-    const faq = page.locator('summary').filter({ hasText: 'When do I get paid?' })
-    await faq.focus()
-    await page.keyboard.press('Enter')
-    await expect(faq.locator('..')).toHaveAttribute('open', '')
-    await expect(faq.locator('..')).toContainText(/Check payouts require an approved exception.*about 10%.*after 30 days/)
-    await expect(faq.locator('..').getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
-    await expect(page.getByText(/3 to 5 business days/)).toHaveCount(0)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-  })
+  for (const activated of [false, true]) {
+    test(`host payout terms for the ${activated ? 'replacement' : 'current'} agreement at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+      await page.route('**/api/v1/config', route => json(route, activated ? {
+        ...config,
+        organizer_payout_terms: 'bank_transfer_with_reserve',
+        payout_schedule_text: 'within 2–3 business days after your event',
+      } : { ...config, organizer_payout_terms: null }))
+      await page.goto('/host')
+      const expectedPayout = activated ? bankPayout : checkPayout
+      await expect(page.getByText(expectedPayout, { exact: true })).toBeVisible()
+      const faq = page.locator('summary').filter({ hasText: 'When do I get paid?' })
+      await faq.focus()
+      await page.keyboard.press('Enter')
+      const answer = faq.locator('..')
+      await expect(answer).toHaveAttribute('open', '')
+      await expect(answer).toContainText(expectedPayout)
+      const reserve = /Check payouts require an approved exception.*about 10%.*remaining reserve 30 days after your event/
+      if (activated) {
+        await expect(answer).toContainText(reserve)
+      } else {
+        await expect(answer).not.toContainText(/bank transfer|reserve/i)
+        await expect(page.getByText(bankPayout, { exact: true })).toHaveCount(0)
+      }
+      await expect(answer.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+      await expect(page.getByText(/3 to 5 business days/)).toHaveCount(0)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    })
+  }
 }
 
 for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {

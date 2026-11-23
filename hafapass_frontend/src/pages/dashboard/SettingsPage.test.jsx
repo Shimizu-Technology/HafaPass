@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -154,6 +154,28 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
     await userEvent.click(screen.getByRole('radio', { name: /Check for approved exceptions/i }))
     expect(screen.getByRole('button', { name: 'Save check details' })).toBeVisible()
+  })
+
+  it('keeps payout guidance neutral during loading and after a config failure', async () => {
+    let rejectConfig
+    const pending = new Promise((_, reject) => { rejectConfig = reject })
+    const get = apiClient.get.getMockImplementation()
+    apiClient.get.mockImplementation((path, ...args) => path === '/config' ? pending : get(path, ...args))
+    show()
+    const payouts = within(await screen.findByRole('region', { name: 'How you get paid' }))
+    const assertNeutral = () => {
+      expect(payouts.getByText(/Payout method and timing are set in your Organizer Agreement/)).toBeVisible()
+      expect(payouts.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
+      expect(payouts.queryByText(/Payouts are made by check|Standard payout target|remaining reserve/)).not.toBeInTheDocument()
+      expect(payouts.getByRole('radio', { name: /Bank transfer sent to your bank account/i })).toBeVisible()
+      expect(payouts.queryByText(/Available when approved and recorded|For approved exceptions/)).not.toBeInTheDocument()
+      expect(payouts.queryByRole('radio', { checked: true })).not.toBeInTheDocument()
+    }
+    assertNeutral()
+    await act(async () => rejectConfig(new Error('Network unavailable')))
+    assertNeutral()
+    await userEvent.click(payouts.getByRole('radio', { name: /^Check\b/ }))
+    expect(payouts.getByRole('button', { name: 'Save check details' })).toBeVisible()
   })
 
   it('restores a selected bank payout account after reload', async () => {

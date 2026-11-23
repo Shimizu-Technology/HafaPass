@@ -789,6 +789,7 @@
       "noSetupOrMonthlyFees": "No setup or monthly fees",
       "cardProcessingIncluded": "Card processing included",
       "chooseWhetherBuyersPayTheFeeOr": "Let buyers pay the fee, absorb it, or split it",
+      "payoutTermsUnavailable": "Payout method and timing are set in your Organizer Agreement.",
       "checkPayouts": "Payouts are made by check on the schedule in your Organizer Agreement, unless another method is approved and recorded for you.",
       "bankTransferPayouts": "Bank transfer to your approved account is the standard method, on the schedule in your Organizer Agreement.",
       "scheduledBankTransferPayouts": "Standard payout target: bank transfer {{schedule}}.",
