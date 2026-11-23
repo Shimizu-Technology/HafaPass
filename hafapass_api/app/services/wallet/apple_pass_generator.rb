@@ -128,7 +128,7 @@ module Wallet
         serialNumber: wallet_pass.serial_number,
         teamIdentifier: ENV.fetch("APPLE_TEAM_IDENTIFIER"),
         organizationName: "HåfaPass",
-        description: "Ticket for #{event.title}",
+        description: state.label(:description, event: event.title),
         logoText: "HåfaPass",
         foregroundColor: "rgb(255, 255, 255)",
         backgroundColor: "rgb(14, 124, 123)",
@@ -136,22 +136,22 @@ module Wallet
         expirationDate: (event.ends_at || event.starts_at)&.iso8601,
         voided: state.voided?,
         eventTicket: {
-          headerFields: [{ key: "status", label: "STATUS", value: state.status_label, changeMessage: "Ticket status: %@" }],
-          primaryFields: [{ key: "event", label: "EVENT", value: event.title }],
+          headerFields: [{ key: "status", label: state.label(:status), value: state.status_label, changeMessage: state.label(:status_change) }],
+          primaryFields: [{ key: "event", label: state.label(:event), value: event.title }],
           secondaryFields: [
-            { key: "date", label: "DATE", value: event.starts_at&.iso8601, dateStyle: "PKDateStyleMedium",
-              timeStyle: "PKDateStyleShort", changeMessage: "Event time changed to %@" },
-            { key: "venue", label: "VENUE", value: event.venue_name.to_s }
+            { key: "date", label: state.label(:date), value: event.starts_at&.iso8601, dateStyle: "PKDateStyleMedium",
+              timeStyle: "PKDateStyleShort", changeMessage: state.label(:date_change) },
+            { key: "venue", label: state.label(:venue), value: event.venue_name.to_s }
           ],
           # A replaced copy (e.g. the sender's after a transfer) never shows
           # the current holder's name, seat or ticket type.
           auxiliaryFields: (holder_details? ? [
-            { key: "ticket", label: "TICKET", value: ticket.ticket_type.name },
-            (ticket.seat_label && { key: "seat", label: "SEAT", value: ticket.seat_label })
+            { key: "ticket", label: state.label(:ticket), value: ticket.ticket_type.name },
+            (ticket.seat_label && { key: "seat", label: state.label(:seat), value: ticket.seat_label })
           ].compact : []),
           backFields: [
-            ({ key: "holder", label: "TICKET HOLDER", value: ticket.attendee_name.to_s } if holder_details?),
-            { key: "address", label: "VENUE ADDRESS", value: event.venue_address.to_s }
+            ({ key: "holder", label: state.label(:holder), value: ticket.attendee_name.to_s } if holder_details?),
+            { key: "address", label: state.label(:address), value: event.venue_address.to_s }
           ].compact
         },
         barcode: barcode,

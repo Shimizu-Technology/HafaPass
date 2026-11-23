@@ -46,7 +46,7 @@ module Wallet
         ticketHolderName: state.current_credential? ? ticket.attendee_name.to_s : nil,
         ticketNumber: ticket.id.to_s,
         ticketType: state.current_credential? ? localized([ticket.ticket_type.name, ticket.seat_label].compact.join(" · ")) : nil,
-        textModulesData: [{ id: "status", header: "Status", body: state.status_label }],
+        textModulesData: [{ id: "status", header: state.label(:status_header), body: state.status_label }],
         barcode: state.barcode? ? { type: "QR_CODE", value: ticket.scan_credential, alternateText: "HåfaPass #{ticket.id}" } : nil
       }.compact
     end

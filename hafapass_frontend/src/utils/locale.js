@@ -8,6 +8,7 @@ import { isWorkspacePath } from './workspacePath'
 export const LANGUAGES = [
   { code: 'en', label: 'English', englishName: 'English', short: 'EN', intl: 'en-US', html: 'en' },
   { code: 'ko', label: '한국어', englishName: 'Korean', short: 'KO', intl: 'ko-KR', html: 'ko' },
+  { code: 'pt', label: 'Português', englishName: 'Portuguese', short: 'PT', intl: 'pt-BR', html: 'pt-BR' },
   { code: 'ja', label: '日本語', englishName: 'Japanese', short: 'JA', intl: 'ja-JP', html: 'ja' },
   { code: 'zh-Hant', label: '繁體中文', englishName: 'Chinese (Traditional)', short: '繁中', intl: 'zh-Hant-TW', html: 'zh-Hant' },
   { code: 'zh', label: '简体中文', englishName: 'Chinese (Simplified)', short: '简中', intl: 'zh-Hans-CN', html: 'zh-Hans' },
@@ -23,7 +24,7 @@ const TRADITIONAL_CHINESE_REGIONS = ['tw', 'hk', 'mo']
 export function normalizeLanguage(tag) {
   const parts = String(tag || '').trim().replace(/_/g, '-').toLowerCase().split('-')
   switch (parts[0]) {
-    case 'en': case 'ko': case 'ja': return parts[0]
+    case 'en': case 'ko': case 'ja': case 'pt': return parts[0]
     case 'tl': case 'fil': return 'tl'
     case 'zh': {
       const rest = parts.slice(1)

@@ -807,8 +807,8 @@ class EmailService
     def send_ticket_transfer(transfer, delivery: nil)
       url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
       event = transfer.ticket.event
-      # The recipient's language is unknown (the transfer records the sender's), so English.
-      html, subject = in_locale(AppLocale::DEFAULT) do
+      # The transfer stores the sender's language.
+      html, subject = in_locale(transfer.locale) do
         body = email_wrapper(t("transfer.title")) do
           <<~HTML
             <h2 style="color:#1f2937">#{ht('transfer.heading')}</h2>

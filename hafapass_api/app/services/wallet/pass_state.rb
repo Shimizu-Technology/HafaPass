@@ -30,20 +30,12 @@ module Wallet
       ending.present? && ending < at
     end
 
-    def status_label
-      return "Replaced — open HåfaPass for the current ticket" unless current_credential?
-      return "Cancelled" if ticket.cancelled? || ticket.order.cancelled?
-      return "Transferred" if ticket.transferred?
-      return "Refunded" if ticket.order.refunded? || ticket.inventory_retained?
-      return "Event cancelled" if ticket.event.cancelled?
-      return "No longer available" if ticket.event.archived?
-      return "Checked in" if ticket.checked_in?
-      return "Paused — payment dispute under review" if ticket.order.ticket_access_blocked?
-      return "Paused — refund pending" if ticket.refund_pending?
-      return "Event postponed" if ticket.event.postponed?
-      return "Valid" if barcode?
+    def label(key, **options)
+      I18n.t("ticket_documents.wallet.#{key}", locale: AppLocale.i18n_locale(ticket.order.locale), **options)
+    end
 
-      "Not valid for entry"
+    def status_label
+      label(status_key)
     end
 
     def google_state(at: Time.current)
@@ -52,6 +44,23 @@ module Wallet
       return "COMPLETED" if ticket.checked_in?
 
       barcode? ? "ACTIVE" : "INACTIVE"
+    end
+
+    private
+
+    def status_key
+      return :replaced unless current_credential?
+      return :cancelled if ticket.cancelled? || ticket.order.cancelled?
+      return :transferred if ticket.transferred?
+      return :refunded if ticket.order.refunded? || ticket.inventory_retained?
+      return :event_cancelled if ticket.event.cancelled?
+      return :unavailable if ticket.event.archived?
+      return :checked_in if ticket.checked_in?
+      return :payment_dispute if ticket.order.ticket_access_blocked?
+      return :refund_pending if ticket.refund_pending?
+      return :event_postponed if ticket.event.postponed?
+
+      barcode? ? :valid : :invalid
     end
   end
 end

@@ -68,7 +68,7 @@ RSpec.describe "Buyer email language" do
     expect(payload.fetch("html")).to include("Your tickets are confirmed!", "November 20, 2026 at 7:00 PM", "Total paid: $52.50")
   end
 
-  it "localizes refunds from the order and writes transfers in English for the recipient" do
+  it "localizes refunds from the order and transfers from the recorded sender language" do
     store_korean_copy
     order = create(:order, event: event, locale: "ko", status: :refunded, refund_amount_cents: 5250)
     item = create(:refund, order: order, amount_cents: 5250)
@@ -82,9 +82,8 @@ RSpec.describe "Buyer email language" do
     delivery = create(:message_delivery, order: ticket.order, ticket: ticket, template: "ticket_transfer",
       recipient: "friend@example.com", metadata: { ticket_transfer_id: transfer.id })
     payload = EmailService.prepare_delivery_payload(delivery)
-    expect(payload.fetch("html")).to include('<html lang="en">', "Sunset Fiesta", "friend@example.com",
-      "November 19, 2026 at 7:00 PM Guam time")
-    expect(payload.fetch("html")).not_to include("ja:Sunset Fiesta")
+    expect(payload.fetch("html")).to include('<html lang="ja">', "ja:Sunset Fiesta", "friend@example.com", "Guam time")
+    expect(payload.fetch("subject")).to include("ja:Sunset Fiesta")
   end
 
   it "states the actual cancellation refund amount after an earlier partial refund" do

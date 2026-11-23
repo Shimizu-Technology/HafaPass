@@ -18,7 +18,7 @@
 #                                its translations; off by default.
 module AppLocale
   DEFAULT = "en"
-  SUPPORTED = %w[en ko ja zh-Hant zh tl].freeze
+  SUPPORTED = %w[en ko ja zh-Hant zh tl pt].freeze
   TRANSLATION_TARGETS = (SUPPORTED - [DEFAULT]).freeze
   ORGANIZER_CONTENT_LOCALES = (TRANSLATION_TARGETS + %w[ch]).freeze
   GT_CODES = { "tl" => "fil" }.freeze
@@ -30,7 +30,7 @@ module AppLocale
   def normalize(value)
     parts = value.to_s.strip.tr("_", "-").downcase.split("-")
     case parts.first
-    when "en", "ko", "ja" then parts.first
+    when "en", "ko", "ja", "pt" then parts.first
     when "tl", "fil" then "tl"
     when "zh" then chinese_variant(parts.drop(1))
     end
