@@ -55,17 +55,17 @@ class PrivacyRequestProcessor
         order.id if buyer_owned?(order) &&
           order.tickets.count == selected_tickets.count { |ticket| ticket.order_id == order.id }
       end
-      # Per-ticket answers follow the ticket they describe: the requester's own
-      # tickets plus any they are named on as attendee, never a ticket since
-      # transferred to someone else.
+      # Per-ticket answers describe one attendee: only the requester's, never
+      # a ticket since transferred away or one naming another attendee's email.
+      # Order-wide answers keep the all-tickets rule above.
       response_tickets = selected_orders.flat_map do |order|
         order.tickets.select do |ticket|
-          !ticket.transferred_away_from?(order) &&
+          !ticket.transferred_away_from?(order) && DataRetention.attendee_answers_owned?(ticket, buyer_emails) &&
             (ticket_ids.include?(ticket.id) || buyer_emails.include?(ticket.attendee_email.to_s.downcase))
         end
       end
       response_ticket_ids = response_tickets.map(&:id)
-      response_ids = RegistrationResponse.where(order_id: response_order_ids)
+      response_ids = RegistrationResponse.where(order_id: response_order_ids, ticket_id: nil)
         .or(RegistrationResponse.where(order_id: selected_orders.map(&:id), ticket_id: response_ticket_ids)).pluck(:id)
       order_ids = selected_orders.map(&:id)
       owned_order_ids = selected_orders.select { |order| buyer_owned?(order) }.map(&:id)

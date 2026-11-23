@@ -541,6 +541,13 @@ it('adds one-click starter templates, scoping alumni door verification to the ch
   await user.click(screen.getByRole('button', { name: 'Add Merch / T-Shirt Size template' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions/apply_template',
     { template: 'merch_shirt_size', ticket_type_id: 18 }, expect.anything()))
+  await screen.findByText(/Merch \/ T-Shirt Size template confirmed/)
+
+  apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { error: '"Shirt Size" already exists with different settings (answer type). Rename or remove it, then add the template again.' } } })
+  await user.click(screen.getByRole('button', { name: 'Add Merch / T-Shirt Size template' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('"Shirt Size" already exists with different settings (answer type)')
+  expect(screen.queryByText(/may have completed/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Add FD Team Registration template' })).toBeEnabled()
 })
 
 it('shows scope, ticket types, number limits and door scanner on saved questions and edits them', async () => {

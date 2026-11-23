@@ -18,7 +18,22 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
   # Templates that set per-ticket attendee details on their ticket type.
   TICKET_TYPE_TEMPLATES = %w[alumni_door_verification].freeze
 
+  # Settings a matching question must share with the template, by the name
+  # shown to organizers in a conflict.
+  TEMPLATE_SETTINGS = {
+    "answer type" => ->(definition) { definition[:kind] },
+    "required" => ->(definition) { definition[:required] == true },
+    "door scanner" => ->(definition) { definition.fetch(:show_on_scanner, false) },
+    "choices" => ->(definition) { definition.fetch(:options, []) },
+    "number limits" => ->(definition) { definition.fetch(:validation_rules, {}).stringify_keys }
+  }.freeze
+  QUESTION_SETTINGS = {
+    "answer type" => :kind, "required" => :required, "door scanner" => :show_on_scanner,
+    "choices" => :options, "number limits" => :validation_rules
+  }.freeze
+
   class TemplateConflict < StandardError; end
+  class TemplateForbidden < StandardError; end
 
   def index
     render json: { registration_questions: event.registration_questions.order(:position, :id).map { |item| serialize(item) } }
@@ -74,6 +89,9 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
     RegistrationQuestion.transaction do
       # docs/LOCKING.md: organization, then event, then ticket type.
       event.organization.lock!("FOR NO KEY UPDATE")
+      # Membership and role changes take the organization lock, so authority
+      # checked here cannot be revoked before this transaction commits.
+      ensure_template_authority!(enables_attendee_names)
       event.lock!("FOR NO KEY UPDATE")
       # Locking reloads the ticket type, so a concurrent upgrade to name and
       # email is seen and never downgraded below.
@@ -103,11 +121,21 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
     }, status: :created
   rescue TemplateConflict => e
     render json: { error: e.message }, status: :conflict
+  rescue TemplateForbidden
+    render json: { error: "You do not have permission to perform this action" }, status: :forbidden
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
   end
 
   private
+
+  def ensure_template_authority!(enables_attendee_names)
+    permissions = [:manage_events, (:manage_inventory if enables_attendee_names)].compact
+    allowed = permissions.all? do |permission|
+      OrganizationAuthorization.allowed?(user: current_user, organization: event.organization, permission: permission, event: event)
+    end
+    raise TemplateForbidden unless allowed
+  end
 
   def template_plan(definitions, ticket_type)
     existing = event.registration_questions.where(active: true).order(:position, :id).to_a
@@ -119,19 +147,39 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
       covered = matches.find do |question|
         question.ticket_type_ids.empty? || (ticket_type && question.ticket_type_ids.include?(ticket_type.id))
       end
-      next [:skip, definition] if covered && covered.kind == definition[:kind]
+      compatible = matches.find { |question| template_differences(question, definition).empty? }
+      next [:skip, definition] if covered && covered == compatible
+      next [:extend, definition, compatible] if compatible && !covered && ticket_type
 
-      compatible = matches.find { |question| question.kind == definition[:kind] }
-      if covered || compatible.nil?
-        raise TemplateConflict, "\"#{definition[:prompt]}\" already exists with a different answer type. " \
+      if compatible.nil? || covered
+        differences = template_differences(covered || matches.first, definition)
+        raise TemplateConflict, "\"#{definition[:prompt]}\" already exists with different settings (#{differences.join(', ')}). " \
           "Rename or remove it, then add the template again."
       end
-      unless ticket_type
-        raise TemplateConflict, "\"#{definition[:prompt]}\" is already limited to specific ticket types. " \
-          "Choose a ticket type for this template or edit the existing question."
-      end
-      [:extend, definition, compatible]
+      raise TemplateConflict, "\"#{definition[:prompt]}\" is already limited to specific ticket types. " \
+        "Choose a ticket type for this template or edit the existing question."
     end
+  end
+
+  def template_differences(question, definition)
+    TEMPLATE_SETTINGS.filter_map do |label, expected|
+      label unless question.public_send(QUESTION_SETTINGS.fetch(label)) == expected.call(definition)
+    end
+  end
+
+  # Rails collapses a JSON [null] into [] before params are read, which would
+  # silently widen the question to every ticket type, so a JSON body is read
+  # as sent.
+  def raw_ticket_type_ids
+    if request.media_type == "application/json"
+      body = begin
+        JSON.parse(request.raw_post)
+      rescue JSON::ParserError
+        nil
+      end
+      return body["ticket_type_ids"] if body.is_a?(Hash) && body.key?("ticket_type_ids")
+    end
+    params[:ticket_type_ids]
   end
 
   def record_params
@@ -140,7 +188,7 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
     if params.key?(:ticket_type_ids)
       # Passed through unfiltered: the model rejects anything but a list of
       # IDs rather than dropping bad items and widening the question.
-      raw = params[:ticket_type_ids]
+      raw = raw_ticket_type_ids
       attributes["ticket_type_ids"] = if raw.nil?
         []
       elsif raw.is_a?(Array) && raw.all? { |id| id.is_a?(String) || id.is_a?(Integer) }

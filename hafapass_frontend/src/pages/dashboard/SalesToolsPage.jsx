@@ -206,7 +206,9 @@ function SalesToolsSession({ eventId, identity }) {
 
   useEffect(() => { load() }, [load])
 
-  const mutate = async (label, allowed, send, complete = () => {}) => {
+  // definiteConflicts: a 409 from this request is a final, explained refusal
+  // (nothing was saved), so its message is shown instead of the recovery prompt.
+  const mutate = async (label, allowed, send, complete = () => {}, { definiteConflicts = false } = {}) => {
     if (!allowed || !current() || busyRef.current || pendingRef.current) return
     const request = beginRequest()
     if (!request) return
@@ -224,7 +226,9 @@ function SalesToolsSession({ eventId, identity }) {
       await load()
     } catch (requestError) {
       if (!request.current()) return
-      const uncertain = !requestError.response || requestError.response.status >= 500 || [408, 409, 429].includes(requestError.response.status)
+      const status = requestError.response?.status
+      const definiteConflict = definiteConflicts && status === 409 && Boolean(requestError.response?.data?.error)
+      const uncertain = !definiteConflict && (!requestError.response || status >= 500 || [408, 409, 429].includes(status))
       if (!uncertain) clearPending()
       if ([401, 403, 404].includes(requestError.response?.status)) setEvent(null)
       setError(uncertain ? 'The response was not confirmed. Refresh saved data and verify the outcome before making another change.' : requestError.response?.data?.errors?.join(', ') || requestError.response?.data?.error || 'Unable to save. Your draft is retained.')
@@ -257,7 +261,7 @@ function SalesToolsSession({ eventId, identity }) {
       return
     }
     return mutate(`${template.title} template`, permission('manage_events'), config => apiClient.post(`/organizer/events/${eventId}/registration_questions/apply_template`,
-      { template: template.key, ticket_type_id: templateTicketTypeId ? Number(templateTicketTypeId) : null }, config))
+      { template: template.key, ticket_type_id: templateTicketTypeId ? Number(templateTicketTypeId) : null }, config), undefined, { definiteConflicts: true })
   }
   const toggleQuestionActive = item => {
     const nextActive = item.active === false

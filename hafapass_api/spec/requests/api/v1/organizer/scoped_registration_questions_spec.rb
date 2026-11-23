@@ -135,7 +135,7 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     create(:registration_question, event: event, prompt: "Shirt size", kind: :short_text, required: false)
     apply_template("merch_shirt_size")
     expect(response).to have_http_status(:conflict)
-    expect(response.parsed_body["error"]).to include('"Shirt Size" already exists with a different answer type')
+    expect(response.parsed_body["error"]).to include('"Shirt Size" already exists with different settings (answer type, choices)')
 
     create(:registration_question, event: event, prompt: "Class Name", kind: :short_text, required: true,
       ticket_type_ids: [adult.id])
@@ -143,6 +143,68 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body["error"]).to include('"Class Name" is already limited to specific ticket types')
     expect(event.registration_questions.pluck(:prompt)).to contain_exactly("Shirt size", "Class Name")
+  end
+
+  it "returns a conflict when an existing Graduation Year differs in limits, scanner or required settings" do
+    create(:registration_question, event: event, prompt: "Graduation Year", kind: :number, scope: :ticket, required: false,
+      ticket_type_ids: [alumni.id], validation_rules: { "min" => 1950, "max" => 2035 })
+
+    apply_template("alumni_door_verification", ticket_type: alumni)
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"])
+      .to include('"Graduation Year" already exists with different settings (required, door scanner, number limits)')
+    expect(alumni.reload.attendee_info_mode).to eq("none")
+    expect(event.registration_questions.count).to eq(1)
+  end
+
+  it "re-checks permission under the organization lock so a revocation cannot slip through" do
+    calls = 0
+    allow(OrganizationAuthorization).to receive(:allowed?).and_wrap_original do |original, **arguments|
+      next original.call(**arguments) unless arguments[:permission] == :manage_events
+
+      calls += 1
+      calls == 1 && original.call(**arguments)
+    end
+
+    apply_template("fd_team_registration")
+    expect(response).to have_http_status(:forbidden)
+    expect(calls).to eq(2)
+    expect(event.registration_questions).to be_empty
+  end
+
+  it "asks organizers to pause a question that has both issued and pending answers" do
+    question = create(:registration_question, event: event, prompt: "Jersey", kind: :short_text, scope: :ticket,
+      required: false, ticket_type_ids: [alumni.id])
+    issued = create(:order, event: event, completed_at: Time.current)
+    issued_item = create(:order_item, order: issued, ticket_type: alumni)
+    ticket = create(:ticket, event: event, order: issued, order_item: issued_item, ticket_type: alumni)
+    RegistrationResponse.create!(order: issued, ticket: ticket, registration_question: question, prompt_snapshot: "Jersey",
+      kind_snapshot: 0, answered_at: Time.current, answer: { "value" => "7" })
+    pending = create(:order, event: event, status: :pending, completed_at: nil)
+    create(:order_item, order: pending, ticket_type: alumni, metadata: { "attendees" => [{ "attendee_name" => "Ana",
+      "answers" => [{ "question_id" => question.id, "prompt" => "Jersey", "kind" => "short_text", "value" => "9" }] }] })
+
+    delete "#{base}/registration_questions/#{question.id}", headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["errors"]).to eq([
+      "Buyers have answered this question on an order still waiting for payment. Pause the question instead of deleting it."
+    ])
+    expect(RegistrationQuestion.exists?(question.id)).to be(true)
+  end
+
+  it "rejects a JSON ticket type list containing null instead of widening the question" do
+    ["[null]", "[#{alumni.id}, null]"].each do |list|
+      post "#{base}/registration_questions", params: %({"prompt": "Year", "kind": "short_text", "ticket_type_ids": #{list}}),
+        headers: headers.merge("Content-Type" => "application/json")
+      expect(response).to have_http_status(:unprocessable_entity), list
+      expect(response.parsed_body["errors"]).to include("Ticket type ids must be a list of ticket types")
+    end
+    question = create(:registration_question, event: event, ticket_type_ids: [alumni.id])
+    patch "#{base}/registration_questions/#{question.id}", params: %({"ticket_type_ids": [null]}),
+      headers: headers.merge("Content-Type" => "application/json")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(question.reload.ticket_type_ids).to eq([alumni.id])
+    expect(event.registration_questions.count).to eq(1)
   end
 
   it "never downgrades a ticket type that was upgraded to name and email while the template waited for its lock" do

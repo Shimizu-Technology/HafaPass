@@ -28,7 +28,9 @@ class RegistrationQuestion < ApplicationRecord
 
   before_validation :normalize_ticket_type_ids
   before_validation :normalize_validation_rules
-  before_destroy :ensure_not_awaiting_payment
+  # Prepended so the pause instruction wins over the generic restrict error
+  # when a question has both issued and pending answers.
+  before_destroy :ensure_not_awaiting_payment, prepend: true
 
   validates :prompt, presence: true, length: { maximum: 500 }
   validates :help_text, length: { maximum: 250 }

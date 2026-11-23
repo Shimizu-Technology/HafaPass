@@ -23,8 +23,10 @@ RSpec.describe AddAttendeeInfoAndScopedRegistrationQuestions, :non_transactional
     without_foreign_keys do
       connection.execute("DELETE FROM registration_responses WHERE id >= #{base_id}")
       connection.execute("DELETE FROM registration_questions WHERE id >= #{base_id}")
+      connection.execute("DELETE FROM registration_questions WHERE id >= #{base_id}")
     end
-    migration.migrate(:up) unless connection.column_exists?(:registration_responses, :ticket_id)
+    # Re-runnable, so this also repairs any half-applied state an example left.
+    migration.migrate(:up)
     models.each(&:reset_column_information)
     ActiveRecord::Migration.verbose = verbose
   end
@@ -75,6 +77,40 @@ RSpec.describe AddAttendeeInfoAndScopedRegistrationQuestions, :non_transactional
     expect(valid_index?("index_registration_responses_unique_order")).to be(true)
     expect(valid_index?("index_registration_responses_unique_ticket")).to be(true)
     expect(valid_index?("index_registration_responses_unique")).to be_nil
+  end
+
+  it "refuses to roll back while a question is limited to specific ticket types" do
+    insert_question
+    connection.execute("UPDATE registration_questions SET ticket_type_ids = '[42]'::jsonb WHERE id = #{base_id}")
+    expect { migration.migrate(:down) }.to raise_error(ActiveRecord::IrreversibleMigration, /limited to specific ticket types/)
+    expect(connection.column_exists?(:registration_questions, :ticket_type_ids)).to be(true)
+  end
+
+  it "re-runs after a failed concurrent build and repairs the invalid index" do
+    connection.remove_index :registration_responses, name: "index_registration_responses_unique_ticket"
+    insert_question
+    without_foreign_keys do
+      2.times do |offset|
+        connection.execute(<<~SQL.squish)
+          INSERT INTO registration_responses (id, order_id, registration_question_id, ticket_id, prompt_snapshot,
+            kind_snapshot, answered_at, created_at, updated_at)
+          VALUES (#{base_id + offset}, #{base_id}, #{base_id}, #{base_id}, 'Synthetic', 0, now(), now(), now())
+        SQL
+      end
+    end
+    expect do
+      connection.execute(<<~SQL.squish)
+        CREATE UNIQUE INDEX CONCURRENTLY index_registration_responses_unique_ticket
+        ON registration_responses (ticket_id, registration_question_id) WHERE ticket_id IS NOT NULL
+      SQL
+    end.to raise_error(ActiveRecord::RecordNotUnique)
+    expect(valid_index?("index_registration_responses_unique_ticket")).to be(false)
+    connection.execute("DELETE FROM registration_responses WHERE id = #{base_id + 1}")
+
+    expect { migration.migrate(:up) }.not_to raise_error
+    expect(valid_index?("index_registration_responses_unique_ticket")).to be(true)
+    expect(valid_index?("index_registration_responses_unique_order")).to be(true)
+    expect(connection.foreign_keys(:registration_responses).count { |key| key.to_table == "tickets" }).to eq(1)
   end
 
   it "rolls back and re-applies cleanly with order-wide answers present" do

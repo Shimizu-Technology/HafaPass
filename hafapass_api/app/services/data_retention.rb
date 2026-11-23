@@ -100,7 +100,7 @@ class DataRetention
       ticket_ids = Array(eligible_ticket_ids)
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
         user_id: privacy_user_id, buyer_owned: false)
-      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids)
+      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids, emails: privacy_emails)
       scrub_attendee_details!(order, force: false)
       raise Protected if RetentionGuard.protected?(order)
 
@@ -129,12 +129,15 @@ class DataRetention
         retention_anonymized_at: Time.current, updated_at: Time.current)
     end
     # Order-wide answers belong to the whole order; per-ticket answers follow
-    # the ticket (and attendee) they describe.
+    # the ticket (and attendee) they describe. Scheduled retention clears
+    # every answer; a privacy request leaves other attendees' answers alone.
     if anonymize_responses
-      update_unheld(RegistrationResponse.where(order_id: order.id), answer: {}, retention_anonymized_at: Time.current,
-        updated_at: Time.current)
-    else
-      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids)
+      responses = RegistrationResponse.where(order_id: order.id)
+      responses = responses.where(ticket_id: nil) if privacy_emails
+      update_unheld(responses, answer: {}, retention_anonymized_at: Time.current, updated_at: Time.current)
+    end
+    if privacy_emails || !anonymize_responses
+      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids, emails: privacy_emails)
     end
     scrub_attendee_details!(order, force: true)
     transfers = TicketTransfer.where(ticket_id: ticket_ids)
@@ -259,11 +262,19 @@ class DataRetention
     end
   end
 
-  def self.anonymize_ticket_responses!(order, ticket_ids)
-    return if Array(ticket_ids).empty?
+  # A ticket's own answers belong to its attendee: with privacy emails, a
+  # ticket naming someone else's email keeps its answers.
+  def self.anonymize_ticket_responses!(order, ticket_ids, emails: nil)
+    ids = Array(ticket_ids)
+    ids = Ticket.where(id: ids).select { |ticket| attendee_answers_owned?(ticket, emails) }.map(&:id) if emails
+    return if ids.empty?
 
-    update_unheld(RegistrationResponse.where(order_id: order.id, ticket_id: ticket_ids), answer: {},
+    update_unheld(RegistrationResponse.where(order_id: order.id, ticket_id: ids), answer: {},
       retention_anonymized_at: Time.current, updated_at: Time.current)
+  end
+
+  def self.attendee_answers_owned?(ticket, emails)
+    ticket.attendee_email.blank? || Array(emails).include?(ticket.attendee_email.downcase)
   end
 
   # Checkout keeps per-ticket attendee details on order items until tickets

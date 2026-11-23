@@ -62,6 +62,47 @@ RSpec.describe "Staff sales with required registration questions", type: :reques
     expect(entry.order.tickets.sole.attendee_name).to eq("Coach Guest")
   end
 
+  describe "answers staff supply" do
+    let(:year) { event.registration_questions.find_by(prompt: "Graduation Year") }
+
+    it "rejects an invalid answer on a cash sale and keeps a valid one" do
+      post "#{base}/box_office", params: sale.merge(payment_method: "door_cash", registration_answers: { year.id.to_s => 1800 }),
+        headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Invalid answer for Graduation Year")
+
+      post "#{base}/box_office", params: sale.merge(payment_method: "door_cash", registration_answers: { year.id.to_s => 1998 }),
+        headers: headers, as: :json
+      expect(response).to have_http_status(:created)
+      expect(Order.find(response.parsed_body.fetch("id")).registration_responses.sole.answer).to eq("value" => 1998)
+    end
+
+    it "rejects an invalid answer on a card-present sale before charging" do
+      create(:card_present_account, :verified, organization: event.organization)
+
+      expect do
+        post "#{base}/box_office", params: sale.merge(payment_method: "door_card", registration_answers: { year.id.to_s => 1800 }),
+          headers: headers.merge("Idempotency-Key" => "staff-invalid-answer"), as: :json
+      end.not_to change(CardPresentPaymentAttempt, :count)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Invalid answer for Graduation Year")
+    end
+
+    it "rejects an invalid answer on guest list redemption and keeps a valid one" do
+      entry = GuestListEntry.create!(event: event, ticket_type: ticket_type, guest_name: "Coach Guest",
+        guest_email: "coach@example.com", quantity: 1, added_by: user.email)
+
+      post "#{base}/guest_list/#{entry.id}/redeem", params: { registration_answers: { year.id.to_s => 1800 } }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Invalid answer for Graduation Year")
+      expect(entry.reload.order).to be_nil
+
+      post "#{base}/guest_list/#{entry.id}/redeem", params: { registration_answers: { year.id.to_s => 2001 } }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(entry.reload.order.registration_responses.sole.answer).to eq("value" => 2001)
+    end
+  end
+
   it "still validates an answer that staff do supply" do
     year = event.registration_questions.find_by(prompt: "Graduation Year")
 
