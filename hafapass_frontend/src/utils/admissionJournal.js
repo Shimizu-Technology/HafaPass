@@ -5,9 +5,10 @@ export function journalExport(eventId, identity, actions) {
     schema: 'hafapass-admission-journal-v1', event_id: Number(eventId), device_id: identity.device_id,
     exported_at: new Date().toISOString(),
     actions: actions.map(({ action_uuid, kind, source, sequence, manifest_version, occurred_at,
-      ticket_id, credential_hash, client_status, reverses_action_uuid }) => ({
+      ticket_id, credential_hash, client_status, reverses_action_uuid, confirmed }) => ({
       action_uuid, kind, source, sequence, manifest_version, occurred_at,
       ticket_id, credential_hash, client_status, reverses_action_uuid,
+      ...(confirmed === true ? { confirmed: true } : {}),
     })),
   }
 }

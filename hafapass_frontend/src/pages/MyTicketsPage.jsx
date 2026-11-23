@@ -15,6 +15,29 @@ import { signInDestination } from '../utils/authDestination'
 import TransferTicketDialog from '../components/TransferTicketDialog'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import InstallAppHelp from '../components/InstallAppHelp'
+import TicketSwitcher from '../components/TicketSwitcher'
+import { isPassParent, pinnableTonight } from '../utils/tonightTickets'
+
+// Tonight's tickets sit above everything else, one at a time with a switcher
+// for a group, so a buyer at the door never scrolls past the right QR.
+function TonightTickets({ tickets, renderTicket }) {
+  const { t } = useTranslation()
+  const [index, setIndex] = useState(0)
+  const at = Math.min(index, tickets.length - 1)
+  const ticket = tickets[at]
+  return (
+    <section aria-labelledby="tonight-heading" className="mb-6 rounded-2xl bg-brand-950 p-4 text-white sm:p-5">
+      <h2 id="tonight-heading" className="font-display text-2xl font-bold">{t('buyerAccount.myTicketsPage.tonightsTicket', { count: tickets.length })}</h2>
+      <p className="mt-1 text-base text-brand-100">{t('buyerAccount.myTicketsPage.tonightHelp')}</p>
+      {tickets.length > 1 && <div className="mt-4">
+        <TicketSwitcher tone="dark" label={t('buyerAccount.myTicketsPage.tonightsTicketsSwitcher')} position={at + 1} total={tickets.length} name={ticket.attendee_name}
+          previous={at > 0 ? { onClick: () => setIndex(at - 1) } : null}
+          next={at < tickets.length - 1 ? { onClick: () => setIndex(at + 1) } : null} />
+      </div>}
+      <div className="mt-4">{renderTicket(ticket, { pinned: true })}</div>
+    </section>
+  )
+}
 
 const TICKETS_PER_PAGE = 100
 const MAX_TICKET_PAGES = 20
@@ -262,6 +285,21 @@ function MyTicketsContent({ refreshSession, signOut }) {
     }
   }
 
+  const tonightTickets = eventGroups.flatMap(group => group.tickets
+    .filter(ticket => pinnableTonight(ticket, group.event, now)).map(ticket => ({ ...ticket, event: group.event })))
+  const pinned = new Set(tonightTickets.map(ticket => ticket.id))
+  const renderTicket = (ticket, event, { pinned: inTonight = false } = {}) => {
+    const started = new Date(event.starts_at) < now
+    return isPassParent(ticket)
+      ? <PassTicketCard key={ticket.id} ticket={ticket} event={event} />
+      : <BuyerTicketPass key={ticket.id} event={event} ticket={ticket} isPast={started && !inTonight} status={getStatusBadge(ticket)}
+        orderId={inTonight ? ticket.orderId : undefined}
+        canTransfer={ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !started}
+        onTransfer={() => setTransferTarget({ ticket, event })}
+        onCancelTransfer={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
+        onTransferSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />
+  }
+
   const sendTransfer = ticket => async body => {
     await apiClient.post(`/me/tickets/${ticket.id}/transfer`, body)
     refreshTickets()
@@ -344,19 +382,11 @@ function MyTicketsContent({ refreshSession, signOut }) {
                 <p className="mt-1 text-sm text-neutral-600">{t('pass.buyer.accountTicketsHelp')}</p>
               </div>
             </TicketStock>
-          </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab" className="space-y-4">
-            {eventGroups.flatMap(({ event, tickets }) => {
-              const isPast = new Date(event.starts_at) < now
-              return tickets.map(ticket => (
-                (ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
-                  ? <PassTicketCard key={ticket.id} ticket={ticket} event={event} />
-                  : <BuyerTicketPass key={ticket.id} event={event} ticket={ticket} isPast={isPast} status={getStatusBadge(ticket)}
-                    canTransfer={ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && !isPast}
-                    onTransfer={() => setTransferTarget({ ticket, event })}
-                    onCancelTransfer={() => apiClient.delete(`/me/tickets/${ticket.id}/transfer`)}
-                    onTransferSettled={({ message }) => { setTicketNotice(message); refreshTickets() }} />
-              ))
-            })}
+          </div> : <div role="tabpanel" id="history-tickets-panel" aria-labelledby="history-tickets-tab">
+            {tonightTickets.length > 0 && <TonightTickets tickets={tonightTickets} renderTicket={(ticket, options) => renderTicket(ticket, ticket.event, options)} />}
+            <div className="space-y-4">
+              {eventGroups.flatMap(({ event, tickets }) => tickets.filter(ticket => !pinned.has(ticket.id)).map(ticket => renderTicket(ticket, event)))}
+            </div>
           </div>}
         </div>
       </div>

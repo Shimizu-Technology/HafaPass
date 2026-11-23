@@ -22,16 +22,72 @@ RSpec.describe Admissions::ManifestBuilder do
     manifest = described_class.call(event: event, actor: profile.user)
 
     expect(manifest).to have_attributes(version: 1, ticket_count: 1, algorithm: "PS256")
+    expect(manifest.payload["schema_version"]).to eq(2)
     expect(Admissions::ManifestSigner.verify(digest: manifest.digest, signature: manifest.signature)).to be(true)
     expect(Digest::SHA256.hexdigest(described_class.canonical_json(manifest.payload))).to eq(manifest.digest)
     expect(manifest.payload.dig("tickets", 0)).to include(
       "ticket_id" => ticket.id,
       "attendee_name" => "Door Guest",
       "ticket_type" => "General Admission",
+      "ticket_type_name" => "General Admission",
+      "door_check_mode" => "instant",
+      "door_alert_label" => nil,
+      "door_instructions" => nil,
+      "door_fields" => [],
       "state" => "valid"
     )
     expect(manifest.payload.to_json).not_to include("door@example.com", ticket.scan_credential)
     expect(described_class.call(event: event, actor: profile.user)).to eq(manifest)
+  end
+
+  it "signs only opted-in answers and minimizes buyer data, even in a mixed cart" do
+    ticket.update!(attendee_name: "Maria Cruz")
+    other_type = create(:ticket_type, event: event)
+    other_ticket = create(:ticket, event: event, order: order, ticket_type: other_type, attendee_name: "Jesse")
+    create_answer("Order choices", %w[Maroon Gold], kind: :multi_select, options: %w[Maroon Gold], position: 0)
+    create_answer("Graduation Year", 1998, ticket: ticket, kind: :number, position: 4)
+    create_answer("Earlier field", "翠" * 100, ticket: ticket, position: 3)
+    create_answer("Tied position", true, ticket: ticket, kind: :checkbox, position: 3)
+    create_answer("Unchecked", false, kind: :checkbox)
+    create_answer("Blank", "   ")
+    create_answer("Private phone", "sensitive", show_on_scanner: false)
+    create_answer("Other ticket", "other attendee only", ticket: other_ticket)
+    create_answer("Other type", "other type only", ticket_type_ids: [other_type.id])
+
+    manifest = described_class.call(event: event, actor: profile.user)
+    entry = manifest.payload.fetch("tickets").find { |item| item["ticket_id"] == ticket.id }
+    expect(entry).to include("attendee_name" => "Maria Cruz", "door_fields" => [
+      { "label" => "Earlier field", "value" => "#{'翠' * 79}…" },
+      { "label" => "Tied position", "value" => "Yes" },
+      { "label" => "Graduation Year", "value" => "1998" },
+      { "label" => "Order choices", "value" => "Maroon, Gold" }
+    ])
+    expect(entry).not_to have_key("buyer_name")
+    expect(manifest.payload.to_json).not_to include("sensitive", "Door Guest")
+
+    ticket_type.update!(scanner_show_buyer: true, door_check_mode: "verify", door_alert_label: "CHECK ID",
+      door_instructions: "Confirm graduation year")
+    updated = described_class.call(event: event, actor: profile.user)
+    expect(updated.version).to eq(manifest.version + 1)
+    expect(updated.payload.fetch("tickets").first).to include(
+      "buyer_name" => "Door Guest", "door_check_mode" => "verify", "door_alert_label" => "CHECK ID",
+      "door_instructions" => "Confirm graduation year"
+    )
+    expect(Admissions::ManifestSigner.verify(digest: updated.digest, signature: updated.signature)).to be(true)
+    ticket.update!(attendee_name: " door guest ")
+    same_person = described_class.call(event: event, actor: profile.user).payload.fetch("tickets").first
+    expect(same_person).not_to have_key("buyer_name")
+    ticket.update!(attendee_name: " ")
+    blank_attendee = described_class.call(event: event, actor: profile.user).payload.fetch("tickets").first
+    expect(blank_attendee).to include("attendee_name" => "Guest")
+  end
+
+  def create_answer(prompt, value, ticket: nil, **settings)
+    question = create(:registration_question, **{ event: event, prompt: prompt, show_on_scanner: true,
+      scope: ticket ? :ticket : :order }.merge(settings))
+    order.registration_responses.create!(registration_question: question, ticket: ticket,
+      prompt_snapshot: prompt, kind_snapshot: RegistrationQuestion.kinds.fetch(question.kind),
+      options_snapshot: question.options, answered_at: Time.current, answer: { "value" => value })
   end
 
   it "signs a new refund-blocked version and restores eligibility only after a definitive failure" do

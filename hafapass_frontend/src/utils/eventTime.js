@@ -4,6 +4,19 @@ import { activeIntlLocale } from './locale'
 // the wording and order (e.g. "Oct 21, 2026" or "2026年10月21日").
 export const DEFAULT_EVENT_TIME_ZONE = 'Pacific/Guam'
 
+const knownZones = new Map()
+// The event's IANA time zone when this browser knows it, otherwise Guam. Date
+// logic and display share it, so a missing or malformed zone never throws.
+export function eventTimeZone(value) {
+  if (typeof value !== 'string' || !value) return DEFAULT_EVENT_TIME_ZONE
+  if (!knownZones.has(value)) {
+    let valid = true
+    try { new Intl.DateTimeFormat('en-US', { timeZone: value }) } catch { valid = false }
+    knownZones.set(value, valid)
+  }
+  return knownZones.get(value) ? value : DEFAULT_EVENT_TIME_ZONE
+}
+
 function validDate(value) {
   if (!value) return null
   const date = new Date(value)

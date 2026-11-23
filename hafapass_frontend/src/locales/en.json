@@ -376,7 +376,11 @@
       "opensGoogleMapsInANewTab": "(opens Google Maps in a new tab)",
       "offerUnavailable": "This waitlist offer is no longer available.",
       "doorsAt": "Doors {{time}}",
-      "reservedUntil": "{{quantity}} × {{ticket}} until {{time}}."
+      "reservedUntil": "{{quantity}} × {{ticket}} until {{time}}.",
+      "dateAndTime": "Date & time",
+      "venue": "Venue",
+      "doorsOpen": "Doors open",
+      "hostedBy": "Hosted by"
     },
     "Events": {
       "browseEvents": "Browse events",
@@ -547,7 +551,8 @@
       "multiNightPass_one": "Multi-Night Pass · {{count}} night",
       "multiNightPass_other": "Multi-Night Pass · {{count}} nights",
       "viewIncludedNights": "View included nights ({{count}})",
-      "hideIncludedNights": "Hide included nights"
+      "hideIncludedNights": "Hide included nights",
+      "freeNoPayment": "Free — no payment needed."
     },
     "WaitlistForm": {
       "failedToJoinWaitlist": "Failed to join waitlist",
@@ -844,7 +849,21 @@
       "localHelpBody": "HåfaPass is run by Shimizu Technology on Guam. Want a hand with your first event? We’ll set it up with you.",
       "firstEventHelp": "Talk to us about your event",
       "payoutMethod": "Payouts are made by check from Shimizu Technology LLC’s business account unless a different payout method is approved and recorded for you.",
-      "tryATicketPrice": "Try a ticket price"
+      "tryATicketPrice": "Try a ticket price",
+      "doorDemo": {
+        "tryIt": "Tap a ticket to try the door scanner",
+        "adultTicket": "Adult Ticket",
+        "alumniTicket": "Free Alumni Ticket",
+        "verifyFirst": "Verify before admitting",
+        "alumniAlert": "Free alumni — check ID",
+        "for": "For:",
+        "gradYear": "Grad year:",
+        "confirmAdmit": "Confirm & Admit",
+        "cancel": "Cancel",
+        "notAdmitted": "Not admitted",
+        "notUsed": "The ticket wasn’t used. Ready for the next guest.",
+        "fictional": "Example · names are fictional"
+      }
     },
     "organizer": {
       "thisOrganizerCouldnTLoadPleaseTry": "This organizer couldn’t load. Please try again.",
@@ -1166,7 +1185,14 @@
         "cancelled": "This ticket is cancelled and cannot be used for entry.",
         "transferred": "This ticket has been transferred and cannot be used by the previous holder."
       },
-      "sharingDoesNotTransfer": "Sharing this link does not transfer the ticket."
+      "sharingDoesNotTransfer": "Sharing this link does not transfer the ticket.",
+      "ticketPosition": "Ticket {{position}} of {{total}}",
+      "ticketPositionNamed": "Ticket {{position}} of {{total}} — {{name}}",
+      "ticketsInOrder": "Tickets in this order",
+      "previousTicket": "Previous ticket",
+      "nextTicket": "Next ticket",
+      "brightnessTip": "Tip: turn your screen brightness up at the door.",
+      "loadingTicket": "Loading this ticket…"
     },
     "myTicketsPage": {
       "testOrderNoRealCharge": "Test order — no real charge",
@@ -1231,7 +1257,11 @@
       "transfer": "Transfer",
       "openTicketToDownload": "Open ticket to download",
       "yourTicketFor": "your {{name}} ticket for {{title}}",
-      "entryPaused": "Entry paused"
+      "entryPaused": "Entry paused",
+      "tonightsTicket_one": "Tonight’s ticket",
+      "tonightsTicket_other": "Tonight’s tickets",
+      "tonightHelp": "Open it at the door and turn your screen brightness up.",
+      "tonightsTicketsSwitcher": "Switch between tonight’s tickets"
     },
     "orderRecoveryPage": {
       "pleaseWaitBeforeRequestingAnotherAccessLink": "Please wait before requesting another access link.",
@@ -1353,7 +1383,22 @@
       "stepBuyTitle": "Buy in a minute",
       "stepBuyBody": "Pay by card. Your tickets arrive by email, no account needed.",
       "stepDoorTitle": "Walk right in",
-      "stepDoorBody": "Show the QR on your phone at the door."
+      "stepDoorBody": "Show the QR on your phone at the door.",
+      "comingUpOnGuam": "Coming up on Guam",
+      "quickFilters": "Quick filters",
+      "featuredOnGuam": "Featured on Guam",
+      "nextUpOnGuam": "Next up on Guam",
+      "seeTickets": "See tickets",
+      "storyTitle": "From your phone to the door",
+      "storyPickTitle": "Pick your night",
+      "storyPickBody": "Find something on Guam and choose your tickets.",
+      "storyPassTitle": "Instant QR pass",
+      "storyPassBody": "Your tickets arrive by email right away. No account needed.",
+      "storyDoorTitle": "Fast scan at the door",
+      "storyDoorBody": "Show the QR on your phone. Staff scan it and you walk right in.",
+      "storyExampleEvent": "Your night out",
+      "storyAdmitted": "Admitted",
+      "dateAndVillage": "Choose a date or village"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

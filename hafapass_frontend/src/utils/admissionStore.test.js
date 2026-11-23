@@ -609,6 +609,22 @@ describe('admissionStore', () => {
     expect(await loadUsableManifest(eventId)).toEqual(envelope)
   })
 
+  it('verifies signed v2 door fields and rejects tampering with the mode or answer', async () => {
+    const eventId = 91015
+    await clearEventAdmissionData(eventId)
+    const ticket = { ticket_id: 15, state: 'valid', attendee_name: 'María Cruz', ticket_type_name: 'Alumni',
+      door_check_mode: 'verify', door_alert_label: 'ALUMNI — CHECK ID', door_instructions: null,
+      door_fields: [{ label: 'Graduation Year', value: '1998' }] }
+    const envelope = await signedManifest(eventId, [ticket], { schema_version: 2 })
+    await saveVerifiedManifest(envelope)
+    expect((await loadUsableManifest(eventId)).payload.tickets).toEqual([ticket])
+
+    const tampered = structuredClone(envelope)
+    tampered.payload.tickets[0].door_check_mode = 'instant'
+    tampered.payload.tickets[0].door_fields[0].value = '2004'
+    await expect(saveVerifiedManifest(tampered)).rejects.toThrow('Scanner manifest digest is invalid')
+  })
+
   it('allocates durable device sequences and removes only server-acknowledged actions', async () => {
     const eventId = 91002
     const device = { id: 42, event_id: eventId, last_sequence: 7, effective: true, authorization_expires_at: new Date(Date.now() + 60_000).toISOString() }

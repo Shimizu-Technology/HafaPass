@@ -39,7 +39,7 @@ class Rack::Attack
     path = req.path.to_s.downcase
     base = %r{\A/api/v1/organizer/events/[^/]+/}
     path.match?(base) && (
-      (req.post? && path.match?(%r{/scanner_devices/[^/]+/sync(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.post? && path.match?(%r{/scanner_devices/[^/]+/(?:scan|sync)(?:\.[a-z0-9]+)?/*\z})) ||
       (req.get? && path.match?(%r{/(?:scanner_devices/[^/]+/manifest|admissions(?:/search)?)(?:\.[a-z0-9]+)?/*\z}))
     )
   end

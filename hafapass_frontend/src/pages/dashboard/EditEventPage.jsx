@@ -185,7 +185,7 @@ function EditEventSession({ id, identity }) {
     try {
       const res = await apiClient.get(`/organizer/events/${id}`, request.config)
       if (!canApply()) return
-      setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [],
+      setEvent(saved => ({ ...saved, ticket_types: res.data.ticket_types || [], scanner_questions: res.data.scanner_questions || [],
         // A successful event save owns newer readiness and access metadata.
         // Still apply ticket data without reviving its pre-save checklist.
         ...(savedGeneration === eventSaveGeneration.current ? {
@@ -914,7 +914,7 @@ function EditEventSession({ id, identity }) {
           <p>{inventoryError}</p>
           <button type="button" onClick={refreshInventory} className="mt-2 min-h-11 font-semibold underline underline-offset-2">Retry ticket list</button>
         </div>}
-        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} assignedSeating={Boolean(event?.assigned_seating)} />
+        <TicketTypeCRUD beginRequest={beginRequest} remainingCapacity={remainingTicketCapacity} eventId={id} ticketTypes={event?.ticket_types || []} scannerQuestions={event?.scanner_questions || []} onRefresh={refreshInventory} eventTimezone={event?.timezone} assignedSeating={Boolean(event?.assigned_seating)} />
       </section>}
 
       {/* Danger Zone — HP-28 */}

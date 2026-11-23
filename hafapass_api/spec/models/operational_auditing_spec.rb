@@ -99,6 +99,17 @@ RSpec.describe "Event operational auditing", type: :model do
     expect(logs("pricing_tier.updated", tier).sole.after_data.keys).to match_array(%w[starts_at ends_at])
   end
 
+  it "audits door settings without storing free-form scanner copy" do
+    as_operator do
+      ticket_type.update!(door_check_mode: "verify", scanner_show_buyer: true,
+        door_alert_label: "Check alumni ID", door_instructions: "Staff instructions")
+    end
+    entry = logs("ticket_type.updated", ticket_type).sole
+    expect(entry.after_data).to eq("door_check_mode" => "verify", "scanner_show_buyer" => true)
+    expect(entry.metadata.fetch("changed_fields")).to match_array(%w[door_check_mode scanner_show_buyer door_alert_label door_instructions])
+    expect(entry.attributes.to_json).not_to include("Check alumni ID", "Staff instructions")
+  end
+
   it "rolls back a mutation and its already-inserted audit row if auditing fails" do
     item = create(:catalog_item, event: event)
     previous_price = item.price_cents

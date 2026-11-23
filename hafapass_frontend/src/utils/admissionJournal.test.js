@@ -4,10 +4,10 @@ import { journalExport, parseJournal } from './admissionJournal'
 describe('retained admission journal interchange', () => {
   it('exports minimal actions without attendee data or browser auth, preserving retry identity', () => {
     const actions = [{ action_uuid: 'scan-a', sequence: 8, kind: 'admit', source: 'offline', ticket_id: 12,
-      manifest_version: 2, credential_hash: 'a'.repeat(64), occurred_at: '2026-10-26T00:00:00Z',
+      manifest_version: 2, credential_hash: 'a'.repeat(64), occurred_at: '2026-10-26T00:00:00Z', confirmed: true,
       attendee_name: 'Private attendee', owner_user_id: 'private-owner', token: 'private-token' }]
     const data = journalExport(123, { device_id: 456, identifier: 'private-browser' }, actions)
-    expect(parseJournal(JSON.stringify(data), '123')).toMatchObject({ device_id: 456, actions: [{ action_uuid: 'scan-a', sequence: 8 }] })
+    expect(parseJournal(JSON.stringify(data), '123')).toMatchObject({ device_id: 456, actions: [{ action_uuid: 'scan-a', sequence: 8, confirmed: true }] })
     expect(JSON.stringify(data)).not.toMatch(/private|Private/)
     expect(actions).toHaveLength(1)
   })

@@ -84,7 +84,7 @@ describe('ticket at the door', () => {
     await screen.findByRole('img', { name: 'Ticket entry QR code' })
     const buttons = screen.getAllByRole('button', { name: /Wallet/ })
     expect(buttons.map(button => button.textContent)).toEqual(labels)
-    for (const button of buttons) expect(button).toHaveClass('min-h-11')
+    for (const button of buttons) expect(button).toHaveClass('min-h-12')
   })
 
   it('treats a touch-screen Mac user agent as iPadOS', async () => {

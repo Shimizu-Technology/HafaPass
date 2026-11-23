@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2606,9 +2606,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_200000) do
     t.datetime "translation_requested_at"
     t.boolean "is_pass", default: false, null: false
     t.string "attendee_info_mode", default: "none", null: false
+    t.string "door_check_mode", default: "instant", null: false
+    t.string "door_alert_label", limit: 120
+    t.text "door_instructions"
+    t.boolean "scanner_show_buyer", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
     t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
+    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying, 'verify'::character varying]::text[])", name: "ticket_types_door_check_mode_valid"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"

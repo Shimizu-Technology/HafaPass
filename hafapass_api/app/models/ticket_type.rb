@@ -3,8 +3,8 @@ class TicketType < ApplicationRecord
 
   audits_operations :ticket_type,
     fields: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at
-      attendee_info_mode],
-    observe: %w[name description]
+      attendee_info_mode door_check_mode scanner_show_buyer],
+    observe: %w[name description door_alert_label door_instructions]
 
   include Translatable
 
@@ -28,6 +28,7 @@ class TicketType < ApplicationRecord
   # Whether checkout asks for each ticket's attendee: "none" keeps the buyer's
   # name on every ticket.
   ATTENDEE_INFO_MODES = %w[none name_only name_and_email].freeze
+  DOOR_CHECK_MODES = %w[instant verify].freeze
   MINIMUM_CARD_TOTAL_MESSAGE = "Ticket price must leave the buyer paying at least $0.50 per ticket including fees " \
     "(the smallest card payment). Set it to $0.00 for a free ticket, raise the price, or have buyers pay the fees."
 
@@ -39,6 +40,11 @@ class TicketType < ApplicationRecord
   validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :door_allocation, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :attendee_info_mode, inclusion: { in: ATTENDEE_INFO_MODES }
+  validates :door_check_mode, inclusion: { in: DOOR_CHECK_MODES }
+  validates :door_alert_label, length: { maximum: 120 }, allow_nil: true
+  validates :door_instructions, length: { maximum: 400 }, allow_nil: true
+  validates :scanner_show_buyer, inclusion: { in: [true, false] }
+  normalizes :door_alert_label, :door_instructions, with: ->(value) { value.strip.presence }
   validate :sold_quantity_within_capacity
   validate :door_allocation_within_capacity
   validate :chronological_sales_window

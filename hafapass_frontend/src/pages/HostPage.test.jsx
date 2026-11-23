@@ -235,3 +235,46 @@ describe('host page calls to action', () => {
     screen.getAllByRole('link', { name: /Start hosting/ }).forEach(link => expect(link).toHaveAttribute('href', '/dashboard'))
   })
 })
+
+describe('door scanner demo', () => {
+  const door = () => screen.getByRole('region', { name: 'Run the door' })
+  const tryIt = () => within(door()).getByRole('group', { name: 'Tap a ticket to try the door scanner' })
+
+  it('admits an adult ticket at once and shows the ticket type and guest', async () => {
+    await load()
+    expect(within(tryIt()).getByRole('button', { name: 'Adult Ticket', pressed: true })).toHaveClass('min-h-12')
+    expect(door()).toHaveTextContent('Admitted')
+    expect(door()).toHaveTextContent('Avery Lindqvist')
+    expect(door()).toHaveTextContent('Example · names are fictional')
+  })
+
+  it('holds a free alumni ticket for an ID check, then admits or cancels', async () => {
+    await load()
+    const user = userEvent.setup()
+    await user.click(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket', pressed: false }))
+    expect(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket', pressed: true })).toBeInTheDocument()
+    expect(door()).toHaveTextContent('Verify before admitting')
+    expect(door()).toHaveTextContent('Free alumni — check ID')
+    expect(door()).toHaveTextContent('For:Calla Yorke')
+    expect(door()).toHaveTextContent('Grad year:1998')
+    expect(door()).not.toHaveTextContent('Admitted')
+    const confirm = within(door()).getByRole('button', { name: 'Confirm & Admit' })
+    expect(confirm).toHaveClass('min-h-12')
+    expect(within(door()).getByRole('button', { name: 'Cancel' })).toHaveClass('min-h-12')
+    await user.click(confirm)
+    expect(door()).toHaveTextContent('Admitted')
+    // The used button is gone; focus moves to the result instead of the page.
+    expect(document.activeElement).toHaveTextContent('Calla Yorke')
+    expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
+    expect(door()).toHaveTextContent('Free Alumni Ticket')
+    expect(within(door()).queryByRole('button', { name: 'Confirm & Admit' })).not.toBeInTheDocument()
+
+    await user.click(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket' }))
+    await user.click(within(door()).getByRole('button', { name: 'Cancel' }))
+    expect(door()).toHaveTextContent('Not admitted')
+    expect(document.activeElement).toHaveTextContent('Not admitted')
+    expect(door()).toHaveTextContent('The ticket wasn’t used. Ready for the next guest.')
+    await user.click(within(tryIt()).getByRole('button', { name: 'Adult Ticket' }))
+    expect(door()).toHaveTextContent('Avery Lindqvist')
+  })
+})

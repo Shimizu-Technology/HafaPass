@@ -485,7 +485,8 @@ export async function clearAllAdmissionData({ isCurrent = () => true } = {}) {
   window.localStorage.removeItem('hafapass_scanner_event_id')
 }
 
-export async function queueAdmission({ eventId, deviceId, manifestVersion, ticket, credentialHash, source, clientStatus = 'locally_accepted' }) {
+export async function queueAdmission({ eventId, deviceId, manifestVersion, ticket, credentialHash, source, clientStatus = 'locally_accepted', confirmed = false }) {
+  if (ticket.door_check_mode === 'verify' && confirmed !== true) throw new Error('Confirm this ticket at the door before admitting.')
   const db = await database()
   const transaction = db.transaction(['devices', 'queue', 'scan_states'], 'readwrite')
   const devices = transaction.objectStore('devices')
@@ -514,6 +515,7 @@ export async function queueAdmission({ eventId, deviceId, manifestVersion, ticke
     ticket_id: ticket.ticket_id,
     credential_hash: credentialHash,
     client_status: clientStatus,
+    ...(confirmed === true ? { confirmed: true } : {}),
   }
   storedDevice.next_sequence = sequence
   await devices.put(storedDevice)

@@ -6,11 +6,11 @@ const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(
   : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
     : JSON.stringify(value)
 const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
-function manifest(id, credential) {
-  const payload = { schema_version: 1, event: { id, title: `Context event ${id}` }, version: 2,
+function manifest(id, credential, schemaVersion = 1, door = {}) {
+  const payload = { schema_version: schemaVersion, event: { id, title: `Context event ${id}` }, version: 2,
     expires_at: new Date(Date.now() + 600_000).toISOString(), tickets: [{ ticket_id: 501, code: 'HP-T501',
       attendee_name: 'José & Ana', ticket_type: 'Admission', state: 'valid',
-      credential_hash: crypto.createHash('sha256').update(credential).digest('hex') }] }
+      credential_hash: crypto.createHash('sha256').update(credential).digest('hex'), ...door }] }
   const digest = crypto.createHash('sha256').update(canonical(payload)).digest('hex')
   const spki = keys.publicKey.export({ type: 'spki', format: 'der' })
   return { payload, digest, algorithm: 'PS256', key_id: crypto.createHash('sha256').update(spki).digest('hex'),
@@ -72,4 +72,83 @@ async function expectManifest(page, text) {
   const summary = page.getByText('Device details', { exact: true })
   if (await summary.locator('..').getAttribute('open') === null) await summary.click()
   await expect(page.getByText(text)).toBeVisible()
+}
+
+for (const [mode, viewport] of [['online', { width: 1280, height: 900 }], ['offline', { width: 375, height: 740 }]]) {
+  test(`signed v2 verification can be cancelled or confirmed ${mode}`, async ({ page, context }) => {
+    const eventId = 42
+    const credential = 'synthetic-alumni-qr'
+    const bundle = manifest(eventId, credential, 2, { attendee_name: 'Maria Cruz', buyer_name: 'Pat Cruz',
+      ticket_type_name: 'Free Alumni', door_check_mode: 'verify', door_alert_label: 'FREE ALUMNI — CHECK ID',
+      door_instructions: 'Confirm graduation year', door_fields: [{ label: 'Graduation Year', value: '1998' }] })
+    const ticket = bundle.payload.tickets[0]
+    const device = { id: 9, identifier: 'alumni-door', effective: true, status: 'active', last_sequence: 0,
+      authorization_expires_at: new Date(Date.now() + 600_000).toISOString() }
+    let checks = 0
+    const sent = []
+    await page.setViewportSize(viewport)
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, { environment: 'test', launch_capabilities: {} }))
+    await page.route('**/api/v1/me', route => json(route, { id: 7, role: 'organizer' }))
+    await page.route(/\/api\/v1\/organizer\/events(?:\?.*)?$/, route => json(route,
+      { events: [{ id: eventId, title: 'Alumni Night', status: 'published' }] }))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices', route => json(route, device, 201))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/9/manifest', route => json(route, bundle))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/9/scan', route => {
+      checks += 1
+      return json(route, { status: 'verification_required', verification_required: true, ticket })
+    })
+    await page.route('**/api/v1/organizer/events/42/admissions', route => json(route, { counts: {}, permissions: {}, recent_actions: [] }))
+    await page.route('**/api/v1/organizer/events/42/scanner_devices/9/sync', route => {
+      const actions = route.request().postDataJSON().actions
+      sent.push(...actions)
+      return json(route, { device: { ...device, last_sequence: actions.at(-1).sequence }, summary: {},
+        results: actions.map(action => ({ ...action, result: 'accepted', reason_code: 'admitted', ticket })) })
+    })
+
+    await page.goto('/dashboard/scanner?event=42')
+    await expect(page.getByRole('button', { name: 'Start camera' })).toBeEnabled()
+    if (mode === 'offline') {
+      await context.setOffline(true)
+      await expect(page.getByText('Offline mode', { exact: true })).toBeVisible()
+    }
+    const scan = async () => {
+      await page.getByLabel('Ticket QR code').fill(credential)
+      await page.getByRole('button', { name: 'Check in ticket', exact: true }).click()
+    }
+    const hold = page.getByRole('dialog', { name: 'FREE ALUMNI — CHECK ID' })
+    await scan()
+    await expect(hold.getByText('For: Maria Cruz')).toBeVisible()
+    await expect(hold.getByText('1998')).toBeVisible()
+    await expect(hold.getByText('Bought by Pat Cruz')).toBeVisible()
+    const confirm = hold.getByRole('button', { name: 'Confirm & Admit' })
+    const cancel = hold.getByRole('button', { name: 'Do Not Admit / Cancel' })
+    expect((await confirm.boundingBox()).height).toBeGreaterThanOrEqual(56)
+    expect((await cancel.boundingBox()).height).toBeGreaterThanOrEqual(56)
+    await page.keyboard.press('Tab')
+    await expect(confirm).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(cancel).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(hold).toBeHidden()
+    expect(sent).toHaveLength(0)
+
+    await scan()
+    await confirm.click()
+    const green = page.getByTestId('scan-result-overlay')
+    await expect(green).toHaveAttribute('data-result', 'success')
+    await expect(green.getByText('Free Alumni', { exact: true })).toBeVisible()
+    if (mode === 'offline') {
+      expect(sent).toHaveLength(0)
+      await context.setOffline(false)
+      await expect(page.getByTestId('scanner-pending-count')).toHaveText('0')
+    } else {
+      await expect(page.getByText('Admission confirmed', { exact: true })).toBeVisible()
+    }
+    expect(sent).toEqual([expect.objectContaining({ ticket_id: 501, confirmed: true, source: mode })])
+    expect(checks).toBe(mode === 'online' ? 2 : 0)
+    await expect(green).toBeHidden()
+    await scan()
+    await expect(page.getByText('Already scanned on this device', { exact: true })).toBeVisible()
+  })
 }

@@ -94,9 +94,14 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
       await page.goto('/')
       await expect(page.getByRole('heading', { name: populated ? 'QA music night' : 'The first events are on their way.', exact: true })).toBeVisible()
       if (populated) {
-        const card = page.getByRole('link', { name: /QA music night/ })
+        // The list card stays free of empty artwork boxes. The hero's featured pass
+        // names the same event; without art it shows the date in its art frame.
+        const card = page.locator('a.event-card').filter({ hasText: 'QA music night' })
         await expect(card.locator('img')).toHaveCount(0)
         await expect(card.locator('[class*="aspect-"]')).toHaveCount(0)
+        const pass = page.locator('a.featured-pass')
+        await expect(pass).toContainText('QA music night')
+        await expect(pass.locator('img')).toHaveCount(0)
         await expect(card.getByLabel('Sunday, Oct 11, 2099')).toContainText('11')
         await expect(page.locator('time[datetime="2099-10-11T08:00:00Z"]')).toHaveCount(1)
       }
