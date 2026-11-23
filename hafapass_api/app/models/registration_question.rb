@@ -83,14 +83,17 @@ class RegistrationQuestion < ApplicationRecord
     validation_rules["integer"] == true
   end
 
-  # Ticket-scoped answers live on pending orders' items until payment
-  # completes; deleting the question then would drop them.
+  # Pending orders may hold order-scoped responses directly or ticket-scoped
+  # answers in order_items.metadata until payment completes; deleting the
+  # question then would drop them or break checkout.
   def referenced_by_pending_checkout?
     return false unless persisted?
 
-    OrderItem.joins(:order).where(orders: { event_id: event_id, status: Order.statuses.fetch("pending") })
-      .where("order_items.metadata @> ?", { "attendees" => [{ "answers" => [{ "question_id" => id }] }] }.to_json)
-      .exists?
+    pending_status = Order.statuses.fetch("pending")
+    registration_responses.joins(:order).where(orders: { event_id: event_id, status: pending_status }).exists? ||
+      OrderItem.joins(:order).where(orders: { event_id: event_id, status: pending_status })
+        .where("order_items.metadata @> ?", { "attendees" => [{ "answers" => [{ "question_id" => id }] }] }.to_json)
+        .exists?
   end
 
   private

@@ -157,6 +157,21 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     expect(event.registration_questions.count).to eq(1)
   end
 
+  it "skips cleanly when an identical covered question already exists alongside another ticket type's identical question" do
+    create(:registration_question, event: event, prompt: "Graduation Year", kind: :number, scope: :ticket, required: true,
+      show_on_scanner: true, position: 0, ticket_type_ids: [adult.id],
+      validation_rules: { "min" => 1950, "max" => 2035, "integer" => true })
+    create(:registration_question, event: event, prompt: "Graduation Year", kind: :number, scope: :ticket, required: true,
+      show_on_scanner: true, position: 1, ticket_type_ids: [alumni.id],
+      validation_rules: { "min" => 1950, "max" => 2035, "integer" => true })
+
+    apply_template("alumni_door_verification", ticket_type: alumni)
+    expect(response).to have_http_status(:created), response.body
+    expect(response.parsed_body["skipped_prompts"]).to eq(["Graduation Year"])
+    expect(alumni.reload.attendee_info_mode).to eq("name_only")
+    expect(event.registration_questions.count).to eq(2)
+  end
+
   it "re-checks permission under the organization lock so a revocation cannot slip through" do
     calls = 0
     allow(OrganizationAuthorization).to receive(:allowed?).and_wrap_original do |original, **arguments|
@@ -183,6 +198,21 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     pending = create(:order, event: event, status: :pending, completed_at: nil)
     create(:order_item, order: pending, ticket_type: alumni, metadata: { "attendees" => [{ "attendee_name" => "Ana",
       "answers" => [{ "question_id" => question.id, "prompt" => "Jersey", "kind" => "short_text", "value" => "9" }] }] })
+
+    delete "#{base}/registration_questions/#{question.id}", headers: headers
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["errors"]).to eq([
+      "Buyers have answered this question on an order still waiting for payment. Pause the question instead of deleting it."
+    ])
+    expect(RegistrationQuestion.exists?(question.id)).to be(true)
+  end
+
+  it "asks organizers to pause an order-scoped question that has a response on a pending order" do
+    question = create(:registration_question, event: event, prompt: "Class Name", kind: :short_text, scope: :order,
+      required: false)
+    pending = create(:order, event: event, status: :pending, completed_at: nil)
+    RegistrationResponse.create!(order: pending, registration_question: question, prompt_snapshot: "Class Name",
+      kind_snapshot: 0, answered_at: Time.current, answer: { "value" => "Class of 1998" })
 
     delete "#{base}/registration_questions/#{question.id}", headers: headers
     expect(response).to have_http_status(:unprocessable_entity)

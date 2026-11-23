@@ -144,15 +144,22 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
       matches = existing.select { |question| question.scope == scope && question.prompt.casecmp?(definition[:prompt]) }
       next [:create, definition] if matches.empty?
 
-      covered = matches.find do |question|
+      covered_matches = matches.select do |question|
         question.ticket_type_ids.empty? || (ticket_type && question.ticket_type_ids.include?(ticket_type.id))
       end
-      compatible = matches.find { |question| template_differences(question, definition).empty? }
-      next [:skip, definition] if covered && covered == compatible
-      next [:extend, definition, compatible] if compatible && !covered && ticket_type
+      if covered_matches.any?
+        next [:skip, definition] if covered_matches.any? { |question| template_differences(question, definition).empty? }
 
-      if compatible.nil? || covered
-        differences = template_differences(covered || matches.first, definition)
+        differences = template_differences(covered_matches.first, definition)
+        raise TemplateConflict, "\"#{definition[:prompt]}\" already exists with different settings (#{differences.join(', ')}). " \
+          "Rename or remove it, then add the template again."
+      end
+
+      compatible = matches.find { |question| template_differences(question, definition).empty? }
+      next [:extend, definition, compatible] if compatible && ticket_type
+
+      if compatible.nil?
+        differences = template_differences(matches.first, definition)
         raise TemplateConflict, "\"#{definition[:prompt]}\" already exists with different settings (#{differences.join(', ')}). " \
           "Rename or remove it, then add the template again."
       end

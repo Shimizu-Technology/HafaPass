@@ -20,6 +20,12 @@ module Api
             return
           end
 
+          if params.key?(:registration_answers) && !params[:registration_answers].nil? &&
+              !params[:registration_answers].is_a?(ActionController::Parameters) && !params[:registration_answers].is_a?(Hash)
+            render json: { error: "registration_answers must be an object" }, status: :unprocessable_entity
+            return
+          end
+
           buyer_name = params[:buyer_name].presence || "Walk-in"
           buyer_email = params[:buyer_email].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local"
 

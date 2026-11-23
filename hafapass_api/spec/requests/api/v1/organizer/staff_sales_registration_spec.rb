@@ -71,6 +71,16 @@ RSpec.describe "Staff sales with required registration questions", type: :reques
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body["error"]).to eq("Invalid answer for Graduation Year")
 
+      post "#{base}/box_office", params: sale.merge(payment_method: "door_cash", registration_answers: ["1998"]),
+        headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("registration_answers must be an object")
+
+      post "#{base}/box_office", params: sale.merge(payment_method: "door_cash", registration_answers: "1998"),
+        headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("registration_answers must be an object")
+
       post "#{base}/box_office", params: sale.merge(payment_method: "door_cash", registration_answers: { year.id.to_s => 1998 }),
         headers: headers, as: :json
       expect(response).to have_http_status(:created)
