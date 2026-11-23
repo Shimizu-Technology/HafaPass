@@ -20,6 +20,12 @@ module Api
             return
           end
 
+          if params.key?(:registration_answers) && !params[:registration_answers].nil? &&
+              !params[:registration_answers].is_a?(ActionController::Parameters) && !params[:registration_answers].is_a?(Hash)
+            render json: { error: "registration_answers must be an object" }, status: :unprocessable_entity
+            return
+          end
+
           buyer_name = params[:buyer_name].presence || "Walk-in"
           buyer_email = params[:buyer_email].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local"
 
@@ -32,7 +38,7 @@ module Api
             event: @event,
             user: current_user,
             parameters: params.permit(:buyer_name, :buyer_email, :buyer_phone, :payment_method, :seat_hold_token, :expected_total_cents,
-              line_items: [:ticket_type_id, :quantity]),
+              line_items: [:ticket_type_id, :quantity], registration_answers: {}),
             idempotency_key: request.headers["Idempotency-Key"]
           )
 
@@ -119,7 +125,9 @@ module Api
             source: "box_office",
             payment_method: "door_card",
             seat_hold_token: params[:seat_hold_token],
-            expected_total_cents: params[:expected_total_cents]
+            expected_total_cents: params[:expected_total_cents],
+            # Optional for staff; any answers given are validated and kept.
+            registration_answers: params[:registration_answers]
           )
           attempt = CardPresentPayments::Processor.call(
             order: result.order,

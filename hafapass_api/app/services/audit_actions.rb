@@ -651,7 +651,7 @@ class AuditActions
 
     define registry, area: "tickets", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at attendee_info_mode], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "ticket_type.created" => "Created a ticket type.",
         "ticket_type.updated" => "Updated a ticket type.",
         "ticket_type.deleted" => "Deleted a ticket type."
@@ -785,7 +785,7 @@ class AuditActions
 
     define registry, area: "attendees", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[event_id kind required active position], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[event_id kind required active position scope show_on_scanner], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "registration_question.created" => "Created a registration question.",
         "registration_question.updated" => "Updated a registration question.",
         "registration_question.deleted" => "Deleted a registration question."

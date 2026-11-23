@@ -12,7 +12,7 @@ class PilotReadiness
   ].freeze
   TICKET_TYPE_FIELDS = %w[
     id name description price_cents quantity_available max_per_order max_per_buyer door_allocation sales_start_at
-    sales_end_at sort_order
+    sales_end_at sort_order attendee_info_mode
   ].freeze
   PRICING_TIER_FIELDS = %w[id name price_cents tier_type starts_at ends_at quantity_limit position].freeze
   EVENT_SEAT_FIELDS = %w[id venue_seat_id ticket_type_id operational_status general_release_at].freeze
@@ -20,7 +20,9 @@ class PilotReadiness
   CATALOG_ITEM_FIELDS = %w[
     id name description kind price_cents minimum_price_cents maximum_price_cents inventory_quantity position active
   ].freeze
-  REGISTRATION_QUESTION_FIELDS = %w[id prompt kind options required position active].freeze
+  REGISTRATION_QUESTION_FIELDS = %w[
+    id prompt kind options required position active scope ticket_type_ids show_on_scanner help_text validation_rules
+  ].freeze
   WAIVER_FIELDS = %w[id title version content_digest required active].freeze
   PROMO_CODE_FIELDS = %w[id code discount_type discount_value max_uses starts_at expires_at active].freeze
   VENUE_FIELDS = %w[id name slug address village accessibility_notes verified active].freeze

@@ -134,6 +134,53 @@ RSpec.describe DataRetention do
       .to eq(Time.zone.parse("2019-01-01"))
   end
 
+  it "clears per-ticket attendee details kept on order items once the order is anonymized" do
+    order = create(:order, completed_at: 8.years.ago, buyer_email: "buyer@example.com")
+    ticket_type = create(:ticket_type, event: order.event, attendee_info_mode: "name_only")
+    item = create(:order_item, order: order, ticket_type: ticket_type,
+      metadata: { "attendees" => [{ "attendee_name" => "Maria Cruz", "attendee_email" => nil, "answers" => [] }] })
+    create(:ticket, order: order, ticket_type: ticket_type, order_item: item, attendee_name: "Maria Cruz",
+      holder_email: "buyer@example.com")
+
+    described_class.anonymize_order!(order)
+
+    expect(item.reload.metadata).to eq({})
+    expect(item.subtotal_cents).to eq(item.unit_price_cents * item.quantity)
+  end
+
+  it "clears attendee details from cancelled or expired orders that never issued tickets once late payments are over" do
+    ticket_type = create(:ticket_type, attendee_info_mode: "name_only")
+    attendees = { "attendees" => [{ "attendee_name" => "Maria Cruz", "attendee_email" => nil, "answers" => [] }] }
+    unissued = %i[expired cancelled pending].to_h do |status|
+      order = create(:order, event: ticket_type.event, status: status, completed_at: nil)
+      item = create(:order_item, order: order, ticket_type: ticket_type, metadata: attendees)
+      order.update_columns(updated_at: 8.days.ago)
+      [status, item]
+    end
+    recent = create(:order, event: ticket_type.event, status: :expired, completed_at: nil)
+    recent_item = create(:order_item, order: recent, ticket_type: ticket_type, metadata: attendees)
+
+    DataRetentionPurgeJob.new.perform
+
+    expect(unissued[:expired].reload.metadata).to eq({})
+    expect(unissued[:cancelled].reload.metadata).to eq({})
+    expect(unissued[:pending].reload.metadata).to eq(attendees)
+    expect(recent_item.reload.metadata).to eq(attendees)
+  end
+
+  it "erases attendee details from an unissued order so a late payment issues tickets without them" do
+    ticket_type = create(:ticket_type, attendee_info_mode: "name_only")
+    order = create(:order, event: ticket_type.event, status: :expired, completed_at: nil, buyer_name: "Pat Buyer")
+    item = create(:order_item, order: order, ticket_type: ticket_type, quantity: 1, unit_price_cents: 5000, subtotal_cents: 5000,
+      metadata: { "attendees" => [{ "attendee_name" => "Maria Cruz", "attendee_email" => nil, "answers" => [] }] })
+
+    expect(described_class.anonymize_order!(order)).to be(true)
+    expect(item.reload.metadata).to eq({})
+
+    ticket = Commerce::OrderLifecycle.send(:issue_tickets!, order.reload).sole
+    expect(ticket.attendee_name).to eq("Deleted buyer")
+  end
+
   it "removes buyer and attendee details while preserving money rows and amounts" do
     user = create(:user)
     order = create(:order, user: user, completed_at: 8.years.ago, buyer_email: "buyer@example.com")

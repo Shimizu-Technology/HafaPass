@@ -19,7 +19,8 @@ RSpec.describe Commerce::OrderCreator do
       attribution: { source: "partner", campaign: "summer" },
       buyer_email: "buyer@example.com",
       buyer_name: "Buyer",
-      payment_required: false
+      payment_required: false,
+      require_registration_answers: true
     }.merge(overrides))
   end
 

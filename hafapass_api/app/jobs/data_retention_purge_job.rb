@@ -86,6 +86,21 @@ class DataRetentionPurgeJob < ApplicationJob
           end
         end
       end
+    unissued_cutoff = DataRetention.cutoff(DataRetention::UNISSUED_ATTENDEE_GRACE, at: at)
+    Order.where(status: DataRetention::UNISSUED_TERMINAL_STATUSES).where(updated_at: ...unissued_cutoff)
+      .where.not(id: Ticket.select(:order_id))
+      .where(id: OrderItem.where("metadata ? 'attendees'").select(:order_id))
+      .in_batches(of: DataRetention::BATCH_SIZE) do |batch|
+        batch.each do |order|
+          next if RetentionGuard.protected?(order)
+
+          if DataRetention.dry_run?
+            counts["unissued_attendee_details"] += 1
+          elsif DataRetention.scrub_unissued_attendee_details!(order)
+            counts["unissued_attendee_details"] += 1
+          end
+        end
+      end
     Rails.logger.info("[DataRetention] dry_run=#{DataRetention.dry_run?} counts=#{counts.sort.to_h.to_json}")
     counts
   end
