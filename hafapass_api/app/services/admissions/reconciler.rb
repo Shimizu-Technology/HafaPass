@@ -38,6 +38,34 @@ module Admissions
       raise SyncError, e.message
     end
 
+    # Online scans inspect live eligibility before the browser journals an
+    # admission. A hold consumes neither an action UUID nor a device sequence.
+    def preview(ticket_id:, credential_hash:, manifest_version:)
+      ticket_id = Integer(ticket_id, exception: false)
+      unless ticket_id&.positive? && credential_hash.is_a?(String) && credential_hash.match?(/\A[0-9a-f]{64}\z/)
+        return { status: "rejected", reason_code: "credential_not_in_manifest" }
+      end
+
+      AdmissionAction.transaction do
+        lock_admission_context!
+        validate_authorization!
+        input = { ticket_id: ticket_id, credential_hash: credential_hash,
+          manifest_version: Integer(manifest_version, exception: false), occurred_at: Time.current }
+        ticket, entry, rejection = resolve_ticket(input)
+        reason = rejection || lock_and_check_ticket(ticket, input)
+        next { status: "rejected", reason_code: reason } if reason
+
+        verification_required = verification_required?(ticket, entry, "online")
+        {
+          status: verification_required ? "verification_required" : "ready",
+          verification_required: verification_required,
+          ticket: DoorPayload.call(ticket).merge(ticket_id: ticket.id, code: "HP-T#{ticket.id}",
+            seat: ticket.seat_label, ticket_type: entry["ticket_type"],
+            door_check_mode: verification_required ? "verify" : "instant")
+        }
+      end
+    end
+
     private
 
     attr_reader :device, :actor, :actions, :request
@@ -93,7 +121,7 @@ module Admissions
         end
 
         action.merge(kind: kind, source: source, sequence: sequence, manifest_version: manifest_version,
-          occurred_at: occurred_at)
+          occurred_at: occurred_at, confirmed: kind == "admit" && action[:confirmed] == true)
       rescue ArgumentError, TypeError
         raise SyncError, "Each action requires a valid occurred_at"
       end.tap do |normalized|
@@ -134,24 +162,36 @@ module Admissions
 
     def reconcile_admission(input)
       ticket, manifest_entry, rejection = resolve_ticket(input)
-      return record_action(input, ticket: ticket, result: :rejected, reason_code: rejection) if rejection
+      reason = rejection || lock_and_check_ticket(ticket, input)
+      if reason
+        result = rejection.nil? && reason == "already_admitted" ? :conflict : :rejected
+        return record_action(input, ticket: ticket, result: result, reason_code: reason)
+      end
+      if verification_required?(ticket, manifest_entry, input[:source]) && !input[:confirmed]
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: "verification_required")
+      end
 
+      ticket.check_in!
+      record_action(input, ticket: ticket, result: :accepted, reason_code: "admitted", entry: manifest_entry)
+    end
+
+    def lock_and_check_ticket(ticket, input)
       ticket.order.lock!
       ticket.lock!
       # Authorization may expire while the ticket/order lock is contended.
       validate_authorization!
       unless secure_equal?(Digest::SHA256.hexdigest(ticket.scan_credential), input[:credential_hash])
-        return record_action(input, ticket: ticket, result: :rejected, reason_code: "credential_revoked")
+        return "credential_revoked"
       end
-      if ticket.checked_in?
-        return record_action(input, ticket: ticket, result: :conflict, reason_code: "already_admitted")
-      end
-      unless ticket.admission_allowed?
-        return record_action(input, ticket: ticket, result: :rejected, reason_code: current_block_reason(ticket))
-      end
+      return "already_admitted" if ticket.checked_in?
 
-      ticket.check_in!
-      record_action(input, ticket: ticket, result: :accepted, reason_code: "admitted", entry: manifest_entry)
+      ticket.admission_block_reason
+    end
+
+    # Offline decisions use the signed list available at the door (including
+    # v1 lists). Online decisions also enforce any stricter current settings.
+    def verification_required?(ticket, entry, source)
+      entry["door_check_mode"] == "verify" || (source == "online" && ticket.ticket_type.door_check_mode == "verify")
     end
 
     def reconcile_reversal(input)
@@ -249,7 +289,7 @@ module Admissions
         occurred_at: input.fetch(:occurred_at),
         received_at: Time.current,
         attendee_snapshot: attendee_snapshot(ticket, entry),
-        metadata: { client_status: input[:client_status],
+        metadata: { client_status: input[:client_status], confirmed: (true if input[:confirmed]),
           reverses_action_uuid: kind == :reverse ? input[:reverses_action_uuid] : nil }.compact
       )
       AuditLogger.record!(
@@ -273,14 +313,11 @@ module Admissions
       }.compact
     end
 
-    def current_block_reason(ticket)
-      ticket.admission_block_reason || "not_admissible"
-    end
-
     def validate_replay!(existing, input)
       unless existing.scanner_device_id == device.id && existing.event_id == device.event_id &&
           existing.sequence == input.fetch(:sequence) && existing.kind == input.fetch(:kind) &&
           existing.source == input.fetch(:source) && existing.credential_hash == input[:credential_hash] &&
+          (existing.metadata["confirmed"] == true) == input[:confirmed] &&
           (existing.reverses_action&.action_uuid || existing.metadata["reverses_action_uuid"]) == input[:reverses_action_uuid]
         raise SyncError, "action_uuid was already used for a different admission action"
       end

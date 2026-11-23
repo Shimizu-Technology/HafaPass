@@ -21,6 +21,8 @@ import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBind
 import useScreenWakeLock from '../../hooks/useScreenWakeLock'
 import useCameraRecovery from '../../hooks/useCameraRecovery'
 import useScanSound from '../../hooks/useScanSound'
+import DoorScanCard from '../../components/admissions/DoorScanCard'
+import VerificationOverlay from '../../components/admissions/VerificationOverlay'
 
 const LOOKUP_STATUS_LABELS = {
   issued: 'Issued', checked_in: 'Already checked in', cancelled: 'Cancelled',
@@ -191,8 +193,12 @@ async function scannerDefaultCandidates(config, q) {
 
 function admissionAcknowledgement(current, receipt) {
   const result = receipt.result || receipt.status
+  const { buyer_name: _cachedBuyer, ...priorTicket } = current.ticket || {}
   const next = result === 'accepted'
-    ? { type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.' }
+    ? { type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.',
+      ticket: receipt.ticket ? { ...priorTicket, ...receipt.ticket } : current.ticket }
+    : receipt.reason_code === 'verification_required'
+      ? { type: 'warning', message: 'This ticket needs door verification', detail: 'Scan the ticket again to review the current door instructions.' }
     : receipt.reason_code === 'refund_pending'
       ? { type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
       : { type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
@@ -208,11 +214,10 @@ function admissionAcknowledgement(current, receipt) {
 // The result panel stays the live announcement; a held refusal is also a modal
 // alert dialog so keyboard and screen-reader users meet the verdict first.
 const OVERLAY_STYLES = {
-  success: ['bg-emerald-600 text-white', CheckCircle2, 'Admitted'],
   warning: ['bg-amber-500 text-neutral-950', AlertTriangle, 'Check ticket'],
   error: ['bg-red-700 text-white', XCircle, 'Do not admit'],
 }
-export const ADMITTED_OVERLAY_MS = 700
+export const ADMITTED_OVERLAY_MS = 1200
 // Camera reads of a code that was just decided are ignored this long after its
 // result (and while it stays in view), so a guest who keeps holding up an
 // admitted ticket does not trigger "Already scanned on this device".
@@ -222,7 +227,7 @@ export const SAME_CREDENTIAL_QUIET_MS = 5000
 export const OVERLAY_TAP_GUARD_MS = 400
 export const SCAN_RESULT_MESSAGE_ID = 'scan-result-message'
 
-function ScanResultOverlay({ id, type, onDismiss, onGesture }) {
+function ScanResultOverlay({ id, type, ticket, onDismiss, onGesture }) {
   const dialogRef = useRef(null)
   const buttonRef = useRef(null)
   const headlineId = useId()
@@ -265,22 +270,23 @@ function ScanResultOverlay({ id, type, onDismiss, onGesture }) {
       }
     }
   }, [dismiss, id, onDismiss, persistent])
-  const [classes, Icon, headline] = OVERLAY_STYLES[type]
   const layout = 'flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center'
   if (!persistent) {
     // The admitted flash is visual only (the panel announces it) and clears itself.
     return (
       <div aria-hidden="true" onClick={dismiss} data-testid="scan-result-overlay" data-result={type} data-armed={armed}
-        className={`fixed inset-0 z-[60] animate-[ticket-fade_120ms_ease-out] ${layout} ${classes}`}>
-        <Icon className="h-24 w-24 shrink-0" strokeWidth={2.5} />
-        <span className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
+        className="fixed inset-0 z-[60] overflow-y-auto bg-emerald-800">
+        <div className="flex min-h-full items-center justify-center">
+          <DoorScanCard ticket={ticket} />
+        </div>
       </div>
     )
   }
+  const [classes, Icon, headline] = OVERLAY_STYLES[type]
   return (
     <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={headlineId} aria-describedby={SCAN_RESULT_MESSAGE_ID}
       data-testid="scan-result-overlay" data-result={type} data-armed={armed}
-      className={`fixed inset-0 z-[60] animate-[ticket-fade_120ms_ease-out] ${classes}`}>
+      className={`fixed inset-0 z-[60] ${classes}`}>
       <button ref={buttonRef} type="button" onClick={dismiss} aria-label={`${headline}. Dismiss scan result`}
         className={`h-full w-full focus:outline-none ${layout}`}>
         <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
@@ -297,6 +303,7 @@ function ResultPanel({ result, className = '', panelRef }) {
     pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
     success: ['bg-emerald-50 border-emerald-300 text-emerald-900', CheckCircle2],
     warning: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
+    verify: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
     error: ['bg-red-50 border-red-300 text-red-900', XCircle],
   }
   const [classes, Icon] = styles[result.type]
@@ -312,6 +319,13 @@ function ResultPanel({ result, className = '', panelRef }) {
               {result.ticket.attendee_name} · {result.ticket.ticket_type} · {result.ticket.code}
             </p>
           )}
+          {result.type === 'success' && result.ticket?.door_fields?.length > 0 && (
+            <dl className="mt-2 text-base">
+              {result.ticket.door_fields.map(({ label, value }, index) => <div key={index}><dt className="inline">{label}: </dt><dd className="inline font-semibold">{value}</dd></div>)}
+            </dl>
+          )}
+          {result.type === 'success' && result.ticket?.buyer_name && <p className="mt-2">Bought by {result.ticket.buyer_name}</p>}
+          {result.type === 'success' && result.ticket?.door_instructions && <p className="mt-2">{result.ticket.door_instructions}</p>}
           {result.latency != null && <details className="mt-3 text-xs">
             <summary className="flex min-h-11 cursor-pointer items-center font-medium">Scan details</summary>
             <p className="pb-2">Local response: {Math.round(result.latency)}ms</p>
@@ -405,6 +419,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const visitRef = useRef(location.key)
   visitRef.current = location.key
   const searchRequestRef = useRef(null)
+  const scanRequestRef = useRef(null)
+  const verificationRef = useRef(null)
   const downloadRequestRef = useRef(null)
   const dashboardRequestRef = useRef(null)
   const eventListAccessRef = useRef(null)
@@ -424,6 +440,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       cancelSyncRetry()
       ++privateReadGenerationRef.current
       searchRequestRef.current?.abort()
+      scanRequestRef.current?.abort()
       downloadRequestRef.current?.abort()
       dashboardRequestRef.current?.abort()
       eventListAccessRef.current?.abort()
@@ -478,6 +495,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     ++presentationRef.current
     ++privateReadGenerationRef.current
     searchRequestRef.current?.abort()
+    scanRequestRef.current?.abort()
+    verificationRef.current = null
     downloadRequestRef.current?.abort()
     dashboardRequestRef.current?.abort()
     eventListAccessRef.current?.abort()
@@ -550,7 +569,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       ++presentationRef.current
       currentManifestRef.current = null
       stopCamera()
-      for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, eventListAccessRef, directEventAccessRef]) {
+      for (const ref of [searchRequestRef, scanRequestRef, downloadRequestRef, dashboardRequestRef, eventListAccessRef, directEventAccessRef]) {
         if (ref.current !== request.controller) ref.current?.abort()
       }
       setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
@@ -593,7 +612,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     ++presentationRef.current
     currentManifestRef.current = null
     stopCamera()
-    for (const ref of [searchRequestRef, downloadRequestRef, dashboardRequestRef, directEventAccessRef]) ref.current?.abort()
+    for (const ref of [searchRequestRef, scanRequestRef, downloadRequestRef, dashboardRequestRef, directEventAccessRef]) ref.current?.abort()
     setDevice(null); setManifest(null); setRecoveryDevice(null); setDashboard(null)
     setEvents([]); setResolvedEvent(null); setEventMeta(null)
     setSearchResults([]); setSearchQuery(''); setManualCode(''); setScanResult(null)
@@ -1099,6 +1118,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   }, [device, eventId, online, syncQueue])
 
   const showResult = useCallback(result => {
+    verificationRef.current = result.verification || null
     // Record ownership synchronously; a peer ACK need not wait for React to render.
     resultContextRef.current = result.actionUuid ? { uuid: result.actionUuid, kind: result.actionKind,
       ticketId: result.ticket?.ticket_id, deviceId: result.deviceId, owner: currentScannerOwner(), eventId: eventIdRef.current,
@@ -1115,11 +1135,16 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   useEffect(() => {
     if (!alertKey) return
     const success = alertKey.endsWith(':success')
-    playScanSound(success ? 'admit' : 'refuse')
+    playScanSound(success ? 'admit' : alertKey.endsWith(':verify') ? 'verify' : 'refuse')
     if (navigator.vibrate) navigator.vibrate(success ? 80 : [100, 60, 100])
   }, [alertKey, playScanSound])
   const overlay = scanResult?.alertType && scanResult.feedbackId !== dismissedFeedback
     ? { id: scanResult.feedbackId, type: scanResult.alertType } : null
+  const verification = scanResult?.verification
+  useLayoutEffect(() => {
+    if (!verification || !device || !manifest) verificationRef.current = null
+    if (verification && (!device || !manifest)) setScanResult(null)
+  }, [verification, device, manifest])
 
   // While a refusal or warning holds the screen, the camera stops deciding, so
   // the next guest cannot be admitted unseen behind it. If the held result came
@@ -1143,11 +1168,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const feedbackId = scanResult?.feedbackId
   useEffect(() => {
     if (!feedbackId || !scanningRef.current) return
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-    resultPanelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' })
+    resultPanelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
   }, [feedbackId])
 
-  const admitEntry = useCallback(async (ticket, hash, startedAt = performance.now(), clientStatus = 'locally_accepted', presentation = ++presentationRef.current, scanManifest = manifest) => {
+  const admitEntry = useCallback(async (ticket, hash, startedAt, clientStatus, presentation, scanManifest, confirmed = false) => {
     if (!device || !scanManifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== scanManifest.digest) return
     const owner = currentScannerOwner()
     if (!owner || device.owner_user_id !== owner) return
@@ -1182,10 +1206,51 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         latency: performance.now() - startedAt })
       return
     }
-    if (ticket.state !== 'valid') {
+    let doorTicket = ticket
+    if (online && !confirmed && scanManifest.payload.schema_version === 2) {
+      const request = beginPrivateRead(scanRequestRef, eventId)
+      const context = await captureAdmissionAccessContext(eventId, {
+        isCurrent: request.current, expectedDevice: device, expectedManifest: scanManifest,
+      })
+      if (!current() || !request.current()) return
+      let response
+      try {
+        response = await apiClient.post(`/organizer/events/${eventId}/scanner_devices/${device.id}/scan`, {
+          ticket_id: ticket.ticket_id, credential_hash: hash, manifest_version: scanManifest.payload.version,
+        }, { ...request.config, timeout: 8000 })
+      } catch (scanError) {
+        await handlePrivateReadError(scanError, request, context, 'Could not verify this ticket online. Check your connection and try again.')
+        throw scanError
+      }
+      if (!current() || !request.current()) return
+      if (response.data?.status === 'rejected') {
+        const reason = response.data.reason_code
+        const labels = { already_admitted: 'Already admitted', cancelled: 'Cancelled ticket', credential_revoked: 'Ticket credential is no longer valid',
+          transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
+        showResult({ type: reason === 'already_admitted' ? 'warning' : 'error', message: labels[reason] || 'Invalid ticket',
+          detail: 'Ask a door manager to check the ticket before admitting.', latency: performance.now() - startedAt })
+        return
+      }
+      const modeByStatus = { ready: 'instant', verification_required: 'verify' }
+      const mode = modeByStatus[response.data?.status]
+      if (!mode || response.data.ticket?.ticket_id !== ticket.ticket_id || response.data.ticket.door_check_mode !== mode) {
+        throw new Error('Online ticket verification returned an unexpected response.')
+      }
+      doorTicket = response.data.ticket
+    } else if (ticket.state !== 'valid' && !(confirmed && online)) {
       const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
       showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
         detail: 'Sync the latest ticket list or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
+      return
+    }
+
+    if (currentManifestRef.current?.digest !== scanManifest.digest) {
+      showResult({ type: 'warning', message: 'Ticket list updated', detail: 'Scan this ticket again to use the updated event list.' })
+      return
+    }
+    if (!confirmed && doorTicket.door_check_mode === 'verify') {
+      showResult({ type: 'verify', message: 'Verify this ticket before admitting', ticket: doorTicket,
+        verification: { ticket: { ...doorTicket, state: ticket.state }, hash, clientStatus, presentation, scanManifest } })
       return
     }
 
@@ -1197,6 +1262,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       credentialHash: hash,
       source: online ? 'online' : 'offline',
       clientStatus,
+      ...(confirmed ? { confirmed: true } : {}),
     })
     if (!current()) return
     if (!action) {
@@ -1207,7 +1273,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     showResult({ type: online ? 'pending' : 'success', message: online ? 'Waiting for server confirmation' : 'Admitted offline',
       actionUuid: action.action_uuid, actionKind: 'admit', deviceId: device.id,
       detail: online ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
-      ticket, latency: performance.now() - startedAt })
+      ticket: doorTicket, latency: performance.now() - startedAt })
     await refreshPending(eventId, device)
     if (!current()) return
     // Another tab can acknowledge the transaction before queueAdmission returns.
@@ -1219,10 +1285,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         ? admissionAcknowledgement(existing, receipt) : existing)
     }
     if (online && current()) syncQueue({ quiet: true })
-  }, [device, eventId, manifest, refreshPending, showResult, syncQueue, online])
+  }, [device, eventId, refreshPending, showResult, syncQueue, online, beginPrivateRead, handlePrivateReadError])
 
-  const processCredential = useCallback(async raw => {
-    if (credentialInFlightRef.current) return
+  const processCredential = useCallback(async (raw, lookupTicket) => {
+    if (credentialInFlightRef.current || verificationRef.current) return
     const startedAt = performance.now()
     const presentation = ++presentationRef.current
     const owner = currentScannerOwner()
@@ -1234,6 +1300,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     credentialInFlightRef.current = credentialOwner
     setCredentialBusy(true)
     try {
+      if (lookupTicket) {
+        await admitEntry(lookupTicket, lookupTicket.credential_hash, startedAt, 'manual_lookup', presentation, manifest)
+        return
+      }
       if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) throw scannerPolicyError('refused')
       if (!device?.effective || new Date(device.authorization_expires_at).getTime() <= Date.now()) {
         throw scannerPolicyError('authorizationExpired')
@@ -1279,10 +1349,39 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     }
   }, [admitEntry, device, downloadManifest, eventId, manifest, online, showResult, ticketsByHash])
 
+  const cancelVerification = () => {
+    if (!verificationRef.current || credentialInFlightRef.current) return
+    verificationRef.current = null
+    ++presentationRef.current
+    setScanResult(null)
+  }
+
+  const confirmVerification = async () => {
+    const held = verificationRef.current
+    if (!held || credentialInFlightRef.current) return
+    primeSound()
+    const credentialOwner = Symbol('confirmation')
+    credentialInFlightRef.current = credentialOwner
+    setCredentialBusy(true)
+    try {
+      await admitEntry(held.ticket, held.hash, performance.now(), held.clientStatus, held.presentation, held.scanManifest, true)
+      if (verificationRef.current === held) {
+        showResult({ type: 'warning', message: 'Scan the ticket again', detail: 'The ticket list or scanner access changed during verification.' })
+      }
+    } catch {
+      if (verificationRef.current === held) showResult({ type: 'error', message: 'Could not confirm entry', detail: 'Check the ticket status before trying again.' })
+    } finally {
+      if (credentialInFlightRef.current === credentialOwner) {
+        credentialInFlightRef.current = false
+        if (mountedRef.current) setCredentialBusy(false)
+      }
+    }
+  }
+
   processCredentialRef.current = processCredential
 
   const handleDecoded = useCallback(code => {
-    if (!code || decodePausedRef.current) return
+    if (!code || decodePausedRef.current || verificationRef.current) return
     const recent = lastDecodedRef.current
     if (recent.code === code && Date.now() < recent.until) {
       // Same guest still holding the code up: keep ignoring it until it has
@@ -1314,7 +1413,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         await videoRef.current.play()
         const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
         detectorTimerRef.current = setInterval(async () => {
-          if (!videoRef.current || scanCooldownRef.current || decodePausedRef.current) return
+          if (!videoRef.current || scanCooldownRef.current || decodePausedRef.current || verificationRef.current) return
           const codes = await detector.detect(videoRef.current).catch(() => [])
           if (generation === cameraGenerationRef.current) handleDecoded(codes[0]?.rawValue)
         }, 250)
@@ -1621,11 +1720,11 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-8 sm:mb-6 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-start-10 lg:mb-0">
         <section id="manual-ticket-entry" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
           <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
-          <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">A valid ticket will be recorded as admitted. Camera not working? Paste the QR code or link from the ticket. For a ticket number such as HP-T123, use attendee lookup below.</p>
+          <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">Paste the QR code or link from the ticket. Some tickets ask you to check details before admitting. For a ticket number such as HP-T123, use attendee lookup below.</p>
           <label htmlFor="manual-ticket-code" className="mb-1 block text-sm font-medium text-neutral-800">Ticket QR code</label>
           <form onSubmit={event => { event.preventDefault(); primeSound(); if (credentialInFlightRef.current) return; processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
             <input value={manualCode} onChange={event => setManualCode(event.target.value)} id="manual-ticket-code" className="input min-w-0 flex-1" aria-describedby="manual-ticket-help" placeholder="Paste ticket QR code or link" disabled={!ready} />
-            <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy}>{credentialBusy ? 'Checking ticket…' : 'Check in ticket'}</button>
+            <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy || !!verification}>{credentialBusy ? 'Checking ticket…' : 'Check in ticket'}</button>
           </form>
         </section>
 
@@ -1644,8 +1743,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
                   <p className="mt-1 text-neutral-700">{ticket.admission_allowed ? 'Available for check-in' : 'Entry unavailable — ask a door manager'}</p>
                   {ticket.admission_allowed && !ticketsById.has(Number(ticket.id)) && <p className="mt-1 text-amber-900">Sync the ticket list before admitting this guest.</p>}
                 </div>
-                <button className="btn-primary text-sm" disabled={!ticket.admission_allowed || !ticketsById.has(Number(ticket.id))}
-                  onClick={() => { primeSound(); const entry = ticketsById.get(Number(ticket.id)); admitEntry(entry, entry.credential_hash, performance.now(), 'manual_lookup') }}>Admit</button>
+                <button className="btn-primary text-sm" disabled={!ticket.admission_allowed || !ticketsById.has(Number(ticket.id)) || credentialBusy || !!verification}
+                  onClick={() => { primeSound(); processCredential(null, ticketsById.get(Number(ticket.id))) }}>Admit</button>
               </div>
             ))}
           </div>
@@ -1700,7 +1799,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
           </div>
         </section>
       )}
-      {overlay && <ScanResultOverlay key={`${overlay.id}:${overlay.type}`} id={overlay.id} type={overlay.type} onDismiss={setDismissedFeedback} onGesture={primeSound} />}
+      {verification && ready && <VerificationOverlay ticket={scanResult.ticket} onConfirm={confirmVerification} onCancel={cancelVerification} busy={credentialBusy} />}
+      {overlay && overlay.type !== 'verify' && <ScanResultOverlay key={`${overlay.id}:${overlay.type}`} id={overlay.id} type={overlay.type} ticket={scanResult.ticket} onDismiss={setDismissedFeedback} onGesture={primeSound} />}
     </div>
   )
 }

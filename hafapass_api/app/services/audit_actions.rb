@@ -651,7 +651,8 @@ class AuditActions
 
     define registry, area: "tickets", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at attendee_info_mode], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at
+        attendee_info_mode door_check_mode scanner_show_buyer], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "ticket_type.created" => "Created a ticket type.",
         "ticket_type.updated" => "Updated a ticket type.",
         "ticket_type.deleted" => "Deleted a ticket type."

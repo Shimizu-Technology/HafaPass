@@ -111,13 +111,14 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
           position += 1
         end
       end
-      ticket_type.update!(attendee_info_mode: "name_only") if enables_attendee_names && !ticket_type.collects_attendee_name?
+      apply_alumni_ticket_settings!(ticket_type) if enables_attendee_names
     end
     render json: {
       registration_questions: created.map { |item| serialize(item) },
       updated_questions: updated.map { |item| serialize(item) },
       skipped_prompts: skipped,
-      ticket_type: ticket_type && { id: ticket_type.id, attendee_info_mode: ticket_type.reload.attendee_info_mode }
+      ticket_type: ticket_type && { id: ticket_type.id, attendee_info_mode: ticket_type.attendee_info_mode,
+        door_check_mode: ticket_type.door_check_mode }
     }, status: :created
   rescue TemplateConflict => e
     render json: { error: e.message }, status: :conflict
@@ -128,6 +129,17 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
   end
 
   private
+
+  def apply_alumni_ticket_settings!(ticket_type)
+    ticket_type.attendee_info_mode = "name_only" unless ticket_type.collects_attendee_name?
+    if ticket_type.door_check_mode == "instant" && ticket_type.door_alert_label.blank?
+      ticket_type.door_check_mode = "verify"
+      ticket_type.door_alert_label = "FREE ALUMNI — CHECK ID"
+      ticket_type.door_instructions = ticket_type.door_instructions.presence ||
+        "Check alumni ID or confirm graduation year before admitting."
+    end
+    ticket_type.save! if ticket_type.changed?
+  end
 
   def ensure_template_authority!(enables_attendee_names)
     permissions = [:manage_events, (:manage_inventory if enables_attendee_names)].compact

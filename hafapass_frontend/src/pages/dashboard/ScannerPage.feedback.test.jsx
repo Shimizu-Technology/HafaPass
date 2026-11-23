@@ -1,10 +1,10 @@
 import 'fake-indexeddb/auto'
-import { act, render as testingRender, screen, waitFor } from '@testing-library/react'
+import { act, render as testingRender, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
-import { clearAllAdmissionData, clearEventAdmissionData, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
+import { clearAllAdmissionData, clearEventAdmissionData, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import { SCANNER_SOUND_KEY } from '../../hooks/useScanSound'
 import ScannerPage, { ADMITTED_OVERLAY_MS, OVERLAY_TAP_GUARD_MS, SAME_CREDENTIAL_QUIET_MS } from './ScannerPage'
@@ -46,17 +46,17 @@ function installAudio() {
   return { tones, contexts, resumes }
 }
 
-async function prepareOffline(tickets) {
+async function prepareOffline(tickets, schemaVersion = 1) {
   await saveDevice(eventId, device)
-  await saveVerifiedManifest(await signedManifest(eventId, tickets))
+  await saveVerifiedManifest(await signedManifest(eventId, tickets, { schema_version: schemaVersion }))
   window.localStorage.setItem('hafapass_scanner_event_id', String(eventId))
   render(<ScannerPage offlineOnly />)
   await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
 }
 
 // A connected scanner whose sync replies are held until acknowledge() is called.
-async function prepareOnline(tickets) {
-  const manifest = await signedManifest(eventId, tickets)
+async function prepareOnline(tickets, schemaVersion = 1) {
+  const manifest = await signedManifest(eventId, tickets, { schema_version: schemaVersion })
   apiClient.get.mockImplementation(url => {
     if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Feedback Event' }] } })
     if (url.endsWith('/manifest')) return Promise.resolve({ data: manifest })
@@ -66,6 +66,10 @@ async function prepareOnline(tickets) {
   })
   const replies = []
   apiClient.post.mockImplementation((url, payload) => {
+    if (url.endsWith('/scan')) {
+      const ticket = tickets.find(entry => entry.ticket_id === payload.ticket_id)
+      return Promise.resolve({ data: { status: ticket.door_check_mode === 'verify' ? 'verification_required' : 'ready', ticket } })
+    }
     if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
     const reply = { data: { device: { ...device, last_sequence: payload.actions.at(-1).sequence }, summary: {}, results: payload.actions.map(action => ({
       action_uuid: action.action_uuid, ticket_id: action.ticket_id, kind: action.kind, result: 'accepted', reason_code: 'admitted' })) } }
@@ -79,6 +83,15 @@ async function prepareOnline(tickets) {
 async function enterCode(user, code) {
   await user.type(screen.getByLabelText('Ticket QR code'), code)
   await user.click(screen.getByRole('button', { name: 'Check in ticket' }))
+}
+
+async function alumniTicket(mode = 'verify') {
+  return {
+    ticket_id: 502, state: 'valid', attendee_name: 'Maria Cruz', ticket_type_name: 'Alumni', ticket_type: 'Alumni',
+    door_check_mode: mode, door_alert_label: 'FREE ALUMNI — CHECK ID', buyer_name: 'Pat Cruz',
+    door_instructions: 'Confirm graduation year', door_fields: [{ label: 'Graduation Year', value: '1998' }],
+    credential_hash: await sha256Hex('alumni-qr'),
+  }
 }
 
 describe('door scan feedback', () => {
@@ -99,7 +112,7 @@ describe('door scan feedback', () => {
     const user = userEvent.setup()
     await enterCode(user, 'admit-qr')
     await waitFor(() => expect(overlay()).toHaveAttribute('data-result', 'success'))
-    expect(overlay()).toHaveClass('fixed', 'inset-0', 'z-[60]', 'bg-emerald-600')
+    expect(overlay()).toHaveClass('fixed', 'inset-0', 'z-[60]', 'bg-emerald-800')
     expect(overlay()).toHaveTextContent('Admitted')
     expect(overlay()).not.toHaveTextContent('Tap to continue')
     expect(overlay()).not.toHaveFocus()
@@ -108,6 +121,75 @@ describe('door scan feedback', () => {
     expect(document.getElementById('scanner-camera').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await waitFor(() => expect(overlay()).not.toBeInTheDocument(), { timeout: ADMITTED_OVERLAY_MS + 1000 })
     expect(screen.getByText('Admitted offline')).toBeInTheDocument()
+  })
+
+  it.each(['online', 'offline'])('shows door details and admits an instant v2 ticket %s without a hold', async mode => {
+    const tickets = [await alumniTicket('instant')]
+    const online = mode === 'online' ? await prepareOnline(tickets, 2) : null
+    if (!online) await prepareOffline(tickets, 2)
+    const user = userEvent.setup()
+    await enterCode(user, 'alumni-qr')
+    if (online) await online.acknowledge()
+    const green = await screen.findByTestId('scan-result-overlay')
+    expect(green).toHaveAttribute('data-result', 'success')
+    for (const text of ['Alumni', 'Maria Cruz', '1998', 'Bought by Pat Cruz', 'Confirm graduation year']) {
+      expect(within(green).getByText(text, { exact: true })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it.each(['online', 'offline'])('holds, cancels, and explicitly confirms a v2 ticket %s', async mode => {
+    const tickets = [await alumniTicket()]
+    const online = mode === 'online' ? await prepareOnline(tickets, 2) : null
+    if (!online) await prepareOffline(tickets, 2)
+    const user = userEvent.setup()
+    await enterCode(user, 'alumni-qr')
+    const hold = await screen.findByRole('dialog', { name: 'FREE ALUMNI — CHECK ID' })
+    expect(hold).toHaveFocus()
+    expect(hold).toHaveTextContent('For: Maria Cruz')
+    expect(hold).toHaveTextContent('Graduation Year: 1998')
+    expect(hold).toHaveTextContent('Bought by Pat Cruz')
+    expect(hold).toHaveTextContent('Confirm graduation year')
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+    await user.tab()
+    expect(within(hold).getByRole('button', { name: 'Confirm & Admit' })).toHaveFocus()
+    await user.tab()
+    expect(within(hold).getByRole('button', { name: 'Do Not Admit / Cancel' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+    expect(apiClient.post.mock.calls.filter(([url]) => url.endsWith('/sync'))).toHaveLength(0)
+
+    await enterCode(user, 'alumni-qr')
+    await user.click(await screen.findByRole('button', { name: 'Confirm & Admit' }))
+    if (online) {
+      await online.acknowledge()
+      const sent = apiClient.post.mock.calls.find(([url]) => url.endsWith('/sync'))
+      expect(sent[1].actions).toEqual([expect.objectContaining({ confirmed: true, source: 'online' })])
+    } else {
+      await waitFor(async () => expect(await queuedActions(eventId, device.id)).toEqual([
+        expect.objectContaining({ confirmed: true, source: 'offline', manifest_version: 1 }),
+      ]))
+    }
+    expect(await screen.findByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'success')
+    await enterCode(user, 'alumni-qr')
+    expect(await screen.findByText('Already scanned on this device')).toBeInTheDocument()
+  })
+
+  it('pauses camera reads until the verification hold is canceled', async () => {
+    const other = { ticket_id: 503, state: 'valid', attendee_name: 'Next guest', credential_hash: await sha256Hex('next-qr') }
+    await prepareOffline([await alumniTicket(), other], 2)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Start camera' }))
+    await waitFor(() => expect(camera.callbacks).toHaveLength(1))
+    await enterCode(user, 'alumni-qr')
+    await screen.findByRole('dialog')
+    await cameraRead('next-qr')
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Do Not Admit / Cancel' }))
+    await cameraRead('next-qr')
+    expect(await screen.findByText('Admitted offline')).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toEqual([expect.objectContaining({ ticket_id: 503 })])
   })
 
   it('holds a refusal until tapped, returns focus, and lets the next scan through', async () => {
@@ -241,15 +323,12 @@ describe('door scan feedback', () => {
     }
   }, 15_000)
 
-  it('brings the result panel into view after a camera scan, without motion when reduced', async () => {
+  it('brings the result panel into view after a camera scan without motion', async () => {
     // jsdom does not implement scrollIntoView.
     const scrollIntoView = vi.fn()
     Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
     onTestFinished(() => { delete Element.prototype.scrollIntoView })
     await prepareOffline([{ ticket_id: 507, state: 'valid', attendee_name: 'Guest', ticket_type: 'General', credential_hash: await sha256Hex('view-qr') }])
-    Object.defineProperty(window, 'matchMedia', { configurable: true, value: query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query,
-      addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn() }) })
-    onTestFinished(() => { delete window.matchMedia })
     const user = userEvent.setup()
     await enterCode(user, 'view-manual-qr')
     await waitFor(() => expect(overlay()).toHaveAttribute('data-result', 'error'))
@@ -259,7 +338,7 @@ describe('door scan feedback', () => {
     await user.click(screen.getByRole('button', { name: 'Start camera' }))
     await waitFor(() => expect(camera.callbacks).toHaveLength(1))
     await cameraRead('view-qr')
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'auto' }))
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'instant' }))
     expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByText('Admitted offline').closest('[role="status"]'))
     expect(document.querySelector('#scanner-camera .relative')).toHaveClass('max-h-[60dvh]', 'landscape:max-h-[45dvh]')
   })

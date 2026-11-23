@@ -8,6 +8,7 @@ module Admissions
 
     MAX_LIFETIME = 24.hours
     EVENT_GRACE = 12.hours
+    SCHEMA_VERSION = 2
 
     def self.call(**)
       new(**).call
@@ -35,7 +36,7 @@ module Admissions
         generated_at = Time.current
         expires_at = manifest_expiration(generated_at)
         payload = {
-          schema_version: 1,
+          schema_version: SCHEMA_VERSION,
           event: event_payload,
           version: version,
           generated_at: generated_at.iso8601(6),
@@ -82,18 +83,18 @@ module Admissions
 
     def manifest_tickets
       event.tickets.scannable.preload(:ticket_type, :inventory_retention, :pending_refund_tickets,
-        { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, { order: [:disputes, :refunds, :payments] },
+        { parent_ticket: [:pending_refund_tickets, :inventory_retention] },
+        { order: [:disputes, :refunds, :payments, { registration_responses: :registration_question }] },
         event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
         {
           ticket_id: ticket.id,
           code: "HP-T#{ticket.id}",
           credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential),
-          attendee_name: ticket.attendee_name.presence || "Guest",
           ticket_type: [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
           seat: ticket.seat_label,
           state: admission_state(ticket),
           reversed_admission_action_uuids: reversed_admissions_by_ticket.fetch(ticket.id, [])
-        }
+        }.merge(DoorPayload.call(ticket))
       end
     end
 
@@ -134,7 +135,7 @@ module Admissions
     # The payment mode decides whether test-card tickets admit people, so a
     # mode switch yields a new manifest version and scanners re-download it.
     def source_payload(tickets)
-      { event: event_payload, payment_mode: payment_mode, tickets: tickets }
+      { schema_version: SCHEMA_VERSION, event: event_payload, payment_mode: payment_mode, tickets: tickets }
     end
 
     def payment_mode

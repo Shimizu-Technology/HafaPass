@@ -28,6 +28,29 @@ RSpec.describe "Organizer TicketTypes pass configuration, sync_pass_holders, sta
     allow(EmailService).to receive(:send_order_confirmation_async)
   end
 
+  it "creates, updates, and returns scanner settings and only scanner-visible preview questions" do
+    settings = { door_check_mode: "verify", door_alert_label: "CHECK ID", door_instructions: "Confirm date of birth",
+      scanner_show_buyer: true }
+    base = "/api/v1/organizer/events/#{pass_event.id}"
+    post "#{base}/ticket_types", params: settings.merge(name: "Alumni", price_cents: 0, quantity_available: 30),
+      headers: headers, as: :json
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body).to include(settings.stringify_keys)
+    id = response.parsed_body.fetch("id")
+    visible = create(:registration_question, event: pass_event, scope: :ticket, ticket_type_ids: [id], show_on_scanner: true)
+    create(:registration_question, event: pass_event, show_on_scanner: false, prompt: "Private question")
+    get base, headers: headers
+    expect(response.parsed_body.fetch("ticket_types").sole).to include(settings.stringify_keys)
+    expect(response.parsed_body.fetch("scanner_questions").sole).to include("id" => visible.id, "scope" => "ticket",
+      "ticket_type_ids" => [id], "show_on_scanner" => true)
+
+    patch "#{base}/ticket_types/#{id}", params: { door_check_mode: "instant", door_alert_label: " ", scanner_show_buyer: false },
+      headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("door_check_mode" => "instant", "door_alert_label" => nil,
+      "scanner_show_buyer" => false, "door_instructions" => "Confirm date of birth")
+  end
+
   describe "POST / PATCH / GET organizer ticket_types with included_event_ids" do
     it "creates, serializes, and updates a multi-night pass preserving included_event_ids order" do
       post "/api/v1/organizer/events/#{pass_event.id}/ticket_types",

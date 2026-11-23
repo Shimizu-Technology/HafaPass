@@ -2,7 +2,7 @@
 
 class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseController
   before_action :set_event
-  before_action :set_device, only: [:update, :destroy, :manifest, :sync, :recover]
+  before_action :set_device, only: [:update, :destroy, :manifest, :scan, :sync, :recover]
 
   def index
     return unless authorize_organization!(:scan, event: @event)
@@ -69,6 +69,19 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def scan
+    return unless require_device_owner!
+    return unless authorize_organization!(:scan, event: @event)
+    return render_device_expired unless @device.effective?
+
+    result = Admissions::Reconciler.new(device: @device, actor: current_user, actions: []).preview(
+      ticket_id: params[:ticket_id], credential_hash: params[:credential_hash], manifest_version: params[:manifest_version]
+    )
+    render json: result
+  rescue Admissions::Reconciler::SyncError => e
+    render json: { error: e.message }, status: :forbidden
+  end
+
   def sync
     return unless require_device_owner!
 
@@ -79,7 +92,7 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
       request: request
     )
     render json: {
-      results: results.map { |result| action_json(result.action) },
+      results: results.map { |result| sync_result_json(result) },
       device: device_json(@device.reload),
       summary: admission_summary
     }
@@ -173,6 +186,15 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
       received_at: action.received_at,
       attendee: action.attendee_snapshot
     }
+  end
+
+  def sync_result_json(result)
+    action = result.action
+    json = action_json(action)
+    if action.source_online? && action.kind_admit? && action.result_accepted?
+      json[:ticket] = Admissions::DoorPayload.call(result.ticket).merge(ticket_id: result.ticket.id)
+    end
+    json
   end
 
   def admission_summary
