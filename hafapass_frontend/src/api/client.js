@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { syncServerClock } from '../utils/serverClock'
 import { Sentry } from '../monitoring'
 import { monitoringPath } from '../utils/telemetryPrivacy'
 import { getActiveLanguage } from '../utils/locale'
@@ -93,8 +94,12 @@ apiClient.interceptors.request.use(async (config) => {
 })
 
 apiClient.interceptors.response.use(
-  response => response,
+  response => {
+    syncServerClock(response.data?.server_now)
+    return response
+  },
   (error) => {
+    syncServerClock(error.response?.data?.server_now)
     // Axios reports a timeout as ECONNABORTED ("timeout of …ms exceeded"), or
     // ETIMEDOUT with clarifyTimeoutError. A browser-aborted request is not one.
     if (error.code === 'ETIMEDOUT' || (error.code === 'ECONNABORTED' && /timeout/i.test(error.message || ''))) {

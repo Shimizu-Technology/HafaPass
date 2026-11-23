@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
+import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -191,6 +192,9 @@ function EventDetailContent() {
       } })
     return () => { active = false }
   }, [slug, isPreview, previewToken, tokenRoute, legacyPreviewToken, isLiveMoneyProof, loadAttempt, navigate])
+
+  usePricingScheduleRefresh(event, tokenRoute || isPreview ? null
+    : `/events/${slug}${isLiveMoneyProof ? '?live_money_proof=true' : ''}`, setEvent)
 
   // Switching language reloads the event text quietly, keeping the page (and any
   // ticket selection) in place; the first load already used the current language.

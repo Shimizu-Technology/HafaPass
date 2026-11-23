@@ -229,6 +229,8 @@ module Api
           else
             render json: { errors: cloned.errors.full_messages }, status: :unprocessable_entity
           end
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { errors: e.record.errors.full_messages }, status: :unprocessable_content
         end
 
         MAX_BULK_CLONE_OCCURRENCES = 25
@@ -327,44 +329,65 @@ module Api
         def generate_recurrences
           return unless authorize_organization!(:manage_events)
 
-          return render_policy_hold_refusal("repeated") if @event.policy_hold?
-
-          unless @event.recurrence_rule.present?
-            return render json: { error: "Event must have a recurrence rule" }, status: :unprocessable_entity
-          end
-          unless @event.starts_at.present? && @event.ends_at.present?
-            return render json: { error: "Event must have start and end dates" }, status: :unprocessable_entity
-          end
-
           count = [params[:count].to_i.clamp(1, 12), 1].max
-          timezone = ActiveSupport::TimeZone[@event.timezone]
-          local_start = @event.starts_at.in_time_zone(timezone)
-          local_end = @event.ends_at.in_time_zone(timezone)
-          local_doors = @event.doors_open_at&.in_time_zone(timezone)
           generated = []
+          validation_error = nil
+          policy_hold = false
 
-          count.times do |i|
-            occurrence_number = i + 1
-            new_starts_at = advance_local_time(local_start, occurrence_number)
-            new_ends_at = advance_local_time(local_end, occurrence_number)
-            new_doors = local_doors ? advance_local_time(local_doors, occurrence_number) : nil
+          Event.transaction do
+            @event.lock!
+            if @event.policy_hold?
+              policy_hold = true
+              next
+            end
+            unless @event.recurrence_rule.present?
+              validation_error = "Event must have a recurrence rule"
+              next
+            end
+            unless @event.starts_at.present? && @event.ends_at.present?
+              validation_error = "Event must have start and end dates"
+              next
+            end
 
-            break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
+            timezone = ActiveSupport::TimeZone[@event.timezone] || ActiveSupport::TimeZone["Pacific/Guam"]
+            local_start = @event.starts_at.in_time_zone(timezone)
+            local_end = @event.ends_at.in_time_zone(timezone)
+            local_doors = @event.doors_open_at&.in_time_zone(timezone)
+            existing_starts = Event.where(recurrence_parent_id: @event.id).pluck(:starts_at)
+              .compact.to_set { |ts| ts.utc.to_i }
 
-            cloned = clone_event(@event,
-              starts_at: new_starts_at,
-              ends_at: new_ends_at,
-              doors_open_at: new_doors,
-              recurrence_parent_id: @event.id,
-              recurrence_rule: @event.recurrence_rule
-            )
-            generated << cloned if cloned.persisted?
+            count.times do |i|
+              occurrence_number = i + 1
+              new_starts_at = advance_local_time(local_start, occurrence_number)
+              new_ends_at = advance_local_time(local_end, occurrence_number)
+              new_doors = local_doors ? advance_local_time(local_doors, occurrence_number) : nil
+
+              break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
+              next if existing_starts.include?(new_starts_at.utc.to_i)
+
+              cloned = clone_event(@event,
+                starts_at: new_starts_at,
+                ends_at: new_ends_at,
+                doors_open_at: new_doors,
+                recurrence_parent_id: @event.id,
+                recurrence_rule: @event.recurrence_rule
+              )
+              raise ActiveRecord::RecordInvalid, cloned unless cloned.persisted?
+
+              generated << cloned
+              existing_starts.add(new_starts_at.utc.to_i)
+            end
           end
+
+          return render_policy_hold_refusal("repeated") if policy_hold
+          return render json: { error: validation_error }, status: :unprocessable_entity if validation_error
 
           render json: {
             generated_count: generated.size,
             events: generated.map { |e| event_json(e) }
           }, status: :created
+        rescue ActiveRecord::RecordInvalid => e
+          render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
         end
 
         # Lets the edit form check a link name as the organizer types, using the
@@ -697,7 +720,9 @@ module Api
 
           new_event = Event.new(attrs)
           new_event.audit_clone_source = source
-          if new_event.save
+          Event.transaction(requires_new: true) do
+            next unless new_event.save
+
             source.ticket_types.each do |tt|
               cloned_ticket_type = new_event.ticket_types.create!(
                 name: tt.name,
@@ -714,14 +739,19 @@ module Api
                 sales_end_at: shifted_relative_time(tt.sales_end_at, source, new_event)
               )
               tt.pricing_tiers.each do |tier|
+                starts_at = shifted_relative_time(tier.starts_at, source, new_event)
+                ends_at = shifted_relative_time(tier.ends_at, source, new_event)
+                # An undated draft has no anchor for copying a price window.
+                next if tier.time_based? && starts_at.nil? && ends_at.nil?
+
                 cloned_ticket_type.pricing_tiers.create!(
                   name: tier.name,
                   price_cents: tier.price_cents,
                   tier_type: tier.tier_type,
                   quantity_limit: tier.quantity_limit,
                   quantity_sold: 0,
-                  starts_at: shifted_relative_time(tier.starts_at, source, new_event),
-                  ends_at: shifted_relative_time(tier.ends_at, source, new_event),
+                  starts_at: starts_at,
+                  ends_at: ends_at,
                   position: tier.position
                 )
               end

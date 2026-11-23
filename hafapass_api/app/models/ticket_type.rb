@@ -15,7 +15,7 @@ class TicketType < ApplicationRecord
   has_many :tickets, dependent: :restrict_with_error
   has_many :order_items, dependent: :restrict_with_error
   has_many :inventory_holds, dependent: :restrict_with_error
-  has_many :pricing_tiers, -> { order(:position) }, dependent: :destroy
+  has_many :pricing_tiers, -> { order(:position, :id) }, dependent: :destroy
   has_many :waitlist_offers, dependent: :restrict_with_error
   has_many :event_seats, dependent: :restrict_with_error
   has_many :seat_holds, through: :event_seats
@@ -48,6 +48,7 @@ class TicketType < ApplicationRecord
   validate :sold_quantity_within_capacity
   validate :door_allocation_within_capacity
   validate :chronological_sales_window
+  validate :sales_window_contains_pricing_tiers, if: -> { persisted? && (will_save_change_to_sales_start_at? || will_save_change_to_sales_end_at?) }
   validate :buyer_total_meets_card_minimum, if: -> { will_save_change_to_price_cents? }
 
   delegate :machine_translation_eligible?, to: :event
@@ -141,38 +142,23 @@ class TicketType < ApplicationRecord
 
   # Evaluates pricing tiers in order and returns the current effective price.
   def current_price_cents(at: Time.current)
-    pricing_tiers.each do |tier|
-      case tier.tier_type
-      when "quantity_based"
-        return tier.price_cents if tier.active?(at: at)
-      when "time_based"
-        if tier.starts_at.present? && tier.ends_at.present?
-          return tier.price_cents if at.between?(tier.starts_at, tier.ends_at)
-        elsif tier.starts_at.present?
-          return tier.price_cents if at >= tier.starts_at
-        elsif tier.ends_at.present?
-          return tier.price_cents if at < tier.ends_at
-        end
-      end
-    end
-    price_cents
+    active_pricing_tier(at: at)&.price_cents || price_cents
   end
 
-  # Returns the currently active pricing tier, or nil if using base price.
   def active_pricing_tier(at: Time.current)
-    pricing_tiers.each do |tier|
-      return tier if tier.active?(at: at)
-    end
-    nil
+    pricing_tiers.find { |tier| tier.active?(at: at) }
   end
 
-  # Returns the next tier that will become active after the current one.
-  def next_pricing_tier
+  def next_pricing_tier(at: Time.current)
     tiers = pricing_tiers.to_a
-    active_index = tiers.index(&:active?)
+    active_index = tiers.index { |tier| tier.active?(at: at) }
     return tiers[active_index + 1] if active_index
 
-    tiers.find { |tier| tier.time_based? && tier.starts_at.present? && tier.starts_at > Time.current }
+    tiers.select { |tier| tier.time_based? && tier.starts_at && tier.starts_at > at }.min_by(&:starts_at)
+  end
+
+  def with_inventory_lock(&block)
+    with_lock(&block)
   end
 
   private
@@ -181,6 +167,26 @@ class TicketType < ApplicationRecord
     errors.add(:sales_end_at, "must be after sales start") if sales_start_at && sales_end_at && sales_end_at <= sales_start_at
     errors.add(:sales_start_at, "must be before the event ends") if sales_start_at && event&.ends_at && sales_start_at >= event.ends_at
     errors.add(:sales_end_at, "must be at or before the event end") if sales_end_at && event&.ends_at && sales_end_at > event.ends_at
+  end
+
+  def sales_window_contains_pricing_tiers
+    tiers = pricing_tiers.time_based.to_a
+    if sales_start_at
+      offender = tiers.find { |tier| tier.starts_at && tier.starts_at < sales_start_at }
+      if offender
+        errors.add(:sales_start_at, "cannot open after the \"#{offender.name}\" price window starts")
+      elsif (missed = tiers.find { |tier| tier.starts_at.nil? && tier.ends_at && tier.ends_at <= sales_start_at })
+        errors.add(:sales_start_at, "cannot open at or after the \"#{missed.name}\" price window ends")
+      end
+    end
+    if sales_end_at
+      offender = tiers.find { |tier| tier.ends_at && tier.ends_at > sales_end_at }
+      if offender
+        errors.add(:sales_end_at, "cannot close before the \"#{offender.name}\" price window ends")
+      elsif (missed = tiers.find { |tier| tier.ends_at.nil? && tier.starts_at && tier.starts_at >= sales_end_at })
+        errors.add(:sales_end_at, "cannot close at or before the \"#{missed.name}\" price window starts")
+      end
+    end
   end
 
   def sold_quantity_within_capacity

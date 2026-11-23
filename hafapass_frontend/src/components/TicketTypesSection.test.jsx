@@ -128,6 +128,19 @@ it('shows a Multi-Night Pass badge and expandable included nights schedule on pa
   expect(screen.getByText('Championship Night')).toBeInTheDocument()
 })
 
+it('shows the server-selected tier, its named transition, and the sales closing time', () => {
+  const early = { name: 'Early Bird', tier_type: 'time_based', ends_at: '2026-05-01T13:59:00Z' }
+  const ticket = { id: 14, name: 'Admission', price_cents: 50000, current_price_cents: 40000,
+    all_in_price_cents: 42016, quantity_remaining: 10, on_sale: true, active_tier: early,
+    pricing_schedule: { timezone: 'Pacific/Guam', active_tier: early,
+      next_tier: { name: 'Regular', starts_at: early.ends_at, all_in_price_cents: 52016 },
+      sales_end_at: '2026-05-02T13:59:00Z' } }
+  render(<TicketTypesSection ticketTypes={[ticket]} onCheckout={vi.fn()} />)
+  expect(screen.getByText('Early Bird · $420.16')).toBeInTheDocument()
+  expect(screen.getByText(/Ends Fri, May 1 at 11:59 PM Guam time/)).toHaveTextContent('then Regular $520.16')
+  expect(screen.getByText(/Sales close Sat, May 2 at 11:59 PM Guam time/)).toBeInTheDocument()
+})
+
 it('gives every quantity stepper a 48px target and says a free ticket needs no payment', async () => {
   const free = { id: 4, name: 'Free alumni', price_cents: 0, quantity_remaining: 50, on_sale: true }
   const paid = { id: 5, name: 'Adult', price_cents: 1500, all_in_price_cents: 1650, service_fee_cents: 150, quantity_remaining: 50, on_sale: true }

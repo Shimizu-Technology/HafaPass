@@ -4,7 +4,7 @@ module Api
       class PricingTiersController < BaseController
         before_action :set_event
         before_action :set_ticket_type
-        before_action :set_pricing_tier, only: [:update, :destroy]
+        before_action :set_pricing_tier, only: [:update, :destroy, :move]
 
         def index
           tiers = @ticket_type.pricing_tiers.ordered
@@ -12,9 +12,12 @@ module Api
         end
 
         def create
-          tier = @ticket_type.pricing_tiers.build(parsed_tier_params)
-          saved = with_inventory_lock { tier.save }
-          if saved
+          tier = with_inventory_lock do
+            attributes = parsed_tier_params
+            attributes["position"] ||= (@ticket_type.pricing_tiers.maximum(:position) || -1) + 1
+            @ticket_type.pricing_tiers.create(attributes)
+          end
+          if tier.persisted?
             render json: tier_json(tier), status: :created
           else
             render json: { errors: tier.errors.full_messages }, status: :unprocessable_entity
@@ -30,6 +33,33 @@ module Api
             render json: tier_json(@tier)
           else
             render json: { errors: @tier.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
+
+        def move
+          direction = { "up" => -1, "down" => 1 }[params[:direction]]
+          unless direction
+            return render json: { error: "Choose up or down" }, status: :unprocessable_entity
+          end
+
+          moved = with_inventory_lock do
+            tiers = @ticket_type.pricing_tiers.ordered.to_a
+            quantity_positions = tiers.each_index.select { |index| tiers[index].quantity_based? }
+            current = quantity_positions.index { |index| tiers[index].id == @tier.id }
+            next false unless current && (current + direction).between?(0, quantity_positions.length - 1)
+
+            from, to = quantity_positions.values_at(current, current + direction)
+            tiers[from], tiers[to] = tiers[to], tiers[from]
+            tiers.each_with_index do |tier, position|
+              # A priority change should also work on legacy schedules.
+              tier.update_attribute!(:position, position) unless tier.position == position
+            end
+            true
+          end
+          if moved
+            head :no_content
+          else
+            render json: { error: "This quantity cap cannot move in that direction" }, status: :unprocessable_entity
           end
         end
 
@@ -50,8 +80,7 @@ module Api
 
         def with_inventory_lock(&block)
           @event.with_lock("FOR NO KEY UPDATE") do
-            @ticket_type.lock!
-            block.call
+            @ticket_type.with_inventory_lock(&block)
           end
         end
 
@@ -95,8 +124,8 @@ module Api
             tier_type: tier.tier_type,
             quantity_limit: tier.quantity_limit,
             quantity_sold: tier.quantity_sold,
-            starts_at: tier.starts_at,
-            ends_at: tier.ends_at,
+            starts_at: tier.starts_at&.utc&.iso8601(6),
+            ends_at: tier.ends_at&.utc&.iso8601(6),
             position: tier.position,
             active: tier.active?,
             created_at: tier.created_at,

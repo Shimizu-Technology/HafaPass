@@ -12,7 +12,7 @@ module Api
               (pricing_tiers.tier_type = 0
                 AND (pricing_tiers.starts_at IS NOT NULL OR pricing_tiers.ends_at IS NOT NULL)
                 AND (pricing_tiers.starts_at IS NULL OR pricing_tiers.starts_at <= :price_at)
-                AND (pricing_tiers.ends_at IS NULL OR pricing_tiers.ends_at >= :price_at))
+                AND (pricing_tiers.ends_at IS NULL OR pricing_tiers.ends_at > :price_at))
               OR
               (pricing_tiers.tier_type = 1
                 AND pricing_tiers.quantity_sold + COALESCE((
@@ -40,7 +40,6 @@ module Api
       SQL
 
       PUBLIC_CACHE_TTL = 15.seconds
-      PUBLIC_CACHE_RACE_TTL = 5.seconds
       MAX_SHOW_SLUG_LENGTH = 120
       MAX_CACHE_FILTER_SLUG_LENGTH = 100
       ALLOWED_PRICE_FILTERS = %w[free under_25 under_50].freeze
@@ -71,15 +70,16 @@ module Api
 
       def index
         payload = if index_cacheable_request?
-          Rails.cache.fetch(index_cache_key, expires_in: PUBLIC_CACHE_TTL, race_condition_ttl: PUBLIC_CACHE_RACE_TTL) do
-            build_index_payload
+          fetch_with_deadline(index_cache_key) do
+            at = Time.current
+            [build_index_payload(at: at), index_cache_deadline(at)]
           end
         else
           build_index_payload
         end
 
         set_pagination_headers_from_meta(payload[:meta])
-        render json: payload
+        render json: payload.merge(server_now: Time.current.utc.iso8601(3))
       end
 
       def categories
@@ -94,7 +94,7 @@ module Api
       def show
         if params[:live_money_proof] == "true" && @current_user&.admin?
           event = Event.find_by_public_slug!(params[:slug], scope: Event.where(live_money_proof_candidate: true))
-          render json: prepare_show_json(event)
+          render json: prepare_show_json(event).merge(server_now: Time.current.utc.iso8601(3))
           return
         end
         # Allow organizers to preview their own draft events
@@ -102,22 +102,23 @@ module Api
           event = Event.find_by_public_slug!(params[:slug])
           organizer_profile = @current_user.organizer_profile
           if organizer_profile && event.organizer_profile_id == organizer_profile.id
-            render json: prepare_show_json(event)
+            render json: prepare_show_json(event).merge(server_now: Time.current.utc.iso8601(3))
             return
           end
         end
 
         payload = if show_cacheable_request?
-          Rails.cache.fetch(show_cache_key, expires_in: PUBLIC_CACHE_TTL, race_condition_ttl: PUBLIC_CACHE_RACE_TTL) do
+          fetch_with_deadline(show_cache_key) do
             event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
-            prepare_show_json(event)
+            at = Time.current
+            [prepare_show_json(event, at: at), show_cache_deadline(event, at)]
           end
         else
           event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
           prepare_show_json(event)
         end
 
-        render json: payload
+        render json: payload.merge(server_now: Time.current.utc.iso8601(3))
       rescue ActiveRecord::RecordNotFound
         render json: { error: "Event not found" }, status: :not_found
       end
@@ -229,7 +230,7 @@ module Api
 
       def index_cache_key
         [
-          "public_events/v1/index",
+          "public_events/v2/index",
           request_locale.to_s,
           I18n.locale.to_s,
           site_setting_cache_version,
@@ -239,7 +240,7 @@ module Api
 
       def show_cache_key
         [
-          "public_events/v1/show",
+          "public_events/v2/show",
           params[:slug].to_s,
           request_locale.to_s,
           I18n.locale.to_s,
@@ -248,11 +249,50 @@ module Api
         ]
       end
 
-      def build_index_payload
-        events = filtered_events.preload(*EVENT_SERIALIZATION_PRELOADS).order(starts_at: :asc)
+      # Recompute remaining TTL after building the payload so crossing a
+      # schedule boundary during construction skips caching instead of writing
+      # a non-positive TTL (which raises ArgumentError in Rails 8).
+      def fetch_with_deadline(cache_key)
+        cached = Rails.cache.read(cache_key)
+        return cached unless cached.nil?
+
+        payload, deadline = yield
+        remaining_ttl = deadline ? (deadline - Time.current) : PUBLIC_CACHE_TTL
+        Rails.cache.write(cache_key, payload, expires_in: remaining_ttl) if remaining_ttl.positive?
+        payload
+      end
+
+      # Discovery can change when a boundary is reached, including for
+      # events excluded from the current page or price filter.
+      def index_cache_deadline(at)
+        limit = at + PUBLIC_CACHE_TTL
+        upcoming = at..limit
+        boundaries = [
+          TicketType.where(sales_start_at: upcoming).select("sales_start_at AS cutoff"),
+          TicketType.where(sales_end_at: upcoming).select("sales_end_at AS cutoff"),
+          PricingTier.time_based.where(starts_at: upcoming).select("starts_at AS cutoff"),
+          PricingTier.time_based.where(ends_at: upcoming).select("ends_at AS cutoff")
+        ].map(&:to_sql).join(" UNION ALL ")
+        Event.with_connection do |connection|
+          connection.select_value(
+            "SELECT MIN(cutoff) FROM (#{boundaries}) schedule_boundaries WHERE cutoff > #{connection.quote(at)}"
+          ) || limit
+        end
+      end
+
+      def show_cache_deadline(event, at)
+        cutoffs = event.ticket_types.flat_map do |ticket_type|
+          [ticket_type.sales_start_at, ticket_type.sales_end_at] +
+            ticket_type.pricing_tiers.select(&:time_based?).flat_map { |tier| [tier.starts_at, tier.ends_at] }
+        end
+        cutoffs << (at + PUBLIC_CACHE_TTL)
+        cutoffs.compact.select { |cutoff| cutoff > at }.min
+      end
+
+      def build_index_payload(at: Time.current)
+        events = filtered_events(at: at).preload(*EVENT_SERIALIZATION_PRELOADS).order(starts_at: :asc)
         pagy, paginated_events = paginate(events, items: normalized_per_page_param)
         records = paginated_events.to_a
-        at = Time.current
         preload_event_stats(records, at: at)
         preload_viewer_state(records)
 
@@ -269,15 +309,15 @@ module Api
         response.set_header("X-Per-Page", meta[:per_page].to_s)
       end
 
-      def prepare_show_json(event)
+      def prepare_show_json(event, at: Time.current)
         ActiveRecord::Associations::Preloader.new(records: [event], associations: EVENT_SERIALIZATION_PRELOADS).call
-        at = Time.current
         preload_event_stats([event], at: at)
         show_json(event, at: at)
       end
 
       def show_json(event, at: Time.current)
         json = event_json(event, include_ticket_types: true, include_design: true, at: at)
+        json[:pricing_as_of] = at.utc.iso8601(3)
         json[:redirected_from] = params[:slug] if event.slug != params[:slug]
         json
       end
@@ -286,8 +326,8 @@ module Api
         params[:include_sold_out] == "true" && (params[:organizer].present? || params[:series].present?)
       end
 
-      def filtered_events
-        events = include_sold_out? ? Event.discoverable_base : Event.discoverable
+      def filtered_events(at:)
+        events = include_sold_out? ? Event.discoverable_base(at) : Event.discoverable(at)
         if params[:q].present?
           events = events.accent_insensitive_search(params[:q], :title, :description, :short_description,
             :venue_name, :venue_city)
@@ -308,7 +348,7 @@ module Api
             .where(event_series: { slug: params[:series] })
             .distinct
         end
-        events = filter_price(events)
+        events = filter_price(events, at: at)
         events
       end
 
@@ -345,7 +385,7 @@ module Api
          FROM (SELECT #{EFFECTIVE_TICKET_PRICE_SQL} AS price_cents) effective)
       SQL
 
-      def filter_price(events)
+      def filter_price(events, at:)
         cents = case params[:price]
         when "free" then 0
         when "under_25" then 2500
@@ -353,7 +393,7 @@ module Api
         else return events
         end
         operator = params[:price] == "free" ? "=" : "<="
-        events.where("#{ALL_IN_TICKET_PRICE_SQL} #{operator} :price_cents", price_at: Time.current, price_cents: cents,
+        events.where("#{ALL_IN_TICKET_PRICE_SQL} #{operator} :price_cents", price_at: at, price_cents: cents,
           fee_percent: listing_fee_terms.percent.to_s, fee_flat_cents: listing_fee_terms.flat_cents)
       end
 
@@ -588,28 +628,41 @@ module Api
       end
 
       def pricing_tier_active?(tier, at: Time.current)
-        case tier.tier_type
-        when "quantity_based"
-          pricing_tier_committed_quantity(tier) < tier.quantity_limit
-        when "time_based"
-          if tier.starts_at.present? && tier.ends_at.present?
-            at.between?(tier.starts_at, tier.ends_at)
-          elsif tier.starts_at.present?
-            at >= tier.starts_at
-          elsif tier.ends_at.present?
-            at < tier.ends_at
-          else
-            false
-          end
-        else
-          false
-        end
+        return pricing_tier_committed_quantity(tier) < tier.quantity_limit if tier.quantity_based?
+
+        tier.active?(at: at)
       end
 
       def pricing_tier_remaining_quantity(tier)
         return unless tier.quantity_based?
 
         [tier.quantity_limit - pricing_tier_committed_quantity(tier), 0].max
+      end
+
+      def scheduled_tier_json(tier, event, fee: nil)
+        return unless tier
+
+        {
+          id: tier.id,
+          name: tier.name,
+          price_cents: tier.price_cents,
+          all_in_price_cents: (fee || Commerce::ServiceFee.for_event(event, tier.price_cents, terms: listing_fee_terms)).all_in_price_cents,
+          starts_at: tier.starts_at&.utc&.iso8601(6),
+          ends_at: tier.ends_at&.utc&.iso8601(6)
+        }
+      end
+
+      def pricing_schedule(ticket_type, event, tiers, active_tier, fee, at:)
+        time_tiers = tiers.select(&:time_based?).sort_by { |tier| [tier.starts_at&.to_f || -Float::INFINITY, tier.id] }
+        next_tier = time_tiers.find { |tier| tier.starts_at && tier.starts_at > at }
+        {
+          timezone: event.timezone,
+          sales_start_at: ticket_type.sales_start_at&.utc&.iso8601(6),
+          sales_end_at: ticket_type.sales_end_at&.utc&.iso8601(6),
+          active_tier: scheduled_tier_json(active_tier, event, fee: fee)&.merge(tier_type: active_tier.tier_type),
+          next_tier: scheduled_tier_json(next_tier, event),
+          time_tiers: time_tiers.map { |tier| scheduled_tier_json(tier, event) }
+        }
       end
 
       def event_json(event, include_ticket_types: false, include_design: false, at: Time.current)
@@ -693,7 +746,10 @@ module Api
             tiers = tt.pricing_tiers.sort_by { |tier| [tier.position, tier.id] }
             active_index = tiers.index { |tier| pricing_tier_active?(tier, at: at) }
             active_tier = active_index ? tiers[active_index] : nil
-            next_tier = if active_index
+            # Forecast what replaces a closing window with today's cap availability.
+            next_tier = if active_tier&.time_based? && active_tier.ends_at
+              tiers.find { |tier| pricing_tier_active?(tier, at: active_tier.ends_at) }
+            elsif active_index
               tiers[active_index + 1]
             else
               tiers.find { |tier| tier.time_based? && tier.starts_at.present? && tier.starts_at > at }
@@ -745,6 +801,9 @@ module Api
                 price_cents: next_tier.price_cents,
                 all_in_price_cents: Commerce::ServiceFee.for_event(event, next_tier.price_cents, terms: listing_fee_terms).all_in_price_cents
               }
+            end
+            if tiers.any? || tt.sales_start_at || tt.sales_end_at
+              tt_json[:pricing_schedule] = pricing_schedule(tt, event, tiers, active_tier, fee, at: at)
             end
             tt_json
           end

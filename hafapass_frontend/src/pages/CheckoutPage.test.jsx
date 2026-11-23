@@ -128,6 +128,116 @@ describe('checkout navigation', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Paid ticket sales open soon')
   })
 
+  it.each(['price_changed', 'sales_closed'])('recovers an authoritative %s conflict without clearing buyer information', async code => {
+    const end = '2026-05-01T13:59:00Z'
+    const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', ticket_types: [{
+      id: 8, name: 'Admission', price_cents: 50000, current_price_cents: 40000, service_fee_cents: 2016, all_in_price_cents: 42016,
+      pricing_schedule: { active_tier: { name: 'Early Bird', ends_at: end } },
+    }] }
+    apiClient.get.mockResolvedValue({ data: {
+      payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0',
+      service_fee_flat_cents: 16, processing_fee_bearer: 'platform',
+    } })
+    const quote = { current_total_cents: 52016, subtotal_cents: 50000, service_fee_cents: 2016, discount_cents: 0,
+      items: [{ ticket_type_id: 8, name: 'Admission', active_tier_name: 'Regular', unit_price_cents: 50000, all_in_price_cents: 52016 }] }
+    apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: {
+      code, error: 'Pricing conflict', server_now: end, checkout_recovery_required: false,
+      ...(code === 'price_changed' ? quote : {}),
+    } } }).mockResolvedValueOnce({ data: { id: 42 } })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes>
+        <Route path="/checkout/:slug" element={<CheckoutPage />} />
+        <Route path="/orders/:id/confirmation" element={<p>Confirmed</p>} />
+      </Routes>
+    </MemoryRouter>)
+
+    await user.type(await screen.findByLabelText(/Full name/i), 'Ana Cruz')
+    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    for (const box of screen.queryAllByRole('checkbox')) await user.click(box)
+    await user.click(screen.getByRole('button', { name: /Place order.*420.16/i }))
+
+    const banner = await screen.findByRole('alert')
+    expect(screen.getByLabelText(/Full name/i)).toHaveValue('Ana Cruz')
+    expect(screen.getByLabelText(/email/i)).toHaveValue('ana@example.test')
+    expect(getCheckoutAttempt('paid-event')).toBeNull()
+    const firstPayload = apiClient.post.mock.calls[0][1]
+    expect(firstPayload.expected_total_cents).toBe(42016)
+    if (code === 'sales_closed') {
+      expect(banner).toHaveTextContent('These tickets are not currently on sale')
+      expect(screen.getByRole('button', { name: /Place order/i })).toBeDisabled()
+    } else {
+      expect(banner).toHaveTextContent('Early Bird ended Fri, May 1 at 11:59 PM Guam time')
+      expect(banner).toHaveTextContent('Your total is now $520.16. Review and continue.')
+      expect(banner).toHaveTextContent('Regular · $520.16 each')
+      await user.click(screen.getByRole('button', { name: /Place order.*520.16/i }))
+      expect(await screen.findByText('Confirmed')).toBeInTheDocument()
+      expect(apiClient.post.mock.calls[1][1]).toMatchObject({ buyer_name: 'Ana Cruz', buyer_email: 'ana@example.test', expected_total_cents: 52016 })
+      expect(apiClient.post.mock.calls[1][1].checkout_key).not.toBe(firstPayload.checkout_key)
+    }
+  })
+
+  it('keeps a conflict replacement quote when a cached refresh has an older pricing_as_of than the conflict', async () => {
+    const startMs = Date.now()
+    const cutoffIso = new Date(startMs + 60_000).toISOString()
+    const conflictIso = new Date(startMs + 10_000).toISOString()
+    const staleCachedPricingIso = new Date(startMs + 5_000).toISOString()
+    const newerServerNowIso = new Date(startMs + 12_000).toISOString()
+    const event = {
+      id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam',
+      server_now: new Date(startMs).toISOString(),
+      pricing_as_of: new Date(startMs).toISOString(),
+      ticket_types: [{
+        id: 8, name: 'Admission', price_cents: 50000, current_price_cents: 40000, service_fee_cents: 2016, all_in_price_cents: 42016,
+        pricing_schedule: { active_tier: { name: 'Early Bird', ends_at: cutoffIso }, next_tier: { name: 'Regular', starts_at: cutoffIso } },
+      }],
+    }
+    const staleCachedRefresh = {
+      ...event,
+      server_now: newerServerNowIso,
+      pricing_as_of: staleCachedPricingIso,
+    }
+    apiClient.get.mockImplementation(url => {
+      if (url === '/config') {
+        return Promise.resolve({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform' } })
+      }
+      if (url === '/events/paid-event') return Promise.resolve({ data: staleCachedRefresh })
+      return new Promise(() => {})
+    })
+    apiClient.post.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          code: 'price_changed',
+          error: 'Pricing conflict',
+          server_now: conflictIso,
+          checkout_recovery_required: false,
+          current_total_cents: 52016,
+          subtotal_cents: 50000,
+          service_fee_cents: 2016,
+          discount_cents: 0,
+          items: [{ ticket_type_id: 8, name: 'Admission', active_tier_name: 'Regular', unit_price_cents: 50000, all_in_price_cents: 52016 }],
+        },
+      },
+    })
+    const user = userEvent.setup()
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/paid-event', state: { event, lineItems: [{ ticket_type_id: 8, quantity: 1 }] } }]}>
+      <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
+    </MemoryRouter>)
+    await user.type(await screen.findByLabelText(/Full name/i), 'Ana Cruz')
+    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    await user.click(document.getElementById('termsAccepted'))
+    await user.click(screen.getByRole('button', { name: /Place order/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your total is now $520.16. Review and continue.')
+
+    // Trigger a refresh via tab focus/visibility; cached payload has newer server_now
+    // but older pricing_as_of, so the authoritative 409 replacement quote must stay active.
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/events/paid-event', expect.anything()))
+    expect(screen.getByRole('alert')).toHaveTextContent('Your total is now $520.16. Review and continue.')
+    expect(screen.getByRole('button', { name: /Place order.*520.16/i })).toBeInTheDocument()
+  })
+
   it('charges the flat fee only on paid tickets in a mixed order', async () => {
     const event = { id: 40, slug: 'paid-event', title: 'Paid Event', timezone: 'Pacific/Guam', buyer_fee_percent: 100, ticket_types: [{ id: 8, name: 'Admission', price_cents: 2500, service_fee_cents: 225, all_in_price_cents: 2725 }, { id: 9, name: 'Child', price_cents: 0, service_fee_cents: 0, all_in_price_cents: 0 }] }
     apiClient.get.mockImplementation(url => url === '/config'

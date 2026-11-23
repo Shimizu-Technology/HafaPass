@@ -39,14 +39,8 @@ module Seating
       if tier.quantity_based?
         tier.quantity_sold + inventory.fetch(tier.id, 0) + waitlist.fetch(tier.id, 0) +
           assigned.fetch(tier.id, 0) < tier.quantity_limit
-      elsif tier.starts_at.present? && tier.ends_at.present?
-        at.between?(tier.starts_at, tier.ends_at)
-      elsif tier.starts_at.present?
-        at >= tier.starts_at
-      elsif tier.ends_at.present?
-        at < tier.ends_at
       else
-        false
+        tier.active?(at: at)
       end
     end
   end

@@ -198,7 +198,18 @@ function TicketTypeForm({
         return
       }
     }
-    if (form.sales_start_at && form.sales_end_at && compareLocalDateTimes(form.sales_end_at, form.sales_start_at) <= 0) {
+    const salesStartChanged = !editingTicketType || form.sales_start_at !== (initial?.sales_start_at || '')
+    const salesEndChanged = !editingTicketType || form.sales_end_at !== (initial?.sales_end_at || '')
+    const effectiveSalesStart = salesStartChanged ? (form.sales_start_at || null) : (editingTicketType.sales_start_at || null)
+    const effectiveSalesEnd = salesEndChanged ? (form.sales_end_at || null) : (editingTicketType.sales_end_at || null)
+    const comparableLocalTimestamp = (raw, changed) => {
+      if (!raw) return ''
+      if (!changed) return toEventLocalInput(raw, eventTimezone, { includeSeconds: true })
+      return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}:00` : raw
+    }
+    const startForCompare = comparableLocalTimestamp(effectiveSalesStart, salesStartChanged)
+    const endForCompare = comparableLocalTimestamp(effectiveSalesEnd, salesEndChanged)
+    if (startForCompare && endForCompare && compareLocalDateTimes(endForCompare, startForCompare) <= 0) {
       invalid('Sales end must be after sales start.', 'ticket-type-sales-end')
       return
     }
@@ -220,8 +231,8 @@ function TicketTypeForm({
       door_alert_label: form.door_alert_label.trim() || null,
       door_instructions: form.door_instructions.trim() || null,
       scanner_show_buyer: form.scanner_show_buyer,
-      sales_start_at: form.sales_start_at || null,
-      sales_end_at: form.sales_end_at || null
+      sales_start_at: effectiveSalesStart,
+      sales_end_at: effectiveSalesEnd
     }
     if (isPass) {
       const orderedIds = [
@@ -741,7 +752,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], scannerQuestions = [], 
                     )}
                   </div>
                 </div>
-                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} eventTimezone={eventTimezone} beginRequest={beginRequest} onRefresh={onRefresh} blocked={locked} />
+                  <PricingTiersCRUD eventId={eventId} ticketTypeId={tt.id} eventTimezone={eventTimezone} salesEndAt={tt.sales_end_at} basePriceCents={tt.price_cents} beginRequest={beginRequest} onRefresh={onRefresh} blocked={locked} />
                 </div>
               )}
             </div>

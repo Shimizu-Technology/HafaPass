@@ -32,6 +32,17 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
       expect(cloned_tt["quantity_sold"]).to eq(0)
     end
 
+    it "keeps quantity caps on an undated draft without copying a price window with no anchor" do
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Scheduled price")
+      create(:pricing_tier, ticket_type: ticket_type, name: "First 50")
+
+      post "/api/v1/organizer/events/#{event.id}/clone", headers: headers
+
+      expect(response).to have_http_status(:created)
+      cloned_event = Event.find(response.parsed_body.fetch("id"))
+      expect(cloned_event.ticket_types.sole.pricing_tiers.pluck(:name)).to eq(["First 50"])
+    end
+
     it "clones promo codes with current_uses reset to 0" do
       post "/api/v1/organizer/events/#{event.id}/clone", headers: headers
 
@@ -107,6 +118,55 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
       expect(response).to have_http_status(:unprocessable_entity)
       json = JSON.parse(response.body)
       expect(json["error"]).to include("recurrence rule")
+    end
+
+    it "skips already-generated occurrences on retry and rolls back the entire batch on failure" do
+      post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+        params: { count: 2 }, headers: headers
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body["generated_count"]).to eq(2)
+
+      # Retrying for 3 creates only the missing 3rd occurrence without duplicating 1 and 2.
+      expect {
+        post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+          params: { count: 3 }, headers: headers
+      }.to change { Event.where(recurrence_parent_id: event.id).count }.by(1)
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body["generated_count"]).to eq(1)
+
+      # If a later occurrence returns unpersisted from clone_event, none of the new occurrences persist.
+      call_number = 0
+      allow_any_instance_of(Api::V1::Organizer::EventsController).to receive(:clone_event).and_wrap_original do |original, *args, **kwargs|
+        call_number += 1
+        if call_number == 2
+          bad = Event.new
+          bad.errors.add(:ends_at, "must be after starts_at")
+          next bad
+        end
+        original.call(*args, **kwargs)
+      end
+
+      expect {
+        post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+          params: { count: 5 }, headers: headers
+      }.not_to change { Event.where(recurrence_parent_id: event.id).count }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("Ends at must be after starts_at")
+    end
+
+    it "uses the source dates reloaded by lock! when generating recurrences" do
+      shifted_start = event.starts_at + 1.day
+      shifted_end = event.ends_at + 1.day
+      allow_any_instance_of(Event).to receive(:lock!).and_wrap_original do |original, *args|
+        Event.where(id: event.id).update_all(starts_at: shifted_start, ends_at: shifted_end)
+        original.call(*args)
+      end
+
+      post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+        params: { count: 1 }, headers: headers
+      expect(response).to have_http_status(:created)
+      generated_start = Time.parse(response.parsed_body.fetch("events").sole.fetch("starts_at"))
+      expect(generated_start).to be_within(1.second).of(shifted_start + 1.week)
     end
 
     it "respects recurrence_end_date" do

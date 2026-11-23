@@ -45,7 +45,7 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       end
     end
 
-    it "keeps SQL query count flat and <= 20 across 16 fully-populated events and skips attendees_preview" do
+    it "keeps SQL query count flat and <= 21 across 16 fully-populated events and skips attendees_preview" do
       queries = count_sql_queries do
         get "/api/v1/events", params: { per_page: 20 }
       end
@@ -61,8 +61,9 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       expect(events.first.fetch("attendees_preview")).to eq([])
       expect(events.first.dig("series", "slug")).to eq("fd-tourney-2026")
 
+      expect(queries.grep(/schedule_boundaries/).size).to eq(1)
       expect(queries.grep(/ROW_NUMBER\(\) OVER/i)).to be_empty
-      expect(queries.size).to be <= 20, "Expected <= 20 SQL queries for 16 events, got #{queries.size}:\n#{queries.join("\n")}"
+      expect(queries.size).to be <= 21, "Expected <= 21 SQL queries for 16 events, got #{queries.size}:\n#{queries.join("\n")}"
     end
 
     it "accurately reflects active inventory holds and show_attendees previews using batched queries" do
@@ -90,7 +91,7 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       first_tt = row.fetch("ticket_types").first
       expect(first_tt.fetch("quantity_remaining")).to eq(97)
       expect(first_tt.dig("active_tier", "remaining")).to eq(17)
-      expect(queries.size).to be <= 21
+      expect(queries.size).to be <= 22
     end
   end
 
@@ -496,7 +497,7 @@ RSpec.describe "Api::V1::Events performance, caching, and include_sold_out", typ
       index_pass_tt = index_pass_event.fetch("ticket_types").find { |tt| tt["id"] == pass_tt.id }
       expect(index_pass_tt).to include("is_pass" => true, "quantity_remaining" => 0, "sold_out" => true)
       expect(index_pass_tt.fetch("included_events").map { |e| e["id"] }.first(2)).to eq([night_a.id, night_b.id])
-      expect(index_queries.size).to be <= 28
+      expect(index_queries.size).to be <= 29
     end
   end
 end
