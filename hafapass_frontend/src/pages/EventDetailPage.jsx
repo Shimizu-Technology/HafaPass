@@ -6,6 +6,7 @@ import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlu
 import apiClient from '../api/client'
 import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
+import useMotionOk from '../hooks/useMotionOk'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -140,7 +141,35 @@ function EventDetailContent() {
   const heroTicketsLink = useRef(null)
   const ticketPanel = useRef(null)
   const pageEnd = useRef(null)
+  const coverFrameRef = useRef(null)
+  const motionOk = useMotionOk()
   const [buyBarTargets] = useState(() => [heroTicketsLink, ticketPanel])
+
+  // Desktop-only (>= 1024px) subtle cover straighten: rotateX(6deg -> 0) over
+  // the top 240px of scroll. Zero listeners attached on phones or reduced motion.
+  useEffect(() => {
+    const frameEl = coverFrameRef.current
+    if (!frameEl || !motionOk || typeof window === 'undefined' || !window.matchMedia) return undefined
+    const desktopQuery = window.matchMedia('(min-width: 1024px)')
+    if (!desktopQuery.matches) return undefined
+    let raf = 0
+    const update = () => {
+      raf = 0
+      const progress = Math.min(1, Math.max(0, window.scrollY / 240))
+      const angle = (1 - progress) * 6
+      frameEl.style.transform = angle > 0.05 ? `perspective(1200px) rotateX(${angle.toFixed(2)}deg)` : 'none'
+    }
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(update) }
+    update()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      frameEl.style.transform = ''
+    }
+  }, [motionOk, event?.cover_image_url])
   const waitlistOfferToken = searchParams.get('waitlist_offer')
   const content = useTranslatedContent(event)
   const contentLanguage = useContentLanguage()
@@ -433,7 +462,7 @@ function EventDetailContent() {
                 <div className="event-art relative mt-6">
                   {/* The artwork's own colors, softly blurred behind its frame. */}
                   <div aria-hidden="true" className="event-art-glow" style={{ backgroundImage: `url("${coverImage}")` }} />
-                  <div className="relative aspect-video overflow-hidden rounded-2xl bg-neutral-100 shadow-card ring-1 ring-black/5">
+                  <div ref={coverFrameRef} data-testid="event-cover-frame" className="event-cover-frame relative aspect-video overflow-hidden rounded-2xl bg-neutral-100 shadow-card ring-1 ring-black/5">
                     <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
                       className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
                   </div>

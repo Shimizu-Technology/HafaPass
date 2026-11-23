@@ -276,12 +276,13 @@ describe('door scanner demo', () => {
     expect(door()).toHaveTextContent('Example · names are fictional')
   })
 
-  it('holds a free alumni ticket for an ID check, then admits or cancels', async () => {
+  it('holds a free alumni ticket for an ID check after scan, then admits or cancels and ticks counter', async () => {
     await load()
     const user = userEvent.setup()
+    expect(screen.getByTestId('door-checked-count')).toHaveTextContent('186')
     await user.click(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket', pressed: false }))
     expect(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket', pressed: true })).toBeInTheDocument()
-    expect(door()).toHaveTextContent('Verify before admitting')
+    expect(await within(door()).findByText('Verify before admitting')).toBeInTheDocument()
     expect(door()).toHaveTextContent('Free alumni — check ID')
     expect(door()).toHaveTextContent('For:Calla Yorke')
     expect(door()).toHaveTextContent('Grad year:1998')
@@ -291,6 +292,7 @@ describe('door scanner demo', () => {
     expect(within(door()).getByRole('button', { name: 'Cancel' })).toHaveClass('min-h-12')
     await user.click(confirm)
     expect(door()).toHaveTextContent('Admitted')
+    expect(screen.getByTestId('door-checked-count')).toHaveTextContent('187')
     // The used button is gone; focus moves to the result instead of the page.
     expect(document.activeElement).toHaveTextContent('Calla Yorke')
     expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
@@ -298,11 +300,12 @@ describe('door scanner demo', () => {
     expect(within(door()).queryByRole('button', { name: 'Confirm & Admit' })).not.toBeInTheDocument()
 
     await user.click(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket' }))
-    await user.click(within(door()).getByRole('button', { name: 'Cancel' }))
+    await user.click(await within(door()).findByRole('button', { name: 'Cancel' }))
     expect(door()).toHaveTextContent('Not admitted')
     expect(document.activeElement).toHaveTextContent('Not admitted')
     expect(door()).toHaveTextContent('The ticket wasn’t used. Ready for the next guest.')
     await user.click(within(tryIt()).getByRole('button', { name: 'Adult Ticket' }))
-    expect(door()).toHaveTextContent('Avery Lindqvist')
+    expect(await within(door()).findByText('Avery Lindqvist')).toBeInTheDocument()
+    expect(screen.getByTestId('door-checked-count')).toHaveTextContent('188')
   })
 })

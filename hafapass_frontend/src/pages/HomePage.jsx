@@ -147,25 +147,32 @@ export default function HomePage() {
             {discovery && wide && <div className="mt-6">{searchCard}</div>}
           </div>
           {/* Hosting is pitched once: in the hero stub while loading, then by the planning ticket. */}
-          {discovery ? <FeaturedPassStub event={upcoming[0]} /> : <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
-            <InstallAppHelp variant="action" />
-            <FindTicketLink />
-          </div> : <div className="px-6 py-3 sm:px-8"><FindTicketLink /></div>}>
-            <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
-              {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
-                <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
-                <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
-              </div> : loadError ? <div role="alert">
-                <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
-                <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
-                <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
-              </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
-                <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
-                <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
-                <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
-              </div> : null}
-            </div>
-          </Ticket>}
+          {discovery ? <FeaturedPassStub event={upcoming[0]} /> : (
+            <FeaturedPassStub
+              showFlipControls={inventoryEmpty}
+              frontContent={
+                <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
+                  <InstallAppHelp variant="action" />
+                  <FindTicketLink />
+                </div> : <div className="px-6 py-3 sm:px-8"><FindTicketLink /></div>}>
+                  <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
+                    {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
+                      <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
+                      <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
+                    </div> : loadError ? <div role="alert">
+                      <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
+                      <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
+                      <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
+                    </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
+                      <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
+                      <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
+                      <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
+                    </div> : null}
+                  </div>
+                </Ticket>
+              }
+            />
+          )}
         </div>
       </section>
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">
@@ -180,13 +187,16 @@ export default function HomePage() {
             <section aria-labelledby="categories-heading" className="pt-9"><h2 id="categories-heading" className="mb-4 font-display text-xl font-bold">{t('buyer.Home.exploreByCategory')}</h2><div className="flex flex-wrap gap-2">{categoriesFor(t).map(({name,slug}) => <Link key={slug} to={`/events?category=${slug}`} className="ticket-chip inline-flex min-h-12 items-center rounded-full border border-neutral-300 bg-white px-5 text-base font-medium">{name}</Link>)}</div></section>
             <PerforatedStubStory event={upcoming[0]} />
           </> : null}
-          {inventoryEmpty && <section aria-labelledby="pass-steps-heading">
-            <h2 id="pass-steps-heading" className="mb-4 font-display text-xl font-bold sm:text-2xl">{t('pass.home.howItWorks')}</h2>
-            <ol className="grid gap-3 sm:grid-cols-3">{passStepsFor(t).map(([title, body], index) => <li key={title} className="pass-step ticket-notch flex items-center gap-4 rounded-2xl bg-white px-6 py-5">
-              <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 font-display text-sm font-bold text-brand-800">{index + 1}</span>
-              <div className="min-w-0"><h3 className="font-display text-lg font-bold leading-snug">{title}</h3><p className="mt-1 text-sm leading-relaxed text-content-muted">{body}</p></div>
-            </li>)}</ol>
-          </section>}
+          {inventoryEmpty && <>
+            <section aria-labelledby="pass-steps-heading">
+              <h2 id="pass-steps-heading" className="mb-4 font-display text-xl font-bold sm:text-2xl">{t('pass.home.howItWorks')}</h2>
+              <ol className="grid gap-3 sm:grid-cols-3">{passStepsFor(t).map(([title, body], index) => <li key={title} className="pass-step ticket-notch flex items-center gap-4 rounded-2xl bg-white px-6 py-5">
+                <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 font-display text-sm font-bold text-brand-800">{index + 1}</span>
+                <div className="min-w-0"><h3 className="font-display text-lg font-bold leading-snug">{title}</h3><p className="mt-1 text-sm leading-relaxed text-content-muted">{body}</p></div>
+              </li>)}</ol>
+            </section>
+            <PerforatedStubStory event={null} />
+          </>}
           {!loading && <section className="mt-9">
             <Ticket className="planning-ticket" topClassName="!bg-brand-950 text-white" stubClassName="!bg-brand-950 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-secondary gap-2 !border-white !text-brand-950">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
               <div className="px-6 py-6 sm:px-8"><h2 className="font-display text-2xl font-bold">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>

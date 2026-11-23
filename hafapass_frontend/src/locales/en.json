@@ -866,7 +866,8 @@
         "cancel": "Cancel",
         "notAdmitted": "Not admitted",
         "notUsed": "The ticket wasn’t used. Ready for the next guest.",
-        "fictional": "Example · names are fictional"
+        "fictional": "Example · names are fictional",
+        "scanning": "Scanning QR pass…"
       }
     },
     "organizer": {

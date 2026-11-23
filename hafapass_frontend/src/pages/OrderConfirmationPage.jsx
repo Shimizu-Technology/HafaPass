@@ -547,13 +547,14 @@ function OrderConfirmationContent() {
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             {ticketActionNotice && <p role="status" className="mb-3 text-sm text-brand-800">{ticketActionNotice}</p>}
             {transferTarget && <TransferTicketDialog ticketLabel={t('buyerAccount.orderConfirmationPage.transferTicketLabel', { name: transferTarget.ticket_type.name })} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
-            <div className="divide-y divide-neutral-100">
+            <div className={order.status === 'completed' ? 'space-y-3' : 'divide-y divide-neutral-100'}>
               {order.tickets.map(ticket => {
                 const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
                 if (ticket.pass_parent || (ticket.is_pass && !ticket.pass_child)) {
                   const canCancelPass = (ticket.status === 'issued' && ticketRefundOpen) || refundNeedsStatusCheck(ticketRefundAttempt)
                   return (
-                    <div key={ticket.id} className="py-3">
+                    <div key={ticket.id} className={order.status === 'completed' ? 'confirm-issued-pass relative overflow-hidden rounded-2xl border border-neutral-300/90 bg-surface p-4' : 'py-3'}>
+                      {order.status === 'completed' && <span aria-hidden="true" className="confirm-issued-glint" />}
                       <PassTicketCard
                         ticket={ticket}
                         event={event}
@@ -582,7 +583,9 @@ function OrderConfirmationContent() {
                     seat.accessibility_kind === ticket.seat?.accessibility_kind)
                 )) || []
                 const selectedExchangeSeat = exchangeOptions.find(seat => seat.id === Number(exchangeSeatId))
-                return <div key={ticket.id} className="py-3">
+                const punched = order.status === 'completed'
+                return <div key={ticket.id} data-punched={punched ? 'true' : undefined} className={punched ? 'confirm-issued-pass relative overflow-hidden rounded-2xl border border-neutral-300/90 bg-surface px-5 py-4' : 'py-3'}>
+                {punched && <span aria-hidden="true" className="confirm-issued-glint" />}
                 <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
