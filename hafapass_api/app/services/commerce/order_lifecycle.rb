@@ -436,17 +436,26 @@ module Commerce
           holder_email: order.buyer_email }
       end
 
-      # Idempotent: a retried issuance never duplicates a ticket's answers. A
-      # question deleted after checkout is skipped rather than blocking tickets.
+      # Idempotent: a retried issuance never duplicates a ticket's answers.
+      # Questions are key-share locked so they cannot be deleted mid-issuance;
+      # RegistrationQuestion refuses deletion while a pending order holds
+      # answers. If one is missing anyway (removed outside the app), tickets
+      # still issue, the accepted snapshot stays on the order item, and the
+      # gap is reported for follow-up.
       def record_ticket_responses!(order, item, ticket, attendee)
         answers = Array(attendee.to_h["answers"])
         return if answers.empty?
 
         answered = ticket.registration_responses.pluck(:registration_question_id).to_set
-        questions = order.event.registration_questions.where(id: answers.map { |answer| answer["question_id"] }).index_by(&:id)
+        questions = order.event.registration_questions.where(id: answers.map { |answer| answer["question_id"] })
+          .order(:id).lock("FOR KEY SHARE").index_by(&:id)
         answers.each do |answer|
           question = questions[answer["question_id"]]
-          next if question.nil? || answered.include?(question.id)
+          if question.nil?
+            report_missing_question!(order, item, answer)
+            next
+          end
+          next if answered.include?(question.id)
 
           ticket.registration_responses.create!(
             order: order,
@@ -459,6 +468,13 @@ module Commerce
             answered_at: item.created_at
           )
         end
+      end
+
+      def report_missing_question!(order, item, answer)
+        message = "Registration question #{answer['question_id']} was deleted before order #{order.id} was paid; " \
+          "its answer remains on order item #{item.id}"
+        Rails.logger.warn("[OrderLifecycle] #{message}")
+        Sentry.capture_message(message, level: :warning)
       end
 
       def finalize_waitlist_offer!(offer)

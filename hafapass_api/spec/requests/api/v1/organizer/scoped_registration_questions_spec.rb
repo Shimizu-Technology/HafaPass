@@ -76,22 +76,27 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     expect(alumni.reload.attendee_info_mode).to eq("name_and_email")
   end
 
+  def apply_template(template, ticket_type: nil, as_headers: headers)
+    post "#{base}/registration_questions/apply_template",
+      params: { template: template, ticket_type_id: ticket_type&.id }.compact, headers: as_headers, as: :json
+  end
+
   it "applies one-click templates once and turns on attendee names for alumni door verification" do
-    post "#{base}/registration_questions/apply_template", params: { template: "fd_team_registration" }, headers: headers, as: :json
+    apply_template("fd_team_registration")
     expect(response).to have_http_status(:created)
     expect(response.parsed_body["registration_questions"].map { |item| [item["prompt"], item["kind"], item["required"]] }).to eq([
       ["Class Name", "short_text", true], ["Graduation Year", "number", true], ["Division", "selection", false],
       ["Team Captain Phone", "phone", false]
     ])
     expect(event.registration_questions.find_by(prompt: "Division").options).to eq(%w[Maroon Gold Platinum Special])
-    expect(event.registration_questions.find_by(prompt: "Graduation Year").validation_rules).to eq("min" => 1950, "max" => 2035)
+    expect(event.registration_questions.find_by(prompt: "Graduation Year").validation_rules)
+      .to eq("min" => 1950, "max" => 2035, "integer" => true)
 
-    post "#{base}/registration_questions/apply_template", params: { template: "fd_team_registration" }, headers: headers, as: :json
-    expect(response.parsed_body).to include("registration_questions" => [],
+    apply_template("fd_team_registration")
+    expect(response.parsed_body).to include("registration_questions" => [], "updated_questions" => [],
       "skipped_prompts" => ["Class Name", "Graduation Year", "Division", "Team Captain Phone"])
 
-    post "#{base}/registration_questions/apply_template", params: { template: "alumni_door_verification", ticket_type_id: alumni.id },
-      headers: headers, as: :json
+    apply_template("alumni_door_verification", ticket_type: alumni)
     expect(response).to have_http_status(:created)
     door = event.registration_questions.find_by(prompt: "Graduation Year", scope: :ticket)
     expect(door).to have_attributes(show_on_scanner: true, ticket_type_ids: [alumni.id], required: true)
@@ -99,11 +104,87 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     expect(alumni.reload.attendee_info_mode).to eq("name_only")
     expect(event.registration_questions.order(:position).pluck(:position)).to eq([0, 1, 2, 3, 4])
 
-    post "#{base}/registration_questions/apply_template", params: { template: "merch_shirt_size" }, headers: headers, as: :json
+    apply_template("merch_shirt_size")
     expect(event.registration_questions.find_by(prompt: "Shirt Size").options).to eq(%w[S M L XL 2XL])
 
-    post "#{base}/registration_questions/apply_template", params: { template: "unknown" }, headers: headers, as: :json
+    apply_template("unknown")
     expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it "requires a ticket type for alumni door verification and extends it to a second ticket type" do
+    apply_template("alumni_door_verification")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["error"]).to eq("Choose the ticket type this template is for")
+    expect(event.registration_questions).to be_empty
+
+    student = create(:ticket_type, event: event, name: "FD Student", price_cents: 0)
+    apply_template("alumni_door_verification", ticket_type: alumni)
+    apply_template("alumni_door_verification", ticket_type: student)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body["updated_questions"].sole).to include("prompt" => "Graduation Year",
+      "ticket_type_ids" => [alumni.id, student.id])
+    expect(event.registration_questions.where(prompt: "Graduation Year", scope: :ticket).sole.ticket_type_ids)
+      .to eq([alumni.id, student.id])
+    expect([alumni.reload, student.reload].map(&:attendee_info_mode)).to eq(%w[name_only name_only])
+
+    apply_template("alumni_door_verification", ticket_type: student)
+    expect(response.parsed_body["skipped_prompts"]).to eq(["Graduation Year"])
+  end
+
+  it "returns a conflict without changes when an existing question cannot be combined with the template" do
+    create(:registration_question, event: event, prompt: "Shirt size", kind: :short_text, required: false)
+    apply_template("merch_shirt_size")
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to include('"Shirt Size" already exists with a different answer type')
+
+    create(:registration_question, event: event, prompt: "Class Name", kind: :short_text, required: true,
+      ticket_type_ids: [adult.id])
+    apply_template("fd_team_registration")
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to include('"Class Name" is already limited to specific ticket types')
+    expect(event.registration_questions.pluck(:prompt)).to contain_exactly("Shirt size", "Class Name")
+  end
+
+  it "never downgrades a ticket type that was upgraded to name and email while the template waited for its lock" do
+    allow_any_instance_of(TicketType).to receive(:lock!).and_wrap_original do |original, *arguments|
+      TicketType.where(id: original.receiver.id).update_all(attendee_info_mode: "name_and_email")
+      original.call(*arguments)
+    end
+
+    apply_template("alumni_door_verification", ticket_type: alumni)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body["ticket_type"]["attendee_info_mode"]).to eq("name_and_email")
+    expect(alumni.reload.attendee_info_mode).to eq("name_and_email")
+  end
+
+  it "leaves questions and the ticket type untouched when alumni door verification lacks inventory access" do
+    marketer = create(:user)
+    create(:organization_membership, organization: event.organization, user: marketer, role: "marketer", status: "active")
+    allow(OrganizationAuthorization).to receive(:allowed?).and_call_original
+    allow(OrganizationAuthorization).to receive(:allowed?).with(hash_including(user: marketer, permission: :manage_events))
+      .and_return(true)
+
+    marketer_headers = auth_headers(marketer).merge("X-Organization-Id" => event.organization_id.to_s)
+    apply_template("merch_shirt_size", as_headers: marketer_headers)
+    expect(response).to have_http_status(:created)
+
+    apply_template("alumni_door_verification", ticket_type: alumni, as_headers: marketer_headers)
+    expect(response).to have_http_status(:forbidden)
+    expect(event.registration_questions.pluck(:prompt)).to eq(["Shirt Size"])
+    expect(alumni.reload.attendee_info_mode).to eq("none")
+  end
+
+  it "rejects malformed ticket type lists instead of widening a question to every ticket type" do
+    [["abc"], [{ id: alumni.id }], [0], "all", [alumni.id, "x"]].each do |bad|
+      post "#{base}/registration_questions", params: { prompt: "Year", kind: "short_text", ticket_type_ids: bad },
+        headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity), bad.inspect
+      expect(response.parsed_body["errors"]).to include("Ticket type ids must be a list of ticket types")
+    end
+    post "#{base}/registration_questions", params: { prompt: "Year", kind: "short_text", ticket_type_ids: [alumni.id.to_s] },
+      headers: headers, as: :json
+    expect(response.parsed_body["ticket_type_ids"]).to eq([alumni.id])
+    expect(event.registration_questions.count).to eq(1)
   end
 
   it "exports multi-select and per-ticket answers on ticket and order rows" do

@@ -427,7 +427,7 @@ function TicketTypeForm({
             <div>
               <label htmlFor="ticket-type-max-buyer" className="block text-sm font-medium text-neutral-700 mb-1">Tickets per buyer</label>
               <input id="ticket-type-max-buyer" type="number" min="1" step="1" value={form.max_per_buyer} onChange={e => setForm(f => ({ ...f, max_per_buyer: e.target.value }))} className="input" placeholder="Leave blank for unlimited" aria-describedby="ticket-type-max-buyer-help" disabled={saving} />
-              <p id="ticket-type-max-buyer-help" className="mt-1 text-xs text-neutral-500">Leave blank for unlimited. Free tickets can then be mixed with paid tickets in one checkout.</p>
+              <p id="ticket-type-max-buyer-help" className="mt-1 text-xs text-neutral-500">Leave blank for unlimited.</p>
             </div>
           </div>
           <p className="text-xs text-neutral-500">Blank purchase limits add no separate cap; event capacity and remaining ticket inventory still apply.</p>

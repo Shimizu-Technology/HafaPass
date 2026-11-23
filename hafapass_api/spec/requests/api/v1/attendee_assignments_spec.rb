@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "ostruct"
+require "csv"
 
 RSpec.describe "Per-ticket attendee details and scoped registration questions", type: :request do
   let(:profile) { create(:organizer_profile, :verified) }
@@ -18,7 +19,7 @@ RSpec.describe "Per-ticket attendee details and scoped registration questions", 
   let!(:graduation_year) do
     create(:registration_question, event: event, prompt: "Graduation Year", kind: :number, scope: :ticket,
       required: true, ticket_type_ids: [alumni.id], show_on_scanner: true, help_text: "4-digit year",
-      validation_rules: { "min" => 1950, "max" => 2035 })
+      validation_rules: { "min" => 1950, "max" => 2035, "integer" => true })
   end
   let!(:division) do
     create(:registration_question, event: event, prompt: "Division", kind: :selection, required: true,
@@ -168,26 +169,119 @@ RSpec.describe "Per-ticket attendee details and scoped registration questions", 
     expect(ticket.registration_responses).to be_empty
   end
 
-  it "skips an answer whose question was deleted between checkout and payment" do
-    checkout(line_items: [{ ticket_type_id: alumni.id, quantity: 2 }])
-    order = Order.find(response.parsed_body.fetch("id"))
-    expect(order).to be_completed
-    expect(order.tickets.map { |ticket| ticket.registration_responses.count }).to eq([1, 1])
-
-    other_question = create(:registration_question, event: event, prompt: "Jersey", kind: :short_text, scope: :ticket,
-      required: false, ticket_type_ids: [alumni.id])
+  def pending_alumni_checkout(extra_answers = {})
     checkout(line_items: [{ ticket_type_id: alumni.id, quantity: 1 }, { ticket_type_id: adult.id, quantity: 1 }],
       assignments: [{ ticket_type_id: alumni.id, index: 0, attendee_name: "Late Answer",
-        registration_answers: { graduation_year.id.to_s => 2001, other_question.id.to_s => "No. 7" } }])
-    pending = Order.find(response.parsed_body.fetch("id"))
-    expect(pending).to be_pending
-    other_question.destroy!
+        registration_answers: { graduation_year.id.to_s => 2001 }.merge(extra_answers) }])
+    Order.find(response.parsed_body.fetch("id")).tap { |order| expect(order).to be_pending }
+  end
 
-    payment = pending.payments.sole
+  def pay!(order)
+    payment = order.payments.sole
     post_stripe_event("payment_intent.succeeded", { id: payment.provider_payment_id, amount: payment.amount_cents,
       amount_received: payment.amount_cents, currency: "usd", status: "succeeded" })
+  end
+
+  it "refuses to delete a question whose answers wait on a pending payment, then records them on payment" do
+    jersey = create(:registration_question, event: event, prompt: "Jersey", kind: :short_text, scope: :ticket,
+      required: false, ticket_type_ids: [alumni.id])
+    pending = pending_alumni_checkout(jersey.id.to_s => "No. 7")
+
+    delete "/api/v1/organizer/events/#{event.id}/registration_questions/#{jersey.id}", headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body["errors"].join).to include("Pause the question instead")
+    expect(RegistrationQuestion.exists?(jersey.id)).to be(true)
+
+    pay!(pending)
     ticket = pending.reload.tickets.find_by(ticket_type: alumni)
     expect(pending).to be_completed
+    expect(ticket.registration_responses.map { |answer| [answer.prompt_snapshot, answer.answer["value"]] })
+      .to contain_exactly(["Graduation Year", 2001], ["Jersey", "No. 7"])
+
+    jersey.update!(active: false)
+    delete "/api/v1/organizer/events/#{event.id}/registration_questions/#{create(:registration_question, event: event).id}",
+      headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:no_content)
+  end
+
+  it "still issues tickets, keeps the accepted snapshot and reports it when a question vanishes outside the app" do
+    jersey = create(:registration_question, event: event, prompt: "Jersey", kind: :short_text, scope: :ticket,
+      required: false, ticket_type_ids: [alumni.id])
+    pending = pending_alumni_checkout(jersey.id.to_s => "No. 7")
+    allow(Sentry).to receive(:capture_message)
+    RegistrationQuestion.where(id: jersey.id).delete_all
+
+    pay!(pending)
+    ticket = pending.reload.tickets.find_by(ticket_type: alumni)
+    expect(pending).to be_completed
+    expect(ticket.attendee_name).to eq("Late Answer")
     expect(ticket.registration_responses.map(&:prompt_snapshot)).to eq(["Graduation Year"])
+    snapshot = pending.order_items.find_by(ticket_type: alumni).metadata.dig("attendees", 0, "answers")
+    expect(snapshot).to include(include("question_id" => jersey.id, "prompt" => "Jersey", "value" => "No. 7"))
+    expect(Sentry).to have_received(:capture_message).with(/deleted before order #{pending.id} was paid/, level: :warning)
+  end
+
+  # Called directly with parsed-JSON values: the public endpoint's per-network
+  # checkout cap would otherwise throttle this many attempts.
+  def buyer_checkout(assignments: alumni_assignments, answers: { division.id.to_s => "Maroon" })
+    Commerce::OrderCreator.call(event: event, line_items: [{ "ticket_type_id" => alumni.id, "quantity" => 2 }],
+      buyer_email: "buyer@example.com", buyer_name: "Pat Buyer", payment_required: false,
+      require_registration_answers: true, registration_answers: answers, attendee_assignments: assignments)
+  end
+
+  it "rejects non-text attendee names, untrimmed or non-text choices and fractional graduation years" do
+    [true, ["Maria"], { "first" => "Maria" }].each do |bad_name|
+      bad = alumni_assignments
+      bad[0][:attendee_name] = bad_name
+      expect { buyer_checkout(assignments: bad) }
+        .to raise_error(Commerce::OrderCreator::CheckoutError, "The attendee details for Free Alumni ticket #1 must be text")
+    end
+
+    [" Maroon", ["Maroon"], 1].each do |bad_choice|
+      expect { buyer_checkout(answers: { division.id.to_s => bad_choice }) }
+        .to raise_error(Commerce::OrderCreator::CheckoutError, "Invalid answer for Division")
+    end
+
+    [1998.5, "1998.5", "1" * 30].each do |bad_year|
+      expect { buyer_checkout(assignments: alumni_assignments(years: [bad_year, 2004])) }
+        .to raise_error(Commerce::OrderCreator::CheckoutError, "Invalid answer for Graduation Year (Free Alumni ticket #1)")
+    end
+    expect(event.orders).to be_empty
+    expect(buyer_checkout.order.tickets.map(&:attendee_name)).to contain_exactly("Maria Cruz", "Jesse Perez")
+  end
+
+  it "exports a paid pass's per-ticket and order answers from an included night" do
+    night = create(:event, :published, organizer_profile: profile, organization: org, title: "Night 1",
+      max_capacity: 20, starts_at: 5.days.from_now, ends_at: 5.days.from_now + 3.hours)
+    pass = create(:ticket_type, event: event, name: "Tournament Pass", price_cents: 4000, quantity_available: 10,
+      attendee_info_mode: "name_only")
+    TicketTypeIncludedEvent.create!(ticket_type: pass, included_event: night, position: 0)
+    pass.update_column(:is_pass, true)
+    jersey = create(:registration_question, event: event, prompt: "Jersey Number", kind: :short_text, scope: :ticket,
+      required: true, ticket_type_ids: [pass.id], position: 5)
+    contact = create(:registration_question, event: event, prompt: "Emergency Contact", kind: :short_text,
+      required: true, ticket_type_ids: [pass.id], position: 6)
+
+    checkout(line_items: [{ ticket_type_id: pass.id, quantity: 2 }], answers: { contact.id.to_s => "Rosa 671-555-0101" },
+      assignments: [
+        { ticket_type_id: pass.id, index: 0, attendee_name: "Ana Taitano", registration_answers: { jersey.id.to_s => "12" } },
+        { ticket_type_id: pass.id, index: 1, attendee_name: "Ben Cruz", registration_answers: { jersey.id.to_s => "33" } }
+      ])
+    order = Order.find(response.parsed_body.fetch("id"))
+    pay!(order)
+    expect(order.reload).to be_completed
+    child = order.tickets.find_by(event: night, attendee_name: "Ben Cruz")
+    expect(child.effective_registration_responses.map(&:prompt_snapshot)).to contain_exactly("Jersey Number", "Emergency Contact")
+
+    post "/api/v1/organizer/events/#{night.id}/sales_exports", params: { view: "tickets", expand_questions: true,
+      payment_environment: "test", columns: %w[name notes_custom_answers] }, headers: auth_headers(profile.user)
+    expect(response).to have_http_status(:ok)
+    csv = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+    expect(csv.headers).to include("Jersey Number", "Emergency Contact")
+    rows = csv.index_by { |row| row["Name"] }
+    expect(rows["Ben Cruz"]["Jersey Number"]).to eq("33")
+    expect(rows["Ana Taitano"]["Jersey Number"]).to eq("12")
+    expect(rows["Ben Cruz"]["Emergency Contact"]).to eq("Rosa 671-555-0101")
+    expect(rows["Ben Cruz"].fields.last(3).first).to include("Jersey Number: 33").and include("Emergency Contact: Rosa")
   end
 end

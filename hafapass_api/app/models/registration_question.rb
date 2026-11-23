@@ -9,12 +9,18 @@ class RegistrationQuestion < ApplicationRecord
 
   OPTION_KINDS = %w[selection multi_select].freeze
   NUMBER_LIMIT = 1_000_000_000
+  # Longest numeric answer accepted before it is parsed at all.
+  NUMBER_TEXT_LIMIT = 24
+  VALIDATION_RULE_KEYS = %w[min max integer].freeze
   EMAIL_FORMAT = URI::MailTo::EMAIL_REGEXP
   PHONE_FORMAT = /\A\+?[0-9().\-\s]+\z/
 
   belongs_to :event
   has_many :registration_responses, dependent: :restrict_with_error
 
+  # A checkbox is an affirmative acknowledgement or opt-in ("I confirm I am an
+  # FD alumnus"): required means it must be checked. A yes/no choice is a
+  # selection question with the options ["Yes", "No"].
   enum :kind, { short_text: 0, long_text: 1, selection: 2, checkbox: 3, number: 4, phone: 5, email: 6, multi_select: 7 }, validate: true
   # "order" questions are asked once per checkout; "ticket" questions once for
   # every ticket they apply to.
@@ -22,6 +28,7 @@ class RegistrationQuestion < ApplicationRecord
 
   before_validation :normalize_ticket_type_ids
   before_validation :normalize_validation_rules
+  before_destroy :ensure_not_awaiting_payment
 
   validates :prompt, presence: true, length: { maximum: 500 }
   validates :help_text, length: { maximum: 250 }
@@ -44,7 +51,8 @@ class RegistrationQuestion < ApplicationRecord
 
   def valid_answer?(value, enforce_required: true)
     return !(enforce_required && required?) if blank_answer?(value)
-    return options.include?(value.to_s) if selection?
+    # Choices must match a stored option exactly; they are never trimmed.
+    return value.is_a?(String) && options.include?(value) if selection?
     return value == true || (value == false && !(enforce_required && required?)) if checkbox?
     return valid_multi_select?(value) if multi_select?
     return valid_number?(value) if number?
@@ -57,6 +65,7 @@ class RegistrationQuestion < ApplicationRecord
   # The stored form of an answer already checked by valid_answer?.
   def normalized_answer(value)
     return value.strip.downcase if email? && value.is_a?(String)
+    return value if selection? || multi_select?
     return value.strip if value.is_a?(String) && !number?
     return value unless number?
 
@@ -68,19 +77,44 @@ class RegistrationQuestion < ApplicationRecord
     value.nil? || value == [] || (value.is_a?(String) && value.strip.empty?)
   end
 
+  def integer_only?
+    validation_rules["integer"] == true
+  end
+
+  # Ticket-scoped answers live on pending orders' items until payment
+  # completes; deleting the question then would drop them.
+  def referenced_by_pending_checkout?
+    return false unless persisted?
+
+    OrderItem.joins(:order).where(orders: { event_id: event_id, status: Order.statuses.fetch("pending") })
+      .where("order_items.metadata @> ?", { "attendees" => [{ "answers" => [{ "question_id" => id }] }] }.to_json)
+      .exists?
+  end
+
   private
+
+  def ensure_not_awaiting_payment
+    return unless referenced_by_pending_checkout?
+
+    errors.add(:base, "Buyers have answered this question on an order still waiting for payment. Pause the question instead of deleting it.")
+    throw(:abort)
+  end
 
   def valid_multi_select?(value)
     value.is_a?(Array) && value.all?(String) && value.uniq.length == value.length && (value - options).empty?
   end
 
   def valid_number?(value)
+    text = value.is_a?(String) ? value.strip : value.to_s
+    return false if text.length > NUMBER_TEXT_LIMIT
+
     number = case value
     when Integer then BigDecimal(value)
-    when Float then value.finite? ? BigDecimal(value.to_s) : nil
-    when String then value.strip.match?(/\A-?\d+(\.\d+)?\z/) ? BigDecimal(value.strip) : nil
+    when Float then value.finite? ? BigDecimal(text) : nil
+    when String then text.match?(/\A-?\d+(\.\d+)?\z/) ? BigDecimal(text) : nil
     end
     return false if number.nil? || number.abs > NUMBER_LIMIT
+    return false if integer_only? && !number.frac.zero?
 
     minimum = validation_rules["min"]
     maximum = validation_rules["max"]
@@ -104,25 +138,32 @@ class RegistrationQuestion < ApplicationRecord
     end
   end
 
+  # Integer IDs (or their decimal strings) are sorted and deduplicated. Any
+  # other item is left in place so validation rejects the list instead of
+  # silently widening the question to every ticket type.
   def normalize_ticket_type_ids
     return unless ticket_type_ids.is_a?(Array)
 
-    self.ticket_type_ids = ticket_type_ids.filter_map { |id| Integer(id.to_s, exception: false) }.uniq.sort
+    ids = ticket_type_ids.map { |id| id.is_a?(Integer) ? id : (id.is_a?(String) && id.match?(/\A\d+\z/) ? id.to_i : id) }
+    self.ticket_type_ids = ids.all? { |id| id.is_a?(Integer) && id.positive? } ? ids.uniq.sort : ids
   end
 
   def normalize_validation_rules
     self.validation_rules = {} if validation_rules.blank?
     return unless validation_rules.is_a?(Hash)
 
-    self.validation_rules = validation_rules.to_h.stringify_keys.transform_values do |value|
-      value.is_a?(String) && value.strip.match?(/\A-?\d+\z/) ? value.strip.to_i : value
+    self.validation_rules = validation_rules.to_h.stringify_keys.to_h do |key, value|
+      value = value.strip.to_i if value.is_a?(String) && value.strip.match?(/\A-?\d+\z/)
+      value = ActiveModel::Type::Boolean.new.cast(value) if key == "integer" && %w[true false].include?(value.to_s)
+      [key, value]
     end.compact
+    validation_rules.delete("integer") if validation_rules["integer"] == false
   end
 
   # Only ticket types added by this change are checked, so a since-deleted
   # ticket type never blocks editing the rest of the question.
   def ticket_types_belong_to_event
-    unless ticket_type_ids.is_a?(Array)
+    unless ticket_type_ids.is_a?(Array) && ticket_type_ids.all? { |id| id.is_a?(Integer) && id.positive? }
       errors.add(:ticket_type_ids, "must be a list of ticket types")
       return
     end
@@ -144,8 +185,11 @@ class RegistrationQuestion < ApplicationRecord
       errors.add(:validation_rules, "are only supported for number questions")
       return
     end
-    unknown = validation_rules.keys - %w[min max]
-    errors.add(:validation_rules, "only support min and max") if unknown.any?
+    unknown = validation_rules.keys - VALIDATION_RULE_KEYS
+    errors.add(:validation_rules, "only support min, max and integer") if unknown.any?
+    if validation_rules.key?("integer") && validation_rules["integer"] != true
+      errors.add(:validation_rules, "integer must be true or false")
+    end
     bounds = validation_rules.slice("min", "max")
     unless bounds.values.all? { |value| value.is_a?(Integer) && value.abs <= NUMBER_LIMIT }
       errors.add(:validation_rules, "min and max must be whole numbers")

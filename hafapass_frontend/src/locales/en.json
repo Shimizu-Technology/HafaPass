@@ -525,7 +525,8 @@
       "enterANumberFromTo": "Enter a number from {{min}} to {{max}}",
       "enterANumberAtLeast": "Enter a number of at least {{min}}",
       "enterANumberAtMost": "Enter a number no more than {{max}}",
-      "enterAValidPhoneNumber": "Enter a valid phone number"
+      "enterAValidPhoneNumber": "Enter a valid phone number",
+      "enterAWholeNumber": "Enter a whole number"
     },
     "TicketTypesSection": {
       "salesUnavailable": "Sales unavailable",

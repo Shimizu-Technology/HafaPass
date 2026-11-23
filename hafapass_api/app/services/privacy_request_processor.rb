@@ -2,8 +2,8 @@
 
 class PrivacyRequestProcessor
   class Blocked < StandardError; end
-  Plan = Data.define(:orders, :ticket_ids, :response_order_ids, :delivery_ids, :wallet_pass_ids,
-    :order_note_ids, :event_note_ids, :audit_ids, :recipient_delivery_ids, :metadata_delivery_ids)
+  Plan = Data.define(:orders, :ticket_ids, :response_order_ids, :response_ticket_ids, :response_ids, :delivery_ids,
+    :wallet_pass_ids, :order_note_ids, :event_note_ids, :audit_ids, :recipient_delivery_ids, :metadata_delivery_ids)
 
   def initialize(privacy_request)
     @request = privacy_request
@@ -55,6 +55,18 @@ class PrivacyRequestProcessor
         order.id if buyer_owned?(order) &&
           order.tickets.count == selected_tickets.count { |ticket| ticket.order_id == order.id }
       end
+      # Per-ticket answers follow the ticket they describe: the requester's own
+      # tickets plus any they are named on as attendee, never a ticket since
+      # transferred to someone else.
+      response_tickets = selected_orders.flat_map do |order|
+        order.tickets.select do |ticket|
+          !ticket.transferred_away_from?(order) &&
+            (ticket_ids.include?(ticket.id) || buyer_emails.include?(ticket.attendee_email.to_s.downcase))
+        end
+      end
+      response_ticket_ids = response_tickets.map(&:id)
+      response_ids = RegistrationResponse.where(order_id: response_order_ids)
+        .or(RegistrationResponse.where(order_id: selected_orders.map(&:id), ticket_id: response_ticket_ids)).pluck(:id)
       order_ids = selected_orders.map(&:id)
       owned_order_ids = selected_orders.select { |order| buyer_owned?(order) }.map(&:id)
       delivery_ids = MessageDelivery.where(order_id: owned_order_ids, ticket_id: [nil, *ticket_ids])
@@ -88,6 +100,7 @@ class PrivacyRequestProcessor
       audit = audit.or(AuditLog.where(id: matched_audit_ids))
       metadata_condition = email_patterns.map { "metadata::text ILIKE ?" }.join(" OR ")
       Plan.new(orders: selected_orders, ticket_ids: ticket_ids, response_order_ids: response_order_ids,
+        response_ticket_ids: response_ticket_ids, response_ids: response_ids,
         delivery_ids: delivery_ids, wallet_pass_ids: WalletPass.where(ticket_id: ticket_ids).pluck(:id),
         order_note_ids: order_note_ids, event_note_ids: note_ids, audit_ids: audit.pluck(:id),
         recipient_delivery_ids: MessageDelivery.where("lower(recipient) IN (?)", buyer_emails)
@@ -159,7 +172,7 @@ class PrivacyRequestProcessor
           action: "anonymize", reason: "Keep dispute amount and status; clear provider payload" },
         { table: "tickets", count: ticket_ids.size,
           action: "anonymize", reason: "Preserve admission evidence without attendee details" },
-        { table: "registration responses", count: RegistrationResponse.where(order_id: plan.response_order_ids).count,
+        { table: "registration responses", count: plan.response_ids.size,
           action: "anonymize", reason: "Keep question and acceptance evidence; clear answers" },
         { table: "message deliveries", count: delivery_ids.size,
           action: "anonymize", reason: "Keep send outcome; clear recipient and body" },
@@ -222,8 +235,8 @@ class PrivacyRequestProcessor
               { "id" => ticket.id, "status" => "transferred" }
             end
           end,
-          registration_responses: plan.response_order_ids.include?(order.id) ?
-            RegistrationResponse.where(order_id: order.id).map(&:attributes) : [],
+          registration_responses: RegistrationResponse.where(id: plan.response_ids, order_id: order.id).order(:id)
+            .map(&:attributes),
           refunds: order.refunds.map do |refund|
             export_fields(refund, "id", "amount_cents", "currency", "status", "created_at").tap do |fields|
               fields["reason"] = refund.reason if buyer_owned?(order) &&
@@ -345,6 +358,7 @@ class PrivacyRequestProcessor
             eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
             eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
             anonymize_responses: current_plan.response_order_ids.include?(order.id),
+            response_ticket_ids: order.tickets.where(id: current_plan.response_ticket_ids).pluck(:id),
             privacy_user_id: user&.id, privacy_emails: buyer_emails, privacy_names: personal_tokens)
           raise Blocked, "A protected order now blocks deletion" unless written
         end

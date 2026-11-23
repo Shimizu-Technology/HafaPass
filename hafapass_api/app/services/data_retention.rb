@@ -7,6 +7,9 @@ class DataRetention
   BATCH_SIZE = 100
   # Only abandoned checkout artifacts may be removed with an order. New foreign
   # key children are blockers until explicitly reviewed here.
+  UNISSUED_TERMINAL_STATUSES = %w[cancelled expired].freeze
+  # Long enough for Stripe's webhook retries to complete a late payment.
+  UNISSUED_ATTENDEE_GRACE = "7_days"
   PENDING_ORDER_CHILDREN = %w[seat_holds catalog_item_holds inventory_holds seat_hold_sessions
     order_items promo_redemptions referral_attributions acquisition_attributions marketplace_funnel_events].freeze
   # Provider references on a legacy order may predate local Payment rows. Audit
@@ -23,6 +26,7 @@ class DataRetention
     when "13_months" then at - 13.months
     when "3_years_after_withdrawal" then at - 3.years
     when "2_days" then at - 2.days
+    when "7_days" then at - 7.days
     when "90_days" then at - 90.days
     else nil
     end
@@ -63,7 +67,7 @@ class DataRetention
   end
 
   def self.anonymize_order!(order, eligible_ticket_ids: nil, eligible_support_note_ids: nil,
-    anonymize_responses: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil,
+    anonymize_responses: nil, response_ticket_ids: nil, buyer_owned: true, privacy_user_id: nil, privacy_emails: nil,
     privacy_names: nil)
     ensure_destructive_enabled!
     LegalHold.with_retention_lock do
@@ -78,7 +82,7 @@ class DataRetention
             end
             anonymize_order_locked!(order, eligible_ticket_ids: eligible_ticket_ids,
               eligible_support_note_ids: eligible_support_note_ids,
-              anonymize_responses: anonymize_responses, buyer_owned: buyer_owned,
+              anonymize_responses: anonymize_responses, response_ticket_ids: response_ticket_ids, buyer_owned: buyer_owned,
               privacy_user_id: privacy_user_id, privacy_emails: privacy_emails, privacy_names: privacy_names)
           end
         end
@@ -90,13 +94,14 @@ class DataRetention
   end
 
   def self.anonymize_order_locked!(order, eligible_ticket_ids:, eligible_support_note_ids:,
-    anonymize_responses:, buyer_owned:, privacy_user_id:, privacy_emails:, privacy_names:)
+    anonymize_responses:, buyer_owned:, privacy_user_id:, privacy_emails:, privacy_names:, response_ticket_ids: nil)
     ensure_destructive_enabled!
     unless buyer_owned
       ticket_ids = Array(eligible_ticket_ids)
       anonymize_requester_tickets!(order, ticket_ids, emails: privacy_emails,
         user_id: privacy_user_id, buyer_owned: false)
-      scrub_issued_attendee_details!(order)
+      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids)
+      scrub_attendee_details!(order, force: false)
       raise Protected if RetentionGuard.protected?(order)
 
       order.update_columns(user_id: nil, updated_at: Time.current)
@@ -123,11 +128,15 @@ class DataRetention
         holder_user_id: nil, cancellation_reason: nil, qr_code: nil,
         retention_anonymized_at: Time.current, updated_at: Time.current)
     end
+    # Order-wide answers belong to the whole order; per-ticket answers follow
+    # the ticket (and attendee) they describe.
     if anonymize_responses
       update_unheld(RegistrationResponse.where(order_id: order.id), answer: {}, retention_anonymized_at: Time.current,
         updated_at: Time.current)
+    else
+      anonymize_ticket_responses!(order, response_ticket_ids || ticket_ids)
     end
-    scrub_issued_attendee_details!(order)
+    scrub_attendee_details!(order, force: true)
     transfers = TicketTransfer.where(ticket_id: ticket_ids)
     transfers = transfers.where("lower(recipient_email) IN (?)", privacy_emails) if privacy_emails
     update_unheld(transfers, recipient_email: replacement,
@@ -250,13 +259,45 @@ class DataRetention
     end
   end
 
-  # Checkout keeps per-ticket attendee details on order items only until the
-  # tickets are issued; once tickets exist they hold the durable copy.
-  def self.scrub_issued_attendee_details!(order)
-    return unless order.tickets.exists?
+  def self.anonymize_ticket_responses!(order, ticket_ids)
+    return if Array(ticket_ids).empty?
+
+    update_unheld(RegistrationResponse.where(order_id: order.id, ticket_id: ticket_ids), answer: {},
+      retention_anonymized_at: Time.current, updated_at: Time.current)
+  end
+
+  # Checkout keeps per-ticket attendee details on order items until tickets
+  # are issued; afterwards the tickets hold the durable copy. A buyer erasure
+  # (force) always clears them, so a late payment issues tickets in the
+  # anonymized buyer's name instead of restoring the erased attendees. Other
+  # callers clear them once tickets exist or the order ended unissued.
+  def self.scrub_attendee_details!(order, force:)
+    return unless force || order.tickets.exists? || UNISSUED_TERMINAL_STATUSES.include?(order.status)
 
     update_unheld(OrderItem.where(order_id: order.id).where("metadata ? 'attendees'"), metadata: {},
       updated_at: Time.current)
+  end
+
+  # A cancelled or expired order never issued tickets, so its attendee
+  # details are not needed once a late payment can no longer complete it.
+  def self.scrub_unissued_attendee_details!(order)
+    ensure_destructive_enabled!
+    LegalHold.with_retention_lock do
+      Order.transaction(requires_new: true) do
+        order.event.with_lock("FOR NO KEY UPDATE") do
+          order.lock!
+          ensure_destructive_enabled!
+          return false unless UNISSUED_TERMINAL_STATUSES.include?(order.status) && !order.tickets.exists?
+          return false if RetentionGuard.protected?(order)
+
+          items = OrderItem.where(order_id: order.id).where("metadata ? 'attendees'")
+          return false unless items.exists?
+
+          update_unheld(items, metadata: {}, updated_at: Time.current)
+          true
+        end
+      end
+    end
   end
 
   def self.update_unheld(scope, **attributes)

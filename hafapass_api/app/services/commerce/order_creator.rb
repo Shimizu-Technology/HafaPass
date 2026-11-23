@@ -56,7 +56,7 @@ module Commerce
     def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, sold_by: nil, promo_code_id: nil, promo_code: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
-      catalog_items: nil, registration_answers: nil, attendee_assignments: nil, require_attendee_details: false,
+      catalog_items: nil, registration_answers: nil, attendee_assignments: nil, require_registration_answers: false,
       waiver_acceptances: nil, referral_code: nil, attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
       checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
@@ -87,9 +87,10 @@ module Commerce
       # Per-ticket attendee names, emails and ticket-scoped answers, each
       # { ticket_type_id, index, attendee_name, attendee_email, registration_answers }.
       @attendee_assignments = attendee_assignments || []
-      # Buyer checkout must supply every required attendee detail; trusted staff
-      # sales (box office, guest list) may leave them for the buyer's name.
-      @require_attendee_details = require_attendee_details
+      # Buyer checkout must supply every required answer and attendee detail.
+      # Trusted staff sales (box office cash and card, guest list) may omit
+      # them; any answer staff do supply is still validated.
+      @require_registration_answers = require_registration_answers
       @waiver_acceptances = waiver_acceptances || []
       @referral_code = referral_code
       @attribution = attribution || {}
@@ -841,7 +842,9 @@ module Commerce
       end
       @order_questions.each do |question|
         answer = answer_for(question.id)
-        raise CheckoutError, "Invalid answer for #{question.prompt}" unless question.valid_answer?(answer)
+        unless question.valid_answer?(answer, enforce_required: @require_registration_answers)
+          raise CheckoutError, "Invalid answer for #{question.prompt}"
+        end
       end
       @attendee_payloads = validated_attendee_payloads(selections, questions.select(&:scope_ticket?))
 
@@ -928,14 +931,14 @@ module Commerce
 
     def attendee_payload(ticket_type, index, assignment, questions)
       label = "#{ticket_type.name} ticket ##{index + 1}"
-      name = param_value(assignment, :attendee_name).to_s.squish.presence if ticket_type.collects_attendee_name?
-      email = param_value(assignment, :attendee_email).to_s.strip.downcase.presence if ticket_type.collects_attendee_email?
+      name = attendee_text(assignment, :attendee_name, label)&.squish.presence if ticket_type.collects_attendee_name?
+      email = attendee_text(assignment, :attendee_email, label)&.strip&.downcase.presence if ticket_type.collects_attendee_email?
       if ticket_type.collects_attendee_name?
-        raise CheckoutError, "Enter the attendee's full name for #{label}" if name.nil? && @require_attendee_details
+        raise CheckoutError, "Enter the attendee's full name for #{label}" if name.nil? && @require_registration_answers
         raise CheckoutError, "The attendee name for #{label} is too long" if name && name.length > 120
       end
       if ticket_type.collects_attendee_email?
-        raise CheckoutError, "Enter the attendee's email for #{label}" if email.nil? && @require_attendee_details
+        raise CheckoutError, "Enter the attendee's email for #{label}" if email.nil? && @require_registration_answers
         if email && (email.length > 254 || !email.match?(RegistrationQuestion::EMAIL_FORMAT))
           raise CheckoutError, "Enter a valid attendee email for #{label}"
         end
@@ -946,7 +949,7 @@ module Commerce
 
       answers = questions.filter_map do |question|
         value = param_value(raw_answers, question.id)
-        unless question.valid_answer?(value, enforce_required: @require_attendee_details)
+        unless question.valid_answer?(value, enforce_required: @require_registration_answers)
           raise CheckoutError, "Invalid answer for #{question.prompt} (#{label})"
         end
         next if question.blank_answer?(value)
@@ -955,6 +958,16 @@ module Commerce
           "required" => question.required, "options" => question.options, "value" => question.normalized_answer(value) }
       end
       { "attendee_name" => name, "attendee_email" => email, "answers" => answers }
+    end
+
+    # Names and emails must be JSON strings; a boolean or list is never
+    # coerced into text.
+    def attendee_text(assignment, key, label)
+      value = param_value(assignment, key)
+      return if value.nil?
+      raise CheckoutError, "The attendee details for #{label} must be text" unless value.is_a?(String)
+
+      value
     end
 
     def attendee_metadata_for(ticket_type)

@@ -10,7 +10,7 @@ import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } fro
 import { LANGUAGES } from '../../utils/locale'
 
 const emptyCatalog = { name: '', kind: 'add_on', price: '', inventory: '' }
-const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '', help_text: '', scope: 'order', ticket_type_ids: [], min: '', max: '', show_on_scanner: false }
+const emptyQuestion = { prompt: '', kind: 'short_text', required: false, options: '', help_text: '', scope: 'order', ticket_type_ids: [], min: '', max: '', integer: false, show_on_scanner: false }
 const emptyQuestionEdit = emptyQuestion
 const QUESTION_KIND_LABELS = { short_text: 'Short text', long_text: 'Long text', selection: 'Choose one', multi_select: 'Choose several', checkbox: 'Checkbox', number: 'Number', phone: 'Phone number', email: 'Email address' }
 const OPTION_KINDS = ['selection', 'multi_select']
@@ -26,12 +26,16 @@ function formFromQuestion(item) {
     prompt: item.prompt || '', kind: item.kind || 'short_text', required: Boolean(item.required),
     options: Array.isArray(item.options) ? item.options.join(', ') : '', help_text: item.help_text || '',
     scope: item.scope || 'order', ticket_type_ids: (item.ticket_type_ids || []).map(Number),
-    min: item.validation_rules?.min ?? '', max: item.validation_rules?.max ?? '', show_on_scanner: Boolean(item.show_on_scanner),
+    min: item.validation_rules?.min ?? '', max: item.validation_rules?.max ?? '', integer: item.validation_rules?.integer === true,
+    show_on_scanner: Boolean(item.show_on_scanner),
   }
 }
 
 function questionPayload(form) {
-  const rules = form.kind === 'number' ? Object.fromEntries([['min', form.min], ['max', form.max]].filter(([, value]) => value !== '' && value != null).map(([key, value]) => [key, Number(value)])) : {}
+  const rules = form.kind === 'number' ? {
+    ...Object.fromEntries([['min', form.min], ['max', form.max]].filter(([, value]) => value !== '' && value != null).map(([key, value]) => [key, Number(value)])),
+    ...(form.integer ? { integer: true } : {}),
+  } : {}
   return {
     prompt: form.prompt.trim(), kind: form.kind, required: form.required, help_text: form.help_text.trim() || null,
     scope: form.scope, ticket_type_ids: form.ticket_type_ids, show_on_scanner: form.show_on_scanner,
@@ -54,6 +58,7 @@ function QuestionControls({ form, onChange, ticketTypes, idPrefix, editing = fal
     {form.kind === 'number' && <>
       <Field label="Lowest number allowed"><input className="input font-normal" type="number" inputMode="numeric" placeholder="e.g. 1950" value={form.min} onChange={e => set({ min: e.target.value })} /></Field>
       <Field label="Highest number allowed"><input className="input font-normal" type="number" inputMode="numeric" placeholder="e.g. 2035" value={form.max} onChange={e => set({ max: e.target.value })} /></Field>
+      <label className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700 sm:col-span-2"><input type="checkbox" checked={form.integer} onChange={e => set({ integer: e.target.checked })} /> Whole numbers only (for example a year)</label>
     </>}
     <fieldset className="min-w-0 sm:col-span-2"><legend className="text-sm font-medium text-neutral-700">Ask this question</legend>
       <div className="mt-1 flex flex-wrap gap-x-5">{[['order', 'Once per order'], ['ticket', 'For each ticket']].map(([value, label]) => <label key={value} className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-700"><input type="radio" name={`${idPrefix}-scope`} value={value} checked={form.scope === value} onChange={() => set({ scope: value })} />{label}</label>)}</div>
@@ -419,6 +424,7 @@ function SalesToolsSession({ eventId, identity }) {
                         {QUESTION_KIND_LABELS[item.kind] || item.kind}
                         {OPTION_KINDS.includes(item.kind) && Array.isArray(item.options) && item.options.length > 0 ? ` · Choices: ${item.options.join(', ')}` : ''}
                         {item.kind === 'number' && (item.validation_rules?.min != null || item.validation_rules?.max != null) ? ` · ${item.validation_rules?.min ?? 'any'} to ${item.validation_rules?.max ?? 'any'}` : ''}
+                        {item.kind === 'number' && item.validation_rules?.integer ? ' · Whole numbers' : ''}
                         {` · ${questionScopeSummary(item, event.ticket_types || [])}`}
                       </p>
                       {item.help_text && <p className="mt-1 text-xs text-neutral-500">Hint: {item.help_text}</p>}

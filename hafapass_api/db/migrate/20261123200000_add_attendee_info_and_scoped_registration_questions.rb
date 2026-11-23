@@ -39,19 +39,30 @@ class AddAttendeeInfoAndScopedRegistrationQuestions < ActiveRecord::Migration[8.
     add_index :registration_responses, :ticket_id, algorithm: :concurrently
     add_foreign_key :registration_responses, :tickets, on_delete: :restrict, validate: false
     validate_foreign_key :registration_responses, :tickets
+    drop_invalid_index(:registration_responses, "index_registration_responses_unique_order")
     add_index :registration_responses, [:order_id, :registration_question_id],
       unique: true, where: "ticket_id IS NULL",
-      name: "index_registration_responses_unique_order", algorithm: :concurrently
+      name: "index_registration_responses_unique_order", algorithm: :concurrently, if_not_exists: true
+    drop_invalid_index(:registration_responses, "index_registration_responses_unique_ticket")
     add_index :registration_responses, [:ticket_id, :registration_question_id],
       unique: true, where: "ticket_id IS NOT NULL",
-      name: "index_registration_responses_unique_ticket", algorithm: :concurrently
+      name: "index_registration_responses_unique_ticket", algorithm: :concurrently, if_not_exists: true
     remove_index :registration_responses, name: "index_registration_responses_unique",
       algorithm: :concurrently, if_exists: true
   end
 
+  # Rolling back is allowed only while nothing depends on the new shape:
+  # no per-ticket answers (the order-wide unique index would reject them), no
+  # question using a new kind or per-ticket scope (the old kind constraint and
+  # columns cannot represent them), and no pending order holding attendee
+  # details that tickets still need. Every check runs before any change, so a
+  # refused rollback leaves the schema untouched. Settings such as
+  # attendee_info_mode, help_text and show_on_scanner are dropped.
   def down
-    # Restoring the order-wide unique index requires that no order has more
-    # than one answer to the same question (ticket-scoped answers do).
+    blocker = rollback_blocker
+    raise ActiveRecord::IrreversibleMigration, blocker if blocker
+
+    drop_invalid_index(:registration_responses, "index_registration_responses_unique")
     add_index :registration_responses, [:order_id, :registration_question_id],
       unique: true, name: "index_registration_responses_unique", algorithm: :concurrently, if_not_exists: true
     remove_index :registration_responses, name: "index_registration_responses_unique_ticket",
@@ -78,5 +89,32 @@ class AddAttendeeInfoAndScopedRegistrationQuestions < ActiveRecord::Migration[8.
 
     remove_check_constraint :ticket_types, name: "ticket_types_attendee_info_mode_valid"
     remove_column :ticket_types, :attendee_info_mode
+  end
+
+  private
+
+  def rollback_blocker
+    if select_value("SELECT 1 FROM registration_responses WHERE ticket_id IS NOT NULL LIMIT 1")
+      return "Per-ticket registration answers exist; the order-wide unique index cannot hold them"
+    end
+    if select_value("SELECT 1 FROM registration_questions WHERE kind > 3 OR scope <> 0 LIMIT 1")
+      return "Registration questions use a new answer type or per-ticket scope; change them back first"
+    end
+    if select_value(<<~SQL.squish)
+      SELECT 1 FROM order_items INNER JOIN orders ON orders.id = order_items.order_id
+      WHERE orders.status = 0 AND order_items.metadata ? 'attendees' LIMIT 1
+    SQL
+      "Pending orders hold attendee details that their tickets still need"
+    end
+  end
+
+  # A canceled concurrent build leaves an INVALID index that if_not_exists
+  # would keep; rebuild it instead.
+  def drop_invalid_index(table, name)
+    invalid = select_value(<<~SQL.squish)
+      SELECT 1 FROM pg_index INNER JOIN pg_class ON pg_class.oid = pg_index.indexrelid
+      WHERE pg_class.relname = #{connection.quote(name)} AND NOT pg_index.indisvalid
+    SQL
+    remove_index table, name: name, algorithm: :concurrently if invalid
   end
 end

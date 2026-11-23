@@ -91,7 +91,7 @@ class Api::V1::OrdersController < ApplicationController
       catalog_items: params[:catalog_items],
       registration_answers: params[:registration_answers],
       attendee_assignments: params[:attendee_assignments],
-      require_attendee_details: true,
+      require_registration_answers: true,
       waiver_acceptances: params[:waiver_acceptances],
       referral_code: params[:referral_code],
       attribution: params[:attribution],

@@ -89,6 +89,14 @@ class Ticket < ApplicationRecord
     parent_ticket_id.nil? && ticket_type.is_pass?
   end
 
+  # The order-wide answers plus the answers given for this ticket. A pass
+  # night ticket uses the answers recorded on its pass. Reads the order's
+  # loaded responses, so preloading order: :registration_responses avoids N+1.
+  def effective_registration_responses
+    answered_ticket_id = parent_ticket_id || id
+    order.registration_responses.select { |response| response.ticket_id.nil? || response.ticket_id == answered_ticket_id }
+  end
+
   def admission_block_reason(payment_mode: nil)
     return "pass_container" if pass_parent?
     return "cancelled" if cancelled? || (pass_child? && parent_ticket&.cancelled?)

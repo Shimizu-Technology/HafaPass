@@ -1,5 +1,8 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_PATTERN = /^\+?[0-9().\-\s]+$/
+// Matches RegistrationQuestion::NUMBER_TEXT_LIMIT on the server.
+const NUMBER_TEXT_LIMIT = 24
+const CHOICE_KINDS = ['selection', 'multi_select']
 
 export function blankAnswer(value) {
   return value === undefined || value === null || value === false || (Array.isArray(value) && value.length === 0)
@@ -17,9 +20,10 @@ export function questionAnswerError(question, value, t) {
   }
   if (question.kind === 'number') {
     const text = String(value).trim()
-    if (!/^-?\d+(\.\d+)?$/.test(text)) return t('buyer.Checkout.enterANumber')
+    const { min, max, integer } = question.validation_rules || {}
+    if (text.length > NUMBER_TEXT_LIMIT || !/^-?\d+(\.\d+)?$/.test(text)) return t('buyer.Checkout.enterANumber')
+    if (integer && !/^-?\d+$/.test(text)) return t('buyer.Checkout.enterAWholeNumber')
     const number = Number(text)
-    const { min, max } = question.validation_rules || {}
     if ((min != null && number < min) || (max != null && number > max)) {
       if (min != null && max != null) return t('buyer.Checkout.enterANumberFromTo', { min, max })
       return min != null ? t('buyer.Checkout.enterANumberAtLeast', { min }) : t('buyer.Checkout.enterANumberAtMost', { max })
@@ -34,12 +38,13 @@ export function questionAnswerError(question, value, t) {
   return null
 }
 
-// The value sent to the API: numbers as numbers, text trimmed, and an
-// unchecked checkbox as an explicit "No".
+// The value sent to the API: numbers as numbers, text trimmed, choices exactly
+// as the organizer wrote them, and an unchecked checkbox as an explicit "No".
 export function answerPayload(question, value) {
   if (question.kind === 'checkbox') return value === true
   if (blankAnswer(value)) return undefined
   if (question.kind === 'number') return Number(String(value).trim())
+  if (CHOICE_KINDS.includes(question.kind)) return value
   if (typeof value === 'string') return value.trim()
   return value
 }

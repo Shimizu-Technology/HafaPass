@@ -2,7 +2,7 @@
 
 class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::EventResourcesController
   GRADUATION_YEAR = { prompt: "Graduation Year", kind: "number", required: true,
-    validation_rules: { "min" => 1950, "max" => 2035 }, help_text: "4-digit year, for example 1998" }.freeze
+    validation_rules: { "min" => 1950, "max" => 2035, "integer" => true }, help_text: "4-digit year, for example 1998" }.freeze
   # One-click starter sets. A template given a ticket type asks its questions
   # only when that ticket type is in the cart.
   TEMPLATES = {
@@ -15,6 +15,10 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
     "alumni_door_verification" => [GRADUATION_YEAR.merge(scope: "ticket", show_on_scanner: true)],
     "merch_shirt_size" => [{ prompt: "Shirt Size", kind: "selection", required: false, options: %w[S M L XL 2XL] }]
   }.freeze
+  # Templates that set per-ticket attendee details on their ticket type.
+  TICKET_TYPE_TEMPLATES = %w[alumni_door_verification].freeze
+
+  class TemplateConflict < StandardError; end
 
   def index
     render json: { registration_questions: event.registration_questions.order(:position, :id).map { |item| serialize(item) } }
@@ -30,64 +34,121 @@ class Api::V1::Organizer::RegistrationQuestionsController < Api::V1::Organizer::
     render_record(item)
   end
 
+  # The event lock serializes with checkout and payment completion, so a
+  # question cannot disappear between a buyer answering it and their tickets
+  # being issued (see RegistrationQuestion#referenced_by_pending_checkout?).
   def destroy
-    destroy_record(event.registration_questions.find(params[:id]))
+    RegistrationQuestion.transaction do
+      event.lock!("FOR NO KEY UPDATE")
+      item = event.registration_questions.find(params[:id])
+      destroy_record(item)
+      raise ActiveRecord::Rollback unless item.destroyed?
+    end
   end
 
-  # Adds a template's questions in one transaction. Questions already on the
-  # event (same prompt and scope) are skipped, so a second click is harmless.
-  # Alumni Door Verification also asks for each attendee's name on the chosen
-  # ticket type, which needs inventory access.
+  # Adds a template's questions in one transaction. A matching question (same
+  # prompt and scope) that already covers the chosen ticket type is skipped,
+  # one limited to other ticket types gains this one, and a match that cannot
+  # be combined (different answer type, or all-ticket vs per-ticket-type)
+  # returns 409 without changing anything. Alumni Door Verification requires a
+  # ticket type and also asks for each attendee's name on it, which needs
+  # inventory access.
   def apply_template
-    definitions = TEMPLATES[params[:template].to_s]
+    template = params[:template].to_s
+    definitions = TEMPLATES[template]
     return render json: { error: "Choose a starter template" }, status: :unprocessable_entity unless definitions
 
     ticket_type = nil
     if params[:ticket_type_id].present?
       ticket_type = event.ticket_types.find_by(id: params[:ticket_type_id])
       return render json: { error: "Ticket type not found" }, status: :not_found unless ticket_type
+    elsif TICKET_TYPE_TEMPLATES.include?(template)
+      return render json: { error: "Choose the ticket type this template is for" }, status: :unprocessable_entity
     end
-    enables_attendee_names = params[:template] == "alumni_door_verification" && ticket_type
+    enables_attendee_names = TICKET_TYPE_TEMPLATES.include?(template)
     return if enables_attendee_names && !authorize_organization!(:manage_inventory, event: event)
 
     created = []
+    updated = []
     skipped = []
     RegistrationQuestion.transaction do
+      # docs/LOCKING.md: organization, then event, then ticket type.
+      event.organization.lock!("FOR NO KEY UPDATE")
       event.lock!("FOR NO KEY UPDATE")
-      existing = event.registration_questions.where(active: true).to_a
+      # Locking reloads the ticket type, so a concurrent upgrade to name and
+      # email is seen and never downgraded below.
+      ticket_type&.lock!("FOR NO KEY UPDATE")
+      plan = template_plan(definitions, ticket_type)
       position = (event.registration_questions.maximum(:position) || -1) + 1
-      definitions.each do |definition|
-        scope = definition.fetch(:scope, "order")
-        if existing.any? { |question| question.scope == scope && question.prompt.casecmp?(definition[:prompt]) }
-          skipped << definition[:prompt]
-          next
+      plan.each do |action, definition, existing|
+        case action
+        when :skip then skipped << definition[:prompt]
+        when :extend
+          existing.update!(ticket_type_ids: existing.ticket_type_ids | [ticket_type.id])
+          updated << existing
+        when :create
+          created << event.registration_questions.create!(definition.merge(
+            scope: definition.fetch(:scope, "order"), position: position, ticket_type_ids: ticket_type ? [ticket_type.id] : []
+          ))
+          position += 1
         end
-
-        created << event.registration_questions.create!(
-          definition.merge(scope: scope, position: position, ticket_type_ids: ticket_type ? [ticket_type.id] : [])
-        )
-        position += 1
       end
-      if enables_attendee_names && !ticket_type.collects_attendee_name?
-        ticket_type.lock!
-        ticket_type.update!(attendee_info_mode: "name_only")
-      end
+      ticket_type.update!(attendee_info_mode: "name_only") if enables_attendee_names && !ticket_type.collects_attendee_name?
     end
     render json: {
       registration_questions: created.map { |item| serialize(item) },
+      updated_questions: updated.map { |item| serialize(item) },
       skipped_prompts: skipped,
       ticket_type: ticket_type && { id: ticket_type.id, attendee_info_mode: ticket_type.reload.attendee_info_mode }
     }, status: :created
+  rescue TemplateConflict => e
+    render json: { error: e.message }, status: :conflict
   rescue ActiveRecord::RecordInvalid => e
     render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
   end
 
   private
 
+  def template_plan(definitions, ticket_type)
+    existing = event.registration_questions.where(active: true).order(:position, :id).to_a
+    definitions.map do |definition|
+      scope = definition.fetch(:scope, "order")
+      matches = existing.select { |question| question.scope == scope && question.prompt.casecmp?(definition[:prompt]) }
+      next [:create, definition] if matches.empty?
+
+      covered = matches.find do |question|
+        question.ticket_type_ids.empty? || (ticket_type && question.ticket_type_ids.include?(ticket_type.id))
+      end
+      next [:skip, definition] if covered && covered.kind == definition[:kind]
+
+      compatible = matches.find { |question| question.kind == definition[:kind] }
+      if covered || compatible.nil?
+        raise TemplateConflict, "\"#{definition[:prompt]}\" already exists with a different answer type. " \
+          "Rename or remove it, then add the template again."
+      end
+      unless ticket_type
+        raise TemplateConflict, "\"#{definition[:prompt]}\" is already limited to specific ticket types. " \
+          "Choose a ticket type for this template or edit the existing question."
+      end
+      [:extend, definition, compatible]
+    end
+  end
+
   def record_params
     attributes = params.permit(:prompt, :kind, :required, :position, :active, :scope, :show_on_scanner, :help_text,
-      options: [], ticket_type_ids: [], validation_rules: [:min, :max]).to_h
-    attributes["ticket_type_ids"] = [] if attributes.key?("ticket_type_ids") && attributes["ticket_type_ids"].nil?
+      options: [], validation_rules: [:min, :max, :integer]).to_h
+    if params.key?(:ticket_type_ids)
+      # Passed through unfiltered: the model rejects anything but a list of
+      # IDs rather than dropping bad items and widening the question.
+      raw = params[:ticket_type_ids]
+      attributes["ticket_type_ids"] = if raw.nil?
+        []
+      elsif raw.is_a?(Array) && raw.all? { |id| id.is_a?(String) || id.is_a?(Integer) }
+        raw
+      else
+        "invalid"
+      end
+    end
     attributes["validation_rules"] = attributes["validation_rules"].to_h.compact_blank if attributes.key?("validation_rules")
     attributes["help_text"] = attributes["help_text"].to_s.strip.presence if attributes.key?("help_text")
     attributes

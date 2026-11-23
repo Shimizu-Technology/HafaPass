@@ -500,6 +500,7 @@ it('builds scoped questions with plain controls: field type, help text, number l
   await user.type(screen.getByLabelText('Help text (optional)'), '4-digit year')
   await user.type(screen.getByLabelText('Lowest number allowed'), '1950')
   await user.type(screen.getByLabelText('Highest number allowed'), '2035')
+  await user.click(screen.getByLabelText(/Whole numbers only/))
   await user.click(screen.getByRole('radio', { name: 'For each ticket' }))
   const tickets = screen.getByRole('group', { name: 'Which tickets?' })
   expect(within(tickets).getByRole('checkbox', { name: 'All ticket types' })).toBeChecked()
@@ -510,7 +511,7 @@ it('builds scoped questions with plain controls: field type, help text, number l
   await user.click(screen.getByRole('button', { name: 'Add question' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/11/registration_questions', {
     prompt: 'Graduation Year', kind: 'number', required: true, help_text: '4-digit year', scope: 'ticket', ticket_type_ids: [18],
-    show_on_scanner: true, options: [], validation_rules: { min: 1950, max: 2035 }, position: 0,
+    show_on_scanner: true, options: [], validation_rules: { min: 1950, max: 2035, integer: true }, position: 0,
   }, expect.anything()))
 })
 
@@ -546,12 +547,12 @@ it('shows scope, ticket types, number limits and door scanner on saved questions
   caps.advanced_sales_tools = false
   rows[11] = { ...rows[11], ticket_types: [{ id: 17, name: 'General', price_cents: 1000 }, { id: 18, name: 'Free Alumni', price_cents: 0 }] }
   const saved = [{ id: 201, prompt: 'Graduation Year', kind: 'number', required: true, options: [], position: 0, active: true, scope: 'ticket',
-    ticket_type_ids: [18], show_on_scanner: true, help_text: '4-digit year', validation_rules: { min: 1950, max: 2035 } }]
+    ticket_type_ids: [18], show_on_scanner: true, help_text: '4-digit year', validation_rules: { min: 1950, max: 2035, integer: true } }]
   apiClient.get.mockImplementation((path, config) => path.endsWith('/registration_questions')
     ? Promise.resolve({ data: { registration_questions: saved } }) : getDefault(path, config))
   mount(tools[1])
   const item = (await screen.findByText('Graduation Year')).closest('li')
-  expect(item).toHaveTextContent('Number · 1950 to 2035 · For each ticket · Free Alumni')
+  expect(item).toHaveTextContent('Number · 1950 to 2035 · Whole numbers · For each ticket · Free Alumni')
   expect(item).toHaveTextContent('Door scanner')
   expect(item).toHaveTextContent('Hint: 4-digit year')
   const user = userEvent.setup()
@@ -564,6 +565,6 @@ it('shows scope, ticket types, number limits and door scanner on saved questions
   await user.click(within(editor.getByRole('group', { name: 'Which tickets?' })).getByRole('checkbox', { name: 'All ticket types' }))
   await user.click(screen.getByRole('button', { name: 'Save question' }))
   await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/organizer/events/11/registration_questions/201', expect.objectContaining({
-    scope: 'order', ticket_type_ids: [], show_on_scanner: true, validation_rules: { min: 1950, max: 2035 },
+    scope: 'order', ticket_type_ids: [], show_on_scanner: true, validation_rules: { min: 1950, max: 2035, integer: true },
   }), expect.anything()))
 })

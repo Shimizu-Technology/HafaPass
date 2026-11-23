@@ -721,6 +721,9 @@ describe('registration error recovery', () => {
     expect(screen.getByRole('link', { name: 'Meal preference: This answer is required' })).toHaveAttribute('href', '#question-17')
     expect(apiClient.post).not.toHaveBeenCalled()
     await user.type(meal, 'Vegetarian')
+    // A checkbox question is an affirmative acknowledgement or opt-in, so a
+    // required one must be checked; yes/no choices use a selection question
+    // with the options Yes and No instead of a dropdown checkbox.
     const dinner = screen.getByRole('checkbox', { name: 'Will you attend dinner? *' })
     expect(dinner.closest('label')).toHaveClass('min-h-11')
     await user.click(dinner)
@@ -748,7 +751,7 @@ describe('per-ticket attendee details and scoped questions', () => {
     { id: 2, name: 'Free Alumni', price_cents: 0, service_fee_cents: 0, all_in_price_cents: 0, attendee_info_mode: 'name_only' },
     { id: 3, name: 'Team Entry', price_cents: 5000, service_fee_cents: 0, all_in_price_cents: 5000, attendee_info_mode: 'name_and_email' }],
   registration_questions: [
-    { id: 30, prompt: 'Graduation Year', kind: 'number', required: true, scope: 'ticket', ticket_type_ids: [2], help_text: '4-digit year, for example 1998', validation_rules: { min: 1950, max: 2035 } },
+    { id: 30, prompt: 'Graduation Year', kind: 'number', required: true, scope: 'ticket', ticket_type_ids: [2], help_text: '4-digit year, for example 1998', validation_rules: { min: 1950, max: 2035, integer: true } },
     { id: 31, prompt: 'Class Name', kind: 'short_text', required: true, scope: 'order', ticket_type_ids: [3] },
     { id: 32, prompt: 'Shirt sizes', kind: 'multi_select', required: true, scope: 'order', ticket_type_ids: [], options: ['S', 'M', 'L'] },
     { id: 33, prompt: 'Join the mailing list?', kind: 'checkbox', required: false, scope: 'order', ticket_type_ids: [] }] }

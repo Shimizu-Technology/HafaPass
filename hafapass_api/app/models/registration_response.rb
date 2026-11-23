@@ -11,7 +11,8 @@ class RegistrationResponse < ApplicationRecord
   belongs_to :ticket, optional: true
 
   validates :prompt_snapshot, :kind_snapshot, :answered_at, presence: true
-  validates :registration_question_id, uniqueness: { scope: :order_id }, if: -> { ticket_id.nil? }
+  validates :registration_question_id, uniqueness: { scope: :order_id, conditions: -> { where(ticket_id: nil) } },
+    if: -> { ticket_id.nil? }
   validates :registration_question_id, uniqueness: { scope: :ticket_id }, if: -> { ticket_id.present? }
   validates :required_snapshot, inclusion: { in: [true, false] }
   validates :options_snapshot, presence: true, if: -> { OPTION_KIND_VALUES.include?(kind_snapshot) }

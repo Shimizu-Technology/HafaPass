@@ -53,9 +53,9 @@ export default function RegistrationQuestionField({ question, id, value, onChang
   } else if (question.kind === 'long_text') {
     control = <textarea {...common} required={question.required} className="input text-base" rows="3" value={value || ''} onChange={e => onChange(e.target.value)} />
   } else {
-    const { min, max } = question.validation_rules || {}
+    const { min, max, integer } = question.validation_rules || {}
     const typeProps = {
-      number: { type: 'number', inputMode: 'numeric', min: min ?? undefined, max: max ?? undefined, step: 'any' },
+      number: { type: 'number', inputMode: integer ? 'numeric' : 'decimal', min: min ?? undefined, max: max ?? undefined, step: integer ? '1' : 'any' },
       phone: { type: 'tel', inputMode: 'tel', autoComplete: 'tel' },
       email: { type: 'email', inputMode: 'email', autoComplete: 'email' },
     }[question.kind] || { type: 'text' }

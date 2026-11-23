@@ -382,6 +382,36 @@ RSpec.describe PrivacyRequestProcessor, "review findings" do
     expect(audit.reload.metadata.to_json).not_to include("Alice", "Example", "671-555-0101", original_email)
   end
 
+  it "exports and erases per-ticket answers only for the retained ticket when another was transferred" do
+    ticket_type = create(:ticket_type, event: order.event, attendee_info_mode: "name_only")
+    kept = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Maria Cruz")
+    moved = create(:ticket, order: order, event: order.event, ticket_type: ticket_type, attendee_name: "Jesse Perez")
+    holder = create(:user)
+    moved.update_columns(holder_user_id: holder.id, holder_email: holder.email, status: Ticket.statuses.fetch("transferred"))
+    year = create(:registration_question, event: order.event, prompt: "Graduation Year", kind: :number, scope: :ticket)
+    team = create(:registration_question, event: order.event, prompt: "Team")
+    answer = lambda do |question, value, ticket = nil|
+      RegistrationResponse.create!(order: order, ticket: ticket, registration_question: question,
+        kind_snapshot: question.kind_before_type_cast, prompt_snapshot: question.prompt,
+        answer: { "value" => value }, answered_at: Time.current)
+    end
+    kept_year = answer.call(year, 1998, kept)
+    moved_year = answer.call(year, 2004, moved)
+    team_answer = answer.call(team, "Friars")
+
+    access = PrivacyRequest.create!(kind: "access", user: buyer, requester_email: buyer.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    exported = described_class.new(access).export[:orders].first
+    expect(exported[:registration_responses].map { |row| row["id"] }).to eq([kept_year.id])
+    expect(described_class.new(privacy_request).preview[:retained])
+      .to include(include(table: "registration responses", count: 1))
+
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(kept_year.reload.answer).to eq({})
+    expect(moved_year.reload.answer).to eq("value" => 2004)
+    expect(team_answer.reload.answer).to eq("value" => "Friars")
+  end
+
   it "keeps a transferred holder's ticket, wallet pass, and identity out of deletion" do
     ticket = create(:ticket, order: order, event: order.event, ticket_type: create(:ticket_type, event: order.event))
     holder = create(:user)
