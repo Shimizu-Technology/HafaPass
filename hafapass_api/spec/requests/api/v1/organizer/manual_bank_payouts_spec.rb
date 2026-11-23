@@ -18,6 +18,7 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
     expect(response.parsed_body["payout_details"]).to eq("bank_name" => "Bank of Guam", "account_holder_name" => "Island Events LLC", "masked_account" => "•••• 9012")
     account = organization.connected_accounts.find_by!(provider: "manual")
     expect(account.bank_account_number).to eq("123456789012")
+    expect(account.as_json).not_to have_key("bank_account_number")
     ciphertext = ConnectedAccount.connection.select_value("SELECT bank_account_number FROM connected_accounts WHERE id = #{account.id.to_i}")
     expect(ciphertext).not_to include("123456789012")
     PayoutMethodReview.approve!(account: account, actor: admin, controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true),
@@ -153,6 +154,16 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
     first = Settlements::Finalizer.call(event: event, actor: admin)
     expect(first).to have_attributes(reserve_cents: 1000, available_to_payout_cents: 9000)
     record_payout.call(first, 9000, "transfer-first")
+    payout = event.payouts.sole
+    expect(payout.payee_snapshot).to include("masked_account" => "•••• 9012")
+    expect(payout.payee_approval_digest).to eq(account.bank_destination_digest)
+
+    record_adjustment.call("reserve_release", 500)
+    mistaken_release_id = response.parsed_body.fetch("id")
+    delete "/api/v1/admin/balance_adjustments/#{mistaken_release_id}", headers: admin_headers,
+      params: { reason: "Release entered early" }
+    expect(response).to have_http_status(:created), response.body
+    expect(Settlements::Calculator.call(event).attributes.fetch(:reserve_cents)).to eq(1000)
     expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
 
     travel 30.days do

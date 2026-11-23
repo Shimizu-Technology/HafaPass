@@ -70,6 +70,9 @@ class Payout < ApplicationRecord
   # are blocked while a check payout is in flight, so a difference only comes
   # from older data; recording it as paid then needs an explicit confirmation.
   def payee_matches_approval?
+    if provider == "manual" && payee_approval_digest.present?
+      return ActiveSupport::SecurityUtils.secure_compare(payee_approval_digest, connected_account.reload.bank_destination_digest)
+    end
     return true unless provider == "check"
 
     payee_snapshot.present? && connected_account.check_payee == payee_snapshot

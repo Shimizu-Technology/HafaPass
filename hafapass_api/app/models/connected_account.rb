@@ -92,7 +92,18 @@ class ConnectedAccount < ApplicationRecord
     # Where money goes is part of what an approval covers. Accounts without
     # payee details (every account before checks existed) keep their digest.
     payload[:payout_details] = canonicalize_readiness_value(payout_details) if payout_details.present?
+    payload[:bank_destination] = bank_destination_digest if provider == "manual" && bank_account_number.present?
     Digest::SHA256.hexdigest(payload.to_json)
+  end
+
+  def bank_destination_digest
+    key = Rails.application.key_generator.generate_key("hafapass/bank-destination/v1", 32)
+    details = [payout_details.to_h.values_at("bank_name", "account_holder_name"), bank_account_number]
+    OpenSSL::HMAC.hexdigest("SHA256", key, details.to_json)
+  end
+
+  def serializable_hash(options = nil)
+    super((options || {}).merge(except: Array(options&.dig(:except)) + ["bank_account_number"]))
   end
 
   def check_payee

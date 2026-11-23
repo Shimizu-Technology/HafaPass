@@ -54,35 +54,39 @@ module ConnectedAccounts
     # Changing who a check is written to (or where it goes) is a change to
     # where money goes, so any earlier readiness approval stops applying.
     def self.update_payout_details!(account:, payout_details:, actor:, request: nil)
-      raise AccountError, "Only manual payouts have payee details" unless account.manual_payout?
-      raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
-      details = normalize_check_details(payout_details) if account.provider == "check"
-      if account.provider == "check"
-        ensure_no_check_in_flight!(account.organization)
-      elsif account.payouts.where(status: [:pending, :processing, :held]).exists?
-        raise AccountError, "A bank payout is in progress. You can change bank details after HåfaPass resolves it."
-      end
+      account.organization.with_lock do
+        account.with_lock do
+          raise AccountError, "Only manual payouts have payee details" unless account.manual_payout?
+          raise AccountError, ConnectedAccount::BANK_UNAVAILABLE_REASON unless account.payout_supported?
+          details = normalize_check_details(payout_details) if account.provider == "check"
+          if account.provider == "check"
+            ensure_no_check_in_flight!(account.organization)
+          elsif account.payouts.where(status: [:pending, :processing, :held]).exists?
+            raise AccountError, "A bank payout is in progress. You can change bank details after HåfaPass resolves it."
+          end
 
-      before_data = readiness_snapshot(account)
-      provider_configuration_before = account.provider_configuration_digest
-      account.payout_details = details if account.provider == "check"
-      assign_bank_details!(account, payout_details) if account.provider == "manual"
-      if account.provider_configuration_digest != provider_configuration_before || account.bank_account_number_changed?
-        account.readiness_revision += 1
-        account.status = derived_status(account, disabled: account.status_disabled?)
+          before_data = readiness_snapshot(account)
+          provider_configuration_before = account.provider_configuration_digest
+          account.payout_details = details if account.provider == "check"
+          assign_bank_details!(account, payout_details) if account.provider == "manual"
+          if account.provider_configuration_digest != provider_configuration_before || account.bank_account_number_changed?
+            account.readiness_revision += 1
+            account.status = derived_status(account, disabled: account.status_disabled?)
+          end
+          account.last_synced_at = Time.current
+          account.save!
+          AuditLogger.record!(
+            action: "connected_account.payout_details_updated",
+            auditable: account,
+            actor: actor,
+            organization: account.organization,
+            before_data: before_data,
+            after_data: readiness_snapshot(account),
+            request: request
+          )
+          account
+        end
       end
-      account.last_synced_at = Time.current
-      account.save!
-      AuditLogger.record!(
-        action: "connected_account.payout_details_updated",
-        auditable: account,
-        actor: actor,
-        organization: account.organization,
-        before_data: before_data,
-        after_data: readiness_snapshot(account),
-        request: request
-      )
-      account
     rescue ActiveRecord::RecordInvalid => e
       raise AccountError, e.record.errors.full_messages.to_sentence
     end

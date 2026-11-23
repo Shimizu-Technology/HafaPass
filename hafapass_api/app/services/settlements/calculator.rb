@@ -169,7 +169,7 @@ module Settlements
     end
 
     def posted_adjustments
-      @posted_adjustments ||= event.balance_adjustments.status_posted.where("effective_at <= ?", Time.current).order(:id).to_a
+      @posted_adjustments ||= event.balance_adjustments.effective.order(:id).to_a
     end
 
     def reserve_kind?(adjustment)
