@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from '../utils/ticketPricing'
+import { formatTicketPrice, priceSummary, isTicketPurchasable, remainingTickets, ticketServiceFeeCents } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
@@ -17,11 +17,11 @@ export default function EventCard({ event }) {
   const content = useTranslatedContent(event)
   const [failedArtwork, setFailedArtwork] = useState(null)
   const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && failedArtwork !== event.cover_image_url
-  const lowestPrice = lowestPurchasablePrice(event.ticket_types)
-  const lowestTicket = event.ticket_types?.find(ticket => isTicketPurchasable(ticket) && ticketAllInCents(ticket) === lowestPrice)
-  const priceLabel = lowestPrice === null ? ''
-    : lowestPrice === 0 ? t('events.free')
-    : `${t('events.from')} ${formatTicketPrice(lowestPrice)}`
+  const summary = priceSummary(event.ticket_types)
+  const lowestTicket = summary?.ticket || null
+  const priceLabel = !summary ? ''
+    : summary.kind === 'free' ? t('events.free')
+    : `${t('events.from')} ${formatTicketPrice(summary.cents)}`
   const hasAvailability = !event.ticket_types || event.ticket_types.some(isTicketPurchasable)
   const hasInventory = !event.ticket_types || event.ticket_types.some(ticket => remainingTickets(ticket) === null || remainingTickets(ticket) > 0)
 
@@ -97,6 +97,7 @@ export default function EventCard({ event }) {
 
         {priceLabel && <div className="mb-4 text-neutral-900">
           <p className="text-base font-semibold tabular-nums">{priceLabel}</p>
+          {summary?.kind === 'from' && summary.hasFree && <p className="mt-0.5 text-xs text-content-muted">{t('events.freeTicketsAvailable')}</p>}
           {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <p className="mt-1 text-xs text-content-muted">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</p>}
         </div>}
 

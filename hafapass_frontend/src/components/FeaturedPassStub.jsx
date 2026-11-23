@@ -8,7 +8,7 @@ import useTilt from '../hooks/useTilt'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import { approvedImageUrl, focalPosition } from '../utils/eventPageDesign'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice } from '../utils/ticketPricing'
+import { formatTicketPrice, priceSummary } from '../utils/ticketPricing'
 
 // The pass rests a little turned, so it reads as a physical ticket.
 const REST = Object.freeze({ x: 4, y: -9 })
@@ -29,7 +29,7 @@ export default function FeaturedPassStub({ event }) {
   const { ref, sheenRef, handlers } = useTilt({ enabled: motionOk, max: 9, rest: REST, touch: true })
   const [failedArtwork, setFailedArtwork] = useState(null)
   const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && failedArtwork !== event.cover_image_url
-  const lowestPrice = lowestPurchasablePrice(event.ticket_types)
+  const summary = priceSummary(event.ticket_types)
   const place = [event.venue_name, event.venue_city].filter(Boolean).join(' · ')
 
   return (
@@ -70,9 +70,12 @@ export default function FeaturedPassStub({ event }) {
               <p className="flex items-start gap-2"><Calendar aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-brand-700" /><span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'short', year: undefined })} · {formatEventTime(event.starts_at, event.timezone)}</span></p>
               {place && <p className="flex items-start gap-2"><MapPin aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-brand-700" /><span className="min-w-0 [overflow-wrap:anywhere]">{place}</span></p>}
               <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                {lowestPrice === null ? <span /> : <p className="font-display text-xl font-bold text-neutral-950">
-                  {lowestPrice === 0 ? <span>{t('events.free')}</span> : <><span className="text-base font-semibold text-neutral-700">{t('events.from')}</span> <span>{formatTicketPrice(lowestPrice)}</span></>}
-                </p>}
+                {!summary ? <span /> : <div>
+                  <p className="font-display text-xl font-bold tabular-nums text-neutral-950">
+                    {summary.kind === 'free' ? <span>{t('events.free')}</span> : <><span className="text-base font-semibold text-neutral-700">{t('events.from')}</span> <span>{formatTicketPrice(summary.cents)}</span></>}
+                  </p>
+                  {summary.kind === 'from' && summary.hasFree && <p className="text-xs text-content-muted">{t('events.freeTicketsAvailable')}</p>}
+                </div>}
                 <span className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-action px-5 font-semibold text-white">{t('pass.home.seeTickets')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></span>
               </div>
             </div>

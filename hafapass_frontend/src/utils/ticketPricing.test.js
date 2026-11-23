@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatTicketPrice, lowestPurchasablePrice, purchasableAllInPrices, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from './ticketPricing'
+import { formatTicketPrice, lowestPurchasablePrice, priceSummary, purchasableAllInPrices, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from './ticketPricing'
 
 describe('discovery ticket pricing', () => {
   it('advertises current available tiers instead of sold-out free or closed cheaper types', () => {
@@ -37,5 +37,15 @@ describe('discovery ticket pricing', () => {
     expect(ticketAllInCents({ price_cents: 1250, all_in_price_cents: -5 })).toBe(1250)
     expect(ticketAllInCents({ price_cents: null, all_in_price_cents: 900 })).toBeNull()
     expect(ticketServiceFeeCents({ price_cents: 1250 })).toBe(0)
+  })
+  it('summarizes mixed free and paid tiers using the lowest paid tier plus a free flag', () => {
+    const childFree = { id: 1, name: 'Child Under 5', price_cents: 0, all_in_price_cents: 0, quantity_remaining: 50, on_sale: true }
+    const youth = { id: 2, name: 'Youth', price_cents: 1000, all_in_price_cents: 1150, service_fee_cents: 150, quantity_remaining: 40, on_sale: true }
+    const adult = { id: 3, name: 'Adult', price_cents: 1500, all_in_price_cents: 1675, service_fee_cents: 175, quantity_remaining: 100, on_sale: true }
+    expect(priceSummary([adult, youth, childFree])).toEqual({ kind: 'from', cents: 1150, hasFree: true, ticket: youth })
+    expect(priceSummary([adult, youth])).toEqual({ kind: 'from', cents: 1150, hasFree: false, ticket: youth })
+    expect(priceSummary([childFree])).toEqual({ kind: 'free', cents: 0, hasFree: true, ticket: childFree })
+    expect(priceSummary([{ ...adult, quantity_remaining: 0 }])).toBeNull()
+    expect(priceSummary([])).toBeNull()
   })
 })
