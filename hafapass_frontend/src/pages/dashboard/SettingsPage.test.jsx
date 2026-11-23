@@ -117,7 +117,7 @@ describe('SettingsPage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
-  it('saves check payee details as the standard payout method', async () => {
+  it('starts with bank transfer and can save exceptional check details', async () => {
     apiClient.post.mockResolvedValue({ data: {
       id: 9, provider: 'check', status: 'onboarding', payout_ready: false, requirements_due: ['payee_details_review'],
       payout_details: { payee_name: 'Island Events LLC', delivery_method: 'mail', mailing_address: 'PO Box 1, Hagåtña' },
@@ -125,6 +125,8 @@ describe('SettingsPage', () => {
     } })
     show()
     await screen.findByRole('heading', { name: 'How you get paid' })
+    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
+    await userEvent.click(screen.getByRole('radio', { name: /Check for approved exceptions/i }))
     await userEvent.click(screen.getByRole('button', { name: 'Save check details' }))
     expect(screen.getByText('Enter the name to write on the check.')).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()

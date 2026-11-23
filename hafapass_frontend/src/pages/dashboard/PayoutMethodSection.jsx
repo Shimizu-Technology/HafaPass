@@ -1,8 +1,7 @@
-import { formatPayoutSchedule } from '../../utils/feeTerms'
+import { useTranslation } from 'react-i18next'
 import { payoutReviewLabel, payoutRequirementLabel } from '../../utils/payoutLabels'
 import { CheckCircle2, CircleAlert, Landmark, Mail, WalletCards } from 'lucide-react'
 import { useState } from 'react'
-import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 import BankPayoutDetails from './BankPayoutDetails'
 
 const emptyCheck = { payee_name: '', delivery_method: 'mail', mailing_address: '', pickup_note: '', memo: '' }
@@ -32,17 +31,16 @@ function AccountStatus({ account }) {
 // How an organizer gets paid. HåfaPass collects ticket money and pays the
 // organizer after each event settles.
 export default function PayoutMethodSection({ accounts, busy, onSave, error, notice }) {
-  const fees = usePlatformFeeTerms()
+  const { t } = useTranslation()
   const checkAccount = accounts.find(item => item.provider === 'check')
   const bankAccount = accounts.find(item => item.provider === 'manual')
-  const selectedMethod = bankAccount?.selected ? 'manual' : 'check'
+  const selectedMethod = checkAccount?.selected ? 'check' : 'manual'
   const [viewedMethod, setViewedMethod] = useState(null)
   const method = viewedMethod || selectedMethod
   const [details, setDetails] = useState(() => ({ ...emptyCheck, ...(checkAccount?.payout_details || {}) }))
   const [errors, setErrors] = useState({})
   const [editing, setEditing] = useState(!checkAccount)
   const set = field => event => setDetails(current => ({ ...current, [field]: event.target.value }))
-  const schedule = fees.terms?.payoutScheduleText
 
   const saveCheck = async event => {
     event.preventDefault()
@@ -60,14 +58,14 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
       <div className="flex items-center gap-3"><WalletCards aria-hidden="true" className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">How you get paid</h2></div>
-      <p className="mt-2 text-sm text-neutral-700">HåfaPass collects ticket money for you. Payouts are sent {formatPayoutSchedule(schedule) || 'after each event settles.'}</p>
+      <p className="mt-2 text-sm text-neutral-700">{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}</p>
 
       <fieldset className="mt-5" disabled={busy}>
         <legend className="sr-only">Payout method</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {[
-            { value: 'check', icon: Mail, title: 'Check', body: 'A check from Shimizu Technology, mailed to you or ready for pickup.' },
             { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'HåfaPass sends the payout to your approved bank account.' },
+            { value: 'check', icon: Mail, title: 'Check', body: 'For approved exceptions. Mailed to you or ready for pickup.' },
           ].map(option => (
             <label key={option.value} className={`flex min-h-11 gap-3 rounded-xl border p-3 transition-colors duration-150 ease-out-strong ${method === option.value ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 [@media(hover:hover)]:hover:border-neutral-300'}`}>
               <input type="radio" name="payout-method" value={option.value} checked={method === option.value} onChange={() => setViewedMethod(option.value)} className="mt-1 h-4 w-4 shrink-0 accent-brand-600" />

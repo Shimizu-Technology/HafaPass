@@ -770,7 +770,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
 
             <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-950">
               <p className="font-semibold">
-                Payout check reference:{' '}
+                Payout reference:{' '}
                 <code className="rounded bg-white px-1.5 py-0.5 font-mono text-neutral-900">
                   {checklist.check_reference_pattern || 'CHK-<check_number>-E<event_id>'}
                 </code>

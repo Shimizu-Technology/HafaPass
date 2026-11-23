@@ -28,8 +28,8 @@ TINs are encrypted in the W-9 and payout snapshot. Admin pages and PDFs show onl
 
 ## Year-end calendar
 
-- **Each payout:** Reconcile the gross reservation, amount withheld, and amount paid by check. Record refund clawbacks separately; the report's post-payout refund adjustment is an amount of organizer proceeds refunded after a payout, not proof that it was recovered.
-- **December/January:** Reconcile checks, bank statements, refunds, prior-year adjustments, and withholding deposits. Payout-time name/TIN snapshots define separate payee rows even if an organization later changes its W-9. Set the form type and IRS/Guam DRT jurisdiction for each payee and calendar year. `CPA review needed` is the default form type. `IRS` is the default jurisdiction, subject to CPA review for Guam taxpayers.
+- **Each payout:** Reconcile the gross reservation, amount withheld, and amount transferred or paid by approved exception check. Record refund clawbacks separately; the report's post-payout refund adjustment is an amount of organizer proceeds refunded after a payout, not proof that it was recovered.
+- **December/January:** Reconcile transfers, exception checks, bank statements, refunds, prior-year adjustments, and withholding deposits. Payout-time name/TIN snapshots define separate payee rows even if an organization later changes its W-9. Set the form type and IRS/Guam DRT jurisdiction for each payee and calendar year. `CPA review needed` is the default form type. `IRS` is the default jurisdiction, subject to CPA review for Guam taxpayers.
 - **January 31, subject to weekend/holiday rules:** Furnish recipient statements when required. Form 1099-NEC is generally due to the IRS by January 31. Confirm the exact tax-year deadlines for Form 1099-MISC and 1099-K; their IRS filing dates can differ from the recipient date and by paper/electronic filing method.
 - **After CPA approval:** Export the audited annual CPA CSV, verify payer and payee TINs securely, prepare IRIS/FIRE or Guam DRT submissions outside HåfaPass, retain acknowledgments, issue corrections, and reconcile Form 945 and deposits if withholding occurred. The organizer can download a masked annual account statement from Finances; it is not a filed Form 1099.
 
@@ -37,9 +37,18 @@ For payments in **2026**, the IRS increased the general 1099-NEC and many 1099-M
 
 The `site_settings.tax_reporting_thresholds` column is deprecated and unused. Annual threshold reads and writes use `annual_tax_thresholds`; keep the legacy column in place until a separately reviewed data cleanup.
 
+## Monthly Guam BPT detail for the CPA
+
+In **Admin → Tax reports**, choose the calendar year and Guam calendar month, then select **Export monthly BPT detail CSV**. The audited download contains USD totals by organization ID and event ID, without names, contact details or tax identifiers.
+
+- Gross service fees include the buyer-paid and organizer-absorbed portions recorded on captured sales. Use the Guam order completion month. Ticket face value is after discounts and before refunds, excludes non-ticket items, and is listed separately as proceeds collected for organizers.
+- Fee refunds include the buyer-paid and organizer-absorbed portions from successful refund allocations in the Guam refund month. Net fees are gross fees minus those refunds and can be negative. Actual Stripe processing costs are attributed to the original sale month and shown for reconciliation only. They do not reduce net service fees.
+- Organizer payouts are confirmed payouts in the Guam paid month, net of withholding and including any audited check amount adjustment. Reserve releases appear when paid. Pending, failed, and reversed payouts are excluded. Reconcile any later reversals and late-arriving processing evidence against the bank and provider statements.
+- The CSV uses live USD orders and older captures with no test or simulated evidence. Organizer-retained door cash is excluded. The CPA confirms the treatment and filing amounts.
+
 ## CPA decisions to record
 
-- Whether the operator is the required filer for organizer check payouts, and whether each payee/year needs NEC, MISC, K, or none, including corporate exceptions, duplicate-reporting rules, and the correct gross/net boxes.
+- Whether the operator is the required filer for organizer payouts, and whether each payee/year needs NEC, MISC, K, or none, including corporate exceptions, duplicate-reporting rules, and the correct gross/net boxes.
 - Whether a Guam payee's return is filed with Guam DRT, the IRS, or both, and the form/deadline for each jurisdiction.
 - Thresholds for each form and category in each tax year, including special MISC categories and 1099-K transaction count.
 - Whether these payments are subject to federal or Guam backup withholding, what triggers first/second B-notices, exact business-day/holiday deadlines, how a second notice is cleared, and deposit/Form 945 steps.

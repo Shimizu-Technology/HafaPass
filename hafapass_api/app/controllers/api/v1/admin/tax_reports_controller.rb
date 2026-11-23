@@ -7,6 +7,8 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
   ORGANIZER_HEADER = %w[organization snapshot_status legal_name business_name classification tin_type masked_tin tax_mailing_address exempt_payee_code w9_on_file gross_ticket_proceeds gross_add_on_proceeds gross_donation_proceeds gross_other_proceeds gross_non_ticket_proceeds ticket_refunds non_ticket_refunds unallocated_refunds fee_refunds fees_collected reconciliation_adjustments net_paid currency].freeze
   RECEIPTS_HEADER = %w[month service_fees_collected service_fees_refunded gross_receipts card_processing_costs currency].freeze
 
+  BPT_EVENT_HEADER = %w[month organization_id event_id gross_service_fees refunded_service_fees net_service_fees stripe_processing_fees_informational ticket_face_value_collected_as_agent organizer_payouts currency].freeze
+
   def show
     render json: @report.as_json
   end
@@ -36,11 +38,26 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
     stream_csv(filename: "hafapass-gross-receipts-#{@report.year}.csv", header: RECEIPTS_HEADER, rows: rows)
   end
 
+  def bpt_events_export
+    month = params[:month].to_s
+    unless month.match?(/\A(?:0?[1-9]|1[0-2])\z/)
+      return render json: { error: "Choose a month from 1 to 12" }, status: :unprocessable_entity
+    end
+
+    period = format("%04d-%02d", @report.year, month.to_i)
+    activity = @report.bpt_event_rows(month)
+    audit_export!("monthly_bpt_by_event", count: activity.size, organization_ids: activity.map(&:first).uniq, month: month.to_i)
+    rows = activity.map do |organization_id, event_id, *amounts|
+      [period, organization_id, event_id, *amounts.map { |value| FinanceExports.money(value) }, "USD"]
+    end
+    stream_csv(filename: "hafapass-bpt-events-#{period}.csv", header: BPT_EVENT_HEADER, rows: rows)
+  end
+
   private
 
   def prepare_report
     response.headers["Cache-Control"] = "no-store"
-    @report = TaxReports.new(params[:year].presence || Date.current.year)
+    @report = TaxReports.new(params[:year].presence || Time.current.in_time_zone(TaxReports::GUAM_TIMEZONE).year)
   rescue ArgumentError
     render json: { error: "Choose a year from 2000 to 2100" }, status: :unprocessable_entity
   end
@@ -64,9 +81,9 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
     stream_csv(filename: "organizer-#{full_tin ? 'SENSITIVE-FULL-TINS' : 'payouts-masked'}-#{@report.year}.csv", header: header, rows: rows)
   end
 
-  def audit_export!(kind, count: nil, purpose: nil)
+  def audit_export!(kind, count: nil, purpose: nil, organization_ids: @report.organization_ids, month: nil)
     AuditLogger.record!(action: "tax_report.exported", auditable: current_user, actor: current_user,
-      metadata: { export: kind, year: @report.year, organization_ids: @report.organization_ids,
-        count: count, purpose: purpose }, request: request)
+      metadata: { export: kind, year: @report.year, organization_ids: organization_ids,
+        count: count, purpose: purpose, month: month }.compact, request: request)
   end
 end

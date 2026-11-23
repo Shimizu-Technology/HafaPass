@@ -69,7 +69,7 @@ describe('host page pricing', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
-    expect(within(section).getByText('Payouts by check within 3 to 5 business days after your event')).toBeInTheDocument()
+    expect(within(section).getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
     expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
     expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
@@ -86,7 +86,7 @@ describe('host page pricing', () => {
     expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$6.00')
     expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$74.00')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket, with card processing included/)).toBeInTheDocument()
-    expect(screen.getByText(/Payouts are sent by check within 3 to 5 business days after your event/)).toBeInTheDocument()
+    expect(screen.getByText(/Check payouts require an approved exception.*release the remaining reserve after 30 days/)).toBeInTheDocument()
   })
 
   it.each([
@@ -136,13 +136,12 @@ describe('host page pricing', () => {
     expect(screen.getAllByText(/automatically start eligible card refunds, including the service fee/)).toHaveLength(2)
   })
 
-  it('shows payout timing only when the API provides it', async () => {
+  it('shows the standard payout timing even when the fee config has no saved schedule', async () => {
     apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
     await load()
     await screen.findByTestId('host-fee-summary')
-    expect(screen.queryByText(/Payouts within/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Payouts are sent/)).not.toBeInTheDocument()
-    expect(screen.getByText(/your dashboard shows a settlement statement/)).toBeInTheDocument()
+    expect(screen.getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(screen.getByText(/Your dashboard shows a settlement statement/)).toBeInTheDocument()
   })
 
   it('handles free tickets, a fee larger than the ticket and invalid prices', async () => {

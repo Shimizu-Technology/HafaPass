@@ -3,6 +3,7 @@
 # Cash-basis preparation aid, not a filed return. Dates are Guam calendar dates.
 class TaxReports
   NOTE = "HåfaPass's gross receipts are its service fees; ticket proceeds belong to organizers (agent model). Confirm with your accountant."
+  GUAM_TIMEZONE = "Pacific/Guam"
   attr_reader :year
 
   def initialize(year)
@@ -11,7 +12,7 @@ class TaxReports
   end
 
   def as_json(*)
-    { year: year, timezone: "Pacific/Guam", currency: "usd", organizers: organizers, months: months, note: NOTE }
+    { year: year, timezone: GUAM_TIMEZONE, currency: "usd", organizers: organizers, months: months, note: NOTE }
   end
 
   def organizers
@@ -84,9 +85,9 @@ class TaxReports
 
   def months
     (1..12).map do |month|
-      range = month_start(month)...month_start(month).next_month
-      collected = live_orders.where("COALESCE(orders.completed_at, orders.created_at) >= ? AND COALESCE(orders.completed_at, orders.created_at) < ?", range.begin, range.end)
-      refunds = live_refunds.where("COALESCE(refunds.succeeded_at, refunds.created_at) >= ? AND COALESCE(refunds.succeeded_at, refunds.created_at) < ?", range.begin, range.end)
+      range = month_period(month)
+      collected = collected_orders(range)
+      refunds = period_refunds(range)
       collected_fees = fees(collected).sum(:amount_cents)
       returned_fees = refunded_fees(refunds)
       { month: month, fees_collected_cents: collected_fees, fees_refunded_cents: returned_fees,
@@ -95,10 +96,50 @@ class TaxReports
     end
   end
 
+  # Aggregate each ledger separately so multiple payments, refunds or payouts
+  # cannot multiply a sale. IDs are sufficient to reconcile without names.
+  def bpt_event_rows(month)
+    range = month_period(month)
+    agent_orders = live_orders.where("orders.payment_method IS DISTINCT FROM 'door_cash'")
+      .where.not(id: Payment.where(provider: "door_cash").select(:order_id))
+    collected = collected_orders(range, orders: agent_orders)
+    refunds = period_refunds(range, orders: agent_orders)
+    orders = collected.select(:id)
+
+    gross_fees = fees(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
+    returned_fees = RefundItem.joins(refund: :order).where(refund_id: refunds.select(:id))
+      .group("orders.event_id").sum("refund_items.fee_cents + refund_items.organizer_fee_cents")
+    processing = FeeComponent.joins(:order).where(order_id: orders, kind: "processing", estimated: false)
+      .group("orders.event_id").sum(:amount_cents)
+    ticket_proceeds = OrderItem.item_ticket.joins(:order).where(order_id: orders)
+      .group("orders.event_id").sum("order_items.subtotal_cents - order_items.discount_cents")
+    payouts = paid_payouts(range, orders: agent_orders)
+    disbursed = payouts.group(:event_id).sum("amount_cents - withheld_cents - carried_withholding_cents")
+    check_adjustments = PayoutCheckAdjustment.joins(:payout).where(payout_id: payouts.where(provider: "check").select(:id))
+      .group("payouts.event_id").sum(:amount_cents)
+
+    event_ids = gross_fees.keys | returned_fees.keys | processing.keys | ticket_proceeds.keys | disbursed.keys
+    Event.where(id: event_ids).order(:organization_id, :id).pluck(:id, :organization_id).map do |event_id, organization_id|
+      gross = gross_fees.fetch(event_id, 0)
+      refunded = returned_fees.fetch(event_id, 0)
+      [organization_id, event_id, gross, refunded, gross - refunded,
+        processing.fetch(event_id, 0), ticket_proceeds.fetch(event_id, 0),
+        disbursed.fetch(event_id, 0) + check_adjustments.fetch(event_id, 0)]
+    end
+  end
+
   private
 
+  def month_period(month)
+    month = Integer(month.to_s, 10)
+    raise ArgumentError unless (1..12).cover?(month)
+
+    start = month_start(month)
+    start...start.next_month
+  end
+
   def month_start(month)
-    ActiveSupport::TimeZone["Pacific/Guam"].local(year, month, 1)
+    ActiveSupport::TimeZone[GUAM_TIMEZONE].local(year, month, 1)
   end
 
   def period
@@ -112,20 +153,16 @@ class TaxReports
       .where(id: captured.select(:order_id))
   end
 
-  def collected_orders
-    live_orders.where("COALESCE(orders.completed_at, orders.created_at) >= ? AND COALESCE(orders.completed_at, orders.created_at) < ?", period.begin, period.end)
+  def collected_orders(range = period, orders: live_orders)
+    orders.where("COALESCE(orders.completed_at, orders.created_at) >= ? AND COALESCE(orders.completed_at, orders.created_at) < ?", range.begin, range.end)
   end
 
-  def live_refunds
-    Refund.succeeded.where(order_id: live_orders.select(:id))
+  def period_refunds(range = period, orders: live_orders)
+    Refund.succeeded.where(order_id: orders.select(:id)).where("COALESCE(refunds.succeeded_at, refunds.created_at) >= ? AND COALESCE(refunds.succeeded_at, refunds.created_at) < ?", range.begin, range.end)
   end
 
-  def period_refunds
-    live_refunds.where("COALESCE(refunds.succeeded_at, refunds.created_at) >= ? AND COALESCE(refunds.succeeded_at, refunds.created_at) < ?", period.begin, period.end)
-  end
-
-  def paid_payouts
-    Payout.status_paid.where(paid_at: period, currency: "usd", event_id: live_orders.select(:event_id))
+  def paid_payouts(range = period, orders: live_orders)
+    Payout.status_paid.where(paid_at: range, currency: "usd", event_id: orders.select(:event_id))
   end
 
   def fees(orders)

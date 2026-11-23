@@ -25,6 +25,12 @@ The prior review started from `origin/main` at `f11e191` on 2026-10-22. Its chec
 
 This version replaces `2026-10-counsel-draft-3`. Earlier register approvals and organizer acceptances become stale. The deployment needs register re-approval and organizer re-acceptance for publishing.
 
+## Copa draft for Leon and the CPA
+
+The review-only `2026-11-24-copa-draft` in [policies.yml](../hafapass_api/config/policies.yml) proposes replacement sections for the Organizer Agreement and Buyer Terms. It has no effective date. The live October 24 registry, accepted documents and approval digests remain in force.
+
+**Requires Leon + CPA sign-off before the register is approved.** Record that sign-off in the restricted evidence location. In a separate release, apply the approved replacement sections to the live documents, assign the agreed version and effective date, and coordinate the saved payout schedule with the new text. Verify the rendered agreement and buyer terms, approve the exact new register digest, and have organizers accept the new agreement before publishing. Saving the proposed payout schedule on its own also changes approval and acceptance digests.
+
 ## Outstanding legal-review items
 
 This table mirrors `review_notes` in `hafapass_api/config/policies.yml`; the YAML is the source shown in the admin register. These notes are not served to buyers or organizers.

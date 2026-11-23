@@ -26,6 +26,20 @@ RSpec.describe PolicyRegistry do
     expect(described_class.organizer_agreement[:digest]).to eq(Digest::SHA256.hexdigest(canonical))
   end
 
+  it "keeps the Copa draft out of the served policies and both approval digests" do
+    catalog = described_class.send(:registry)
+    draft = catalog.fetch("draft")
+    expect(draft).to include("status" => "draft", "effective_date" => nil)
+    expect(draft.fetch("version")).not_to eq(described_class.version)
+    expect(described_class).to have_attributes(version: "2026-10-24", effective_date: "2026-10-24", status: "approved")
+    served = [described_class.public_documents, described_class.review_summary,
+      described_class.buyer_terms, described_class.organizer_agreement]
+
+    allow(described_class).to receive(:registry).and_return(catalog.except("draft"))
+    expect([described_class.public_documents, described_class.review_summary,
+      described_class.buyer_terms, described_class.organizer_agreement]).to eq(served)
+  end
+
   it "keeps every digest and the register approval when only cosmetic settings change" do
     profile = create(:organizer_profile, :verified)
     before = [described_class.registry_digest, described_class.buyer_terms, described_class.organizer_agreement,

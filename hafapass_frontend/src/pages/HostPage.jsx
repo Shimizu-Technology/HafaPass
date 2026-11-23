@@ -276,7 +276,7 @@ function PricingSection({ configState, targets }) {
               </li>)}
             </ul>
             <p className="mt-6 text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.cancellationPromise')}</p>
-            <div className="mt-4 min-h-6">{pricing?.payoutScheduleText && <p className="text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.payouts', { payoutScheduleText: pricing.payoutScheduleText })}</p>}</div>
+            <div className="mt-4 min-h-6"><p className="text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.payouts')}</p></div>
             <div className="mt-7"><CtaGroup targets={targets} tone="dark" /></div>
           </div>
           <div className="min-w-0 lg:pt-1">
@@ -293,14 +293,11 @@ function faqItems(pricing, t) {
   const feeAnswer = pricing
     ? t('buyerDiscovery.host.håfapassChargesThereAreNoSetupOr', { value1: describeFee(pricing, t), value2: pricing.processingIncluded ? t('buyerDiscovery.host.withCardProcessingIncluded') : '', value3: pricing.processingIncluded ? '' : t('buyerDiscovery.host.processingDeducted') })
     : t('buyerDiscovery.host.paidTicketsCarryAPerTicketHåfaPass2')
-  const payoutAnswer = pricing?.payoutScheduleText
-    ? t('buyerDiscovery.host.payoutsAreSentYourDashboardShowsA', { payoutScheduleText: pricing.payoutScheduleText })
-    : t('buyerDiscovery.host.afterYourEventYourDashboardShowsA')
   return [
     { q: t('buyerDiscovery.host.howMuchDoesHåfaPassCost'), a: feeAnswer },
     { q: t('buyerDiscovery.host.whoPaysTheFeeMeOrMy'), a: t('buyerDiscovery.host.youDecideForEachEventBuyersCan') },
     { q: t('buyerDiscovery.host.canIHostAFreeEvent'), a: t('buyerDiscovery.host.yesFreeTicketsHaveNoHåfaPassFee') },
-    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{payoutAnswer}{' '}{t('buyerDiscovery.host.payoutMethod')}</> },
+    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}{t('buyerDiscovery.host.payoutSettlementStatement')}</> },
     { q: t('buyerDiscovery.host.howDoRefundsWork'), a: <>{t('buyerDiscovery.host.cancellationPromise')}{' '}{t('buyerDiscovery.host.youSetTheRefundRulesForYour')}<Link to="/policies/refunds" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.refundCancellationPolicy')}</Link>.</> },
     { q: t('buyerDiscovery.host.doesMyDoorStaffNeedAnApp'), a: t('buyerDiscovery.host.noStaffOpenTheScannerInTheir') },
     { q: t('buyerDiscovery.host.howDoIGetHelp'), a: <>{t('buyerDiscovery.host.emailTheHåfaPassTeamAtAnyPoint')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.contactSupport')}</SupportLink>.</> },

@@ -1,4 +1,4 @@
-import { formatPayoutSchedule } from '../../utils/feeTerms'
+import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Circle, Clock, Download, Loader2, RotateCcw, WalletCards, XCircle } from 'lucide-react'
@@ -86,6 +86,7 @@ export default function FinancesPage() {
 }
 
 function FinancesSession({ identity }) {
+  const { t } = useTranslation()
   const { current, beginRequest } = useOrganizerRequests(identity, PATH)
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
   const [exporting, setExporting] = useState(null)
@@ -190,7 +191,6 @@ function FinancesSession({ identity }) {
   const today = new Date().toISOString().slice(0, 10)
   const signed = cents => ({ value: money(Math.abs(cents || 0)), sign: cents < 0 ? '−' : '' })
   const adjustment = breakdown.adjustment_cents || 0
-  const payoutTiming = feeTerms.terms?.payoutScheduleText
   const notes = processingNotes(data.processing_fee_bearers, feeTerms.terms)
   const heldCents = Math.max(0, events.reduce((sum, row) => sum + (row.requestable_cents || 0), 0) - (totals.requestable_cents || 0))
 
@@ -221,7 +221,7 @@ function FinancesSession({ identity }) {
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
             {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} has been requested for payout. Payment hasn't been confirmed yet.</li>}
             {totals.held_cents > 0 && <li>{money(totals.held_cents)} is on hold — event cancelled, refunds in progress.</li>}
-            {formatPayoutSchedule(payoutTiming) && <li>Payouts by check {formatPayoutSchedule(payoutTiming)}</li>}
+            <li>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}</li>
           </ul>
           {breakdown.negative_balance_cents > 0 && (
             <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

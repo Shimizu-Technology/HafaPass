@@ -4,6 +4,24 @@ import AxeBuilder from '@axe-core/playwright'
 const json = (route, data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
 const config = { payment_mode: 'live', service_fee_percent: '5.0', service_fee_flat_cents: 100, processing_fee_bearer: 'platform', payout_schedule_text: 'within 3 to 5 business days after your event', support_email: 'public-pages-qa@example.test' }
 
+for (const width of [390, 1440]) {
+  test(`host payout schedule and reserve at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.route('**/api/v1/health', route => json(route, { status: 'ok' }))
+    await page.route('**/api/v1/config', route => json(route, config))
+    await page.goto('/host')
+    await expect(page.getByText('Bank transfer within 2–3 business days after your event.', { exact: true })).toBeVisible()
+    const faq = page.locator('summary').filter({ hasText: 'When do I get paid?' })
+    await faq.focus()
+    await page.keyboard.press('Enter')
+    await expect(faq.locator('..')).toHaveAttribute('open', '')
+    await expect(faq.locator('..')).toContainText(/Check payouts require an approved exception.*about 10%.*after 30 days/)
+    await expect(page.getByText(/3 to 5 business days/)).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  })
+}
+
 for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
   test(`pending inventory preserves hosting and policy navigation at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height })

@@ -42,7 +42,7 @@ describe('OrganizerSetupChecklist', () => {
     ])
     expect(steps[1]).toHaveAttribute('aria-current', 'step')
     expect(screen.getByText('1 of 6 done')).toBeInTheDocument()
-    expect(within(steps[3]).getByRole('link', { name: 'Choose check or bank transfer' })).toHaveAttribute('href', '/dashboard/settings')
+    expect(within(steps[3]).getByRole('link', { name: 'Set up payouts' })).toHaveAttribute('href', '/dashboard/settings')
   })
 
   it('makes tax and payout setup conditional on selling paid tickets', () => {
@@ -57,7 +57,7 @@ describe('OrganizerSetupChecklist', () => {
     const { onAcceptPolicy } = show()
     await userEvent.click(screen.getByRole('button', { name: 'Review and accept' }))
     const dialog = within(screen.getByRole('dialog', { name: 'Accept the organizer agreement' }))
-    expect(dialog.getByText(/Payouts are made by check/)).toHaveTextContent('unless another payout method has been approved')
+    expect(dialog.getByText(/payout terms for this version/)).toBeInTheDocument()
     await userEvent.click(dialog.getByRole('button', { name: 'Accept version 2026-10' }))
     expect(onAcceptPolicy).toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()

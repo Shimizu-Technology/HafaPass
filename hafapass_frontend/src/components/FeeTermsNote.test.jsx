@@ -12,9 +12,9 @@ describe('FeeTermsNote', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the organizer bearer copy and trims a trailing period from payout timing', () => {
+  it('shows the organizer bearer copy and uses the standard bank transfer timing despite a legacy contract setting', () => {
     render(<FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.' } }} feePolicy="buyer_pays" />)
     expect(screen.getByText(/Card processing costs are deducted from your proceeds\./)).toBeInTheDocument()
-    expect(screen.getByText('Payouts by check within 7 days.')).toBeInTheDocument()
+    expect(screen.getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
   })
 })

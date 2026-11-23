@@ -108,12 +108,12 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
       expect(legacy).not_to be_payout_ready
       expect(PayoutMethodReview.account_json(legacy).dig(:payout_review, :missing)).to include(ConnectedAccount::BANK_UNAVAILABLE_REASON)
       expect { ConnectedAccounts::Manager.select!(account: legacy, actor: admin) }
-        .to raise_error(ConnectedAccounts::Manager::AccountError, /currently pays by check/)
+        .to raise_error(ConnectedAccounts::Manager::AccountError, /Bank transfer is unavailable/)
       expect(PayoutMethodReview.account_json(existing).dig(:payout_review, :missing)).to include(ConnectedAccount::BANK_UNAVAILABLE_REASON)
       expect {
         PayoutMethodReview.approve!(account: existing, actor: admin,
           controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true), expected_digest: PayoutMethodReview.digest(existing))
-      }.to raise_error(PayoutMethodReview::ReviewError, /currently pays by check/)
+      }.to raise_error(PayoutMethodReview::ReviewError, /Bank transfer is unavailable/)
     end
   end
 

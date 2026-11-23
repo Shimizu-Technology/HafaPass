@@ -5,7 +5,7 @@ Operator runbook for the FD Class of 2017 Host Year (Bryan Ho 5K / Beer Mile pil
 Related contracts:
 - [Event-Day Operations](EVENT_DAY_OPERATIONS.md) — scanner safety invariants, offline journal recovery, door sales
 - [Operations Runbook](OPERATIONS_RUNBOOK.md) — probes, deploy order, rollbacks, CGNAT rate limits, Neon settings
-- [Settlement and Payout Operations](SETTLEMENT_AND_PAYOUT_OPERATIONS.md) — statement finalization, manual check payout evidence
+- [Settlement and Payout Operations](SETTLEMENT_AND_PAYOUT_OPERATIONS.md) — statement finalization, bank transfer and exception check evidence
 - [Single-Service Runtime](SINGLE_SERVICE_RUNTIME.md) — `embedded` vs `solid_queue` worker cutover
 - [render.tournament.yaml](../render.tournament.yaml) — June–July peak Render topology template (Leon-gated)
 - [load_tests/README.md](../load_tests/README.md) — k6 championship-rush load suite and safety rails
@@ -66,7 +66,7 @@ Everyone needs a ticket on Championship nights, alumni included. Season Passes d
 `EventSeriesReport` (`GET /api/v1/organizer/event_series/:id/report`, CSV `GET /api/v1/organizer/event_series/:id/report_export`, UI `/dashboard/series/:id/report`) is a read-only tournament worksheet reconciled to per-event settlements:
 
 - **Current defaults on `main`:**
-  - `revenue_share_includes_door_cash: false` — `door_cash` walk-ups are **excluded** from the 16% shareable base by default unless toggled on in **Edit Split Settings** (`door_cash_retained_cents` and the `Door Cash` channel row remain visible in the UI and CSV either way, and door cash is always excluded from platform check payouts).
+  - `revenue_share_includes_door_cash: false` — `door_cash` walk-ups are **excluded** from the 16% shareable base by default unless toggled on in **Edit Split Settings** (`door_cash_retained_cents` and the `Door Cash` channel row remain visible in the UI and CSV either way, and door cash is always excluded from platform payouts).
   - **`$0` tickets:** Free `$0` tickets (e.g., *Alumni / FD Student* and *Free Alumni Championship*) contribute `$0.00` to gross/proceeds while remaining tracked in `tickets_issued_count`, `free_tickets_count`, `checked_in_count`, and the `Free / Comp` channel row.
   - **Base formula modes:** Defaults to `admissions_net_proceeds` (ticket/pass admissions organizer proceeds net of discounts, organizer-absorbed fees, and refunded proceeds; excludes team registration). Also supports `admissions_gross` (ticket-only gross sales minus discounts and ticket-only refunds), `admissions_net_after_processing`, and `all_net_proceeds`.
 
@@ -140,7 +140,7 @@ Post-drill verification:
 
 ## 3. Sat Mar 6, 2027 — Bryan Ho 5K / Beer Mile Pilot Runbook (First Live CO2017 Event)
 
-**Why this pilot matters:** The Bryan Ho 5K / Beer Mile is the first live Class of 2017 event on HåfaPass. Running it end-to-end 3.5 months before June tip-off proves live Shimizu Stripe collection, custom registration questions and waivers (Slice 3), expanded CSV export (`expand_questions=true`), door cash, QR check-in, and the Shimizu-to-CO2017 Bank of Guam check payout before tournament traffic arrives.
+**Why this pilot matters:** The Bryan Ho 5K / Beer Mile is the first live Class of 2017 event on HåfaPass. Running it end-to-end 3.5 months before June tip-off proves live Shimizu Stripe collection, custom registration questions and waivers (Slice 3), expanded CSV export (`expand_questions=true`), door cash, QR check-in, and the Shimizu-to-CO2017 Bank of Guam transfer before tournament traffic arrives.
 
 ### T-3 Weeks (Mid-Feb 2027 — Leon-Gated)
 - [ ] Confirm HåfaPass is unpaused and the `CO2017` organization is active.
@@ -168,14 +168,15 @@ Post-drill verification:
 - [ ] If cellular signal drops at the start/finish area, continue scanning against the verified offline manifest and tap **Sync now** once connectivity returns.
 - [ ] Reconcile the physical cash box against the box-office summary before leaving the site.
 
-### T+1–3 Days (Mar 7–9, 2027)
+### First 2–3 business days after the pilot
 - [ ] Confirm the event status is `completed` (manual complete in dashboard, or automatic 6 hours after `ends_at` via `CompletePastEventsJob`).
 - [ ] Resolve any pending refunds, open disputes, or reconciliation exceptions (`/admin/reconciliation_exceptions`).
 - [ ] Finalize the settlement statement (`POST /api/v1/organizer/events/:id/finance/finalize`) and export the sales and finance reports (`orders_export`, `statement_export`).
-- [ ] Issue the Shimizu Technology check to the **Class of 2017 Bank of Guam** account and record the confirmed payout via `PATCH /api/v1/admin/payouts/:id` with:
+- [ ] Transfer the available balance to the approved **Class of 2017 Bank of Guam** account and record the confirmed payout via `PATCH /api/v1/admin/payouts/:id` with:
   - `status`: `"paid"`
-  - `provider_payout_id`: `CHK-<num>-E<event_id>`
+  - `provider_payout_id`: the actual bank transfer identifier
   - `evidence`: `{ reference, confirmed_at, reason }` (matching exact cents)
+- [ ] Hold about 10% of eligible proceeds for chargebacks and reconcile the remaining reserve release 30 days after the pilot.
 - [ ] Write a short post-pilot notes list (any check-in, export, registration-form, or payout friction) and resolve items before **April 15, 2027** team registration opens.
 
 ---
@@ -235,7 +236,7 @@ This playbook requires **zero code changes** and uses only shipped HåfaPass fea
 ### 5.2 Organization & Event Activation
 
 - [ ] **Unpause HåfaPass** before mid-Feb 2027.
-- [ ] **By Feb 2027 (for Sat Mar 6 pilot):** Create/verify the `CO2017` organization, owner/manager memberships, and Bank of Guam manual-check payout setup.
+- [ ] **By Feb 2027 (for Sat Mar 6 pilot):** Create/verify the `CO2017` organization, owner/manager memberships, and Bank of Guam transfer setup.
 - [ ] **By Apr 10, 2027 (for Apr 15 team registration open):** Create/verify the `FDAA` organization and staff permissions.
 - [ ] **Providers & auth:** Verify Stripe live mode (`STRIPE_LIVE_*` + live webhook), Clerk production domains (`CLERK_AUTHORIZED_PARTIES`), and Resend delivery/webhook approvals.
 - [ ] **FDAA 16% revenue share:** Confirm `revenue_share_bps` (`1600`), `revenue_share_base` (`admissions_net_proceeds` / `admissions_gross` / `admissions_net_after_processing` / `all_net_proceeds`), `revenue_share_includes_door_cash`, and payout direction with FDAA/CO2017 treasurers before opening sales.
@@ -257,7 +258,7 @@ Before June 1, 2027 (peak tournament window):
 - [ ] **Neon PostgreSQL:** Disable scale-to-zero for the June–July tournament window so cold compute starts do not stall championship-rush checkouts. Confirm paid plan PITR (>= 7 days) and run the quarterly restore drill in `docs/OPERATIONS_RUNBOOK.md`.
 
 Post-tournament scale-down (August 2027):
-- [ ] Wait for all events to complete, 30-day reserve release, and final check payout recorded with `CHK-<num>-E<event_id>`.
+- [ ] Reconcile transfers within 2–3 business days after each event and the final reserve release 30 days after each event. Record the corresponding bank transfer identifiers. Use a check only for an approved exception.
 - [ ] Confirm Solid Queue ready/claimed/failed backlog is `0` (`solid_queue_ready_executions`, `solid_queue_failed_executions`).
 - [ ] Remove `hafapass-worker`, switch `hafapass-api` back to `HAFAPASS_RUNTIME=embedded` (`DB_POOL=10`, `RAILS_MAX_THREADS=3`, `0.5c-512mb` per `render.yaml`), and re-enable baseline Neon compute settings.
 

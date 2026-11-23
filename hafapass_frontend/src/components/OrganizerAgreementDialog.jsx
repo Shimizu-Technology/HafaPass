@@ -17,7 +17,7 @@ export default function OrganizerAgreementDialog({ version, reaccept = false, bu
       <ul className="mt-1 list-disc space-y-1.5 pl-5 text-sm text-neutral-700">
         <li>Buyers see all-in ticket prices, including the service fee they pay, from the first price they see.</li>
         <li>You are named as the seller of your tickets. HåfaPass, operated by Shimizu Technology, sells them as your limited agent and collects the service fee.</li>
-        <li>The agreement states the current fees, your fee options (buyers pay, you absorb, or split) and payout timing. Payouts are made by check from Shimizu Technology’s business account unless another payout method has been approved.</li>
+        <li>The agreement explains the fees, how you can share them with buyers, and the payout terms for this version.</li>
         <li>It also covers refunds, chargebacks, event cancellations and your responsibilities for the event.</li>
       </ul>
       <p className="mt-3 text-sm">
