@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
-import { clearAllAdmissionData, clearEventAdmissionData, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
+import { clearAllAdmissionData, clearEventAdmissionData, loadUsableManifest, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
 import { signedManifest } from '../../test/manifestFixture'
 import { SCANNER_SOUND_KEY } from '../../hooks/useScanSound'
 import ScannerPage, { ADMITTED_OVERLAY_MS, OVERLAY_TAP_GUARD_MS, SAME_CREDENTIAL_QUIET_MS } from './ScannerPage'
@@ -55,8 +55,8 @@ async function prepareOffline(tickets, schemaVersion = 1) {
 }
 
 // A connected scanner whose sync replies are held until acknowledge() is called.
-async function prepareOnline(tickets, schemaVersion = 1) {
-  const manifest = await signedManifest(eventId, tickets, { schema_version: schemaVersion })
+async function prepareOnline(tickets, schemaVersion = 1, previewScan = null) {
+  let manifest = await signedManifest(eventId, tickets, { schema_version: schemaVersion })
   apiClient.get.mockImplementation(url => {
     if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Feedback Event' }] } })
     if (url.endsWith('/manifest')) return Promise.resolve({ data: manifest })
@@ -67,17 +67,26 @@ async function prepareOnline(tickets, schemaVersion = 1) {
   const replies = []
   apiClient.post.mockImplementation((url, payload) => {
     if (url.endsWith('/scan')) {
-      const ticket = tickets.find(entry => entry.ticket_id === payload.ticket_id)
+      if (previewScan) return previewScan()
+      const ticket = manifest.payload.tickets.find(entry => entry.ticket_id === payload.ticket_id)
       return Promise.resolve({ data: { status: ticket.door_check_mode === 'verify' ? 'verification_required' : 'ready', ticket } })
     }
     if (!url.endsWith('/sync')) return Promise.resolve({ data: device })
     const reply = { data: { device: { ...device, last_sequence: payload.actions.at(-1).sequence }, summary: {}, results: payload.actions.map(action => ({
       action_uuid: action.action_uuid, ticket_id: action.ticket_id, kind: action.kind, result: 'accepted', reason_code: 'admitted' })) } }
-    return new Promise(resolve => { replies.push(() => resolve(reply)) })
+    return new Promise(resolve => { replies.push(overrides => resolve({
+      data: { ...reply.data, results: reply.data.results.map(result => ({ ...result, ...overrides })) },
+    })) })
   })
   render(<ScannerPage />)
   await waitFor(() => expect(screen.getByRole('button', { name: 'Start camera' })).toBeEnabled())
-  return { acknowledge: async () => { await waitFor(() => expect(replies.length).toBeGreaterThan(0)); await act(async () => replies.shift()()) } }
+  return {
+    offerManifest: envelope => { manifest = envelope },
+    acknowledge: async (overrides = {}) => {
+      await waitFor(() => expect(replies.length).toBeGreaterThan(0))
+      await act(async () => replies.shift()(overrides))
+    },
+  }
 }
 
 async function enterCode(user, code) {
@@ -174,6 +183,79 @@ describe('door scan feedback', () => {
     expect(await screen.findByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'success')
     await enterCode(user, 'alumni-qr')
     expect(await screen.findByText('Already scanned on this device')).toBeInTheDocument()
+  })
+
+  for (const mode of ['instant', 'verify']) {
+    it.each([
+      ['a timeout', () => Promise.reject({ code: 'ECONNABORTED' })],
+      ['a network error', () => Promise.reject({ code: 'ERR_NETWORK' })],
+      ['HTTP 503', () => Promise.reject({ response: { status: 503 } })],
+      ['HTTP 429', () => Promise.reject({ response: { status: 429 } })],
+      ['a captive portal', () => Promise.resolve({ data: '<html>Sign in to Wi-Fi</html>' })],
+    ])(`uses the signed manifest for a v2 ${mode} ticket after %s`, async (_label, previewScan) => {
+      const online = await prepareOnline([await alumniTicket(mode)], 2, previewScan)
+      const user = userEvent.setup()
+      await enterCode(user, 'alumni-qr')
+      if (mode === 'verify') {
+        const hold = await screen.findByRole('dialog', { name: 'FREE ALUMNI — CHECK ID' })
+        expect(hold).toHaveTextContent('Graduation Year: 1998')
+        expect(await queuedActions(eventId, device.id)).toEqual([])
+        await user.click(within(hold).getByRole('button', { name: 'Confirm & Admit' }))
+      } else {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      }
+      expect(await screen.findByText('Admitted offline')).toBeInTheDocument()
+      expect(await screen.findByTestId('scan-result-overlay')).toHaveAttribute('data-result', 'success')
+      const [action] = await queuedActions(eventId, device.id)
+      expect(action).toMatchObject({ ticket_id: 502, source: 'offline' })
+      expect(action.confirmed).toBe(mode === 'verify' ? true : undefined)
+      await online.acknowledge()
+      expect(await screen.findByText('Admission confirmed')).toBeInTheDocument()
+      const calls = apiClient.post.mock.calls
+      expect(calls.filter(([url]) => url.endsWith('/scan'))).toHaveLength(1)
+      expect(calls.find(([url]) => url.endsWith('/sync'))[1].actions[0]).toMatchObject({ source: 'offline', action_uuid: action.action_uuid })
+    })
+  }
+
+  it.each([
+    ['HTTP 422', () => Promise.reject({ response: { status: 422, data: { error: 'Ticket refused' } } }), 'Ticket refused'],
+    ['HTTP 403', () => Promise.reject({ response: { status: 403, data: { error: 'Scanner access refused' } } }), 'Scanner access refused'],
+    ['a rejected body', () => Promise.resolve({ data: { status: 'rejected', reason_code: 'cancelled' } }), 'Cancelled ticket'],
+    ['a rejection in HTTP 503', () => Promise.reject({ response: { status: 503, data: { status: 'rejected', reason_code: 'cancelled' } } }), 'Cancelled ticket'],
+  ])('does not fall back to a valid signed entry after %s', async (_label, previewScan, message) => {
+    await prepareOnline([await alumniTicket('instant')], 2, previewScan)
+    await enterCode(userEvent.setup(), 'alumni-qr')
+    expect(await screen.findByText(message, { exact: true })).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+    expect(apiClient.post.mock.calls.some(([url]) => url.endsWith('/sync'))).toBe(false)
+    expect(screen.queryByText('Admitted offline')).not.toBeInTheDocument()
+  })
+
+  it('still refuses a ticket that was cancelled in the signed list when the online preview fails', async () => {
+    const ticket = { ...await alumniTicket(), state: 'cancelled' }
+    await prepareOnline([ticket], 2, () => Promise.reject({ code: 'ERR_NETWORK' }))
+    await enterCode(userEvent.setup(), 'alumni-qr')
+    expect(await screen.findByText('Cancelled ticket')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+  })
+
+  it('refreshes a stale v1 manifest after the server requires confirmation and holds the next scan', async () => {
+    const ticket = await alumniTicket()
+    const { door_check_mode: _mode, ...legacy } = ticket
+    const online = await prepareOnline([legacy])
+    const user = userEvent.setup()
+    online.offerManifest(await signedManifest(eventId, [ticket], { schema_version: 2, version: 2 }))
+    await enterCode(user, 'alumni-qr')
+    await online.acknowledge({ result: 'rejected', reason_code: 'verification_required' })
+    expect(await screen.findByText('This ticket needs door verification')).toBeInTheDocument()
+    await waitFor(async () => expect((await loadUsableManifest(eventId))?.payload.schema_version).toBe(2))
+    await armed()
+    await user.click(dismissButton())
+    await enterCode(user, 'alumni-qr')
+    expect(await screen.findByRole('dialog', { name: 'FREE ALUMNI — CHECK ID' })).toBeInTheDocument()
+    expect(await queuedActions(eventId, device.id)).toEqual([])
+    expect(apiClient.post.mock.calls.filter(([url]) => url.endsWith('/sync'))).toHaveLength(1)
   })
 
   it('pauses camera reads until the verification hold is canceled', async () => {

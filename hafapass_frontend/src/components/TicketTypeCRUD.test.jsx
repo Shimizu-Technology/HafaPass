@@ -102,6 +102,7 @@ describe('organizer ticket setup', () => {
 
     await user.click(screen.getByRole('radio', { name: /Hold & Verify at Door/ }))
     expect(preview).toHaveTextContent('VERIFY AT DOOR')
+    expect(within(preview).queryByRole('heading', { name: 'VERIFY AT DOOR' })).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('Alert Banner'), 'FREE ALUMNI — CHECK ID')
     await user.type(screen.getByLabelText('Staff Instructions'), 'Ask for the graduation year.')
     await user.click(screen.getByRole('checkbox', { name: 'Show buyer name if someone else bought the ticket' }))

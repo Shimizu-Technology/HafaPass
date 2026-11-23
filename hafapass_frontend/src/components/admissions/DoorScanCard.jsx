@@ -8,13 +8,14 @@ export default function DoorScanCard({ ticket, verifying = false, preview = fals
   const cancelClasses = `${action} border-2 border-white text-white ${focus}`
   const confirmText = busy ? 'Checking ticket…' : 'Confirm & Admit'
   const cancelText = 'Do Not Admit / Cancel'
+  const AlertBanner = preview ? 'p' : 'h2'
 
   return (
     <div className={`${base} ${preview ? 'px-4 py-5' : 'mx-auto max-w-xl px-5 py-6 sm:px-8'} ${verifying ? 'bg-neutral-950 text-white' : 'bg-emerald-800 text-white'}`}>
       {verifying ? (
-        <h2 id={titleId} className={`w-full rounded-xl bg-amber-300 px-4 py-3 font-black text-neutral-950 ${preview ? 'text-lg' : 'text-2xl sm:text-4xl'}`}>
+        <AlertBanner id={titleId} className={`w-full rounded-xl bg-amber-300 px-4 py-3 font-black text-neutral-950 ${preview ? 'text-lg' : 'text-2xl sm:text-4xl'}`}>
           {ticket?.door_alert_label || 'VERIFY AT DOOR'}
-        </h2>
+        </AlertBanner>
       ) : (
         <p className={`flex items-center gap-2 font-display font-bold ${preview ? 'text-xl' : 'text-3xl sm:text-5xl'}`}>
           <CheckCircle2 aria-hidden="true" className={preview ? 'h-6 w-6' : 'h-9 w-9'} /> Admitted

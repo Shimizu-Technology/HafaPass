@@ -142,6 +142,7 @@ function defaultScannerEvent(events, now = Date.now()) {
 // to the visible page after the deadline; it never blocks device preparation or
 // widens event selection. Abandoning the page aborts it immediately.
 const SCANNER_DEFAULT_LOOKUP_DEADLINE_MS = 4000
+const SCAN_PREVIEW_TIMEOUT_MS = 3000
 const UNKNOWN_REFRESH_INTERVAL_MS = 5000
 const scannerPolicyMessages = {
   refused: 'Reconnect and verify scanner access before scanning.',
@@ -772,6 +773,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         if (batch.some(action => pendingAfterSync.some(pending => pending.action_uuid === action.action_uuid))) {
           throw new Error('Saved scans could not be acknowledged on this device. They remain saved; reconnect and retry synchronization.')
         }
+        refreshRequired ||= results.some(result => result.result === 'rejected' && result.reason_code === 'verification_required')
         if (eventIdRef.current === String(selectedEventId)) setScanResult(current => {
           if (!current) return current
           const result = current.actionUuid && results.find(item => item.action_uuid === current.actionUuid
@@ -1171,18 +1173,21 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     resultPanelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' })
   }, [feedbackId])
 
-  const admitEntry = useCallback(async (ticket, hash, startedAt, clientStatus, presentation, scanManifest, confirmed = false) => {
+  const admitEntry = useCallback(async (ticket, hash, startedAt, clientStatus, presentation, scanManifest, { confirmed = false, forceOffline = false } = {}) => {
     if (!device || !scanManifest || eventIdRef.current !== eventId || currentManifestRef.current?.digest !== scanManifest.digest) return
     const owner = currentScannerOwner()
     if (!owner || device.owner_user_id !== owner) return
-    if (refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) {
+    const accessRefused = () => refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)
+    if (accessRefused()) {
       showResult({ type: 'error', message: 'Scanner access needs verification', detail: 'Reconnect and verify access before admitting another guest.' })
       return
     }
     const generation = setupGenerationRef.current
     const current = () => mountedRef.current && owner && device.owner_user_id === owner && owner === currentScannerOwner()
       && eventIdRef.current === eventId && generation === setupGenerationRef.current && presentation === presentationRef.current
-    if (!device.effective || new Date(device.authorization_expires_at).getTime() <= Date.now() || new Date(scanManifest.payload.expires_at).getTime() <= Date.now()) {
+    const accessExpired = () => !device.effective || Date.parse(device.authorization_expires_at) <= Date.now()
+      || Date.parse(scanManifest.payload.expires_at) <= Date.now()
+    if (accessExpired()) {
       try {
         const context = await captureAdmissionAccessContext(eventId, { isCurrent: current,
           expectedDevice: device, expectedManifest: scanManifest })
@@ -1199,7 +1204,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     const savedDevice = await loadDevice(eventId)
     if (!current() || savedDevice?.id !== device.id || savedDevice.owner_user_id !== owner || !savedDevice.effective) return
     const localState = await localScanState(eventId, ticket.ticket_id)
-    if (!current() || refusedAccessRef.current.has(JSON.stringify([owner, String(eventId)])) || hasStoredRefusal(owner, eventId)) return
+    if (!current() || accessRefused()) return
     if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
         ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
@@ -1207,24 +1212,35 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       return
     }
     let doorTicket = ticket
-    if (online && !confirmed && scanManifest.payload.schema_version === 2) {
+    let source = online && !forceOffline ? 'online' : 'offline'
+    let needsManifestState = !confirmed || source === 'offline'
+    if (source === 'online' && !confirmed && scanManifest.payload.schema_version === 2) {
       const request = beginPrivateRead(scanRequestRef, eventId)
-      const context = await captureAdmissionAccessContext(eventId, {
+      const accessOptions = {
         isCurrent: request.current, expectedDevice: device, expectedManifest: scanManifest,
-      })
+      }
+      const context = await captureAdmissionAccessContext(eventId, accessOptions)
       if (!current() || !request.current()) return
-      let response
+      let preview
       try {
-        response = await apiClient.post(`/organizer/events/${eventId}/scanner_devices/${device.id}/scan`, {
+        const response = await apiClient.post(`/organizer/events/${eventId}/scanner_devices/${device.id}/scan`, {
           ticket_id: ticket.ticket_id, credential_hash: hash, manifest_version: scanManifest.payload.version,
-        }, { ...request.config, timeout: 8000 })
+        }, { ...request.config, timeout: SCAN_PREVIEW_TIMEOUT_MS })
+        preview = response.data
       } catch (scanError) {
-        await handlePrivateReadError(scanError, request, context, 'Could not verify this ticket online. Check your connection and try again.')
-        throw scanError
+        if (!current() || !request.current() || scanError.code === 'ERR_CANCELED' || scanError.name === 'AbortError') return
+        const status = scanError.response?.status
+        if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+          await handlePrivateReadError(scanError, request, context, 'The server refused this scan. Ask a door manager to check the ticket.')
+          throw scanError
+        }
+        // Error responses can refuse a scan, but only a successful response can
+        // supply an online approval or verification instruction.
+        if (scanError.response?.data?.status === 'rejected') preview = scanError.response.data
       }
       if (!current() || !request.current()) return
-      if (response.data?.status === 'rejected') {
-        const reason = response.data.reason_code
+      if (preview?.status === 'rejected') {
+        const reason = preview.reason_code
         const labels = { already_admitted: 'Already admitted', cancelled: 'Cancelled ticket', credential_revoked: 'Ticket credential is no longer valid',
           transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
         showResult({ type: reason === 'already_admitted' ? 'warning' : 'error', message: labels[reason] || 'Invalid ticket',
@@ -1232,12 +1248,20 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         return
       }
       const modeByStatus = { ready: 'instant', verification_required: 'verify' }
-      const mode = modeByStatus[response.data?.status]
-      if (!mode || response.data.ticket?.ticket_id !== ticket.ticket_id || response.data.ticket.door_check_mode !== mode) {
-        throw new Error('Online ticket verification returned an unexpected response.')
+      const mode = modeByStatus[preview?.status]
+      if (mode && preview.ticket?.ticket_id === ticket.ticket_id && preview.ticket.door_check_mode === mode) {
+        doorTicket = preview.ticket
+        needsManifestState = false
+      } else {
+        // Re-check the same grant and signed list after the network wait.
+        await captureAdmissionAccessContext(eventId, accessOptions)
+        if (!request.current()) return
+        source = 'offline'
       }
-      doorTicket = response.data.ticket
-    } else if (ticket.state !== 'valid' && !(confirmed && online)) {
+    }
+    if (!current() || accessRefused()) return
+    if (source === 'offline' && accessExpired()) throw scannerPolicyError('manifestExpired')
+    if (needsManifestState && ticket.state !== 'valid') {
       const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
       showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
         detail: 'Sync the latest ticket list or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
@@ -1250,7 +1274,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     }
     if (!confirmed && doorTicket.door_check_mode === 'verify') {
       showResult({ type: 'verify', message: 'Verify this ticket before admitting', ticket: doorTicket,
-        verification: { ticket: { ...doorTicket, state: ticket.state }, hash, clientStatus, presentation, scanManifest } })
+        verification: { ticket: { ...doorTicket, state: ticket.state }, hash, clientStatus, presentation, scanManifest, source } })
       return
     }
 
@@ -1260,7 +1284,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       manifestVersion: scanManifest.payload.version,
       ticket,
       credentialHash: hash,
-      source: online ? 'online' : 'offline',
+      source,
       clientStatus,
       ...(confirmed ? { confirmed: true } : {}),
     })
@@ -1270,9 +1294,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       return
     }
     // Own the result before count refresh yields to an already-running sync.
-    showResult({ type: online ? 'pending' : 'success', message: online ? 'Waiting for server confirmation' : 'Admitted offline',
+    showResult({ type: source === 'online' ? 'pending' : 'success', message: source === 'online' ? 'Waiting for server confirmation' : 'Admitted offline',
       actionUuid: action.action_uuid, actionKind: 'admit', deviceId: device.id,
-      detail: online ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
+      detail: source === 'online' ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
       ticket: doorTicket, latency: performance.now() - startedAt })
     await refreshPending(eventId, device)
     if (!current()) return
@@ -1364,7 +1388,9 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     credentialInFlightRef.current = credentialOwner
     setCredentialBusy(true)
     try {
-      await admitEntry(held.ticket, held.hash, performance.now(), held.clientStatus, held.presentation, held.scanManifest, true)
+      await admitEntry(held.ticket, held.hash, performance.now(), held.clientStatus, held.presentation, held.scanManifest, {
+        confirmed: true, forceOffline: held.source === 'offline',
+      })
       if (verificationRef.current === held) {
         showResult({ type: 'warning', message: 'Scan the ticket again', detail: 'The ticket list or scanner access changed during verification.' })
       }
