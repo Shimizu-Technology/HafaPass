@@ -10,10 +10,11 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
   let(:october_end) { Time.utc(2026, 10, 31, 14) }
   let(:event) { create(:event, title: "Private Organizer Name") }
 
-  def captured_order(event:, at:, fee:, environment: "live", provider: "stripe", currency: "usd")
+  def captured_order(event:, at:, fee:, environment: "live", provider: "stripe", currency: "usd", payment_id: nil)
     order = create(:order, :completed, event: event, completed_at: at, currency: currency,
       buyer_email: "private-buyer@example.test")
-    payment = create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment)
+    payment = create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment,
+      **(payment_id ? { provider_payment_id: payment_id } : {}))
     create(:fee_component, order: order, amount_cents: fee)
     [order, payment]
   end
@@ -33,6 +34,10 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     refund = create(:refund, order: order, payment: capture, succeeded_at: october_end)
     create(:refund_item, refund: refund, order_item: line, amount_cents: 500, organizer_proceeds_cents: 390,
       fee_cents: 60, organizer_fee_cents: 50)
+
+    test_payment = create(:payment, :succeeded, order: order, provider_environment: "test")
+    test_refund = create(:refund, order: order, payment: test_payment, succeeded_at: october_end)
+    create(:refund_item, refund: test_refund, order_item: line, amount_cents: 25, organizer_proceeds_cents: 0, fee_cents: 25)
 
     settlement = create(:settlement, event: event, organization: event.organization)
     bank_account = create(:connected_account, organization: event.organization, provider: "manual", with_readiness_approval: false)
@@ -69,7 +74,7 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     )
   end
 
-  it "groups by event and organization and excludes test, simulated, door cash and other currencies" do
+  it "groups by event and organization and excludes test and simulated captures, direct organizer sales and other currencies" do
     same_organization = create(:event, organization: event.organization)
     elsewhere = create(:event)
     captured_order(event: event, at: september_end, fee: 125)
@@ -80,13 +85,28 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     captured_order(event: elsewhere, at: september_end, fee: 900, environment: "simulate")
     captured_order(event: elsewhere, at: september_end, fee: 1000, provider: "door_cash")
     captured_order(event: elsewhere, at: september_end, fee: 1100, currency: "jpy")
+    captured_order(event: elsewhere, at: september_end, fee: 1300, provider: "boh_clover", environment: nil)
+    captured_order(event: elsewhere, at: september_end, fee: 1400, environment: nil, payment_id: "sim_legacy")
+    captured_order(event: elsewhere, at: september_end, fee: 25, environment: nil, payment_id: "pi_legacy_live")
 
     expect(export("10").map { |row| row.values_at("organization_id", "event_id", "gross_service_fees") }).to contain_exactly(
       [event.organization_id.to_s, event.id.to_s, "1.25"],
       [same_organization.organization_id.to_s, same_organization.id.to_s, "2.00"],
-      [elsewhere.organization_id.to_s, elsewhere.id.to_s, "3.25"]
+      [elsewhere.organization_id.to_s, elsewhere.id.to_s, "3.50"]
     )
     expect(export("02")).to be_empty
+  end
+
+  it "omits a month with only a fee-free refund and a withholding-only payout" do
+    order, capture = captured_order(event: event, at: september_end, fee: 0)
+    line = create(:order_item, order: order)
+    refund = create(:refund, order: order, payment: capture, succeeded_at: october_end, amount_cents: 500)
+    create(:refund_item, refund: refund, order_item: line)
+    create(:payout, event: event, organization: event.organization, status: :paid,
+      paid_at: october_end, amount_cents: 100, withheld_cents: 24, carried_withholding_cents: 76)
+
+    expect(export("11")).to be_empty
+    expect(AuditLog.where(action: "tax_report.exported").last.metadata).to include("count" => 0, "organization_ids" => [])
   end
 
   it "rejects a missing or invalid month" do

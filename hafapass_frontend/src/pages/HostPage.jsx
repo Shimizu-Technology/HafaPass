@@ -297,7 +297,7 @@ function faqItems(pricing, t) {
     { q: t('buyerDiscovery.host.howMuchDoesHåfaPassCost'), a: feeAnswer },
     { q: t('buyerDiscovery.host.whoPaysTheFeeMeOrMy'), a: t('buyerDiscovery.host.youDecideForEachEventBuyersCan') },
     { q: t('buyerDiscovery.host.canIHostAFreeEvent'), a: t('buyerDiscovery.host.yesFreeTicketsHaveNoHåfaPassFee') },
-    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}{t('buyerDiscovery.host.payoutSettlementStatement')}</> },
+    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}{t('buyerDiscovery.host.payoutSettlementStatement')}{' '}<Link to="/policies/organizer-agreement" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></> },
     { q: t('buyerDiscovery.host.howDoRefundsWork'), a: <>{t('buyerDiscovery.host.cancellationPromise')}{' '}{t('buyerDiscovery.host.youSetTheRefundRulesForYour')}<Link to="/policies/refunds" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.refundCancellationPolicy')}</Link>.</> },
     { q: t('buyerDiscovery.host.doesMyDoorStaffNeedAnApp'), a: t('buyerDiscovery.host.noStaffOpenTheScannerInTheir') },
     { q: t('buyerDiscovery.host.howDoIGetHelp'), a: <>{t('buyerDiscovery.host.emailTheHåfaPassTeamAtAnyPoint')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.contactSupport')}</SupportLink>.</> },

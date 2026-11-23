@@ -100,10 +100,14 @@ class TaxReports
   # cannot multiply a sale. IDs are sufficient to reconcile without names.
   def bpt_event_rows(month)
     range = month_period(month)
-    agent_orders = live_orders.where("orders.payment_method IS DISTINCT FROM 'door_cash'")
-      .where.not(id: Payment.where(provider: "door_cash").select(:order_id))
+    # Only Stripe captures collect proceeds into the platform's account.
+    captures = Payment.live_or_legacy_capture.where(provider: "stripe", currency: "usd")
+      .where("LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'")
+      .where("provider_payload->>'simulated' IS DISTINCT FROM 'true' AND provider_payload->>'livemode' IS DISTINCT FROM 'false'")
+    agent_orders = live_orders(captures)
     collected = collected_orders(range, orders: agent_orders)
     refunds = period_refunds(range, orders: agent_orders)
+    refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: captures.select(:id)))
     orders = collected.select(:id)
 
     gross_fees = fees(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
@@ -119,12 +123,15 @@ class TaxReports
       .group("payouts.event_id").sum(:amount_cents)
 
     event_ids = gross_fees.keys | returned_fees.keys | processing.keys | ticket_proceeds.keys | disbursed.keys
-    Event.where(id: event_ids).order(:organization_id, :id).pluck(:id, :organization_id).map do |event_id, organization_id|
+    Event.where(id: event_ids).order(:organization_id, :id).pluck(:id, :organization_id).filter_map do |event_id, organization_id|
       gross = gross_fees.fetch(event_id, 0)
       refunded = returned_fees.fetch(event_id, 0)
-      [organization_id, event_id, gross, refunded, gross - refunded,
-        processing.fetch(event_id, 0), ticket_proceeds.fetch(event_id, 0),
-        disbursed.fetch(event_id, 0) + check_adjustments.fetch(event_id, 0)]
+      costs = processing.fetch(event_id, 0)
+      face_value = ticket_proceeds.fetch(event_id, 0)
+      paid = disbursed.fetch(event_id, 0) + check_adjustments.fetch(event_id, 0)
+      next if [gross, refunded, costs, face_value, paid].all?(&:zero?)
+
+      [organization_id, event_id, gross, refunded, gross - refunded, costs, face_value, paid]
     end
   end
 
@@ -146,9 +153,8 @@ class TaxReports
     month_start(1)...month_start(1).next_year
   end
 
-  def live_orders
+  def live_orders(captured = Payment.live_or_legacy_capture)
     # The shared scope is production-only; enforce live evidence in every env.
-    captured = Payment.live_or_legacy_capture
     Order.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded], currency: "usd")
       .where(id: captured.select(:order_id))
   end

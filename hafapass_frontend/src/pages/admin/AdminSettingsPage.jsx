@@ -365,7 +365,7 @@ function AdminSettingsSession({ identity, resourcePath }) {
           </div>
 
           <div className="mt-6">
-            <Field id="payout_schedule_text" label="Payout timing" hint={`Completes the payout sentence in the active Organizer Agreement. Changes require a new register approval. ${form.payout_schedule_text.length}/${MAX_SCHEDULE_LENGTH} characters.`} error={errors.payout_schedule_text}>
+            <Field id="payout_schedule_text" label="Payout timing" hint={`Sets the timing in the active Organizer Agreement and fee-change notices. Coordinate any change with the published operating schedule and approve the new register digest. ${form.payout_schedule_text.length}/${MAX_SCHEDULE_LENGTH} characters.`} error={errors.payout_schedule_text}>
               <textarea id="payout_schedule_text" rows={2} maxLength={MAX_SCHEDULE_LENGTH + 50} value={form.payout_schedule_text} onChange={update('payout_schedule_text')} aria-invalid={!!errors.payout_schedule_text} aria-describedby={describedBy('payout_schedule_text', true, errors.payout_schedule_text)} className={inputClass('payout_schedule_text')} />
             </Field>
           </div>

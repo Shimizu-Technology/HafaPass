@@ -44,7 +44,7 @@ In **Admin → Tax reports**, choose the calendar year and Guam calendar month, 
 - Gross service fees include the buyer-paid and organizer-absorbed portions recorded on captured sales. Use the Guam order completion month. Ticket face value is after discounts and before refunds, excludes non-ticket items, and is listed separately as proceeds collected for organizers.
 - Fee refunds include the buyer-paid and organizer-absorbed portions from successful refund allocations in the Guam refund month. Net fees are gross fees minus those refunds and can be negative. Actual Stripe processing costs are attributed to the original sale month and shown for reconciliation only. They do not reduce net service fees.
 - Organizer payouts are confirmed payouts in the Guam paid month, net of withholding and including any audited check amount adjustment. Reserve releases appear when paid. Pending, failed, and reversed payouts are excluded. Reconcile any later reversals and late-arriving processing evidence against the bank and provider statements.
-- The CSV uses live USD orders and older captures with no test or simulated evidence. Organizer-retained door cash is excluded. The CPA confirms the treatment and filing amounts.
+- The CSV uses live USD Stripe captures and older Stripe captures with no test or simulation evidence. Organizer-retained door cash and organizer-direct Clover sales are excluded. The CPA confirms the treatment and filing amounts.
 
 ## CPA decisions to record
 

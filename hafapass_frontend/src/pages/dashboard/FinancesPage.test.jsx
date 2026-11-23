@@ -69,7 +69,7 @@ describe('FinancesPage', () => {
     mount()
     expect(await screen.findByText('$94.49', { selector: 'p' })).toBeInTheDocument()
     expect(screen.getByText('$46.32 can be requested now from finalized statements.')).toBeInTheDocument()
-    expect(screen.getByText(/Bank transfer within 2–3 business days after your event.*reserve after 30 days/)).toBeInTheDocument()
+    expect(screen.getByText(/Standard payout target: bank transfer within 2–3 business days after your event.*reserve after 30 days/)).toBeInTheDocument()
     expect(screen.getByText('Sales, fees and payouts across every GuamTime Events event.')).toBeInTheDocument()
     const breakdown = screen.getByRole('region', { name: 'How the total adds up' })
     expect(within(breakdown).getByText('Card processing you paid').closest('div')).toHaveTextContent('−$5.51')

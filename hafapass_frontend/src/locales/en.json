@@ -789,7 +789,7 @@
       "noSetupOrMonthlyFees": "No setup or monthly fees",
       "cardProcessingIncluded": "Card processing included",
       "chooseWhetherBuyersPayTheFeeOr": "Let buyers pay the fee, absorb it, or split it",
-      "payouts": "Bank transfer within 2–3 business days after your event.",
+      "payouts": "Standard payout target: bank transfer within 2–3 business days after your event.",
       "pricing": "Pricing",
       "simplePricingYouOnlyPayWhenYou": "Simple pricing. You only pay when you sell.",
       "loadingPricing": "Loading pricing",
@@ -848,7 +848,8 @@
       "localHelp": "A real person, here on Guam",
       "localHelpBody": "You run the doors. We give your team the software, a setup session, a door guide and someone on call during the event.",
       "firstEventHelp": "Talk to us about your event",
-      "payoutMethod": "Check payouts require an approved exception. We hold about 10% of your proceeds for chargebacks and release the remaining reserve after 30 days, subject to any open refunds or disputes.",
+      "payoutMethod": "Check payouts require an approved exception. Under the standard payout process, we hold about 10% of your proceeds for chargebacks and release the remaining reserve after 30 days, subject to any open refunds or disputes.",
+      "payoutAgreementLink": "See the current Organizer Agreement for your contractual payout terms.",
       "tryATicketPrice": "Try a ticket price",
       "doorDemo": {
         "tryIt": "Tap a ticket to try the door scanner",

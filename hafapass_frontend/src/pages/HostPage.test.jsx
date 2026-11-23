@@ -69,7 +69,7 @@ describe('host page pricing', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
-    expect(within(section).getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(within(section).getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
     expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
     expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
@@ -140,7 +140,7 @@ describe('host page pricing', () => {
     apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
     await load()
     await screen.findByTestId('host-fee-summary')
-    expect(screen.getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(screen.getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
     expect(screen.getByText(/Your dashboard shows a settlement statement/)).toBeInTheDocument()
   })
 

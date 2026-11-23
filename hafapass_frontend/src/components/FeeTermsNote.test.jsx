@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,8 +14,8 @@ describe('FeeTermsNote', () => {
   })
 
   it('shows the organizer bearer copy and uses the standard bank transfer timing despite a legacy contract setting', () => {
-    render(<FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.' } }} feePolicy="buyer_pays" />)
+    render(<MemoryRouter><FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.' } }} feePolicy="buyer_pays" /></MemoryRouter>)
     expect(screen.getByText(/Card processing costs are deducted from your proceeds\./)).toBeInTheDocument()
-    expect(screen.getByText('Bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(screen.getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
   })
 })

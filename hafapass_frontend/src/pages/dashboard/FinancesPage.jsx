@@ -221,7 +221,7 @@ function FinancesSession({ identity }) {
             {heldCents > 0 && <li>{money(heldCents)} from finalized statements is on hold until open refunds, disputes or payment checks are settled.</li>}
             {totals.in_flight_cents > 0 && <li>{money(totals.in_flight_cents)} has been requested for payout. Payment hasn't been confirmed yet.</li>}
             {totals.held_cents > 0 && <li>{money(totals.held_cents)} is on hold — event cancelled, refunds in progress.</li>}
-            <li>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}</li>
+            <li>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}<Link to="/policies/organizer-agreement" className="underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></li>
           </ul>
           {breakdown.negative_balance_cents > 0 && (
             <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

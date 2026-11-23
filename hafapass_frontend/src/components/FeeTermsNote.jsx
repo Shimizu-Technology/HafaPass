@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { organizerFeeExplanation } from '../utils/feeTerms'
 
@@ -17,7 +18,7 @@ export default function FeeTermsNote({ feeTerms, feePolicy, buyerFeePercent, cla
   return (
     <div className={`rounded-xl bg-neutral-50 p-3 text-sm text-neutral-700 ${className}`} data-testid="fee-terms-note">
       <p>{organizerFeeExplanation(feeTerms.terms, feePolicy, buyerFeePercent)}</p>
-      <p className="mt-1 text-neutral-500">{t('buyerDiscovery.host.payouts')}</p>
+      <p className="mt-1 text-neutral-500">{t('buyerDiscovery.host.payouts')}{' '}<Link to="/policies/organizer-agreement" className="underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></p>
       <p className="mt-1 text-xs text-neutral-500">Changes apply to new orders. Existing orders keep the terms they were placed with.</p>
     </div>
   )
