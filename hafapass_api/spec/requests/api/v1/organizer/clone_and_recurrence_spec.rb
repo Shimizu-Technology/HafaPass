@@ -134,14 +134,14 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
       expect(response).to have_http_status(:created)
       expect(response.parsed_body["generated_count"]).to eq(1)
 
-      # If a later occurrence fails validation, none of the new occurrences in that batch persist.
+      # If a later occurrence returns unpersisted from clone_event, none of the new occurrences persist.
       call_number = 0
       allow_any_instance_of(Api::V1::Organizer::EventsController).to receive(:clone_event).and_wrap_original do |original, *args, **kwargs|
         call_number += 1
         if call_number == 2
           bad = Event.new
-          bad.errors.add(:base, "Simulated occurrence failure")
-          raise ActiveRecord::RecordInvalid, bad
+          bad.errors.add(:ends_at, "must be after starts_at")
+          next bad
         end
         original.call(*args, **kwargs)
       end
@@ -151,7 +151,22 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
           params: { count: 5 }, headers: headers
       }.not_to change { Event.where(recurrence_parent_id: event.id).count }
       expect(response).to have_http_status(:unprocessable_entity)
-      expect(response.parsed_body["error"]).to include("Simulated occurrence failure")
+      expect(response.parsed_body["error"]).to include("Ends at must be after starts_at")
+    end
+
+    it "uses the source dates reloaded by lock! when generating recurrences" do
+      shifted_start = event.starts_at + 1.day
+      shifted_end = event.ends_at + 1.day
+      allow_any_instance_of(Event).to receive(:lock!).and_wrap_original do |original, *args|
+        Event.where(id: event.id).update_all(starts_at: shifted_start, ends_at: shifted_end)
+        original.call(*args)
+      end
+
+      post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+        params: { count: 1 }, headers: headers
+      expect(response).to have_http_status(:created)
+      generated_start = Time.parse(response.parsed_body.fetch("events").sole.fetch("starts_at"))
+      expect(generated_start).to be_within(1.second).of(shifted_start + 1.week)
     end
 
     it "respects recurrence_end_date" do

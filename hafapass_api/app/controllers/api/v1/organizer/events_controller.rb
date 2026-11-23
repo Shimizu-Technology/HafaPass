@@ -329,24 +329,30 @@ module Api
         def generate_recurrences
           return unless authorize_organization!(:manage_events)
 
-          return render_policy_hold_refusal("repeated") if @event.policy_hold?
-
-          unless @event.recurrence_rule.present?
-            return render json: { error: "Event must have a recurrence rule" }, status: :unprocessable_entity
-          end
-          unless @event.starts_at.present? && @event.ends_at.present?
-            return render json: { error: "Event must have start and end dates" }, status: :unprocessable_entity
-          end
-
           count = [params[:count].to_i.clamp(1, 12), 1].max
-          timezone = ActiveSupport::TimeZone[@event.timezone]
-          local_start = @event.starts_at.in_time_zone(timezone)
-          local_end = @event.ends_at.in_time_zone(timezone)
-          local_doors = @event.doors_open_at&.in_time_zone(timezone)
           generated = []
+          validation_error = nil
+          policy_hold = false
 
           Event.transaction do
             @event.lock!
+            if @event.policy_hold?
+              policy_hold = true
+              next
+            end
+            unless @event.recurrence_rule.present?
+              validation_error = "Event must have a recurrence rule"
+              next
+            end
+            unless @event.starts_at.present? && @event.ends_at.present?
+              validation_error = "Event must have start and end dates"
+              next
+            end
+
+            timezone = ActiveSupport::TimeZone[@event.timezone] || ActiveSupport::TimeZone["Pacific/Guam"]
+            local_start = @event.starts_at.in_time_zone(timezone)
+            local_end = @event.ends_at.in_time_zone(timezone)
+            local_doors = @event.doors_open_at&.in_time_zone(timezone)
             existing_starts = Event.where(recurrence_parent_id: @event.id).pluck(:starts_at)
               .compact.to_set { |ts| ts.utc.to_i }
 
@@ -366,12 +372,15 @@ module Api
                 recurrence_parent_id: @event.id,
                 recurrence_rule: @event.recurrence_rule
               )
-              if cloned.persisted?
-                generated << cloned
-                existing_starts.add(new_starts_at.utc.to_i)
-              end
+              raise ActiveRecord::RecordInvalid, cloned unless cloned.persisted?
+
+              generated << cloned
+              existing_starts.add(new_starts_at.utc.to_i)
             end
           end
+
+          return render_policy_hold_refusal("repeated") if policy_hold
+          return render json: { error: validation_error }, status: :unprocessable_entity if validation_error
 
           render json: {
             generated_count: generated.size,
