@@ -7,6 +7,22 @@ RSpec.describe TicketType, type: :model do
       expect(ticket_type).to be_valid
     end
 
+    it "defaults to instant admission and hides the buyer name" do
+      expect(create(:ticket_type)).to have_attributes(door_check_mode: "instant", scanner_show_buyer: false,
+        door_alert_label: nil, door_instructions: nil)
+    end
+
+    it "normalizes door copy and validates the mode, limits, and boolean" do
+      type = build(:ticket_type, door_check_mode: "verify", door_alert_label: "  Check ID  ",
+        door_instructions: " \n ", scanner_show_buyer: true)
+      expect(type).to be_valid
+      expect(type).to have_attributes(door_alert_label: "Check ID", door_instructions: nil)
+      type.assign_attributes(door_check_mode: "unknown", door_alert_label: "a" * 121, door_instructions: "a" * 401,
+        scanner_show_buyer: nil)
+      expect(type).not_to be_valid
+      expect(type.errors.attribute_names).to match_array(%i[door_check_mode door_alert_label door_instructions scanner_show_buyer])
+    end
+
     it "requires name" do
       ticket_type = build(:ticket_type, name: nil)
       expect(ticket_type).not_to be_valid

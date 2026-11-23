@@ -313,7 +313,9 @@ RSpec.describe AuditActions do
       fields = described_class.organization_definition(key, audience: :org_manager)[:organization_fields].values.flatten
       expect(fields.grep(prohibited)).to be_empty, "Manager transaction fields for #{key}: #{fields.grep(prohibited)}"
     end
-    expect(described_class.organization_definition("ticket_type.updated", audience: :org_manager)[:organization_fields][:after_data]).to include("price_cents")
+    fields = described_class.organization_definition("ticket_type.updated", audience: :org_manager)[:organization_fields][:after_data]
+    expect(fields).to include("price_cents", "door_check_mode", "scanner_show_buyer")
+    expect(fields).not_to include("door_alert_label", "door_instructions")
   end
 
   it "documents every registered key in the coverage table" do

@@ -1035,6 +1035,8 @@
       "action": "keep",
       "pii_columns": [
         "description",
+        "door_alert_label",
+        "door_instructions",
         "name"
       ]
     },
@@ -3012,6 +3014,9 @@
       "created_at": "system",
       "description": "pii",
       "door_allocation": "non-personal",
+      "door_alert_label": "pii",
+      "door_check_mode": "non-personal",
+      "door_instructions": "pii",
       "event_id": "system",
       "is_pass": "non-personal",
       "max_per_buyer": "non-personal",
@@ -3027,7 +3032,8 @@
       "translations": "pii",
       "translation_status": "system",
       "translation_requested_at": "system",
-      "attendee_info_mode": "non-personal"
+      "attendee_info_mode": "non-personal",
+      "scanner_show_buyer": "non-personal"
     },
     "tickets": {
       "id": "system",

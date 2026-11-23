@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import apiClient from '../api/client'
@@ -46,6 +46,7 @@ describe('organizer ticket setup', () => {
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/organizer/events/42/ticket_types', {
       name: 'General Admission', description: null, price_cents: 0, quantity_available: 18,
       door_allocation: null, max_per_order: null, max_per_buyer: null, attendee_info_mode: 'none', sales_start_at: null, sales_end_at: null,
+      door_check_mode: 'instant', door_alert_label: null, door_instructions: null, scanner_show_buyer: false,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
@@ -71,7 +72,52 @@ describe('organizer ticket setup', () => {
       name: 'Early admission', description: 'Existing terms', price_cents: 3995, quantity_available: 25,
       door_allocation: 0, max_per_order: 3, max_per_buyer: 6, attendee_info_mode: 'name_and_email',
       sales_start_at: '2026-10-20T18:00', sales_end_at: '2026-10-21T18:00',
+      door_check_mode: 'instant', door_alert_label: null, door_instructions: null, scanner_show_buyer: false,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
+  })
+
+  it('previews the edited ticket in real time with only scanner questions for this ticket type', async () => {
+    const scanner_questions = [
+      { id: 1, position: 0, prompt: 'Shirt size', kind: 'selection', options: ['M', 'L'], show_on_scanner: true },
+      { id: 2, position: 3, prompt: 'Graduation Year', kind: 'number', scope: 'ticket', ticket_type_ids: [7], show_on_scanner: true },
+      { id: 3, position: 0, prompt: 'Other ticket only', ticket_type_ids: [8], show_on_scanner: true },
+      { id: 4, position: 1, prompt: 'Private note', ticket_type_ids: [7], show_on_scanner: false },
+    ]
+    apiClient.get.mockResolvedValue({ data: {
+      permissions: { edit_event_content: true, manage_events: true, manage_inventory: true },
+      id: 42, slug: 'community-night', status: 'draft', title: 'Community Night', timezone: 'Pacific/Guam', max_capacity: 30,
+      ticket_types: [{ id: 7, name: 'Free Alumni', price_cents: 0, quantity_available: 12, quantity_sold: 2 }],
+      scanner_questions,
+    } })
+    render(<MemoryRouter initialEntries={['/dashboard/events/42/edit']}><Routes><Route path="/dashboard/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Edit Free Alumni' }))
+    const preview = screen.getByRole('region', { name: 'Live Door Scanner Preview' })
+    expect(preview).toHaveTextContent('Admitted')
+    expect(preview).toHaveTextContent('Free Alumni')
+    expect(preview).toHaveTextContent('Maria Cruz')
+    expect(within(preview).getAllByRole('term').map(element => element.textContent.trim())).toEqual(['Graduation Year:', 'Shirt size:'])
+    expect(preview).toHaveTextContent('1998')
+    expect(preview).not.toHaveTextContent(/Other ticket only|Private note|Bought by/)
+
+    await user.click(screen.getByRole('radio', { name: /Hold & Verify at Door/ }))
+    expect(preview).toHaveTextContent('VERIFY AT DOOR')
+    expect(within(preview).queryByRole('heading', { name: 'VERIFY AT DOOR' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Alert Banner'), 'FREE ALUMNI — CHECK ID')
+    await user.type(screen.getByLabelText('Staff Instructions'), 'Ask for the graduation year.')
+    await user.click(screen.getByRole('checkbox', { name: 'Show buyer name if someone else bought the ticket' }))
+    await user.type(screen.getByRole('textbox', { name: 'Name', exact: true }), ' 2027')
+    expect(preview).toHaveTextContent('FREE ALUMNI — CHECK ID')
+    expect(preview).toHaveTextContent('Free Alumni 2027')
+    expect(preview).toHaveTextContent('For: Maria Cruz')
+    expect(preview).toHaveTextContent('Bought by Pat Cruz')
+    expect(preview).toHaveTextContent('Ask for the graduation year.')
+    expect(preview).toHaveTextContent('Confirm & Admit')
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/42/ticket_types/7', expect.objectContaining({
+      door_check_mode: 'verify', door_alert_label: 'FREE ALUMNI — CHECK ID',
+      door_instructions: 'Ask for the graduation year.', scanner_show_buyer: true,
+    }), expect.anything())
   })
 
   it('lets organizers build a multi-night pass using series quick-select and excludes seated/pass/self events', async () => {

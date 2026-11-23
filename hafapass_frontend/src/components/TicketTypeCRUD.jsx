@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../hooks/useOrganizerContext'
 import SupportLink from './SupportLink'
 import PricingTiersCRUD from './PricingTiersCRUD'
+import DoorScannerSettings from './admissions/DoorScannerSettings'
 import { compareLocalDateTimes, DEFAULT_EVENT_TIME_ZONE, formatEventDate, formatEventDateTime, toEventLocalInput } from '../utils/eventTime'
 
 const readPendingInventory = key => {
@@ -43,7 +44,8 @@ const ATTENDEE_INFO_OPTIONS = [
   ['name_only', "Ask for each attendee's name"],
   ['name_and_email', "Ask for each attendee's name and email"],
 ]
-const EMPTY_FORM = { name: '', description: '', price: '0.00', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', attendee_info_mode: 'none', sales_start_at: '', sales_end_at: '' }
+const EMPTY_FORM = { name: '', description: '', price: '0.00', quantity_available: '', door_allocation: '', max_per_order: '', max_per_buyer: '', attendee_info_mode: 'none', sales_start_at: '', sales_end_at: '',
+  door_check_mode: 'instant', door_alert_label: '', door_instructions: '', scanner_show_buyer: false }
 
 function TicketTypeForm({
   initial,
@@ -56,6 +58,7 @@ function TicketTypeForm({
   saving,
   eventTimezone,
   defaultQuantity,
+  scannerQuestions,
 }) {
   const [form, setForm] = useState(() => initial || { ...EMPTY_FORM, quantity_available: Number.isInteger(defaultQuantity) && defaultQuantity > 0 ? String(defaultQuantity) : '' })
   const wasPass = Boolean(editingTicketType?.is_pass)
@@ -213,6 +216,10 @@ function TicketTypeForm({
       max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
       max_per_buyer: form.max_per_buyer ? parseInt(form.max_per_buyer, 10) : null,
       attendee_info_mode: form.attendee_info_mode || 'none',
+      door_check_mode: form.door_check_mode,
+      door_alert_label: form.door_alert_label.trim() || null,
+      door_instructions: form.door_instructions.trim() || null,
+      scanner_show_buyer: form.scanner_show_buyer,
       sales_start_at: form.sales_start_at || null,
       sales_end_at: form.sales_end_at || null
     }
@@ -433,9 +440,10 @@ function TicketTypeForm({
           <p className="text-xs text-neutral-500">Blank purchase limits add no separate cap; event capacity and remaining ticket inventory still apply.</p>
         </div>
       </details>
+      <DoorScannerSettings form={form} setForm={setForm} ticketTypeId={editingTicketType?.id} questions={scannerQuestions} saving={saving} />
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 px-3 py-1.5 text-sm text-neutral-600 hover:text-neutral-800">Cancel</button>
-        <button type="submit" disabled={saving} className="btn-primary min-h-11 text-sm px-4 py-1.5">
+        <button type="button" onClick={onCancel} disabled={saving} className="min-h-12 px-3 py-1.5 text-base text-neutral-700 hover:text-neutral-900">Cancel</button>
+        <button type="submit" disabled={saving} className="btn-primary min-h-12 text-base px-4 py-1.5">
           {saving ? 'Saving...' : initial ? 'Update' : 'Add ticket type'}
         </button>
       </div>
@@ -443,7 +451,7 @@ function TicketTypeForm({
   )
 }
 
-function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCapacity, eventTimezone = 'Pacific/Guam', assignedSeating = false, beginRequest: parentBeginRequest, identity, resourcePath }) {
+function TicketTypesSession({ eventId, ticketTypes = [], scannerQuestions = [], onRefresh, remainingCapacity, eventTimezone = 'Pacific/Guam', assignedSeating = false, beginRequest: parentBeginRequest, identity, resourcePath }) {
   const { current, beginRequest } = useInventoryRequests(identity, resourcePath, parentBeginRequest)
   const busy = useRef(false)
   const storageKey = `hafapass:pending-ticket-types:${identity.owner}:${identity.organizationId}:${eventId}`
@@ -580,6 +588,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
             saving={locked}
             eventTimezone={eventTimezone}
             defaultQuantity={remainingCapacity}
+            scannerQuestions={scannerQuestions}
           />
         </div>
       )}
@@ -600,6 +609,7 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                   assignedSeating={assignedSeating}
                   beginRequest={beginRequest}
                   editingTicketType={tt}
+                  scannerQuestions={scannerQuestions}
                   initial={{
                     name: tt.name,
                     description: tt.description || '',
@@ -609,6 +619,10 @@ function TicketTypesSession({ eventId, ticketTypes = [], onRefresh, remainingCap
                     max_per_order: tt.max_per_order ? String(tt.max_per_order) : '',
                     max_per_buyer: tt.max_per_buyer ? String(tt.max_per_buyer) : '',
                     attendee_info_mode: tt.attendee_info_mode || 'none',
+                    door_check_mode: tt.door_check_mode || 'instant',
+                    door_alert_label: tt.door_alert_label || '',
+                    door_instructions: tt.door_instructions || '',
+                    scanner_show_buyer: tt.scanner_show_buyer === true,
                     sales_start_at: toEventLocalInput(tt.sales_start_at, eventTimezone),
                     sales_end_at: toEventLocalInput(tt.sales_end_at, eventTimezone)
                   }}

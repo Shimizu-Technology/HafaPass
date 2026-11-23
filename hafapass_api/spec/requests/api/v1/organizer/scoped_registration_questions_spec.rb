@@ -100,8 +100,9 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
     expect(response).to have_http_status(:created)
     door = event.registration_questions.find_by(prompt: "Graduation Year", scope: :ticket)
     expect(door).to have_attributes(show_on_scanner: true, ticket_type_ids: [alumni.id], required: true)
-    expect(response.parsed_body["ticket_type"]).to eq("id" => alumni.id, "attendee_info_mode" => "name_only")
-    expect(alumni.reload.attendee_info_mode).to eq("name_only")
+    expect(response.parsed_body["ticket_type"]).to eq("id" => alumni.id, "attendee_info_mode" => "name_only", "door_check_mode" => "verify")
+    expect(alumni.reload).to have_attributes(attendee_info_mode: "name_only", door_check_mode: "verify",
+      door_alert_label: "FREE ALUMNI — CHECK ID", door_instructions: "Check alumni ID or confirm graduation year before admitting.")
     expect(event.registration_questions.order(:position).pluck(:position)).to eq([0, 1, 2, 3, 4])
 
     apply_template("merch_shirt_size")
@@ -109,6 +110,21 @@ RSpec.describe "Organizer scoped registration questions and attendee info", type
 
     apply_template("unknown")
     expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it "preserves custom door copy, and preserves instant mode when it has a custom banner" do
+    alumni.update!(door_instructions: "Check the list at the second table", scanner_show_buyer: true)
+    student = create(:ticket_type, event: event, name: "Student")
+    student.update!(door_alert_label: "WRISTBAND REQUIRED", door_instructions: "Use a blue wristband")
+
+    apply_template("alumni_door_verification", ticket_type: alumni)
+    expect(response).to have_http_status(:created)
+    expect(alumni.reload).to have_attributes(door_check_mode: "verify", scanner_show_buyer: true,
+      door_instructions: "Check the list at the second table")
+    apply_template("alumni_door_verification", ticket_type: student)
+    expect(response).to have_http_status(:created)
+    expect(student.reload).to have_attributes(door_check_mode: "instant", door_alert_label: "WRISTBAND REQUIRED",
+      door_instructions: "Use a blue wristband")
   end
 
   it "requires a ticket type for alumni door verification and extends it to a second ticket type" do
