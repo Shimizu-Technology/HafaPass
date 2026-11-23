@@ -192,9 +192,10 @@ describe('discovery first', () => {
   fireEvent.pointerMove(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
   fireEvent.pointerUp(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
   // The click this drag produces (a pointer click, detail 1) is swallowed; the next tap opens.
-  fireEvent.click(pass,{detail:1})
+  const dragClick = () => Object.assign(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }), { pointerId: 3, pointerType: 'touch' })
+  fireEvent(pass, dragClick())
   expect(screen.queryByText(/Browse destination/)).not.toBeInTheDocument()
-  fireEvent.click(pass,{detail:1})
+  fireEvent(pass, dragClick())
   expect(screen.getByText('Browse destination /events/community-night')).toBeInTheDocument()
  })
  it('opens the date and village choices from a labeled 48px button on phones', async () => {
