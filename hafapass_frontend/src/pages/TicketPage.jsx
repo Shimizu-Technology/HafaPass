@@ -148,7 +148,6 @@ function OrderTickets({ orderId, authContext }) {
   const alive = useRef(false)
   const loaded = useRef(false)
   const pending = useRef(false)
-  const focusRequest = useRef(null)
   const shown = useRef(false)
   useEffect(() => {
     alive.current = true
@@ -171,8 +170,26 @@ function OrderTickets({ orderId, authContext }) {
       .catch(() => {})
       .finally(() => { pending.current = false })
   }, [orderId, authContext, credential])
-  return <TicketContent key={JSON.stringify([credential, orderId])} authContext={authContext}
-    siblings={siblings || []} focusRequest={focusRequest} shown={shown} />
+  const content = <TicketContent key={JSON.stringify([credential, orderId])} authContext={authContext}
+    siblings={siblings || []} shown={shown} framed={Boolean(orderId)} />
+  if (!orderId) return content
+  // Inside an order the frame and the switcher stay mounted while each ticket
+  // loads, fails or shows, so paging keeps focus on the switcher and the QR in
+  // place. Links mark the move as a ticket switch so Layout keeps scroll and focus.
+  const list = siblings || []
+  const position = list.findIndex(item => item.display_credential === credential)
+  const sibling = item => item && { to: `/tickets/${encodeURIComponent(item.display_credential)}?order=${encodeURIComponent(orderId)}`, state: { ticketSwitch: true } }
+  return (
+    <div className="min-h-dvh bg-brand-950 flex items-start justify-center px-3 sm:px-4 py-6 sm:py-8">
+      <div className="flex w-full flex-col items-center">
+        {position >= 0 && list.length > 1 && <div className="mb-4 w-full max-w-[380px] sm:max-w-sm">
+          <TicketSwitcher tone="dark" position={position + 1} total={list.length} name={list[position].attendee_name}
+            previous={sibling(list[position - 1])} next={sibling(list[position + 1])} />
+        </div>}
+        {content}
+      </div>
+    </div>
+  )
 }
 
 // Follows connectivity changes so the offline explanation appears and clears
@@ -206,7 +223,8 @@ function TransferredRefundSupport() {
   )
 }
 
-function TicketContent({ authContext, siblings: orderTickets = [], focusRequest, shown }) {
+// `framed`: OrderTickets draws the page frame (and any switcher) around this ticket.
+function TicketContent({ authContext, siblings: orderTickets = [], shown, framed = false }) {
   const { t } = useTranslation()
   const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
   const reducedMotion = useReducedMotion()
@@ -360,18 +378,23 @@ function TicketContent({ authContext, siblings: orderTickets = [], focusRequest,
     }
   }
 
+  const page = (className, children) => framed ? children : <div className={className}>{children}</div>
+
   if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-dvh bg-brand-950">
+    // Inside an order, a calm placeholder holds the card's place under the switcher.
+    return framed
+      ? <div role="status" className="flex min-h-[32rem] w-full max-w-[380px] items-center justify-center rounded-[1.25rem] bg-white/5 sm:max-w-sm">
+        <Loader2 aria-hidden="true" className="w-10 h-10 text-brand-300 animate-spin" />
+        <span className="sr-only">{t('buyerAccount.ticketPage.loadingTicket')}</span>
+      </div>
+      : <div className="flex justify-center items-center min-h-dvh bg-brand-950">
         <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
       </div>
-    )
   }
 
   if (error) {
-    return (
-      <div className="min-h-dvh bg-brand-950 px-4 py-12 text-center">
-        <div className="card p-8 max-w-md mx-auto">
+    return page('min-h-dvh bg-brand-950 px-4 py-12 text-center', (
+        <div className={`card p-8 max-w-md mx-auto ${framed ? 'w-full text-center' : ''}`}>
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-neutral-950 mb-3">{t('buyerAccount.ticketPage.ticketUnavailable')}</h1>
           <div role="alert" className="mb-4">
@@ -380,23 +403,20 @@ function TicketContent({ authContext, siblings: orderTickets = [], focusRequest,
           </div>
           <div className="flex flex-wrap justify-center gap-3"><button type="button" className="btn-primary text-sm" onClick={() => setLoadAttempt(value => value + 1)}>{t('buyerAccount.ticketPage.tryAgain')}</button><Link to="/orders/recover" className="btn-secondary text-sm">{t('buyerAccount.ticketPage.findMyOrder')}</Link></div>
         </div>
-      </div>
-    )
+    ))
   }
 
   const { event, ticket_type } = ticket
   const isPassParent = Boolean(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
 
   if (isPassParent) {
-    return (
-      <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+    return page('min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8', <>
         <SEO title={t('pageTitles.ticket')} noIndex />
         <div className="w-full max-w-md">
           <PassTicketCard ticket={ticket} event={event} orderId={orderId} showSummaryBanner />
           <AddToHomeScreenInstructions />
         </div>
-      </div>
-    )
+    </>)
   }
 
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'long', month: 'long' })
@@ -416,13 +436,8 @@ function TicketContent({ authContext, siblings: orderTickets = [], focusRequest,
   const wallets = visibleWallets(ticket.wallet_availability)
   const position = orderTickets.findIndex(item => item.display_credential === credential)
   const attendeeName = ticket.attendee_name || (position >= 0 ? orderTickets[position].attendee_name : null)
-  const siblingLink = item => item && { to: `/tickets/${encodeURIComponent(item.display_credential)}?order=${encodeURIComponent(orderId)}` }
-  const switcher = position >= 0 && orderTickets.length > 1 && <TicketSwitcher tone="dark" position={position + 1} total={orderTickets.length}
-    name={attendeeName} previous={siblingLink(orderTickets[position - 1])} next={siblingLink(orderTickets[position + 1])}
-    focusRequest={focusRequest} />
 
-  return (
-    <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+  return page('min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8', <>
       <SEO title={t('pageTitles.ticket')} noIndex />
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
@@ -440,7 +455,6 @@ function TicketContent({ authContext, siblings: orderTickets = [], focusRequest,
             <strong>{t('buyerAccount.ticketPage.ticketUnavailable2')}</strong> {ticket.admission_block_reason || t('buyerAccount.ticketPage.thisTicketIsNotCurrentlyValidForEntry')}
           </div>
         )}
-        {switcher && <div className="mb-4">{switcher}</div>}
         {/* Main Ticket Card */}
         <div className="wallet-tilt" {...tilt.handlers}>
         <div ref={tilt.ref} className="ticket wallet-ticket">
@@ -613,6 +627,5 @@ function TicketContent({ authContext, siblings: orderTickets = [], focusRequest,
         {/* Add to Home Screen */}
         <AddToHomeScreenInstructions />
       </motion.div>
-    </div>
-  )
+  </>)
 }

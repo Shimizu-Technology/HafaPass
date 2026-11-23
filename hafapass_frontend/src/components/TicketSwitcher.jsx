@@ -5,14 +5,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 // Previous/next for a group of tickets: one on screen at a time, so a buyer
 // showing four QR codes at the door always knows which one is up.
-// `previous` and `next` are { to } links or { onClick } buttons; null at either end.
-// Keyboard focus stays on the switcher after paging: on the control used, or on
-// the other one when the end of the group disables it. Links remount the
-// ticket, so the parent keeps the pending move in `focusRequest` across it.
-export default function TicketSwitcher({ position, total, name, previous, next, tone = 'light', label, focusRequest }) {
+// `previous` and `next` are { to, state } links or { onClick } buttons; null at either end.
+// Keep it mounted while paging: keyboard focus then stays on the control used,
+// or moves to the other one when the end of the group disables it.
+export default function TicketSwitcher({ position, total, name, previous, next, tone = 'light', label }) {
   const { t } = useTranslation()
-  const ownRequest = useRef(null)
-  const request = focusRequest || ownRequest
+  const request = useRef(null)
   const controls = { previous: useRef(null), next: useRef(null) }
   useLayoutEffect(() => {
     const side = request.current
@@ -35,7 +33,7 @@ export default function TicketSwitcher({ position, total, name, previous, next, 
     const ref = controls[side]
     if (!target) return <button ref={ref} type="button" disabled aria-label={text} className={disabled}>{content}</button>
     const activate = () => { request.current = side; target.onClick?.() }
-    if (target.to) return <Link ref={ref} to={target.to} onClick={activate} aria-label={text} className={control}>{content}</Link>
+    if (target.to) return <Link ref={ref} to={target.to} state={target.state} onClick={activate} aria-label={text} className={control}>{content}</Link>
     return <button ref={ref} type="button" onClick={activate} aria-label={text} className={control}>{content}</button>
   }
   return (

@@ -1163,7 +1163,8 @@
       "ticketsInOrder": "Tickets in this order",
       "previousTicket": "Previous ticket",
       "nextTicket": "Next ticket",
-      "brightnessTip": "Tip: turn your screen brightness up at the door."
+      "brightnessTip": "Tip: turn your screen brightness up at the door.",
+      "loadingTicket": "Loading this ticket…"
     },
     "myTicketsPage": {
       "testOrderNoRealCharge": "Test order — no real charge",

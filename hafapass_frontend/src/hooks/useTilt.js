@@ -27,11 +27,12 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
   const pose = useRef({ x: rest.x, y: rest.y, tx: rest.x, ty: rest.y })
   const frame = useRef(0)
   const drag = useRef(null)
-  const dragged = useRef(false)
+  // The pointer that dragged ({ id, type }) until its own click has passed.
+  const dragged = useRef(null)
   const forget = useRef(0)
   const clearDragged = useCallback(() => {
     clearTimeout(forget.current)
-    dragged.current = false
+    dragged.current = null
   }, [])
 
   const paint = useCallback(() => {
@@ -89,8 +90,8 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
     drag.current = null
     settle()
     clearTimeout(forget.current)
-    if (cancelled || !dragged.current) { dragged.current = false; return }
-    forget.current = window.setTimeout(() => { dragged.current = false }, DRAG_CLICK_MS)
+    if (cancelled || dragged.current?.id !== event.pointerId) { dragged.current = null; return }
+    forget.current = window.setTimeout(() => { dragged.current = null }, DRAG_CLICK_MS)
   }
 
   const handlers = !enabled ? {} : {
@@ -112,12 +113,15 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
         // A mostly vertical press is a scroll; leave it to the page.
         if (Math.abs(dy) > Math.abs(dx)) { drag.current = null; return }
         state.moved = true
-        dragged.current = true
+        dragged.current = { id: state.id, type: event.pointerType }
       }
       aim(rest.x - clamp(dy * 0.12, max), rest.y + clamp(dx * 0.22, max * 1.6))
     },
     onPointerLeave: event => { if (event.pointerType === 'mouse') settle() },
     onPointerDown: event => {
+      // Any new press (a mouse on a hybrid device, another finger) ends a
+      // finished drag's claim on the next click.
+      if (!drag.current) clearDragged()
       if (!touch || event.pointerType === 'mouse' || drag.current) return
       drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
       clearDragged()
@@ -125,10 +129,15 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
     onPointerUp: event => release(event),
     onPointerCancel: event => release(event, true),
     onLostPointerCapture: event => release(event, true),
-    // A drag that ends over a link must not follow it. Keyboard and assistive
-    // technology clicks report no pointer (detail 0) and always go through.
+    // A drag that ends over a link must not follow it, but only the click that
+    // same pointer produces is swallowed. Keyboard and assistive-technology
+    // clicks report no pointer (detail 0) and always go through; a click from
+    // another pointer (id or type) goes through too.
     onClickCapture: event => {
-      const swallow = dragged.current && event.detail !== 0
+      const by = dragged.current
+      const { pointerId, pointerType } = event.nativeEvent
+      const samePointer = by && (pointerId == null || pointerId === by.id) && (!pointerType || pointerType === by.type)
+      const swallow = Boolean(samePointer) && event.detail !== 0
       clearDragged()
       if (!swallow) return
       event.preventDefault()

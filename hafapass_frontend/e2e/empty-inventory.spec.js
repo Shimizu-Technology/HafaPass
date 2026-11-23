@@ -79,7 +79,9 @@ for (const width of [375, 1280]) {
     await page.getByRole('button', { name: 'Clear filters' }).click()
     await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
     await page.goto('/discover')
-    await expect(page.getByRole('link', { name: 'Browse events', exact: true })).toBeVisible()
+    // Scoped to the page: the footer has its own Browse events link, and matching
+    // both only passed when the check ran before collections loaded.
+    await expect(page.getByRole('main').getByRole('link', { name: 'Browse events', exact: true })).toBeVisible()
     await expect(page.getByText('The first events are on their way.')).toHaveCount(0)
   })
 }

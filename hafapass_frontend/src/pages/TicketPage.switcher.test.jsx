@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import TicketPage from './TicketPage'
+import Layout from '../components/Layout'
 import api from '../api/client'
 
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
+vi.mock('../components/Navbar', () => ({ default: () => null }))
+vi.mock('../components/Footer', () => ({ default: () => null, WorkspaceFooter: () => null }))
+vi.mock('../components/EnvironmentBanner', () => ({ default: () => null }))
 
 const event = { title: 'Alumni night', status: 'published', starts_at: '2099-01-01T08:00:00Z', timezone: 'Pacific/Guam', venue_name: 'QA Gym' }
 const ticket = credential => ({ id: Number(credential.slice(-1)), status: 'issued', admission_allowed: true, scan_credential: `scan-${credential}`,
@@ -104,8 +108,71 @@ describe('group order ticket switcher', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('link', { name: 'Next ticket' }))
     await screen.findByText('Ticket 2 of 3 — Bram Okafor')
-    const card = screen.getByRole('navigation', { name: 'Tickets in this order' }).parentElement.parentElement
+    await screen.findByRole('img', { name: 'Ticket entry QR code' })
+    const card = document.querySelector('.wallet-tilt').parentElement
     expect(card.style.transform || 'none').toBe('none')
+  })
+
+  describe('inside the app layout', () => {
+    const deferred = () => { let settle; const promise = new Promise((resolve, reject) => { settle = { resolve, reject } }); return { promise, ...settle } }
+    const showInLayout = path => render(<MemoryRouter initialEntries={[path]}><Routes>
+      <Route element={<Layout />}><Route path="/tickets/:credential" element={<TicketPage />} /></Route>
+    </Routes></MemoryRouter>)
+
+    it('keeps the switcher, its focus and the scroll position through loading, failure and success', async () => {
+      const pending = {}
+      api.get.mockImplementation(url => {
+        if (url === '/orders/9') return Promise.resolve({ data: order })
+        const credential = decodeURIComponent(url.split('/').pop())
+        if (credential === 'cred-1') return Promise.resolve({ data: ticket(credential) })
+        pending[credential] = deferred()
+        return pending[credential].promise
+      })
+      showInLayout('/tickets/cred-1?order=9')
+      const user = userEvent.setup()
+      const next = await screen.findByRole('link', { name: 'Next ticket' })
+      await screen.findByRole('img', { name: 'Ticket entry QR code' })
+      const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+      const nav = screen.getByRole('navigation', { name: 'Tickets in this order' })
+
+      await user.click(next)
+      // Loading: the same switcher stays, focus stays on Next, and a calm placeholder holds the card's place.
+      expect(screen.getByRole('navigation', { name: 'Tickets in this order' })).toBe(nav)
+      expect(nav).toHaveTextContent('Ticket 2 of 3 — Bram Okafor')
+      expect(screen.getByRole('link', { name: 'Next ticket' })).toHaveFocus()
+      expect(screen.getByText('Loading this ticket…').closest('[role="status"]')).toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: 'Ticket entry QR code' })).not.toBeInTheDocument()
+
+      // Failure: the error shows in the card's place and paging still works.
+      await act(async () => pending['cred-2'].reject(new Error('weak signal')))
+      expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load this ticket.")
+      expect(screen.getByRole('navigation', { name: 'Tickets in this order' })).toBe(nav)
+      expect(screen.getByRole('link', { name: 'Next ticket' })).toHaveFocus()
+
+      await user.click(screen.getByRole('link', { name: 'Next ticket' }))
+      // At the end Next is disabled, so focus moves to Previous, not to the page.
+      expect(nav).toHaveTextContent('Ticket 3 of 3 — Calla Yorke')
+      expect(screen.getByRole('link', { name: 'Previous ticket' })).toHaveFocus()
+      await act(async () => pending['cred-3'].resolve({ data: ticket('cred-3') }))
+      expect(await screen.findByRole('img', { name: 'Ticket entry QR code' })).toBeInTheDocument()
+      expect(screen.getByRole('navigation', { name: 'Tickets in this order' })).toBe(nav)
+      expect(screen.getByRole('link', { name: 'Previous ticket' })).toHaveFocus()
+      expect(document.getElementById('main-content')).not.toHaveFocus()
+      expect(scroll).not.toHaveBeenCalled()
+      scroll.mockRestore()
+    })
+
+    it('still moves focus and scroll for an ordinary route change', async () => {
+      const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+      function Leave() { const navigate = useNavigate(); return <button type="button" onClick={() => navigate('/tickets/cred-3?order=9')}>Open another ticket</button> }
+      render(<MemoryRouter initialEntries={['/tickets/cred-1?order=9']}><Leave /><Routes>
+        <Route element={<Layout />}><Route path="/tickets/:credential" element={<TicketPage />} /></Route>
+      </Routes></MemoryRouter>)
+      await screen.findByRole('img', { name: 'Ticket entry QR code' })
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Open another ticket' }))
+      expect(scroll).toHaveBeenCalled()
+      scroll.mockRestore()
+    })
   })
 })
 

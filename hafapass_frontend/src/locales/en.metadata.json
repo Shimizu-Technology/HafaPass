@@ -1532,6 +1532,9 @@
       },
       "brightnessTip": {
         "context": "Advice under the ticket QR code: a brighter phone screen scans faster at the entrance."
+      },
+      "loadingTicket": {
+        "context": "Screen-reader status while the next ticket in a group order loads after Previous/Next."
       }
     },
     "privacyRequests": {

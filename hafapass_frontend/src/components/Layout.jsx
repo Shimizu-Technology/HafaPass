@@ -29,9 +29,15 @@ export default function Layout() {
   const checkout = /^\/checkout(?:\/|$)/.test(location.pathname)
   const defaultTitleKey = routeTitleKey(location.pathname)
 
+  // Paging between tickets of one order is marked { ticketSwitch: true }: the
+  // switcher keeps focus and announces the change, and the QR stays in view.
+  const ticketSwitch = useRef(false)
+  ticketSwitch.current = location.state?.ticketSwitch === true
+
   useEffect(() => {
     if (previousPath.current === location.pathname) return undefined
     previousPath.current = location.pathname
+    if (ticketSwitch.current) return undefined
     const content = main.current
     if (!content) return undefined
     window.scrollTo({ top: 0, behavior: 'instant' })
