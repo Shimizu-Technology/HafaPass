@@ -17,7 +17,14 @@ test.describe('hero exploration variants (?hero=1..4)', () => {
     test(`all 4 hero variants render cleanly with zero overflow and >=44px tap targets at ${vp.name}`, async ({ page }) => {
       const consoleErrors = []
       const pageErrors = []
-      page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()) })
+      page.on('console', msg => {
+        if (msg.type() !== 'error') return
+        const text = msg.text()
+        // Netlify injects its Collaborate preview drawer iframe from app.netlify.com,
+        // which logs a report-only CSP notice unrelated to HåfaPass.
+        if (text.includes('app.netlify.com')) return
+        consoleErrors.push(text)
+      })
       page.on('pageerror', err => pageErrors.push(err.message))
 
       await page.setViewportSize({ width: vp.width, height: vp.height })

@@ -380,10 +380,10 @@
 }
 .hero-island-status { transition: background-color 220ms ease, color 220ms ease; }
 
-/* Demo-only floating hero variant switcher: opaque high-contrast dark teal pill
-   so labels remain legible over both dark hero and light event surfaces. */
+/* Demo-only floating hero variant switcher: sticky below the navbar so it stays
+   clear of Netlify's bottom preview drawer and never blocks hero ticket CTAs. */
+.hero-switcher-wrap { top: calc(70px + env(safe-area-inset-top, 0px)); }
 .hero-switcher {
-  bottom: max(12px, env(safe-area-inset-bottom, 0px));
   background-color: rgb(3 40 39 / 0.94);
   border: 1px solid rgb(255 255 255 / 0.18);
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.34), 0 2px 8px rgb(0 0 0 / 0.22);

@@ -185,17 +185,18 @@ export default function HomePage() {
   )
 
   return (
-    <div className={`public-intros min-h-dvh bg-brand-950 text-content ${demoMode ? 'pb-20 sm:pb-16' : ''}`}>
+    <div className="public-intros min-h-dvh bg-brand-950 text-content">
       <SEO />
       <section
         data-header-band="dark"
         data-hero-variant={heroVariant}
         className={`relative overflow-x-clip bg-brand-950 text-white ${
           heroVariant === 3
-            ? 'pb-14 pt-4 sm:pb-20 sm:pt-12 lg:pb-24 lg:pt-14'
-            : 'pb-12 pt-4 sm:pb-20 sm:pt-11 lg:pb-24 lg:pt-14'
+            ? 'pb-14 pt-3 sm:pb-20 sm:pt-6 lg:pb-24 lg:pt-8'
+            : 'pb-12 pt-3 sm:pb-20 sm:pt-6 lg:pb-24 lg:pt-8'
         }`}
       >
+        {demoMode && <HeroVariantSwitcher activeVariant={heroVariant} onSelect={selectHeroVariant} />}
         {heroVariant === 3 && discovery ? (
           <div>
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -268,7 +269,6 @@ export default function HomePage() {
         </div>
       </div>
       <Footer />
-      {demoMode && <HeroVariantSwitcher activeVariant={heroVariant} onSelect={selectHeroVariant} />}
     </div>
   )
 }
