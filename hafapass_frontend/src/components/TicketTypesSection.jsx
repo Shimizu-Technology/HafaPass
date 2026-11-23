@@ -144,6 +144,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         {t('pricing.ticketPlusFee', { price: formatTicketPrice(basePrice), fee: formatTicketPrice(feeCents) })}
                       </p>
                     )}
+                    {currentPrice === 0 && <p className="text-sm text-neutral-700">{t('buyer.TicketTypesSection.freeNoPayment')}</p>}
                   </div>
 
                   {/* Urgency indicators */}
@@ -173,21 +174,21 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                 </div>
 
                 {!soldOut && (
-                  <div className="flex shrink-0 items-center gap-2 self-end">
+                  <div className="flex shrink-0 items-center gap-3 self-end">
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
+                      className="min-h-12 min-w-12 rounded-xl border-2 border-neutral-300 flex items-center justify-center text-neutral-800 hover:bg-neutral-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
                     >
-                      <Minus className="w-3.5 h-3.5" />
+                      <Minus aria-hidden="true" className="w-5 h-5" />
                     </button>
-                    <span className="w-8 text-center text-sm font-semibold text-neutral-900">{qty}</span>
+                    <span className="w-10 text-center text-lg font-semibold text-neutral-900">{qty}</span>
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="w-11 h-11 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 disabled:opacity-30 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
+                      className="min-h-12 min-w-12 rounded-xl border-2 border-brand-700 flex items-center justify-center text-brand-800 hover:bg-brand-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus aria-hidden="true" className="w-5 h-5" />
                     </button>
                   </div>
                 )}

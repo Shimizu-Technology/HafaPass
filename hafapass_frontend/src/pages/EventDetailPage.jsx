@@ -399,29 +399,37 @@ function EventDetailContent() {
               <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-tight tracking-tight text-neutral-950 mb-3 break-words">{content.title}</h1>
               {content.notice && <MachineTranslationNotice {...content.notice} className="mb-3" />}
 
-              {/* Date & Venue on hero */}
-              <div className="flex flex-wrap items-center gap-4 text-neutral-600 text-base">
-                {event.starts_at && (
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Calendar className="w-4 h-4 text-brand-800" />
-                    <span>{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</span>
-                    <span className="text-neutral-500">·</span>
-                    <span className="min-w-0 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</span>
-                  </div>
-                )}
-                {event.venue_name && (
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <MapPin className="w-4 h-4 text-brand-800" />
-                    <span>{event.venue_name}</span>
-                  </div>
-                )}
-              </div>
+              {/* Bento strip: the four facts a guest checks before going. */}
+              <dl className="event-bento mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {event.starts_at && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Calendar aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.dateAndTime')}</dt>
+                  <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</dd>
+                  <dd className="text-base text-neutral-700 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</dd>
+                </div>}
+                {event.venue_name && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><MapPin aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.venue')}</dt>
+                  <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.venue_name}</dd>
+                  {event.venue_city && <dd className="text-base text-neutral-700">{event.venue_city}</dd>}
+                </div>}
+                {event.doors_open_at && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Clock aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.doorsOpen')}</dt>
+                  <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventTime(event.doors_open_at, event.timezone)}</dd>
+                </div>}
+                {event.organizer?.business_name && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Users aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.hostedBy')}</dt>
+                  <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.organizer.business_name}</dd>
+                </div>}
+              </dl>
               {!event.private_preview && !closedStatus && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
 
               {coverImage && (
-                <div className="mt-6 aspect-video overflow-hidden rounded-2xl bg-neutral-100">
-                  <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
-                    className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
+                <div className="event-art relative mt-6">
+                  {/* The artwork's own colors, softly blurred behind its frame. */}
+                  <div aria-hidden="true" className="event-art-glow" style={{ backgroundImage: `url("${coverImage}")` }} />
+                  <div className="relative aspect-video overflow-hidden rounded-2xl bg-neutral-100 shadow-card ring-1 ring-black/5">
+                    <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
+                      className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
+                  </div>
                 </div>
               )}
             </section>
@@ -523,11 +531,6 @@ function EventDetailContent() {
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
                     <Users className="w-3 h-3" />
                     {ageLabels[event.age_restriction] || event.age_restriction}
-                  </span>
-                )}
-                {event.doors_open_at && (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                    <Clock className="w-3 h-3" />{t('buyer.EventDetail.doorsAt', { time: formatEventTime(event.doors_open_at, event.timezone) })}
                   </span>
                 )}
               </div>

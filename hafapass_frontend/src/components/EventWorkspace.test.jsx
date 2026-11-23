@@ -109,31 +109,36 @@ describe('connected event workspace', () => {
   })
 
   it.each([
-    ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Sales tools & messages']],
-    ['finance', { view_finance: true, refund: true }, ['Sales & finances', 'Refunds']],
-    ['box office', { view_attendees: true, manage_attendees: true, scan: true, box_office: true }, ['Attendee list', 'Guest list', 'Waitlist', 'Scan tickets', 'Box office']],
-    ['scanner', { scan: true }, ['Scan tickets']],
-    ['reader', { view_finance: true }, ['Sales & finances']],
+    ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Questions & Waivers']],
+    ['finance', { view_finance: true, refund: true }, ['Reports & Sales', 'Refunds']],
+    ['box office', { view_attendees: true, manage_attendees: true, scan: true, box_office: true }, ['Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office']],
+    ['scanner', { scan: true }, ['Door Scanner']],
+    ['reader', { view_finance: true }, ['Reports & Sales']],
   ])('only offers the tools granted to %s', (_role, scope, expected) => {
     mount({ event: { ...dto(), permissions: scope } })
     const tools = within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link')
     expect(tools.map(link => link.textContent)).toEqual(expected)
   })
 
-  it('hides disabled capabilities while keeping baseline promo codes, registration & waivers, and all other permitted tools', () => {
+  it('hides disabled capabilities while keeping baseline promo codes, questions & waivers, and all other permitted tools', () => {
     launch.assigned_seating = false; launch.advanced_sales_tools = false
     mount({ event: { ...dto(), permissions: { ...permissions, manage_events: true } } })
     expect(screen.queryByRole('link', { name: 'Assigned seating' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Sales tools & messages' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Promo codes' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Registration & waivers' })).toHaveAttribute('href', '/dashboard/events/37/sales-tools')
+    expect(screen.getByRole('link', { name: 'Questions & Waivers' })).toHaveAttribute('href', '/dashboard/events/37/sales-tools')
   })
 
-  it('hides registration & waivers from marketer-only members when advanced sales tools are disabled', () => {
+  it('names the organizer tools in plain words', () => {
+    mount({ event: { ...dto(), permissions: { ...permissions, manage_events: true, scan: true, view_finance: true } } })
+    const labels = within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link').map(link => link.textContent)
+    expect(labels).toEqual(expect.arrayContaining(['Questions & Waivers', 'Reports & Sales', 'Door Scanner']))
+    for (const old of ['Sales tools & messages', 'Sales & finances', 'Scan tickets', 'Registration & waivers']) expect(labels).not.toContain(old)
+  })
+
+  it('hides questions & waivers from marketer-only members when advanced sales tools are disabled', () => {
     launch.assigned_seating = false; launch.advanced_sales_tools = false
     mount({ event: { ...dto(), permissions: { edit_event_content: true, manage_marketing: true } } })
-    expect(screen.queryByRole('link', { name: 'Sales tools & messages' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Registration & waivers' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Questions & Waivers' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Promo codes' })).toBeInTheDocument()
   })
 

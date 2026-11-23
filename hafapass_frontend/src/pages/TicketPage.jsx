@@ -6,11 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
-import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles, Sun } from 'lucide-react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import PassTicketCard from '../components/PassTicketCard'
+import TicketSwitcher from '../components/TicketSwitcher'
+import useMotionOk from '../hooks/useMotionOk'
+import useTilt from '../hooks/useTilt'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
@@ -83,7 +86,7 @@ function WalletButton({ label, icon, onClick, disabled, loading }) {
   const { t } = useTranslation()
   return (
       <button onClick={onClick} disabled={disabled || loading}
-        className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
+        className="w-full min-h-12 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-50">
         {icon}
         <span>{loading ? t('buyerAccount.ticketPage.opening') : label}</span>
       </button>
@@ -93,7 +96,7 @@ function WalletButton({ label, icon, onClick, disabled, loading }) {
 // Apple Wallet icon (SVG)
 function AppleWalletIcon() {
   return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
@@ -103,7 +106,7 @@ function AppleWalletIcon() {
 // Google Wallet icon (SVG)
 function GoogleWalletIcon() {
   return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7" />
       <circle cx="18" cy="18" r="3" />
       <path d="M18 15v6" />
@@ -148,6 +151,13 @@ const subscribeConnectivity = callback => {
 }
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
+// The keepsake lean follows a mouse only: on a phone the QR must lie flat for the scanner.
+const finePointer = () => typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches === true
+
+// The other single tickets in this order, in order, for the previous/next switcher.
+const switchableTickets = order => (Array.isArray(order?.tickets) ? order.tickets : [])
+  .filter(item => item.display_credential && !(item.pass_parent || item.is_pass))
+
 // Loads support contact details only for the holders who need them.
 function TransferredRefundSupport() {
   const { t } = useTranslation()
@@ -176,6 +186,9 @@ function TicketContent({ authContext }) {
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
+  const [orderTickets, setOrderTickets] = useState([])
+  const motionOk = useMotionOk()
+  const tilt = useTilt({ enabled: motionOk && finePointer(), max: 4 })
   const lifecycle = useRef({ active: false, generation: 0 })
   const access = useRef({ buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) })
   useLayoutEffect(() => {
@@ -221,6 +234,23 @@ function TicketContent({ authContext }) {
     fetchTicket()
     return () => { active = false }
   }, [credential, orderId, authContext, t, loadAttempt])
+
+  // Opened from an order, a group's tickets get a previous/next switcher. The
+  // switcher is extra: if the order can't load, the ticket shows on its own.
+  const loadedTicketId = ticket?.id
+  const singleTicket = Boolean(ticket) && !(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
+  useEffect(() => {
+    if (!orderId || !loadedTicketId || !singleTicket) return undefined
+    let active = true
+    const generation = lifecycle.current.generation
+    const current = () => active && lifecycle.current.active && lifecycle.current.generation === generation
+      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
+      && getOrderAccess(orderId) === access.current.token
+    api.get(`/orders/${encodeURIComponent(orderId)}`, { headers: orderAccessHeaders(orderId, access.current.token), authContext })
+      .then(response => { if (current()) setOrderTickets(switchableTickets(response.data)) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [orderId, loadedTicketId, singleTicket, authContext])
 
   async function handleDownload() {
     const current = currentOperation()
@@ -362,6 +392,11 @@ function TicketContent({ authContext }) {
   const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.access_paused
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
   const wallets = visibleWallets(ticket.wallet_availability)
+  const position = orderTickets.findIndex(item => item.display_credential === credential)
+  const attendeeName = ticket.attendee_name || (position >= 0 ? orderTickets[position].attendee_name : null)
+  const siblingLink = item => item && { to: `/tickets/${encodeURIComponent(item.display_credential)}?order=${encodeURIComponent(orderId)}` }
+  const switcher = position >= 0 && orderTickets.length > 1 && <TicketSwitcher tone="dark" position={position + 1} total={orderTickets.length}
+    name={attendeeName} previous={siblingLink(orderTickets[position - 1])} next={siblingLink(orderTickets[position + 1])} />
 
   return (
     <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
@@ -382,9 +417,12 @@ function TicketContent({ authContext }) {
             <strong>{t('buyerAccount.ticketPage.ticketUnavailable2')}</strong> {ticket.admission_block_reason || t('buyerAccount.ticketPage.thisTicketIsNotCurrentlyValidForEntry')}
           </div>
         )}
+        {switcher && <div className="mb-4">{switcher}</div>}
         {/* Main Ticket Card */}
-        <div className="ticket">
+        <div className="wallet-tilt" {...tilt.handlers}>
+        <div ref={tilt.ref} className="ticket wallet-ticket">
           <TicketTop className="overflow-hidden">
+          {motionOk && finePointer() && <span aria-hidden="true" className="wallet-foil"><span ref={tilt.sheenRef} /></span>}
           {/* Cover image banner */}
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="h-32 sm:h-36 overflow-hidden relative">
@@ -428,7 +466,7 @@ function TicketContent({ authContext }) {
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={280} className="block w-full max-w-[17.5rem] h-auto" />
             </div>
-            <p className="mt-2 text-xs text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
+            <p className="mt-2 text-sm text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
           </motion.div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
@@ -439,6 +477,16 @@ function TicketContent({ authContext }) {
             </div>
           )}
 
+          {/* Who and what, readable at arm's length for door staff. */}
+          <div className="px-4 pb-5 text-center sm:px-6">
+            <p className="font-display text-2xl font-bold leading-tight text-neutral-950 [overflow-wrap:anywhere]">{ticket_type.name}</p>
+            {attendeeName && <p className="mt-1 text-xl font-semibold text-neutral-800 [overflow-wrap:anywhere]">{attendeeName}</p>}
+            {ticket.seat && <p className="mt-1 text-lg font-semibold text-brand-800">{ticket.seat.display_label}</p>}
+            {showCredential && <p className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-amber-50 px-4 py-3 text-left text-base font-medium text-amber-950">
+              <Sun aria-hidden="true" className="h-5 w-5 shrink-0" />{t('buyerAccount.ticketPage.brightnessTip')}
+            </p>}
+          </div>
+
           </TicketTop>
           <TicketStub>
 
@@ -447,8 +495,6 @@ function TicketContent({ authContext }) {
             <div>
               <h1 className="font-display text-lg font-bold text-neutral-900">{eventContent.title}</h1>
               <MachineTranslationNotice {...eventContent.notice} />
-              <p className="text-sm text-brand-800 font-semibold font-sans">{ticket_type.name}</p>
-              {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-sm text-amber-700">{t('buyerAccount.ticketPage.obstructedView')}{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
 
@@ -484,18 +530,31 @@ function TicketContent({ authContext }) {
 
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons: one tap to a wallet, or a printable PDF. */}
           <div className="px-4 sm:px-6 pb-5 space-y-2.5">
+            {walletError && <p role="alert" className="text-center text-sm text-red-700">{walletError}</p>}
+            {(wallets.apple || wallets.google) && (
+              <div className={`grid grid-cols-1 gap-2 ${wallets.apple && wallets.google ? 'sm:grid-cols-2' : ''}`}>
+                {wallets.apple && (
+                  <WalletButton label={t('buyerAccount.ticketPage.appleWallet')} icon={<AppleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
+                )}
+                {wallets.google && (
+                  <WalletButton label={t('buyerAccount.ticketPage.googleWallet')} icon={<GoogleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
+                )}
+              </div>
+            )}
             {/* Download PDF */}
             <button
               onClick={handleDownload}
               disabled={downloading || !showCredential}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl min-h-11 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl min-h-12 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-base font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
             >
               {downloading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 aria-hidden="true" className="w-5 h-5 animate-spin" />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download aria-hidden="true" className="w-5 h-5" />
               )}
               <span>{downloading ? t('buyerAccount.ticketPage.generating') : t('buyerAccount.ticketPage.downloadPDF')}</span>
             </button>
@@ -516,19 +575,6 @@ function TicketContent({ authContext }) {
               <p className="text-center text-sm text-neutral-500">{t('buyerAccount.ticketPage.sharingDoesNotTransfer')}</p>
             )}
 
-            {walletError && <p role="alert" className="text-center text-sm text-red-700">{walletError}</p>}
-            {(wallets.apple || wallets.google) && (
-              <div className={`grid grid-cols-1 gap-2 ${wallets.apple && wallets.google ? 'sm:grid-cols-2' : ''}`}>
-                {wallets.apple && (
-                  <WalletButton label={t('buyerAccount.ticketPage.appleWallet')} icon={<AppleWalletIcon />} disabled={!showCredential}
-                    loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
-                )}
-                {wallets.google && (
-                  <WalletButton label={t('buyerAccount.ticketPage.googleWallet')} icon={<GoogleWalletIcon />} disabled={!showCredential}
-                    loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
-                )}
-              </div>
-            )}
           </div>
 
           {/* Footer */}
@@ -538,6 +584,7 @@ function TicketContent({ authContext }) {
             </p>
           </div>
           </TicketStub>
+        </div>
         </div>
 
         {/* Add to Home Screen */}

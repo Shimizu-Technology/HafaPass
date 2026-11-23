@@ -7,10 +7,11 @@ import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 
-export default function BuyerTicketPass({ event, ticket, isPast, status, canTransfer, onTransfer, onCancelTransfer, onTransferSettled }) {
+// `orderId` opens the ticket inside its order, with the previous/next switcher.
+export default function BuyerTicketPass({ event, ticket, isPast, status, canTransfer, onTransfer, onCancelTransfer, onTransferSettled, orderId }) {
   const { t } = useTranslation()
   const content = useTranslatedContent(event)
-  const href = `/tickets/${encodeURIComponent(ticket.display_credential)}`
+  const href = `/tickets/${encodeURIComponent(ticket.display_credential)}${orderId ? `?order=${encodeURIComponent(orderId)}` : ''}`
   return <Ticket stub={<div className="px-5 py-3 sm:px-6">
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
       <div className="flex flex-wrap items-center gap-2">

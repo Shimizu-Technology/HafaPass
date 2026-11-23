@@ -474,3 +474,49 @@ describe('truthful admission badges', () => {
     expect(headings.indexOf('FD Tourney Pass')).toBeLessThan(headings.indexOf('Past Concert'))
   })
 })
+
+describe('tonight at the door', () => {
+  beforeEach(() => { apiClient.get.mockReset(); apiClient.post.mockReset().mockResolvedValue({ data: {} }) })
+  // Already under way, so the test holds at any hour (a later start could fall on tomorrow in Guam).
+  const soon = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  const tonight = { id: 8, title: 'Alumni night', slug: 'alumni-night', timezone: 'Pacific/Guam', starts_at: soon }
+  const group = [
+    { ...ticket, id: 31, order_id: 70, display_credential: 'cred-a', attendee_name: 'Avery Lindqvist', ticket_type: { name: 'Adult' }, event: tonight },
+    { ...ticket, id: 32, order_id: 70, display_credential: 'cred-b', attendee_name: 'Bram Okafor', ticket_type: { name: 'Free Alumni' }, event: tonight },
+  ]
+
+  it('pins tonight’s tickets above the rest, one at a time, and opens each inside its order', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [ticket, ...group] } })
+    renderPage()
+    const pinned = await screen.findByRole('region', { name: 'Tonight’s tickets' })
+    expect(pinned).toHaveTextContent('Ticket 1 of 2 — Avery Lindqvist')
+    expect(within(pinned).getByRole('link', { name: 'Open ticket: Adult, #31' })).toHaveAttribute('href', '/tickets/cred-a?order=70')
+    expect(within(pinned).queryByText('Free Alumni')).not.toBeInTheDocument()
+    const next = within(pinned).getByRole('button', { name: 'Next ticket' })
+    expect(next).toHaveClass('min-h-12', 'min-w-12')
+    await userEvent.click(next)
+    expect(pinned).toHaveTextContent('Ticket 2 of 2 — Bram Okafor')
+    expect(within(pinned).getByRole('link', { name: 'Open ticket: Free Alumni, #32' })).toHaveAttribute('href', '/tickets/cred-b?order=70')
+    expect(within(pinned).getByRole('button', { name: 'Next ticket' })).toBeDisabled()
+    // Pinned tickets are not repeated below; later events stay in the list.
+    expect(screen.getAllByRole('link', { name: /Open ticket: Free Alumni/ })).toHaveLength(1)
+    expect(screen.getByText('Island workshop')).toBeInTheDocument()
+    expect(pinned.compareDocumentPosition(screen.getByText('Island workshop')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('pins a single ticket without a switcher and leaves future events unpinned', async () => {
+    apiClient.get.mockResolvedValue({ data: { tickets: [group[0], ticket] } })
+    renderPage()
+    const pinned = await screen.findByRole('region', { name: 'Tonight’s ticket' })
+    expect(within(pinned).queryByRole('navigation', { name: 'Tickets in this order' })).not.toBeInTheDocument()
+    expect(within(pinned).queryByText('Island workshop')).not.toBeInTheDocument()
+  })
+
+  it('does not pin used tickets or events that already ended', async () => {
+    const ended = { ...tonight, id: 9, slug: 'earlier', starts_at: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString() }
+    apiClient.get.mockResolvedValue({ data: { tickets: [{ ...group[0], status: 'checked_in' }, { ...group[1], event: ended }] } })
+    renderPage()
+    await screen.findAllByText('Alumni night')
+    expect(screen.queryByRole('region', { name: /Tonight/ })).not.toBeInTheDocument()
+  })
+})

@@ -28,6 +28,29 @@ const statusCopy = {
 // verification state to show if the organizer profile cannot be loaded.
 const verificationReasons = { organizer_not_verified: 'unverified', organizer_verification_requested: 'pending', organizer_paused: 'suspended' }
 
+// Four plain steps for a first-time volunteer organizer. Each links to the
+// tool that finishes it when this teammate may use that tool. Questions and
+// waivers are optional, so that step never counts as unfinished.
+function setupChecklist(event, has) {
+  const base = `/dashboard/events/${event.id}`
+  const published = ['published', 'postponed', 'completed'].includes(event.status)
+  const ticketTypes = (event.ticket_types || []).length
+  return [
+    { key: 'tickets', label: 'Ticket types set up', state: ticketTypes ? 'done' : 'todo',
+      detail: ticketTypes ? `${ticketTypes} ticket ${ticketTypes === 1 ? 'type' : 'types'} ready.` : 'Add at least one ticket, free or paid.',
+      link: has('manage_inventory') && has('edit_event_content') ? { to: `${base}/edit#ticket-types`, label: ticketTypes ? 'Review tickets' : 'Add tickets' } : null },
+    { key: 'questions', label: 'Questions & waivers', state: 'optional',
+      detail: 'Optional. Ask buyers a question at checkout or have them sign a waiver.',
+      link: has('manage_events') ? { to: `${base}/sales-tools`, label: 'Set up questions' } : null },
+    { key: 'publish', label: 'Event published', state: published ? 'done' : 'todo',
+      detail: published ? 'Buyers can find your event.' : 'Only your team can see it until you publish.',
+      link: !published && has('edit_event_content') ? { to: `${base}/edit`, label: 'Review and publish' } : null },
+    { key: 'scanner', label: 'Door scanner ready', state: published && ticketTypes ? 'done' : 'todo',
+      detail: published && ticketTypes ? 'Open the Door Scanner on any phone to check tickets in.' : 'Ready once your event is published with tickets.',
+      link: published && has('scan') ? { to: `/dashboard/scanner?event=${event.id}`, label: 'Open Door Scanner' } : null },
+  ]
+}
+
 // The server message may repeat the headline shown above it.
 const salesDetail = message => {
   const detail = (message || '').replace(/^(Visible but not on sale yet|Sales paused by HåfaPass)[:.]?\s*/i, '')
@@ -202,6 +225,8 @@ function EventOverviewSession({ id, identity }) {
   const publiclyVisible = event.publicly_visible == null ? !verificationState : event.publicly_visible
   const publicPath = event.slug ? `/events/${event.slug}` : null
   const tools = eventToolLinks(event, capabilities)
+  const setupSteps = ['draft', 'published'].includes(event.status) ? setupChecklist(event, has) : []
+  const requiredSteps = setupSteps.filter(step => step.state !== 'optional')
 
   return <EventWorkspace eventId={id} event={event}>
     <div className="space-y-6">
@@ -277,7 +302,7 @@ function EventOverviewSession({ id, identity }) {
               <button type="button" onClick={sharePreview} className="btn-secondary min-h-11 text-sm">{t('organizerVerification.sharePreview')}</button>
               <button type="button" onClick={() => copyLink(previewUrl)} className="btn-secondary min-h-11 text-sm">{copyState === 'copied' ? t('organizerVerification.copied') : t('organizerVerification.copyPreview')}</button>
               <button type="button" onClick={() => setConfirmNewPreview(true)} className="btn-secondary min-h-11 text-sm">Get a new preview link</button></>}
-            {has('scan') && <Link to={`/dashboard/scanner?event=${event.id}`} className="btn-secondary inline-flex min-h-11 text-sm">Scan tickets</Link>}
+            {has('scan') && <Link to={`/dashboard/scanner?event=${event.id}`} className="btn-secondary inline-flex min-h-11 text-sm">Open Door Scanner</Link>}
           </div>
           {previewUrl && !publiclyVisible && <p className="mt-2 text-sm text-neutral-700">Anyone using the old link will lose access.</p>}
           {!publiclyVisible && !previewUrl && <p className="mt-2 text-sm text-neutral-700">This event has no public link right now.</p>}
@@ -291,8 +316,27 @@ function EventOverviewSession({ id, identity }) {
           </label>}
         </>}
         {event.status === 'postponed' && <p className="mt-1 text-sm text-neutral-700">{has('edit_event_content') ? <>Set a new date in <Link to={`/dashboard/events/${event.id}/edit`} className="font-semibold text-brand-700 underline">event details</Link> when you have one.</> : 'Your event manager will set a new date.'}</p>}
-        {['cancelled', 'completed', 'archived'].includes(event.status) && <p className="mt-1 text-sm text-neutral-700">This event is closed. {has('view_finance') ? <>Review the final numbers in <Link to={`/dashboard/events/${event.id}/analytics`} className="font-semibold text-brand-700 underline">sales &amp; finances</Link>.</> : 'Nothing else needs doing here.'}</p>}
+        {['cancelled', 'completed', 'archived'].includes(event.status) && <p className="mt-1 text-sm text-neutral-700">This event is closed. {has('view_finance') ? <>Review the final numbers in <Link to={`/dashboard/events/${event.id}/analytics`} className="font-semibold text-brand-700 underline">reports &amp; sales</Link>.</> : 'Nothing else needs doing here.'}</p>}
       </section>
+
+      {setupSteps.length > 0 && <section aria-labelledby="overview-setup" className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">
+        <h2 id="overview-setup" className="text-lg font-semibold text-neutral-950">Event setup checklist</h2>
+        <p className="mt-1 text-base text-neutral-700">{requiredSteps.filter(step => step.state === 'done').length} of {requiredSteps.length} steps done.</p>
+        <ol className="mt-4 divide-y divide-neutral-100">
+          {setupSteps.map(step => <li key={step.key} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              {step.state === 'done'
+                ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+                : <Circle aria-hidden="true" className={`mt-0.5 h-5 w-5 shrink-0 ${step.state === 'optional' ? 'text-neutral-400' : 'text-amber-700'}`} />}
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-neutral-950">{step.label}<span className="sr-only">{step.state === 'done' ? ' (done)' : step.state === 'optional' ? ' (optional)' : ' (to do)'}</span></p>
+                <p className="text-sm text-neutral-700">{step.detail}</p>
+              </div>
+            </div>
+            {step.link && <Link to={step.link.to} className="btn-secondary inline-flex min-h-12 shrink-0 text-sm">{step.link.label}</Link>}
+          </li>)}
+        </ol>
+      </section>}
 
       {tools.length > 0 && <section aria-labelledby="overview-tools">
         <h2 id="overview-tools" className="text-lg font-semibold text-neutral-950">Event tools</h2>
