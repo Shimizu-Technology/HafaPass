@@ -70,10 +70,9 @@ module Api
 
       def index
         payload = if index_cacheable_request?
-          Rails.cache.fetch(index_cache_key) do |_key, options|
+          fetch_with_deadline(index_cache_key) do
             at = Time.current
-            options.expires_at = index_cache_deadline(at)
-            build_index_payload(at: at)
+            [build_index_payload(at: at), index_cache_deadline(at)]
           end
         else
           build_index_payload
@@ -109,12 +108,10 @@ module Api
         end
 
         payload = if show_cacheable_request?
-          Rails.cache.fetch(show_cache_key) do |_key, options|
+          fetch_with_deadline(show_cache_key) do
             event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
             at = Time.current
-            json = prepare_show_json(event, at: at)
-            options.expires_at = show_cache_deadline(event, at)
-            json
+            [prepare_show_json(event, at: at), show_cache_deadline(event, at)]
           end
         else
           event = Event.find_by_public_slug!(params[:slug], scope: Event.publicly_showable)
@@ -250,6 +247,19 @@ module Api
           site_setting_cache_version,
           normalized_show_cache_params
         ]
+      end
+
+      # Recompute remaining TTL after building the payload so crossing a
+      # schedule boundary during construction skips caching instead of writing
+      # a non-positive TTL (which raises ArgumentError in Rails 8).
+      def fetch_with_deadline(cache_key)
+        cached = Rails.cache.read(cache_key)
+        return cached unless cached.nil?
+
+        payload, deadline = yield
+        remaining_ttl = deadline ? (deadline - Time.current) : PUBLIC_CACHE_TTL
+        Rails.cache.write(cache_key, payload, expires_in: remaining_ttl) if remaining_ttl.positive?
+        payload
       end
 
       # Discovery can change when a boundary is reached, including for

@@ -98,4 +98,34 @@ RSpec.describe "Public pricing schedules", type: :request do
       expect(response.parsed_body).to include("code" => "sales_closed", "server_now" => closes.iso8601(3))
     end
   end
+
+  it "skips caching instead of raising when payload construction crosses a schedule cutoff" do
+    cache = ActiveSupport::Cache::MemoryStore.new
+    allow(Rails).to receive(:cache).and_return(cache)
+    allow(cache).to receive(:write).and_wrap_original do |original, *args, **kwargs|
+      raise ArgumentError, "expires_in must be positive" if kwargs[:expires_in] && kwargs[:expires_in] <= 0
+
+      original.call(*args, **kwargs)
+    end
+
+    travel_to(cutoff - 0.5.seconds)
+    crossed = false
+    allow_any_instance_of(Api::V1::EventsController).to receive(:prepare_show_json).and_wrap_original do |original, *args, **kwargs|
+      result = original.call(*args, **kwargs)
+      unless crossed
+        crossed = true
+        travel_to(cutoff + 0.5.seconds)
+      end
+      result
+    end
+
+    get "/api/v1/events/#{event.slug}"
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("ticket_types").sole.dig("pricing_schedule", "active_tier", "name")).to eq("Early Bird")
+
+    # Next request rebuilds fresh post-cutoff data because the crossed payload was not cached.
+    get "/api/v1/events/#{event.slug}"
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("ticket_types").sole.dig("pricing_schedule", "active_tier", "name")).to eq("Regular")
+  end
 end

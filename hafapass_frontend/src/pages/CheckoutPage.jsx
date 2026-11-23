@@ -181,8 +181,10 @@ function CheckoutContent({ buyerId }) {
   const handleScheduleRefresh = useCallback((nextEvent) => {
     setEvent(nextEvent)
     const current = pricingConflictLatestRef.current
-    if (!current?.server_now || !nextEvent?.server_now) return
-    if (Date.parse(nextEvent.server_now) > Date.parse(current.server_now)) {
+    const conflictTime = Date.parse(current?.pricing_as_of || current?.server_now || current?.recorded_at || '')
+    const nextPricingTime = Date.parse(nextEvent?.pricing_as_of || '')
+    if (!Number.isFinite(conflictTime) || !Number.isFinite(nextPricingTime)) return
+    if (nextPricingTime > conflictTime) {
       if (current.promoData && Number.isSafeInteger(current.discount_cents)) {
         setPromoData((prev) => (prev === current.promoData ? { ...prev, discount_cents: current.discount_cents } : prev))
       }
@@ -585,7 +587,7 @@ function CheckoutContent({ buyerId }) {
             const tier = selectedTicketType(event, item.ticket_type_id)?.pricing_schedule?.active_tier
             return tier?.name !== item.active_tier_name && Date.parse(tier?.ends_at) <= Date.parse(conflict.server_now) ? tier : null
           }).find(Boolean)
-          setPricingConflict({ ...conflict, endedTier, catalogSelections, promoData })
+          setPricingConflict({ ...conflict, recorded_at: new Date().toISOString(), endedTier, catalogSelections, promoData })
           return
         }
         rejectionContext.current = context

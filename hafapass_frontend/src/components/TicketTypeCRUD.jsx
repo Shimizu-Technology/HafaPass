@@ -195,7 +195,9 @@ function TicketTypeForm({
         return
       }
     }
-    if (form.sales_start_at && form.sales_end_at && compareLocalDateTimes(form.sales_end_at, form.sales_start_at) <= 0) {
+    const salesStartChanged = !editingTicketType || form.sales_start_at !== (initial?.sales_start_at || '')
+    const salesEndChanged = !editingTicketType || form.sales_end_at !== (initial?.sales_end_at || '')
+    if ((salesStartChanged || salesEndChanged) && form.sales_start_at && form.sales_end_at && compareLocalDateTimes(form.sales_end_at, form.sales_start_at) <= 0) {
       invalid('Sales end must be after sales start.', 'ticket-type-sales-end')
       return
     }
@@ -213,8 +215,8 @@ function TicketTypeForm({
       max_per_order: form.max_per_order ? parseInt(form.max_per_order, 10) : null,
       max_per_buyer: form.max_per_buyer ? parseInt(form.max_per_buyer, 10) : null,
       attendee_info_mode: form.attendee_info_mode || 'none',
-      sales_start_at: form.sales_start_at || null,
-      sales_end_at: form.sales_end_at || null
+      sales_start_at: salesStartChanged ? (form.sales_start_at || null) : (editingTicketType.sales_start_at || null),
+      sales_end_at: salesEndChanged ? (form.sales_end_at || null) : (editingTicketType.sales_end_at || null)
     }
     if (isPass) {
       const orderedIds = [

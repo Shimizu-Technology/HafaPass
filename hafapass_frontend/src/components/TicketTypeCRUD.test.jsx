@@ -70,7 +70,7 @@ describe('organizer ticket setup', () => {
     await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/organizer/events/42/ticket_types/7', {
       name: 'Early admission', description: 'Existing terms', price_cents: 3995, quantity_available: 25,
       door_allocation: 0, max_per_order: 3, max_per_buyer: 6, attendee_info_mode: 'name_and_email',
-      sales_start_at: '2026-10-20T18:00', sales_end_at: '2026-10-21T18:00',
+      sales_start_at: '2026-10-20T08:00:00Z', sales_end_at: '2026-10-21T08:00:00Z',
     }, expect.objectContaining({ signal: expect.any(AbortSignal) })))
   })
 
@@ -230,5 +230,35 @@ describe('organizer ticket setup', () => {
     await user.click(screen.getByRole('checkbox', { name: /This ticket is a multi-night pass/i }))
     expect(await screen.findByText('Night 1')).toBeInTheDocument()
     expect(screen.getByText(/Showing first 100 events — use a series or search if your event isn't listed/i)).toBeInTheDocument()
+  })
+
+  it('preserves saved sales_start_at and sales_end_at precision when editing unrelated fields', async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} eventTimezone="Pacific/Guam" onRefresh={onRefresh} ticketTypes={[{
+      id: 9,
+      name: 'Early Admission',
+      price_cents: 2500,
+      quantity_available: 50,
+      quantity_sold: 0,
+      sales_start_at: '2027-05-01T00:00:01Z',
+      sales_end_at: '2027-05-20T00:00:01Z',
+    }]} /></MemoryRouter>)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Edit Early Admission' }))
+    const nameInput = screen.getByLabelText(/Name/i)
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Renamed Admission')
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith(
+      '/organizer/events/42/ticket_types/9',
+      expect.objectContaining({
+        name: 'Renamed Admission',
+        sales_start_at: '2027-05-01T00:00:01Z',
+        sales_end_at: '2027-05-20T00:00:01Z',
+      }),
+      expect.any(Object),
+    ))
   })
 })
