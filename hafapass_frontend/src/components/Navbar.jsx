@@ -9,8 +9,9 @@ import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/cl
 import LanguageSwitcher from './LanguageSwitcher'
 import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
 import { useCanManageOrganizationSettings, useCanViewOrganizationSeries, useCanViewOrganizationFinances, useCanViewOrganizationActivity } from '../utils/organizerOrganizations'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 // A dark page introduction marks itself with data-header-band="dark". The
 // header stays dark while that band (or a light sheet tucked over its lower

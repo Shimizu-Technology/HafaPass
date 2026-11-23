@@ -57,6 +57,9 @@ export function normalizePageCustomization(value) {
 }
 
 export function approvedImageUrl(value, host) {
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' && host === 'demo-local' && typeof value === 'string' && value.startsWith('data:image/svg+xml;base64,')) {
+    return true
+  }
   if (!host || typeof value !== 'string') return false
   try {
     const url = new URL(value)

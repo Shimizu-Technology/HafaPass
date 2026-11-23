@@ -1,5 +1,4 @@
 import { Elements } from '@stripe/react-stripe-js'
-import { loadStripe } from '@stripe/stripe-js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw } from 'lucide-react'
@@ -12,10 +11,11 @@ import plusJakartaSans from '@fontsource-variable/plus-jakarta-sans/files/plus-j
 const stripeCache = {}
 
 function getStripe(publishableKey, stripeAccount) {
-  if (!publishableKey) return null
+  if (!publishableKey || import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return null
   const cacheKey = `${publishableKey}:${stripeAccount || 'platform'}`
   if (!stripeCache[cacheKey]) {
-    const promise = loadStripe(publishableKey, stripeAccount ? { stripeAccount } : undefined)
+    const promise = import('@stripe/stripe-js')
+      .then(({ loadStripe }) => loadStripe(publishableKey, stripeAccount ? { stripeAccount } : undefined))
       .then(stripe => {
         if (!stripe) throw new Error('Stripe.js unavailable')
         return stripe

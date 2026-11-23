@@ -17,6 +17,7 @@ import PassTicketCard from '../components/PassTicketCard'
 import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
+import { isClerkEnabled } from '../utils/demoMode'
 
 const emailInFlightStatuses = new Set(['queued', 'sent'])
 const EMAIL_REFRESH_INTERVAL = 10_000
@@ -26,7 +27,7 @@ const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'c
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedOrderConfirmation key={id} /> : <OrderConfirmationContent key={id} />
+  return isClerkEnabled() ? <AuthenticatedOrderConfirmation key={id} /> : <OrderConfirmationContent key={id} />
 }
 
 function AuthenticatedOrderConfirmation() {

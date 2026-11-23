@@ -24,7 +24,9 @@ function describeFee({ basisPoints, flatCents }, t) {
   return parts.length ? t('buyerDiscovery.host.perPaidTicket', { fee: parts.join(' + ') }) : t('buyerDiscovery.host.noFeeOnTickets')
 }
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+import { clerkPublishableKey } from '../utils/demoMode'
+
+const clerkPubKey = clerkPublishableKey()
 function usePublicConfig() {
   const [state, setState] = useState({ status: 'loading', config: null })
   const [attempt, setAttempt] = useState(0)

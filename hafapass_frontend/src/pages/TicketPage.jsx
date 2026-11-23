@@ -22,6 +22,7 @@ import useScreenWakeLock from '../hooks/useScreenWakeLock'
 import { visibleWallets } from '../utils/walletPlatform'
 import { useSupportContact } from '../utils/supportContact'
 import { revokeObjectUrlLater } from '../utils/download'
+import { isClerkEnabled } from '../utils/demoMode'
 
 // Mounted only with an authorized, scannable QR, so the lock follows the QR.
 function ScreenWakeLock() {
@@ -119,7 +120,7 @@ export default function TicketPage() {
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
   // Keyed by order, not ticket: previous/next keeps the order's ticket list.
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+  return isClerkEnabled()
     ? <AuthenticatedTicket key={orderId || ''} orderId={orderId} />
     : <OrderTickets key={JSON.stringify([orderId, getOrderAccess(orderId)])} orderId={orderId} />
 }

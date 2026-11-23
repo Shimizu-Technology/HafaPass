@@ -4,6 +4,7 @@ import { useLocation, useOutlet } from 'react-router-dom'
 import Navbar from './Navbar'
 import Footer, { WorkspaceFooter } from './Footer'
 import EnvironmentBanner from './EnvironmentBanner'
+import DemoPreviewBanner from './DemoPreviewBanner'
 import RouteLoading from './RouteLoading'
 import SEO from './SEO'
 import { isWorkspacePath } from '../utils/workspace'
@@ -81,6 +82,7 @@ export default function Layout() {
       {/* Workspace and account routes always replace the previous page's title
           and stay out of indexes; a page's own <SEO> renders later and wins. */}
       {defaultTitleKey && <SEO title={t(defaultTitleKey)} noIndex />}
+      {import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' && <DemoPreviewBanner />}
       <EnvironmentBanner />
       <Navbar />
       <main ref={main} id="main-content" tabIndex={-1} className="flex-1">
