@@ -60,6 +60,30 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(page.getByRole('region', { name: 'Buyer pays the fee', exact: true })).toContainText('$62.95')
     await expect(page.getByRole('region', { name: 'You absorb the fee', exact: true })).toContainText('$55.05')
     await expect(page.getByRole('link', { name: 'Talk to us about your event' })).toHaveAttribute('href', /^mailto:public-pages-qa@example.test/)
+    const door = page.getByRole('region', { name: 'Run the door', exact: true })
+    const alumniButton = door.getByRole('button', { name: 'Free Alumni Ticket', exact: true })
+    if (width >= 640) {
+      const [frontBox, backBox] = await Promise.all([
+        door.locator('.host-preview-front').boundingBox(),
+        door.locator('.host-preview-back').boundingBox(),
+      ])
+      expect(frontBox).not.toBeNull()
+      expect(backBox).not.toBeNull()
+      const overlaps =
+        frontBox.x < backBox.x + backBox.width &&
+        frontBox.x + frontBox.width > backBox.x &&
+        frontBox.y < backBox.y + backBox.height &&
+        frontBox.y + frontBox.height > backBox.y
+      expect(overlaps).toBe(false)
+    }
+    await alumniButton.click()
+    await expect(alumniButton).toHaveAttribute('aria-pressed', 'true')
+    await expect(door).toContainText('Verify before admitting')
+    await expect(door).toContainText('Calla Yorke')
+    await door.getByRole('button', { name: 'Confirm & Admit', exact: true }).click()
+    await expect(door).toContainText('Admitted')
+    await door.getByRole('button', { name: 'Adult Ticket', exact: true }).click()
+    await expect(door).toContainText('Avery Lindqvist')
     const faq = page.locator('summary').filter({ hasText: 'Does my door staff need an app?' })
     await faq.focus()
     await page.keyboard.press('Enter')
