@@ -260,3 +260,31 @@ Public checkout limits how many tickets one network can hold or take free per ev
 - One buyer (email, or signed-in account) may have only one live unpaid checkout per event, whatever the network.
 
 Hold expiry (`ExpireInventoryHoldsJob`, every minute) checks Stripe before releasing an order with a payment, with a 5-second limit per check. After 45 seconds of work in one run it leaves the remaining orders for the next run and logs `order_expiry_budget_exhausted`. Holds stop counting against inventory when they expire whether or not the job has reached them yet.
+
+## Launch alert rules and morning brief
+
+Configure these rules on the production Sentry projects. Verify routing using
+a controlled staging failure before the launch. Assign the HåfaPass on-call
+operator to each rule.
+
+| Rule | Condition | Action |
+| --- | --- | --- |
+| Stripe webhook processing failure | API issue event with `integration=stripe_webhook` and `operation=webhook_processing` | Notify on the first error, then at most once per issue every 15 minutes. Check the live Stripe event destination's failed delivery attempts and Admin → Operations. Compare Stripe's event with the local receipt before replay. |
+| Checkout and admissions errors | API and frontend production error issue first seen or regressed, or five events on an issue in five minutes | Notify on-call. Check the revision, readiness, impact on checkout/scan and pending payment or offline queues. |
+| Readiness and job backlog | Two failed readiness probes, or oldest due production commerce job exceeds 5 minutes | Page on-call through the uptime and job monitoring channels. Verify the worker/scheduler and queue recovery before replay. |
+
+A signature rejection happens before webhook processing and returns HTTP 400.
+Use the Stripe event destination's failed deliveries view and the API access
+logs to investigate those, as well as requests that never reached Rails.
+[Stripe delivery troubleshooting](https://docs.stripe.com/webhooks#fix-http-status-codes)
+and [Sentry issue alert rules](https://docs.sentry.io/api/monitors/create-an-alert-for-an-organization/).
+
+A trusted operator or morning-brief agent with access to the deployed
+application shell can run `bin/rails hafapass:daily_summary` from
+`hafapass_api` using its normal runtime environment. Read the final JSON line.
+It contains the release SHA, readiness verdict, previous full Guam day's
+live Stripe order count and gross USD cents at capture, and current failed
+Stripe webhook receipt count across modes. Gross captures include buyer fees
+and exclude test, simulation, proof-event and cash activity. Refunds and
+payouts are tracked in the ledger. The command returns aggregates and exposes
+no public endpoint, buyer information or provider references.
