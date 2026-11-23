@@ -1,4 +1,4 @@
-import { LayoutDashboard, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards } from 'lucide-react'
+import { LayoutDashboard, FilePenLine, Ticket, Users, ScanLine, Megaphone, UserRoundCog, WalletCards, ChartNoAxesColumn } from 'lucide-react'
 
 // The single list of event tools. The workspace sidebar and the event
 // overview's quick links both read it, so a tool cannot appear in one only.
@@ -33,6 +33,9 @@ export function navigationFor(event, capabilities) {
       },
     ] },
     { label: 'Team', icon: UserRoundCog, links: [{ label: 'Event team', to: `${base}/team`, allowed: has('manage_staff') }] },
+    { label: 'Reports', icon: ChartNoAxesColumn, links: [
+      { label: 'Reports', to: `${base}/reports`, allowed: has('view_finance') || has('view_attendees') },
+    ] },
     { label: 'Finances', icon: WalletCards, links: [
       { label: 'Sales & finances', to: `${base}/analytics`, allowed: has('view_finance') },
       { label: 'Refunds', to: `${base}/refunds`, allowed: has('refund') && has('view_finance') },

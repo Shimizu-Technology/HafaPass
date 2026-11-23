@@ -25,6 +25,7 @@ const EventSeriesReportPage = lazy(() => import('./pages/dashboard/EventSeriesRe
 const CreateEventPage = lazy(() => import('./pages/dashboard/CreateEventPage'))
 const EditEventPage = lazy(() => import('./pages/dashboard/EditEventPage'))
 const EventOverviewPage = lazy(() => import('./pages/dashboard/EventOverviewPage'))
+const EventReportsPage = lazy(() => import('./pages/dashboard/EventReportsPage'))
 const EventAnalyticsPage = lazy(() => import('./pages/dashboard/EventAnalyticsPage'))
 const ScannerPage = lazy(() => import('./pages/dashboard/ScannerPage'))
 const SettingsPage = lazy(() => import('./pages/dashboard/SettingsPage'))
@@ -109,6 +110,7 @@ function App() {
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEventPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id" element={<ProtectedRoute><EventOverviewPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/edit" element={<ProtectedRoute><EditEventPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/reports" element={<ProtectedRoute><EventReportsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/analytics" element={<ProtectedRoute><EventAnalyticsPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/guest-list" element={<ProtectedRoute><GuestListPage /></ProtectedRoute>} />
