@@ -81,14 +81,8 @@ function DoorPreview() {
   const guest = DEMO_GUESTS[ticket]
   const ticketLabel = ticket === 'adult' ? t('buyerDiscovery.host.doorDemo.adultTicket') : t('buyerDiscovery.host.doorDemo.alumniTicket')
   return (
-    <div className="relative mx-auto w-full max-w-sm lg:max-w-none">
-      <div aria-hidden="true" className="host-preview-back absolute -right-2 -top-4 z-10 hidden w-56 select-none rounded-2xl border border-neutral-200 bg-white p-4 shadow-card sm:block lg:-right-4">
-        <p className="text-xs font-semibold text-content-muted">{t('buyerDiscovery.host.checkedIn')}</p>
-        <p className="mt-1 font-display text-2xl font-bold text-neutral-950">186 <span className="text-base font-medium text-content-muted">{t('buyerDiscovery.host.of240')}</span></p>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full w-[78%] rounded-full bg-brand-500" /></div>
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-content-muted"><WifiOff className="h-3.5 w-3.5" />{t('buyerDiscovery.host.offlineScansSyncLater')}</p>
-      </div>
-      <div className="host-preview-front relative mr-auto w-full max-w-[20rem] rounded-[1.75rem] border border-neutral-200 bg-white p-3 shadow-card sm:ml-4">
+    <div className="mx-auto flex w-full max-w-[20rem] flex-col gap-3">
+      <div className="host-preview-front relative w-full rounded-[1.75rem] border border-neutral-200 bg-white p-3 shadow-card">
         <p id={`${id}-try`} className="px-2 pb-2 pt-1 text-base font-semibold text-neutral-900">{t('buyerDiscovery.host.doorDemo.tryIt')}</p>
         <div role="group" aria-labelledby={`${id}-try`} className="grid grid-cols-2 gap-2 px-1 pb-3">
           {[['adult', 'adult', t('buyerDiscovery.host.doorDemo.adultTicket')], ['alumni', 'alumni-hold', t('buyerDiscovery.host.doorDemo.alumniTicket')]].map(([kind, start, label]) => <button key={kind} type="button" aria-pressed={ticket === kind}
@@ -125,6 +119,14 @@ function DoorPreview() {
         <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-3 text-sm text-content-muted">
           <span>{t('buyerDiscovery.host.doorDemo.fictional')}</span><span className="shrink-0 whitespace-nowrap font-semibold text-brand-800">{t('buyerDiscovery.host.nextGuest')}</span>
         </div>
+      </div>
+      <div aria-hidden="true" className="host-preview-back pointer-events-none hidden w-full select-none rounded-2xl border border-neutral-200 bg-white px-4 py-3.5 shadow-card sm:block">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-xs font-semibold text-content-muted">{t('buyerDiscovery.host.checkedIn')}</p>
+          <p className="font-display text-xl font-bold text-neutral-950">186 <span className="text-sm font-medium text-content-muted">{t('buyerDiscovery.host.of240')}</span></p>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full w-[78%] rounded-full bg-brand-500" /></div>
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-content-muted"><WifiOff className="h-3.5 w-3.5 shrink-0" />{t('buyerDiscovery.host.offlineScansSyncLater')}</p>
       </div>
     </div>
   )
