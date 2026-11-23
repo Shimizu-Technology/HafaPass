@@ -307,4 +307,36 @@ describe('organizer ticket setup', () => {
       expect.any(Object),
     ))
   })
+
+  it('validates effective sales timestamps at second precision when only one endpoint changes', async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    render(<MemoryRouter><TicketTypeCRUD eventId={42} eventTimezone="Pacific/Guam" onRefresh={onRefresh} ticketTypes={[{
+      id: 10,
+      name: 'Short Window',
+      price_cents: 2500,
+      quantity_available: 50,
+      quantity_sold: 0,
+      // 10:00:01 to 10:01:59 Guam time (UTC+10)
+      sales_start_at: '2027-05-01T00:00:01Z',
+      sales_end_at: '2027-05-01T00:01:59Z',
+    }]} /></MemoryRouter>)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Edit Short Window' }))
+    await user.click(screen.getByText('More ticket options'))
+    const startInput = screen.getByLabelText('Sales start')
+    // Changing start to 10:01 is still before preserved end 10:01:59.
+    await user.clear(startInput)
+    await user.type(startInput, '2027-05-01T10:01')
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith(
+      '/organizer/events/42/ticket_types/10',
+      expect.objectContaining({
+        sales_start_at: '2027-05-01T10:01',
+        sales_end_at: '2027-05-01T00:01:59Z',
+      }),
+      expect.any(Object),
+    ))
+  })
 })

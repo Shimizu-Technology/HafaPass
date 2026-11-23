@@ -345,22 +345,32 @@ module Api
           local_doors = @event.doors_open_at&.in_time_zone(timezone)
           generated = []
 
-          count.times do |i|
-            occurrence_number = i + 1
-            new_starts_at = advance_local_time(local_start, occurrence_number)
-            new_ends_at = advance_local_time(local_end, occurrence_number)
-            new_doors = local_doors ? advance_local_time(local_doors, occurrence_number) : nil
+          Event.transaction do
+            @event.lock!
+            existing_starts = Event.where(recurrence_parent_id: @event.id).pluck(:starts_at)
+              .compact.to_set { |ts| ts.utc.to_i }
 
-            break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
+            count.times do |i|
+              occurrence_number = i + 1
+              new_starts_at = advance_local_time(local_start, occurrence_number)
+              new_ends_at = advance_local_time(local_end, occurrence_number)
+              new_doors = local_doors ? advance_local_time(local_doors, occurrence_number) : nil
 
-            cloned = clone_event(@event,
-              starts_at: new_starts_at,
-              ends_at: new_ends_at,
-              doors_open_at: new_doors,
-              recurrence_parent_id: @event.id,
-              recurrence_rule: @event.recurrence_rule
-            )
-            generated << cloned if cloned.persisted?
+              break if @event.recurrence_end_date && new_starts_at.to_date > @event.recurrence_end_date
+              next if existing_starts.include?(new_starts_at.utc.to_i)
+
+              cloned = clone_event(@event,
+                starts_at: new_starts_at,
+                ends_at: new_ends_at,
+                doors_open_at: new_doors,
+                recurrence_parent_id: @event.id,
+                recurrence_rule: @event.recurrence_rule
+              )
+              if cloned.persisted?
+                generated << cloned
+                existing_starts.add(new_starts_at.utc.to_i)
+              end
+            end
           end
 
           render json: {

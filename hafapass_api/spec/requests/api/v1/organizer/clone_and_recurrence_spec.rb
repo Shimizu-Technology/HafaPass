@@ -120,6 +120,40 @@ RSpec.describe "Api::V1::Organizer::Events Clone & Recurrence", type: :request d
       expect(json["error"]).to include("recurrence rule")
     end
 
+    it "skips already-generated occurrences on retry and rolls back the entire batch on failure" do
+      post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+        params: { count: 2 }, headers: headers
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body["generated_count"]).to eq(2)
+
+      # Retrying for 3 creates only the missing 3rd occurrence without duplicating 1 and 2.
+      expect {
+        post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+          params: { count: 3 }, headers: headers
+      }.to change { Event.where(recurrence_parent_id: event.id).count }.by(1)
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body["generated_count"]).to eq(1)
+
+      # If a later occurrence fails validation, none of the new occurrences in that batch persist.
+      call_number = 0
+      allow_any_instance_of(Api::V1::Organizer::EventsController).to receive(:clone_event).and_wrap_original do |original, *args, **kwargs|
+        call_number += 1
+        if call_number == 2
+          bad = Event.new
+          bad.errors.add(:base, "Simulated occurrence failure")
+          raise ActiveRecord::RecordInvalid, bad
+        end
+        original.call(*args, **kwargs)
+      end
+
+      expect {
+        post "/api/v1/organizer/events/#{event.id}/generate_recurrences",
+          params: { count: 5 }, headers: headers
+      }.not_to change { Event.where(recurrence_parent_id: event.id).count }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to include("Simulated occurrence failure")
+    end
+
     it "respects recurrence_end_date" do
       event.update!(recurrence_end_date: 2.weeks.from_now.to_date)
 
