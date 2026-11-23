@@ -140,16 +140,29 @@ RSpec.describe "Buyer email states", :webmock do
     expect(html).not_to include("business days", "original card", "on its way", "including service fees")
   end
 
-  it "falls back to truthful English for changed copy in every translated locale" do
-    with_locales_enabled(AppLocale::SUPPORTED)
-    ticket_for_order(status: :cancelled)
-    refund = create(:refund, order: order, amount_cents: 1000)
-    AppLocale::TRANSLATION_TARGETS.each do |locale|
+  translated_copy = {
+    "ko" => ["현재 주문 내역", "유효한 티켓만 입장에 사용할 수 있습니다.", "취소됨", "주문 보기",
+      "은행이나 카드사에 따라 보통 영업일 기준 5~10일 내에"],
+    "ja" => ["現在のご注文内容", "有効なチケットで入場できます。", "取消済み", "ご注文を表示",
+      "通常、ご利用のカードに5〜10営業日以内に反映されます。反映時期は銀行やカード発行会社によって異なります。"],
+    "pt" => ["Dados atuais do seu pedido", "Só é possível entrar com ingressos válidos.", "Cancelado", "Ver seu pedido",
+      "em 5 a 10 dias úteis, dependendo do banco ou da operadora do cartão."]
+  }
+  english_copy = ["Your current order details", "Only valid tickets can be used for entry.", "Cancelled", "View your order",
+    "usually appears on your original card within 5–10 business days, depending on your bank or card issuer."]
+
+  AppLocale::TRANSLATION_TARGETS.each do |locale|
+    heading, entry_rule, status, order_link, refund_timing = translated_copy.fetch(locale, english_copy)
+    copy_language = translated_copy.key?(locale) ? locale : "English fallback"
+
+    it "uses #{copy_language} for current order and refund copy in #{locale} emails" do
+      with_locales_enabled(AppLocale::SUPPORTED)
+      ticket_for_order(status: :cancelled)
+      refund = create(:refund, order: order, amount_cents: 1000)
       order.update!(locale: locale)
       html = confirmation(template: "fulfillment_resend").fetch("html")
-      expect(html).to include("Your current order details", "Only valid tickets can be used for entry.", "Cancelled", "View your order")
-      expect(refund_payload(refund).fetch("html"))
-        .to include("usually appears on your original card within 5–10 business days, depending on your bank or card issuer.")
+      expect(html).to include(%(<html lang="#{locale}">), heading, entry_rule, status, order_link)
+      expect(refund_payload(refund).fetch("html")).to include(refund_timing)
     end
   end
 
