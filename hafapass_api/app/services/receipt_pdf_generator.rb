@@ -8,7 +8,7 @@ class ReceiptPdfGenerator
   end
 
   def generate
-    I18n.with_locale(AppLocale.i18n_locale(@order.locale)) do
+    I18n.with_locale(AppLocale.enabled_i18n_locale(@order.locale)) do
       lines = receipt_lines
       Prawn::Document.new(page_size: "A4", margin: 48) do |pdf|
         title = I18n.t("emails.receipt.title")

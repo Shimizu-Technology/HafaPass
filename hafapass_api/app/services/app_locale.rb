@@ -74,6 +74,10 @@ module AppLocale
     (SUPPORTED.include?(code.to_s) ? code.to_s : DEFAULT).to_sym
   end
 
+  def enabled_i18n_locale(code)
+    enabled?(code.to_s) ? i18n_locale(code) : DEFAULT.to_sym
+  end
+
   def gt_code(code)
     GT_CODES.fetch(code, code)
   end

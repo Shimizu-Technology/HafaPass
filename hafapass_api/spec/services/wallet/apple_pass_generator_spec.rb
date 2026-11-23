@@ -25,6 +25,7 @@ RSpec.describe Wallet::ApplePassGenerator do
   it "writes localized wallet labels without changing admission data" do
     configure_apple_wallet
     ticket = wallet_ticket
+    with_locales_enabled(%w[en ja])
     ticket.order.update!(locale: "ja")
 
     pass = pass_json(described_class.call(ticket))

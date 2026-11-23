@@ -68,6 +68,7 @@ RSpec.describe TicketPdfGenerator do
 
   %w[ja ko pt].each do |locale|
     it "renders the #{locale} rehearsal and admission labels" do
+      with_locales_enabled(%w[en ja ko pt])
       order.update!(locale: locale)
       text = read_pdf.pages.map(&:text).join("\n")
       expect(text).to include(I18n.t("ticket_documents.pdf.rehearsal_title", locale: locale),
@@ -92,7 +93,10 @@ RSpec.describe TicketPdfGenerator do
 
   it "retains a postponed event notice" do
     event.update!(status: :postponed)
-    expect(read_pdf.pages.map(&:text).join("\n")).to include("EVENT POSTPONED — check your email for updates")
+    expect(RQRCode::QRCode).not_to receive(:new)
+    text = read_pdf.pages.map(&:text).join("\n")
+    expect(text).to include("EVENT POSTPONED — check your email for updates")
+    expect(text).not_to include("For testing only - no real event admission")
   end
 
   it "keeps the full long text and the QR instructions on a continuation page" do

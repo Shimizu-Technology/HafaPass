@@ -68,8 +68,7 @@ class Api::V1::TicketsController < ApplicationController
   end
 
   def downloadable?(ticket)
-    !ticket.pass_parent? && ticket.issued? && ticket.order.ticket_fulfilled? && !ticket.order.ticket_access_blocked? &&
-      !ticket.refund_pending? && !ticket.inventory_retained? && !(ticket.pass_child? && ticket.parent_ticket&.inventory_retained?)
+    ticket.admission_allowed?
   end
 
   def admission_block_reason(ticket)

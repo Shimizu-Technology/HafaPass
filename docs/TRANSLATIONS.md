@@ -165,8 +165,8 @@ created it:
 
 Existing rows were given `en`, so emails about earlier purchases are unchanged.
 Event titles in these emails use the record's language too. Transfer emails
-use the sender's recorded language. A missing or disabled locale falls back to
-English. Deadlines (transfer and waitlist-offer expiry) include the time zone.
+use the sender's recorded language and include English acceptance instructions
+for recipients. A missing or disabled locale falls back to English. Deadlines (transfer and waitlist-offer expiry) include the time zone.
 
 Issued tickets use the organizer's own ticket names everywhere (emails, PDFs,
 My Tickets, the ticket page and door lists) so buyers and door staff see the
@@ -255,7 +255,7 @@ notice); the emergency door list always prints and shows them as `?`.
 
 ## Copa document and email coverage
 
-Ticket PDF and Apple/Google Wallet labels read the purchase language. Japanese,
+Ticket PDF and Apple/Google Wallet labels use the purchase language when enabled. Japanese,
 Korean and Brazilian Portuguese use `config/locales/ticket_documents.*.yml`.
 Organizer-entered proper names and the QR stay unchanged. Other languages fall
 back to the English document labels. Portuguese API support and the core

@@ -31,7 +31,7 @@ module Wallet
     end
 
     def label(key, **options)
-      I18n.t("ticket_documents.wallet.#{key}", locale: AppLocale.i18n_locale(ticket.order.locale), **options)
+      I18n.t("ticket_documents.wallet.#{key}", locale: AppLocale.enabled_i18n_locale(ticket.order.locale), **options)
     end
 
     def status_label
