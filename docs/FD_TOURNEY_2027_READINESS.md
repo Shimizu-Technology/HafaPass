@@ -8,7 +8,7 @@
 
 ## Settled Decisions & Operating Boundaries
 
-- **Payments:** Buyers pay Shimizu Technology's Stripe account. Shimizu pays FDAA/FDMSAA (tournament proceeds) and CO2017 (class fundraisers, into the class's Bank of Guam account) by check. No separate legal review is planned. Hold the final payout ~30 days after the finals for chargebacks (tracked with HåfaPass's existing `reserve_hold` / `reserve_release` balance adjustments, followed by re-finalizing the statement, writing the final check for the released amount, and recording that payout).
+- **Payments:** Buyers pay Shimizu Technology's Stripe account. Leon decided on November 24 that Shimizu pays FDAA/FDMSAA (tournament proceeds) and CO2017 (class fundraisers) by bank transfer 2–3 business days after the event or finals. Hold about 10% of payable proceeds for chargebacks via `reserve_hold`. After 30 days, reconcile any liabilities, record `reserve_release`, re-finalize the statement and transfer the remaining reserve. No separate legal review is planned.
 - **Two HåfaPass organizations:** `FDAA` (tournament tickets, passes, team registration) and `CO2017` (class fundraisers). Separate orgs keep statements, payouts, and tax records apart.
 - **Activation timing (Leon, Nov 22):** Build and verify locally and on staging with no rush. Leon will run production activation (taking HåfaPass off pause, creating the `FDAA` and `CO2017` orgs, Render/Neon/Netlify/Stripe/Clerk changes) when we are ready. Section 7 keeps the exact steps ready without blocking implementation.
 - **Hub integration:** FD Alumni Hub reads `GET /api/v1/events?organizer=<slug>` server-side and links buyers to HafaPass via `/go/:code`. Keep this contract stable (Section 2).
@@ -248,11 +248,11 @@ All pass operations obey `docs/LOCKING.md` (which allows skipping a rank, and fo
          - `admissions_gross`: sum of `Settlements::Calculator` `gross_cents - discount_cents` (pre-refund net sales face value) across admissions events.
          - `admissions_net_after_processing`: sum of `Settlements::Calculator` `(organizer_proceeds_cents - processing_fee_cents)` (series-netted, floored at 0) across admissions events.
          - `all_net_proceeds`: sum of `Settlements::Calculator` `organizer_proceeds_cents` across all events in the series (admissions + `registration` + `other`).
-       - `revenue_share_includes_door_cash`: `true` (default). When `true`, `door_cash` proceeds remain in the base, and `door_cash_retained_cents` (derived from `Settlements::Calculator` cash custody items, matching `OrganizationFinanceSummary#door_cash_retained`) is shown separately next to the net check payable so cash already held by the organizer is never double-paid. When `false`, `door_cash_retained_cents` is excluded from the base.
+       - `revenue_share_includes_door_cash`: `true` (default). When `true`, `door_cash` proceeds remain in the base, and `door_cash_retained_cents` (derived from `Settlements::Calculator` cash custody items, matching `OrganizationFinanceSummary#door_cash_retained`) is shown separately next to the net amount payable so cash already held by the organizer is never double-paid. When `false`, `door_cash_retained_cents` is excluded from the base.
        - `revenue_share_label` (e.g. `"Host Class (CO2017) — 16%"`) & `primary_share_label` (e.g. `"FDAA / FDMSAA — 84%"`)
      - Math: `Commerce::MoneyAllocator.call(base_cents, [revenue_share_bps, 10_000 - revenue_share_bps])` — guarantees `share_cents + remainder_cents == base_cents` with zero penny drift.
      - Displays both the 16% share AND the 84% remainder clearly so whichever direction FDMSAA confirms, no code rewrite is needed.
-  6. **Payout closeout note (verified DB constraint):** `payouts` enforces `idx_payouts_unique_provider_id` (`UNIQUE(provider, provider_payout_id) WHERE provider_payout_id IS NOT NULL`, `schema.rb:1652`). Because payouts remain per-event, if Shimizu writes one physical check (e.g., Check #1042) settling multiple finalized tournament events, record each event payout's `provider_payout_id` as `CHK-1042-E<event_id>` and reference Check #1042 in `evidence.reference` and `evidence.reason`. For the 30-day post-finals chargeback holdback, use existing `BalanceAdjustment` (`kind: "reserve_hold"` negative amount, then `"reserve_release"` 30 days after finals, followed by re-finalizing the statement and recording the final check payout).
+  6. **Payout closeout:** Payouts remain per-event. When one bank transfer covers several finalized events, record a distinct reference per event (for example `BANK-1042-E<event_id>`) and tie each allocation to the actual bank receipt in restricted storage. Use `reserve_hold` before the first transfer and `reserve_release` after 30 days. Re-finalize the statement before each payout.
 
 ---
 
@@ -333,7 +333,7 @@ All pass operations obey `docs/LOCKING.md` (which allows skipping a rank, and fo
 | **Free-pass cancel, partial-use refund, or buyer-limit loophole on child tickets** | Medium / High | DB check constraint (`parent_ticket_id IS NULL OR order_item_id IS NULL`), `is_pass` flag, `release_inventory!` no-op on children, `enforce_buyer_limit!` filters `parent_ticket_id: nil`, `cancel_free_ticket!` cascades to children (or blocks if admitted), `FinancialReversalInventory` treats parent as admitted if any child was admitted (1 grouped `ReconciliationException`), unified `admission_allowed?` / `check_in!` gate. |
 | **Storm mass-reschedule sends 6+ emails to every Season Pass holder** | Medium / Medium | Document storm runbook: postpone affected nights first, then batch schedule updates inside `EventChange::NOTICE_COALESCE_WINDOW` (10 min per night); use informational `pass_event_change` template (no broken Accept/Refund CTA). |
 | **Championship rush throttled on Guam carrier NAT / Jungle Wi-Fi or Postgres throttle row contention** | High / High | Raise ENV-configurable IP ceilings (`req/ip` 3000/5m, `orders/ip` 200/m, `/go/:code` 600/m, `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`), eliminate `EventsController` N+1s + 15s server-memory cache (with safe browser headers), upgrade Render + Neon for June–July, prove with free + paid k6 staging runs including shared-NAT contention. |
-| **Stripe holds/freezes funds partway through 15+ nights** | Low–Med / High | Accepted by Leon (Nov 22); hold final payout ~30 days post-finals via `reserve_hold` adjustment; door cash (`BoxOffice`) works offline from Stripe; zero-code daily-ticket fallback stays intact. |
+| **Stripe holds/freezes funds partway through 15+ nights** | Low–Med / High | Follow Leon's November 24 payout schedule and reconcile provider holds before a transfer. Door cash through Box Office works independently of Stripe. The daily-ticket fallback stays available. |
 | **Merge conflicts with local sibling worktrees** (`lock-order`, `admissions-recovery`, `refund-reconciliation`, `commerce-recovery`) | Medium / Medium | Defer whole-pass transfer cascade (avoiding `Ticket#with_entry_lock` churn); isolate pass logic in dedicated `Passes::*` services; merge `EventsController` slices sequentially (Slice 1 → 2B → 5). |
 | **Multi-night passes slip past Jun 1** | Low / Medium | Zero-code fallback from plan §5: sell daily + championship tickets on HåfaPass and sell physical season passes at the door. |
 
@@ -383,23 +383,23 @@ None of these steps are executed by agents. Run them only when Leon decides to a
 
 1. **Keep HåfaPass unpaused:** Confirm `hafapass-api` (`srv-d6bsuq0gjchc73fu35hg`) stays active on Render ($7/mo) and `https://hafapass.shimizu-technology.com` + `/api/v1/config` report `production` and `live` mode (verify approvals in `docs/PRODUCTION_CUTOVER.md` §8: Policy Register, Resend production, Stripe live). Confirm which Render env var group (`hafapass-staging-runtime` in `render.yaml`) is attached to the live service before making changes.
 2. **Create two production organizations** (Admin → Organizations):
-   - **`CO2017`** (`slug: "co2017"`, e.g. `"FD Class of 2017"`): for class fundraisers; payout check payee = Class of 2017 Bank of Guam account.
-   - **`FDAA`** (`slug: "fdaa"`, e.g. `"FD Alumni Association / FDMSAA"`): for 2027 tournament daily tickets, season/championship passes, and team registration; payout check payee per FDMSAA payout note.
+   - **`CO2017`** (`slug: "co2017"`, e.g. `"FD Class of 2017"`): for class fundraisers; bank transfer destination = Class of 2017 Bank of Guam account.
+   - **`FDAA`** (`slug: "fdaa"`, e.g. `"FD Alumni Association / FDMSAA"`): for 2027 tournament daily tickets, season/championship passes, and team registration; bank transfer destination per FDMSAA payout note.
 3. **Verify both organizations & payout readiness:**
    - Approve organizer verification for both `CO2017` and `FDAA`.
-   - Configure each org's `check` `ConnectedAccount` (payee name, mailing/delivery instructions), submit and approve Gate B payment readiness review, and enter W-9 / tax-exempt info (`OrganizerTaxInformation`) so payouts are not subject to 24% backup withholding.
+   - Configure each organization's manual bank-transfer payout destination (supported since the bank-transfer payout release, PR #221, merged Nov 24, 2026; the release must be deployed first), submit and approve Gate B payment readiness review, and enter W-9 / tax-exempt info (`OrganizerTaxInformation`) so payouts are not subject to 24% backup withholding.
    - Confirm `ADMIN_EMAILS`, `ADMISSION_MANIFEST_PRIVATE_KEY_PEM`, and `ACTIVE_RECORD_ENCRYPTION_*` are backed up securely.
 4. **Create `fd-alumni-hub` distribution partner (Admin → Marketplace → Distribution Partners):**
    - Partner slug: `fd-alumni-hub` (`kind: partner` / `media`).
    - Create `/go/:code` `DistributionLink`s for Phase A fundraiser events (such as the Mar 6 Bryan Ho 5K/beer mile) once those events exist, and share codes with the **FD Alumni Hub 2027** lead. Tournament team-registration, pass-event, and night links are created in Phases B1 and B2 after those events are created.
 5. **Run the Mar 6, 2027 Bryan Ho 5K/beer mile pilot under `CO2017`:**
    - Publish single-night tickets (~Feb 1).
-   - Verify end-to-end live path: online Stripe charge → QR scan at check-in → event completion → statement finalization → check payout into the class's Bank of Guam account → admin payout confirmation with bank/check reference.
+   - Verify end-to-end live path: online Stripe charge → QR scan at check-in → event completion → statement finalization → bank transfer into the class's approved account → admin payout confirmation with the bank reference.
 
 ### Phase B1: Team Registration launch (by Apr 15, after Slices 1 & 3 deploy)
 
 1. **Confirm FDMSAA registration & payout terms (through Vince / Jeramiah via Leon):**
-   - Written one-page payout note: payee name, 5% + $1 buyer-paid fee, refund/storm policy, and ~30-day post-finals chargeback holdback.
+   - Written one-page payout note: payee name, 5% + $1 buyer-paid fee, refund/storm policy, bank transfer 2–3 business days after completion, and about 10% reserved for 30 days for chargebacks.
    - Team registration fee bearer (`$420.16` early / `$520.16` late all-in or buyer-pays fees), early/late cutoff date, and required registration fields/waiver text.
 2. **Create the 2027 Tournament Series & Team Registration event under `FDAA`:**
    - Create `EventSeries` (`slug: "fd-2027-alumni-basketball"`).
@@ -428,7 +428,7 @@ None of these steps are executed by agents. Run them only when Leon decides to a
    - Start 1 dedicated Render Background Worker (`bundle exec bin/jobs`, `HAFAPASS_RUNTIME=solid_queue`, `0.5c-512mb`, `DB_POOL=10`, identical secrets/encryption keys/DB URLs). Drain embedded queue cleanly during cutover per `docs/SINGLE_SERVICE_RUNTIME.md`.
    - Raise Neon minimum compute (no scale-to-zero) for June–July.
    - Verify `/api/v1/readiness` confirms live worker/scheduler heartbeats and zero overdue jobs.
-2. **Closeout (late July – August):**
-   - Complete all nights, finalize statements, place 30-day chargeback `reserve_hold` balance adjustment on final proceeds, finalize updated statements, export final Tournament Series Report + 16% worksheet, write initial checks, and record/reconcile those payouts (`CHK-<num>-E<event_id>`).
-   - 30 days post-finals: post `reserve_release` balance adjustment, finalize new statement versions, write the final check for the released reserve amount, record and reconcile those final payouts (`CHK-<num2>-E<event_id>`), finalize post-payout statements, and archive closed events.
+2. **Closeout (starts the day after the finals, tentatively Jul 16):**
+   - Complete all nights, finalize statements, and post a `reserve_hold` of about 10% of payable proceeds. Finalize updated statements and export the final Tournament Series Report and 16% worksheet. Send initial bank transfers within 2–3 business days after the finals and record each confirmed payout.
+   - After 30 days: reconcile chargebacks, post `reserve_release`, and finalize new statement versions. Transfer the remaining reserve and record each confirmed payout. Finalize post-payout statements and archive closed events.
    - Scale Render back down to single `0.5c-512mb` `HAFAPASS_RUNTIME=embedded` and lower Neon minimum compute.

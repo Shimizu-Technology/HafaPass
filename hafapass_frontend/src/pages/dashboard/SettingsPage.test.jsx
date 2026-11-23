@@ -140,13 +140,13 @@ describe('SettingsPage', () => {
     expect(screen.getByText('payee details review')).toBeInTheDocument()
   })
 
-  it('shows check-only payouts for a saved bank account after reload', async () => {
-    accounts = [{ id: 4, provider: 'manual', status: 'onboarding', payout_ready: false, requirements_due: ['bank_account_review'] }]
+  it('restores a selected bank payout account after reload', async () => {
+    accounts = [{ id: 4, provider: 'manual', selected: true, payout_ready: false,
+      payout_details: { bank_name: 'Island Bank', account_holder_name: 'Island Events LLC', masked_account: '•••• 1234' } }]
     show()
-    await screen.findByText('Not available yet — HåfaPass currently pays by check.')
-    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeDisabled()
-    expect(screen.queryByLabelText('Account number')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Choose bank transfer' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /Bank transfer/ })).toBeChecked()
+    expect(screen.getByText('•••• 1234')).toBeVisible()
+    expect(screen.getByText('Selected payout method')).toBeVisible()
   })
 
   it('shows the marketing address confirmation beside its form without payout access', async () => {

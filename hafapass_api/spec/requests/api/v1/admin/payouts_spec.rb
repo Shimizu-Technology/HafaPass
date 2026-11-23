@@ -8,7 +8,11 @@ RSpec.describe "Evidence-backed payout reconciliation", type: :request do
   let(:profile) { create(:organizer_profile, organization: organization) }
   let(:event) { create(:event, :completed, organization: organization, organizer_profile: profile) }
   let(:settlement) { create(:settlement, organization: organization, event: event) }
-  let(:account) { create(:connected_account, organization: organization, provider: "manual") }
+  let(:account) do
+    create(:connected_account, organization: organization, provider: "manual",
+      payout_details: { "bank_name" => "Fixture Bank", "account_holder_name" => "Fixture LLC" },
+      bank_account_number: "123456789012")
+  end
   let!(:payout) do
     create(:payout, organization: organization, event: event, settlement: settlement,
       connected_account: account, status: :processing, provider_payout_id: "manual_po_fixture", created_at: 1.hour.ago)

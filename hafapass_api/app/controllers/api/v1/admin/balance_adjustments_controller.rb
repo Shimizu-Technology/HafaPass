@@ -37,26 +37,29 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
     return render json: { error: BackupWithholding::TIN_WARNING }, status: :unprocessable_entity unless BackupWithholding.safe_text?(params[:reason])
     organization = Organization.find(params[:organization_id])
     event = organization.events.find(params[:event_id]) if params[:event_id].present?
-    adjustment = organization.balance_adjustments.create!(
-      event: event,
-      order_id: params[:order_id],
-      dispute_id: params[:dispute_id],
-      created_by_user: current_user,
-      kind: params[:kind],
-      amount_cents: params[:amount_cents],
-      currency: organization.currency,
-      status: :posted,
-      reason: params[:reason],
-      effective_at: params[:effective_at].presence || Time.current
-    )
-    AuditLogger.record!(
-      action: "balance_adjustment.posted",
-      auditable: adjustment,
-      actor: current_user,
-      organization: organization,
-      after_data: adjustment_json(adjustment),
-      request: request
-    )
+    adjustment = organization.with_lock do
+      entry = organization.balance_adjustments.create!(
+        event: event,
+        order_id: params[:order_id],
+        dispute_id: params[:dispute_id],
+        created_by_user: current_user,
+        kind: params[:kind],
+        amount_cents: params[:amount_cents],
+        currency: organization.currency,
+        status: :posted,
+        reason: params[:reason],
+        effective_at: params[:effective_at].presence || Time.current
+      )
+      AuditLogger.record!(
+        action: "balance_adjustment.posted",
+        auditable: entry,
+        actor: current_user,
+        organization: organization,
+        after_data: adjustment_json(entry),
+        request: request
+      )
+      entry
+    end
     render json: adjustment_json(adjustment), status: :created
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Organization or event not found" }, status: :not_found
@@ -68,8 +71,9 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
     return render json: { error: BackupWithholding::TIN_WARNING }, status: :unprocessable_entity unless BackupWithholding.safe_text?(params[:reason])
     adjustment = BalanceAdjustment.status_posted.find(params[:id])
     reversal = nil
-    BalanceAdjustment.transaction do
+    adjustment.organization.with_lock do
       adjustment.lock!
+      raise ActiveRecord::RecordNotFound unless adjustment.status_posted?
       reversal = adjustment.organization.balance_adjustments.create!(
         event: adjustment.event,
         order: adjustment.order,
@@ -82,7 +86,7 @@ class Api::V1::Admin::BalanceAdjustmentsController < Api::V1::Admin::BaseControl
         currency: adjustment.currency,
         status: :posted,
         reason: params[:reason].presence || "Reversal of adjustment #{adjustment.id}",
-        effective_at: Time.current
+        effective_at: [Time.current, adjustment.effective_at].max
       )
       adjustment.update!(status: :reversed, reversed_by_user: current_user)
     end
