@@ -11,6 +11,7 @@ import InstallAppHelp from '../components/InstallAppHelp'
 import EventCard from '../components/EventCard'
 import FeaturedPassStub from '../components/FeaturedPassStub'
 import PerforatedStubStory from '../components/PerforatedStubStory'
+import GuamEventDeck from '../components/GuamEventDeck'
 import useContentLanguage from '../hooks/useContentLanguage'
 import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
 
@@ -175,6 +176,7 @@ export default function HomePage() {
           )}
         </div>
       </section>
+      {discovery && upcoming.length >= 2 && <GuamEventDeck events={upcoming} />}
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {discovery ? <>

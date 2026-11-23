@@ -145,8 +145,9 @@ function EventDetailContent() {
   const motionOk = useMotionOk()
   const [buyBarTargets] = useState(() => [heroTicketsLink, ticketPanel])
 
-  // Desktop-only (>= 1024px) subtle cover straighten: rotateX(6deg -> 0) over
-  // the top 240px of scroll. Zero listeners attached on phones or reduced motion.
+  // Desktop-only (>= 1024px) kinetic cover: expands via clip-path inset and
+  // straightens rotateX(6deg -> 0) over the top 280px of scroll. Zero listeners
+  // attached on phones or under reduced motion.
   useEffect(() => {
     const frameEl = coverFrameRef.current
     if (!frameEl || !motionOk || typeof window === 'undefined' || !window.matchMedia) return undefined
@@ -155,9 +156,13 @@ function EventDetailContent() {
     let raf = 0
     const update = () => {
       raf = 0
-      const progress = Math.min(1, Math.max(0, window.scrollY / 240))
+      const progress = Math.min(1, Math.max(0, window.scrollY / 280))
       const angle = (1 - progress) * 6
+      const insetPct = (1 - progress) * 3.5
       frameEl.style.transform = angle > 0.05 ? `perspective(1200px) rotateX(${angle.toFixed(2)}deg)` : 'none'
+      frameEl.style.clipPath = insetPct > 0.05
+        ? `inset(${insetPct.toFixed(2)}% ${insetPct.toFixed(2)}% ${insetPct.toFixed(2)}% ${insetPct.toFixed(2)}% round 1.25rem)`
+        : 'inset(0% 0% 0% 0% round 1rem)'
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(update) }
     update()
@@ -168,6 +173,7 @@ function EventDetailContent() {
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       frameEl.style.transform = ''
+      frameEl.style.clipPath = ''
     }
   }, [motionOk, event?.cover_image_url])
   const waitlistOfferToken = searchParams.get('waitlist_offer')

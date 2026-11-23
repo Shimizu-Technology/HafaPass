@@ -459,8 +459,66 @@
   .stub-story-pinned[data-mode="live"] .stub-story-step[data-active="true"] .stub-story-body { display: block; }
 }
 
-/* Option B: Desktop-only Event Detail cover straighten frame. */
-.event-cover-frame { transform-origin: center top; will-change: transform; }
+/* Option B/C: Desktop-only Event Detail cover straighten & clip-path expand. */
+.event-cover-frame { transform-origin: center top; will-change: transform, clip-path; }
+
+/* Option C: Guåhan village map pins + flickable event stub deck. */
+.guam-outline { fill: rgb(13 158 150 / 0.22); stroke: rgb(83 245 223 / 0.55); stroke-width: 2; }
+.guam-pin {
+  fill: #94a3b8;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: fill 200ms ease, transform 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.guam-pin[data-active="true"] { fill: #ff7a6e; transform: scale(1.65); }
+.guam-pin-ring {
+  fill: none;
+  stroke: #ff7a6e;
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes guam-pin-pulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .guam-pin-ring[data-active="true"] { opacity: 0.9; animation: guam-pin-pulse 1.4s ease-out infinite; }
+}
+.stub-deck { touch-action: pan-y; }
+.stub-deck-card {
+  grid-area: 1 / 1;
+  user-select: none;
+  -webkit-user-select: none;
+  filter: drop-shadow(0 22px 34px rgb(0 0 0 / 0.42));
+  transition: transform 420ms cubic-bezier(0.23, 1, 0.32, 1), opacity 260ms ease;
+  will-change: transform;
+}
+.stub-deck-card[data-top="true"] { cursor: grab; }
+.stub-deck-card[data-dragging="true"],
+.stub-deck-card[data-instant="true"] { transition: none; }
+.stub-deck-card[data-dragging="true"] { cursor: grabbing; }
+
+/* Option C: Rolling tabular-numeral price odometer. */
+.odometer-slot {
+  display: inline-block;
+  height: 1.2em;
+  overflow: hidden;
+  vertical-align: bottom;
+  line-height: 1.2;
+}
+.odometer-reel {
+  display: flex;
+  flex-direction: column;
+  transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+}
+.odometer-digit {
+  display: block;
+  height: 1.2em;
+  line-height: 1.2;
+}
 
 /* Event page artwork: the cover's own colors, blurred once behind its frame. Static. */
 .event-art-glow { position: absolute; inset: 6% 3% -5%; border-radius: 2rem; background-size: cover; background-position: center; filter: blur(32px) saturate(1.25); opacity: 0.45; pointer-events: none; }

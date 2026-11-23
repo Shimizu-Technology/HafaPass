@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap, ChevronDown, Sparkles } from 'lucide-react'
 import PaidCheckoutGate from './PaidCheckoutGate'
+import PriceOdometer from './PriceOdometer'
 import usePaidCheckoutAdminOnly from '../hooks/usePaidCheckoutAdminOnly'
 import { formatTicketPrice, ticketPriceCents, ticketAllInCents, ticketServiceFeeCents, remainingTickets, isTicketPurchasable } from '../utils/ticketPricing'
 import { formatScheduleTime, getServerNow } from '../utils/serverClock'
@@ -228,7 +229,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
       {totalSelected > 0 && <PaidCheckoutGate active={paidAdminOnly && totalCents > 0}>
         <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
           <ShoppingCart className="w-5 h-5" />
-          {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
+          {t('eventDetail.buyTickets')} &mdash; <PriceOdometer value={formatPrice(totalCents)} />
         </button>
       </PaidCheckoutGate>}
     </div>
