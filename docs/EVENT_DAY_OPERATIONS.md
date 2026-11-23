@@ -2,6 +2,8 @@
 
 This is the operating contract for Phase 6 admissions and door sales. It explains what the software guarantees, what event staff must do, and which external approvals still block production card-present sales.
 
+The organizer supplies the event-day scanners, door lead and cash-table staff. HåfaPass provides the software, a setup session, team training, a [printable volunteer guide](VOLUNTEER_DOOR_GUIDE.md) and an on-call contact. See [organizer onboarding](ORGANIZER_ONBOARDING.md) before configuring an event.
+
 ## Safety invariants
 
 1. A scanner is authorized for one user, one organization, and one event, with an explicit expiration no later than 72 hours or 12 hours after the event.
