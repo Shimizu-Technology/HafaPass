@@ -8,7 +8,18 @@ vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 const event = { id: 37, slug: 'community-night', title: 'Community night', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }
 function Destination() { const location = useLocation(); return <p>Browse destination {location.pathname}{location.search}</p> }
-function mount() { return render(<MemoryRouter><Routes><Route path="/" element={<HomePage />} /><Route path="/events" element={<Destination />} /><Route path="/events/:slug" element={<Destination />} /><Route path="/host" element={<h1>Host your event</h1>} /></Routes></MemoryRouter>) }
+function mount(initialEntry = '/') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/events" element={<Destination />} />
+        <Route path="/events/:slug" element={<Destination />} />
+        <Route path="/host" element={<h1>Host your event</h1>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
 const pointer = coarse => vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: coarse && query === '(pointer: coarse)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 beforeEach(() => { apiClient.get.mockReset(); apiClient.get.mockResolvedValue({data:{events:[]}}) })
 afterEach(() => { vi.unstubAllGlobals() })
@@ -164,7 +175,7 @@ describe('discovery first', () => {
   expect(heading.querySelectorAll('.hero-rise-word')).toHaveLength(7)
   expect(stubOf(container)).toBeInTheDocument()
  })
- it('shows the next event as a featured pass that opens the event and stays still under reduced motion', async () => {
+ it('shows the next event as a flat featured pass that opens the event cleanly', async () => {
   vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const featured={...event,id:40,slug:'reef-fest',title:'Reef fest',is_featured:true,venue_name:'Ypao Beach Park',venue_city:'Tumon',ticket_types:[{price_cents:0,quantity_remaining:5,on_sale:true}]}
   apiClient.get.mockResolvedValue({data:{events:[event,featured]}}); const {container}=mount()
@@ -175,28 +186,51 @@ describe('discovery first', () => {
   expect(pass).toHaveTextContent('Reef fest')
   expect(pass).toHaveTextContent('Ypao Beach Park · Tumon')
   expect(pass).toHaveTextContent('See tickets')
-  expect(pass.style.transform).toBe('rotateX(4deg) rotateY(-9deg)')
+  expect(pass.style.transform).toBe('')
   // A keyboard reaches it as one link; Enter follows it.
   pass.focus(); expect(pass).toHaveFocus()
-  // Reduced motion: no tilt handlers, so a pointer leaves the resting pose alone.
-  fireEvent.pointerMove(pass.parentElement,{pointerType:'mouse',clientX:5,clientY:5})
-  expect(pass.style.transform).toBe('rotateX(4deg) rotateY(-9deg)')
   await userEvent.setup().click(pass)
   expect(screen.getByText('Browse destination /events/reef-fest')).toBeInTheDocument()
  })
- it('never follows the pass after a sideways finger drag', async () => {
-  apiClient.get.mockResolvedValue({data:{events:[event]}}); const {container}=mount()
-  await screen.findByRole('list',{name:'Coming up on Guam'})
-  const pass=stubOf(container); const stage=pass.parentElement
-  fireEvent.pointerDown(stage,{pointerType:'touch',pointerId:3,clientX:100,clientY:100})
-  fireEvent.pointerMove(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
-  fireEvent.pointerUp(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
-  // The click this drag produces (a pointer click, detail 1) is swallowed; the next tap opens.
-  const dragClick = () => Object.assign(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }), { pointerId: 3, pointerType: 'touch' })
-  fireEvent(pass, dragClick())
-  expect(screen.queryByText(/Browse destination/)).not.toBeInTheDocument()
-  fireEvent(pass, dragClick())
-  expect(screen.getByText('Browse destination /events/community-night')).toBeInTheDocument()
+ it('supports hero variants 1 through 4 via ?hero= param and honors reduced motion', async () => {
+  const events=[
+   {...event,id:40,slug:'copa',title:'Copa de Marianas',is_featured:true,venue_name:'Calvo Field House',venue_city:'Mangilao'},
+   {...event,id:41,slug:'fd-night-1',title:'FD Alumni Night 1',starts_at:'2099-10-21T08:00:00Z',venue_name:'Phoenix Gym',venue_city:'Mangilao'},
+   {...event,id:42,slug:'tumon-acoustic',title:'Tumon Bay Acoustic',starts_at:'2099-10-22T08:00:00Z',venue_name:'Starfruit Pavilion',venue_city:'Tumon'},
+  ]
+  apiClient.get.mockResolvedValue({data:{events}})
+
+  // Hero 2: flat fanned deck with 3 cards and interactive dots
+  const deckView=mount('/?hero=2')
+  const deck=await screen.findByTestId('hero-fanned-deck')
+  expect(deck).toHaveAttribute('data-active-index','0')
+  await userEvent.setup().click(within(deck).getByRole('button',{name:'Next featured event'}))
+  expect(deck).toHaveAttribute('data-active-index','1')
+  deckView.unmount()
+
+  // Hero 3: event marquee with Browse events CTA and static fallback under reduced motion
+  vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+  const marqueeView=mount('/?hero=3')
+  const marquee=await screen.findByTestId('hero-event-marquee')
+  expect(marquee).toHaveAttribute('data-static','true')
+  expect(within(marquee.closest('section')).getByRole('link',{name:'Browse events'})).toHaveAttribute('href','/events')
+  marqueeView.unmount()
+
+  // Hero 4: island pass with QR already settled under reduced motion
+  const islandView=mount('/?hero=4')
+  const island=await screen.findByTestId('hero-island-pass')
+  expect(island).toHaveAttribute('data-qr-settled','true')
+  expect(island).toHaveTextContent('Instant QR · Ready')
+  islandView.unmount()
+ })
+ it('shows the floating hero switcher only in demo mode and updates ?hero=', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[event]}})
+  vi.stubEnv('VITE_HAFAPASS_DEMO_DATA', '1')
+  mount('/?hero=1')
+  const switcher=await screen.findByTestId('hero-variant-switcher')
+  await userEvent.setup().click(within(switcher).getByRole('button',{name:/Hero 3/i}))
+  expect(await screen.findByTestId('hero-event-marquee')).toBeInTheDocument()
+  vi.unstubAllEnvs()
  })
  it('opens the date and village choices from a labeled 48px button on phones', async () => {
   apiClient.get.mockResolvedValue({data:{events:[event]}}); mount()

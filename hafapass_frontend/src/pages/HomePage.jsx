@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Fragment, useState, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowRight, ChevronDown, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
@@ -10,9 +10,15 @@ import { HostingStub } from '../components/EmptyInventory'
 import InstallAppHelp from '../components/InstallAppHelp'
 import EventCard from '../components/EventCard'
 import FeaturedPassStub from '../components/FeaturedPassStub'
+import HeroFannedDeck from '../components/HeroFannedDeck'
+import HeroEventMarquee from '../components/HeroEventMarquee'
+import HeroIslandPass from '../components/HeroIslandPass'
+import HeroVariantSwitcher from '../components/HeroVariantSwitcher'
 import PerforatedStubStory from '../components/PerforatedStubStory'
 import useContentLanguage from '../hooks/useContentLanguage'
+import { isDemoDataEnabled } from '../utils/demoMode'
 import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
+import { parseHeroVariant } from '../utils/heroVariants'
 
 const passStepsFor = t => [
   [t('pass.home.stepFindTitle'), t('pass.home.stepFindBody')],
@@ -20,9 +26,17 @@ const passStepsFor = t => [
   [t('pass.home.stepDoorTitle'), t('pass.home.stepDoorBody')],
 ]
 
-function FindTicketLink() {
+function FindTicketLink({ inverse = false }) {
   const { t } = useTranslation()
-  return <Link to="/orders/recover" className="ticket-link inline-flex min-h-12 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.findTicket')}<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" /></Link>
+  return (
+    <Link
+      to="/orders/recover"
+      className={`ticket-link inline-flex min-h-12 items-center gap-2 rounded-lg text-sm font-semibold ${inverse ? 'text-brand-100 hover:text-white' : 'text-brand-800'}`}
+    >
+      {t('pass.home.findTicket')}
+      <ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" />
+    </Link>
+  )
 }
 
 const categoriesFor = t => [
@@ -34,9 +48,8 @@ const categoriesFor = t => [
   { name: t('buyer.Home.ClassesWorkshops'), slug: 'workshop' },
 ]
 
-// The page's one entrance: the headline's words rise into place in CSS, done
-// within a second. The full sentence stays in the heading for screen readers,
-// and reduced motion shows it still.
+// LCP-safe entrance: every word starts at opacity 1 on frame 0 and settles
+// cleanly into place with a composite-only transform. Reduced motion shows it still.
 function RiseHeadline({ text, className }) {
   const words = text.split(' ')
   return <h1 className={`hero-rise ${className}`}>{words.map((word, index) => <Fragment key={index}>
@@ -73,6 +86,10 @@ export default function HomePage() {
   const { t } = useTranslation()
   const contentLanguage = useContentLanguage()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const heroVariant = parseHeroVariant(searchParams.get('hero'))
+  const demoMode = isDemoDataEnabled()
+
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
   const [date, setDate] = useState('upcoming')
@@ -105,6 +122,16 @@ export default function HomePage() {
   }).slice(0, 8), [events])
   const inventoryEmpty = !loading && !loadError && events.length === 0
   const discovery = !loading && !loadError && !inventoryEmpty
+  const showSearchInHero = discovery && wide && heroVariant !== 3
+  const showSearchInSheet = discovery && !showSearchInHero
+
+  const selectHeroVariant = nextId => {
+    const next = new URLSearchParams(searchParams)
+    next.set('hero', String(nextId))
+    setSearchParams(next, { replace: false })
+    if (window.scrollY > 40) window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
   const browse = event => {
     event.preventDefault()
     const params = new URLSearchParams()
@@ -134,44 +161,90 @@ export default function HomePage() {
       <FindTicketLink />
     </div>
   </form>
+
+  const fallbackTicket = (
+    <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
+      <InstallAppHelp variant="action" />
+      <FindTicketLink />
+    </div> : <div className="px-6 py-3 sm:px-8"><FindTicketLink /></div>}>
+      <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
+        {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
+          <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
+          <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
+        </div> : loadError ? <div role="alert">
+          <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
+          <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
+          <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
+        </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
+          <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
+          <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
+          <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
+        </div> : null}
+      </div>
+    </Ticket>
+  )
+
   return (
-    <div className="public-intros min-h-dvh bg-brand-950 text-content">
+    <div className={`public-intros min-h-dvh bg-brand-950 text-content ${demoMode ? 'pb-20 sm:pb-16' : ''}`}>
       <SEO />
-      <section data-header-band="dark" className="bg-brand-950 pb-12 pt-6 text-white sm:pb-20 sm:pt-12 lg:pb-24 lg:pt-16">
-        {/* Top-aligned, with the text column holding the loaded height in every
-            state, so events arriving (or not) never shift the page. */}
-        <div className="mx-auto grid max-w-6xl items-start gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-16 lg:px-8">
-          <div className="min-w-0 lg:min-h-[31rem]">
-            <RiseHeadline text={t('pass.home.title')} className="max-w-lg font-display text-[2.5rem] font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-6xl" />
-            <p className="mt-4 max-w-md text-lg leading-relaxed text-brand-100">{t('pass.home.lede')}</p>
-            {discovery && wide && <div className="mt-6">{searchCard}</div>}
-          </div>
-          {/* Hosting is pitched once: in the hero stub while loading, then by the planning ticket. */}
-          {discovery ? <FeaturedPassStub event={upcoming[0]} /> : <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
-            <InstallAppHelp variant="action" />
-            <FindTicketLink />
-          </div> : <div className="px-6 py-3 sm:px-8"><FindTicketLink /></div>}>
-            <div className={`home-ticket-content px-6 py-6 sm:px-8 sm:py-7 ${inventoryEmpty ? 'home-ticket-empty' : ''}`} aria-busy={loading}>
-              {loading ? <div className="flex h-full flex-col items-start justify-center gap-3">
-                <p role="status" className="text-content-muted">{t('buyer.Home.loadingUpcomingEvents')}</p>
-                <Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link>
-              </div> : loadError ? <div role="alert">
-                <h2 className="font-display text-2xl font-bold">{t('buyer.Home.eventsCouldntLoad')}</h2>
-                <p className="mt-3 text-content-muted">{t('buyer.Home.pleaseTryAgainToSeeWhatsComingUp')}</p>
-                <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)} className="btn-primary">{t('buyer.Home.retryEvents')}</button><Link to="/events" className="btn-secondary">{t('buyer.Home.browseEvents')}</Link></div>
-              </div> : inventoryEmpty ? <div className="flex h-full flex-col items-start justify-center">
-                <TicketIcon aria-hidden="true" className="mb-4 h-8 w-8 text-brand-700" />
-                <h2 className="max-w-sm font-display text-2xl font-bold leading-tight sm:text-3xl">{t('pass.home.firstEvents')}</h2>
-                <p className="mt-3 max-w-sm leading-relaxed text-content-muted">{t('pass.home.checkBack')}</p>
-              </div> : null}
+      <section
+        data-header-band="dark"
+        data-hero-variant={heroVariant}
+        className={`relative overflow-x-clip bg-brand-950 text-white ${
+          heroVariant === 3
+            ? 'pb-14 pt-4 sm:pb-20 sm:pt-12 lg:pb-24 lg:pt-14'
+            : 'pb-12 pt-4 sm:pb-20 sm:pt-11 lg:pb-24 lg:pt-14'
+        }`}
+      >
+        {heroVariant === 3 && discovery ? (
+          <div>
+            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+              <div className="max-w-2xl">
+                <p className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-brand-400/25 bg-brand-900/60 px-3.5 py-1 text-xs font-semibold tracking-[0.04em] text-brand-200">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brand-300" />
+                  {t('pass.home.guamTime')}
+                </p>
+                <RiseHeadline text={t('pass.home.title')} className="font-display text-[2.2rem] font-bold leading-[1.04] tracking-[-0.03em] sm:text-5xl lg:text-[3.75rem]" />
+                <p className="mt-3 max-w-xl text-base leading-relaxed text-brand-100/95 sm:mt-4 sm:text-lg">{t('pass.home.lede')}</p>
+                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 sm:mt-6">
+                  <Link to="/events" className="btn-primary min-h-12 gap-2 !px-6">
+                    {t('buyer.Home.browseEvents')}
+                    <ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  </Link>
+                  <FindTicketLink inverse />
+                </div>
+              </div>
             </div>
-          </Ticket>}
-        </div>
+            <HeroEventMarquee events={upcoming} />
+          </div>
+        ) : (
+          /* Top-aligned, with the text column holding the loaded height in every
+             state, so events arriving (or not) never shift the page. */
+          <div className="mx-auto grid max-w-6xl items-start gap-5 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:items-center lg:gap-14 lg:px-8">
+            <div className="min-w-0 lg:min-h-[30rem]">
+              {heroVariant === 4 && (
+                <p className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-brand-300/20 bg-brand-900/55 px-3.5 py-1 text-xs font-semibold tracking-[0.04em] text-brand-200">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brand-300" />
+                  {t('pass.home.guamTime')}
+                </p>
+              )}
+              <RiseHeadline text={t('pass.home.title')} className="max-w-lg font-display text-[2.2rem] font-bold leading-[1.05] tracking-[-0.028em] sm:text-5xl lg:text-[3.75rem]" />
+              <p className="mt-3 max-w-md text-base leading-relaxed text-brand-100/95 sm:mt-4 sm:text-lg">{t('pass.home.lede')}</p>
+              {showSearchInHero && <div className="mt-7">{searchCard}</div>}
+            </div>
+            {/* Hosting is pitched once: in the hero stub while loading, then by the planning ticket. */}
+            {discovery ? (
+              heroVariant === 2 ? <HeroFannedDeck events={upcoming} />
+                : heroVariant === 4 ? <HeroIslandPass event={upcoming[0]} />
+                : <FeaturedPassStub event={upcoming[0]} />
+            ) : fallbackTicket}
+          </div>
+        )}
       </section>
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {discovery ? <>
-            {!wide && <div className="mb-8">{searchCard}</div>}
+            {showSearchInSheet && <div className="mb-8">{searchCard}</div>}
             <section aria-labelledby="upcoming-heading">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="upcoming-heading" className="font-display text-2xl font-bold sm:text-3xl">{t('pass.home.comingUpOnGuam')}</h2><Link to="/events" className="ticket-link inline-flex min-h-12 items-center gap-2 rounded-lg text-base font-semibold text-brand-800">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>
               <ul aria-label={t('pass.home.quickFilters')} className="mb-5 flex flex-wrap gap-2">{quickFiltersFor(events, t).map(({ label, to }) => <li key={to}><Link to={to} className="ticket-chip inline-flex min-h-12 items-center rounded-full border border-neutral-300 bg-white px-5 text-base font-medium text-neutral-900">{label}</Link></li>)}</ul>
@@ -195,6 +268,7 @@ export default function HomePage() {
         </div>
       </div>
       <Footer />
+      {demoMode && <HeroVariantSwitcher activeVariant={heroVariant} onSelect={selectHeroVariant} />}
     </div>
   )
 }

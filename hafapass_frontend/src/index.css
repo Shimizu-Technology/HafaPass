@@ -260,20 +260,146 @@
 }
 
 /* Public-page signature moments (Home, event page, ticket wallet). Each one's
-   still state is the finished page; motion only plays when the component's
-   useMotionOk gate allows it, and the reduced-motion rule above stops the
-   rest. Checkout, forms, dashboards and the scanner never use these. */
+   still state is the finished page; the headline never hides at opacity 0 so
+   LCP paints at frame 0, and reduced motion stops every transform animation. */
 .hero-rise-word { display: inline-block; }
 @media (prefers-reduced-motion: no-preference) {
-  .hero-rise-word { animation: hero-word-rise 520ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--word, 0) * 55ms); }
+  .hero-rise-word {
+    animation: hero-word-settle 420ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(var(--word, 0) * 35ms);
+  }
 }
-@keyframes hero-word-rise { from { opacity: 0; transform: translateY(0.38em); } to { opacity: 1; transform: translateY(0); } }
+@keyframes hero-word-settle {
+  from { transform: translate3d(0, 0.22em, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
 
-.featured-pass-stage { perspective: 1100px; max-width: 26rem; width: 100%; margin-inline: auto; }
-.featured-pass { transform-style: preserve-3d; will-change: transform; filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28)); }
+/* Hero 1 & Hero 4 flat featured pass (zero 3D tilt, zero flip, zero skew). */
+.featured-pass-stage { max-width: 26.5rem; width: 100%; margin-inline: auto; }
+.featured-pass {
+  filter: drop-shadow(0 16px 28px rgb(0 0 0 / 0.26));
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.featured-pass:active { transform: scale(0.985); }
 .featured-pass:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  .featured-pass:hover { transform: translate3d(0, -2px, 0); }
+}
 .featured-ticket { --notch-radius: 14px; }
-.featured-pass-sheen { position: absolute; inset: -20% -40%; pointer-events: none; background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.22) 50%, transparent 62%); mix-blend-mode: screen; }
+
+/* Hero 2: flat 2D fanned ticket deck (composite-only transform & opacity). */
+.hero-deck-stage { touch-action: pan-y; }
+.hero-deck-card {
+  transform-origin: center bottom;
+  transition: transform 280ms cubic-bezier(0.23, 1, 0.32, 1), opacity 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hero-deck-card-front { filter: drop-shadow(0 16px 28px rgb(0 0 0 / 0.30)); }
+.hero-deck-card-back { filter: drop-shadow(0 8px 14px rgb(0 0 0 / 0.24)) brightness(0.92); }
+.hero-deck-link { transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.hero-deck-link:active { transform: scale(0.985); }
+.hero-deck-link:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
+.hero-deck-dot { transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 180ms ease; }
+.hero-deck-nav { transition: background-color 150ms ease, border-color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.hero-deck-nav:active { transform: scale(0.95); }
+@media (hover: hover) and (pointer: fine) {
+  .hero-deck-nav:hover { background-color: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.32); }
+}
+
+/* Hero 3: slow continuous horizontal marquee with edge fade mask. */
+.hero-marquee-viewport {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+}
+.hero-marquee-viewport-static {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-mask-image: none;
+  mask-image: none;
+  padding-inline: 1rem;
+}
+.hero-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 1rem;
+  padding-block: 4px 10px;
+}
+.hero-marquee-group {
+  display: flex;
+  flex-shrink: 0;
+  gap: 1rem;
+}
+.hero-marquee-card {
+  filter: drop-shadow(0 10px 22px rgb(0 0 0 / 0.24));
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  scroll-snap-align: start;
+}
+.hero-marquee-card:active { transform: scale(0.985); }
+.hero-marquee-card:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
+.hero-marquee-toggle { transition: background-color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.hero-marquee-toggle:active { transform: scale(0.96); }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-marquee-track {
+    animation: hero-marquee-scroll 40s linear infinite;
+  }
+  .hero-marquee-track.hero-marquee-paused,
+  .hero-marquee-viewport:focus-within .hero-marquee-track {
+    animation-play-state: paused;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-marquee-viewport:hover .hero-marquee-track { animation-play-state: paused; }
+  .hero-marquee-card:hover { transform: translate3d(0, -2px, 0); }
+  .hero-marquee-toggle:hover { background-color: rgb(255 255 255 / 0.14); }
+}
+@keyframes hero-marquee-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+/* Hero 4: calm static Guåhan lagoon glow + one-shot WAAPI QR cluster assembly. */
+.hero-island-glow {
+  position: absolute;
+  inset: -16% -14%;
+  pointer-events: none;
+  border-radius: 9999px;
+  background:
+    radial-gradient(62% 58% at 72% 26%, rgb(32 224 204 / 0.28) 0%, transparent 72%),
+    radial-gradient(56% 52% at 22% 78%, rgb(240 86 74 / 0.18) 0%, transparent 70%);
+}
+.hero-island-qr-cluster { transform-box: fill-box; transform-origin: center; }
+.hero-island-scan-beam {
+  position: absolute;
+  inset: 0 6px auto;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, theme('colors.brand.400'), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.hero-island-status { transition: background-color 220ms ease, color 220ms ease; }
+
+/* Demo-only floating hero variant switcher: opaque high-contrast dark teal pill
+   so labels remain legible over both dark hero and light event surfaces. */
+.hero-switcher {
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  background-color: rgb(3 40 39 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.18);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.34), 0 2px 8px rgb(0 0 0 / 0.22);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-pass, .featured-pass:active, .featured-pass:hover,
+  .hero-deck-link, .hero-deck-link:active, .hero-deck-nav:active,
+  .hero-marquee-card, .hero-marquee-card:active, .hero-marquee-card:hover {
+    transform: none !important;
+  }
+  .hero-marquee-track { animation: none !important; }
+  .hero-island-scan-beam { display: none !important; }
+}
 
 .stub-story-ticket { --tear: 1; }
 .stub-story-stub { transform: translateY(calc(var(--tear) * 22px)) rotate(calc(var(--tear) * 2.5deg)); transform-origin: 10% 0; }
