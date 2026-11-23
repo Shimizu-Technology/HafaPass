@@ -387,7 +387,7 @@ None of these steps are executed by agents. Run them only when Leon decides to a
    - **`FDAA`** (`slug: "fdaa"`, e.g. `"FD Alumni Association / FDMSAA"`): for 2027 tournament daily tickets, season/championship passes, and team registration; bank transfer destination per FDMSAA payout note.
 3. **Verify both organizations & payout readiness:**
    - Approve organizer verification for both `CO2017` and `FDAA`.
-   - Configure each organization's manual bank-transfer payout destination, submit and approve Gate B payment readiness review, and enter W-9 / tax-exempt info (`OrganizerTaxInformation`) so payouts are not subject to 24% backup withholding.
+   - Configure each organization's manual bank-transfer payout destination (supported since the bank-transfer payout release, PR #221, merged Nov 24, 2026; the release must be deployed first), submit and approve Gate B payment readiness review, and enter W-9 / tax-exempt info (`OrganizerTaxInformation`) so payouts are not subject to 24% backup withholding.
    - Confirm `ADMIN_EMAILS`, `ADMISSION_MANIFEST_PRIVATE_KEY_PEM`, and `ACTIVE_RECORD_ENCRYPTION_*` are backed up securely.
 4. **Create `fd-alumni-hub` distribution partner (Admin → Marketplace → Distribution Partners):**
    - Partner slug: `fd-alumni-hub` (`kind: partner` / `media`).
@@ -428,7 +428,7 @@ None of these steps are executed by agents. Run them only when Leon decides to a
    - Start 1 dedicated Render Background Worker (`bundle exec bin/jobs`, `HAFAPASS_RUNTIME=solid_queue`, `0.5c-512mb`, `DB_POOL=10`, identical secrets/encryption keys/DB URLs). Drain embedded queue cleanly during cutover per `docs/SINGLE_SERVICE_RUNTIME.md`.
    - Raise Neon minimum compute (no scale-to-zero) for June–July.
    - Verify `/api/v1/readiness` confirms live worker/scheduler heartbeats and zero overdue jobs.
-2. **Closeout (late July – August):**
-   - Complete all nights, finalize statements, and post a `reserve_hold` of about 10% of payable proceeds. Finalize updated statements and export the final Tournament Series Report and 16% worksheet. Send initial bank transfers within 2–3 business days and record each confirmed payout.
+2. **Closeout (starts the day after the finals, tentatively Jul 16):**
+   - Complete all nights, finalize statements, and post a `reserve_hold` of about 10% of payable proceeds. Finalize updated statements and export the final Tournament Series Report and 16% worksheet. Send initial bank transfers within 2–3 business days after the finals and record each confirmed payout.
    - After 30 days: reconcile chargebacks, post `reserve_release`, and finalize new statement versions. Transfer the remaining reserve and record each confirmed payout. Finalize post-payout statements and archive closed events.
    - Scale Render back down to single `0.5c-512mb` `HAFAPASS_RUNTIME=embedded` and lower Neon minimum compute.
