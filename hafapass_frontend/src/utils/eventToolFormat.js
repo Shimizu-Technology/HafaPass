@@ -30,3 +30,10 @@ export const refundConfirmLabel = (order, form) => {
   }
   return 'Process Refund'
 }
+
+export function formatRegistrationAnswer(value) {
+  if (Array.isArray(value)) return value.join(', ')
+  if (value === true) return 'Yes'
+  if (value === false) return 'No'
+  return value ?? '—'
+}

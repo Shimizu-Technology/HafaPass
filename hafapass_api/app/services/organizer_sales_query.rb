@@ -14,18 +14,27 @@ class OrganizerSalesQuery
     "amount" => ["order_items.unit_price_cents - (order_items.discount_cents / NULLIF(order_items.quantity, 0))", "orders.total_cents"],
     "check_in_time" => ["tickets.checked_in_at", "(SELECT MAX(st.checked_in_at) FROM tickets st WHERE st.order_id = orders.id)"]
   }.freeze
-  FILTER_KEYS = %w[search ticket_type status channel promo_code purchased_from purchased_to payment_environment sort direction view].freeze
+  FILTER_KEYS = %w[search ticket_type status channel promo_code purchased_from purchased_to payment_environment sort direction view question_id answer_value].freeze
   CHANNELS = %w[online box_office guest_list].freeze
   STATUSES = %w[paid refunded partially_refunded cancelled checked_in not_checked_in transferred issued].freeze
 
   attr_reader :filters, :view, :event
 
-  def initialize(event:, params:, attendee_access:)
+  def initialize(event:, params:, attendee_access:, active_only: false)
     @event = event
     @attendee_access = attendee_access
+    @active_only = active_only
     input = params.respond_to?(:to_unsafe_h) ? params.to_unsafe_h : params.to_h
-    @filters = input.stringify_keys.slice(*FILTER_KEYS).transform_values { |value| value.to_s.strip }
-      .reject { |_key, value| value.blank? }
+    input = input.stringify_keys
+    if input["ticket_type_id"].present?
+      id = input["ticket_type_id"].to_s
+      raise InvalidFilter, "Invalid ticket type" unless id.match?(/\A[1-9][0-9]*\z/) && @event.ticket_types.exists?(id)
+
+      input["ticket_type"] = id
+    end
+    @filters = input.slice(*FILTER_KEYS).transform_values { |value| value.to_s.strip }
+    @filters["answer_value"] = input["answer_value"].to_s if input.key?("answer_value")
+    @filters.reject! { |_key, value| value.blank? }
     @view = filters.fetch("view", "tickets")
     validate!
   end
@@ -33,6 +42,8 @@ class OrganizerSalesQuery
   def relation
     @relation ||= begin
       tickets = @event.tickets.joins(:order, :ticket_type).left_joins(:order_item)
+        .where(orders: { event_id: Event.where(organization_id: @event.organization_id).select(:id) })
+      tickets = EventReportingService.active_tickets(@event, tickets) if @active_only
       tickets = apply_filters(tickets)
       if view == "orders"
         orders = @event.orders.where(id: tickets.select(:order_id))
@@ -74,7 +85,9 @@ class OrganizerSalesQuery
 
   def validate!
     raise InvalidFilter, "Invalid view" unless %w[tickets orders].include?(view)
-    raise InvalidFilter, "Invalid status" if filters["status"] && !STATUSES.include?(filters["status"])
+    statuses = @active_only ? EventReportingService::STATUSES : STATUSES
+    raise InvalidFilter, "Invalid status" if filters["status"] && !statuses.include?(filters["status"])
+    validate_answer_filter!
     raise InvalidFilter, "Invalid channel" if filters["channel"] && !CHANNELS.include?(filters["channel"])
     raise InvalidFilter, "Invalid sort" if filters["sort"] && !SORTS.key?(filters["sort"])
     raise InvalidFilter, "Name sorting requires attendee access" if filters["sort"] == "name" && !@attendee_access
@@ -89,6 +102,18 @@ class OrganizerSalesQuery
     raise InvalidFilter, "Invalid purchase date"
   end
 
+  def validate_answer_filter!
+    return unless filters.key?("question_id") || filters.key?("answer_value")
+
+    raise InvalidFilter, "Answer filtering requires attendee access" unless @attendee_access
+    id = filters["question_id"].to_s
+    raise InvalidFilter, "Select a question and answer" unless id.match?(/\A[1-9][0-9]*\z/) && filters["answer_value"].present?
+    raise InvalidFilter, "Answer is too long" if filters["answer_value"].length > 4_000
+
+    @question = @event.registration_questions.find_by(id: id)
+    raise InvalidFilter, "Invalid registration question" unless @question
+  end
+
   def allowed_ticket_type?(ticket_type_id)
     return true if @event.ticket_types.where(id: ticket_type_id).exists?
 
@@ -97,11 +122,9 @@ class OrganizerSalesQuery
 
   def apply_filters(tickets)
     tickets = tickets.where(ticket_type_id: filters["ticket_type"]) if filters["ticket_type"]
-    tickets = apply_status(tickets)
-    if filters["channel"]
-      tickets = filters["channel"] == "online" ? tickets.where("orders.source IS NULL OR orders.source NOT IN (?)", %w[box_office guest_list]) :
-        tickets.where(orders: { source: filters["channel"] })
-    end
+    tickets = @active_only ? EventReportingService.filter_status(tickets, filters["status"]) : apply_status(tickets)
+    tickets = EventReportRegistrations.filter(tickets, @question, filters.fetch("answer_value")) if @question
+    tickets = tickets.merge(EventReportingService.filter_channel(Order.all, filters["channel"])) if filters["channel"]
     if filters["promo_code"]
       codes = @event.promo_codes.where("LOWER(code) = ?", filters["promo_code"].downcase).select(:id)
       tickets = tickets.where(orders: { promo_code_id: codes })
@@ -113,11 +136,7 @@ class OrganizerSalesQuery
     if filters["purchased_to"]
       tickets = tickets.where("COALESCE(orders.completed_at, orders.created_at) < ?", (zone.parse(filters["purchased_to"]) + 1.day).utc)
     end
-    environment = filters.fetch("payment_environment", "live")
-    nonlive_orders = Payment.nonlive_stripe.select(:order_id)
-    live_capture = Payment.live_or_legacy_capture.select(:order_id)
-    tickets = tickets.where(orders: { id: nonlive_orders }).where.not(orders: { id: live_capture }) if environment == "test"
-    tickets = tickets.where.not(orders: { id: nonlive_orders }).or(tickets.where(orders: { id: live_capture })) if environment == "live"
+    tickets = filter_payment_environment(tickets) unless @active_only
     if filters["search"]
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(filters['search'])}%"
       search_clause = if @attendee_access
@@ -130,6 +149,17 @@ class OrganizerSalesQuery
       tickets = tickets.where(search_clause, q: pattern)
     end
     tickets
+  end
+
+  def filter_payment_environment(tickets)
+    environment = filters.fetch("payment_environment", "live")
+    nonlive_orders = Payment.nonlive_stripe.select(:order_id)
+    live_capture = Payment.live_or_legacy_capture.select(:order_id)
+    case environment
+    when "test" then tickets.where(orders: { id: nonlive_orders }).where.not(orders: { id: live_capture })
+    when "live" then tickets.where.not(orders: { id: nonlive_orders }).or(tickets.where(orders: { id: live_capture }))
+    else tickets
+    end
   end
 
   def apply_status(tickets)
