@@ -32,6 +32,16 @@ import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttrib
 // treats it as a boolean and drops ''. Emit the value each version needs.
 const INERT_VALUE = Number(reactVersion.split('.')[0]) >= 19 ? true : ''
 
+// Moves to the ticket panel in place. Following the #tickets hash instead would
+// remount this page (it is keyed by the hash) and refetch the event.
+function showTicketPanel(event, behavior) {
+  const panel = document.getElementById('tickets')
+  if (!panel) return
+  event.preventDefault()
+  panel.scrollIntoView({ behavior, block: 'start' })
+  panel.focus({ preventScroll: true })
+}
+
 // Phones see the ticket panel once near the top; this bar keeps the purchase one tap
 // away while the hero button and the panel are out of view. It also stays hidden once
 // the visitor reaches (or scrolls past) the end of the event content, so it never
@@ -55,13 +65,7 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
     return () => observer.disconnect()
   }, [targets, endMarker])
 
-  const openTickets = event => {
-    const panel = document.getElementById('tickets')
-    if (!panel) return
-    event.preventDefault()
-    panel.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
-    panel.focus({ preventScroll: true })
-  }
+  const openTickets = event => showTicketPanel(event, reducedMotion ? 'auto' : 'smooth')
 
   return (
     <div
@@ -420,7 +424,7 @@ function EventDetailContent() {
                   <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.organizer.business_name}</dd>
                 </div>}
               </dl>
-              {!event.private_preview && !closedStatus && <a ref={heroTicketsLink} href="#tickets" className="btn-primary mt-5 min-h-11 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
+              {!event.private_preview && !closedStatus && <a ref={heroTicketsLink} href="#tickets" onClick={click => showTicketPanel(click, 'auto')} className="btn-primary mt-5 min-h-12 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
 
               {coverImage && (
                 <div className="event-art relative mt-6">

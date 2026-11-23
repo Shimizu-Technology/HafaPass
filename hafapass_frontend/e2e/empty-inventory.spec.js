@@ -69,8 +69,10 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: 'Your night out on Guam starts here.' })).toBeVisible()
     await expect(page.getByRole('searchbox', { name: 'Event or venue' })).toBeVisible()
     await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Coming up' })).toBeVisible()
-    await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Coming up on Guam' })).toBeVisible()
+    // The event shows as the hero's featured pass and as a card in the list.
+    await expect(page.locator('a.featured-pass')).toContainText('Community night')
+    await expect(page.locator('a.event-card').filter({ hasText: 'Community night' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toHaveCount(0)
     await page.goto('/events?search=nothing')
     await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()

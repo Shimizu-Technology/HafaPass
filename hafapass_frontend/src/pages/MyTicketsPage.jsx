@@ -16,18 +16,7 @@ import TransferTicketDialog from '../components/TransferTicketDialog'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import InstallAppHelp from '../components/InstallAppHelp'
 import TicketSwitcher from '../components/TicketSwitcher'
-
-// An event is "tonight" on its own calendar day (in the event's time zone)
-// until it ends; without an end time, for six hours after it starts.
-const DEFAULT_EVENT_LENGTH_MS = 6 * 60 * 60 * 1000
-const localDay = (date, timeZone) => new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'Pacific/Guam' }).format(date)
-function happeningToday(event, now) {
-  const start = new Date(event?.starts_at)
-  if (Number.isNaN(start.valueOf())) return false
-  const parsedEnd = event.ends_at ? new Date(event.ends_at) : null
-  const end = parsedEnd && !Number.isNaN(parsedEnd.valueOf()) ? parsedEnd : new Date(start.valueOf() + DEFAULT_EVENT_LENGTH_MS)
-  return end > now && (start <= now || localDay(start, event.timezone) === localDay(now, event.timezone))
-}
+import { isPassParent, pinnableTonight } from '../utils/tonightTickets'
 
 // Tonight's tickets sit above everything else, one at a time with a switcher
 // for a group, so a buyer at the door never scrolls past the right QR.
@@ -41,7 +30,7 @@ function TonightTickets({ tickets, renderTicket }) {
       <h2 id="tonight-heading" className="font-display text-2xl font-bold">{t('buyerAccount.myTicketsPage.tonightsTicket', { count: tickets.length })}</h2>
       <p className="mt-1 text-base text-brand-100">{t('buyerAccount.myTicketsPage.tonightHelp')}</p>
       {tickets.length > 1 && <div className="mt-4">
-        <TicketSwitcher tone="dark" position={at + 1} total={tickets.length} name={ticket.attendee_name}
+        <TicketSwitcher tone="dark" label={t('buyerAccount.myTicketsPage.tonightsTicketsSwitcher')} position={at + 1} total={tickets.length} name={ticket.attendee_name}
           previous={at > 0 ? { onClick: () => setIndex(at - 1) } : null}
           next={at < tickets.length - 1 ? { onClick: () => setIndex(at + 1) } : null} />
       </div>}
@@ -296,9 +285,8 @@ function MyTicketsContent({ refreshSession, signOut }) {
     }
   }
 
-  const isPassParent = ticket => Boolean(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
-  const tonightTickets = eventGroups.filter(group => happeningToday(group.event, now))
-    .flatMap(group => group.tickets.filter(ticket => !isPassParent(ticket) && ticket.status === 'issued').map(ticket => ({ ...ticket, event: group.event })))
+  const tonightTickets = eventGroups.flatMap(group => group.tickets
+    .filter(ticket => pinnableTonight(ticket, group.event, now)).map(ticket => ({ ...ticket, event: group.event })))
   const pinned = new Set(tonightTickets.map(ticket => ticket.id))
   const renderTicket = (ticket, event, { pinned: inTonight = false } = {}) => {
     const started = new Date(event.starts_at) < now

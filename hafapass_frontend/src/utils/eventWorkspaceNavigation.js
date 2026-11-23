@@ -25,7 +25,8 @@ export function navigationFor(event, capabilities) {
     { label: 'Sales & messages', icon: Megaphone, links: [
       { label: 'Promo codes', to: `${base}/promo-codes`, allowed: has('manage_marketing') },
       {
-        label: 'Questions & Waivers',
+        // Questions and waivers need event management; marketers there see promoters and campaigns.
+        label: has('manage_events') ? 'Questions & Waivers' : 'Promoters & Messages',
         to: `${base}/sales-tools`,
         allowed: capabilities.advanced_sales_tools === true
           ? (has('manage_marketing') || has('manage_events'))

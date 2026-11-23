@@ -269,7 +269,7 @@
 }
 @keyframes hero-word-rise { from { opacity: 0; transform: translateY(0.38em); } to { opacity: 1; transform: translateY(0); } }
 
-.featured-pass-stage { perspective: 1100px; touch-action: pan-y; max-width: 26rem; width: 100%; margin-inline: auto; }
+.featured-pass-stage { perspective: 1100px; max-width: 26rem; width: 100%; margin-inline: auto; }
 .featured-pass { transform-style: preserve-3d; will-change: transform; filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28)); }
 .featured-pass:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
 .featured-ticket { --notch-radius: 14px; }

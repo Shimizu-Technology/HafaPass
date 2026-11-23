@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import TicketPage from './TicketPage'
 import api from '../api/client'
 
@@ -17,7 +17,9 @@ const order = { id: 9, tickets: [
   { id: 3, display_credential: 'cred-3', attendee_name: 'Calla Yorke', ticket_type: { name: 'Free Alumni' } },
   { id: 4, display_credential: null, attendee_name: 'Transferred away', ticket_type: { name: 'Adult' } },
 ] }
-const show = path => render(<MemoryRouter initialEntries={[path]}><Routes><Route path="/tickets/:credential" element={<TicketPage />} /></Routes></MemoryRouter>)
+function Back() { const navigate = useNavigate(); return <button type="button" onClick={() => navigate(-1)}>Browser back</button> }
+const show = path => render(<MemoryRouter initialEntries={[path]}><Back /><Routes><Route path="/tickets/:credential" element={<TicketPage />} /></Routes></MemoryRouter>)
+const orderCalls = () => api.get.mock.calls.filter(([url]) => url === '/orders/9')
 
 describe('group order ticket switcher', () => {
   beforeEach(() => {
@@ -62,4 +64,48 @@ describe('group order ticket switcher', () => {
     await screen.findByRole('img', { name: 'Ticket entry QR code' })
     expect(api.get.mock.calls.map(([url]) => url)).toEqual(['/tickets/cred-1'])
   })
+
+  it('keeps the order list while paging, even when the connection drops after the first load', async () => {
+    let orderLoads = 0
+    api.get.mockImplementation(url => {
+      if (url !== '/orders/9') return Promise.resolve({ data: ticket(decodeURIComponent(url.split('/').pop())) })
+      orderLoads += 1
+      return orderLoads === 1 ? Promise.resolve({ data: order }) : Promise.reject(new Error('weak signal'))
+    })
+    show('/tickets/cred-1?order=9')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('link', { name: 'Next ticket' }))
+    expect(await screen.findByText('Ticket 2 of 3 — Bram Okafor')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Next ticket' }))
+    expect(await screen.findByText('Ticket 3 of 3 — Calla Yorke')).toBeInTheDocument()
+    expect(orderCalls()).toHaveLength(1)
+    // Each ticket still fetches its own QR.
+    expect(api.get.mock.calls.map(([url]) => url).filter(url => url.startsWith('/tickets/'))).toEqual(['/tickets/cred-1', '/tickets/cred-2', '/tickets/cred-3'])
+  })
+
+  it('keeps keyboard focus on the switcher after paging and records each ticket in history', async () => {
+    show('/tickets/cred-2?order=9')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('link', { name: 'Next ticket' }))
+    await screen.findByText('Ticket 3 of 3 — Calla Yorke')
+    // Next is now disabled at the end, so focus lands on Previous rather than the page heading.
+    expect(screen.getByRole('link', { name: 'Previous ticket' })).toHaveFocus()
+    await user.click(screen.getByRole('link', { name: 'Previous ticket' }))
+    await screen.findByText('Ticket 2 of 3 — Bram Okafor')
+    expect(screen.getByRole('link', { name: 'Previous ticket' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Browser back' }))
+    expect(await screen.findByText('Ticket 3 of 3 — Calla Yorke')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Browser back' }))
+    expect(await screen.findByText('Ticket 2 of 3 — Bram Okafor')).toBeInTheDocument()
+  })
+
+  it('shows a paged ticket in place without replaying the entrance', async () => {
+    show('/tickets/cred-1?order=9')
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('link', { name: 'Next ticket' }))
+    await screen.findByText('Ticket 2 of 3 — Bram Okafor')
+    const card = screen.getByRole('navigation', { name: 'Tickets in this order' }).parentElement.parentElement
+    expect(card.style.transform || 'none').toBe('none')
+  })
 })
+

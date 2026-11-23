@@ -109,7 +109,7 @@ describe('connected event workspace', () => {
   })
 
   it.each([
-    ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Questions & Waivers']],
+    ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Promoters & Messages']],
     ['finance', { view_finance: true, refund: true }, ['Reports & Sales', 'Refunds']],
     ['box office', { view_attendees: true, manage_attendees: true, scan: true, box_office: true }, ['Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office']],
     ['scanner', { scan: true }, ['Door Scanner']],

@@ -263,12 +263,16 @@ describe('door scanner demo', () => {
     expect(within(door()).getByRole('button', { name: 'Cancel' })).toHaveClass('min-h-12')
     await user.click(confirm)
     expect(door()).toHaveTextContent('Admitted')
+    // The used button is gone; focus moves to the result instead of the page.
+    expect(document.activeElement).toHaveTextContent('Calla Yorke')
+    expect(document.activeElement).toHaveAttribute('aria-live', 'polite')
     expect(door()).toHaveTextContent('Free Alumni Ticket')
     expect(within(door()).queryByRole('button', { name: 'Confirm & Admit' })).not.toBeInTheDocument()
 
     await user.click(within(tryIt()).getByRole('button', { name: 'Free Alumni Ticket' }))
     await user.click(within(door()).getByRole('button', { name: 'Cancel' }))
     expect(door()).toHaveTextContent('Not admitted')
+    expect(document.activeElement).toHaveTextContent('Not admitted')
     expect(door()).toHaveTextContent('The ticket wasn’t used. Ready for the next guest.')
     await user.click(within(tryIt()).getByRole('button', { name: 'Adult Ticket' }))
     expect(door()).toHaveTextContent('Avery Lindqvist')

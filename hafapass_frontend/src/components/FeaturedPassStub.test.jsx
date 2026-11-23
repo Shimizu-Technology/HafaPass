@@ -71,6 +71,39 @@ describe('FeaturedPassStub', () => {
     expect(pass().style.transform).toBe(REST)
   })
 
+  it('lets the keyboard open the pass after a drag that produced no click', () => {
+    reduceMotion(false)
+    mount()
+    const stage = pass().parentElement
+    fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 2, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(stage, { pointerType: 'touch', pointerId: 2, clientX: 170, clientY: 102 })
+    fireEvent.pointerUp(stage, { pointerType: 'touch', pointerId: 2, clientX: 170, clientY: 102 })
+    // Enter on a focused link is a click with no pointer behind it (detail 0).
+    fireEvent.click(pass(), { detail: 0 })
+    expect(screen.getByText('Opened /events/reef-night')).toBeInTheDocument()
+  })
+
+  it('forgets a cancelled drag, so the next tap opens', () => {
+    reduceMotion(false)
+    mount()
+    const stage = pass().parentElement
+    fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 4, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(stage, { pointerType: 'touch', pointerId: 4, clientX: 170, clientY: 102 })
+    fireEvent.pointerCancel(stage, { pointerType: 'touch', pointerId: 4 })
+    fireEvent.click(pass(), { detail: 1 })
+    expect(screen.getByText('Opened /events/reef-night')).toBeInTheDocument()
+  })
+
+  it('keeps pinch zoom and scrolling while tilting, and leaves touch handling alone without motion', () => {
+    reduceMotion(false)
+    const view = mount()
+    expect(pass().parentElement.style.touchAction).toBe('pan-y pinch-zoom')
+    view.unmount()
+    reduceMotion(true)
+    mount()
+    expect(pass().parentElement.getAttribute('style') || '').not.toContain('touch-action')
+  })
+
   it('leaves an up-and-down finger drag to the page and still opens on a tap', () => {
     reduceMotion(false)
     mount()

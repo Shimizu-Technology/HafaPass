@@ -5,14 +5,19 @@ const FOLLOW_MS = 110
 const SETTLE_DEG = 0.02
 // A press must travel this far sideways before a finger takes over the tilt.
 const DRAG_SLOP = 6
+// The click a dragging gesture itself produces arrives right after the let-go.
+const DRAG_CLICK_MS = 80
 const REST_FLAT = Object.freeze({ x: 0, y: 0 })
 const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value))
 
 /**
  * A card that leans toward a mouse pointer and, with `touch`, follows a
  * sideways finger drag, then glides back to its resting pose when let go
- * (modelled on tano-y-tasi's SpinBox). Vertical drags stay with the page:
- * give the surface `touch-action: pan-y`. The pose is written straight to the
+ * (modelled on tano-y-tasi's SpinBox). While enabled, the surface keeps
+ * vertical scrolling and pinch zoom (`touch-action: pan-y pinch-zoom`);
+ * disabled, the browser's own touch handling is untouched. Only the click a
+ * dragging gesture produces is swallowed; keyboard and assistive-technology
+ * activation always go through. The pose is written straight to the
  * element's transform from one rAF loop that stops once settled; React never
  * re-renders per frame. Disabled, the card holds its resting pose.
  */
@@ -23,6 +28,11 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
   const frame = useRef(0)
   const drag = useRef(null)
   const dragged = useRef(false)
+  const forget = useRef(0)
+  const clearDragged = useCallback(() => {
+    clearTimeout(forget.current)
+    dragged.current = false
+  }, [])
 
   const paint = useCallback(() => {
     const { x, y } = pose.current
@@ -70,12 +80,17 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
     paint()
     return undefined
   }, [enabled, paint, rest.x, rest.y, stop])
-  useEffect(() => stop, [stop])
+  useEffect(() => () => { stop(); clearTimeout(forget.current) }, [stop])
 
-  function release(event) {
+  // A let-go keeps the drag's flag only long enough to swallow its own click;
+  // a cancelled press produces no click, so nothing is left to swallow.
+  function release(event, cancelled = false) {
     if (drag.current?.id !== event.pointerId) return
     drag.current = null
     settle()
+    clearTimeout(forget.current)
+    if (cancelled || !dragged.current) { dragged.current = false; return }
+    forget.current = window.setTimeout(() => { dragged.current = false }, DRAG_CLICK_MS)
   }
 
   const handlers = !enabled ? {} : {
@@ -105,17 +120,21 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
     onPointerDown: event => {
       if (!touch || event.pointerType === 'mouse' || drag.current) return
       drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
-      dragged.current = false
+      clearDragged()
     },
-    onPointerUp: release,
-    onPointerCancel: release,
-    // A drag that ends over a link must not follow it.
+    onPointerUp: event => release(event),
+    onPointerCancel: event => release(event, true),
+    onLostPointerCapture: event => release(event, true),
+    // A drag that ends over a link must not follow it. Keyboard and assistive
+    // technology clicks report no pointer (detail 0) and always go through.
     onClickCapture: event => {
-      if (!dragged.current) return
-      dragged.current = false
+      const swallow = dragged.current && event.detail !== 0
+      clearDragged()
+      if (!swallow) return
       event.preventDefault()
       event.stopPropagation()
     },
+    style: touch ? { touchAction: 'pan-y pinch-zoom' } : undefined,
   }
 
   return { ref, sheenRef, handlers }

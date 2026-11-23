@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { ArrowRight, Banknote, Check, CheckCircle2, ChevronDown, Mail, ScanLine, Users, WifiOff } from 'lucide-react'
@@ -67,6 +67,15 @@ function DoorPreview() {
   const id = useId()
   // adult | alumni-hold | alumni-admitted | alumni-cancelled
   const [screen, setScreen] = useState('adult')
+  // Confirm & Admit and Cancel disappear once used; focus moves to the result.
+  const result = useRef(null)
+  const focusResult = useRef(false)
+  useEffect(() => {
+    if (!focusResult.current) return
+    focusResult.current = false
+    result.current?.focus()
+  }, [screen])
+  const decide = next => { focusResult.current = true; setScreen(next) }
   const ticket = screen === 'adult' ? 'adult' : 'alumni'
   const admitted = screen === 'adult' || screen === 'alumni-admitted'
   const guest = DEMO_GUESTS[ticket]
@@ -88,7 +97,7 @@ function DoorPreview() {
             {label}
           </button>)}
         </div>
-        <div aria-live="polite" className={`min-h-[19rem] rounded-[1.25rem] px-5 pb-5 pt-4 text-white ${admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
+        <div ref={result} tabIndex={-1} aria-live="polite" className={`min-h-[19rem] rounded-[1.25rem] px-5 pb-5 pt-4 text-white outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
           <p className="text-sm font-semibold text-white/85">{t('buyerDiscovery.host.doorScanner')}</p>
           {admitted && <div className="mt-5 flex flex-col items-center text-center">
             <CheckCircle2 aria-hidden="true" className="h-14 w-14 text-white" />
@@ -104,8 +113,8 @@ function DoorPreview() {
               <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.gradYear')}</dt><dd className="text-xl font-bold">{guest.gradYear}</dd></div>
             </dl>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setScreen('alumni-admitted')} className="min-h-12 rounded-xl bg-amber-300 px-2 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
-              <button type="button" onClick={() => setScreen('alumni-cancelled')} className="min-h-12 rounded-xl border-2 border-white px-2 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
+              <button type="button" onClick={() => decide('alumni-admitted')} className="min-h-12 rounded-xl bg-amber-300 px-2 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
+              <button type="button" onClick={() => decide('alumni-cancelled')} className="min-h-12 rounded-xl border-2 border-white px-2 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
             </div>
           </div>}
           {screen === 'alumni-cancelled' && <div className="mt-6 text-center">

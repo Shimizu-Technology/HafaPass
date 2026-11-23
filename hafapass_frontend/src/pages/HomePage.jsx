@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
-import { Fragment, useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
+import { ArrowRight, ChevronDown, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
@@ -22,7 +22,7 @@ const passStepsFor = t => [
 
 function FindTicketLink() {
   const { t } = useTranslation()
-  return <Link to="/orders/recover" className="ticket-link inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.findTicket')}<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" /></Link>
+  return <Link to="/orders/recover" className="ticket-link inline-flex min-h-12 items-center gap-2 rounded-lg text-sm font-semibold text-brand-800">{t('pass.home.findTicket')}<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" /></Link>
 }
 
 const categoriesFor = t => [
@@ -58,6 +58,17 @@ function quickFiltersFor(events, t) {
   ]
 }
 
+// Wide screens put search beside the featured pass; narrower ones put it at
+// the top of the listing, so the hero keeps the loading ticket's height.
+const WIDE = '(min-width: 1024px)'
+const wideQuery = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(WIDE) : null)
+function subscribeWide(callback) {
+  const list = wideQuery()
+  list?.addEventListener?.('change', callback)
+  return () => list?.removeEventListener?.('change', callback)
+}
+const useWideHero = () => useSyncExternalStore(subscribeWide, () => Boolean(wideQuery()?.matches), () => false)
+
 export default function HomePage() {
   const { t } = useTranslation()
   const contentLanguage = useContentLanguage()
@@ -66,6 +77,9 @@ export default function HomePage() {
   const [search, setSearch] = useState('')
   const [date, setDate] = useState('upcoming')
   const [village, setVillage] = useState('')
+  // Phones open the date and village selects on request; chips cover the common picks.
+  const [moreFilters, setMoreFilters] = useState(false)
+  const wide = useWideHero()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -99,31 +113,38 @@ export default function HomePage() {
     if (village) params.set('village', village)
     navigate(`/events${params.size ? `?${params}` : ''}`)
   }
+  const searchCard = <form role="search" onSubmit={browse} className="hero-search rounded-2xl bg-white p-5 text-content shadow-card sm:p-6">
+    <label htmlFor="home-event-search" className="mb-2 block text-base font-medium">{t('buyer.Home.eventOrVenue')}</label>
+    <div className="flex gap-3">
+      <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" /><input id="home-event-search" name="search" type="search" enterKeyHint="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('buyer.Home.searchEventsAndVenues')} className="input min-h-12 !pl-10 text-base border-neutral-500 hover:border-neutral-600" /></div>
+      <button type="submit" className="btn-primary min-h-12 shrink-0 !px-5">{t('buyer.Home.search')}</button>
+    </div>
+    <button type="button" aria-expanded={moreFilters} aria-controls="home-filters" onClick={() => setMoreFilters(open => !open)}
+      className="mt-3 inline-flex min-h-12 w-full items-center justify-between gap-2 rounded-xl border-2 border-neutral-500 px-4 text-base font-semibold text-neutral-900 sm:hidden">
+      {t('pass.home.dateAndVillage')}<ChevronDown aria-hidden="true" className={`h-5 w-5 shrink-0 ${moreFilters ? 'rotate-180' : ''}`} />
+    </button>
+    <div id="home-filters" className={`${moreFilters ? 'grid' : 'hidden'} mt-3 grid-cols-1 gap-3 sm:mt-4 sm:grid sm:grid-cols-2`}>
+      <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-base font-medium">{t('pass.home.when')}</label>
+        <select id="home-when" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div>
+      <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-base font-medium">{t('pass.home.where')}</label>
+        <select id="home-where" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select></div>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <p className="text-sm text-content-muted">{t('pass.home.guamTime')}</p>
+      <FindTicketLink />
+    </div>
+  </form>
   return (
     <div className="public-intros min-h-dvh bg-brand-950 text-content">
       <SEO />
       <section data-header-band="dark" className="bg-brand-950 pb-12 pt-6 text-white sm:pb-20 sm:pt-12 lg:pb-24 lg:pt-16">
-        <div className={`mx-auto grid max-w-6xl items-center gap-7 px-4 sm:gap-10 sm:px-6 lg:gap-16 lg:px-8 ${discovery ? 'lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]' : 'lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]'}`}>
-          <div className="min-w-0">
+        {/* Top-aligned, with the text column holding the loaded height in every
+            state, so events arriving (or not) never shift the page. */}
+        <div className="mx-auto grid max-w-6xl items-start gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-16 lg:px-8">
+          <div className="min-w-0 lg:min-h-[31rem]">
             <RiseHeadline text={t('pass.home.title')} className="max-w-lg font-display text-[2.5rem] font-bold leading-[1.06] tracking-tight sm:text-5xl lg:text-6xl" />
             <p className="mt-4 max-w-md text-lg leading-relaxed text-brand-100">{t('pass.home.lede')}</p>
-            {discovery && <form role="search" onSubmit={browse} className="hero-search mt-6 rounded-2xl bg-white p-5 text-content shadow-card sm:p-6">
-              <div className="hidden grid-cols-2 gap-3 sm:grid">
-                <div className="min-w-0"><label htmlFor="home-when" className="mb-2 block text-base font-medium">{t('pass.home.when')}</label>
-                  <select id="home-when" className="input min-h-12 !pl-3 text-base" value={date} onChange={e => setDate(e.target.value)}>{EVENT_DATES.map(([value,key]) => <option key={value} value={value}>{t(key)}</option>)}</select></div>
-                <div className="min-w-0"><label htmlFor="home-where" className="mb-2 block text-base font-medium">{t('pass.home.where')}</label>
-                  <select id="home-where" className="input min-h-12 !pl-3 text-base" value={village} onChange={e => setVillage(e.target.value)}><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select></div>
-              </div>
-              <label htmlFor="home-event-search" className="mb-2 block text-base font-medium sm:mt-4">{t('buyer.Home.eventOrVenue')}</label>
-              <div className="flex gap-3">
-                <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" /><input id="home-event-search" name="search" type="search" enterKeyHint="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('buyer.Home.searchEventsAndVenues')} className="input min-h-12 !pl-10 text-base" /></div>
-                <button type="submit" className="btn-primary min-h-12 shrink-0 !px-5">{t('buyer.Home.search')}</button>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                <p className="text-sm text-content-muted">{t('pass.home.guamTime')}</p>
-                <FindTicketLink />
-              </div>
-            </form>}
+            {discovery && wide && <div className="mt-6">{searchCard}</div>}
           </div>
           {/* Hosting is pitched once: in the hero stub while loading, then by the planning ticket. */}
           {discovery ? <FeaturedPassStub event={upcoming[0]} /> : <Ticket className="hero-ticket text-content" stub={loading ? <HostingStub /> : inventoryEmpty ? <div className="flex flex-col items-start gap-1 px-6 py-5 sm:px-8">
@@ -150,6 +171,7 @@ export default function HomePage() {
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {discovery ? <>
+            {!wide && <div className="mb-8">{searchCard}</div>}
             <section aria-labelledby="upcoming-heading">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="upcoming-heading" className="font-display text-2xl font-bold sm:text-3xl">{t('pass.home.comingUpOnGuam')}</h2><Link to="/events" className="ticket-link inline-flex min-h-12 items-center gap-2 rounded-lg text-base font-semibold text-brand-800">{t('buyer.Home.viewAllEvents')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>
               <ul aria-label={t('pass.home.quickFilters')} className="mb-5 flex flex-wrap gap-2">{quickFiltersFor(events, t).map(({ label, to }) => <li key={to}><Link to={to} className="ticket-chip inline-flex min-h-12 items-center rounded-full border border-neutral-300 bg-white px-5 text-base font-medium text-neutral-900">{label}</Link></li>)}</ul>

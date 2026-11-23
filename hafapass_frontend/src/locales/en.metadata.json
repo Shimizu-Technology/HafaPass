@@ -1578,6 +1578,9 @@
       },
       "tonightHelp": {
         "context": "Help under 'Tonight’s ticket': open the ticket to show its QR code at the entrance."
+      },
+      "tonightsTicketsSwitcher": {
+        "context": "Screen-reader name for the previous/next controls over tonight's tickets, which can come from more than one order."
       }
     }
   },
@@ -1696,6 +1699,9 @@
       },
       "storyAdmitted": {
         "context": "Green confirmation on an illustrated ticket: the ticket was accepted at the door and the guest may enter."
+      },
+      "dateAndVillage": {
+        "context": "Button on phones that shows the date and village filters for the event search on the home page."
       }
     },
     "install": {

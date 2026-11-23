@@ -44,7 +44,7 @@ export default function FeaturedPassStub({ event }) {
       >
         <div className="ticket featured-ticket text-content">
           <TicketTop>
-            <div className="relative aspect-[5/2] overflow-hidden bg-brand-800 sm:aspect-[16/9]">
+            <div className="relative aspect-[5/2] overflow-hidden bg-brand-800">
               {hasArtwork ? <img
                 src={event.cover_image_url}
                 alt=""

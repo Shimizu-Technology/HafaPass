@@ -31,7 +31,9 @@ const verificationReasons = { organizer_not_verified: 'unverified', organizer_ve
 // Four plain steps for a first-time volunteer organizer. Each links to the
 // tool that finishes it when this teammate may use that tool. Questions and
 // waivers are optional, so that step never counts as unfinished.
-function setupChecklist(event, has) {
+// Publishing needs event management as well as content editing, and a
+// published event may still be a private preview until verification.
+function setupChecklist(event, has, publiclyVisible) {
   const base = `/dashboard/events/${event.id}`
   const published = ['published', 'postponed', 'completed'].includes(event.status)
   const ticketTypes = (event.ticket_types || []).length
@@ -43,8 +45,9 @@ function setupChecklist(event, has) {
       detail: 'Optional. Ask buyers a question at checkout or have them sign a waiver.',
       link: has('manage_events') ? { to: `${base}/sales-tools`, label: 'Set up questions' } : null },
     { key: 'publish', label: 'Event published', state: published ? 'done' : 'todo',
-      detail: published ? 'Buyers can find your event.' : 'Only your team can see it until you publish.',
-      link: !published && has('edit_event_content') ? { to: `${base}/edit`, label: 'Review and publish' } : null },
+      detail: !published ? 'Only your team can see it until you publish.'
+        : publiclyVisible ? 'Buyers can find your event.' : 'Published as a private preview. Only people with the preview link can see it for now.',
+      link: !published && has('edit_event_content') && has('manage_events') ? { to: `${base}/edit`, label: 'Review and publish' } : null },
     { key: 'scanner', label: 'Door scanner ready', state: published && ticketTypes ? 'done' : 'todo',
       detail: published && ticketTypes ? 'Open the Door Scanner on any phone to check tickets in.' : 'Ready once your event is published with tickets.',
       link: published && has('scan') ? { to: `/dashboard/scanner?event=${event.id}`, label: 'Open Door Scanner' } : null },
@@ -225,7 +228,7 @@ function EventOverviewSession({ id, identity }) {
   const publiclyVisible = event.publicly_visible == null ? !verificationState : event.publicly_visible
   const publicPath = event.slug ? `/events/${event.slug}` : null
   const tools = eventToolLinks(event, capabilities)
-  const setupSteps = ['draft', 'published'].includes(event.status) ? setupChecklist(event, has) : []
+  const setupSteps = ['draft', 'published'].includes(event.status) ? setupChecklist(event, has, publiclyVisible) : []
   const requiredSteps = setupSteps.filter(step => step.state !== 'optional')
 
   return <EventWorkspace eventId={id} event={event}>
@@ -330,7 +333,7 @@ function EventOverviewSession({ id, identity }) {
                 : <Circle aria-hidden="true" className={`mt-0.5 h-5 w-5 shrink-0 ${step.state === 'optional' ? 'text-neutral-400' : 'text-amber-700'}`} />}
               <div className="min-w-0">
                 <p className="text-base font-semibold text-neutral-950">{step.label}<span className="sr-only">{step.state === 'done' ? ' (done)' : step.state === 'optional' ? ' (optional)' : ' (to do)'}</span></p>
-                <p className="text-sm text-neutral-700">{step.detail}</p>
+                <p className="text-base text-neutral-700">{step.detail}</p>
               </div>
             </div>
             {step.link && <Link to={step.link.to} className="btn-secondary inline-flex min-h-12 shrink-0 text-sm">{step.link.label}</Link>}

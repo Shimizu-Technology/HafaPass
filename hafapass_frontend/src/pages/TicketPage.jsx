@@ -116,15 +116,15 @@ function GoogleWalletIcon() {
 }
 
 export default function TicketPage() {
-  const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
-  const routeKey = JSON.stringify([credential, orderId])
+  // Keyed by order, not ticket: previous/next keeps the order's ticket list.
   return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-    ? <AuthenticatedTicket key={routeKey} /> : <TicketContent key={routeKey} />
+    ? <AuthenticatedTicket key={orderId || ''} orderId={orderId} />
+    : <OrderTickets key={JSON.stringify([orderId, getOrderAccess(orderId)])} orderId={orderId} />
 }
 
-function AuthenticatedTicket() {
+function AuthenticatedTicket({ orderId }) {
   const { t } = useTranslation()
   const { isLoaded, userId, sessionId } = useAuth()
   const context = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
@@ -135,8 +135,44 @@ function AuthenticatedTicket() {
   }
   // Guests keep their explicit order capability; signed-in requests bind to the
   // authoritative session. A changed session remounts private state immediately.
-  return <TicketContent key={JSON.stringify([userId, sessionId, context?.generation])}
-    authContext={userId ? context : undefined} />
+  return <OrderTickets key={JSON.stringify([userId, sessionId, context?.generation, orderId, getOrderAccess(orderId)])}
+    orderId={orderId} authContext={userId ? context : undefined} />
+}
+
+// One order's tickets, scoped to the order, the account session and the guest
+// token. Paging between them remounts only the ticket itself, which fetches
+// its own QR; the list, a pending focus move and the entrance stay here.
+function OrderTickets({ orderId, authContext }) {
+  const { credential } = useParams()
+  const [siblings, setSiblings] = useState(null)
+  const alive = useRef(false)
+  const loaded = useRef(false)
+  const pending = useRef(false)
+  const focusRequest = useRef(null)
+  const shown = useRef(false)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
+  // Loaded once per scope. Paging never drops a request in flight; until the
+  // list arrives, each newly opened ticket tries again.
+  useEffect(() => {
+    if (!orderId || loaded.current || pending.current) return
+    pending.current = true
+    const scope = { buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) }
+    const current = () => alive.current && checkoutBuyerIdentity() === scope.buyerId && getApiAuthContext() === scope.auth
+      && getOrderAccess(orderId) === scope.token
+    api.get(`/orders/${encodeURIComponent(orderId)}`, { headers: orderAccessHeaders(orderId, scope.token), authContext })
+      .then(response => {
+        if (!current()) return
+        loaded.current = true
+        setSiblings(switchableTickets(response.data))
+      })
+      .catch(() => {})
+      .finally(() => { pending.current = false })
+  }, [orderId, authContext, credential])
+  return <TicketContent key={JSON.stringify([credential, orderId])} authContext={authContext}
+    siblings={siblings || []} focusRequest={focusRequest} shown={shown} />
 }
 
 // Follows connectivity changes so the offline explanation appears and clears
@@ -170,7 +206,7 @@ function TransferredRefundSupport() {
   )
 }
 
-function TicketContent({ authContext }) {
+function TicketContent({ authContext, siblings: orderTickets = [], focusRequest, shown }) {
   const { t } = useTranslation()
   const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
   const reducedMotion = useReducedMotion()
@@ -186,7 +222,8 @@ function TicketContent({ authContext }) {
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
-  const [orderTickets, setOrderTickets] = useState([])
+  // A ticket reached with previous/next appears in place, without the entrance.
+  const [enter] = useState(() => !shown?.current)
   const motionOk = useMotionOk()
   const tilt = useTilt({ enabled: motionOk && finePointer(), max: 4 })
   const lifecycle = useRef({ active: false, generation: 0 })
@@ -235,22 +272,7 @@ function TicketContent({ authContext }) {
     return () => { active = false }
   }, [credential, orderId, authContext, t, loadAttempt])
 
-  // Opened from an order, a group's tickets get a previous/next switcher. The
-  // switcher is extra: if the order can't load, the ticket shows on its own.
-  const loadedTicketId = ticket?.id
-  const singleTicket = Boolean(ticket) && !(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
-  useEffect(() => {
-    if (!orderId || !loadedTicketId || !singleTicket) return undefined
-    let active = true
-    const generation = lifecycle.current.generation
-    const current = () => active && lifecycle.current.active && lifecycle.current.generation === generation
-      && checkoutBuyerIdentity() === access.current.buyerId && getApiAuthContext() === access.current.auth
-      && getOrderAccess(orderId) === access.current.token
-    api.get(`/orders/${encodeURIComponent(orderId)}`, { headers: orderAccessHeaders(orderId, access.current.token), authContext })
-      .then(response => { if (current()) setOrderTickets(switchableTickets(response.data)) })
-      .catch(() => {})
-    return () => { active = false }
-  }, [orderId, loadedTicketId, singleTicket, authContext])
+  useEffect(() => { if (ticket && shown) shown.current = true }, [ticket, shown])
 
   async function handleDownload() {
     const current = currentOperation()
@@ -396,14 +418,15 @@ function TicketContent({ authContext }) {
   const attendeeName = ticket.attendee_name || (position >= 0 ? orderTickets[position].attendee_name : null)
   const siblingLink = item => item && { to: `/tickets/${encodeURIComponent(item.display_credential)}?order=${encodeURIComponent(orderId)}` }
   const switcher = position >= 0 && orderTickets.length > 1 && <TicketSwitcher tone="dark" position={position + 1} total={orderTickets.length}
-    name={attendeeName} previous={siblingLink(orderTickets[position - 1])} next={siblingLink(orderTickets[position + 1])} />
+    name={attendeeName} previous={siblingLink(orderTickets[position - 1])} next={siblingLink(orderTickets[position + 1])}
+    focusRequest={focusRequest} />
 
   return (
     <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
       <SEO title={t('pageTitles.ticket')} noIndex />
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
-        initial={reducedMotion ? false : { opacity: 1, y: 8 }}
+        initial={reducedMotion || !enter ? false : { opacity: 1, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.23, 1, 0.32, 1] }}
       >

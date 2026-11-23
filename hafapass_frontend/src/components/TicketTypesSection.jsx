@@ -144,7 +144,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         {t('pricing.ticketPlusFee', { price: formatTicketPrice(basePrice), fee: formatTicketPrice(feeCents) })}
                       </p>
                     )}
-                    {currentPrice === 0 && <p className="text-sm text-neutral-700">{t('buyer.TicketTypesSection.freeNoPayment')}</p>}
+                    {currentPrice === 0 && !soldOut && <p className="text-sm text-neutral-700">{t('buyer.TicketTypesSection.freeNoPayment')}</p>}
                   </div>
 
                   {/* Urgency indicators */}

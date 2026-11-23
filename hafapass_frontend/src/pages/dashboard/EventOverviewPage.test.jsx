@@ -312,6 +312,24 @@ describe('event setup checklist', () => {
     expect(within(region).getAllByRole('link').map(link => link.textContent)).toEqual(['Open Door Scanner'])
   })
 
+  it('offers publishing only to teammates who can publish', async () => {
+    mount({ ...base, status: 'draft', permissions: { view_events: true, edit_event_content: true, manage_inventory: true } }, {})
+    const region = await checklist()
+    expect(within(region).queryByRole('link', { name: 'Review and publish' })).not.toBeInTheDocument()
+    expect(within(region).getByRole('link', { name: 'Review tickets' })).toBeInTheDocument()
+  })
+
+  it('calls a published private preview what it is', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'unverified' }, {
+      '/organizer/events/37/stats': {}, '/organizer/events/37/preview_link': { url: 'https://example.test/p' },
+      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+    })
+    const region = await checklist()
+    expect(region).toHaveTextContent('Published as a private preview. Only people with the preview link can see it for now.')
+    expect(region).not.toHaveTextContent('Buyers can find your event.')
+    for (const detail of region.querySelectorAll('li p + p')) expect(detail).toHaveClass('text-base')
+  })
+
   it('leaves closed events without a setup checklist', async () => {
     mount({ ...base, status: 'completed' }, { '/organizer/events/37/stats': {} })
     await screen.findByRole('region', { name: 'Next steps' })

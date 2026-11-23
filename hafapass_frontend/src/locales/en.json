@@ -1231,7 +1231,8 @@
       "entryPaused": "Entry paused",
       "tonightsTicket_one": "Tonight’s ticket",
       "tonightsTicket_other": "Tonight’s tickets",
-      "tonightHelp": "Open it at the door and turn your screen brightness up."
+      "tonightHelp": "Open it at the door and turn your screen brightness up.",
+      "tonightsTicketsSwitcher": "Switch between tonight’s tickets"
     },
     "orderRecoveryPage": {
       "pleaseWaitBeforeRequestingAnotherAccessLink": "Please wait before requesting another access link.",
@@ -1367,7 +1368,8 @@
       "storyDoorTitle": "Fast scan at the door",
       "storyDoorBody": "Show the QR on your phone. Staff scan it and you walk right in.",
       "storyExampleEvent": "Your night out",
-      "storyAdmitted": "Admitted"
+      "storyAdmitted": "Admitted",
+      "dateAndVillage": "Choose a date or village"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

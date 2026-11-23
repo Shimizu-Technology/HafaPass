@@ -481,8 +481,8 @@ describe('tonight at the door', () => {
   const soon = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   const tonight = { id: 8, title: 'Alumni night', slug: 'alumni-night', timezone: 'Pacific/Guam', starts_at: soon }
   const group = [
-    { ...ticket, id: 31, order_id: 70, display_credential: 'cred-a', attendee_name: 'Avery Lindqvist', ticket_type: { name: 'Adult' }, event: tonight },
-    { ...ticket, id: 32, order_id: 70, display_credential: 'cred-b', attendee_name: 'Bram Okafor', ticket_type: { name: 'Free Alumni' }, event: tonight },
+    { ...ticket, id: 31, order_id: 70, display_credential: 'cred-a', admission_allowed: true, attendee_name: 'Avery Lindqvist', ticket_type: { name: 'Adult' }, event: tonight },
+    { ...ticket, id: 32, order_id: 70, display_credential: 'cred-b', admission_allowed: true, attendee_name: 'Bram Okafor', ticket_type: { name: 'Free Alumni' }, event: tonight },
   ]
 
   it('pins tonight’s tickets above the rest, one at a time, and opens each inside its order', async () => {
@@ -490,6 +490,7 @@ describe('tonight at the door', () => {
     renderPage()
     const pinned = await screen.findByRole('region', { name: 'Tonight’s tickets' })
     expect(pinned).toHaveTextContent('Ticket 1 of 2 — Avery Lindqvist')
+    expect(within(pinned).getByRole('navigation', { name: 'Switch between tonight’s tickets' })).toBeInTheDocument()
     expect(within(pinned).getByRole('link', { name: 'Open ticket: Adult, #31' })).toHaveAttribute('href', '/tickets/cred-a?order=70')
     expect(within(pinned).queryByText('Free Alumni')).not.toBeInTheDocument()
     const next = within(pinned).getByRole('button', { name: 'Next ticket' })
@@ -498,6 +499,8 @@ describe('tonight at the door', () => {
     expect(pinned).toHaveTextContent('Ticket 2 of 2 — Bram Okafor')
     expect(within(pinned).getByRole('link', { name: 'Open ticket: Free Alumni, #32' })).toHaveAttribute('href', '/tickets/cred-b?order=70')
     expect(within(pinned).getByRole('button', { name: 'Next ticket' })).toBeDisabled()
+    // The end of the group disables Next, so focus moves to Previous instead of being lost.
+    expect(within(pinned).getByRole('button', { name: 'Previous ticket' })).toHaveFocus()
     // Pinned tickets are not repeated below; later events stay in the list.
     expect(screen.getAllByRole('link', { name: /Open ticket: Free Alumni/ })).toHaveLength(1)
     expect(screen.getByText('Island workshop')).toBeInTheDocument()
@@ -510,6 +513,26 @@ describe('tonight at the door', () => {
     const pinned = await screen.findByRole('region', { name: 'Tonight’s ticket' })
     expect(within(pinned).queryByRole('navigation', { name: 'Tickets in this order' })).not.toBeInTheDocument()
     expect(within(pinned).queryByText('Island workshop')).not.toBeInTheDocument()
+  })
+
+  it('leaves a ticket the door would refuse in the list with its status', async () => {
+    const paused = { ...group[0], admission_allowed: false, admission_block_reason: 'Refund pending' }
+    apiClient.get.mockResolvedValue({ data: { tickets: [paused] } })
+    renderPage()
+    expect(await screen.findByText('Refund pending')).toBeInTheDocument()
+    expect(screen.getByText('Entry paused')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /Tonight/ })).not.toBeInTheDocument()
+  })
+
+  it('lists a ticket whose event has no date or time zone without pinning it or breaking', async () => {
+    const undated = { ...group[0], event: { ...tonight, id: 12, slug: 'undated', starts_at: null, ends_at: '2099-01-01T00:00:00Z', timezone: null } }
+    const badZone = { ...group[1], event: { ...tonight, id: 13, slug: 'bad-zone', timezone: 'Not/AZone' } }
+    apiClient.get.mockResolvedValue({ data: { tickets: [undated, badZone] } })
+    renderPage()
+    const pinned = await screen.findByRole('region', { name: 'Tonight’s ticket' })
+    expect(within(pinned).getByRole('link', { name: 'Open ticket: Free Alumni, #32' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open ticket: Adult, #31' })).toBeInTheDocument()
+    expect(within(pinned).queryByRole('link', { name: 'Open ticket: Adult, #31' })).not.toBeInTheDocument()
   })
 
   it('does not pin used tickets or events that already ended', async () => {

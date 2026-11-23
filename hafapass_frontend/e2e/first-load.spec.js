@@ -12,7 +12,9 @@ test('public browsing starts before health resolves and preserves the shell and 
   await page.route('**/api/v1/config', route => json(route, {}))
   await page.route('**/api/v1/events', route => json(route, { events: [{ id: 1, slug: 'recovery-event', title: 'Service recovery event', starts_at: '2099-10-11T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }] }))
   await page.goto('/')
-  await expect(page.getByRole('link', { name: /Service recovery event/ })).toBeVisible()
+  // The event card in the list (the hero's featured pass names it too).
+  await expect(page.locator('a.event-card').filter({ hasText: 'Service recovery event' })).toBeVisible()
+  await expect(page.locator('a.featured-pass')).toContainText('Service recovery event')
   await page.evaluate(() => { window.originalShell = document.querySelector('.app-shell') })
   const search = page.getByRole('searchbox', { name: 'Event or venue' })
   await search.fill('Friday night')
