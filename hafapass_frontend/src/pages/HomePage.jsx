@@ -34,13 +34,13 @@ const categoriesFor = t => [
   { name: t('buyer.Home.ClassesWorkshops'), slug: 'workshop' },
 ]
 
-// The page's one entrance: the headline's words rise into place in CSS, done
-// within a second. The full sentence stays in the heading for screen readers,
-// and reduced motion shows it still.
+// The page's one entrance: words rise from an overflow: clip mask in CSS so
+// the headline paints at opacity 1 on frame 0 (LCP-safe). Reduced motion
+// shows it still immediately.
 function RiseHeadline({ text, className }) {
   const words = text.split(' ')
   return <h1 className={`hero-rise ${className}`}>{words.map((word, index) => <Fragment key={index}>
-    <span className="hero-rise-word" style={{ '--word': index }}>{word}</span>{index < words.length - 1 ? ' ' : null}
+    <span className="hero-rise-mask"><span className="hero-rise-word" style={{ '--word': index }}>{word}</span></span>{index < words.length - 1 ? ' ' : null}
   </Fragment>)}</h1>
 }
 

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react'
 import apiClient from '../api/client'
 import SupportLink from '../components/SupportLink'
 import { SUPPORT_FALLBACK_PATH } from '../utils/supportContact'
@@ -475,8 +475,13 @@ function OrderConfirmationContent() {
       <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} noIndex />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
-          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>
-            {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="h-8 w-8 text-emerald-700" />}
+          <div className={`relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100 confirm-check-badge'}`} data-testid={order.status === 'completed' ? 'order-confirmed-badge' : undefined}>
+            {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <>
+              <span aria-hidden="true" className="confirm-check-ring" />
+              <svg role="img" aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="confirm-check-svg h-8 w-8 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 13l4.5 4.5L19 7.5" />
+              </svg>
+            </>}
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950">
             {awaitingPayment ? t('buyerAccount.orderConfirmationPage.yourPaymentIsNotComplete') : isProcessing ? t('buyerAccount.orderConfirmationPage.paymentIsProcessing') : order.status === 'refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasRefunded') : order.status === 'partially_refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasPartiallyRefunded') : order.status === 'cancelled' ? t('buyerAccount.orderConfirmationPage.orderCancelled') : order.status === 'expired' ? t('buyerAccount.orderConfirmationPage.reservationExpired') : t('buyerAccount.orderConfirmationPage.yourOrderIsConfirmed')}

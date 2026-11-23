@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useMatch } from 'react-router-dom'
 import { Search, CalendarPlus, Ticket, SlidersHorizontal, ChevronDown } from 'lucide-react'
-import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import EmptyInventory from '../components/EmptyInventory'
@@ -12,6 +11,7 @@ import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
 import useContentLanguage from '../hooks/useContentLanguage'
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { categoryIcon } from '../utils/categoryIcons'
 import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
@@ -44,7 +44,7 @@ export default function EventsPage() {
   const activeFilterCount = [activeCategory !== 'all', dateRange !== 'upcoming', price !== 'all', Boolean(village)].filter(Boolean).length
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories().map(category => ({ ...category, label: t(`buyer.categories.${category.value}`, { defaultValue: category.label }) }))
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = usePrefersReducedMotion()
   const ResultsContainer = reducedMotion ? 'div' : StaggerContainer
   const ResultItem = reducedMotion ? 'div' : StaggerItem
 
@@ -207,11 +207,7 @@ export default function EventsPage() {
               <button type="button" onClick={() => setRetry(value => value + 1)} className="btn-primary">{t('buyer.Events.tryAgain')}</button>
             </div>
           ) : events.length === 0 ? (
-            <motion.div
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-neutral-200 bg-white px-5 py-8 sm:p-10 text-center"
-            >
+            <div className="rounded-xl border border-neutral-200 bg-white px-5 py-8 sm:p-10 text-center">
               <Ticket aria-hidden="true" className="mx-auto mb-4 h-8 w-8 text-brand-800" />
 
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
@@ -244,7 +240,7 @@ export default function EventsPage() {
                   className="min-h-11 rounded px-3 text-brand-800 hover:bg-brand-50 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
                 >{t('buyer.Events.clearFilters')}</button>
               )}
-            </motion.div>
+            </div>
           ) : (
             <ResultsContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map(event => <ResultItem key={event.id}><EventCard event={event} /></ResultItem>)}

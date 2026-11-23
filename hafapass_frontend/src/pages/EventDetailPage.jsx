@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle } from 'lucide-react'
-import { motion, useReducedMotion } from 'framer-motion'
 import apiClient from '../api/client'
 import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -49,7 +49,7 @@ function showTicketPanel(event, behavior) {
 // covers the footer.
 function MobileBuyBar({ priceLabel, targets, endMarker }) {
   const { t } = useTranslation()
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = usePrefersReducedMotion()
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -105,7 +105,6 @@ function EventDetailContent() {
   const translation = useRef(t)
   translation.current = t
   const { slug } = useParams()
-  const reducedMotion = useReducedMotion()
   const navigate = useNavigate()
   const location = useLocation()
   const browseFrom = eventBrowseReturn(location.state?.browseFrom)
@@ -443,14 +442,11 @@ function EventDetailContent() {
             </section>
 
             {/* Sidebar - Tickets */}
-            <motion.div
+            <div
               ref={ticketPanel}
               id="tickets"
               tabIndex={-1}
               className="min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:self-stretch"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reducedMotion ? 0 : 0.3 }}
             >
               <div className="lg:sticky lg:top-24">
                 {waitlistOffer && !waitlistOffer.error && (
@@ -498,15 +494,10 @@ function EventDetailContent() {
                   </div>
                 )}
               </div>
-            </motion.div>
+            </div>
 
             {/* Main content */}
-            <motion.div
-              className="min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-2"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: reducedMotion ? 0 : 0.3 }}
-            >
+            <div className="min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-2">
               {/* Action buttons */}
               <div className="flex flex-wrap items-center gap-2 mb-6">
                 {event.starts_at && !event.private_preview && !closedStatus && (
@@ -589,7 +580,7 @@ function EventDetailContent() {
                   </div>
                 </section></FadeUp>
               )}
-            </motion.div>
+            </div>
 
 
           </div>

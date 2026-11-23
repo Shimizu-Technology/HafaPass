@@ -7,7 +7,7 @@ import api from '../api/client'
 
 vi.mock('../api/client', async importOriginal => ({ ...(await importOriginal()), default: { get: vi.fn() } }))
 const motionPreference = vi.hoisted(() => ({ reduced: false }))
-vi.mock('framer-motion', async original => ({ ...await original(), useReducedMotion: () => motionPreference.reduced }))
+vi.mock('../hooks/usePrefersReducedMotion', () => ({ default: () => motionPreference.reduced }))
 
 vi.mock('../components/QRCode', () => ({ default: () => <div>Entry QR</div> }))
 vi.mock('../components/SEO', () => ({ default: () => null }))

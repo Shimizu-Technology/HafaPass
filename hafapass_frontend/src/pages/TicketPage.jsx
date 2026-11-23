@@ -7,12 +7,12 @@ import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } fr
 import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
 import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles, Sun } from 'lucide-react'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import PassTicketCard from '../components/PassTicketCard'
 import TicketSwitcher from '../components/TicketSwitcher'
 import useMotionOk from '../hooks/useMotionOk'
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import useTilt from '../hooks/useTilt'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
@@ -33,7 +33,7 @@ function ScreenWakeLock() {
 function AddToHomeScreenInstructions() {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = usePrefersReducedMotion()
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   const isAndroid = /Android/.test(navigator.userAgent)
 
@@ -50,35 +50,27 @@ function AddToHomeScreenInstructions() {
         <span>{t('buyerAccount.ticketPage.addToHomeScreen')}</span>
         {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={reducedMotion ? false : { opacity: 1, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={reducedMotion ? undefined : { opacity: 1, height: 0 }}
-            transition={{ duration: reducedMotion ? 0 : 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-sm text-neutral-600 space-y-1.5">
-              {isIOS ? (
-                <>
-                  <p className="font-medium text-neutral-700">{t('buyerAccount.ticketPage.iOSInstructions')}</p>
-                  <p>{t('buyerAccount.ticketPage.1TapTheShareButtonInSafari')}</p>
-                  <p>{t('buyerAccount.ticketPage.2ScrollDownAndTapAddToHome')}</p>
-                  <p>{t('buyerAccount.ticketPage.3TapAddToConfirm')}</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-neutral-700">{t('buyerAccount.ticketPage.androidInstructions')}</p>
-                  <p>{t('buyerAccount.ticketPage.1TapTheMenuThreeDotsInChrome')}</p>
-                  <p>{t('buyerAccount.ticketPage.2TapAddToHomeScreen')}</p>
-                  <p>{t('buyerAccount.ticketPage.3TapAddToConfirm')}</p>
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {expanded && (
+        <div className={reducedMotion ? 'overflow-hidden' : 'accordion-enter overflow-hidden'}>
+          <div className="mt-3 p-3 bg-neutral-50 rounded-xl text-sm text-neutral-600 space-y-1.5">
+            {isIOS ? (
+              <>
+                <p className="font-medium text-neutral-700">{t('buyerAccount.ticketPage.iOSInstructions')}</p>
+                <p>{t('buyerAccount.ticketPage.1TapTheShareButtonInSafari')}</p>
+                <p>{t('buyerAccount.ticketPage.2ScrollDownAndTapAddToHome')}</p>
+                <p>{t('buyerAccount.ticketPage.3TapAddToConfirm')}</p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-neutral-700">{t('buyerAccount.ticketPage.androidInstructions')}</p>
+                <p>{t('buyerAccount.ticketPage.1TapTheMenuThreeDotsInChrome')}</p>
+                <p>{t('buyerAccount.ticketPage.2TapAddToHomeScreen')}</p>
+                <p>{t('buyerAccount.ticketPage.3TapAddToConfirm')}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -228,7 +220,7 @@ function TransferredRefundSupport() {
 function TicketContent({ authContext, siblings: orderTickets = [], shown, framed = false }) {
   const { t } = useTranslation()
   const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
-  const reducedMotion = useReducedMotion()
+  const reducedMotion = usePrefersReducedMotion()
   const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
@@ -440,12 +432,7 @@ function TicketContent({ authContext, siblings: orderTickets = [], shown, framed
 
   return page('min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8', <>
       <SEO title={t('pageTitles.ticket')} noIndex />
-      <motion.div
-        className="w-full max-w-[380px] sm:max-w-sm"
-        initial={reducedMotion || !enter ? false : { opacity: 1, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.23, 1, 0.32, 1] }}
-      >
+      <div className={`w-full max-w-[380px] sm:max-w-sm${enter && !reducedMotion ? ' ticket-card-enter' : ''}`}>
         {['postponed', 'cancelled'].includes(event.status) && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
             <strong className="capitalize">{t('buyerAccount.ticketPage.event', { status: t(`buyerAccount.ticketPage.eventStatus.${event.status}`, { defaultValue: event.status }) })}</strong>{t('buyerAccount.ticketPage.keepThisTicketAndWatchYourEmailFor')}</div>
@@ -494,18 +481,16 @@ function TicketContent({ authContext, siblings: orderTickets = [], shown, framed
           )}
 
           {/* QR Code Section */}
-          {showCredential ? <motion.div
+          {showCredential ? <div
             className="px-4 sm:px-6 pt-6 pb-4 flex flex-col items-center"
-            initial={false}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0 }}
+            style={{ opacity: 1 }}
           >
             <ScreenWakeLock />
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={280} className="block w-full max-w-[17.5rem] h-auto" />
             </div>
             <p className="mt-2 text-sm text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
-          </motion.div> : (
+          </div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-700">{t('buyerAccount.ticketPage.entryCodeUnavailable')}</p>
@@ -627,6 +612,6 @@ function TicketContent({ authContext, siblings: orderTickets = [], shown, framed
 
         {/* Add to Home Screen */}
         <AddToHomeScreenInstructions />
-      </motion.div>
+      </div>
   </>)
 }

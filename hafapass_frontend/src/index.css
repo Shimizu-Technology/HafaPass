@@ -263,11 +263,72 @@
    still state is the finished page; motion only plays when the component's
    useMotionOk gate allows it, and the reduced-motion rule above stops the
    rest. Checkout, forms, dashboards and the scanner never use these. */
+.hero-rise-mask { display: inline-block; overflow: clip; vertical-align: bottom; padding-bottom: 0.08em; margin-bottom: -0.08em; }
 .hero-rise-word { display: inline-block; }
 @media (prefers-reduced-motion: no-preference) {
-  .hero-rise-word { animation: hero-word-rise 520ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--word, 0) * 55ms); }
+  .hero-rise-word { animation: hero-word-rise 520ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--word, 0) * 45ms); }
 }
-@keyframes hero-word-rise { from { opacity: 0; transform: translateY(0.38em); } to { opacity: 1; transform: translateY(0); } }
+@keyframes hero-word-rise { from { transform: translateY(108%); } to { transform: translateY(0); } }
+
+/* Pure CSS replacements for ScrollReveal & TicketPage motion (zero framer-motion). */
+.scroll-reveal,
+.scroll-reveal-item {
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.scroll-reveal[data-reveal="resting"],
+.scroll-reveal-stagger[data-reveal="resting"][data-reduced-motion="false"] .scroll-reveal-item {
+  transform: translateY(8px);
+}
+.scroll-reveal[data-reveal="settled"],
+.scroll-reveal-stagger[data-reveal="settled"] .scroll-reveal-item {
+  transform: translateY(0);
+}
+.scroll-reveal-stagger[data-reduced-motion="false"] .scroll-reveal-item:nth-child(2) { transition-delay: 40ms; }
+.scroll-reveal-stagger[data-reduced-motion="false"] .scroll-reveal-item:nth-child(3) { transition-delay: 80ms; }
+.scroll-reveal-stagger[data-reduced-motion="false"] .scroll-reveal-item:nth-child(4) { transition-delay: 120ms; }
+.scroll-reveal-stagger[data-reduced-motion="false"] .scroll-reveal-item:nth-child(5) { transition-delay: 160ms; }
+.scroll-reveal-stagger[data-reduced-motion="false"] .scroll-reveal-item:nth-child(6) { transition-delay: 200ms; }
+
+@keyframes card-nudge-in { from { transform: translateY(8px); } to { transform: translateY(0); } }
+.ticket-card-enter { animation: card-nudge-in 220ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.accordion-enter { animation: card-nudge-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+
+/* Tactile press feedback for steppers, fee preset pills, and door demo tabs. */
+.tactile-press {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tactile-press:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .tactile-press:active:not(:disabled) { transform: none; }
+}
+
+/* Order confirmation: calm one-shot checkmark draw + subtle emerald ring pulse. */
+.confirm-check-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid #059669;
+  opacity: 0;
+  pointer-events: none;
+}
+.confirm-check-svg path {
+  stroke-dasharray: 42;
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .confirm-check-badge { animation: confirm-badge-pop 420ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .confirm-check-ring { animation: confirm-ring-pulse 650ms cubic-bezier(0.23, 1, 0.32, 1) 80ms both; }
+  .confirm-check-svg path { animation: confirm-stroke-draw 460ms cubic-bezier(0.23, 1, 0.32, 1) 120ms both; }
+}
+@keyframes confirm-badge-pop { from { transform: scale(0.9); } to { transform: scale(1); } }
+@keyframes confirm-ring-pulse { 0% { transform: scale(0.95); opacity: 0.65; } 100% { transform: scale(1.4); opacity: 0; } }
+@keyframes confirm-stroke-draw { from { stroke-dashoffset: 42; } to { stroke-dashoffset: 0; } }
+
+/* /host DoorPreview smooth 200ms state crossfade. */
+@keyframes door-fade-in { from { opacity: 0.25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .door-state-fade { animation: door-fade-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+}
 
 .featured-pass-stage { perspective: 1100px; max-width: 26rem; width: 100%; margin-inline: auto; }
 .featured-pass { transform-style: preserve-3d; will-change: transform; filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28)); }

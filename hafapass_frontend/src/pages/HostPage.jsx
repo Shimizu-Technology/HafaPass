@@ -90,12 +90,13 @@ function DoorPreview() {
         <div role="group" aria-labelledby={`${id}-try`} className="grid grid-cols-2 gap-2 px-1 pb-3">
           {[['adult', 'adult', t('buyerDiscovery.host.doorDemo.adultTicket')], ['alumni', 'alumni-hold', t('buyerDiscovery.host.doorDemo.alumniTicket')]].map(([kind, start, label]) => <button key={kind} type="button" aria-pressed={ticket === kind}
             onClick={() => setScreen(start)}
-            className="min-h-12 rounded-xl border-2 border-neutral-300 px-2 text-sm font-semibold leading-tight text-neutral-900 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 aria-pressed:text-brand-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
+            className="tactile-press min-h-12 rounded-xl border-2 border-neutral-300 px-2 text-sm font-semibold leading-tight text-neutral-900 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 aria-pressed:text-brand-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
             {label}
           </button>)}
         </div>
-        <div ref={result} tabIndex={-1} aria-live="polite" className={`min-h-[19rem] rounded-[1.25rem] px-5 pb-5 pt-4 text-white outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
+        <div ref={result} tabIndex={-1} aria-live="polite" data-door-state={screen} className={`min-h-[19rem] rounded-[1.25rem] px-5 pb-5 pt-4 text-white outline-none transition-[background-color] duration-200 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
           <p className="text-sm font-semibold text-white/85">{t('buyerDiscovery.host.doorScanner')}</p>
+          <div key={screen} className="door-state-fade">
           {admitted && <div className="mt-5 flex flex-col items-center text-center">
             <CheckCircle2 aria-hidden="true" className="h-14 w-14 text-white" />
             <p className="mt-3 font-display text-3xl font-bold uppercase tracking-wide">{t('buyerDiscovery.host.admitted')}</p>
@@ -110,14 +111,15 @@ function DoorPreview() {
               <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.gradYear')}</dt><dd className="text-xl font-bold">{guest.gradYear}</dd></div>
             </dl>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => decide('alumni-admitted')} className="min-h-12 rounded-xl bg-amber-300 px-2 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
-              <button type="button" onClick={() => decide('alumni-cancelled')} className="min-h-12 rounded-xl border-2 border-white px-2 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
+              <button type="button" onClick={() => decide('alumni-admitted')} className="tactile-press min-h-12 rounded-xl bg-amber-300 px-2 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
+              <button type="button" onClick={() => decide('alumni-cancelled')} className="tactile-press min-h-12 rounded-xl border-2 border-white px-2 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
             </div>
           </div>}
           {screen === 'alumni-cancelled' && <div className="mt-6 text-center">
             <p className="font-display text-2xl font-bold">{t('buyerDiscovery.host.doorDemo.notAdmitted')}</p>
             <p className="mt-2 text-base text-content-inverse-muted">{t('buyerDiscovery.host.doorDemo.notUsed')}</p>
           </div>}
+          </div>
         </div>
         <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-3 text-sm text-content-muted">
           <span>{t('buyerDiscovery.host.doorDemo.fictional')}</span><span className="shrink-0 whitespace-nowrap font-semibold text-brand-800">{t('buyerDiscovery.host.nextGuest')}</span>
@@ -224,7 +226,7 @@ function FeeCalculator({ pricing }) {
       <div role="group" aria-label={t('buyerDiscovery.host.tryATicketPrice')} className="mt-3 flex flex-wrap gap-2">
         {[10, 25, 59].map(price => <button key={price} type="button" aria-pressed={priceCents === price * 100}
           onClick={() => setPriceInput(String(price))}
-          className="min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
+          className="tactile-press min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
           {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
         </button>)}
       </div>
