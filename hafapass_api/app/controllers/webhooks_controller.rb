@@ -16,7 +16,7 @@ class WebhooksController < ActionController::API
   rescue JSON::ParserError
     render json: { error: "Invalid payload" }, status: :bad_request
   rescue StandardError => e
-    Sentry.capture_exception(e)
+    Sentry.capture_exception(e, tags: { integration: "stripe_webhook", operation: "webhook_processing" })
     render json: { error: "Webhook processing failed" }, status: :internal_server_error
   end
 
