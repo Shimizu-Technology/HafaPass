@@ -9,7 +9,21 @@ export function parseFeeTerms(config) {
   if (!Number.isFinite(percent) || percent < 0 || !Number.isInteger(flatCents) || flatCents < 0) return null
   const bearer = ['platform', 'organizer'].includes(config.processing_fee_bearer) ? config.processing_fee_bearer : null
   const payoutScheduleText = typeof config.payout_schedule_text === 'string' ? config.payout_schedule_text.trim() || null : null
-  return { percent, flatCents, bearer, payoutScheduleText }
+  return { percent, flatCents, bearer, payoutScheduleText, organizerPayoutTerms: config.organizer_payout_terms }
+}
+
+export function organizerPayoutCopy(t, terms) {
+  const bankTransfer = terms?.organizerPayoutTerms === 'bank_transfer_with_reserve'
+  if (!bankTransfer) return { bankTransfer, summary: t('buyerDiscovery.host.checkPayouts'), detail: '' }
+
+  const schedule = terms.payoutScheduleText?.replace(/\.$/, '')
+  return {
+    bankTransfer,
+    summary: schedule
+      ? t('buyerDiscovery.host.scheduledBankTransferPayouts', { schedule })
+      : t('buyerDiscovery.host.bankTransferPayouts'),
+    detail: t('buyerDiscovery.host.bankTransferPayoutTerms'),
+  }
 }
 
 // Aggregate illustration for organizer screens. Mixed-price carts use the

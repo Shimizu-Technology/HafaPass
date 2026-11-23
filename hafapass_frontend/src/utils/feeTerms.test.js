@@ -14,7 +14,7 @@ describe('fee terms', () => {
     expect(quote.allInPriceCents * example.quantity).toBe(example.all_in_total_cents)
   })
   it('parses server terms and refuses to guess missing or invalid values', () => {
-    expect(parseFeeTerms(allIn)).toEqual({ percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' })
+    expect(parseFeeTerms(allIn)).toMatchObject({ percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' })
     expect(parseFeeTerms({ ...allIn, service_fee_percent: undefined })).toBeNull()
     expect(parseFeeTerms({ ...allIn, service_fee_flat_cents: null })).toBeNull()
     expect(parseFeeTerms({ ...allIn, service_fee_percent: 'abc' })).toBeNull()

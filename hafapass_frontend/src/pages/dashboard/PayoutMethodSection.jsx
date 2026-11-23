@@ -4,6 +4,8 @@ import { payoutReviewLabel, payoutRequirementLabel } from '../../utils/payoutLab
 import { CheckCircle2, CircleAlert, Landmark, Mail, WalletCards } from 'lucide-react'
 import { useState } from 'react'
 import BankPayoutDetails from './BankPayoutDetails'
+import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
+import { organizerPayoutCopy } from '../../utils/feeTerms'
 
 const emptyCheck = { payee_name: '', delivery_method: 'mail', mailing_address: '', pickup_note: '', memo: '' }
 
@@ -33,11 +35,14 @@ function AccountStatus({ account }) {
 // organizer after each event settles.
 export default function PayoutMethodSection({ accounts, busy, onSave, error, notice }) {
   const { t } = useTranslation()
+  const feeTerms = usePlatformFeeTerms()
+  const payout = organizerPayoutCopy(t, feeTerms.terms)
   const checkAccount = accounts.find(item => item.provider === 'check')
   const bankAccount = accounts.find(item => item.provider === 'manual')
-  const selectedMethod = checkAccount?.selected ? 'check' : 'manual'
+  const selectedMethod = accounts.find(item => item.selected && ['check', 'manual'].includes(item.provider))?.provider
   const [viewedMethod, setViewedMethod] = useState(null)
-  const method = viewedMethod || selectedMethod
+  const defaultMethod = payout.bankTransfer ? 'manual' : 'check'
+  const method = viewedMethod || selectedMethod || (feeTerms.status === 'loading' ? null : defaultMethod)
   const [details, setDetails] = useState(() => ({ ...emptyCheck, ...(checkAccount?.payout_details || {}) }))
   const [errors, setErrors] = useState({})
   const [editing, setEditing] = useState(!checkAccount)
@@ -59,14 +64,16 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
       <div className="flex items-center gap-3"><WalletCards aria-hidden="true" className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">How you get paid</h2></div>
-      <p className="mt-2 text-sm text-neutral-700">{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}<Link to="/policies/organizer-agreement" className="underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></p>
+      <p className="mt-2 text-sm text-neutral-700">{payout.summary}{' '}{payout.detail && `${payout.detail} `}<Link to="/policies/organizer-agreement" className="underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></p>
 
       <fieldset className="mt-5" disabled={busy}>
         <legend className="sr-only">Payout method</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {[
-            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'HåfaPass sends the payout to your approved bank account.' },
-            { value: 'check', icon: Mail, title: 'Check', body: 'For approved exceptions. Mailed to you or ready for pickup.' },
+            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: payout.bankTransfer
+              ? 'HåfaPass sends the payout to your approved bank account.' : 'Available when approved and recorded for your organization.' },
+            { value: 'check', icon: Mail, title: 'Check', body: payout.bankTransfer
+              ? 'For approved exceptions. Mailed to you or ready for pickup.' : 'Mailed to you or ready for pickup.' },
           ].map(option => (
             <label key={option.value} className={`flex min-h-11 gap-3 rounded-xl border p-3 transition-colors duration-150 ease-out-strong ${method === option.value ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 [@media(hover:hover)]:hover:border-neutral-300'}`}>
               <input type="radio" name="payout-method" value={option.value} checked={method === option.value} onChange={() => setViewedMethod(option.value)} className="mt-1 h-4 w-4 shrink-0 accent-brand-600" />

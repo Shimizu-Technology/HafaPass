@@ -69,7 +69,7 @@ describe('host page pricing', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/config')
     const section = pricing()
     expect(within(section).getByText('Card processing included')).toBeInTheDocument()
-    expect(within(section).getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(within(section).getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
     expect(within(section).getByLabelText('Ticket price')).toHaveAttribute('inputmode', 'decimal')
     expect(within(section).getByText(/Card processing is included in the HåfaPass fee/)).toBeInTheDocument()
 
@@ -86,7 +86,7 @@ describe('host page pricing', () => {
     expect(value('You absorb the fee', 'HåfaPass fee')).toHaveTextContent('$6.00')
     expect(value('You absorb the fee', 'You receive')).toHaveTextContent('$74.00')
     expect(screen.getByText(/HåfaPass charges 5% \+ \$1\.00 per paid ticket, with card processing included/)).toBeInTheDocument()
-    expect(screen.getByText(/Check payouts require an approved exception.*release the remaining reserve after 30 days/)).toBeInTheDocument()
+    expect(screen.queryByText(/Standard payout target|remaining reserve/)).not.toBeInTheDocument()
   })
 
   it.each([
@@ -136,12 +136,24 @@ describe('host page pricing', () => {
     expect(screen.getAllByText(/automatically start eligible card refunds, including the service fee/)).toHaveLength(2)
   })
 
-  it('shows the standard payout timing even when the fee config has no saved schedule', async () => {
+  it('uses the agreement schedule when the fee config has no saved payout terms', async () => {
     apiClient.get.mockResolvedValue({ data: feeOnlyConfig })
     await load()
     await screen.findByTestId('host-fee-summary')
-    expect(screen.getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(within(pricing()).getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
     expect(screen.getByText(/Your dashboard shows a settlement statement/)).toBeInTheDocument()
+  })
+
+  it('shows the saved bank transfer schedule and reserve terms once the Copa terms take effect', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...platformConfig, organizer_payout_terms: 'bank_transfer_with_reserve', payout_schedule_text: 'within 2–3 business days after your event' } })
+    await load()
+    const timing = 'Standard payout target: bank transfer within 2–3 business days after your event.'
+    expect(await within(pricing()).findByText(timing)).toBeInTheDocument()
+    const payoutQuestion = screen.getByText('When do I get paid?')
+    await user().click(payoutQuestion)
+    const answer = within(payoutQuestion.closest('details'))
+    expect(answer.getByText(/hold about 10% of eligible proceeds.*reserve 30 days after your event/)).toBeVisible()
+    expect(answer.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
   })
 
   it('handles free tickets, a fee larger than the ticket and invalid prices', async () => {

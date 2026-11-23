@@ -27,9 +27,11 @@ This version replaces `2026-10-counsel-draft-3`. Earlier register approvals and 
 
 ## Copa draft for Leon and the CPA
 
-The review-only `2026-11-24-copa-draft` in [policies.yml](../hafapass_api/config/policies.yml) proposes replacement sections for the Organizer Agreement and Buyer Terms. It has no effective date. The live October 24 registry, accepted documents and approval digests remain in force. Host and organizer screens describe the standard operating target and link to the current agreement for contractual terms. Admin payout timing still controls the agreement and fee-change notices. Coordinate both when the operating schedule changes.
+The review-only `2026-11-24-copa-draft` in [policies.yml](../hafapass_api/config/policies.yml) proposes replacement sections for the Organizer Agreement and Buyer Terms. It has no effective date. The live October 24 registry, accepted documents and approval digests remain in force. Host and organizer screens describe check payouts on the schedule in the agreement, with other methods available when approved and recorded.
 
 **Requires Leon + CPA sign-off before the register is approved.** Record that sign-off in the restricted evidence location. In a separate release, apply the approved replacement sections to the live documents, assign the agreed version and effective date, and coordinate the saved payout schedule with the new text. Verify the rendered agreement and buyer terms, approve the exact new register digest, and have organizers accept the new agreement before publishing. Saving the proposed payout schedule on its own also changes approval and acceptance digests.
+
+The replacement Payouts section carries `payout_terms: bank_transfer_with_reserve`. Once that section is effective in the approved register, the site shows the bank-transfer and reserve guidance automatically, using the saved payout schedule. Keep the section metadata in step with any edits to those terms during review.
 
 ## Outstanding legal-review items
 

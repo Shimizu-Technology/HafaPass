@@ -7,6 +7,7 @@ import Ticket from '../components/Ticket'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
 import { activeIntlLocale } from '../utils/locale'
+import { organizerPayoutCopy, parseFeeTerms } from '../utils/feeTerms'
 import { formatMoneyCents } from '../utils/money'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import SupportLink from '../components/SupportLink'
@@ -233,7 +234,7 @@ function FeeCalculator({ pricing }) {
   )
 }
 
-function PricingSection({ configState, targets }) {
+function PricingSection({ configState, targets, payoutSummary }) {
   const { t } = useTranslation()
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
   const points = [
@@ -276,7 +277,7 @@ function PricingSection({ configState, targets }) {
               </li>)}
             </ul>
             <p className="mt-6 text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.cancellationPromise')}</p>
-            <div className="mt-4 min-h-6"><p className="text-sm leading-relaxed text-brand-100">{t('buyerDiscovery.host.payouts')}</p></div>
+            <div className="mt-4 min-h-6"><p className="text-sm leading-relaxed text-brand-100">{payoutSummary}</p></div>
             <div className="mt-7"><CtaGroup targets={targets} tone="dark" /></div>
           </div>
           <div className="min-w-0 lg:pt-1">
@@ -289,7 +290,7 @@ function PricingSection({ configState, targets }) {
   )
 }
 
-function faqItems(pricing, t) {
+function faqItems(pricing, payout, t) {
   const feeAnswer = pricing
     ? t('buyerDiscovery.host.håfapassChargesThereAreNoSetupOr', { value1: describeFee(pricing, t), value2: pricing.processingIncluded ? t('buyerDiscovery.host.withCardProcessingIncluded') : '', value3: pricing.processingIncluded ? '' : t('buyerDiscovery.host.processingDeducted') })
     : t('buyerDiscovery.host.paidTicketsCarryAPerTicketHåfaPass2')
@@ -297,7 +298,7 @@ function faqItems(pricing, t) {
     { q: t('buyerDiscovery.host.howMuchDoesHåfaPassCost'), a: feeAnswer },
     { q: t('buyerDiscovery.host.whoPaysTheFeeMeOrMy'), a: t('buyerDiscovery.host.youDecideForEachEventBuyersCan') },
     { q: t('buyerDiscovery.host.canIHostAFreeEvent'), a: t('buyerDiscovery.host.yesFreeTicketsHaveNoHåfaPassFee') },
-    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{t('buyerDiscovery.host.payouts')}{' '}{t('buyerDiscovery.host.payoutMethod')}{' '}{t('buyerDiscovery.host.payoutSettlementStatement')}{' '}<Link to="/policies/organizer-agreement" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></> },
+    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{payout.summary}{' '}{payout.detail && `${payout.detail} `}{t('buyerDiscovery.host.payoutSettlementStatement')}{' '}<Link to="/policies/organizer-agreement" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></> },
     { q: t('buyerDiscovery.host.howDoRefundsWork'), a: <>{t('buyerDiscovery.host.cancellationPromise')}{' '}{t('buyerDiscovery.host.youSetTheRefundRulesForYour')}<Link to="/policies/refunds" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.refundCancellationPolicy')}</Link>.</> },
     { q: t('buyerDiscovery.host.doesMyDoorStaffNeedAnApp'), a: t('buyerDiscovery.host.noStaffOpenTheScannerInTheir') },
     { q: t('buyerDiscovery.host.howDoIGetHelp'), a: <>{t('buyerDiscovery.host.emailTheHåfaPassTeamAtAnyPoint')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.contactSupport')}</SupportLink>.</> },
@@ -309,6 +310,7 @@ function HostContent({ targets }) {
   const support = useSupportContact()
   const configState = usePublicConfig()
   const pricing = configState.status === 'loaded' ? parseHostPricing(configState.config) : null
+  const payout = organizerPayoutCopy(t, parseFeeTerms(configState.config))
 
   return (
     <div className="public-intros bg-surface text-content">
@@ -319,7 +321,7 @@ function HostContent({ targets }) {
         image={`${PUBLIC_WEB_URL}/og-host.jpg`}
       />
 
-      <PricingSection configState={configState} targets={targets} />
+      <PricingSection configState={configState} targets={targets} payoutSummary={payout.summary} />
 
       <section aria-labelledby="publish-heading" className="relative -mt-6 rounded-t-[2rem] bg-white py-12 sm:rounded-t-[2.5rem] sm:py-20">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
@@ -378,7 +380,7 @@ function HostContent({ targets }) {
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
           <h2 id="faq-heading" className="font-display text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">{t('buyerDiscovery.host.questionsOrganizersAsk')}</h2>
           <div className="mt-8 divide-y divide-neutral-200 border-y border-neutral-200">
-            {faqItems(pricing, t).map(({ q, a }) => (
+            {faqItems(pricing, payout, t).map(({ q, a }) => (
               <details key={q} className="host-faq group">
                 <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 rounded py-4 text-left font-semibold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden">
                   {q}

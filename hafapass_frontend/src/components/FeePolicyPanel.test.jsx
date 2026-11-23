@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../api/client'
 import FeePolicyPanel from './FeePolicyPanel'
@@ -11,8 +12,8 @@ const request = { config: { organizationId: '1' }, current: () => true, release:
 
 function mount(props = {}) {
   const onSaved = vi.fn()
-  const view = render(<FeePolicyPanel eventId="11" event={{ fee_policy: 'buyer_pays', buyer_fee_percent: 100 }} canEdit
-    beginRequest={() => request} onSaved={onSaved} {...props} />)
+  const view = render(<MemoryRouter><FeePolicyPanel eventId="11" event={{ fee_policy: 'buyer_pays', buyer_fee_percent: 100 }} canEdit
+    beginRequest={() => request} onSaved={onSaved} {...props} /></MemoryRouter>)
   return { ...view, onSaved }
 }
 

@@ -1337,11 +1337,17 @@
       "generalAdmission1Ticket": {
         "context": "Public HåfaPass host page on Guam. Events are local gatherings, concerts, festivals or classes; tickets grant admission. Keep HåfaPass, Shimizu Technology and Guam as written. Preserve interpolation variables. Organizer receives the ticket proceeds after fees. Processing means card payment processing; absorb means organizer pays the fee rather than passing it to buyers. "
       },
-      "payouts": {
-        "context": "Retranslate for the new standard organizer payout schedule. Business days exclude weekends and holidays."
+      "checkPayouts": {
+        "context": "Organizer payouts default to check. Another method is available only when approved and recorded for that organizer."
       },
-      "payoutMethod": {
-        "context": "Retranslate for the new payout terms. A check is an approved exception. Chargeback means a card payment dispute. The reserve is money held temporarily for the organizer."
+      "bankTransferPayouts": {
+        "context": "Organizer payouts use bank transfer to the organizer's approved account. The agreement specifies when payment is due."
+      },
+      "scheduledBankTransferPayouts": {
+        "context": "Preserve {{schedule}}, the saved payout timing, for example 'within 2–3 business days after your event'."
+      },
+      "bankTransferPayoutTerms": {
+        "context": "A check is an approved exception. Chargeback means a card payment dispute. The reserve is money held temporarily for the organizer."
       },
       "payoutSettlementStatement": {
         "context": "Organizer dashboard statement listing financial activity for one event."

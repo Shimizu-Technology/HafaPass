@@ -451,6 +451,7 @@ draft:
 
           Buyer card payments are processed through {{operator_name}}'s payment account and received into its business account. We hold collected ticket proceeds for you in a custodial capacity and record them separately from our service fees. The ticket face value belongs to you. {{operator_name}} has no claim of right to the face value. We remit your available balance under the Payouts section. We may withhold or offset amounts for refunds, chargebacks, cancelled or postponed events, and suspected fraud. You remain responsible for refunds beyond the funds we hold, including after a payout.
       - heading: Payouts
+        payout_terms: bank_transfer_with_reserve
         body: |-
           We pay your available balance {{payout_schedule}}, after we reconcile the event's sales, refunds, and disputes and receive required tax information. Bank transfer to your approved account is the standard payout method. We pay by check only as an approved exception recorded for your organization.
 

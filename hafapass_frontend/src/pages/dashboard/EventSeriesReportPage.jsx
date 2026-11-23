@@ -728,7 +728,7 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
               </h2>
             </div>
             <p className="mt-1 text-sm text-neutral-600">
-              Track per-event settlement finalization, check references, and post-event reserve holdbacks.
+              Track settlement and payout status for each event.
             </p>
 
             <dl className="mt-4 grid grid-cols-2 gap-2.5 text-sm">
@@ -770,13 +770,10 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
 
             <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-950">
               <p className="font-semibold">
-                Reference for approved check exceptions:{' '}
+                Payout check reference:{' '}
                 <code className="rounded bg-white px-1.5 py-0.5 font-mono text-neutral-900">
                   {checklist.check_reference_pattern || 'CHK-<check_number>-E<event_id>'}
                 </code>
-              </p>
-              <p>
-                <strong>30-day reserve holdback reminder:</strong> Reconcile any open refunds or disputes, then release the remaining reserve 30 days after the event and finalize a closing statement.
               </p>
               {checklist.guidance && <p className="text-amber-900">{checklist.guidance}</p>}
             </div>

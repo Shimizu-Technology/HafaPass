@@ -25,6 +25,7 @@ class Api::V1::ConfigController < ApplicationController
       service_fee_flat_cents: settings.service_fee_flat_cents,
       processing_fee_bearer: settings.processing_fee_bearer,
       payout_schedule_text: settings.payout_schedule_text,
+      organizer_payout_terms: PolicyRegistry.organizer_payout_terms,
       public_web_url: PublicSiteUrl.base,
       buyer_terms_version: PolicyRegistry.buyer_terms[:version],
       policy_effective_date: PolicyRegistry.effective_date,

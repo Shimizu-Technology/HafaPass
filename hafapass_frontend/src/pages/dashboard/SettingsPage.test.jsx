@@ -13,6 +13,7 @@ const ownerPermissions = { manage_members: true, manage_payout_settings: true, m
 let organization
 let memberships
 let accounts
+let config
 
 const show = () => render(<MemoryRouter initialEntries={['/dashboard/settings']}><SettingsPage /></MemoryRouter>)
 
@@ -27,8 +28,9 @@ describe('SettingsPage', () => {
       { id: 4, email: 'late@example.com', role: 'finance', status: 'invited', invitation_status: 'expired' },
     ]
     accounts = []
+    config = { service_fee_percent: '5.0', service_fee_flat_cents: 100 }
     apiClient.get.mockImplementation(path => {
-      if (path === '/config') return Promise.resolve({ data: {} })
+      if (path === '/config') return Promise.resolve({ data: config })
       if (path === '/organizer/organization') return Promise.resolve({ data: organization })
       if (path === '/organizer/memberships') return Promise.resolve({ data: memberships })
       if (path === '/organizer/tax_information') return Promise.resolve({ data: { tax_information: null, edit_locked: false, certification: 'Under penalties of perjury, I certify.' } })
@@ -117,7 +119,7 @@ describe('SettingsPage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
-  it('starts with bank transfer and can save exceptional check details', async () => {
+  it('starts with check and can save check details under the October 24 agreement', async () => {
     apiClient.post.mockResolvedValue({ data: {
       id: 9, provider: 'check', status: 'onboarding', payout_ready: false, requirements_due: ['payee_details_review'],
       payout_details: { payee_name: 'Island Events LLC', delivery_method: 'mail', mailing_address: 'PO Box 1, Hagåtña' },
@@ -125,9 +127,12 @@ describe('SettingsPage', () => {
     } })
     show()
     await screen.findByRole('heading', { name: 'How you get paid' })
-    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
-    await userEvent.click(screen.getByRole('radio', { name: /Check for approved exceptions/i }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save check details' }))
+    expect(screen.getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeVisible()
+    expect(screen.queryByText(/remaining reserve/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Check for approved exceptions/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Bank transfer available when approved and recorded/i })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Save check details' }))
+    expect(screen.getByRole('radio', { name: /Check mailed to you/i })).toBeChecked()
     expect(screen.getByText('Enter the name to write on the check.')).toBeInTheDocument()
     expect(apiClient.post).not.toHaveBeenCalled()
 
@@ -140,6 +145,15 @@ describe('SettingsPage', () => {
     }, expect.anything())
     await screen.findByText('Saved — waiting for HåfaPass review')
     expect(screen.getByText('payee details review')).toBeInTheDocument()
+  })
+
+  it('starts with bank transfer and explains check exceptions once the Copa terms take effect', async () => {
+    config = { ...config, organizer_payout_terms: 'bank_transfer_with_reserve', payout_schedule_text: 'within 2–3 business days after your event' }
+    show()
+    expect(await screen.findByText(/Standard payout target: bank transfer within 2–3 business days after your event.*reserve 30 days after your event/)).toBeVisible()
+    expect(screen.getByRole('radio', { name: /Bank transfer/ })).toBeChecked()
+    await userEvent.click(screen.getByRole('radio', { name: /Check for approved exceptions/i }))
+    expect(screen.getByRole('button', { name: 'Save check details' })).toBeVisible()
   })
 
   it('restores a selected bank payout account after reload', async () => {

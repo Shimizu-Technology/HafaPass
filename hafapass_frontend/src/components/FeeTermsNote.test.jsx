@@ -13,9 +13,14 @@ describe('FeeTermsNote', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the organizer bearer copy and uses the standard bank transfer timing despite a legacy contract setting', () => {
-    render(<MemoryRouter><FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.' } }} feePolicy="buyer_pays" /></MemoryRouter>)
+  it.each([
+    [null, /Payouts are made by check on the schedule in your Organizer Agreement/],
+    ['bank_transfer_with_reserve', /Standard payout target: bank transfer within 7 days\. .*eligible proceeds.*reserve 30 days after your event/],
+  ])('reflects the effective payout terms (%s)', (organizerPayoutTerms, copy) => {
+    render(<MemoryRouter><FeeTermsNote feeTerms={{ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'organizer', payoutScheduleText: 'within 7 days.', organizerPayoutTerms } }} feePolicy="buyer_pays" /></MemoryRouter>)
     expect(screen.getByText(/Card processing costs are deducted from your proceeds\./)).toBeInTheDocument()
-    expect(screen.getByText('Standard payout target: bank transfer within 2–3 business days after your event.')).toBeInTheDocument()
+    expect(screen.getByText(copy)).toBeInTheDocument()
+    if (!organizerPayoutTerms) expect(screen.queryByText(/bank transfer|reserve/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /current Organizer Agreement/ })).toHaveAttribute('href', '/policies/organizer-agreement')
   })
 })

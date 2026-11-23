@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../../api/client'
+import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
 import { saveBlob } from '../../utils/download'
 import FinancesPage from './FinancesPage'
 import DashboardSummary from './DashboardSummary'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
-vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: () => ({ status: 'ready', retry: () => {}, terms: { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' } }) }))
+vi.mock('../../hooks/usePlatformFeeTerms', () => ({ default: vi.fn() }))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 
 const summary = {
@@ -37,12 +38,14 @@ const summary = {
 }
 
 let clearAuth
+const platformFeeTerms = { percent: 5, flatCents: 100, bearer: 'platform', payoutScheduleText: 'within 3 to 5 business days after your event' }
 function mount() {
   return render(<MemoryRouter initialEntries={['/dashboard/finances']}><Routes><Route path="/dashboard/finances" element={<FinancesPage />} /></Routes></MemoryRouter>)
 }
 
 beforeEach(() => {
   vi.clearAllMocks(); apiClient.get.mockReset(); window.localStorage.clear()
+  usePlatformFeeTerms.mockReturnValue({ status: 'ready', terms: platformFeeTerms })
   vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
   window.localStorage.setItem('hafapass_scanner_user_id', 'actor-a'); window.localStorage.setItem('hafapass_organization_id', '1')
   clearAuth = setAuthTokenGetter(() => Promise.resolve('synthetic-token'), { userId: 'actor-a', sessionId: 'session-a', ready: true })
@@ -69,13 +72,21 @@ describe('FinancesPage', () => {
     mount()
     expect(await screen.findByText('$94.49', { selector: 'p' })).toBeInTheDocument()
     expect(screen.getByText('$46.32 can be requested now from finalized statements.')).toBeInTheDocument()
-    expect(screen.getByText(/Standard payout target: bank transfer within 2–3 business days after your event.*reserve after 30 days/)).toBeInTheDocument()
+    expect(screen.getByText(/Payouts are made by check on the schedule in your Organizer Agreement/)).toBeInTheDocument()
+    expect(screen.queryByText(/Standard payout target|remaining reserve/)).not.toBeInTheDocument()
     expect(screen.getByText('Sales, fees and payouts across every GuamTime Events event.')).toBeInTheDocument()
     const breakdown = screen.getByRole('region', { name: 'How the total adds up' })
     expect(within(breakdown).getByText('Card processing you paid').closest('div')).toHaveTextContent('−$5.51')
     expect(within(breakdown).getByText('HåfaPass paid $1.85 of card processing on your tickets.')).toBeInTheDocument()
     expect(within(breakdown).getByText('Buyers also paid $14.00 in service fees to HåfaPass. Those are not part of your proceeds.')).toBeInTheDocument()
     expect(apiClient.get).toHaveBeenCalledWith('/organizer/finances', expect.objectContaining({ organizationId: '1', authContext: expect.objectContaining({ userId: 'actor-a' }) }))
+  })
+
+  it('shows the bank transfer timing and chargeback reserve under effective Copa terms', async () => {
+    usePlatformFeeTerms.mockReturnValue({ status: 'ready', terms: { ...platformFeeTerms,
+      organizerPayoutTerms: 'bank_transfer_with_reserve', payoutScheduleText: 'within 2–3 business days after your event' } })
+    mount()
+    expect(await screen.findByText(/Standard payout target: bank transfer within 2–3 business days after your event.*reserve 30 days after your event/)).toBeInTheDocument()
   })
 
   it('explains who paid card processing, including orders under earlier terms', async () => {
