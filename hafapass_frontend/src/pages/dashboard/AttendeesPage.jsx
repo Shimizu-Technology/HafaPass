@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import apiClient from '../../api/client'
 import TestPaymentBadge from '../../components/TestPaymentBadge'
-import { pluralize } from '../../utils/eventToolFormat'
+import { formatRegistrationAnswer, pluralize } from '../../utils/eventToolFormat'
 import { saveBlob } from '../../utils/download'
 
 const STATUS_STYLES = {
@@ -80,6 +80,18 @@ async function exportFailureMessage(error, fallback) {
     const body = content == null ? data : JSON.parse(content)
     return body?.error || fallback
   } catch { return fallback }
+}
+
+function InlineAnswers({ answers, showTicket }) {
+  if (!answers?.length) return null
+
+  return <dl className="space-y-2 text-base">
+    {answers.map(({ question_id: questionId, prompt, value, ticket_id: ticketId }) =>
+      <div key={`${questionId}-${ticketId || 'order'}`} className="break-words">
+        <dt className="font-medium">{prompt}{showTicket && ticketId && <span className="text-neutral-600"> · HP-T{ticketId}</span>}</dt>
+        <dd className="text-neutral-700">{formatRegistrationAnswer(value)}</dd>
+      </div>)}
+  </dl>
 }
 
 function formatDate(iso, timeZone) {
@@ -335,6 +347,7 @@ function AttendeesPageSession({ id, identity }) {
   const permissions = event?.permissions || {}
   const canCheckIn = attendee => filter('view') !== 'orders' && permissions.scan === true && event?.status === 'published' && attendee.status === 'issued' && (!attendee.sales_status || attendee.sales_status === 'issued')
   const canResend = attendee => filter('view') !== 'orders' && permissions.manage_attendees === true && RESENDABLE_STATUSES.has(attendee.status) && !['refunded', 'cancelled'].includes(attendee.sales_status)
+  const showAnswers = permissions.view_attendees === true && attendees.some(row => row.registration_answers?.length)
   const showActions = filter('view') !== 'orders' && (permissions.scan === true || permissions.manage_attendees === true)
   // Check-in hands off to the scanner, which runs the ticket lookup but leaves
   // Admit to staff so the admission uses the device's signed ticket list, the
@@ -456,6 +469,7 @@ function AttendeesPageSession({ id, identity }) {
                   {filter('view') === 'orders' && canSeeFinance && <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Amount</th>}
                   <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Checked in</th>
+                  {showAnswers && <th scope="col" className="px-4 py-3 text-left text-base font-medium text-neutral-800">Registration answers</th>}
                   {showActions && <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
@@ -471,6 +485,9 @@ function AttendeesPageSession({ id, identity }) {
                       {filter('view') === 'orders' && canSeeFinance && <td className="px-4 py-3 text-right text-sm text-neutral-900 tabular-nums">{att.amount_cents == null ? '—' : `$${(att.amount_cents / 100).toFixed(2)}`}</td>}
                       <td className="px-4 py-3"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.className}`}>{att.sales_status_label || style.label}</span></td>
                       <td className="px-4 py-3 text-sm text-neutral-500">{filter('view') === 'orders' ? `${att.checked_in_count || 0}/${att.ticket_count || 0}` : formatDate(att.checked_in_at, event?.timezone)}</td>
+                      {showAnswers && <td className="min-w-40 max-w-64 px-4 py-3 align-top">
+                        <InlineAnswers answers={att.registration_answers} showTicket={filter('view') === 'orders'} />
+                      </td>}
                       {/* Stacked until 2xl so the actions stay in view beside the event sidebar at 1280. */}
                       {showActions && <td className="px-4 py-3"><div className="flex flex-col items-stretch gap-1.5 2xl:flex-row 2xl:justify-end">{rowActions(att, 'desktop')}</div></td>}
                     </tr>
@@ -497,6 +514,9 @@ function AttendeesPageSession({ id, identity }) {
                     <span className="text-xs text-neutral-600">{att.ticket_type}</span>
                     {filter('view') === 'orders' ? <span className="text-xs text-neutral-600">{att.checked_in_count || 0}/{att.ticket_count || 0} checked in</span> : att.checked_in_at && <span className="text-xs text-neutral-600">{formatDate(att.checked_in_at, event?.timezone)}</span>}
                   </div>
+                  {showAnswers && att.registration_answers?.length > 0 && <div className="mt-3 border-t border-neutral-200 pt-2">
+                    <InlineAnswers answers={att.registration_answers} showTicket={filter('view') === 'orders'} />
+                  </div>}
                   {(canCheckIn(att) || canResend(att)) && <div className="mt-3 flex gap-2">{rowActions(att, 'phone')}</div>}
                 </div>
               )

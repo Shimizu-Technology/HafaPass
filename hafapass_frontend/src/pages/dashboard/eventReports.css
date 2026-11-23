@@ -1,0 +1,41 @@
+@media print {
+  .app-shell:has(.event-report) > :not(main),
+  .app-shell:has(.event-report) header,
+  .app-shell:has(.event-report) aside,
+  .event-report-controls {
+    display: none !important;
+  }
+
+  .event-report {
+    page: event-report;
+    color: #000;
+  }
+
+  .event-report-table {
+    overflow: visible !important;
+  }
+
+  .event-report-table table {
+    font-size: 9pt;
+    overflow-wrap: anywhere;
+  }
+
+  .event-report-table :is(td, th) {
+    min-width: 0;
+    padding: 0.25rem;
+  }
+
+  .event-report :is(tr, li) {
+    break-inside: avoid;
+  }
+
+  .event-report-bar {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page event-report {
+    size: landscape;
+    margin: 12mm;
+  }
+}

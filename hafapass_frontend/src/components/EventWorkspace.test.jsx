@@ -59,7 +59,7 @@ describe('connected event workspace', () => {
     expect(screen.getByText(/Pacific\/Guam/)).toHaveTextContent('7:00 PM')
     expect(screen.getByText('Published', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('Organization role: Owner')).toBeInTheDocument()
-    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Reports, Finances')
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit event' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Refunds' })).toHaveAttribute('href', '/dashboard/events/37/refunds')
@@ -70,7 +70,7 @@ describe('connected event workspace', () => {
     mount()
     expect(await screen.findByText('Organization role: Door scanner')).toBeInTheDocument()
     expect(screen.queryByText(/Event access/)).not.toBeInTheDocument()
-    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Finances')
+    expect(screen.getByText('What you can do').closest('details')).toHaveTextContent('Event details, Tickets & seating, Attendees, Event day, Sales & messages, Team, Reports, Finances')
   })
 
   it('falls back to plain wording when the organization role is unknown', async () => {
@@ -110,10 +110,10 @@ describe('connected event workspace', () => {
 
   it.each([
     ['marketer', { edit_event_content: true, manage_marketing: true }, ['Edit event', 'Promo codes', 'Promoters & Messages']],
-    ['finance', { view_finance: true, refund: true }, ['Reports & Sales', 'Refunds']],
-    ['box office', { view_attendees: true, manage_attendees: true, scan: true, box_office: true }, ['Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office']],
+    ['finance', { view_finance: true, refund: true }, ['Reports', 'Reports & Sales', 'Refunds']],
+    ['box office', { view_attendees: true, manage_attendees: true, scan: true, box_office: true }, ['Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office', 'Reports']],
     ['scanner', { scan: true }, ['Door Scanner']],
-    ['reader', { view_finance: true }, ['Reports & Sales']],
+    ['reader', { view_finance: true }, ['Reports', 'Reports & Sales']],
   ])('only offers the tools granted to %s', (_role, scope, expected) => {
     mount({ event: { ...dto(), permissions: scope } })
     const tools = within(screen.getByRole('navigation', { name: 'Event workspace' })).getAllByRole('link')

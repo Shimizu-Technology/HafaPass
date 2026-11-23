@@ -139,7 +139,7 @@ describe('event overview', () => {
     expect(screen.getByRole('link', { name: 'View public page' })).toHaveAttribute('href', '/events/synthetic-reef-night')
     expect(screen.getByRole('button', { name: 'Copy event link' })).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Next steps' })).getByRole('link', { name: 'Open Door Scanner' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
-    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office', 'Promo codes', 'Questions & Waivers', 'Event team', 'Reports & Sales'])
+    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office', 'Promo codes', 'Questions & Waivers', 'Event team', 'Reports', 'Reports & Sales'])
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('Island events')).toBeInTheDocument()
     expect(requested('/organizer/events/37/admissions')).toBe(false)

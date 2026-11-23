@@ -251,6 +251,8 @@ Rails.application.routes.draw do
             member { post :send_now }
           end
           post "attendees/:ticket_id/resend", to: "attendee_deliveries#create", as: :resend_attendee_ticket
+          get "reports", to: "reports#show"
+          get "reports/export", to: "reports#export", defaults: { format: :csv }
           post "sales_exports", to: "sales_exports#create"
           get "sales_exports", to: "sales_exports#index"
           get "sales_exports/door_list", to: "sales_exports#door_list"

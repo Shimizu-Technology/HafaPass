@@ -473,45 +473,73 @@ module Api
         end
 
         def attendees
-          query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: @can_view_attendees)
+          active_only = params[:active_only] == "true"
+          return unless !active_only || @can_view_attendees || authorize_organization!(:view_attendees, event: @event)
+
+          query = OrganizerSalesQuery.new(event: @event, params: params, attendee_access: @can_view_attendees, active_only: active_only)
           pagy, records = paginate(query.relation, items: params.fetch(:per_page, 25).to_i.clamp(1, 100))
           can_view_finance = OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
             permission: :view_finance, event: @event)
-          can_view_attendees = @can_view_attendees
+          records = records.includes(*attendee_preloads(query.view)).to_a
+          answers = EventReportRegistrations::Inline.new(records) if @can_view_attendees
+          rows = records.map do |record|
+            if record.is_a?(Order)
+              attendee_order_row(record, can_view_finance, answers)
+            else
+              attendee_ticket_row(record, answers)
+            end
+          end
+          payload = { attendees: rows, meta: pagination_meta(pagy) }
+          if active_only
+            questions = EventReportRegistrations.new(event: @event, tickets: query.relation).questions
+            payload[:registration_questions] = questions.map { |question| { question_id: question.id, prompt: question.prompt, kind: question.kind } }
+          end
           response.headers["Cache-Control"] = "no-store"
-          render json: {
-            attendees: records.includes(query.view == "orders" ? [{ tickets: :ticket_type }, :promo_code] : [:ticket_type, { order: :payments }]).map { |record|
-              if record.is_a?(Order)
-                row = { id: record.id,
-                  order_number: record.reference, ticket_type: record.tickets.map { |ticket| ticket.ticket_type.name }.uniq.join(", "),
-                  status: record.status, sales_status_label: OrganizerTicketSalesStatus.label(record.status), purchase_date: record.completed_at || record.created_at,
-                  channel: FinanceExports.channel(record), ticket_count: record.tickets.size,
-                  checked_in_count: record.tickets.count(&:checked_in?) }
-                row.merge!(attendee_name: record.buyer_name, attendee_email: record.buyer_email,
-                  checked_in_at: record.tickets.filter_map(&:checked_in_at).max) if can_view_attendees
-                row[:amount_cents] = record.total_cents if can_view_finance
-                row
-              else
-                sales_status = OrganizerTicketSalesStatus.for(record, event_cancelled: @event.cancelled?)
-                row = { id: record.id,
-                  ticket_type: record.ticket_type.name, status: record.status, sales_status: sales_status,
-                  sales_status_label: OrganizerTicketSalesStatus.label(sales_status),
-                  order_id: record.order_id, order_number: record.order.reference,
-                  purchase_date: record.order.completed_at || record.order.created_at,
-                  channel: FinanceExports.channel(record.order), test_payment: record.order.test_payment? }
-                row.merge!(attendee_name: record.attendee_name,
-                  attendee_email: record.holder_email.presence || record.attendee_email,
-                  checked_in_at: record.checked_in_at) if can_view_attendees
-                row
-              end
-            },
-            meta: pagination_meta(pagy)
-          }
+          render json: payload
         rescue OrganizerSalesQuery::InvalidFilter => error
           render json: { error: error.message }, status: :unprocessable_entity
         end
 
         private
+
+        def attendee_preloads(view)
+          if view == "orders"
+            [{ tickets: :ticket_type }]
+          else
+            [:ticket_type, { order: :payments }, *(@can_view_attendees ? [:pricing_tier, :order_item] : [])]
+          end
+        end
+
+        def attendee_order_row(order, can_view_finance, answers)
+          row = { id: order.id, order_number: order.reference,
+            ticket_type: order.tickets.map { |ticket| ticket.ticket_type.name }.uniq.join(", "),
+            status: order.status, sales_status_label: OrganizerTicketSalesStatus.label(order.status),
+            purchase_date: order.completed_at || order.created_at, channel: FinanceExports.channel(order),
+            ticket_count: order.tickets.size, checked_in_count: order.tickets.count(&:checked_in?) }
+          if @can_view_attendees
+            row.merge!(attendee_name: order.buyer_name, attendee_email: order.buyer_email,
+              checked_in_at: order.tickets.filter_map(&:checked_in_at).max,
+              registration_answers: answers.for_order(order))
+          end
+          row[:amount_cents] = order.total_cents if can_view_finance
+          row
+        end
+
+        def attendee_ticket_row(ticket, answers)
+          order = ticket.order
+          sales_status = OrganizerTicketSalesStatus.for(ticket, event_cancelled: @event.cancelled?)
+          row = { id: ticket.id, ticket_type: ticket.ticket_type.name, status: ticket.status, sales_status: sales_status,
+            sales_status_label: OrganizerTicketSalesStatus.label(sales_status), order_id: order.id, order_number: order.reference,
+            purchase_date: order.completed_at || order.created_at, channel: FinanceExports.channel(order), test_payment: order.test_payment? }
+          if @can_view_attendees
+            row.merge!(attendee_name: ticket.attendee_name, attendee_email: ticket.holder_email.presence || ticket.attendee_email,
+              buyer_name: order.buyer_name, checked_in_at: ticket.checked_in_at,
+              pricing_tier: ticket.order_item&.tier_name.presence || ticket.pricing_tier&.name,
+              order_status_label: OrganizerTicketSalesStatus.label(order.status),
+              registration_answers: answers.for_ticket(ticket))
+          end
+          row
+        end
 
         # Optional narrowing used by the door scanner to find its default event
         # across pages. Filters apply after access scoping, so they never widen
