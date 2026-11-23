@@ -160,8 +160,10 @@ describe('ticket context boundaries with the real router, wrapper and API interc
     rerender(view())
     await screen.findByText('Entry code unavailable')
     await act(async () => token.resolve('token-a'))
-    expect(api.defaults.adapter).toHaveBeenCalledTimes(1)
-    expect(api.defaults.adapter.mock.calls[0][0].headers.get('Authorization')).toBe('Bearer token-b')
+    // One ticket lookup (plus the order behind ?order=, for the group switcher), all as buyer B.
+    const requests = api.defaults.adapter.mock.calls.map(([config]) => config)
+    expect(requests.filter(config => config.url.startsWith('/tickets/'))).toHaveLength(1)
+    expect(requests.map(config => config.headers.get('Authorization'))).toEqual(requests.map(() => 'Bearer token-b'))
   })
 
   it('keeps current Apple Wallet available and cleans its successful artifact URL', async () => {

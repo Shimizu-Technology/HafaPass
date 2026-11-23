@@ -19,13 +19,14 @@ export function navigationFor(event, capabilities) {
       { label: 'Waitlist', to: `${base}/waitlist`, allowed: has('manage_attendees') },
     ] },
     { label: 'Event day', icon: ScanLine, links: [
-      { label: 'Scan tickets', to: `/dashboard/scanner?event=${event.id}`, allowed: has('scan') },
+      { label: 'Door Scanner', to: `/dashboard/scanner?event=${event.id}`, allowed: has('scan') },
       { label: 'Box office', to: `${base}/box-office`, allowed: has('box_office') },
     ] },
     { label: 'Sales & messages', icon: Megaphone, links: [
       { label: 'Promo codes', to: `${base}/promo-codes`, allowed: has('manage_marketing') },
       {
-        label: capabilities.advanced_sales_tools === true ? 'Sales tools & messages' : 'Registration & waivers',
+        // Questions and waivers need event management; marketers there see promoters and campaigns.
+        label: has('manage_events') ? 'Questions & Waivers' : 'Promoters & Messages',
         to: `${base}/sales-tools`,
         allowed: capabilities.advanced_sales_tools === true
           ? (has('manage_marketing') || has('manage_events'))
@@ -34,7 +35,7 @@ export function navigationFor(event, capabilities) {
     ] },
     { label: 'Team', icon: UserRoundCog, links: [{ label: 'Event team', to: `${base}/team`, allowed: has('manage_staff') }] },
     { label: 'Finances', icon: WalletCards, links: [
-      { label: 'Sales & finances', to: `${base}/analytics`, allowed: has('view_finance') },
+      { label: 'Reports & Sales', to: `${base}/analytics`, allowed: has('view_finance') },
       { label: 'Refunds', to: `${base}/refunds`, allowed: has('refund') && has('view_finance') },
     ] },
   ].map(group => ({ ...group, links: group.links.filter(link => link.allowed === true) })).filter(group => group.links.length)

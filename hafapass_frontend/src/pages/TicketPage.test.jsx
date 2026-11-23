@@ -145,7 +145,8 @@ it('retries loading the same ticket and offers email order recovery', async () =
   expect(screen.getByRole('link', { name: 'Find my order' })).toHaveAttribute('href', '/orders/recover')
   await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('Entry QR')).toBeInTheDocument()
-  expect(api.get.mock.calls.map(([url]) => url)).toEqual(['/tickets/display', '/tickets/display'])
+  // The ticket loads twice; the order behind ?order= loads once alongside it, for the group switcher.
+  await waitFor(() => expect(api.get.mock.calls.map(([url]) => url)).toEqual(['/tickets/display', '/orders/2', '/tickets/display']))
 })
 it.each([
   ['checked_in', 'This ticket has already been used.'],

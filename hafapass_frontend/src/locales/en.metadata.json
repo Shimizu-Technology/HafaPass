@@ -397,6 +397,18 @@
       },
       "reservedUntil": {
         "context": "Buyer-facing buyer.EventDetail copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "dateAndTime": {
+        "context": "Label on the event page for when the event happens, shown in the event's local (Guam) time."
+      },
+      "venue": {
+        "context": "Label on the event page for the place where the event is held, with its village or city."
+      },
+      "doorsOpen": {
+        "context": "Label on the event page for the time guests can start entering."
+      },
+      "hostedBy": {
+        "context": "Label on the event page before the organizer's name. The organizer is the person or business hosting the event."
       }
     },
     "Events": {
@@ -861,6 +873,9 @@
       },
       "increaseQuantityFor": {
         "context": "Buyer-facing TicketTypesSection interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "freeNoPayment": {
+        "context": "Shown under a $0 ticket: the buyer does not pay or enter a card for it."
       }
     },
     "WaitlistForm": {
@@ -1330,6 +1345,44 @@
       },
       "noStaffOpenTheScannerInTheir": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. No. Staff open the scanner in their phone’s browser and scan tickets with the camera. If the venue Wi‑Fi drops, scanning keeps working and syncs when the connection is back. Each device must be prepared online before the event."
+      },
+      "doorDemo": {
+        "tryIt": {
+          "context": "Instruction above two example buttons on the organizer page that show what door staff see when they scan a ticket. Illustration only."
+        },
+        "adultTicket": {
+          "context": "Example ticket type name in a door-scanner demo: a regular paid ticket for an adult."
+        },
+        "alumniTicket": {
+          "context": "Example ticket type name in a door-scanner demo: a free ticket for former students (alumni) whose ID is checked at the door."
+        },
+        "verifyFirst": {
+          "context": "Banner on the door scanner telling staff to check the guest before letting them in. Shown in capital letters by the design."
+        },
+        "alumniAlert": {
+          "context": "Organizer's alert on the door scanner: this is a free alumni ticket, so staff must check the guest's ID. Shown in capital letters by the design."
+        },
+        "for": {
+          "context": "Label before the name of the person the ticket is for, on the door scanner."
+        },
+        "gradYear": {
+          "context": "Label before the graduation year the guest gave, shown to door staff to verify alumni status."
+        },
+        "confirmAdmit": {
+          "context": "Door staff button: the guest checked out, let them in and mark the ticket used."
+        },
+        "cancel": {
+          "context": "Door staff button: do not let the guest in; the ticket stays unused."
+        },
+        "notAdmitted": {
+          "context": "Door scanner result after staff cancelled: the guest was not let in."
+        },
+        "notUsed": {
+          "context": "Door scanner message after staff cancelled an entry: the ticket can still be used later."
+        },
+        "fictional": {
+          "context": "Note under the door-scanner demo: it is an illustration and the guest names are made up."
+        }
       }
     },
     "organizer": {
@@ -1509,6 +1562,27 @@
       },
       "checkOutMyTicketFor": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Ticket link for {{event}}. Sharing this link does not transfer the ticket."
+      },
+      "ticketPosition": {
+        "context": "Which ticket of a group order is on screen, e.g. 'Ticket 2 of 4'."
+      },
+      "ticketPositionNamed": {
+        "context": "Which ticket of a group order is on screen and who it is for, e.g. 'Ticket 2 of 4 — Jane Doe'. {{name}} is the attendee's name."
+      },
+      "ticketsInOrder": {
+        "context": "Screen-reader label for the previous/next ticket controls."
+      },
+      "previousTicket": {
+        "context": "Button that shows the previous ticket in the same order."
+      },
+      "nextTicket": {
+        "context": "Button that shows the next ticket in the same order."
+      },
+      "brightnessTip": {
+        "context": "Advice under the ticket QR code: a brighter phone screen scans faster at the entrance."
+      },
+      "loadingTicket": {
+        "context": "Screen-reader status while the next ticket in a group order loads after Previous/Next."
       }
     },
     "privacyRequests": {
@@ -1546,6 +1620,18 @@
     "myTicketsPage": {
       "entryPaused": {
         "context": "Buyer-facing HåfaPass interface. State only what is known. Preserve placeholders and inline markup. Entry paused"
+      },
+      "tonightsTicket_one": {
+        "context": "Heading over the ticket for an event happening today, pinned at the top of My Tickets."
+      },
+      "tonightsTicket_other": {
+        "context": "Heading over the tickets for events happening today, pinned at the top of My Tickets."
+      },
+      "tonightHelp": {
+        "context": "Help under 'Tonight’s ticket': open the ticket to show its QR code at the entrance."
+      },
+      "tonightsTicketsSwitcher": {
+        "context": "Screen-reader name for the previous/next controls over tonight's tickets, which can come from more than one order."
       }
     }
   },
@@ -1622,6 +1708,51 @@
       },
       "stepDoorBody": {
         "context": "Door staff scan the QR code on the buyer's phone at the event entrance."
+      },
+      "comingUpOnGuam": {
+        "context": "Home page heading over the list of upcoming events on Guam. Guam is the island; keep the name."
+      },
+      "quickFilters": {
+        "context": "Label for a row of one-tap buttons (tonight, this weekend, village names) that open the event list filtered."
+      },
+      "featuredOnGuam": {
+        "context": "Small label above an event the organizer or HåfaPass featured. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings."
+      },
+      "nextUpOnGuam": {
+        "context": "Small label above the next upcoming event on the home page. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings."
+      },
+      "seeTickets": {
+        "context": "Button-style label on the featured event pass; opens the event page where tickets can be chosen."
+      },
+      "storyTitle": {
+        "context": "Heading for a short three-step explanation of how a HåfaPass ticket works, from buying to entering the event."
+      },
+      "storyPickTitle": {
+        "context": "Step 1 of how a ticket works: choose an event to go to."
+      },
+      "storyPickBody": {
+        "context": "Step 1 body. HåfaPass sells tickets to local events on Guam: concerts, festivals, nightlife, food and drink, classes and community gatherings."
+      },
+      "storyPassTitle": {
+        "context": "Step 2 of how a ticket works: the ticket, with its QR code, arrives right after purchase."
+      },
+      "storyPassBody": {
+        "context": "Step 2 body. Buying as a guest does not require creating an account."
+      },
+      "storyDoorTitle": {
+        "context": "Step 3 of how a ticket works: event staff scan the QR code at the entrance."
+      },
+      "storyDoorBody": {
+        "context": "Step 3 body. 'Staff' are the event's door staff."
+      },
+      "storyExampleEvent": {
+        "context": "Placeholder event name on an illustrated example ticket when no real event is available."
+      },
+      "storyAdmitted": {
+        "context": "Green confirmation on an illustrated ticket: the ticket was accepted at the door and the guest may enter."
+      },
+      "dateAndVillage": {
+        "context": "Button on phones that shows the date and village filters for the event search on the home page."
       }
     },
     "install": {

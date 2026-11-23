@@ -138,8 +138,8 @@ describe('event overview', () => {
     expect(sales).toHaveTextContent('Checked in10 / 42')
     expect(screen.getByRole('link', { name: 'View public page' })).toHaveAttribute('href', '/events/synthetic-reef-night')
     expect(screen.getByRole('button', { name: 'Copy event link' })).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'Next steps' })).getByRole('link', { name: 'Scan tickets' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
-    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Guest list', 'Waitlist', 'Scan tickets', 'Box office', 'Promo codes', 'Registration & waivers', 'Event team', 'Sales & finances'])
+    expect(within(screen.getByRole('region', { name: 'Next steps' })).getByRole('link', { name: 'Open Door Scanner' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
+    expect(tools().map(([label]) => label)).toEqual(['Edit event', 'Ticket types', 'Attendee list', 'Guest list', 'Waitlist', 'Door Scanner', 'Box office', 'Promo codes', 'Questions & Waivers', 'Event team', 'Reports & Sales'])
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('Island events')).toBeInTheDocument()
     expect(requested('/organizer/events/37/admissions')).toBe(false)
@@ -165,7 +165,7 @@ describe('event overview', () => {
     expect(await within(sales).findByText('Checked in')).toBeInTheDocument()
     expect(sales).toHaveTextContent('Checked in5 / 20')
     expect(sales).not.toHaveTextContent('Revenue')
-    expect(tools()).toEqual([['Scan tickets', '/dashboard/scanner?event=37']])
+    expect(tools()).toEqual([['Door Scanner', '/dashboard/scanner?event=37']])
     expect(requested('/organizer/events/37/stats')).toBe(false)
   })
 
@@ -188,7 +188,7 @@ describe('event overview', () => {
     mount({ ...base, permissions: { ...manager, refund: true } }, { '/organizer/events/37/stats': { total_tickets_sold: 0, total_revenue_cents: 0, tickets_checked_in: 0 } })
     await screen.findByRole('region', { name: 'Event tools' })
     const labels = tools().map(([label]) => label)
-    expect(labels).toEqual(expect.arrayContaining(['Refunds', 'Sales tools & messages', 'Assigned seating']))
+    expect(labels).toEqual(expect.arrayContaining(['Refunds', 'Questions & Waivers', 'Assigned seating']))
     expect(tools()).toEqual(sidebarTools())
   })
 
@@ -248,7 +248,7 @@ describe('event overview', () => {
     expect(next).not.toHaveTextContent('Your event is live')
     expect(screen.getByRole('region', { name: 'Overview' })).toHaveTextContent('private preview link')
     expect(within(next).queryByRole('link', { name: 'View public page' })).not.toBeInTheDocument()
-    expect(within(next).getByRole('link', { name: 'Scan tickets' })).toBeInTheDocument()
+    expect(within(next).getByRole('link', { name: 'Open Door Scanner' })).toBeInTheDocument()
     await user.click(await within(next).findByRole('button', { name: 'Request verification' }))
     await user.click(within(next).getByRole('button', { name: 'Send request' }))
     expect(apiClient.post).toHaveBeenCalledWith('/organizer_profile/submit_verification', expect.objectContaining({ verification_phone: '+1-671-555-1234' }), expect.objectContaining({ organizationId: '1' }))
@@ -278,5 +278,61 @@ describe('event overview', () => {
     expect(next).toHaveTextContent('Venue permit under review.')
     expect(next).not.toHaveTextContent('Your event is live')
     expect(within(next).queryByRole('button', { name: /Request approval/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('event setup checklist', () => {
+  beforeEach(() => { vi.clearAllMocks(); window.localStorage.setItem('hafapass_organization_id', '1') })
+  const checklist = () => screen.findByRole('region', { name: 'Event setup checklist' })
+  const steps = region => within(region).getAllByRole('listitem').map(item => item.querySelector('p').textContent)
+
+  it('walks a first-time organizer through a draft in plain words with a link for each step', async () => {
+    mount({ ...base, status: 'draft', ticket_types: [] }, { '/organizer/events/37/stats': {} })
+    const region = await checklist()
+    expect(region).toHaveTextContent('0 of 3 steps done.')
+    expect(steps(region)).toEqual(['Ticket types set up (to do)', 'Questions & waivers (optional)', 'Event published (to do)', 'Door scanner ready (to do)'])
+    expect(within(region).getByRole('link', { name: 'Add tickets' })).toHaveAttribute('href', '/dashboard/events/37/edit#ticket-types')
+    expect(within(region).getByRole('link', { name: 'Set up questions' })).toHaveAttribute('href', '/dashboard/events/37/sales-tools')
+    expect(within(region).getByRole('link', { name: 'Review and publish' })).toHaveAttribute('href', '/dashboard/events/37/edit')
+    expect(within(region).queryByRole('link', { name: 'Open Door Scanner' })).not.toBeInTheDocument()
+    for (const link of within(region).getAllByRole('link')) expect(link).toHaveClass('min-h-12')
+  })
+
+  it('marks a published event with tickets ready for the door', async () => {
+    mount(base, { '/organizer/events/37/stats': {} })
+    const region = await checklist()
+    expect(region).toHaveTextContent('3 of 3 steps done.')
+    expect(within(region).getByRole('link', { name: 'Open Door Scanner' })).toHaveAttribute('href', '/dashboard/scanner?event=37')
+    expect(within(region).queryByRole('link', { name: 'Review and publish' })).not.toBeInTheDocument()
+  })
+
+  it('offers door staff only the steps they can act on', async () => {
+    mount({ ...base, permissions: { view_events: true, scan: true } }, { '/organizer/events/37/admissions': { counts: { admitted: 0, remaining: 0 } } })
+    const region = await checklist()
+    expect(within(region).getAllByRole('link').map(link => link.textContent)).toEqual(['Open Door Scanner'])
+  })
+
+  it('offers publishing only to teammates who can publish', async () => {
+    mount({ ...base, status: 'draft', permissions: { view_events: true, edit_event_content: true, manage_inventory: true } }, {})
+    const region = await checklist()
+    expect(within(region).queryByRole('link', { name: 'Review and publish' })).not.toBeInTheDocument()
+    expect(within(region).getByRole('link', { name: 'Review tickets' })).toBeInTheDocument()
+  })
+
+  it('calls a published private preview what it is', async () => {
+    mount({ ...base, publicly_visible: false, organizer_verification_status: 'unverified' }, {
+      '/organizer/events/37/stats': {}, '/organizer/events/37/preview_link': { url: 'https://example.test/p' },
+      '/organizer_profile': { verification_status: 'unverified', organization: { role: 'owner' } },
+    })
+    const region = await checklist()
+    expect(region).toHaveTextContent('Published as a private preview. Only people with the preview link can see it for now.')
+    expect(region).not.toHaveTextContent('Buyers can find your event.')
+    for (const detail of region.querySelectorAll('li p + p')) expect(detail).toHaveClass('text-base')
+  })
+
+  it('leaves closed events without a setup checklist', async () => {
+    mount({ ...base, status: 'completed' }, { '/organizer/events/37/stats': {} })
+    await screen.findByRole('region', { name: 'Next steps' })
+    expect(screen.queryByRole('region', { name: 'Event setup checklist' })).not.toBeInTheDocument()
   })
 })

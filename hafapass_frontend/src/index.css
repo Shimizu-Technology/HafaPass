@@ -259,6 +259,47 @@
   .event-card:active { transform: none; }
 }
 
+/* Public-page signature moments (Home, event page, ticket wallet). Each one's
+   still state is the finished page; motion only plays when the component's
+   useMotionOk gate allows it, and the reduced-motion rule above stops the
+   rest. Checkout, forms, dashboards and the scanner never use these. */
+.hero-rise-word { display: inline-block; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-rise-word { animation: hero-word-rise 520ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--word, 0) * 55ms); }
+}
+@keyframes hero-word-rise { from { opacity: 0; transform: translateY(0.38em); } to { opacity: 1; transform: translateY(0); } }
+
+.featured-pass-stage { perspective: 1100px; max-width: 26rem; width: 100%; margin-inline: auto; }
+.featured-pass { transform-style: preserve-3d; will-change: transform; filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28)); }
+.featured-pass:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
+.featured-ticket { --notch-radius: 14px; }
+.featured-pass-sheen { position: absolute; inset: -20% -40%; pointer-events: none; background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / 0.22) 50%, transparent 62%); mix-blend-mode: screen; }
+
+.stub-story-ticket { --tear: 1; }
+.stub-story-stub { transform: translateY(calc(var(--tear) * 22px)) rotate(calc(var(--tear) * 2.5deg)); transform-origin: 10% 0; }
+.stub-story-qr { opacity: calc(0.15 + var(--tear) * 0.85); }
+.stub-story-check { opacity: clamp(0, calc((var(--tear) - 0.62) * 3), 1); transform: scale(calc(0.92 + clamp(0, calc((var(--tear) - 0.62) * 3), 1) * 0.08)); }
+.stub-story-marker { border-color: theme('colors.brand.700'); color: theme('colors.brand.800'); background: white; }
+.stub-story:is([data-step="done"], [data-step="3"]) .stub-story-step .stub-story-marker,
+.stub-story[data-step="2"] .stub-story-step:nth-child(-n+2) .stub-story-marker,
+.stub-story[data-step="1"] .stub-story-step:first-child .stub-story-marker { background: theme('colors.brand.700'); color: white; }
+@media (prefers-reduced-motion: no-preference) {
+  .stub-story[data-motion="on"] .stub-story-marker { transition: background-color 200ms ease-out, color 200ms ease-out; }
+}
+
+/* Event page artwork: the cover's own colors, blurred once behind its frame. Static. */
+.event-art-glow { position: absolute; inset: 6% 3% -5%; border-radius: 2rem; background-size: cover; background-position: center; filter: blur(32px) saturate(1.25); opacity: 0.45; pointer-events: none; }
+
+/* Keepsake ticket: a gentle lean and a foil glint on the edge, mouse only, so
+   the QR always lies flat on a phone at the door. */
+.wallet-tilt { perspective: 1200px; }
+.wallet-ticket { position: relative; transform-style: preserve-3d; }
+/* A 3px ring inside the upper half's mask, so the glint never crosses the QR. */
+.wallet-foil { position: absolute; inset: 0; z-index: 1; padding: 3px; border-radius: inherit; overflow: hidden; pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.wallet-foil > span { position: absolute; inset: 0 -60%; background: linear-gradient(100deg, transparent 40%, rgb(83 245 223 / 0.9) 47%, rgb(255 255 255 / 0.95) 50%, rgb(255 168 159 / 0.85) 53%, transparent 60%); opacity: 0.55; }
+
 /* Public route changes fade the new page in. Reduced motion turns the
    animation off with every other animation above. */
 .route-fade { animation: ticket-fade 150ms ease-out; }
