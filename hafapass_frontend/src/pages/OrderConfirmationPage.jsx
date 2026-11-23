@@ -487,8 +487,9 @@ function OrderConfirmationContent() {
             {awaitingPayment ? t('buyerAccount.orderConfirmationPage.yourPaymentIsNotComplete') : isProcessing ? t('buyerAccount.orderConfirmationPage.paymentIsProcessing') : order.status === 'refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasRefunded') : order.status === 'partially_refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasPartiallyRefunded') : order.status === 'cancelled' ? t('buyerAccount.orderConfirmationPage.orderCancelled') : order.status === 'expired' ? t('buyerAccount.orderConfirmationPage.reservationExpired') : t('buyerAccount.orderConfirmationPage.yourOrderIsConfirmed')}
           </h1>
           <p className="mt-2 break-words text-neutral-600">{t('buyerAccount.orderConfirmationPage.order2', { reference: order.reference, email: order.buyer_email })}</p>
-          {['test', 'simulate', 'simulated'].includes(order.payment_environment) && <p className="mt-3 rounded-lg bg-amber-100 p-3 font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.testOrderNoRealCharge')}</p>}
-          {order.receipt_available === false && <p className="mt-3 rounded-lg bg-amber-100 p-3 font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.checkoutNotCompleted')}</p>}
+          {order.receipt_available === false && !['completed', 'refunded', 'partially_refunded'].includes(order.status)
+            ? <p className="mt-3 rounded-lg bg-amber-100 p-3 font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.checkoutNotCompleted')}</p>
+            : ['test', 'simulate', 'simulated'].includes(order.payment_environment) && <p className="mt-3 rounded-lg bg-amber-100 p-3 font-semibold text-amber-950">{t('buyerAccount.orderConfirmationPage.testOrderNoRealCharge')}</p>}
           {(order.completed_at || order.created_at) && <p className="mt-1 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.orderedOn', { date: formatEventDate(order.completed_at || order.created_at, order.event.timezone) })}</p>}
           {finalStatuses.has(order.status) && order.receipt_available !== false && <button type="button" onClick={downloadReceipt} disabled={receiptState === 'loading'} className="btn-secondary mt-4 min-h-11">{receiptState === 'loading' ? t('buyerAccount.orderConfirmationPage.preparingReceipt') : t('buyerAccount.orderConfirmationPage.downloadReceipt')}</button>}
           {receiptState === 'error' && <p role="alert" className="mt-2 text-sm text-red-700">{t('buyerAccount.orderConfirmationPage.receiptDownloadFailed')}</p>}
@@ -654,8 +655,10 @@ function OrderConfirmationContent() {
 
         <section className="rounded-2xl border border-neutral-200 bg-white mb-6 overflow-hidden">
           <div className="border-b border-neutral-100 p-5 sm:p-6">
-            <p className="min-h-11 px-2 text-sm font-semibold text-brand-700">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
-            <h2 className="mt-1 text-xl font-bold text-neutral-950">{eventContent.title}</h2>
+            {['postponed', 'cancelled', 'rescheduled'].includes(event?.status) && (
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-800">{t(`buyerAccount.orderConfirmationPage.eventStatus.${event.status}`, { defaultValue: event.status })}</p>
+            )}
+            <h2 className="font-display text-xl font-bold text-neutral-950">{eventContent.title}</h2>
             <MachineTranslationNotice {...eventContent.notice} />
             <p className="mt-2 text-sm text-neutral-600">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long' })} · {formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</p>
             <p className="text-sm text-neutral-600">{event.venue_name}{event.venue_address ? ` · ${event.venue_address}` : ''}</p>
