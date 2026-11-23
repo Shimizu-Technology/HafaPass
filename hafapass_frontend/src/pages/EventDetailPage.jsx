@@ -25,7 +25,7 @@ import { FadeUp } from '../components/ui/ScrollReveal'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
-import { formatTicketPrice, lowestPurchasablePrice, purchasableAllInPrices } from '../utils/ticketPricing'
+import { formatTicketPrice, priceSummary, purchasableAllInPrices } from '../utils/ticketPricing'
 import { AllInPriceNote, SellerLine } from '../components/PriceDisclosure'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
@@ -288,8 +288,8 @@ function EventDetailContent() {
     }
     if (navigator.share) {
       try {
-        const from = lowestPurchasablePrice(event.ticket_types || [])
-        const priceText = from === null ? '' : from === 0 ? `${t('events.free')}. ` : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(from) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })} `
+        const summary = priceSummary(event.ticket_types || [])
+        const priceText = !summary ? '' : summary.kind === 'free' ? `${t('events.free')}. ` : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(summary.cents) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })} `
         await navigator.share({ title: event.title, text: `${priceText}${event.short_description || event.description?.slice(0, 120) || ''}`, url })
       } catch {
         // Share cancellation is user-driven; no visible error needed.
@@ -319,14 +319,14 @@ function EventDetailContent() {
 
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
-  const lowestPrice = lowestPurchasablePrice(event.ticket_types || [])
-  const advertisedDescription = lowestPrice === null ? truncatedDescription
-    : `${lowestPrice === 0 ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
+  const summary = priceSummary(event.ticket_types || [])
+  const advertisedDescription = !summary ? truncatedDescription
+    : `${summary.kind === 'free' ? t('events.free') : `${t('buyer.EventDetail.from', { value1: formatTicketPrice(summary.cents) })}. ${t(allInPriceNoteKey(event.ticket_types, event.service_fee_includes_processing === true), { platform: 'HåfaPass' })}`}. ${truncatedDescription}`.slice(0, 160)
   // A direct link still opens after a postponement or cancellation so ticket
   // holders can read the status; sales are closed and the page offers no buying.
   const closedStatus = ['postponed', 'cancelled'].includes(event.status) ? event.status : null
-  const onSale = !closedStatus && !event.private_preview && event.purchasable === true && (event.assigned_seating || lowestPrice !== null)
-  const buyBarPrice = lowestPrice === 0 ? t('buyer.EventDetail.free') : lowestPrice !== null ? t('buyer.EventDetail.from', { value1: formatTicketPrice(lowestPrice) }) : t('buyer.EventDetail.ticketsAvailable')
+  const onSale = !closedStatus && !event.private_preview && event.purchasable === true && (event.assigned_seating || summary !== null)
+  const buyBarPrice = summary?.kind === 'free' ? t('buyer.EventDetail.free') : summary ? t('buyer.EventDetail.from', { value1: formatTicketPrice(summary.cents) }) : t('buyer.EventDetail.ticketsAvailable')
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
