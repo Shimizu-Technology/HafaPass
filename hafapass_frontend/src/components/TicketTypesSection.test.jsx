@@ -127,3 +127,14 @@ it('shows a Multi-Night Pass badge and expandable included nights schedule on pa
   expect(screen.getByText('Opening Night')).toBeInTheDocument()
   expect(screen.getByText('Championship Night')).toBeInTheDocument()
 })
+
+it('gives every quantity stepper a 48px target and says a free ticket needs no payment', async () => {
+  const free = { id: 4, name: 'Free alumni', price_cents: 0, quantity_remaining: 50, on_sale: true }
+  const paid = { id: 5, name: 'Adult', price_cents: 1500, all_in_price_cents: 1650, service_fee_cents: 150, quantity_remaining: 50, on_sale: true }
+  render(<TicketTypesSection ticketTypes={[free, paid]} onCheckout={vi.fn()} />)
+  for (const name of ['Free alumni', 'Adult']) {
+    expect(screen.getByRole('button', { name: `Increase quantity for ${name}` })).toHaveClass('min-h-12', 'min-w-12')
+    expect(screen.getByRole('button', { name: `Decrease quantity for ${name}` })).toHaveClass('min-h-12', 'min-w-12')
+  }
+  expect(screen.getAllByText('Free — no payment needed.')).toHaveLength(1)
+})
