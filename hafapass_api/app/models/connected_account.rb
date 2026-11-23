@@ -2,7 +2,7 @@
 
 class ConnectedAccount < ApplicationRecord
   PROVIDERS = %w[paypal manual stripe legacy_manual check].freeze
-  BANK_TRANSFERS_ENABLED = false
+  BANK_TRANSFERS_ENABLED = true
   BANK_UNAVAILABLE_REASON = "Bank transfer is not available yet — HåfaPass currently pays by check"
   CHECK_DELIVERY_METHODS = %w[mail pickup].freeze
   MANUAL_PROVIDERS = %w[check manual].freeze
@@ -30,10 +30,12 @@ class ConnectedAccount < ApplicationRecord
   end
 
   def payout_supported?
-    !%w[manual legacy_manual].include?(provider) || BANK_TRANSFERS_ENABLED
+    provider != "legacy_manual" && (provider != "manual" || BANK_TRANSFERS_ENABLED)
   end
 
   def externally_ready?
+    return false if provider == "manual" && !bank_details_complete?
+
     !status_disabled? && charges_enabled? && payouts_enabled? && details_submitted? && provider_requirements_due.blank?
   end
 
@@ -126,7 +128,7 @@ class ConnectedAccount < ApplicationRecord
       check_payee["payee_name"].present? && CHECK_DELIVERY_METHODS.include?(check_payee["delivery_method"]) &&
         (check_payee["delivery_method"] == "pickup" || check_payee["mailing_address"].present?)
     elsif provider == "manual"
-      payout_details.to_h.values_at("bank_name", "account_holder_name").all?(&:present?) && bank_account_number.present?
+      bank_details_complete?
     end
     missing << "Payout details incomplete" unless complete
     missing << "Payout method is disabled" if status_disabled?
@@ -134,6 +136,10 @@ class ConnectedAccount < ApplicationRecord
   end
 
   private
+
+  def bank_details_complete?
+    payout_details.to_h.values_at("bank_name", "account_holder_name").all?(&:present?) && bank_account_number.present?
+  end
 
   def check_payee_details
     unless payout_details.is_a?(Hash)

@@ -3,6 +3,7 @@ import { payoutReviewLabel, payoutRequirementLabel } from '../../utils/payoutLab
 import { CheckCircle2, CircleAlert, Landmark, Mail, WalletCards } from 'lucide-react'
 import { useState } from 'react'
 import usePlatformFeeTerms from '../../hooks/usePlatformFeeTerms'
+import BankPayoutDetails from './BankPayoutDetails'
 
 const emptyCheck = { payee_name: '', delivery_method: 'mail', mailing_address: '', pickup_note: '', memo: '' }
 
@@ -29,12 +30,14 @@ function AccountStatus({ account }) {
 }
 
 // How an organizer gets paid. HåfaPass collects ticket money and pays the
-// organizer after each event settles; a check from Shimizu Technology is the
-// only available method for now.
+// organizer after each event settles.
 export default function PayoutMethodSection({ accounts, busy, onSave, error, notice }) {
   const fees = usePlatformFeeTerms()
   const checkAccount = accounts.find(item => item.provider === 'check')
-  const method = 'check'
+  const bankAccount = accounts.find(item => item.provider === 'manual')
+  const selectedMethod = bankAccount?.selected ? 'manual' : 'check'
+  const [viewedMethod, setViewedMethod] = useState(null)
+  const method = viewedMethod || selectedMethod
   const [details, setDetails] = useState(() => ({ ...emptyCheck, ...(checkAccount?.payout_details || {}) }))
   const [errors, setErrors] = useState({})
   const [editing, setEditing] = useState(!checkAccount)
@@ -57,18 +60,18 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6" aria-labelledby="payout-heading">
       <div className="flex items-center gap-3"><WalletCards aria-hidden="true" className="h-5 w-5 text-brand-600" /><h2 id="payout-heading" className="text-lg font-semibold text-neutral-900">How you get paid</h2></div>
-      <p className="mt-2 text-sm text-neutral-700">HåfaPass collects ticket money for you. Payouts by check {formatPayoutSchedule(schedule) || 'after each event settles.'}</p>
+      <p className="mt-2 text-sm text-neutral-700">HåfaPass collects ticket money for you. Payouts are sent {formatPayoutSchedule(schedule) || 'after each event settles.'}</p>
 
       <fieldset className="mt-5" disabled={busy}>
         <legend className="sr-only">Payout method</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {[
             { value: 'check', icon: Mail, title: 'Check', body: 'A check from Shimizu Technology, mailed to you or ready for pickup.' },
-            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'Not available yet — HåfaPass currently pays by check.' },
+            { value: 'manual', icon: Landmark, title: 'Bank transfer', body: 'HåfaPass sends the payout to your approved bank account.' },
           ].map(option => (
             <label key={option.value} className={`flex min-h-11 gap-3 rounded-xl border p-3 transition-colors duration-150 ease-out-strong ${method === option.value ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 [@media(hover:hover)]:hover:border-neutral-300'}`}>
-              <input type="radio" name="payout-method" value={option.value} checked={method === option.value} readOnly disabled={option.value === 'manual'} className="mt-1 h-4 w-4 shrink-0 accent-brand-600" />
-              <span><span className="flex items-center gap-2 text-sm font-semibold text-neutral-900"><option.icon aria-hidden="true" className="h-4 w-4" />{option.title}{option.value === 'check' && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">Standard</span>}</span><span className="block text-sm text-content-muted">{option.body}</span></span>
+              <input type="radio" name="payout-method" value={option.value} checked={method === option.value} onChange={() => setViewedMethod(option.value)} className="mt-1 h-4 w-4 shrink-0 accent-brand-600" />
+              <span><span className="flex items-center gap-2 text-sm font-semibold text-neutral-900"><option.icon aria-hidden="true" className="h-4 w-4" />{option.title}</span><span className="block text-sm text-content-muted">{option.body}</span></span>
             </label>
           ))}
         </div>
@@ -136,11 +139,22 @@ export default function PayoutMethodSection({ accounts, busy, onSave, error, not
         </div>
       )}
 
+      {method === 'manual' && (
+        <div className="mt-5">
+          <BankPayoutDetails account={bankAccount} busy={busy} onSave={onSave} />
+          {bankAccount?.selected && <p className="mt-3 text-sm font-semibold text-neutral-800">Selected payout method</p>}
+          {bankAccount?.payout_details?.masked_account && !bankAccount.selected && (
+            <button type="button" disabled={busy} onClick={() => onSave({ provider: 'manual', accountId: bankAccount.id })} className="btn-primary mt-4">Use this bank payout method</button>
+          )}
+          <AccountStatus account={bankAccount} />
+        </div>
+      )}
+
       {accounts.some(item => ['paypal', 'stripe'].includes(item.provider)) && (
         <details className="mt-5 rounded-xl border border-neutral-200 p-4 text-sm">
           <summary className="min-h-11 cursor-pointer font-semibold text-neutral-800">Earlier PayPal or Stripe setup</summary>
           {accounts.filter(item => ['paypal', 'stripe'].includes(item.provider)).map(item => (
-            <p key={item.id} className="mt-2 text-neutral-700">{item.provider === 'paypal' ? 'PayPal' : 'Stripe'}: {item.payout_ready ? 'ready' : 'not in use'}. HåfaPass currently pays organizers by check.</p>
+            <p key={item.id} className="mt-2 text-neutral-700">{item.provider === 'paypal' ? 'PayPal' : 'Stripe'}: {item.payout_ready ? 'ready' : 'not in use'}. Choose a payout method above for your event proceeds.</p>
           ))}
         </details>
       )}

@@ -460,7 +460,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
   return <>
     <form onSubmit={createPayout} className="mb-5 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
       <h2 className="font-semibold">Request payout from finalized settlement</h2>
-      <p className="mt-1 text-sm text-neutral-700">A tax hold blocks the request by default. An override requires an admin reason and is audited. Enter a gross amount; the saved payout shows any withholding and net check amount.</p>
+      <p className="mt-1 text-sm text-neutral-700">A tax hold blocks the request by default. An override requires an admin reason and is audited. Enter a gross amount; the saved payout shows any withholding and net amount to send.</p>
       {createError && <p role="alert" className="mt-2 text-sm text-red-800">{createError}</p>}
       <div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-medium">Settlement ID<input className="input mt-1" required inputMode="numeric" pattern="[0-9]+" value={payoutForm.settlement_id} onChange={e => setPayoutForm(prev => ({ ...prev, settlement_id: e.target.value }))} /></label>
         <label className="text-sm font-medium">Gross amount (cents, optional)<input className="input mt-1" type="number" min="1" step="1" value={payoutForm.amount_cents} onChange={e => setPayoutForm(prev => ({ ...prev, amount_cents: e.target.value }))} /></label>

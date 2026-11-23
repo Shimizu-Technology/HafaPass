@@ -86,7 +86,7 @@ for (const width of [375, 1280]) {
     await page.reload(); await expect(page.getByText('Changes requested', { exact: true })).toBeVisible()
     await accessible(page, width)
   })
-  test(`organizer check-only selection persists at ${width}`, async ({ page }) => {
+  test(`organizer can switch payout methods and selection persists at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await base(page)
     const account = { ...accountFixture(), selected: false, payout_ready: true, payout_review: { ...accountFixture().payout_review, status: 'approved' } }
     await page.route('**/api/v1/organizer/organizations', route => json(route, [{ id: 7, name: 'Island Events', role: 'owner', permissions: { manage_payout_settings: true, manage_organization: true } }]))
@@ -100,9 +100,9 @@ for (const width of [375, 1280]) {
     })
     await page.goto('/dashboard/settings')
     const payouts = page.getByRole('region', { name: 'How you get paid' })
-    await expect(payouts.getByRole('radio', { name: /Bank transfer/ })).toBeDisabled()
-    await expect(payouts.getByText('Not available yet — HåfaPass currently pays by check.')).toBeVisible()
-    await expect(payouts.getByLabel('Account number', { exact: true })).toHaveCount(0)
+    await payouts.getByRole('radio', { name: /Bank transfer/ }).check()
+    await expect(payouts.getByLabel('Account number', { exact: true })).toBeVisible()
+    await payouts.getByRole('radio', { name: /^Check A check/ }).check()
     await payouts.getByRole('button', { name: 'Use this check payout method' }).click()
     await expect(payouts.getByText('Selected payout method')).toBeVisible()
     await page.reload()
