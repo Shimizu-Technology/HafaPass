@@ -15,6 +15,41 @@ async function prepare(page, permissions = event.permissions) {
   await page.route('**/api/v1/organizer/events/601/guest_list', route => json(route, []))
 }
 
+for (const width of [375, 1280]) {
+  test(`organizer previews and saves door verification at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await prepare(page)
+    let ticketType = { id: 7, name: 'Free Alumni', price_cents: 0, quantity_available: 20, quantity_sold: 0 }
+    await page.route('**/api/v1/organizer/events/601', route => json(route, { ...event, ticket_types: [ticketType],
+      scanner_questions: [{ id: 1, position: 0, show_on_scanner: true, ticket_type_ids: [7], scope: 'ticket',
+        kind: 'number', prompt: 'Graduation Year' }] }))
+    await page.route('**/api/v1/organizer/events/601/ticket_types/7', route => {
+      ticketType = { ...ticketType, ...route.request().postDataJSON() }
+      return json(route, ticketType)
+    })
+    await page.goto('/dashboard/events/601/edit')
+    await page.getByRole('button', { name: 'Edit Free Alumni' }).click()
+    const preview = page.getByRole('region', { name: 'Live Door Scanner Preview' })
+    await expect(preview.getByText('Admitted', { exact: true })).toBeVisible()
+    await page.getByRole('radio', { name: /Hold & Verify at Door/ }).check()
+    await page.getByLabel('Alert Banner').fill('ALUMNI — ID CHECK')
+    await page.getByLabel('Staff Instructions').fill('Ask which year they graduated.')
+    await page.getByRole('checkbox', { name: /Show buyer name/ }).check()
+    for (const copy of ['ALUMNI — ID CHECK', 'For: Maria Cruz', 'Bought by Pat Cruz', 'Ask which year they graduated.', '1998']) {
+      await expect(preview.getByText(copy, { exact: true })).toBeVisible()
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    const update = page.getByRole('button', { name: 'Update', exact: true })
+    expect((await update.boundingBox()).height).toBeGreaterThanOrEqual(48)
+    await update.click()
+    await expect(preview).toHaveCount(0)
+    expect(ticketType).toMatchObject({ door_check_mode: 'verify', door_alert_label: 'ALUMNI — ID CHECK',
+      scanner_show_buyer: true, door_instructions: 'Ask which year they graduated.' })
+    await page.getByRole('button', { name: 'Edit Free Alumni' }).click()
+    await expect(preview.getByText('ALUMNI — ID CHECK', { exact: true })).toBeVisible()
+  })
+}
+
 for (const width of [390, 1440]) {
   test(`event workspace protects a dirty draft and keeps navigation reachable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })

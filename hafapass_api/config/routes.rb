@@ -199,6 +199,7 @@ Rails.application.routes.draw do
           resources :scanner_devices, only: [:index, :create, :update, :destroy] do
             member do
               get :manifest
+              post :scan
               post :sync
               post :recover
             end

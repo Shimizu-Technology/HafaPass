@@ -50,7 +50,13 @@ module Api
         end
 
         def show
-          render json: event_json(@event, include_ticket_types: true)
+          json = event_json(@event, include_ticket_types: true)
+          if json[:permissions][:manage_inventory]
+            json[:scanner_questions] = @event.registration_questions.where(show_on_scanner: true).order(:position, :id).map do |question|
+              question.as_json(only: %i[id prompt kind scope position options ticket_type_ids validation_rules show_on_scanner])
+            end
+          end
+          render json: json
         end
 
         def preview_link
@@ -857,6 +863,10 @@ module Api
                 max_per_order: tt.max_per_order,
                 max_per_buyer: tt.max_per_buyer,
                 attendee_info_mode: tt.attendee_info_mode,
+                door_check_mode: tt.door_check_mode,
+                door_alert_label: tt.door_alert_label,
+                door_instructions: tt.door_instructions,
+                scanner_show_buyer: tt.scanner_show_buyer,
                 sales_start_at: tt.sales_start_at,
                 sales_end_at: tt.sales_end_at,
                 is_pass: tt.is_pass?,
