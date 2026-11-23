@@ -8,7 +8,7 @@ vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 const event = { id: 37, slug: 'community-night', title: 'Community night', starts_at: '2099-10-20T08:00:00Z', timezone: 'Pacific/Guam', ticket_types: [] }
 function Destination() { const location = useLocation(); return <p>Browse destination {location.pathname}{location.search}</p> }
-function mount() { return render(<MemoryRouter><Routes><Route path="/" element={<HomePage />} /><Route path="/events" element={<Destination />} /><Route path="/host" element={<h1>Host your event</h1>} /></Routes></MemoryRouter>) }
+function mount() { return render(<MemoryRouter><Routes><Route path="/" element={<HomePage />} /><Route path="/events" element={<Destination />} /><Route path="/events/:slug" element={<Destination />} /><Route path="/host" element={<h1>Host your event</h1>} /></Routes></MemoryRouter>) }
 const pointer = coarse => vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: coarse && query === '(pointer: coarse)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 beforeEach(() => { apiClient.get.mockReset(); apiClient.get.mockResolvedValue({data:{events:[]}}) })
 afterEach(() => { vi.unstubAllGlobals() })
@@ -86,9 +86,10 @@ describe('the public ticket', () => {
  it('drops the hero hosting stub and keeps order recovery once events load', async () => {
   apiClient.get.mockResolvedValue({data:{events:[event]}})
   const {container}=mount()
-  await screen.findByRole('list',{name:'Coming up'})
-  const hero=container.querySelector('.hero-ticket')
-  expect(within(hero).queryByRole('link',{name:'Sell tickets'})).not.toBeInTheDocument()
+  await screen.findByRole('list',{name:'Coming up on Guam'})
+  const hero=container.querySelector('.hero-search')
+  expect(container.querySelector('.hero-ticket')).not.toBeInTheDocument()
+  expect(screen.queryByRole('link',{name:'Sell tickets'})).not.toBeInTheDocument()
   expect(within(hero).getByRole('link',{name:'Already bought a ticket? Find it'})).toHaveAttribute('href','/orders/recover')
   expect(screen.queryByRole('region',{name:'How your pass works'})).not.toBeInTheDocument()
   expect(screen.getByRole('heading',{name:'Planning an event?'})).toBeInTheDocument()
@@ -117,7 +118,7 @@ describe('the public ticket', () => {
   mount(); expect(await screen.findByRole('alert')).toHaveTextContent('Events couldn’t load')
   expect(screen.queryByText('The first events are on their way.')).not.toBeInTheDocument()
   await userEvent.setup().click(screen.getByRole('button',{name:'Retry events'}))
-  expect(await screen.findByRole('link',{name:/Community night/})).toHaveAttribute('href','/events/community-night')
+  expect(within(await screen.findByRole('list',{name:'Coming up on Guam'})).getByRole('link',{name:/Community night/})).toHaveAttribute('href','/events/community-night')
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
  })
  it('carries all working controls into the Events query contract', async () => {
@@ -135,7 +136,7 @@ describe('the public ticket', () => {
  it('folds featured events into one row and sorts without mutating the API array', async()=>{
   const events=Object.freeze([{...event,id:38,slug:'later',title:'Later featured event',is_featured:true,starts_at:'2099-10-21T08:00:00Z'},event])
   apiClient.get.mockResolvedValue({data:{events}}); mount()
-  const row=await screen.findByRole('list',{name:'Coming up'})
+  const row=await screen.findByRole('list',{name:'Coming up on Guam'})
   expect(within(row).getAllByRole('link').map(a=>a.getAttribute('href'))).toEqual(['/events/later','/events/community-night'])
   expect(events.map(e=>e.id)).toEqual([38,37])
   expect(screen.getByRole('link',{name:'Food & Drink'})).toHaveAttribute('href','/events?category=dining')
@@ -147,3 +148,83 @@ describe('the public ticket', () => {
   expect(screen.getByLabelText('Tuesday, Oct 20, 2099')).toBeInTheDocument()
  })
 })
+
+// jsdom has no PointerEvent; without it fireEvent drops clientX and pointerType.
+class TestPointerEvent extends MouseEvent {
+  constructor(type, init = {}) { super(type, init); this.pointerId = init.pointerId ?? 1; this.pointerType = init.pointerType ?? 'mouse' }
+}
+describe('discovery first', () => {
+ beforeEach(() => { window.PointerEvent = TestPointerEvent })
+ afterEach(() => { delete window.PointerEvent })
+ const stubOf=container=>container.querySelector('.featured-pass')
+ it('splits the headline into rising words while keeping the whole sentence as its name', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[event]}}); const {container}=mount()
+  await screen.findByRole('list',{name:'Coming up on Guam'})
+  const heading=screen.getByRole('heading',{level:1,name:'Your night out on Guam starts here.'})
+  expect(heading.querySelectorAll('.hero-rise-word')).toHaveLength(7)
+  expect(stubOf(container)).toBeInTheDocument()
+ })
+ it('shows the next event as a featured pass that opens the event and stays still under reduced motion', async () => {
+  vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+  const featured={...event,id:40,slug:'reef-fest',title:'Reef fest',is_featured:true,venue_name:'Ypao Beach Park',venue_city:'Tumon',ticket_types:[{price_cents:0,quantity_remaining:5,on_sale:true}]}
+  apiClient.get.mockResolvedValue({data:{events:[event,featured]}}); const {container}=mount()
+  await screen.findByRole('list',{name:'Coming up on Guam'})
+  const pass=stubOf(container)
+  expect(pass).toHaveAttribute('href','/events/reef-fest')
+  expect(pass).toHaveTextContent('Featured on Guam')
+  expect(pass).toHaveTextContent('Reef fest')
+  expect(pass).toHaveTextContent('Ypao Beach Park · Tumon')
+  expect(pass).toHaveTextContent('See tickets')
+  expect(pass.style.transform).toBe('rotateX(4deg) rotateY(-9deg)')
+  // A keyboard reaches it as one link; Enter follows it.
+  pass.focus(); expect(pass).toHaveFocus()
+  // Reduced motion: no tilt handlers, so a pointer leaves the resting pose alone.
+  fireEvent.pointerMove(pass.parentElement,{pointerType:'mouse',clientX:5,clientY:5})
+  expect(pass.style.transform).toBe('rotateX(4deg) rotateY(-9deg)')
+  await userEvent.setup().click(pass)
+  expect(screen.getByText('Browse destination /events/reef-fest')).toBeInTheDocument()
+ })
+ it('never follows the pass after a sideways finger drag', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[event]}}); const {container}=mount()
+  await screen.findByRole('list',{name:'Coming up on Guam'})
+  const pass=stubOf(container); const stage=pass.parentElement
+  fireEvent.pointerDown(stage,{pointerType:'touch',pointerId:3,clientX:100,clientY:100})
+  fireEvent.pointerMove(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
+  fireEvent.pointerUp(stage,{pointerType:'touch',pointerId:3,clientX:160,clientY:104})
+  // The click this drag produces (a pointer click, detail 1) is swallowed; the next tap opens.
+  const dragClick = () => Object.assign(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }), { pointerId: 3, pointerType: 'touch' })
+  fireEvent(pass, dragClick())
+  expect(screen.queryByText(/Browse destination/)).not.toBeInTheDocument()
+  fireEvent(pass, dragClick())
+  expect(screen.getByText('Browse destination /events/community-night')).toBeInTheDocument()
+ })
+ it('opens the date and village choices from a labeled 48px button on phones', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[event]}}); mount()
+  const toggle=await screen.findByRole('button',{name:'Choose a date or village'})
+  expect(toggle).toHaveClass('min-h-12','sm:hidden')
+  expect(toggle).toHaveAttribute('aria-expanded','false')
+  const filters=document.getElementById(toggle.getAttribute('aria-controls'))
+  expect(filters).toHaveClass('hidden','sm:grid')
+  await userEvent.setup().click(toggle)
+  expect(toggle).toHaveAttribute('aria-expanded','true')
+  expect(filters).toHaveClass('grid')
+  expect(filters).not.toHaveClass('hidden')
+  for (const field of [screen.getByLabelText('When'),screen.getByLabelText('Where'),screen.getByRole('searchbox',{name:'Event or venue'})]) expect(field).toHaveClass('border-neutral-500')
+ })
+ it('puts one-tap time and village shortcuts beside the events, busiest village first', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[{...event,venue_city:'Hagåtña'},{...event,id:41,slug:'b',venue_city:'Dededo'},{...event,id:42,slug:'c',venue_city:'Dededo'}]}})
+  mount()
+  const chips=within(await screen.findByRole('list',{name:'Quick filters'})).getAllByRole('link')
+  expect(chips.map(link=>[link.textContent,link.getAttribute('href')])).toEqual([
+   ['Tonight','/events?date=tonight'],['This weekend','/events?date=weekend'],
+   ['Dededo','/events?village=Dededo'],['Hagåtña','/events?village=Hag%C3%A5t%C3%B1a'],
+  ])
+ })
+ it('tells the ticket story finished and still before motion is allowed', async () => {
+  apiClient.get.mockResolvedValue({data:{events:[event]}}); mount()
+  const story=await screen.findByRole('region',{name:'From your phone to the door'})
+  expect(within(story).getAllByRole('heading',{level:3}).map(item=>item.textContent)).toEqual(['Pick your night','Instant QR pass','Fast scan at the door'])
+  expect(story).toHaveTextContent('Community night')
+ })
+})
+

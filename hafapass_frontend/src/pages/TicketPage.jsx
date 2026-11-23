@@ -6,11 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { useLocation, useParams, Link } from 'react-router-dom'
-import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Calendar, MapPin, Clock, AlertTriangle, Loader2, Download, Share2, Smartphone, ChevronDown, ChevronUp, Sparkles, Sun } from 'lucide-react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import api, { getApiAuthContext, subscribeApiAuthContext } from '../api/client'
 import QRCode from '../components/QRCode'
 import PassTicketCard from '../components/PassTicketCard'
+import TicketSwitcher from '../components/TicketSwitcher'
+import useMotionOk from '../hooks/useMotionOk'
+import useTilt from '../hooks/useTilt'
 import SEO from '../components/SEO'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, getOrderAccess, orderAccessHeaders } from '../utils/orderAccess'
@@ -83,7 +86,7 @@ function WalletButton({ label, icon, onClick, disabled, loading }) {
   const { t } = useTranslation()
   return (
       <button onClick={onClick} disabled={disabled || loading}
-        className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50">
+        className="w-full min-h-12 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-50">
         {icon}
         <span>{loading ? t('buyerAccount.ticketPage.opening') : label}</span>
       </button>
@@ -93,7 +96,7 @@ function WalletButton({ label, icon, onClick, disabled, loading }) {
 // Apple Wallet icon (SVG)
 function AppleWalletIcon() {
   return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
@@ -103,7 +106,7 @@ function AppleWalletIcon() {
 // Google Wallet icon (SVG)
 function GoogleWalletIcon() {
   return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7" />
       <circle cx="18" cy="18" r="3" />
       <path d="M18 15v6" />
@@ -113,15 +116,15 @@ function GoogleWalletIcon() {
 }
 
 export default function TicketPage() {
-  const { credential } = useParams()
   const location = useLocation()
   const orderId = new URLSearchParams(location.search).get('order')
-  const routeKey = JSON.stringify([credential, orderId])
+  // Keyed by order, not ticket: previous/next keeps the order's ticket list.
   return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-    ? <AuthenticatedTicket key={routeKey} /> : <TicketContent key={routeKey} />
+    ? <AuthenticatedTicket key={orderId || ''} orderId={orderId} />
+    : <OrderTickets key={JSON.stringify([orderId, getOrderAccess(orderId)])} orderId={orderId} />
 }
 
-function AuthenticatedTicket() {
+function AuthenticatedTicket({ orderId }) {
   const { t } = useTranslation()
   const { isLoaded, userId, sessionId } = useAuth()
   const context = useSyncExternalStore(subscribeApiAuthContext, getApiAuthContext)
@@ -132,8 +135,61 @@ function AuthenticatedTicket() {
   }
   // Guests keep their explicit order capability; signed-in requests bind to the
   // authoritative session. A changed session remounts private state immediately.
-  return <TicketContent key={JSON.stringify([userId, sessionId, context?.generation])}
-    authContext={userId ? context : undefined} />
+  return <OrderTickets key={JSON.stringify([userId, sessionId, context?.generation, orderId, getOrderAccess(orderId)])}
+    orderId={orderId} authContext={userId ? context : undefined} />
+}
+
+// One order's tickets, scoped to the order, the account session and the guest
+// token. Paging between them remounts only the ticket itself, which fetches
+// its own QR; the list, a pending focus move and the entrance stay here.
+function OrderTickets({ orderId, authContext }) {
+  const { credential } = useParams()
+  const [siblings, setSiblings] = useState(null)
+  const alive = useRef(false)
+  const loaded = useRef(false)
+  const pending = useRef(false)
+  const shown = useRef(false)
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
+  // Loaded once per scope. Paging never drops a request in flight; until the
+  // list arrives, each newly opened ticket tries again.
+  useEffect(() => {
+    if (!orderId || loaded.current || pending.current) return
+    pending.current = true
+    const scope = { buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) }
+    const current = () => alive.current && checkoutBuyerIdentity() === scope.buyerId && getApiAuthContext() === scope.auth
+      && getOrderAccess(orderId) === scope.token
+    api.get(`/orders/${encodeURIComponent(orderId)}`, { headers: orderAccessHeaders(orderId, scope.token), authContext })
+      .then(response => {
+        if (!current()) return
+        loaded.current = true
+        setSiblings(switchableTickets(response.data))
+      })
+      .catch(() => {})
+      .finally(() => { pending.current = false })
+  }, [orderId, authContext, credential])
+  const content = <TicketContent key={JSON.stringify([credential, orderId])} authContext={authContext}
+    siblings={siblings || []} shown={shown} framed={Boolean(orderId)} />
+  if (!orderId) return content
+  // Inside an order the frame and the switcher stay mounted while each ticket
+  // loads, fails or shows, so paging keeps focus on the switcher and the QR in
+  // place. Links mark the move as a ticket switch so Layout keeps scroll and focus.
+  const list = siblings || []
+  const position = list.findIndex(item => item.display_credential === credential)
+  const sibling = item => item && { to: `/tickets/${encodeURIComponent(item.display_credential)}?order=${encodeURIComponent(orderId)}`, state: { ticketSwitch: true } }
+  return (
+    <div className="min-h-dvh bg-brand-950 flex items-start justify-center px-3 sm:px-4 py-6 sm:py-8">
+      <div className="flex w-full flex-col items-center">
+        {position >= 0 && list.length > 1 && <div className="mb-4 w-full max-w-[380px] sm:max-w-sm">
+          <TicketSwitcher tone="dark" position={position + 1} total={list.length} name={list[position].attendee_name}
+            previous={sibling(list[position - 1])} next={sibling(list[position + 1])} />
+        </div>}
+        {content}
+      </div>
+    </div>
+  )
 }
 
 // Follows connectivity changes so the offline explanation appears and clears
@@ -148,6 +204,13 @@ const subscribeConnectivity = callback => {
 }
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
+// The keepsake lean follows a mouse only: on a phone the QR must lie flat for the scanner.
+const finePointer = () => typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches === true
+
+// The other single tickets in this order, in order, for the previous/next switcher.
+const switchableTickets = order => (Array.isArray(order?.tickets) ? order.tickets : [])
+  .filter(item => item.display_credential && !(item.pass_parent || item.is_pass))
+
 // Loads support contact details only for the holders who need them.
 function TransferredRefundSupport() {
   const { t } = useTranslation()
@@ -160,7 +223,8 @@ function TransferredRefundSupport() {
   )
 }
 
-function TicketContent({ authContext }) {
+// `framed`: OrderTickets draws the page frame (and any switcher) around this ticket.
+function TicketContent({ authContext, siblings: orderTickets = [], shown, framed = false }) {
   const { t } = useTranslation()
   const offline = useSyncExternalStore(subscribeConnectivity, isOffline, () => false)
   const reducedMotion = useReducedMotion()
@@ -176,6 +240,10 @@ function TicketContent({ authContext }) {
   const [downloadError, setDownloadError] = useState(null)
   const [walletLoading, setWalletLoading] = useState(null)
   const [walletError, setWalletError] = useState(null)
+  // A ticket reached with previous/next appears in place, without the entrance.
+  const [enter] = useState(() => !shown?.current)
+  const motionOk = useMotionOk()
+  const tilt = useTilt({ enabled: motionOk && finePointer(), max: 4 })
   const lifecycle = useRef({ active: false, generation: 0 })
   const access = useRef({ buyerId: checkoutBuyerIdentity(), auth: getApiAuthContext(), token: getOrderAccess(orderId) })
   useLayoutEffect(() => {
@@ -221,6 +289,8 @@ function TicketContent({ authContext }) {
     fetchTicket()
     return () => { active = false }
   }, [credential, orderId, authContext, t, loadAttempt])
+
+  useEffect(() => { if (ticket && shown) shown.current = true }, [ticket, shown])
 
   async function handleDownload() {
     const current = currentOperation()
@@ -308,18 +378,23 @@ function TicketContent({ authContext }) {
     }
   }
 
+  const page = (className, children) => framed ? children : <div className={className}>{children}</div>
+
   if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-dvh bg-brand-950">
+    // Inside an order, a calm placeholder holds the card's place under the switcher.
+    return framed
+      ? <div role="status" className="flex min-h-[32rem] w-full max-w-[380px] items-center justify-center rounded-[1.25rem] bg-white/5 sm:max-w-sm">
+        <Loader2 aria-hidden="true" className="w-10 h-10 text-brand-300 animate-spin" />
+        <span className="sr-only">{t('buyerAccount.ticketPage.loadingTicket')}</span>
+      </div>
+      : <div className="flex justify-center items-center min-h-dvh bg-brand-950">
         <Loader2 className="w-10 h-10 text-brand-500 animate-spin" />
       </div>
-    )
   }
 
   if (error) {
-    return (
-      <div className="min-h-dvh bg-brand-950 px-4 py-12 text-center">
-        <div className="card p-8 max-w-md mx-auto">
+    return page('min-h-dvh bg-brand-950 px-4 py-12 text-center', (
+        <div className={`card p-8 max-w-md mx-auto ${framed ? 'w-full text-center' : ''}`}>
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-neutral-950 mb-3">{t('buyerAccount.ticketPage.ticketUnavailable')}</h1>
           <div role="alert" className="mb-4">
@@ -328,23 +403,20 @@ function TicketContent({ authContext }) {
           </div>
           <div className="flex flex-wrap justify-center gap-3"><button type="button" className="btn-primary text-sm" onClick={() => setLoadAttempt(value => value + 1)}>{t('buyerAccount.ticketPage.tryAgain')}</button><Link to="/orders/recover" className="btn-secondary text-sm">{t('buyerAccount.ticketPage.findMyOrder')}</Link></div>
         </div>
-      </div>
-    )
+    ))
   }
 
   const { event, ticket_type } = ticket
   const isPassParent = Boolean(ticket.pass_parent || (ticket.is_pass && !ticket.pass_child))
 
   if (isPassParent) {
-    return (
-      <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+    return page('min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8', <>
         <SEO title={t('pageTitles.ticket')} noIndex />
         <div className="w-full max-w-md">
           <PassTicketCard ticket={ticket} event={event} orderId={orderId} showSummaryBanner />
           <AddToHomeScreenInstructions />
         </div>
-      </div>
-    )
+    </>)
   }
 
   const formatDate = (dateStr) => formatEventDate(dateStr, event?.timezone, { weekday: 'long', month: 'long' })
@@ -362,13 +434,14 @@ function TicketContent({ authContext }) {
   const status = accessPaused ? statusConfig.access_paused : statusConfig[ticket.status] || statusConfig.access_paused
   const showCredential = ticket.admission_allowed && Boolean(ticket.scan_credential)
   const wallets = visibleWallets(ticket.wallet_availability)
+  const position = orderTickets.findIndex(item => item.display_credential === credential)
+  const attendeeName = ticket.attendee_name || (position >= 0 ? orderTickets[position].attendee_name : null)
 
-  return (
-    <div className="min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8">
+  return page('min-h-dvh bg-brand-950 flex items-start sm:items-center justify-center px-3 sm:px-4 py-6 sm:py-8', <>
       <SEO title={t('pageTitles.ticket')} noIndex />
       <motion.div
         className="w-full max-w-[380px] sm:max-w-sm"
-        initial={reducedMotion ? false : { opacity: 1, y: 8 }}
+        initial={reducedMotion || !enter ? false : { opacity: 1, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.23, 1, 0.32, 1] }}
       >
@@ -383,8 +456,10 @@ function TicketContent({ authContext }) {
           </div>
         )}
         {/* Main Ticket Card */}
-        <div className="ticket">
+        <div className="wallet-tilt" {...tilt.handlers}>
+        <div ref={tilt.ref} className="ticket wallet-ticket">
           <TicketTop className="overflow-hidden">
+          {motionOk && finePointer() && <span aria-hidden="true" className="wallet-foil"><span ref={tilt.sheenRef} /></span>}
           {/* Cover image banner */}
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
             <div className="h-32 sm:h-36 overflow-hidden relative">
@@ -428,7 +503,7 @@ function TicketContent({ authContext }) {
             <div className="bg-white p-3 rounded-xl border border-neutral-100 shadow-sm">
               <QRCode value={ticket.scan_credential} size={280} className="block w-full max-w-[17.5rem] h-auto" />
             </div>
-            <p className="mt-2 text-xs text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
+            <p className="mt-2 text-sm text-content-muted tabular-nums break-all text-center select-all">{t('buyerAccount.ticketPage.ticketHPT', { id: ticket.id })}</p>
           </motion.div> : (
             <div className="px-6 py-8 text-center">
               <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-neutral-400" />
@@ -439,6 +514,16 @@ function TicketContent({ authContext }) {
             </div>
           )}
 
+          {/* Who and what, readable at arm's length for door staff. */}
+          <div className="px-4 pb-5 text-center sm:px-6">
+            <p className="font-display text-2xl font-bold leading-tight text-neutral-950 [overflow-wrap:anywhere]">{ticket_type.name}</p>
+            {attendeeName && <p className="mt-1 text-xl font-semibold text-neutral-800 [overflow-wrap:anywhere]">{attendeeName}</p>}
+            {ticket.seat && <p className="mt-1 text-lg font-semibold text-brand-800">{ticket.seat.display_label}</p>}
+            {showCredential && <p className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-amber-50 px-4 py-3 text-left text-base font-medium text-amber-950">
+              <Sun aria-hidden="true" className="h-5 w-5 shrink-0" />{t('buyerAccount.ticketPage.brightnessTip')}
+            </p>}
+          </div>
+
           </TicketTop>
           <TicketStub>
 
@@ -447,8 +532,6 @@ function TicketContent({ authContext }) {
             <div>
               <h1 className="font-display text-lg font-bold text-neutral-900">{eventContent.title}</h1>
               <MachineTranslationNotice {...eventContent.notice} />
-              <p className="text-sm text-brand-800 font-semibold font-sans">{ticket_type.name}</p>
-              {ticket.seat && <p className="mt-1 text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
               {ticket.seat?.obstructed_view && <p className="mt-1 text-sm text-amber-700">{t('buyerAccount.ticketPage.obstructedView')}{ticket.seat.view_note ? `: ${ticket.seat.view_note}` : ''}</p>}
             </div>
 
@@ -484,18 +567,31 @@ function TicketContent({ authContext }) {
 
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons: one tap to a wallet, or a printable PDF. */}
           <div className="px-4 sm:px-6 pb-5 space-y-2.5">
+            {walletError && <p role="alert" className="text-center text-sm text-red-700">{walletError}</p>}
+            {(wallets.apple || wallets.google) && (
+              <div className={`grid grid-cols-1 gap-2 ${wallets.apple && wallets.google ? 'sm:grid-cols-2' : ''}`}>
+                {wallets.apple && (
+                  <WalletButton label={t('buyerAccount.ticketPage.appleWallet')} icon={<AppleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
+                )}
+                {wallets.google && (
+                  <WalletButton label={t('buyerAccount.ticketPage.googleWallet')} icon={<GoogleWalletIcon />} disabled={!showCredential}
+                    loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
+                )}
+              </div>
+            )}
             {/* Download PDF */}
             <button
               onClick={handleDownload}
               disabled={downloading || !showCredential}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl min-h-11 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl min-h-12 bg-action-teal hover:bg-action-teal-hover text-content-inverse text-base font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
             >
               {downloading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 aria-hidden="true" className="w-5 h-5 animate-spin" />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download aria-hidden="true" className="w-5 h-5" />
               )}
               <span>{downloading ? t('buyerAccount.ticketPage.generating') : t('buyerAccount.ticketPage.downloadPDF')}</span>
             </button>
@@ -516,19 +612,6 @@ function TicketContent({ authContext }) {
               <p className="text-center text-sm text-neutral-500">{t('buyerAccount.ticketPage.sharingDoesNotTransfer')}</p>
             )}
 
-            {walletError && <p role="alert" className="text-center text-sm text-red-700">{walletError}</p>}
-            {(wallets.apple || wallets.google) && (
-              <div className={`grid grid-cols-1 gap-2 ${wallets.apple && wallets.google ? 'sm:grid-cols-2' : ''}`}>
-                {wallets.apple && (
-                  <WalletButton label={t('buyerAccount.ticketPage.appleWallet')} icon={<AppleWalletIcon />} disabled={!showCredential}
-                    loading={walletLoading === 'apple'} onClick={() => handleWallet('apple')} />
-                )}
-                {wallets.google && (
-                  <WalletButton label={t('buyerAccount.ticketPage.googleWallet')} icon={<GoogleWalletIcon />} disabled={!showCredential}
-                    loading={walletLoading === 'google'} onClick={() => handleWallet('google')} />
-                )}
-              </div>
-            )}
           </div>
 
           {/* Footer */}
@@ -539,10 +622,10 @@ function TicketContent({ authContext }) {
           </div>
           </TicketStub>
         </div>
+        </div>
 
         {/* Add to Home Screen */}
         <AddToHomeScreenInstructions />
       </motion.div>
-    </div>
-  )
+  </>)
 }
