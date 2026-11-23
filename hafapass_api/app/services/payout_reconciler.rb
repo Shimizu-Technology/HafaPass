@@ -36,12 +36,20 @@ class PayoutReconciler
       end
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       raise ReconciliationError, "Transfer identifier is too long" if external_id.to_s.length > 255
-      withholding_only = payout.provider == "check" && payout.disbursement_cents.zero? &&
+      manual_payout = %w[check manual].include?(payout.provider)
+      if payout.provider == "manual"
+        account_number = payout.connected_account.bank_account_number
+        fields = [external_id, *normalized.values.grep(String).excluding(normalized["confirmed_at"])]
+        if account_number.present? && fields.any? { |value| value.to_s.gsub(/\D/, "").include?(account_number) }
+          raise ReconciliationError, "Leave full bank account numbers out of payout evidence"
+        end
+      end
+      withholding_only = manual_payout && payout.disbursement_cents.zero? &&
         external_id == "withholding_only_#{payout.id}"
       if status == "paid" && !withholding_only && (external_id.blank? || external_id.start_with?("sim_", "manual_po_", "withholding_only_"))
         raise ReconciliationError, "A real provider or bank transfer identifier is required to record payment"
       end
-      if status == "paid" && payout.provider == "check" && payout.disbursement_cents.zero? && !withholding_only
+      if status == "paid" && manual_payout && payout.disbursement_cents.zero? && !withholding_only
         raise ReconciliationError, "Use the withholding-only reference for a zero-net payout"
       end
       if external_id.present? && external_id != payout.provider_payout_id &&

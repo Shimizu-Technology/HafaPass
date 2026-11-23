@@ -216,8 +216,9 @@ class PayoutCreator
         amount_cents: amount,
         currency: settlement.currency,
         status: :pending,
-        payee_snapshot: account.check_payee,
-        payee_approval_digest: account.provider == "check" ? account.readiness_state_digest : nil,
+        payee_snapshot: account.safe_payout_details,
+        payee_approval_digest: account.provider == "manual" ? account.bank_destination_digest :
+          (account.provider == "check" ? account.readiness_state_digest : nil),
         tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
         tax_approval_digest: account.readiness_state_digest,
         **withholding

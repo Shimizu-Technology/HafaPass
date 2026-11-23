@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Manual bank transfer payout details", type: :request do
-  before { stub_const("ConnectedAccount::BANK_TRANSFERS_ENABLED", true) }
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:profile) { create(:organizer_profile) }
   let(:organization) { profile.organization }
   let(:admin) { create(:user, :admin) }
@@ -17,6 +18,7 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
     expect(response.parsed_body["payout_details"]).to eq("bank_name" => "Bank of Guam", "account_holder_name" => "Island Events LLC", "masked_account" => "•••• 9012")
     account = organization.connected_accounts.find_by!(provider: "manual")
     expect(account.bank_account_number).to eq("123456789012")
+    expect(account.as_json).not_to have_key("bank_account_number")
     ciphertext = ConnectedAccount.connection.select_value("SELECT bank_account_number FROM connected_accounts WHERE id = #{account.id.to_i}")
     expect(ciphertext).not_to include("123456789012")
     PayoutMethodReview.approve!(account: account, actor: admin, controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true),
@@ -112,6 +114,69 @@ RSpec.describe "Manual bank transfer payout details", type: :request do
         PayoutMethodReview.approve!(account: existing, actor: admin,
           controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true), expected_digest: PayoutMethodReview.digest(existing))
       }.to raise_error(PayoutMethodReview::ReviewError, /currently pays by check/)
+    end
+  end
+
+  it "records the initial bank transfer and releases the reserve through successive organizer statements" do
+    create(:organizer_tax_information, organization: organization)
+    post "/api/v1/organizer/connected_accounts", headers: headers, params: { provider: "manual", payout_details: details }
+    expect(response).to have_http_status(:created)
+    account = organization.connected_accounts.find_by!(provider: "manual")
+    PayoutMethodReview.approve!(account: account, actor: admin, controls: PaymentReadinessReview::MANUAL_CONTROL_KEYS.index_with(true),
+      expected_digest: PayoutMethodReview.digest(account))
+
+    event = create(:event, :completed, organization: organization, organizer_profile: profile)
+    create(:balance_adjustment, organization: organization, event: event, amount_cents: 10_000)
+    admin_headers = auth_headers(admin)
+    allow(PayoutGateway).to receive(:submit) do |payout|
+      PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing)
+    end
+    record_adjustment = lambda do |kind, amount_cents|
+      post "/api/v1/admin/balance_adjustments", headers: admin_headers,
+        params: { organization_id: organization.id, event_id: event.id, kind: kind, amount_cents: amount_cents,
+          reason: "Copa chargeback reserve" }
+      expect(response).to have_http_status(:created), response.body
+    end
+    record_payout = lambda do |settlement, cents, reference|
+      key_headers = admin_headers.merge("Idempotency-Key" => reference)
+      post "/api/v1/admin/payouts", headers: key_headers, params: { settlement_id: settlement.id, amount_cents: cents }
+      expect(response).to have_http_status(:created), response.body
+      payout = Payout.find(response.parsed_body.fetch("id"))
+      expect(payout).to have_attributes(provider: "manual", amount_cents: cents, status: "processing")
+      patch "/api/v1/admin/payouts/#{payout.id}", headers: admin_headers,
+        params: { status: "paid", provider_payout_id: reference,
+          evidence: { reference: reference, confirmed_at: Time.current.iso8601(6), reason: "Confirmed bank receipt and exact amount" } }
+      expect(response).to have_http_status(:ok), response.body
+      expect(payout.reload).to be_status_paid
+    end
+
+    record_adjustment.call("reserve_hold", -1000)
+    first = Settlements::Finalizer.call(event: event, actor: admin)
+    expect(first).to have_attributes(reserve_cents: 1000, available_to_payout_cents: 9000)
+    record_payout.call(first, 9000, "transfer-first")
+    payout = event.payouts.sole
+    expect(payout.payee_snapshot).to include("masked_account" => "•••• 9012")
+    expect(payout.payee_approval_digest).to eq(account.bank_destination_digest)
+
+    record_adjustment.call("reserve_release", 500)
+    mistaken_release_id = response.parsed_body.fetch("id")
+    delete "/api/v1/admin/balance_adjustments/#{mistaken_release_id}", headers: admin_headers,
+      params: { reason: "Release entered early" }
+    expect(response).to have_http_status(:created), response.body
+    expect(Settlements::Calculator.call(event).attributes.fetch(:reserve_cents)).to eq(1000)
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
+
+    travel 30.days do
+      record_adjustment.call("reserve_release", 1000)
+      second = Settlements::Finalizer.call(event: event, actor: admin)
+      expect(second).to have_attributes(reserve_cents: 0, available_to_payout_cents: 1000)
+      record_payout.call(second, 1000, "transfer-reserve")
+      get "/api/v1/organizer/events/#{event.id}/finance", headers: headers
+      expect(response).to have_http_status(:ok), response.body
+      expect(response.parsed_body.fetch("preview")).to include("reserve_cents" => 0, "paid_cents" => 10_000)
+      expect(response.parsed_body.fetch("payouts").pluck("provider_payout_id")).to eq(%w[transfer-reserve transfer-first])
+      expect(response.body).not_to include(details.fetch(:account_number))
+      expect(OrganizationPayoutBalance.available_cents(organization)).to eq(0)
     end
   end
 

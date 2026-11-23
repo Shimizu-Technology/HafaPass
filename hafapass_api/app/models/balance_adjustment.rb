@@ -22,7 +22,9 @@ class BalanceAdjustment < ApplicationRecord
   validate :order_matches_organization
   validate :dispute_matches_organization
 
-  scope :effective, -> { status_posted.where("effective_at <= ?", Time.current) }
+  # Reversal changes the original status for audit, while its counter-entry
+  # neutralizes the original amount in the effective ledger.
+  scope :effective, -> { where(status: [:posted, :reversed]).where("effective_at <= ?", Time.current) }
 
   before_update :protect_posted_financial_fields
   before_destroy :prevent_destruction
