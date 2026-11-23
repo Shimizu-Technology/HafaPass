@@ -144,12 +144,18 @@ function CheckoutContent({ buyerId }) {
   const [orderId, setOrderId] = useState(null)
   const [orderData, setOrderData] = useState(null)
   const refreshEventUrl = `/events/${slug}${liveMoneyProof ? '?live_money_proof=true' : ''}`
+  const pricingConflictLatestRef = useRef(null)
+  pricingConflictLatestRef.current = pricingConflict
   const handleScheduleRefresh = useCallback((nextEvent) => {
     setEvent(nextEvent)
-    setPricingConflict((current) => {
-      if (!current?.server_now || !nextEvent?.server_now) return current
-      return Date.parse(nextEvent.server_now) > Date.parse(current.server_now) ? null : current
-    })
+    const current = pricingConflictLatestRef.current
+    if (!current?.server_now || !nextEvent?.server_now) return
+    if (Date.parse(nextEvent.server_now) > Date.parse(current.server_now)) {
+      if (current.promoData && Number.isSafeInteger(current.discount_cents)) {
+        setPromoData((prev) => (prev === current.promoData ? { ...prev, discount_cents: current.discount_cents } : prev))
+      }
+      setPricingConflict(null)
+    }
   }, [])
   usePricingScheduleRefresh(event, !orderData && !submitting && !recovering ? refreshEventUrl : null, handleScheduleRefresh)
 

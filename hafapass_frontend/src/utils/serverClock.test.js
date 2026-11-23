@@ -38,3 +38,9 @@ it.each([
     `Fri, May 1 at 11:59 PM Guam time (ChST)${suffix}`,
   )
 })
+
+it('formats schedule dates using the requested interface locale', () => {
+  const formatted = formatScheduleTime('2026-05-01T13:59:00Z', 'Pacific/Guam', { includeLocal: false, locale: 'ja-JP' })
+  expect(formatted).toContain('5月1日')
+  expect(formatted).toContain('Guam time (ChST)')
+})

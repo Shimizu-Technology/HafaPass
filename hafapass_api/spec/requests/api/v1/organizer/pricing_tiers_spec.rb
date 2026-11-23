@@ -134,6 +134,28 @@ RSpec.describe "Api::V1::Organizer::PricingTiers", type: :request do
       }, headers: headers, as: :json
       expect(response).to have_http_status(:ok)
     end
+
+    it "rejects sales-window edits that leave one-sided tiers with no sales overlap" do
+      event.update!(timezone: "Pacific/Guam", starts_at: Time.utc(2027, 6, 1, 8, 0), ends_at: Time.utc(2027, 6, 2, 8, 0))
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Early Open",
+        starts_at: nil, ends_at: Time.utc(2027, 5, 5, 0, 0))
+      create(:pricing_tier, :time_based, ticket_type: ticket_type, name: "Late Open",
+        starts_at: Time.utc(2027, 5, 15, 0, 0), ends_at: nil)
+
+      put ticket_type_path, params: { sales_start_at: "2027-05-05T10:00" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").join(" ")).to include("Early Open")
+
+      put ticket_type_path, params: { sales_end_at: "2027-05-15T10:00" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body.fetch("errors").join(" ")).to include("Late Open")
+
+      put ticket_type_path, params: {
+        sales_start_at: "2027-05-04T10:00",
+        sales_end_at: "2027-05-16T10:00"
+      }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe "PATCH /pricing_tiers/:id/move" do

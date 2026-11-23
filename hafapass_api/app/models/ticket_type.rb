@@ -156,12 +156,16 @@ class TicketType < ApplicationRecord
       offender = tiers.find { |tier| tier.starts_at && tier.starts_at < sales_start_at }
       if offender
         errors.add(:sales_start_at, "cannot open after the \"#{offender.name}\" price window starts")
+      elsif (missed = tiers.find { |tier| tier.starts_at.nil? && tier.ends_at && tier.ends_at <= sales_start_at })
+        errors.add(:sales_start_at, "cannot open at or after the \"#{missed.name}\" price window ends")
       end
     end
     if sales_end_at
       offender = tiers.find { |tier| tier.ends_at && tier.ends_at > sales_end_at }
       if offender
         errors.add(:sales_end_at, "cannot close before the \"#{offender.name}\" price window ends")
+      elsif (missed = tiers.find { |tier| tier.ends_at.nil? && tier.starts_at && tier.starts_at >= sales_end_at })
+        errors.add(:sales_end_at, "cannot close at or before the \"#{missed.name}\" price window starts")
       end
     end
   end
