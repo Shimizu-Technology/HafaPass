@@ -18,6 +18,10 @@ class TicketPdfGenerator
     @ticket_type = ticket.ticket_type
     @scan_credential = ticket.scan_credential
     @seller = SellerIdentity.for_event(@event)
+    @locale = AppLocale.enabled_i18n_locale(ticket.order&.locale)
+    @labels = I18n.t("ticket_documents.pdf", locale: :en).merge(I18n.t("ticket_documents.pdf", locale: @locale))
+    @seller_line = I18n.t("ticket_documents.pdf.seller_line", locale: @locale,
+      seller: @seller.seller_name, service: @seller.ticketing_service)
   end
 
   def generate
@@ -25,7 +29,7 @@ class TicketPdfGenerator
       # Picks fonts for every character before the QR is made; text no bundled
       # font can draw raises instead of printing missing-glyph boxes.
       @unsupported = PdfFonts.configure(pdf, texts: [@event.title, @event.venue_name, @event.venue_address, @ticket_type.name,
-        @ticket.seat_label, @seller.line], locale: @ticket.order&.locale, strict: false)
+        @ticket.seat_label, @seller_line, *@labels.values], locale: @ticket.order&.locale, strict: false)
       # Reserve the header in the page margin so flowing text cannot overlap
       # repeated branding or rehearsal labels on continuation pages.
       pdf.repeat(:all, dynamic: true) do
@@ -36,8 +40,9 @@ class TicketPdfGenerator
       render_event_details(pdf)
       render_divider(pdf)
       render_ticket_details(pdf)
-      render_qr_code(pdf)
-      render_footer(pdf)
+      admissible = @ticket.admission_allowed?
+      render_qr_code(pdf) if admissible
+      render_footer(pdf, admissible: admissible)
     end.render
   end
 
@@ -57,7 +62,7 @@ class TicketPdfGenerator
 
     pdf.fill_color MUTED_TEXT
     pdf.font "TicketSans", size: 8
-    pdf.text Rails.env.production? ? "EVENT TICKET" : "TEST TICKET - REHEARSAL ONLY"
+    pdf.text @labels.fetch(Rails.env.production? ? :production_title : :rehearsal_title)
     pdf.move_down 16
   end
 
@@ -70,7 +75,7 @@ class TicketPdfGenerator
     if @event.cancelled? || @event.postponed?
       pdf.fill_color BRAND_CORAL
       pdf.font "TicketSans", style: :bold, size: 10
-      pdf.text "EVENT #{@event.status.upcase} — check your email for updates"
+      pdf.text @labels.fetch(@event.status.to_sym)
       pdf.move_down 8
     end
 
@@ -107,7 +112,7 @@ class TicketPdfGenerator
     pdf.move_down 4
     pdf.fill_color MUTED_TEXT
     pdf.font "TicketSans", size: 9
-    pdf.text "TICKET #"
+    pdf.text @labels.fetch(:ticket_number)
     pdf.fill_color DARK_TEXT
     pdf.font "Courier", size: 8
     pdf.text "HP-T#{@ticket.id}"
@@ -145,13 +150,13 @@ class TicketPdfGenerator
     tempfile&.unlink
   end
 
-  def render_footer(pdf)
+  def render_footer(pdf, admissible:)
     pdf.fill_color MUTED_TEXT
     pdf.font "TicketSans", size: 9
-    pdf.text Rails.env.production? ? "Present this QR code at the door" : "For testing only - no real event admission", align: :center
+    pdf.text @labels.fetch(Rails.env.production? ? :door_hint : :rehearsal_hint), align: :center if admissible
     pdf.move_down 4
     pdf.font "TicketSans", size: 7
-    pdf.text safe_text(@seller.line), align: :center, color: "6B7280"
+    pdf.text safe_text(@seller_line), align: :center, color: "6B7280"
   end
 
   def safe_text(text)
@@ -159,7 +164,7 @@ class TicketPdfGenerator
   end
 
   def format_date(datetime)
-    datetime.strftime("%A, %B %-d, %Y")
+    datetime.strftime(@labels.fetch(:date_format))
   end
 
   def event_time(datetime)
@@ -167,6 +172,6 @@ class TicketPdfGenerator
   end
 
   def format_time(datetime)
-    datetime.strftime("%-I:%M %p")
+    datetime.strftime(@labels.fetch(:time_format))
   end
 end

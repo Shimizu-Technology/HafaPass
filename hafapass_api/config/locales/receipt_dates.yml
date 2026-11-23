@@ -22,3 +22,7 @@ tl:
   time:
     formats:
       receipt: "%-m/%-d/%Y %-I:%M %p %Z"
+pt:
+  time:
+    formats:
+      receipt: "%d/%m/%Y %H:%M %Z"

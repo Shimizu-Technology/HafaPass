@@ -23,6 +23,14 @@ emails:
     am: "午前"
     pm: "午後"
   order_confirmation:
+    current_subject: "HåfaPassの現在のご注文内容 - %{event}"
+    current_heading: "現在のご注文内容"
+    reference: "注文 %{reference}"
+    status_column: "状態"
+    view_order: "ご注文を表示"
+    seller_disclosure: "イベントの販売元：%{seller}。チケットサービス：%{operator}が運営する%{service}は、主催者の代理としてチケットを販売し、サービス手数料を受け取ります。"
+    all_transferred: "この注文のチケットはすべて譲渡されました。新しい所持者は自分のアカウントから確認できます。この注文は%{tickets_link}で確認できます。"
+    entry_instructions: "%{tickets_link}でチケットと現在の状態をご確認ください。有効なチケットで入場できます。"
     subject: "HåfaPassチケットのご案内 - %{event}"
     title: "ご注文確定"
     heading: "チケットのご購入が確定しました！"
@@ -38,6 +46,8 @@ emails:
     ticket_column: "チケット"
     view_ticket: "チケットを表示"
   pdf_note:
+    capped: "最初の%{count}枚をPDFで添付しました。入場時に通信環境がなくても表示できます。残りは%{tickets_link}でご確認ください。"
+    partial: "全%{total}枚のうち%{count}枚をPDFで添付しました。残りのチケットは現在入場に使用できません。%{tickets_link}で状態をご確認ください。"
     single: "チケットはPDFでも添付していますので、入場時に通信環境がなくても表示できます。"
     all: "全%{count}枚のチケットをPDFでも添付していますので、入場時に通信環境がなくても表示できます。"
   ticket:
@@ -46,11 +56,18 @@ emails:
     view: "お持ちのチケットを表示"
     entry_instructions: "入場時に受付でQR Codeをご提示ください。"
   event_cancelled:
+    holder_body: "譲渡されたチケットは使用できなくなりました。返金はチケットを購入した方に行われます。"
     subject: "イベント中止：%{event}"
     heading: "%{event}は中止となりました"
     body: "サービス料を含むお支払い全額の自動返金を準備しています。申請は不要です。現金で購入された方には返金方法を別途ご案内します。"
     view_order: "注文を確認"
   refund:
+    late_capture_subject: "お支払いの%{amount}を返金しました - %{event}"
+    late_capture_heading: "お支払いを返金しました"
+    late_capture_body: "お支払いの完了前に%{event}のチケット確保期限が切れました。チケットは解放され、注文は成立していません。お支払いの%{amount}を全額返金しました。在庫があれば再度ご購入いただけます。"
+    returned: "%{amount}の返金は通常、ご利用のカードに5〜10営業日以内に反映されます。反映時期は銀行やカード発行会社によって異なります。"
+    returned_cash: "主催者が%{amount}の現金返金を記録しました。ご不明な点は主催者にお問い合わせください。"
+    returned_door_card: "主催者が%{amount}のカード返金を記録しました。反映時期は主催者にお問い合わせください。"
     cancelled_subject: "イベント中止 — %{amount}の返金手続き中"
     cancelled_heading: "イベント中止 — 返金手続き中"
     cancelled_body: "%{event}は中止となりました。サービス料を含む%{amount}の返金手続きを進めています。"
@@ -82,3 +99,8 @@ emails:
     body: "%{event}の%{ticket_type}チケットを、お客様用に%{count}枚確保しています。"
     cta: "チケットを確保する"
     expires: "このご案内の有効期限は%{expires_at}です。"
+  ticket_status:
+    issued: "発行済み"
+    checked_in: "入場済み"
+    cancelled: "取消済み"
+    transferred: "譲渡済み"

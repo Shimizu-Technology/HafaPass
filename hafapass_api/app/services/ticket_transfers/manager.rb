@@ -126,7 +126,7 @@ module TicketTransfers
         raise TransferError, "Only unused active tickets can be transferred" unless ticket.issued?
         raise TransferError, "Transfers are disabled for this event" unless ticket.event.transfers_available?
         raise TransferError, "Transfers close when the event starts" unless ticket.event.starts_at&.future?
-        raise TransferError, "Ticket access is blocked" if ticket.order.ticket_access_blocked?
+        raise TransferError, "Ticket access is blocked" unless ticket.admission_allowed?
       end
     end
   end

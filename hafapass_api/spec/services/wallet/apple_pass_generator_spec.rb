@@ -22,6 +22,18 @@ RSpec.describe Wallet::ApplePassGenerator do
     expect(pass.dig("eventTicket", "headerFields", 0, "value")).to eq("Valid")
   end
 
+  it "writes localized wallet labels without changing admission data" do
+    configure_apple_wallet
+    ticket = wallet_ticket
+    with_locales_enabled(%w[en ja])
+    ticket.order.update!(locale: "ja")
+
+    pass = pass_json(described_class.call(ticket))
+
+    expect(pass.dig("eventTicket", "headerFields", 0)).to include("label" => "状態", "value" => "有効")
+    expect(pass.dig("barcode", "message")).to eq(ticket.scan_credential)
+  end
+
   it "uses the bundled icon and its retina variants from a path relative to the app root" do
     configure_apple_wallet
     stub_const("ENV", ENV.to_h.merge("APPLE_PASS_ICON_PATH" => "app/assets/wallet/icon.png"))

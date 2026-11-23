@@ -22,6 +22,13 @@ describe('enabled languages (VITE_ENABLED_LOCALES)', () => {
     expect(getEnabledLanguages().map(language => language.code)).toEqual(['en', 'ko'])
   })
 
+  it('maps Portuguese browsers to the Brazil catalog only when enabled', () => {
+    expect(enabledLanguageCode('pt-BR')).toBeNull()
+    configureEnabledLanguages('pt')
+    expect(enabledLanguageCode('pt-BR')).toBe('pt')
+    expect(languageFor('pt').intl).toBe('pt-BR')
+  })
+
   it('turns a saved choice of a disabled language into English', () => {
     configureEnabledLanguages('ko')
     window.localStorage.setItem('i18nextLng', 'ja')

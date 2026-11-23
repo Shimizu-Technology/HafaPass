@@ -714,7 +714,7 @@ class EmailService
       return unless change && EventChange::TYPES.include?(change.change_type)
 
       # A transferred ticket's holder has no order link or refund choice, and
-      # their language is unknown (as for transfer emails), so English.
+      # their language is unknown, so English.
       holder = delivery&.metadata.to_h["audience"] == "holder"
       recipient = holder ? delivery.recipient : order.buyer_email
       html, subject = in_locale(holder ? AppLocale::DEFAULT : order.locale) do
@@ -807,8 +807,14 @@ class EmailService
     def send_ticket_transfer(transfer, delivery: nil)
       url = "#{frontend_url}/ticket-transfers/accept?token=#{ERB::Util.url_encode(TicketTransferCredential.issue(transfer))}"
       event = transfer.ticket.event
-      # The recipient's language is unknown (the transfer records the sender's), so English.
-      html, subject = in_locale(AppLocale::DEFAULT) do
+      # The recipient may speak a different language from the sender.
+      html, subject = in_locale(transfer.locale) do
+        english_help = if I18n.locale != :en
+          I18n.with_locale(:en) do
+            %(<p lang="en"><a href="#{url}">#{ht('transfer.accept')}</a> · #{ht('transfer.sign_in',
+              email: transfer.recipient_email, expires_at: format_local_datetime(transfer.expires_at, event.timezone))}</p>)
+          end
+        end
         body = email_wrapper(t("transfer.title")) do
           <<~HTML
             <h2 style="color:#1f2937">#{ht('transfer.heading')}</h2>
@@ -816,6 +822,7 @@ class EmailService
             <p><a href="#{url}" style="display:inline-block;background:#0e7c7b;color:white;padding:14px 28px;border-radius:10px;text-decoration:none">#{ht('transfer.accept')}</a></p>
             <p style="color:#6b7280;font-size:14px">#{ht('transfer.sign_in', email: transfer.recipient_email,
               expires_at: format_local_datetime(transfer.expires_at, event.timezone))}</p>
+            #{english_help}
           HTML
         end
         [body, safe_subject(t("transfer.subject", event: event_title(event)))]

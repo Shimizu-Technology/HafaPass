@@ -152,6 +152,7 @@ RSpec.describe "Buyer orders and receipts", type: :request do
   end
 
   it "localizes receipt dates and uses the payment capture when completion time is absent" do
+    with_locales_enabled(%w[en ko])
     order.update!(locale: "ko", completed_at: nil)
     create(:payment, :succeeded, order: order, succeeded_at: Time.utc(2030, 1, 1, 15, 30))
     get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
@@ -190,10 +191,12 @@ RSpec.describe "Buyer orders and receipts", type: :request do
   end
 
   it "falls back to English receipt labels when a saved order locale has no receipt translation" do
+    with_locales_enabled(%w[en ko])
     order.update!(locale: "ko")
+    create(:payment, :succeeded, order: order, provider_environment: "live")
     get "/api/v1/orders/#{order.id}/receipt", headers: auth_headers(buyer)
     text = PDF::Reader.new(StringIO.new(response.body)).pages.map(&:text).join("\n")
-    expect(text).to include("Order number: HP-RECEIPT", "Total paid: US$47.50")
+    expect(text).to include("Order number: HP-RECEIPT", "Order date: 2030년 1월 2일 01:30 ChST", "Total paid: US$47.50")
   end
 
   it "shows recovered guest orders even when no ticket is retained" do

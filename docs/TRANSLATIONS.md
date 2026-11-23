@@ -1,6 +1,6 @@
 # Translations
 
-HåfaPass is written in English and offered to buyers in six languages:
+HåfaPass is written in English and supports the following locale catalogs. Language rollout is configured per environment:
 
 | Code | Language | Switcher label | Notes |
 | --- | --- | --- | --- |
@@ -9,6 +9,7 @@ HåfaPass is written in English and offered to buyers in six languages:
 | `ja` | Japanese | 日本語 | |
 | `zh-Hant` | Chinese (Traditional) | 繁體中文 | Detected from `zh-TW`, `zh-HK`, `zh-MO`, `zh-Hant`. |
 | `zh` | Chinese (Simplified) | 简体中文 | Detected from `zh`, `zh-CN`, `zh-Hans`. |
+| `pt` | Brazilian Portuguese | Português | Copa catalog is partial. Keep disabled until buyer flows pass. |
 | `tl` | Filipino | Filipino | General Translation calls it `fil`; `customMapping` in `gt.config.json` maps it. |
 
 CHamoru (`ch`) is planned with human translators (see the end of this document).
@@ -160,12 +161,12 @@ created it:
 | --- | --- | --- |
 | `orders` | `locale` | Online checkout (`POST /orders`). Box office, cash and guest-list orders stay English. |
 | `waitlist_entries` | `locale` | Joining a waitlist. |
-| `ticket_transfers` | `locale` | The sender's language when starting a transfer (recorded only; see below). |
+| `ticket_transfers` | `locale` | The sender's language when starting a transfer. |
 
 Existing rows were given `en`, so emails about earlier purchases are unchanged.
-Event titles in these emails use the record's language too. Ticket transfer
-emails go to the recipient, whose language is unknown, so they are always
-English. Deadlines (transfer and waitlist-offer expiry) include the time zone.
+Event titles in these emails use the record's language too. Transfer emails
+use the sender's recorded language and include English acceptance instructions
+for recipients. A missing or disabled locale falls back to English. Deadlines (transfer and waitlist-offer expiry) include the time zone.
 
 Issued tickets use the organizer's own ticket names everywhere (emails, PDFs,
 My Tickets, the ticket page and door lists) so buyers and door staff see the
@@ -250,8 +251,28 @@ Noto Emoji (`hafapass_api/app/assets/fonts/tickets`, SIL Open Font License; see
 the README there). `PdfFonts` loads only the fallback fonts the text needs and
 puts the font for the text's language first. A ticket PDF still refuses
 characters no bundled font has (the download and email paths fall back to a
-notice); the emergency door list always prints and shows them as `?`. PDF labels
-are English.
+notice); the emergency door list always prints and shows them as `?`.
+
+## Copa document and email coverage
+
+Ticket PDF and Apple/Google Wallet labels use the purchase language when enabled. Japanese,
+Korean and Brazilian Portuguese use `config/locales/ticket_documents.*.yml`.
+Organizer-entered proper names and the QR stay unchanged. Other languages fall
+back to the English document labels. Portuguese API support and the core
+confirmation, ticket, receipt, refund and transfer email catalog are in place.
+The buyer switch recognizes Brazilian Portuguese. Core event, pricing,
+checkout and payment strings have draft translations in all three languages.
+Some event details, checkout errors and downstream buyer screens still fall
+back to English. Keep the rollout settings off until the complete buyer flow
+is tested in each language. The Portuguese catalog is hand-maintained until
+a full General Translation run is approved.
+
+For native-speaker review, prioritize the all-in fee and seller disclosures,
+refund timing and payment-method language, transfer sign-in and expiry,
+rehearsal/admission labels, and wallet states for a replaced, suspended or
+cancelled ticket. Review Brazilian Portuguese wording for a Guam audience and
+preserve USD and Guam time. Re-test PDF glyphs and wallet presentation on
+devices with the actual providers after text review.
 
 ## Policies
 
