@@ -814,6 +814,54 @@
       },
       "termsAgreement": {
         "context": "Buyer-facing buyer.Checkout copy on HåfaPass, a local event ticketing platform for Guam. Keep proper names and interpolation placeholders unchanged. Seat holds are temporary reservations. A transfer gives a ticket to another attendee. Service fees are not taxes."
+      },
+      "ticketDetails": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "tellUsWhoEachTicketIsFor": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "ticketNumber": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "useMyInfo": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "useMyInfoFor": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterTheAttendeesFullName": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterTheAttendeesEmail": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "checkThisBoxToContinue": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "chooseAtLeastOne": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "chooseAllThatApply": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterANumber": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterANumberFromTo": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterANumberAtLeast": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterANumberAtMost": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterAValidPhoneNumber": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
+      },
+      "enterAWholeNumber": {
+        "context": "Buyer-facing Checkout interface on HåfaPass, an event-ticketing platform for Guam. Event means a local happening, not a tournament. Keep HåfaPass, Guam, USD, names and interpolation placeholders unchanged. Seat hold means a temporary reservation; service fee is not a tax; transfer means giving a ticket to another attendee. Preserve leading/trailing spaces where present."
       }
     },
     "TicketTypesSection": {

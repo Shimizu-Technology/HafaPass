@@ -292,7 +292,8 @@ RSpec.describe Commerce::OrderCreator do
     def scoped_checkout(**overrides)
       described_class.call(**{
         event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
-        buyer_email: "test@example.com", buyer_name: "Tester", payment_required: false
+        buyer_email: "test@example.com", buyer_name: "Tester", payment_required: false,
+        require_registration_answers: true
       }.merge(overrides))
     end
 

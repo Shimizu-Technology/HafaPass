@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1288,6 +1288,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
     t.string "tier_name"
     t.integer "unit_price_cents", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "metadata", default: {}, null: false
     t.index ["catalog_item_id"], name: "index_order_items_on_catalog_item_id"
     t.index ["order_id"], name: "index_order_items_on_order_id"
     t.index ["pricing_tier_id"], name: "index_order_items_on_pricing_tier_id"
@@ -2077,9 +2078,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
     t.string "prompt", null: false
     t.boolean "required", default: false, null: false
     t.datetime "updated_at", null: false
+    t.integer "scope", default: 0, null: false
+    t.jsonb "ticket_type_ids", default: [], null: false
+    t.boolean "show_on_scanner", default: false, null: false
+    t.string "help_text", limit: 250
+    t.jsonb "validation_rules", default: {}, null: false
     t.index ["event_id", "active", "position"], name: "idx_on_event_id_active_position_0e532f85bc"
     t.index ["event_id"], name: "index_registration_questions_on_event_id"
-    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3])", name: "registration_questions_kind_valid"
+    t.check_constraint "jsonb_typeof(ticket_type_ids) = 'array'::text", name: "registration_questions_ticket_type_ids_array"
+    t.check_constraint "jsonb_typeof(validation_rules) = 'object'::text", name: "registration_questions_validation_rules_object"
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7])", name: "registration_questions_kind_valid"
+    t.check_constraint "scope = ANY (ARRAY[0, 1])", name: "registration_questions_scope_valid"
   end
 
   create_table "registration_responses", force: :cascade do |t|
@@ -2094,10 +2103,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
     t.boolean "required_snapshot", default: false, null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
-    t.index ["order_id", "registration_question_id"], name: "index_registration_responses_unique", unique: true
+    t.bigint "ticket_id"
+    t.index ["order_id", "registration_question_id"], name: "index_registration_responses_unique_order", unique: true, where: "(ticket_id IS NULL)"
     t.index ["order_id"], name: "index_registration_responses_on_order_id"
     t.index ["registration_question_id"], name: "index_registration_responses_on_registration_question_id"
     t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
+    t.index ["ticket_id", "registration_question_id"], name: "index_registration_responses_unique_ticket", unique: true, where: "(ticket_id IS NOT NULL)"
+    t.index ["ticket_id"], name: "index_registration_responses_on_ticket_id"
   end
 
   create_table "runtime_alert_states", primary_key: "signal", id: :string, force: :cascade do |t|
@@ -2593,7 +2605,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
     t.string "translation_status", default: "untranslated", null: false
     t.datetime "translation_requested_at"
     t.boolean "is_pass", default: false, null: false
+    t.string "attendee_info_mode", default: "none", null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
+    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
@@ -3089,6 +3103,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_000000) do
   add_foreign_key "registration_questions", "events", on_delete: :restrict
   add_foreign_key "registration_responses", "orders", on_delete: :restrict
   add_foreign_key "registration_responses", "registration_questions", on_delete: :restrict
+  add_foreign_key "registration_responses", "tickets", on_delete: :restrict
   add_foreign_key "scanner_devices", "events", on_delete: :restrict
   add_foreign_key "scanner_devices", "organizations", on_delete: :restrict
   add_foreign_key "scanner_devices", "users", on_delete: :restrict

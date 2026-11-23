@@ -56,8 +56,8 @@ module Commerce
     def initialize(event:, line_items:, buyer_email:, buyer_name:, buyer_phone: nil, marketing_opt_in: false, user: nil, sold_by: nil, promo_code_id: nil, promo_code: nil,
       payment_required: nil, service_fee: true, complimentary: false, source: nil, payment_method: nil,
       payment_provider: nil, buyer_terms_version: nil, buyer_terms_digest: nil, buyer_terms_accepted_at: nil,
-      catalog_items: nil, registration_answers: nil, waiver_acceptances: nil, referral_code: nil,
-      attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
+      catalog_items: nil, registration_answers: nil, attendee_assignments: nil, require_registration_answers: false,
+      waiver_acceptances: nil, referral_code: nil, attribution: nil, waitlist_offer_token: nil, seat_hold_token: nil, live_money_proof_authorization: nil,
       cash_sale_key: nil, cash_sale_request_digest: nil, checkout_key_digest: nil, checkout_request_digest: nil,
       checkout_attempt: nil, checkout_lease_token: nil, expected_total_cents: nil, client_quote_required: false,
       checkout_ip_digest: nil, enforce_buyer_limits: false, locale: AppLocale::DEFAULT)
@@ -84,6 +84,13 @@ module Commerce
       @buyer_terms_accepted_at = buyer_terms_accepted_at
       @catalog_items = catalog_items || []
       @registration_answers = registration_answers || {}
+      # Per-ticket attendee names, emails and ticket-scoped answers, each
+      # { ticket_type_id, index, attendee_name, attendee_email, registration_answers }.
+      @attendee_assignments = attendee_assignments || []
+      # Buyer checkout must supply every required answer and attendee detail.
+      # Trusted staff sales (box office cash and card, guest list) may omit
+      # them; any answer staff do supply is still validated.
+      @require_registration_answers = require_registration_answers
       @waiver_acceptances = waiver_acceptances || []
       @referral_code = referral_code
       @attribution = attribution || {}
@@ -160,7 +167,7 @@ module Commerce
         validate_seating_selection!(selections)
         catalog_selections = locked_catalog_selections!
         enforce_event_capacity!(selections, offer: offer)
-        validate_registration!
+        validate_registration!(selections)
         promoter = locked_promoter
         totals = calculate_totals(selections, catalog_selections)
         # Only buyer checkout can come from a stale cached page; server-side
@@ -766,7 +773,8 @@ module Commerce
           organizer_fee_cents: organizer_fees[index],
           tax_cents: 0,
           organizer_proceeds_cents: [subtotal - discounts[index] - organizer_fees[index], 0].max,
-          currency: order.currency
+          currency: order.currency,
+          metadata: attendee_metadata_for(selection[:ticket_type])
         )
         order.inventory_holds.create!(
           order_item: item,
@@ -822,14 +830,23 @@ module Commerce
       )
     end
 
-    def validate_registration!
+    def validate_registration!(selections)
       raise CheckoutError, "registration_answers must be an object" unless registration_answers.respond_to?(:key?)
       raise CheckoutError, "waiver_acceptances must be an array" unless waiver_acceptances.is_a?(Array)
 
-      event.registration_questions.published.each do |question|
-        answer = answer_for(question.id)
-        raise CheckoutError, "Invalid answer for #{question.prompt}" unless question.valid_answer?(answer)
+      questions = event.registration_questions.published.to_a
+      cart_ticket_type_ids = selections.map { |selection| selection[:ticket_type].id }
+      # Questions limited to other ticket types are neither asked nor stored.
+      @order_questions = questions.select do |question|
+        question.scope_order? && question.applies_to_any_ticket_type?(cart_ticket_type_ids)
       end
+      @order_questions.each do |question|
+        answer = answer_for(question.id)
+        unless question.valid_answer?(answer, enforce_required: @require_registration_answers)
+          raise CheckoutError, "Invalid answer for #{question.prompt}"
+        end
+      end
+      @attendee_payloads = validated_attendee_payloads(selections, questions.select(&:scope_ticket?))
 
       accepted = waiver_acceptances.index_by { |value| (value[:event_waiver_id] || value["event_waiver_id"]).to_i }
       event.event_waivers.published.each do |waiver|
@@ -844,9 +861,9 @@ module Commerce
     end
 
     def record_registration!(order)
-      event.registration_questions.published.each do |question|
+      @order_questions.each do |question|
         answer = answer_for(question.id)
-        next if answer.nil? || answer == ""
+        next if question.blank_answer?(answer)
 
         order.registration_responses.create!(
           registration_question: question,
@@ -854,7 +871,7 @@ module Commerce
           kind_snapshot: RegistrationQuestion.kinds.fetch(question.kind),
           required_snapshot: question.required,
           options_snapshot: question.options,
-          answer: { "value" => answer },
+          answer: { "value" => question.normalized_answer(answer) },
           answered_at: Time.current
         )
       end
@@ -874,6 +891,97 @@ module Commerce
 
     def answer_for(question_id)
       registration_answers[question_id] || registration_answers[question_id.to_s]
+    end
+
+    # Validates per-ticket details for each cart line that collects them and
+    # returns { ticket_type_id => [attendee, ...] } in ticket order. The result
+    # is stored on the order item so the tickets issued later (including after
+    # an asynchronous card payment) carry exactly what the buyer entered.
+    def validated_attendee_payloads(selections, ticket_questions)
+      raise CheckoutError, "attendee_assignments must be an array" unless @attendee_assignments.is_a?(Array)
+
+      supplied = {}
+      @attendee_assignments.each do |assignment|
+        raise CheckoutError, "Each attendee entry must be an object" unless assignment.respond_to?(:key?)
+
+        ticket_type_id = Integer(param_value(assignment, :ticket_type_id).to_s, exception: false)
+        index = Integer(param_value(assignment, :index).to_s, exception: false)
+        raise CheckoutError, "Each attendee entry needs a ticket type and ticket number" unless ticket_type_id && index && index >= 0
+        raise CheckoutError, "Attendee details were sent twice for the same ticket" if supplied.key?([ticket_type_id, index])
+
+        supplied[[ticket_type_id, index]] = assignment
+      end
+
+      payloads = {}
+      expected = []
+      selections.each do |selection|
+        ticket_type = selection[:ticket_type]
+        questions = ticket_questions.select { |question| question.applies_to_ticket_type?(ticket_type.id) }
+        next unless ticket_type.collects_attendee_name? || questions.any?
+
+        payloads[ticket_type.id] = Array.new(selection[:quantity]) do |index|
+          expected << [ticket_type.id, index]
+          attendee_payload(ticket_type, index, supplied.fetch([ticket_type.id, index], {}), questions)
+        end
+      end
+      raise CheckoutError, "Attendee details do not match the tickets in this order" if (supplied.keys - expected).any?
+
+      payloads
+    end
+
+    def attendee_payload(ticket_type, index, assignment, questions)
+      label = "#{ticket_type.name} ticket ##{index + 1}"
+      name = attendee_text(assignment, :attendee_name, label)&.squish.presence if ticket_type.collects_attendee_name?
+      email = attendee_text(assignment, :attendee_email, label)&.strip&.downcase.presence if ticket_type.collects_attendee_email?
+      if ticket_type.collects_attendee_name?
+        raise CheckoutError, "Enter the attendee's full name for #{label}" if name.nil? && @require_registration_answers
+        raise CheckoutError, "The attendee name for #{label} is too long" if name && name.length > 120
+      end
+      if ticket_type.collects_attendee_email?
+        raise CheckoutError, "Enter the attendee's email for #{label}" if email.nil? && @require_registration_answers
+        if email && (email.length > 254 || !email.match?(RegistrationQuestion::EMAIL_FORMAT))
+          raise CheckoutError, "Enter a valid attendee email for #{label}"
+        end
+      end
+
+      raw_answers = param_value(assignment, :registration_answers) || {}
+      raise CheckoutError, "Answers for #{label} must be an object" unless raw_answers.respond_to?(:key?)
+
+      answers = questions.filter_map do |question|
+        value = param_value(raw_answers, question.id)
+        unless question.valid_answer?(value, enforce_required: @require_registration_answers)
+          raise CheckoutError, "Invalid answer for #{question.prompt} (#{label})"
+        end
+        next if question.blank_answer?(value)
+
+        { "question_id" => question.id, "prompt" => question.prompt, "kind" => question.kind,
+          "required" => question.required, "options" => question.options, "value" => question.normalized_answer(value) }
+      end
+      { "attendee_name" => name, "attendee_email" => email, "answers" => answers }
+    end
+
+    # Names and emails must be JSON strings; a boolean or list is never
+    # coerced into text.
+    def attendee_text(assignment, key, label)
+      value = param_value(assignment, key)
+      return if value.nil?
+      raise CheckoutError, "The attendee details for #{label} must be text" unless value.is_a?(String)
+
+      value
+    end
+
+    def attendee_metadata_for(ticket_type)
+      attendees = @attendee_payloads&.fetch(ticket_type.id, nil)
+      attendees ? { "attendees" => attendees } : {}
+    end
+
+    # Reads a string- or symbol-keyed hash (or request parameters) without
+    # losing a false checkbox answer.
+    def param_value(hash, key)
+      return hash[key] if hash.key?(key)
+      return hash[key.to_s] if hash.key?(key.to_s)
+
+      hash[key.to_sym] if key.respond_to?(:to_sym) && hash.key?(key.to_sym)
     end
 
     def locked_promoter

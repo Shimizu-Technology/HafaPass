@@ -25,6 +25,7 @@ class Ticket < ApplicationRecord
   has_many :admission_actions, dependent: :restrict_with_error
   has_many :ticket_transfers, dependent: :restrict_with_error
   has_many :wallet_passes, dependent: :restrict_with_error
+  has_many :registration_responses, dependent: :restrict_with_error
   has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
@@ -86,6 +87,14 @@ class Ticket < ApplicationRecord
 
   def pass_parent?
     parent_ticket_id.nil? && ticket_type.is_pass?
+  end
+
+  # The order-wide answers plus the answers given for this ticket. A pass
+  # night ticket uses the answers recorded on its pass. Reads the order's
+  # loaded responses, so preloading order: :registration_responses avoids N+1.
+  def effective_registration_responses
+    answered_ticket_id = parent_ticket_id || id
+    order.registration_responses.select { |response| response.ticket_id.nil? || response.ticket_id == answered_ticket_id }
   end
 
   def admission_block_reason(payment_mode: nil)

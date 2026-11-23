@@ -2,7 +2,8 @@ class TicketType < ApplicationRecord
   include OperationalAuditable
 
   audits_operations :ticket_type,
-    fields: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at],
+    fields: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at
+      attendee_info_mode],
     observe: %w[name description]
 
   include Translatable
@@ -24,6 +25,9 @@ class TicketType < ApplicationRecord
   # A blank per-order limit means this many for public online checkout; staff
   # sales (box office, guest list) treat blank as unlimited. See OrderCreator.
   DEFAULT_MAX_PER_ORDER = 10
+  # Whether checkout asks for each ticket's attendee: "none" keeps the buyer's
+  # name on every ticket.
+  ATTENDEE_INFO_MODES = %w[none name_only name_and_email].freeze
   MINIMUM_CARD_TOTAL_MESSAGE = "Ticket price must leave the buyer paying at least $0.50 per ticket including fees " \
     "(the smallest card payment). Set it to $0.00 for a free ticket, raise the price, or have buyers pay the fees."
 
@@ -34,6 +38,7 @@ class TicketType < ApplicationRecord
   validates :max_per_order, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :max_per_buyer, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validates :door_allocation, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :attendee_info_mode, inclusion: { in: ATTENDEE_INFO_MODES }
   validate :sold_quantity_within_capacity
   validate :door_allocation_within_capacity
   validate :chronological_sales_window
@@ -52,6 +57,14 @@ class TicketType < ApplicationRecord
 
   def pass?
     is_pass?
+  end
+
+  def collects_attendee_name?
+    attendee_info_mode != "none"
+  end
+
+  def collects_attendee_email?
+    attendee_info_mode == "name_and_email"
   end
 
   def sold_out?

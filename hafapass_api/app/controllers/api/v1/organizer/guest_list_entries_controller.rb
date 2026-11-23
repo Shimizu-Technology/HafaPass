@@ -87,7 +87,9 @@ module Api
               payment_required: false,
               service_fee: false,
               complimentary: true,
-              source: "guest_list"
+              source: "guest_list",
+              # Optional for staff; any answers given are validated and kept.
+              registration_answers: params[:registration_answers]
             )
 
             @entry.redeem!(result.order)

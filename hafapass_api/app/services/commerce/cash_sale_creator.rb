@@ -43,6 +43,8 @@ module Commerce
             buyer_email: parameters["buyer_email"].presence || "walkin-#{SecureRandom.hex(4)}@boxoffice.local",
             buyer_phone: parameters["buyer_phone"],
             seat_hold_token: parameters["seat_hold_token"],
+            # Optional for staff; any answers given are validated and kept.
+            registration_answers: parameters["registration_answers"],
             payment_required: false,
             service_fee: false,
             source: "box_office",
@@ -82,7 +84,8 @@ module Commerce
 
     def request_digest
       @request_digest ||= begin
-        requested = parameters.slice("line_items", "buyer_name", "buyer_email", "buyer_phone", "payment_method", "expected_total_cents")
+        requested = parameters.slice("line_items", "buyer_name", "buyer_email", "buyer_phone", "payment_method", "expected_total_cents",
+          "registration_answers")
         requested["seat_hold_digest"] = Digest::SHA256.hexdigest(parameters["seat_hold_token"].to_s)
         identity = { "event_id" => event.id, "organization_id" => event.organization_id, "user_id" => user.id,
                      "request" => requested }

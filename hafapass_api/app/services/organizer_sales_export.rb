@@ -103,7 +103,7 @@ class OrganizerSalesExport
     when "check_in_time" then self.class.local_time(ticket ? ticket.checked_in_at : order.tickets.filter_map(&:checked_in_at).max, @query.event)
     when "transferred_to" then transferred_to(ticket ? [ticket] : order.tickets)
     when "purchase_date" then self.class.local_time(order.completed_at || order.created_at, @query.event)
-    when "notes_custom_answers" then registration_answers(order)
+    when "notes_custom_answers" then registration_answers(order, ticket)
     end
   end
 
@@ -157,32 +157,45 @@ class OrganizerSalesExport
     FinanceExports.money(cents)
   end
 
-  def registration_answers(order)
+  def registration_answers(order, ticket = nil)
     # Keep the column key compatible with saved export requests. Internal
     # support notes have a separate audience and never belong in this export.
-    order.registration_responses.map { |answer| "#{answer.prompt_snapshot}: #{format_answer(answer.answer)}" }.join("; ")
+    # A ticket row shows the order's answers plus its own per-ticket answers;
+    # an order row labels each per-ticket answer with its ticket code.
+    responses = ticket ? ticket.effective_registration_responses : order.registration_responses
+    responses.map do |answer|
+      prompt = ticket || answer.ticket_id.nil? ? answer.prompt_snapshot : "#{answer.prompt_snapshot} (HP-T#{answer.ticket_id})"
+      "#{prompt}: #{format_answer(answer.answer)}"
+    end.join("; ")
   end
+
 
   def expanded_questions
     return [] unless @expand_questions
 
     @expanded_questions ||= begin
       event = @query.event
-      answered_ids = RegistrationResponse.joins(:order)
-        .where(orders: { event_id: event.id })
+      # A pass night's tickets belong to orders on the pass event, so the
+      # questions answered on those orders get columns too, after this event's.
+      order_ids = Order.where(event_id: event.id).select(:id)
+      ticket_order_ids = Ticket.where(event_id: event.id).select(:order_id)
+      answered_ids = RegistrationResponse.where(order_id: order_ids).or(RegistrationResponse.where(order_id: ticket_order_ids))
         .distinct.pluck(:registration_question_id)
-      scope = event.registration_questions.where(active: true)
-      scope = scope.or(event.registration_questions.where(id: answered_ids)) if answered_ids.any?
-      scope.order(:position, :id).to_a
+      scope = RegistrationQuestion.where(event_id: event.id, active: true)
+      scope = scope.or(RegistrationQuestion.where(id: answered_ids)) if answered_ids.any?
+      scope.to_a.sort_by { |question| [question.event_id == event.id ? 0 : 1, question.event_id, question.position, question.id] }
     end
   end
 
   def expanded_question_values(record)
-    order = record.is_a?(Ticket) ? record.order : record
-    by_question = order.registration_responses.index_by(&:registration_question_id)
+    ticket = record.is_a?(Ticket) ? record : nil
+    order = ticket ? ticket.order : record
+    responses = ticket ? ticket.effective_registration_responses : order.registration_responses
+    by_question = responses.group_by(&:registration_question_id)
     expanded_questions.map do |question|
-      response = by_question[question.id]
-      response ? format_answer(response.answer) : ""
+      # An order row joins the per-ticket answers in ticket order.
+      Array(by_question[question.id]).sort_by { |response| response.ticket_id.to_i }
+        .map { |response| format_answer(response.answer) }.join("; ")
     end
   end
 

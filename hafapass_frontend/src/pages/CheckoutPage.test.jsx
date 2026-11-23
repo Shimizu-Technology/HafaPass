@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuth } from '@clerk/clerk-react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useOutlet } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -721,14 +721,121 @@ describe('registration error recovery', () => {
     expect(screen.getByRole('link', { name: 'Meal preference: This answer is required' })).toHaveAttribute('href', '#question-17')
     expect(apiClient.post).not.toHaveBeenCalled()
     await user.type(meal, 'Vegetarian')
-    await user.selectOptions(screen.getByLabelText('Will you attend dinner? *'), 'false')
+    // A checkbox question is an affirmative acknowledgement or opt-in, so a
+    // required one must be checked; yes/no choices use a selection question
+    // with the options Yes and No instead of a dropdown checkbox.
+    const dinner = screen.getByRole('checkbox', { name: 'Will you attend dinner? *' })
+    expect(dinner.closest('label')).toHaveClass('min-h-11')
+    await user.click(dinner)
     await user.click(screen.getByRole('button', { name: /Place order/ }))
     expect(document.getElementById('waiver-19')).toHaveFocus()
     expect(document.getElementById('waiver-19')).toHaveAttribute('aria-describedby', 'waiver-19-error')
     expect(meal).toHaveValue('Vegetarian')
     await user.click(document.getElementById('waiver-19'))
     await user.click(screen.getByRole('button', { name: /Place order/ }))
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ registration_answers: { 17: 'Vegetarian', 18: false }, waiver_acceptances: [{ event_waiver_id: 19, version: 'qa-v1' }] })))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/orders', expect.objectContaining({ registration_answers: { 17: 'Vegetarian', 18: true }, waiver_acceptances: [{ event_waiver_id: 19, version: 'qa-v1' }] })))
+  })
+})
+
+describe('per-ticket attendee details and scoped questions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); apiClient.get.mockReset(); apiClient.post.mockReset(); window.sessionStorage.clear(); window.localStorage.clear()
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
+    vi.stubGlobal('requestAnimationFrame', callback => callback())
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'qa-v1', service_fee_percent: '0', service_fee_flat_cents: 0, processing_fee_bearer: 'platform' } })
+    apiClient.post.mockRejectedValue({ response: { status: 503, data: { checkout_recovery_required: true, error: 'Synthetic outcome unknown' } } })
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+  const event = { id: 40, slug: 'alumni', title: 'FD Alumni Night', timezone: 'Pacific/Guam', ticket_types: [
+    { id: 1, name: 'Adult GA', price_cents: 1500, service_fee_cents: 0, all_in_price_cents: 1500, attendee_info_mode: 'none' },
+    { id: 2, name: 'Free Alumni', price_cents: 0, service_fee_cents: 0, all_in_price_cents: 0, attendee_info_mode: 'name_only' },
+    { id: 3, name: 'Team Entry', price_cents: 5000, service_fee_cents: 0, all_in_price_cents: 5000, attendee_info_mode: 'name_and_email' }],
+  registration_questions: [
+    { id: 30, prompt: 'Graduation Year', kind: 'number', required: true, scope: 'ticket', ticket_type_ids: [2], help_text: '4-digit year, for example 1998', validation_rules: { min: 1950, max: 2035, integer: true } },
+    { id: 31, prompt: 'Class Name', kind: 'short_text', required: true, scope: 'order', ticket_type_ids: [3] },
+    { id: 32, prompt: 'Shirt sizes', kind: 'multi_select', required: true, scope: 'order', ticket_type_ids: [], options: ['S', 'M', 'L'] },
+    { id: 33, prompt: 'Join the mailing list?', kind: 'checkbox', required: false, scope: 'order', ticket_type_ids: [] }] }
+  function mount(lineItems) { render(<MemoryRouter initialEntries={[{ pathname: '/checkout/alumni', state: { event, lineItems } }]}><Routes><Route path='/checkout/:slug' element={<CheckoutPage />} /></Routes></MemoryRouter>) }
+  async function fillBuyer(user) {
+    await user.type(await screen.findByLabelText('Full name', { selector: '#buyerName' }), 'Pat Buyer')
+    await user.type(screen.getByLabelText('Email address', { selector: '#buyerEmail' }), 'pat@example.invalid')
+    await user.click(document.getElementById('termsAccepted'))
+  }
+
+  it('keeps a regular GA cart free of ticket cards and hides questions for other ticket types', async () => {
+    mount([{ ticket_type_id: 1, quantity: 2 }]); const user = userEvent.setup()
+    await fillBuyer(user)
+    expect(screen.queryByText('Ticket details')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Graduation Year/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Class Name/)).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Shirt sizes *' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+    expect(screen.getByRole('link', { name: 'Shirt sizes: Choose at least one' })).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'S' }))
+    await user.click(screen.getByRole('checkbox', { name: 'L' }))
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled())
+    const payload = apiClient.post.mock.calls[0][1]
+    expect(payload.registration_answers).toEqual({ 32: ['S', 'L'], 33: false })
+    expect(payload).not.toHaveProperty('attendee_assignments')
+  })
+
+  it('collects numbered alumni cards in a mixed cart, with Use my info and range validation', async () => {
+    mount([{ ticket_type_id: 1, quantity: 2 }, { ticket_type_id: 2, quantity: 2 }]); const user = userEvent.setup()
+    await fillBuyer(user)
+    const first = screen.getByRole('region', { name: 'Free Alumni Ticket #1' })
+    const second = screen.getByRole('region', { name: 'Free Alumni Ticket #2' })
+    expect(screen.queryByRole('region', { name: /Adult GA Ticket/ })).not.toBeInTheDocument()
+    expect(within(second).queryByRole('button', { name: /Use my info/ })).not.toBeInTheDocument()
+    const year = within(first).getByLabelText('Graduation Year *')
+    expect(year).toHaveAttribute('inputmode', 'numeric')
+    expect(year).toHaveAttribute('min', '1950')
+    expect(year).toHaveAttribute('max', '2035')
+    expect(year).toHaveAccessibleDescription('4-digit year, for example 1998')
+
+    await user.click(within(first).getByRole('button', { name: 'Use my info for Free Alumni Ticket #1' }))
+    expect(within(first).getByLabelText('Full name *')).toHaveValue('Pat Buyer')
+    await user.type(year, '1998')
+    await user.type(within(second).getByLabelText('Graduation Year *'), '1949')
+    await user.click(screen.getByRole('checkbox', { name: 'M' }))
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+
+    const secondName = within(second).getByLabelText('Full name *')
+    expect(secondName).toHaveFocus()
+    expect(screen.getByRole('link', { name: "Free Alumni Ticket #2 · Full name: Enter this attendee's full name" })).toHaveAttribute('href', '#attendee-2-1-name')
+    expect(screen.getByRole('link', { name: 'Free Alumni Ticket #2 · Graduation Year: Enter a number from 1950 to 2035' })).toBeInTheDocument()
+    expect(apiClient.post).not.toHaveBeenCalled()
+
+    await user.type(secondName, 'Jesse Perez')
+    const secondYear = within(second).getByLabelText('Graduation Year *')
+    await user.clear(secondYear)
+    await user.type(secondYear, '2004')
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled())
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({
+      registration_answers: { 32: ['M'], 33: false },
+      attendee_assignments: [
+        { ticket_type_id: 2, index: 0, attendee_name: 'Pat Buyer', registration_answers: { 30: 1998 } },
+        { ticket_type_id: 2, index: 1, attendee_name: 'Jesse Perez', registration_answers: { 30: 2004 } },
+      ],
+    })
+  })
+
+  it('asks for each attendee email and shows team-only order questions for the team ticket', async () => {
+    mount([{ ticket_type_id: 3, quantity: 1 }]); const user = userEvent.setup()
+    await fillBuyer(user)
+    const card = screen.getByRole('region', { name: 'Team Entry Ticket #1' })
+    await user.click(within(card).getByRole('button', { name: /Use my info/ }))
+    expect(within(card).getByLabelText('Email address *')).toHaveValue('pat@example.invalid')
+    await user.type(screen.getByLabelText('Class Name *'), 'Class of 1998')
+    await user.click(screen.getByRole('checkbox', { name: 'S' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Join the mailing list?' }))
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled())
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({
+      registration_answers: { 31: 'Class of 1998', 32: ['S'], 33: true },
+      attendee_assignments: [{ ticket_type_id: 3, index: 0, attendee_name: 'Pat Buyer', attendee_email: 'pat@example.invalid', registration_answers: {} }],
+    })
   })
 })
 
