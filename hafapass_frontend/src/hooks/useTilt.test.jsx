@@ -56,6 +56,14 @@ describe('useTilt drag suppression', () => {
     expect(open).toHaveBeenCalledTimes(2)
   })
 
+  it('lets a plain MouseEvent click without pointer metadata through during the suppression window', () => {
+    const open = vi.fn()
+    render(<Surface onOpen={open} />)
+    touchDrag(7)
+    fireEvent(link(), new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+    expect(open).toHaveBeenCalledOnce()
+  })
+
   it('always lets keyboard activation through', () => {
     const open = vi.fn()
     render(<Surface onOpen={open} />)

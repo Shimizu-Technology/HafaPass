@@ -136,7 +136,7 @@ export default function useTilt({ enabled, max = 8, rest = REST_FLAT, touch = fa
     onClickCapture: event => {
       const by = dragged.current
       const { pointerId, pointerType } = event.nativeEvent
-      const samePointer = by && (pointerId == null || pointerId === by.id) && (!pointerType || pointerType === by.type)
+      const samePointer = Boolean(by) && pointerId === by.id && pointerType === by.type
       const swallow = Boolean(samePointer) && event.detail !== 0
       clearDragged()
       if (!swallow) return
