@@ -26,6 +26,7 @@ const navGroups = [
   ] },
   { label: 'Platform', items: [
     { to: '/admin/operations', label: 'Operational review', icon: LifeBuoy },
+    { to: '/dashboard/email?scope=platform', label: 'Email audiences', icon: Users },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
     { to: '/admin/privacy', label: 'Privacy requests', icon: LockKeyhole },
     { to: '/admin/provider-readiness', label: 'Integrations & policies', icon: ShieldCheck },

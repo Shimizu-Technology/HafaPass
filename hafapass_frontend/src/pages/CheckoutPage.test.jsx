@@ -122,7 +122,7 @@ describe('checkout navigation', () => {
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
     await user.type(await screen.findByLabelText(/Full name|name/i), 'Ana Cruz')
-    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    await user.type(screen.getByRole('textbox', { name: /^email address$/i }), 'ana@example.test')
     for (const box of screen.queryAllByRole('checkbox')) await user.click(box)
     await user.click(screen.getByRole('button', { name: /Continue to payment/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Paid ticket sales open soon')
@@ -153,13 +153,13 @@ describe('checkout navigation', () => {
     </MemoryRouter>)
 
     await user.type(await screen.findByLabelText(/Full name/i), 'Ana Cruz')
-    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    await user.type(screen.getByRole('textbox', { name: /^email address$/i }), 'ana@example.test')
     for (const box of screen.queryAllByRole('checkbox')) await user.click(box)
     await user.click(screen.getByRole('button', { name: /Place order.*420.16/i }))
 
     const banner = await screen.findByRole('alert')
     expect(screen.getByLabelText(/Full name/i)).toHaveValue('Ana Cruz')
-    expect(screen.getByLabelText(/email/i)).toHaveValue('ana@example.test')
+    expect(screen.getByRole('textbox', { name: /^email address$/i })).toHaveValue('ana@example.test')
     expect(getCheckoutAttempt('paid-event')).toBeNull()
     const firstPayload = apiClient.post.mock.calls[0][1]
     expect(firstPayload.expected_total_cents).toBe(42016)
@@ -225,7 +225,7 @@ describe('checkout navigation', () => {
       <Routes><Route path="/checkout/:slug" element={<CheckoutPage />} /></Routes>
     </MemoryRouter>)
     await user.type(await screen.findByLabelText(/Full name/i), 'Ana Cruz')
-    await user.type(screen.getByLabelText(/email/i), 'ana@example.test')
+    await user.type(screen.getByRole('textbox', { name: /^email address$/i }), 'ana@example.test')
     await user.click(document.getElementById('termsAccepted'))
     await user.click(screen.getByRole('button', { name: /Place order/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Your total is now $520.16. Review and continue.')

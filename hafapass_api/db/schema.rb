@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_140300) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -144,6 +144,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.datetime "updated_at", null: false
     t.index ["device_library_identifier", "wallet_pass_id"], name: "index_apple_wallet_registrations_on_device_and_pass", unique: true
     t.index ["wallet_pass_id"], name: "index_apple_wallet_registrations_on_wallet_pass_id"
+  end
+
+  create_table "audience_mailings", force: :cascade do |t|
+    t.bigint "organization_id"
+    t.bigint "created_by_id", null: false
+    t.string "subject", null: false
+    t.text "body", null: false
+    t.string "audience", null: false
+    t.string "status", default: "draft", null: false
+    t.datetime "scheduled_at"
+    t.bigint "cursor", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "recipient_emails", default: [], null: false
+    t.index ["created_by_id"], name: "index_audience_mailings_on_created_by_id"
+    t.index ["organization_id"], name: "index_audience_mailings_on_organization_id"
   end
 
   create_table "audit_logs", force: :cascade do |t|
@@ -452,6 +468,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.index ["active", "kind"], name: "index_distribution_partners_on_active_and_kind"
     t.index ["slug"], name: "index_distribution_partners_on_slug", unique: true
     t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3, 4])", name: "distribution_partners_kind_valid"
+  end
+
+  create_table "email_consents", force: :cascade do |t|
+    t.string "email", null: false
+    t.bigint "organization_id"
+    t.string "scope", null: false
+    t.string "action", null: false
+    t.string "version", null: false
+    t.string "source", null: false
+    t.string "ip"
+    t.string "user_agent"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email", "created_at"], name: "index_email_consents_on_email_and_created_at"
+    t.index ["organization_id"], name: "index_email_consents_on_organization_id"
+  end
+
+  create_table "email_preferences", force: :cascade do |t|
+    t.string "email", null: false
+    t.boolean "all_unsubscribed", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email"], name: "index_email_preferences_on_email", unique: true
+  end
+
+  create_table "email_rate_slots", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "available_at", null: false
+    t.index ["name"], name: "index_email_rate_slots_on_name", unique: true
   end
 
   create_table "event_cancellation_refund_items", force: :cascade do |t|
@@ -1229,6 +1274,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.datetime "retention_anonymized_at"
     t.datetime "reconciled_at"
     t.datetime "replay_requested_at"
+    t.bigint "audience_mailing_id"
+    t.bigint "platform_subscriber_id"
+    t.index ["audience_mailing_id"], name: "index_message_deliveries_on_audience_mailing_id"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
     t.index ["event_id"], name: "index_message_deliveries_on_event_id"
@@ -1237,6 +1285,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.index ["order_id"], name: "index_message_deliveries_on_order_id"
     t.index ["organization_membership_id"], name: "index_message_deliveries_on_organization_membership_id"
     t.index ["platform_invitation_id"], name: "index_message_deliveries_on_platform_invitation_id"
+    t.index ["platform_subscriber_id"], name: "index_message_deliveries_on_platform_subscriber_id"
     t.index ["privacy_request_id"], name: "index_message_deliveries_on_privacy_request_id"
     t.index ["provider_id"], name: "index_message_deliveries_on_provider_id"
     t.index ["requested_by_id"], name: "index_message_deliveries_on_requested_by_id"
@@ -1244,7 +1293,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.index ["status", "updated_at"], name: "index_message_deliveries_on_status_and_updated_at"
     t.index ["ticket_id"], name: "index_message_deliveries_on_ticket_id"
     t.check_constraint "attempts >= 0", name: "message_deliveries_attempts_nonnegative"
-    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL", name: "message_deliveries_subject_present_with_privacy"
+    t.check_constraint "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL OR audience_mailing_id IS NOT NULL OR platform_subscriber_id IS NOT NULL", name: "message_deliveries_subject_present_email_base"
     t.check_constraint "outbound_wire_body IS NULL AND wire_body_digest IS NULL OR outbound_wire_body IS NOT NULL AND wire_body_digest IS NOT NULL AND wire_body_digest::text = encode(sha256(convert_to(outbound_wire_body, 'UTF8'::name)), 'hex'::text)", name: "message_deliveries_wire_digest_matches"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5, 6, 7, 8])", name: "message_deliveries_status_valid"
   end
@@ -1447,6 +1496,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.bigint "organization_id", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.datetime "email_opted_in_at"
+    t.string "email_consent_version"
     t.index ["organization_id"], name: "index_organizer_follows_on_organization_id"
     t.index ["user_id", "organization_id"], name: "index_organizer_follows_on_user_id_and_organization_id", unique: true
     t.index ["user_id"], name: "index_organizer_follows_on_user_id"
@@ -1843,6 +1894,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.check_constraint "role = ANY (ARRAY[2, 3])", name: "platform_invitations_staff_role"
     t.check_constraint "status <> 1 OR accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL", name: "platform_invitations_acceptance_recorded"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "platform_invitations_status_valid"
+  end
+
+  create_table "platform_subscribers", force: :cascade do |t|
+    t.string "email", null: false
+    t.string "name"
+    t.string "status", default: "pending", null: false
+    t.string "source", null: false
+    t.jsonb "interests", default: [], null: false
+    t.jsonb "villages", default: [], null: false
+    t.string "confirmation_nonce", null: false
+    t.datetime "confirmed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email"], name: "index_platform_subscribers_on_email", unique: true
   end
 
   create_table "pricing_tiers", force: :cascade do |t|
@@ -2611,9 +2676,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.text "door_instructions"
     t.boolean "scanner_show_buyer", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
-    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
+    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying::text, 'name_only'::character varying::text, 'name_and_email'::character varying::text])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
-    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying, 'verify'::character varying]::text[])", name: "ticket_types_door_check_mode_valid"
+    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying::text, 'verify'::character varying::text])", name: "ticket_types_door_check_mode_valid"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"
@@ -2878,6 +2943,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
   add_foreign_key "admission_manifests", "users", column: "generated_by_user_id", on_delete: :restrict
   add_foreign_key "annual_tax_report_settings", "organizations"
   add_foreign_key "apple_wallet_registrations", "wallet_passes"
+  add_foreign_key "audience_mailings", "organizations"
+  add_foreign_key "audience_mailings", "users", column: "created_by_id"
   add_foreign_key "audit_logs", "organizations", on_delete: :restrict
   add_foreign_key "balance_adjustments", "balance_adjustments", column: "reversal_of_id", on_delete: :restrict
   add_foreign_key "balance_adjustments", "disputes", on_delete: :restrict
@@ -2911,6 +2978,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
   add_foreign_key "distribution_links", "distribution_partners", on_delete: :restrict
   add_foreign_key "distribution_links", "events", on_delete: :restrict
   add_foreign_key "distribution_links", "users", column: "created_by_user_id", on_delete: :restrict
+  add_foreign_key "email_consents", "organizations"
   add_foreign_key "event_cancellation_refund_items", "event_cancellation_refund_runs"
   add_foreign_key "event_cancellation_refund_items", "orders"
   add_foreign_key "event_cancellation_refund_runs", "events"
@@ -3020,11 +3088,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
   add_foreign_key "marketplace_funnel_events", "event_referrals", on_delete: :restrict
   add_foreign_key "marketplace_funnel_events", "events", on_delete: :restrict
   add_foreign_key "marketplace_funnel_events", "orders", on_delete: :restrict
+  add_foreign_key "message_deliveries", "audience_mailings"
   add_foreign_key "message_deliveries", "communication_campaigns", on_delete: :restrict
   add_foreign_key "message_deliveries", "events", on_delete: :restrict
   add_foreign_key "message_deliveries", "orders", on_delete: :restrict
   add_foreign_key "message_deliveries", "organization_memberships"
   add_foreign_key "message_deliveries", "platform_invitations"
+  add_foreign_key "message_deliveries", "platform_subscribers"
   add_foreign_key "message_deliveries", "privacy_requests", on_delete: :restrict
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify

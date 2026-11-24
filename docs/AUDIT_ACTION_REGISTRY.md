@@ -485,3 +485,6 @@ captured context fall back to stable record IDs; no live buyer record is loaded
 to reconstruct a sentence. Organization JSON and CSV use the same presenter.
 Search reads only the allowlisted display context, and masking also applies to
 exact actor filters. Admin drilldowns retain sanitized technical data.
+
+| `email.audience_exported` | messaging | admin_only | Scoped audience CSV export; scope/count only. |
+| `email.subscriber_suppressed` | messaging | admin_only | Manual platform unsubscribe; no copied address in metadata. |

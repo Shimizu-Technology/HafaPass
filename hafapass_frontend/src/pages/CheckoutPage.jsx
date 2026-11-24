@@ -143,6 +143,7 @@ function CheckoutContent({ buyerId }) {
   const [buyerEmail, setBuyerEmail] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [platformOptIn, setPlatformOptIn] = useState(false)
   const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [catalogSelections, setCatalogSelections] = useState({})
   const [registrationAnswers, setRegistrationAnswers] = useState({})
@@ -518,6 +519,7 @@ function CheckoutContent({ buyerId }) {
         buyer_name: buyerName.trim(),
         buyer_email: buyerEmail.trim(),
         marketing_opt_in: marketingOptIn,
+        platform_opt_in: platformOptIn,
         buyer_phone: buyerPhone.trim() || null,
         line_items: lineItems.map(item => ({ ticket_type_id: item.ticket_type_id, quantity: item.quantity })),
         expected_total_cents: displayedTotal,
@@ -1007,6 +1009,7 @@ function CheckoutContent({ buyerId }) {
                     {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-sm text-danger-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
+                <label className="my-3 flex items-start gap-3 text-sm"><input type="checkbox" checked={platformOptIn} disabled={submitting} onChange={e => setPlatformOptIn(e.target.checked)} />{t('emailBase.checkout')}</label>
                 <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700" htmlFor="marketingOptIn">
                   <input id="marketingOptIn" type="checkbox" checked={marketingOptIn} onChange={event => setMarketingOptIn(event.target.checked)} disabled={submitting} className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600" />
                   <span>{t('buyer.Checkout.marketingOptIn', { organizer: event.organizer?.business_name?.trim() || event.seller?.seller_name?.trim() || 'the organizer' })}</span>

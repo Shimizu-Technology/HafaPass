@@ -104,6 +104,9 @@ class Api::V1::OrdersController < ApplicationController
       locale: request_locale
     )
 
+    if params[:platform_opt_in] == true
+      PlatformSubscription.call({ email: result.order.buyer_email, name: result.order.buyer_name, source: "checkout" }, request: request)
+    end
     response_payload = OrderPresenter.call(
       result.order,
       include_tickets: result.payment_intent.nil?,

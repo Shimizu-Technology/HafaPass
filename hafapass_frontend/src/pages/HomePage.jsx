@@ -1,3 +1,4 @@
+import EventAlertsSignup from '../components/EventAlertsSignup'
 import { useTranslation } from 'react-i18next'
 import { Fragment, useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -187,6 +188,7 @@ export default function HomePage() {
               <div className="min-w-0"><h3 className="font-display text-lg font-bold leading-snug">{title}</h3><p className="mt-1 text-sm leading-relaxed text-content-muted">{body}</p></div>
             </li>)}</ol>
           </section>}
+          <EventAlertsSignup source="home" />
           {!loading && <section className="mt-9">
             <Ticket className="planning-ticket" topClassName="!bg-brand-950 text-white" stubClassName="!bg-brand-950 text-white" stub={<div className="px-6 py-5 sm:px-8"><Link to="/host" className="btn-secondary gap-2 !border-white !text-brand-950">{t('buyer.Home.startHosting2')}<ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div>}>
               <div className="px-6 py-6 sm:px-8"><h2 className="font-display text-2xl font-bold">{t('buyer.Home.planningAnEvent')}</h2><p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p></div>

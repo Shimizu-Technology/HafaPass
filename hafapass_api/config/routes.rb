@@ -14,6 +14,21 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
+      post "platform_subscriptions", to: "platform_subscriptions#create"
+      post "platform_subscriptions/confirm/:token", to: "platform_subscriptions#confirm"
+      post "platform_subscriptions/unsubscribe/:token", to: "platform_subscriptions#unsubscribe"
+      get "email_preferences/account", to: "email_preferences#account"
+      get "email_preferences/:token", to: "email_preferences#show"
+      patch "email_preferences/:token", to: "email_preferences#update"
+      get "audience_mailings/audience", to: "audience_mailings#audience"
+      post "audience_mailings/preview", to: "audience_mailings#preview"
+      post "audience_mailings/suppress/:id", to: "audience_mailings#suppress"
+      resources :audience_mailings, only: [:index, :create] do
+        member do
+          post :test_send
+          post :send_now
+        end
+      end
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
       get "config", to: "config#show"

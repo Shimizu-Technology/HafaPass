@@ -18,6 +18,13 @@ class MessageDeliveryJob < ApplicationJob
       raise ArgumentError, "Email provider deadline must be shorter than the send lease"
     end
     delivery = MessageDelivery.find(delivery_id)
+    if EmailService.configured? && !terminal?(delivery)
+      delay = EmailRateSlot.reserve!
+      if delay.positive?
+        self.class.set(wait: delay.seconds).perform_later(delivery_id)
+        return
+      end
+    end
     lease_token = SecureRandom.uuid
     previously_unknown = nil
     outcome = with_delivery_lock(delivery) do
@@ -77,7 +84,7 @@ class MessageDeliveryJob < ApplicationJob
         delivery.update!(status: :cancelled, last_error: "Recipient address is a reserved placeholder")
         next :done
       end
-      if delivery.promotional? && delivery.event.nil? && delivery.attempts.positive?
+      if delivery.promotional? && delivery.event.nil? && !%w[audience_mailing audience_test].include?(delivery.template) && delivery.attempts.positive?
         if delivery.provider == "resend" && delivery.outbound_wire_body.blank?
           raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
         end
@@ -125,7 +132,7 @@ class MessageDeliveryJob < ApplicationJob
           (delivery.provider_attempted_at.present? || (delivery.provider == "resend" && delivery.attempts.positive?))
         raise MessageWirePayload::Unavailable, "The frozen legacy payload is unavailable; reconcile before rendering"
       end
-      if delivery.promotional? && delivery.event.nil?
+      if delivery.promotional? && delivery.event.nil? && !%w[audience_mailing audience_test].include?(delivery.template)
         if delivery.attempts.positive?
           raise MessageWirePayload::Unavailable, "Legacy promotional delivery lacks organizer consent context; reconcile before replay"
         end
@@ -169,7 +176,8 @@ class MessageDeliveryJob < ApplicationJob
       return
     end
 
-    if delivery.suppressed_recipient? || (delivery.promotional? && delivery.event &&
+    if delivery.suppressed_recipient? || (delivery.promotional? &&
+        (delivery.event || delivery.audience_mailing) &&
         (delivery.marketing_unsubscribed? ||
           (delivery.requires_marketing_consent? &&
             !MarketingConsent.opted_in?(organization: delivery.event.organization, email: delivery.recipient)) ||
@@ -216,6 +224,7 @@ class MessageDeliveryJob < ApplicationJob
     end
     MessageProviderEventProcessor.reconcile_for!(delivery)
   rescue StandardError => error
+    EmailRateSlot.backoff! if error.is_a?(Resend::Error::RateLimitExceededError)
     with_delivery_lock(delivery) do
       if !terminal?(delivery) && (delivery.send_lease_token.nil? || delivery.send_lease_token == lease_token)
         # A definite rejection can clear uncertainty only if no older attempt
@@ -292,6 +301,11 @@ class MessageDeliveryJob < ApplicationJob
   end
 
   def current_marketing_address?(delivery)
+    if %w[audience_mailing audience_test].include?(delivery.template)
+      mailing = delivery.audience_mailing
+      return mailing&.authorized? && mailing.address.present? && mailing.address == delivery.metadata["mailing_address"] &&
+        mailing.sender_name == delivery.metadata["organizer_name"]
+    end
     organization = Organization.find_by(id: delivery.event&.organization_id)
     organization&.marketing_postal_address_ready? && (PublicSiteUrl.api.present? || Rails.env.local?) &&
       delivery.metadata["mailing_address"] == organization.marketing_mailing_address &&

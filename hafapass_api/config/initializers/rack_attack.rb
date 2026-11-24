@@ -24,6 +24,10 @@ class Rack::Attack
     Rails.logger.warn("[Rack::Attack] REDIS_URL not set — falling back to in-memory store (not suitable for multi-process)")
   end
 
+  throttle("platform-subscription/ip", limit: 5, period: 1.hour) do |req|
+    req.ip if req.post? && req.path.match?(%r{\A/api/v1/platform_subscriptions/?(?:\.json)?\z})
+  end
+
   # ─── Safelist ─────────────────────────────────────────────────────────────
   safelist("boot-liveness") do |req|
     req.get? && req.path == "/up"
