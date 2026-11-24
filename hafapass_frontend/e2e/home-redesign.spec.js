@@ -1,7 +1,5 @@
-import { env } from 'node:process'
 import { expect, test } from '@playwright/test'
 
-const demoEnabled = env.VITE_HAFAPASS_DEMO_DATA === '1' || Boolean(env.DEMO_PREVIEW_BASE_URL)
 
 const VIEWPORTS = [
   { name: '320px', width: 320, height: 740 },
@@ -65,7 +63,6 @@ async function measureHeroHeadline(page) {
 }
 
 test.describe('Home redesign — deck, filters and buyer flow', () => {
-  test.skip(!demoEnabled, 'Runs only against a VITE_HAFAPASS_DEMO_DATA=1 build or deploy preview')
 
   for (const vp of VIEWPORTS) {
     test(`meets all layout, deck, cover badge, single-line chip, and no-reflow gates at ${vp.name}`, async ({ page }) => {

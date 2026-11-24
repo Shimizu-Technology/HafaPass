@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowRight, Calendar, ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
+import { ArrowRight, Calendar, ChevronLeft, ChevronRight, MapPin, Pause, Play } from 'lucide-react'
 import BrandTicketCover from './BrandTicketCover'
 import { TicketTop, TicketStub } from './Ticket'
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
@@ -226,6 +226,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   }, [events, t])
 
   const count = cards.length
+  const cardSetKey = cards.map(card => card.id).join('|')
   const showStack = loading || count > 1
   const isSkeleton = loading && count <= 1
   const [activeIndex, setActiveIndex] = useState(0)
@@ -245,6 +246,11 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   const swallowClickRef = useRef(false)
   const lastInteractionWasPointerRef = useRef(false)
   const exitSeqRef = useRef(0)
+  const countRef = useRef(count)
+  countRef.current = count
+  const exitFrameRef = useRef(null)
+  const keyboardFocusRef = useRef(null)
+  const [rotationStopped, setRotationStopped] = useState(false)
   const exitTimerRef = useRef(null)
   const exitSettleTimerRef = useRef(null)
   const exitAnimsRef = useRef([])
@@ -255,7 +261,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   activeIndexRef.current = safeIndex
   exitingRef.current = exiting
 
-  const isPaused = reducedMotion || hoverPaused || focusPaused || touchPaused || tabHidden || offscreen || dragging || count < 2
+  const isPaused = rotationStopped || reducedMotion || hoverPaused || focusPaused || touchPaused || tabHidden || offscreen || dragging || count < 2
 
   const restoreCardNode = useCallback((node, idx, activeIdx, total) => {
     if (!node || !node.isConnected) return
@@ -287,6 +293,8 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   }, [])
 
   const clearExitAnimation = useCallback(() => {
+    if (exitFrameRef.current) cancelAnimationFrame(exitFrameRef.current)
+    exitFrameRef.current = null
     if (exitTimerRef.current) {
       window.clearTimeout(exitTimerRef.current)
       exitTimerRef.current = null
@@ -305,10 +313,33 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
     if (prevExiting) {
       const prevNode = cardRefs.current[prevExiting.index]
       if (prevNode && prevNode.isConnected) {
-        restoreCardNode(prevNode, prevExiting.index, activeIndexRef.current, count)
+        restoreCardNode(prevNode, prevExiting.index, activeIndexRef.current, countRef.current)
       }
     }
-  }, [count, restoreCardNode])
+  }, [restoreCardNode])
+
+  // Reconcile imperative gesture styles with the selected card before paint.
+  useLayoutEffect(() => {
+    if (dragging) return
+    cardRefs.current.forEach((node, idx) => {
+      if (idx !== exiting?.index) restoreCardNode(node, idx, safeIndex, count)
+    })
+    if (keyboardFocusRef.current) {
+      const target = keyboardFocusRef.current === 'link'
+        ? cardRefs.current[safeIndex]?.querySelector('a')
+        : rootRef.current?.querySelectorAll('[data-slide-selector]')[safeIndex]
+      target?.focus({ preventScroll: true })
+      keyboardFocusRef.current = null
+    }
+  }, [safeIndex, count, exiting, dragging, restoreCardNode])
+
+  useLayoutEffect(() => {
+    clearExitAnimation()
+    setExiting(null)
+    setActiveIndex(0)
+    dragState.current = null
+    setDragging(false)
+  }, [cardSetKey, clearExitAnimation])
 
   // Cleanup timers and animations on unmount.
   useEffect(() => () => {
@@ -412,6 +443,8 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
     el.style.transition = 'none'
     el.style.transform = stackTransform(0)
     el.style.opacity = '1'
+    const face = el.querySelector('.ticket')
+    if (face) face.style.visibility = 'visible'
 
     const fromTransform = `translate3d(${exiting.startX}px, 0px, 0px) scale(1)`
     const toTransform = `translate3d(${exiting.direction * 108}%, -6px, 0px) scale(0.96)`
@@ -462,14 +495,14 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
         }
         if (targetOpacity === 0) {
           el.style.opacity = '0'
-          window.requestAnimationFrame(() => {
+          exitFrameRef.current = window.requestAnimationFrame(() => {
             if (!el.isConnected) return
             el.style.transition = ''
             if (veil) veil.style.transition = ''
           })
         } else {
           el.style.opacity = '0'
-          window.requestAnimationFrame(() => {
+          exitFrameRef.current = window.requestAnimationFrame(() => {
             if (!el.isConnected) return
             el.style.transition = `opacity 360ms ${GLIDE_EASE}`
             el.style.opacity = String(targetOpacity)
@@ -502,7 +535,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   }, [isPaused, step])
 
   const handlePointerDown = event => {
-    if (count < 2) return
+    if (count < 2 || dragState.current || event.isPrimary === false) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     lastInteractionWasPointerRef.current = true
     if (touchResumeTimerRef.current) {
@@ -513,7 +546,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
       window.clearTimeout(snapBackTimerRef.current)
       snapBackTimerRef.current = null
     }
-    setTouchPaused(true)
+    pauseForPointer()
     const now = performance.now()
     dragState.current = {
       pointerId: event.pointerId,
@@ -663,8 +696,27 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
     }
   }
 
+  useEffect(() => {
+    const clearOutsidePress = event => {
+      const state = dragState.current
+      if (!state || state.pointerId !== event.pointerId || state.locked) return
+      dragState.current = null
+      pauseForPointer()
+    }
+    window.addEventListener('pointerup', clearOutsidePress)
+    window.addEventListener('pointercancel', clearOutsidePress)
+    return () => {
+      window.removeEventListener('pointerup', clearOutsidePress)
+      window.removeEventListener('pointercancel', clearOutsidePress)
+    }
+  }, [pauseForPointer])
+
   const handleKeyDown = event => {
     if (count < 2) return
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      if (event.target.closest?.('a.hero-deck-link')) keyboardFocusRef.current = 'link'
+      else if (event.target.closest?.('[data-slide-selector]')) keyboardFocusRef.current = 'selector'
+    }
     if (event.key === 'ArrowRight') {
       event.preventDefault()
       step(1)
@@ -801,7 +853,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
       </div>
 
       {showStack && (
-        <div className="mt-1 flex items-center justify-between gap-2" data-testid="hero-deck-controls">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2" data-testid="hero-deck-controls">
           {isSkeleton ? (
             <>
               <div className="flex items-center gap-0.5" aria-hidden="true">
@@ -837,19 +889,20 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                 >
                   <ChevronRight className="h-5 w-5" />
                 </button>
+                <span className="inline-block h-11 w-11" />
               </div>
             </>
           ) : (
             <>
-              <div className="flex items-center gap-0.5" role="tablist" aria-label={t('pass.home.choosePass')}>
+              <div className="flex items-center gap-0.5" role="group" aria-label={t('pass.home.choosePass')}>
                 {cards.map((card, index) => {
                   const active = index === safeIndex
                   return (
                     <button
                       key={card.id}
                       type="button"
-                      role="tab"
-                      aria-selected={active}
+                      data-slide-selector="true"
+                      aria-pressed={active}
                       aria-label={t('pass.home.showPass', { label: card.label, index: index + 1, count })}
                       onClick={clickEvent => handleControlClick(clickEvent, () => goTo(index))}
                       className="hero-deck-dot-btn inline-flex h-11 w-11 items-center justify-center rounded-full"
@@ -882,6 +935,12 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                   className="hero-deck-nav tactile-press inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white"
                 >
                   <ChevronRight aria-hidden="true" className="h-5 w-5" />
+                </button>
+                <button type="button" onClick={() => setRotationStopped(value => !value)}
+                  aria-label={t(rotationStopped ? 'pass.home.resumeRotation' : 'pass.home.pauseRotation')}
+                  aria-pressed={rotationStopped}
+                  className="hero-deck-nav inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/25 text-white">
+                  {rotationStopped ? <Play aria-hidden="true" className="h-4 w-4" /> : <Pause aria-hidden="true" className="h-4 w-4" />}
                 </button>
               </div>
             </>

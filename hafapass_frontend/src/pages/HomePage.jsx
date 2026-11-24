@@ -1,3 +1,4 @@
+import { matchesGuamWindow } from '../utils/guamDiscoveryWindow'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -40,41 +41,12 @@ const categoriesFor = t => [
   { name: t('buyer.Home.ClassesWorkshops'), slug: 'workshop' },
 ]
 
-function guamDateParts(value) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.valueOf())) return null
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: DEFAULT_EVENT_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'short',
-  }).formatToParts(date)
-  const get = type => parts.find(part => part.type === type)?.value || ''
-  return {
-    ymd: `${get('year')}-${get('month')}-${get('day')}`,
-    weekday: get('weekday'),
-  }
-}
-
 function matchesQuickFilter(event, filter) {
   if (!filter || filter.kind === 'all') return true
   if (filter.kind === 'village') {
     return String(event.venue_city || '').toLowerCase() === filter.value.toLowerCase()
   }
-  if (!event.starts_at) return false
-  const eventParts = guamDateParts(event.starts_at)
-  const nowParts = guamDateParts(new Date())
-  if (!eventParts || !nowParts) return false
-  if (filter.kind === 'tonight') {
-    return eventParts.ymd === nowParts.ymd
-  }
-  if (filter.kind === 'weekend') {
-    const startMs = Date.parse(event.starts_at)
-    const nowMs = Date.now()
-    const withinSevenDays = startMs >= nowMs - 86400_000 && startMs <= nowMs + 7 * 86400_000
-    return withinSevenDays && ['Fri', 'Sat', 'Sun'].includes(eventParts.weekday)
-  }
+  if (['tonight', 'weekend'].includes(filter.kind)) return matchesGuamWindow(event.starts_at, filter.kind)
   return true
 }
 
@@ -360,7 +332,7 @@ export default function HomePage() {
           )}
 
           {/* 6. "Planning an event?" host CTA. */}
-          {!loading && (
+          {(
             <section className={discovery ? 'mt-4 sm:mt-12' : 'mt-9 sm:mt-12'}>
               <Ticket
                 className="planning-ticket"

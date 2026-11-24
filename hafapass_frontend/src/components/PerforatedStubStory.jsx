@@ -242,7 +242,7 @@ export default function PerforatedStubStory({ event }) {
       <div ref={stickyRef} className="stub-story-sticky">
         <div className="stub-story-inner grid w-full max-w-5xl items-center gap-6 md:grid-cols-2 md:gap-14">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-700">How HåfaPass works</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-700">{t('pass.home.storyKicker')}</p>
             <h2 id="stub-story-heading" className="mt-2 font-display text-2xl font-bold leading-tight text-neutral-950 sm:text-3xl">
               {t('pass.home.storyTitle')}
             </h2>

@@ -97,7 +97,7 @@ describe('HeroFannedDeck', () => {
     expect(link).toHaveAttribute('href', '/events')
     expect(screen.queryByTestId('hero-deck-controls')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Next featured pass/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Show / })).not.toBeInTheDocument()
   })
 
   it('always puts the HåfaPass default ticket first, followed by up to 3 featured events', () => {
@@ -110,7 +110,7 @@ describe('HeroFannedDeck', () => {
     const frontCard = deck.querySelector('[data-front="true"]')
     expect(frontCard).toHaveAttribute('data-card-kind', 'brand')
     expect(deck).not.toHaveTextContent('Fourth Event Should Not Show')
-    expect(within(deck).getAllByRole('tab')).toHaveLength(4)
+    expect(within(deck).getAllByRole('button', { name: /^Show / })).toHaveLength(4)
   })
 
   it('supports prev/next buttons, dots, keyboard arrows, and mixed pricing under reduced motion', async () => {
@@ -129,7 +129,7 @@ describe('HeroFannedDeck', () => {
     await user.click(screen.getByRole('button', { name: 'Previous featured pass' }))
     expect(deck).toHaveAttribute('data-active-index', '0')
 
-    await user.click(screen.getByRole('tab', { name: /FD Alumni Basketball/i }))
+    await user.click(screen.getByRole('button', { name: /FD Alumni Basketball/i }))
     expect(deck).toHaveAttribute('data-active-index', '2')
 
     fireEvent.keyDown(deck, { key: 'ArrowRight' })
@@ -227,4 +227,44 @@ describe('HeroFannedDeck', () => {
     expect(reducedDeck).toHaveAttribute('data-active-index', '0')
   })
 
+
+  it('restores the visible front after rapid next/previous interruption', () => {
+    reduceMotion(false)
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Next featured pass' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous featured pass' }))
+    const front = screen.getByTestId('hero-fanned-deck').querySelector('[data-front="true"]')
+    expect(front.style.opacity).toBe('1')
+    expect(front.querySelector('.ticket').style.visibility).toBe('visible')
+  })
+
+  it('recovers to an operable brand card when inventory disappears during exit', () => {
+    reduceMotion(false)
+    const { rerender } = render(<MemoryRouter><HeroFannedDeck events={sampleEvents} /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Next featured pass' }))
+    rerender(<MemoryRouter><HeroFannedDeck events={[]} /></MemoryRouter>)
+    const brand = screen.getByTestId('hero-brand-card')
+    expect(brand).toBeVisible()
+    expect(brand.closest('[data-front]')).toHaveAttribute('data-front', 'true')
+    expect(screen.queryByTestId('hero-deck-controls')).not.toBeInTheDocument()
+  })
+
+  it('opens the visible event after keyboard Right from the focused brand link', async () => {
+    reduceMotion(true)
+    const user = userEvent.setup()
+    mount()
+    screen.getByTestId('hero-brand-card').closest('a').focus()
+    await user.keyboard('{ArrowRight}{Enter}')
+    expect(screen.getByText('Destination /events/copa-2027')).toBeInTheDocument()
+  })
+
+  it('preserves an explicit stop while focus moves elsewhere', () => {
+    vi.useFakeTimers()
+    reduceMotion(false)
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause event rotation' }))
+    fireEvent.blur(screen.getByRole('button', { name: 'Resume event rotation' }), { relatedTarget: document.body })
+    act(() => { vi.advanceTimersByTime(24000) })
+    expect(screen.getByTestId('hero-fanned-deck')).toHaveAttribute('data-active-index', '0')
+  })
 })

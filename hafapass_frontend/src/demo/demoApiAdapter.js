@@ -1,3 +1,4 @@
+import { matchesGuamWindow } from '../utils/guamDiscoveryWindow'
 import { AxiosError } from 'axios'
 import {
   DEMO_CATEGORIES,
@@ -116,9 +117,8 @@ function filterEvents(params) {
   if (dateTo) {
     results = results.filter(event => String(event.starts_at || '').slice(0, 10) <= dateTo)
   }
-  if (windowFilter === 'tonight') {
-    const today = new Date().toISOString().slice(0, 10)
-    results = results.filter(event => String(event.starts_at || '').slice(0, 10) === today)
+  if (['tonight', 'weekend'].includes(windowFilter)) {
+    results = results.filter(event => matchesGuamWindow(event.starts_at, windowFilter))
   }
   return results
 }

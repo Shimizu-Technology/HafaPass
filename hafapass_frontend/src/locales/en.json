@@ -1423,7 +1423,10 @@
       "featuredEventLabel": "Featured event",
       "showPass": "Show {{label}} ({{index}} of {{count}})",
       "passPosition": "{{index}} of {{count}}: {{label}}",
-      "brandArtBadge": "HåfaPass · Guam"
+      "brandArtBadge": "HåfaPass · Guam",
+      "pauseRotation": "Pause event rotation",
+      "resumeRotation": "Resume event rotation",
+      "storyKicker": "How HåfaPass works"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

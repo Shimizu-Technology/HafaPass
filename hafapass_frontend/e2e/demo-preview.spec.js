@@ -1,10 +1,7 @@
-import { env } from 'node:process'
 import { expect, test } from '@playwright/test'
 
-const demoEnabled = env.VITE_HAFAPASS_DEMO_DATA === '1' || Boolean(env.DEMO_PREVIEW_BASE_URL)
 
 test.describe('preview-only demo-data mode', () => {
-  test.skip(!demoEnabled, 'Runs only against a VITE_HAFAPASS_DEMO_DATA=1 build or deploy preview')
 
   test('events list -> event detail -> checkout shows payments-off notice without external API or Stripe calls', async ({ page }) => {
     const blockedRequests = []

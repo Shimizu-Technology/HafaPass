@@ -610,7 +610,7 @@ function OrderConfirmationContent() {
                       <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket2') : t('buyerAccount.orderConfirmationPage.viewTicketStatus')}
                     </Link>}
                     {hasSecondaryActions && (
-                      <div className="flex items-center justify-between gap-1 border-t border-neutral-200/80 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-1 border-t border-neutral-200/80 pt-1">
                         {canRotate && (
                           <button type="button" onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100">
                             <RefreshCw aria-hidden="true" className="h-4 w-4 shrink-0" />

@@ -64,7 +64,7 @@ export default function ChipRow({
     if (!active || typeof row.scrollTo !== 'function') return
     const maxScroll = row.scrollWidth - row.clientWidth
     if (maxScroll <= 2) return
-    const targetLeft = Math.max(0, Math.min(maxScroll, active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2))
+    const targetLeft = Math.max(0, Math.min(maxScroll, active.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - active.offsetWidth) / 2))
     row.scrollTo({ left: targetLeft, behavior: reducedMotion ? 'auto' : 'smooth' })
   }, [activeKey, reducedMotion])
 
