@@ -1,7 +1,7 @@
 // Baseline staff handler: just enough fictional data for the organizer, admin,
 // box-office and scanner screens to load. Feature workers add their own files
 // beside this one; they should not edit it.
-import { json, created, notFound } from './respond'
+import { json, created } from './respond'
 import { organizationFinances, adminDashboard, boxOfficeSummary, recordBoxOfficeSale, scannerHandlers } from '../staff/responses'
 
 const eventIdOf = path => path.match(/^\/organizer\/events\/(\d+)(?:\/|$)/)?.[1]
@@ -22,9 +22,7 @@ export async function handle(ctx) {
   if (method === 'get' && path === '/me') return json(staff.user)
   if (method === 'get' && path === '/organizer/organizations') return json([staff.organization])
   if (method === 'get' && path === '/organizer/organization') return json(staff.organization)
-  if (path === '/organizer_profile') {
-    return json(staff.profile)
-  }
+  if (method === 'get' && path === '/organizer_profile') return json(staff.profile)
   if (method === 'get' && path === '/organizer/connected_accounts') return json([])
   if (method === 'get' && path === '/organizer/card_present_account') return json({ status: 'not_configured', configured: false })
 
@@ -50,7 +48,9 @@ export async function handle(ctx) {
   if (eventId) {
     const event = staff.events.find(item => String(item.id) === eventId)
     const rest = path.replace(`/organizer/events/${eventId}`, '') || ''
-    if (!event) return notFound('Event not found in the demo preview.')
+    // Unknown event ids fall through so feature handlers (or the adapter's
+    // friendly 404) can answer them.
+    if (!event) return undefined
     if (method === 'get' && rest === '') return json(event)
     if (method === 'get' && rest === '/box_office/summary') return json(boxOfficeSummary(staff))
     if (method === 'post' && rest === '/box_office') return created(recordBoxOfficeSale(staff, event, body))
@@ -72,9 +72,5 @@ export async function handle(ctx) {
     return json({ balance_adjustments: [], meta: paginate([], params).meta })
   }
 
-  // Any other organizer/admin change succeeds in memory only (nothing is kept).
-  if (['post', 'put', 'patch', 'delete'].includes(method) && /^\/(organizer|admin)\//.test(path)) {
-    return json({ demo: true, saved: false, message: 'Demo preview: nothing was saved.' })
-  }
   return undefined
 }

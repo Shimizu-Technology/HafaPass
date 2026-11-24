@@ -29,7 +29,7 @@ Everything in `src/demo/` exists only for the Netlify **deploy-preview** (`VITE_
 
    Return `undefined` when the request is not yours. Return `json(data, status?)`, `created(data)`, `notFound()`, `forbidden()` or `unprocessable(message)` otherwise. Status 400 and above reject like a real API error.
 
-2. Register it in `src/demo/handlers/index.js`: add `import * as example from './example'` and one entry in `DEMO_HANDLERS`. Handlers run in list order before the adapter's built-in routes, and `baseline` answers the staff shells (`/me`, organizer events, box office, scanner, finances, admin dashboard and payouts). Put yours before `baseline` only if you need to override one of its routes.
+2. Register it in `src/demo/handlers/index.js`: add `import * as example from './example'` and one entry in `DEMO_HANDLERS`. Handlers run in list order before the adapter's built-in routes, and `baseline` answers the staff shells (`/me`, organizer events, box office, scanner, finances, admin dashboard and payouts). Add yours **above** `baseline` in the list. Order only matters when two handlers claim the same route; the first answer wins. Return `undefined` (or `null`) for anything that is not yours. Organizer/admin changes that no handler claims get a generic "nothing was saved" success from the adapter after all handlers have run, so your write handlers are always reached.
 
 Unknown organizer/admin changes (`POST`, `PUT`, `PATCH`, `DELETE`) return a friendly success marked `demo: true`. Unknown reads return 404 and log `[demo-api] unhandled GET /path` in the console so you can see what to add.
 
