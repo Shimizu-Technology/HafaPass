@@ -60,10 +60,10 @@ function BrandDefaultTicketFace({ variant = DEFAULT_BRAND_VARIANT }) {
         <BrandTicketCover variant={variant} />
         <div className="px-5 pb-4 pt-4 sm:px-6">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-800">
-            HåfaPass Guam
+            {t('pass.home.brandCardKicker')}
           </p>
           <p className="mt-1 line-clamp-2 min-h-[2.85rem] font-display text-[1.25rem] font-bold leading-[1.18] tracking-[-0.02em] text-neutral-950 sm:min-h-[3.2rem] sm:text-[1.4rem]">
-            Your pass to what’s on across Guam
+            {t('pass.home.brandCardHeadline')}
           </p>
         </div>
       </TicketTop>

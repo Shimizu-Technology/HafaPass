@@ -1405,7 +1405,9 @@
       "storyDoorBody": "Show the QR on your phone. Staff scan it and you walk right in.",
       "storyExampleEvent": "Your night out",
       "storyAdmitted": "Admitted",
-      "dateAndVillage": "Choose a date or village"
+      "dateAndVillage": "Choose a date or village",
+      "brandCardKicker": "HåfaPass Guam",
+      "brandCardHeadline": "Tickets for everything happening on Guam"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

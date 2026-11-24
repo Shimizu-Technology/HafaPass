@@ -1,4 +1,4 @@
-export const DEFAULT_BRAND_VARIANT = 2
+export const DEFAULT_BRAND_VARIANT = 1
 
 export const BRAND_VARIANTS = Object.freeze([
   {
