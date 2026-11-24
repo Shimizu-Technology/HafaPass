@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useMatch } from 'react-router-dom'
-import { Search, CalendarPlus, Ticket, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Search, CalendarPlus, Ticket, X } from 'lucide-react'
 import apiClient from '../api/client'
 import EventCard from '../components/EventCard'
 import EmptyInventory from '../components/EmptyInventory'
 import SEO from '../components/SEO'
 import BuyerTitleBand from '../components/BuyerTitleBand'
+import ChipRow from '../components/ui/ChipRow'
 import { StaggerContainer, StaggerItem } from '../components/ui/ScrollReveal'
 import { EventCardSkeleton } from '../components/ui/Skeleton'
 import useEventCategories from '../hooks/useEventCategories'
@@ -40,7 +41,6 @@ export default function EventsPage() {
   const [dateRange, setDateRange] = useState(searchParams.get('date') || 'upcoming')
   const [price, setPrice] = useState(searchParams.get('price') || 'all')
   const [village, setVillage] = useState(searchParams.get('village') || '')
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const activeFilterCount = [activeCategory !== 'all', dateRange !== 'upcoming', price !== 'all', Boolean(village)].filter(Boolean).length
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const categories = useEventCategories().map(category => ({ ...category, label: t(`buyer.categories.${category.value}`, { defaultValue: category.label }) }))
@@ -144,56 +144,79 @@ export default function EventsPage() {
       <div className="bg-surface min-h-[50vh]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <h2 className="sr-only">{t('pass.buyer.eventResults')}</h2>
-          {/* Responsive discovery filters */}
-          <div className="flex flex-col gap-4 mb-8">
-           <div className="hidden sm:flex sm:flex-wrap gap-2">
-            {[{ value: 'all', label: t('buyer.Events.allEvents') }, ...categories].map(({ value, label }) => {
-              const Icon = value === 'all' ? Ticket : categoryIcon(value)
-              return (
-              <button
-                key={value}
-                onClick={() => changeCategory(value)}
-                aria-pressed={activeCategory === value}
-                className={`inline-flex min-h-11 items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${
-                  activeCategory === value
-                    ? 'bg-brand-700 text-white'
-                    : 'bg-white text-neutral-600 border border-neutral-200 hover:border-brand-300 hover:text-brand-600'
-                }`}
-              >
-                <Icon aria-hidden="true" className="w-4 h-4" />
-                {label}
-              </button>
-            )})}
-           </div>
-           <button type="button" aria-expanded={filtersOpen} aria-controls="event-filters" onClick={() => setFiltersOpen(open => !open)} className="btn-secondary min-h-11 self-start gap-2 sm:hidden">
-            <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-            {t('buyer.Events.filters')}{activeFilterCount > 0 && <span>({activeFilterCount})</span>}
-            <ChevronDown aria-hidden="true" className={`h-4 w-4 ${filtersOpen ? 'rotate-180' : ''}`} />
-           </button>
-           <div id="event-filters" className={`${filtersOpen ? 'grid' : 'hidden'} grid-cols-1 min-[400px]:grid-cols-2 gap-2 sm:grid sm:gap-3 lg:grid-cols-[12rem_10rem_minmax(16rem,1fr)]`}>
-            <div className="col-span-full min-w-0 sm:hidden">
-             <label htmlFor="event-category" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.category')}</label>
-             <select id="event-category" value={activeCategory} onChange={event => changeCategory(event.target.value)} className="input min-h-11 !py-2 text-base !pl-3">
-              <option value="all">{t('buyer.Events.allEvents')}</option>
-              {categories.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-             </select>
-            </div>
-            <div className="min-w-0">
-             <label htmlFor="event-date-range" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.when')}</label>
-             <select id="event-date-range" value={dateRange} onChange={event => { setDateRange(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !pl-2 sm:!pl-4">
-             {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
-             </select>
-            </div>
-            <div className="min-w-0">
-             <label htmlFor="event-price" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.price')}</label>
-             <select id="event-price" value={price} onChange={event => { setPrice(event.target.value); setPage(1) }} className="input min-h-11 !py-2 text-base !pl-2 sm:!pl-4"><option value="all">{t('buyer.Events.anyPrice')}</option><option value="free">{t('buyer.Events.free')}</option><option value="under_25">{t('buyer.Events.under25')}</option><option value="under_50">{t('buyer.Events.under50')}</option></select>
-            </div>
-            <div className="min-w-0 col-span-full lg:col-span-1">
-             <label htmlFor="event-village" className="mb-1 block text-sm font-medium text-neutral-600">{t('buyer.Events.village')}</label>
-             <select id="event-village" value={village} onChange={event => { setVillage(event.target.value); setPage(1) }} className="input min-h-11 !py-2"><option value="">{t('buyer.Events.allVillages')}</option>{GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}</select>
-            </div>
-           </div>
-           {!loading && !loadError && <span role="status" className="text-sm text-content-muted">{t('buyer.Events.eventCount', { count: meta.total_count })}</span>}
+          {/* Responsive discovery filters: two single-line ChipRows at every width */}
+          <div className="flex flex-col gap-3 mb-8">
+            <ChipRow role="group" ariaLabel={t('buyer.Events.category')} activeKey={activeCategory}>
+              {[{ value: 'all', label: t('buyer.Events.allEvents') }, ...categories].map(({ value, label }) => {
+                const Icon = value === 'all' ? Ticket : categoryIcon(value)
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => changeCategory(value)}
+                    aria-pressed={activeCategory === value}
+                    className="chip"
+                  >
+                    <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    {label}
+                  </button>
+                )
+              })}
+            </ChipRow>
+
+            <ChipRow role="group" ariaLabel={t('buyer.Events.filters')}>
+              <div className="chip-select-wrap" data-active={dateRange !== 'upcoming' ? 'true' : undefined}>
+                <label htmlFor="event-date-range" className="chip-select-prefix">{t('buyer.Events.when')}:</label>
+                <select
+                  id="event-date-range"
+                  aria-label={t('buyer.Events.when')}
+                  value={dateRange}
+                  onChange={event => { setDateRange(event.target.value); setPage(1) }}
+                  className="chip-select"
+                >
+                  {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
+                </select>
+              </div>
+
+              <div className="chip-select-wrap" data-active={price !== 'all' ? 'true' : undefined}>
+                <label htmlFor="event-price" className="chip-select-prefix">{t('buyer.Events.price')}:</label>
+                <select
+                  id="event-price"
+                  aria-label={t('buyer.Events.price')}
+                  value={price}
+                  onChange={event => { setPrice(event.target.value); setPage(1) }}
+                  className="chip-select"
+                >
+                  <option value="all">{t('buyer.Events.anyPrice')}</option>
+                  <option value="free">{t('buyer.Events.free')}</option>
+                  <option value="under_25">{t('buyer.Events.under25')}</option>
+                  <option value="under_50">{t('buyer.Events.under50')}</option>
+                </select>
+              </div>
+
+              <div className="chip-select-wrap" data-active={village ? 'true' : undefined}>
+                <label htmlFor="event-village" className="chip-select-prefix">{t('buyer.Events.village')}:</label>
+                <select
+                  id="event-village"
+                  aria-label={t('buyer.Events.village')}
+                  value={village}
+                  onChange={event => { setVillage(event.target.value); setPage(1) }}
+                  className="chip-select"
+                >
+                  <option value="">{t('buyer.Events.allVillages')}</option>
+                  {GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+
+              {(activeFilterCount > 0 || search.trim()) && (
+                <button type="button" onClick={clearFilters} className="chip-ghost">
+                  <X aria-hidden="true" className="h-4 w-4" />
+                  {t('buyer.Events.clearFilters')}
+                </button>
+              )}
+            </ChipRow>
+
+            {!loading && !loadError && <span role="status" className="text-sm text-content-muted">{t('buyer.Events.eventCount', { count: meta.total_count })}</span>}
           </div>
 
           {loading ? (

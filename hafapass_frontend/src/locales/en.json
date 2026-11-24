@@ -443,6 +443,7 @@
       "getTickets": "Get Tickets ",
       "nextUpOnGuam": "Next Up on Guam",
       "viewAllEvents": "View all events",
+      "seeAll": "See all",
       "loadingUpcomingEvents": "Loading upcoming events…",
       "eventsCouldntLoad": "Events couldn’t load",
       "pleaseTryAgainToSeeWhatsComingUp": "Please try again to see what's coming up.",
@@ -857,17 +858,18 @@
       "tryATicketPrice": "Try a ticket price",
       "doorDemo": {
         "tryIt": "Tap a ticket to try the door scanner",
-        "adultTicket": "Adult Ticket",
-        "alumniTicket": "Free Alumni Ticket",
+        "adultTicket": "Adult",
+        "alumniTicket": "Free alumni",
         "verifyFirst": "Verify before admitting",
         "alumniAlert": "Free alumni — check ID",
         "for": "For:",
         "gradYear": "Grad year:",
-        "confirmAdmit": "Confirm & Admit",
+        "confirmAdmit": "Admit",
         "cancel": "Cancel",
         "notAdmitted": "Not admitted",
         "notUsed": "The ticket wasn’t used. Ready for the next guest.",
-        "fictional": "Example · names are fictional"
+        "fictional": "Example · names are fictional",
+        "scanning": "Scanning QR pass…"
       }
     },
     "organizer": {

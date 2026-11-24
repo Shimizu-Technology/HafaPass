@@ -7,7 +7,7 @@ const baseURL = externalBaseURL || `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: /(demo-preview|mockup-motion-[abc])\.spec\.js/,
+  testMatch: /(demo-preview|mockup-motion-[abcd])\.spec\.js/,
   fullyParallel: true,
   retries: 0,
   reporter: 'list',

@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { ArrowRight, Banknote, Check, CheckCircle2, ChevronDown, Mail, ScanLine, Users, WifiOff } from 'lucide-react'
 import Ticket from '../components/Ticket'
+import ChipRow from '../components/ui/ChipRow'
 import apiClient from '../api/client'
 import SEO from '../components/SEO'
+import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import { activeIntlLocale } from '../utils/locale'
 import { organizerPayoutCopy, parseFeeTerms } from '../utils/feeTerms'
 import { formatMoneyCents } from '../utils/money'
@@ -60,78 +62,152 @@ function CtaGroup({ targets, tone = 'light', align = 'start' }) {
 }
 
 // Fictional guests (from the demo-data starter list) for the door demo.
-const DEMO_GUESTS = { adult: { name: 'Avery Lindqvist' }, alumni: { name: 'Calla Yorke', gradYear: '1998' } }
+const DEMO_GUESTS = {
+  adult: [
+    { name: 'Avery Lindqvist' },
+    { name: 'Bram Okafor' },
+    { name: 'Dashiell Pruitt' },
+  ],
+  alumni: [
+    { name: 'Calla Yorke', gradYear: '1998' },
+    { name: 'Elowen Marsh', gradYear: '2004' },
+    { name: 'Fenwick Abara', gradYear: '2011' },
+  ],
+}
 
-// A tap-to-try door scanner: an adult ticket admits at once; a free alumni
-// ticket holds for an ID check until staff confirm or cancel. Illustrative
-// only, with fictional names; nothing is scanned or saved, and nothing moves.
+// A tap-to-try door scanner: tapping Adult or Free alumni runs a 400ms teal
+// scan beam across the viewfinder before popping into Admitted (and advancing
+// the checked-in progress bar via scaleX) or Verify ID First. Under reduced
+// motion, state changes are immediate with zero scan beam.
 function DoorPreview() {
   const { t } = useTranslation()
   const id = useId()
+  const reducedMotion = usePrefersReducedMotion()
   // adult | alumni-hold | alumni-admitted | alumni-cancelled
   const [screen, setScreen] = useState('adult')
-  // Confirm & Admit and Cancel disappear once used; focus moves to the result.
+  const [scanningFor, setScanningFor] = useState(null)
+  const [checkedCount, setCheckedCount] = useState(186)
+  const [guestIdx, setGuestIdx] = useState(0)
+  // Admit and Cancel disappear once used; focus moves to the result.
   const result = useRef(null)
   const focusResult = useRef(false)
+  const scanTimer = useRef(0)
+
+  useEffect(() => () => clearTimeout(scanTimer.current), [])
+
   useEffect(() => {
     if (!focusResult.current) return
     focusResult.current = false
     result.current?.focus()
   }, [screen])
-  const decide = next => { focusResult.current = true; setScreen(next) }
-  const ticket = screen === 'adult' ? 'adult' : 'alumni'
-  const admitted = screen === 'adult' || screen === 'alumni-admitted'
-  const guest = DEMO_GUESTS[ticket]
+
+  const decide = next => {
+    clearTimeout(scanTimer.current)
+    setScanningFor(null)
+    if (next === 'alumni-admitted') setCheckedCount(c => Math.min(240, c + 1))
+    focusResult.current = true
+    setScreen(next)
+  }
+
+  const triggerScan = (kind, nextScreen) => {
+    clearTimeout(scanTimer.current)
+    if (reducedMotion) {
+      setScanningFor(null)
+      if (nextScreen === 'adult') setCheckedCount(c => Math.min(240, c + 1))
+      setScreen(nextScreen)
+      return
+    }
+    setScanningFor(kind)
+    scanTimer.current = window.setTimeout(() => {
+      setScanningFor(null)
+      if (nextScreen === 'adult') setCheckedCount(c => Math.min(240, c + 1))
+      setScreen(nextScreen)
+    }, 400)
+  }
+
+  const nextGuest = () => {
+    setGuestIdx(idx => (idx + 1) % DEMO_GUESTS.adult.length)
+    triggerScan('adult', 'adult')
+  }
+
+  const ticket = scanningFor || (screen === 'adult' ? 'adult' : 'alumni')
+  const isScanning = Boolean(scanningFor)
+  const admitted = !isScanning && (screen === 'adult' || screen === 'alumni-admitted')
+  const guest = DEMO_GUESTS[ticket][guestIdx % DEMO_GUESTS[ticket].length]
   const ticketLabel = ticket === 'adult' ? t('buyerDiscovery.host.doorDemo.adultTicket') : t('buyerDiscovery.host.doorDemo.alumniTicket')
+  const doorState = isScanning ? 'scanning' : screen
+
   return (
     <div className="mx-auto flex w-full max-w-[20rem] flex-col gap-3">
       <div className="host-preview-front relative w-full rounded-[1.75rem] border border-neutral-200 bg-white p-3 shadow-card">
         <p id={`${id}-try`} className="px-2 pb-2 pt-1 text-base font-semibold text-neutral-900">{t('buyerDiscovery.host.doorDemo.tryIt')}</p>
-        <div role="group" aria-labelledby={`${id}-try`} className="grid grid-cols-2 gap-2 px-1 pb-3">
-          {[['adult', 'adult', t('buyerDiscovery.host.doorDemo.adultTicket')], ['alumni', 'alumni-hold', t('buyerDiscovery.host.doorDemo.alumniTicket')]].map(([kind, start, label]) => <button key={kind} type="button" aria-pressed={ticket === kind}
-            onClick={() => setScreen(start)}
-            className="tactile-press min-h-12 rounded-xl border-2 border-neutral-300 px-2 text-sm font-semibold leading-tight text-neutral-900 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 aria-pressed:text-brand-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
-            {label}
-          </button>)}
+        <div role="group" aria-labelledby={`${id}-try`} className="grid grid-cols-2 gap-1.5 rounded-2xl bg-neutral-100 p-1 mb-3">
+          {[['adult', 'adult', t('buyerDiscovery.host.doorDemo.adultTicket')], ['alumni', 'alumni-hold', t('buyerDiscovery.host.doorDemo.alumniTicket')]].map(([kind, start, label]) => (
+            <button
+              key={kind}
+              type="button"
+              aria-pressed={ticket === kind}
+              onClick={() => triggerScan(kind, start)}
+              className="tactile-press min-h-11 whitespace-nowrap rounded-xl border border-transparent px-3 text-sm font-semibold text-neutral-700 aria-pressed:border-brand-700 aria-pressed:bg-white aria-pressed:text-brand-950 aria-pressed:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div ref={result} tabIndex={-1} aria-live="polite" data-door-state={screen} className={`min-h-[19rem] rounded-[1.25rem] px-5 pb-5 pt-4 text-white outline-none transition-[background-color] duration-200 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
+        <div ref={result} tabIndex={-1} aria-live="polite" data-door-state={doorState} className={`door-screen relative min-h-[19rem] overflow-hidden rounded-[1.25rem] px-5 pb-5 pt-4 text-white outline-none transition-[background-color] duration-200 ease-out-strong focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 ${isScanning ? 'bg-brand-950' : admitted ? 'bg-emerald-800' : screen === 'alumni-hold' ? 'bg-indigo-950' : 'bg-brand-950'}`}>
+          <div aria-hidden="true" className="door-laser" />
           <p className="text-sm font-semibold text-white/85">{t('buyerDiscovery.host.doorScanner')}</p>
-          <div key={screen} className="door-state-fade">
-          {admitted && <div className="mt-5 flex flex-col items-center text-center">
-            <CheckCircle2 aria-hidden="true" className="h-14 w-14 text-white" />
-            <p className="mt-3 font-display text-3xl font-bold uppercase tracking-wide">{t('buyerDiscovery.host.admitted')}</p>
-            <p className="mt-3 rounded-full bg-white px-4 py-1.5 text-base font-bold text-emerald-900">{ticketLabel}</p>
-            <p className="mt-3 font-display text-2xl font-bold [overflow-wrap:anywhere]">{guest.name}</p>
-          </div>}
-          {screen === 'alumni-hold' && <div className="mt-3">
-            <p className="rounded-lg bg-amber-300 px-3 py-2 text-center text-sm font-bold uppercase tracking-wide text-neutral-950">{t('buyerDiscovery.host.doorDemo.verifyFirst')}</p>
-            <p className="mt-3 text-center font-display text-lg font-bold uppercase tracking-wide text-amber-300">{t('buyerDiscovery.host.doorDemo.alumniAlert')}</p>
-            <dl className="mt-3 space-y-1 rounded-xl bg-white/10 px-4 py-3">
-              <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.for')}</dt><dd className="font-display text-2xl font-bold [overflow-wrap:anywhere]">{guest.name}</dd></div>
-              <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.gradYear')}</dt><dd className="text-xl font-bold">{guest.gradYear}</dd></div>
-            </dl>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => decide('alumni-admitted')} className="tactile-press min-h-12 rounded-xl bg-amber-300 px-2 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
-              <button type="button" onClick={() => decide('alumni-cancelled')} className="tactile-press min-h-12 rounded-xl border-2 border-white px-2 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
+          {isScanning ? (
+            <div className="mt-16 text-center">
+              <p className="text-base font-semibold text-brand-100">{t('buyerDiscovery.host.doorDemo.scanning')}</p>
             </div>
-          </div>}
-          {screen === 'alumni-cancelled' && <div className="mt-6 text-center">
-            <p className="font-display text-2xl font-bold">{t('buyerDiscovery.host.doorDemo.notAdmitted')}</p>
-            <p className="mt-2 text-base text-content-inverse-muted">{t('buyerDiscovery.host.doorDemo.notUsed')}</p>
-          </div>}
-          </div>
+          ) : (
+            <div key={`${screen}-${guestIdx}`} className="door-result-pop">
+              {admitted && <div className="mt-5 flex flex-col items-center text-center">
+                <CheckCircle2 aria-hidden="true" className="h-14 w-14 text-white" />
+                <p className="mt-3 font-display text-3xl font-bold uppercase tracking-wide">{t('buyerDiscovery.host.admitted')}</p>
+                <p className="mt-3 rounded-full bg-white px-4 py-1.5 text-sm font-bold text-emerald-900">{ticketLabel}</p>
+                <p className="mt-3 font-display text-2xl font-bold [overflow-wrap:anywhere]">{guest.name}</p>
+              </div>}
+              {screen === 'alumni-hold' && <div className="mt-3">
+                <p className="rounded-lg bg-amber-300 px-3 py-2 text-center text-sm font-bold uppercase tracking-wide text-neutral-950">{t('buyerDiscovery.host.doorDemo.verifyFirst')}</p>
+                <p className="mt-3 text-center font-display text-lg font-bold uppercase tracking-wide text-amber-300">{t('buyerDiscovery.host.doorDemo.alumniAlert')}</p>
+                <dl className="mt-3 space-y-1 rounded-xl bg-white/10 px-4 py-3">
+                  <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.for')}</dt><dd className="font-display text-2xl font-bold [overflow-wrap:anywhere]">{guest.name}</dd></div>
+                  <div className="flex items-baseline gap-2"><dt className="text-base text-white/85">{t('buyerDiscovery.host.doorDemo.gradYear')}</dt><dd className="text-xl font-bold">{guest.gradYear}</dd></div>
+                </dl>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => decide('alumni-admitted')} className="tactile-press min-h-12 whitespace-nowrap rounded-xl bg-amber-300 px-3 text-base font-bold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.confirmAdmit')}</button>
+                  <button type="button" onClick={() => decide('alumni-cancelled')} className="tactile-press min-h-12 whitespace-nowrap rounded-xl border-2 border-white px-3 text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950">{t('buyerDiscovery.host.doorDemo.cancel')}</button>
+                </div>
+              </div>}
+              {screen === 'alumni-cancelled' && <div className="mt-6 text-center">
+                <p className="font-display text-2xl font-bold">{t('buyerDiscovery.host.doorDemo.notAdmitted')}</p>
+                <p className="mt-2 text-base text-content-inverse-muted">{t('buyerDiscovery.host.doorDemo.notUsed')}</p>
+              </div>}
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-3 text-sm text-content-muted">
-          <span>{t('buyerDiscovery.host.doorDemo.fictional')}</span><span className="shrink-0 whitespace-nowrap font-semibold text-brand-800">{t('buyerDiscovery.host.nextGuest')}</span>
+        <div className="flex items-center justify-between gap-2 px-2 pb-0.5 pt-2 text-xs text-content-muted">
+          <span>{t('buyerDiscovery.host.doorDemo.fictional')}</span>
+          <button
+            type="button"
+            onClick={nextGuest}
+            className="tactile-press inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-brand-800 hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          >
+            {t('buyerDiscovery.host.nextGuest')}
+          </button>
         </div>
       </div>
-      <div aria-hidden="true" className="host-preview-back pointer-events-none hidden w-full select-none rounded-2xl border border-neutral-200 bg-white px-4 py-3.5 shadow-card sm:block">
+      <div data-testid="door-checked-counter" className="host-preview-back w-full select-none rounded-2xl border border-neutral-200 bg-white px-4 py-3.5 shadow-card">
         <div className="flex items-baseline justify-between gap-3">
           <p className="text-xs font-semibold text-content-muted">{t('buyerDiscovery.host.checkedIn')}</p>
-          <p className="font-display text-xl font-bold text-neutral-950">186 <span className="text-sm font-medium text-content-muted">{t('buyerDiscovery.host.of240')}</span></p>
+          <p className="font-display text-xl font-bold tabular-nums text-neutral-950"><span data-testid="door-checked-count">{checkedCount}</span> <span className="text-sm font-medium text-content-muted">{t('buyerDiscovery.host.of240')}</span></p>
         </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full w-[78%] rounded-full bg-brand-500" /></div>
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-content-muted"><WifiOff className="h-3.5 w-3.5 shrink-0" />{t('buyerDiscovery.host.offlineScansSyncLater')}</p>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100">
+          <div className="door-counter-fill h-full w-full origin-left rounded-full bg-brand-500" style={{ transform: `scaleX(${(checkedCount / 240).toFixed(3)})` }} />
+        </div>
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-content-muted"><WifiOff aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />{t('buyerDiscovery.host.offlineScansSyncLater')}</p>
       </div>
     </div>
   )
@@ -223,13 +299,19 @@ function FeeCalculator({ pricing }) {
             className={`input text-base tabular-nums ${quantityError ? 'input-error' : ''}`} />
         </div>
       </div>
-      <div role="group" aria-label={t('buyerDiscovery.host.tryATicketPrice')} className="mt-3 flex flex-wrap gap-2">
-        {[10, 25, 59].map(price => <button key={price} type="button" aria-pressed={priceCents === price * 100}
-          onClick={() => setPriceInput(String(price))}
-          className="tactile-press min-h-11 rounded-lg border border-brand-200 px-4 text-sm font-semibold tabular-nums text-brand-900 hover:bg-brand-50 aria-pressed:border-brand-800 aria-pressed:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2">
-          {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
-        </button>)}
-      </div>
+      <ChipRow role="group" ariaLabel={t('buyerDiscovery.host.tryATicketPrice')} bleed="none" className="mt-3">
+        {[10, 25, 59].map(price => (
+          <button
+            key={price}
+            type="button"
+            aria-pressed={priceCents === price * 100}
+            onClick={() => setPriceInput(String(price))}
+            className="chip tabular-nums"
+          >
+            {new Intl.NumberFormat(activeIntlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(price)}
+          </button>
+        ))}
+      </ChipRow>
       {priceError && <p id={`${id}-price-error`} className="mt-2 text-sm text-red-700">{priceError}</p>}
       {quantityError && <p id={`${id}-quantity-error`} className="mt-2 text-sm text-red-700">{quantityError}</p>}
 

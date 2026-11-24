@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, ChevronLeft, ChevronRight, Play, Globe, Instagram, Facebook, Youtube, Music2, Link2 } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ChevronDown, Play, Globe, Instagram, Facebook, Youtube, Music2, Link2 } from 'lucide-react'
 import { safeLink, videoEmbed, normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
 
 const linkIcons = {
@@ -178,7 +178,7 @@ export default function EventPageSections({ design, imageAssetHost }) {
       const title = t(`buyer.EventDetail.design.${section.type}`)
       return (
         <section key={section.type} className="mb-8" aria-label={title}>
-          <h2 className="event-heading mb-3 text-lg font-semibold">{title}</h2>
+          <h2 className="mb-4 font-display text-2xl font-bold text-neutral-950 sm:text-3xl">{title}</h2>
           {section.type === 'gallery' && <Gallery photos={page.gallery.filter(photo => approvedImageUrl(photo.url, imageAssetHost))} />}
           {section.type === 'video' && <Video url={section.url} />}
           {section.type === 'lineup' && (
@@ -219,11 +219,11 @@ export default function EventPageSections({ design, imageAssetHost }) {
           {section.type === 'schedule' && (
             <ol className="space-y-2">
               {items.map((item, index) => (
-                <li key={index} className="flex gap-4 rounded-xl border border-neutral-200 p-3">
-                  <time className="font-semibold event-link">{item.time}</time>
-                  <div>
-                    <p className="font-semibold">{item.title}</p>
-                    {item.note && <p className="text-sm text-neutral-600">{item.note}</p>}
+                <li key={index} className="flex items-baseline gap-4 rounded-xl border border-neutral-200 p-3.5">
+                  <time className="w-[4.75rem] shrink-0 whitespace-nowrap tabular-nums text-sm font-semibold event-link">{item.time}</time>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-neutral-950">{item.title}</p>
+                    {item.note && <p className="mt-0.5 text-sm text-neutral-600">{item.note}</p>}
                   </div>
                 </li>
               ))}
@@ -232,9 +232,12 @@ export default function EventPageSections({ design, imageAssetHost }) {
           {section.type === 'faq' && (
             <div className="space-y-2">
               {items.map((item, index) => (
-                <details key={index} className="rounded-xl border border-neutral-200 p-4">
-                  <summary className="cursor-pointer font-semibold">{item.question}</summary>
-                  <p className="mt-2 whitespace-pre-wrap text-neutral-600">{item.answer}</p>
+                <details key={index} className="group rounded-xl border border-neutral-200 bg-white">
+                  <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 p-4 text-left font-semibold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden">
+                    <span>{item.question}</span>
+                    <ChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 text-content-muted transition-transform duration-200 ease-out-strong group-open:rotate-180" />
+                  </summary>
+                  <p className="px-4 pb-4 whitespace-pre-wrap text-neutral-600">{item.answer}</p>
                 </details>
               ))}
             </div>

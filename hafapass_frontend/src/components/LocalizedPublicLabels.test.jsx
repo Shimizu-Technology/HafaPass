@@ -18,8 +18,8 @@ it('uses the selected Japanese locale for recovery links and free/current-priced
   api.get.mockResolvedValue({ data: { events: [make(1, 0), make(2, 1250)] } })
   render(<I18nextProvider i18n={i18n}><MemoryRouter><HomePage /></MemoryRouter></I18nextProvider>)
   // Copy comes from the generated ja.json, so assert against it rather than a fixed wording.
-  // The free event shows on its card and, as the next event, on the featured pass.
-  expect(await screen.findAllByText(ja.events.free)).toHaveLength(2)
+  // The free event shows on its card, on the featured pass, and as the top stub-deck card.
+  expect(await screen.findAllByText(ja.events.free)).toHaveLength(3)
   expect(screen.getByText(`${ja.events.from} $12.50`)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: ja.footer.findTickets })).toHaveAttribute('href', '/orders/recover')
   expect(screen.getByRole('link', { name: ja.footer.contactSupport }).getAttribute('href')).toMatch(/^mailto:/)

@@ -747,10 +747,10 @@ function CheckoutContent({ buyerId }) {
         </div>
 
         {/* Event summary card */}
-        <div className="card p-4 mb-6 flex items-center gap-4">
+        <div className="card p-4 mb-6 flex items-start gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="80" height="80" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
+            <div className="aspect-video w-24 sm:w-28 rounded-xl overflow-hidden flex-shrink-0 bg-brand-800">
+              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="160" height="90" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">

@@ -68,13 +68,13 @@ export default function EventCard({ event }) {
           </span>
         )}
 
-        <h3 className="text-lg font-semibold text-neutral-900 mb-3 break-words line-clamp-2 min-h-[3.5rem]">
+        <h3 className="font-display text-lg font-bold leading-snug text-neutral-950 mb-3 break-words line-clamp-2">
           {content.title}
         </h3>
         {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
         {content.notice && <MachineTranslationNotice {...content.notice} labelOnly className="-mt-2 mb-3" />}
 
-        <div className="space-y-1.5 mb-4 flex-1">
+        <div className="space-y-1.5 mb-4">
           {event.starts_at && (
             <>
               <div className="flex items-start gap-2 text-sm text-content-muted">
@@ -95,19 +95,19 @@ export default function EventCard({ event }) {
           )}
         </div>
 
-        {priceLabel && <div className="mb-4 text-neutral-900">
+        {priceLabel && <div className="mt-auto mb-4 text-neutral-900">
           <p className="text-base font-semibold tabular-nums">{priceLabel}</p>
           {summary?.kind === 'from' && summary.hasFree && <p className="mt-0.5 text-xs text-content-muted">{t('events.freeTicketsAvailable')}</p>}
           {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <p className="mt-1 text-xs text-content-muted">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</p>}
         </div>}
 
         {event.attendee_count > 0 && (
-          <div className="mb-3">
+          <div className={`${priceLabel ? '' : 'mt-auto '}mb-3`}>
             <WhosGoingBadge attendeeCount={event.attendee_count} />
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
+        <div className={`${priceLabel || event.attendee_count > 0 ? '' : 'mt-auto '}flex items-center justify-between pt-3 border-t border-neutral-100`}>
           {/* Availability indicator */}
           <div className="flex items-center gap-1.5">
             {event.status === 'completed' ? (

@@ -1,10 +1,23 @@
 import { DEFAULT_EVENT_TIME_ZONE, formatEventDate } from '../utils/eventTime'
 
-export default function EventDateTile({ event, artwork = false }) {
+export default function EventDateTile({ event, artwork = false, compact = false }) {
   const timeZone = event.timezone || DEFAULT_EVENT_TIME_ZONE
   const date = formatEventDate(event.starts_at, timeZone, { weekday: 'long' })
   if (!date) return null
   const part = options => formatEventDate(event.starts_at, timeZone, { year: undefined, month: undefined, day: undefined, ...options })
+
+  if (compact) {
+    return (
+      <time
+        dateTime={event.starts_at}
+        aria-label={date}
+        className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-brand-200 bg-brand-50 font-display tabular-nums text-brand-900"
+      >
+        <span aria-hidden="true" className="text-xs font-semibold uppercase leading-none tracking-[0.06em] text-brand-700">{part({ month: 'short' })}</span>
+        <span aria-hidden="true" className="mt-1 text-2xl font-bold leading-none text-neutral-950">{part({ day: 'numeric' })}</span>
+      </time>
+    )
+  }
 
   return (
     <time dateTime={event.starts_at} aria-label={date}

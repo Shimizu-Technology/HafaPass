@@ -43,12 +43,11 @@ test.describe('Option A — Subtle Polish motion checks', () => {
       await expect(badge.locator('.confirm-check-svg path')).toBeVisible()
       await expectNoHorizontalOverflow(page)
 
-      // 4. /host: tactile fee pills + DoorPreview state crossfade
+      // 4. /host: tactile fee pills + DoorPreview state
       await page.goto('/host')
-      await expect(page.getByRole('button', { name: '$25' })).toHaveClass(/tactile-press/)
-      await page.getByRole('button', { name: /Free Alumni Ticket/i }).click()
-      await expect(page.locator('[data-door-state="alumni-hold"]')).toBeVisible()
-      await expect(page.locator('.door-state-fade')).toBeVisible()
+      await expect(page.getByRole('button', { name: '$25' })).toHaveClass(/chip/)
+      await page.getByRole('button', { name: /Free alumni/i }).click()
+      await expect(page.locator('[data-door-state="alumni-hold"]')).toBeVisible({ timeout: 2000 })
       await expectNoHorizontalOverflow(page)
     })
   }
@@ -69,9 +68,9 @@ test.describe('Option A — Subtle Polish motion checks', () => {
     await expectNoHorizontalOverflow(page)
 
     await page.goto('/host')
-    await page.getByRole('button', { name: /Free Alumni Ticket/i }).click()
+    await page.getByRole('button', { name: /Free alumni/i }).click()
     await expect(page.locator('[data-door-state="alumni-hold"]')).toBeVisible()
-    await expect(page.locator('.door-state-fade')).toHaveCSS('animation-name', 'none')
+    await expect(page.locator('.door-result-pop')).toHaveCSS('animation-name', 'none')
     await expectNoHorizontalOverflow(page)
 
     await context.close()

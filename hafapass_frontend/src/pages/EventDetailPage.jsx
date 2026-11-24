@@ -2,7 +2,7 @@ import { allInPriceNoteKey } from '../utils/priceDisclosure'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom'
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, Loader2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle, BadgeCheck } from 'lucide-react'
 import apiClient from '../api/client'
 import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
@@ -22,6 +22,7 @@ import useTranslatedContent from '../hooks/useTranslatedContent'
 import useContentLanguage from '../hooks/useContentLanguage'
 import NotFound from '../components/NotFound'
 import { FadeUp } from '../components/ui/ScrollReveal'
+import ChipRow from '../components/ui/ChipRow'
 import { formatEventDate, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
@@ -391,7 +392,7 @@ function EventDetailContent() {
       </div>}
       {/* One grid keeps purchasing beside the title on desktop and after the artwork on phones. */}
       <div className="bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-8">
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 ${onSale ? 'pb-4 lg:pb-8' : 'pb-8'}`}>
           <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
             <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-surface px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
               {/* Back link */}
@@ -406,23 +407,23 @@ function EventDetailContent() {
               <h1 className="font-display text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-tight tracking-tight text-neutral-950 mb-3 break-words">{content.title}</h1>
               {content.notice && <MachineTranslationNotice {...content.notice} className="mb-3" />}
 
-              {/* Bento strip: the four facts a guest checks before going. */}
-              <dl className="event-bento mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {event.starts_at && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+              {/* Bento strip: one card with 1px dividers for the key facts guests check. */}
+              <dl className="event-bento mt-5 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-200 sm:grid-cols-2">
+                {event.starts_at && <div className="bg-white px-4 py-3">
                   <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Calendar aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.dateAndTime')}</dt>
                   <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</dd>
                   <dd className="text-base text-neutral-700 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</dd>
                 </div>}
-                {event.venue_name && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                {event.venue_name && <div className="bg-white px-4 py-3">
                   <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><MapPin aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.venue')}</dt>
                   <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.venue_name}</dd>
                   {event.venue_city && <dd className="text-base text-neutral-700">{event.venue_city}</dd>}
                 </div>}
-                {event.doors_open_at && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                {event.doors_open_at && <div className="bg-white px-4 py-3">
                   <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Clock aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.doorsOpen')}</dt>
                   <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventTime(event.doors_open_at, event.timezone)}</dd>
                 </div>}
-                {event.organizer?.business_name && <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
+                {event.organizer?.business_name && <div className="bg-white px-4 py-3">
                   <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Users aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.hostedBy')}</dt>
                   <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.organizer.business_name}</dd>
                 </div>}
@@ -499,40 +500,45 @@ function EventDetailContent() {
             {/* Main content */}
             <div className="min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-2">
               {/* Action buttons */}
-              <div className="flex flex-wrap items-center gap-2 mb-6">
-                {event.starts_at && !event.private_preview && !closedStatus && (
-                  <a
-                    href={buildGoogleCalendarUrl(event)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-brand-600 hover:border-brand-300 transition-colors text-sm font-medium"
-                  >
-                    <CalendarPlus className="w-4 h-4" />{t('buyer.EventDetail.addToCalendar')}</a>
-                )}
-                {!event.private_preview && <button
-                  onClick={handleShare}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 hover:text-neutral-700 hover:border-neutral-300 transition-colors text-sm font-medium"
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
-                  {copied ? t('buyer.EventDetail.copied') : t('buyer.EventDetail.share')}
-                </button>}
-                {!event.private_preview && <button onClick={() => marketplaceAction('favorite')} aria-pressed={event.favorited} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Heart className={`h-4 w-4 ${event.favorited ? 'fill-accent-700 text-accent-700' : ''}`} />{event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
-                </button>}
-                {!event.private_preview && !closedStatus && <button onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600 hover:border-brand-300">
-                  <Bell className={`h-4 w-4 ${event.reminder ? 'fill-brand-500 text-brand-700' : ''}`} />{event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
-                </button>}
-              </div>
+              {!event.private_preview && (
+                <ChipRow role="group" ariaLabel="Event actions" bleed="mobile" className="mb-6">
+                  {event.starts_at && !closedStatus && (
+                    <a
+                      href={buildGoogleCalendarUrl(event)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="chip"
+                    >
+                      <CalendarPlus aria-hidden="true" className="h-4 w-4 shrink-0" />
+                      {t('buyer.EventDetail.addToCalendar')}
+                    </a>
+                  )}
+                  <button type="button" onClick={handleShare} className="chip">
+                    {copied ? <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" /> : <Share2 aria-hidden="true" className="h-4 w-4 shrink-0" />}
+                    {copied ? t('buyer.EventDetail.copied') : t('buyer.EventDetail.share')}
+                  </button>
+                  <button type="button" onClick={() => marketplaceAction('favorite')} aria-pressed={Boolean(event.favorited)} className="chip">
+                    <Heart aria-hidden="true" className={`h-4 w-4 shrink-0 ${event.favorited ? 'fill-current' : ''}`} />
+                    {event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
+                  </button>
+                  {!closedStatus && (
+                    <button type="button" onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="chip">
+                      <Bell aria-hidden="true" className={`h-4 w-4 shrink-0 ${event.reminder ? 'fill-current' : ''}`} />
+                      {event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
+                    </button>
+                  )}
+                </ChipRow>
+              )}
 
               {/* Badges */}
-              <div className="flex flex-wrap gap-2 mb-6">
-                {event.age_restriction && event.age_restriction !== 'all_ages' && (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-neutral-100 text-neutral-700 px-3 py-1.5 rounded-full">
-                    <Users className="w-3 h-3" />
+              {event.age_restriction && event.age_restriction !== 'all_ages' && (
+                <ChipRow bleed="mobile" className="mb-6">
+                  <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-medium text-neutral-700 whitespace-nowrap">
+                    <Users aria-hidden="true" className="h-3.5 w-3.5" />
                     {ageLabels[event.age_restriction] || event.age_restriction}
                   </span>
-                )}
-              </div>
+                </ChipRow>
+              )}
 
               {/* Who's Going */}
               <WhosGoing
@@ -544,19 +550,61 @@ function EventDetailContent() {
               {/* Description */}
               {content.description && (
                 <FadeUp><div className="prose prose-neutral max-w-none mb-8">
-                  <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.about')}</h2>
+                  <h2 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4 mt-0">{t('buyer.EventDetail.about')}</h2>
                   <EventDescription text={content.description} format={design.description_format} />
                 </div></FadeUp>
               )}
 
-              {event.organizer && <FadeUp><div className="mb-8 rounded-2xl border border-neutral-200 p-5"><p className="text-sm font-semibold text-neutral-600">{t('buyer.EventDetail.organizer')}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3">{approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 rounded-xl object-contain" />}{event.private_preview ? <span className="text-lg font-bold text-neutral-900">{event.organizer.business_name}</span> : <Link to={`/organizers/${event.organizer.slug}`} className="text-lg font-bold text-neutral-900 hover:text-brand-600">{event.organizer.business_name}</Link>}{event.organizer.verified && <span className="ml-2 text-xs font-semibold text-emerald-700">{t('buyer.EventDetail.verified')}</span>}</div>{!event.private_preview && <button onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex items-center gap-2"><UserPlus className="h-4 w-4" />{event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}</button>}</div></div></FadeUp>}
+              {event.organizer && (
+                <FadeUp>
+                  <div className="mb-8 rounded-2xl border border-neutral-200 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-600">{t('buyer.EventDetail.organizer')}</p>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        {approvedImageUrl(event.organizer.logo_url, event.image_asset_host) && (
+                          <img src={event.organizer.logo_url} alt="" loading="lazy" width="48" height="48" className="h-12 w-12 shrink-0 rounded-xl object-contain" />
+                        )}
+                        <p className="min-w-0 text-lg font-bold leading-snug text-neutral-950">
+                          {event.private_preview ? (
+                            <span>
+                              {event.organizer.business_name}
+                              {event.organizer.verified && (
+                                <BadgeCheck
+                                  aria-label={t('buyer.EventDetail.verified')}
+                                  className="ml-1.5 inline-block h-[0.95em] w-[0.95em] align-[-0.14em] text-emerald-700"
+                                />
+                              )}
+                            </span>
+                          ) : (
+                            <Link to={`/organizers/${event.organizer.slug}`} className="hover:text-brand-600">
+                              {event.organizer.business_name}
+                              {event.organizer.verified && (
+                                <BadgeCheck
+                                  aria-label={t('buyer.EventDetail.verified')}
+                                  className="ml-1.5 inline-block h-[0.95em] w-[0.95em] align-[-0.14em] text-emerald-700"
+                                />
+                              )}
+                            </Link>
+                          )}
+                        </p>
+                      </div>
+                      {!event.private_preview && (
+                        <button type="button" onClick={() => marketplaceAction('follow')} aria-pressed={event.organizer.followed} className="btn-secondary inline-flex shrink-0 items-center gap-2">
+                          <UserPlus aria-hidden="true" className="h-4 w-4" />
+                          {event.organizer.followed ? t('buyer.EventDetail.following') : t('buyer.EventDetail.follow')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </FadeUp>
+              )}
 
               <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
 
               {/* Venue Location Section */}
               {event.venue_address && (
-                <FadeUp delay={0.1}><section aria-labelledby="event-location-heading" className="mb-8">
-                  <h2 id="event-location-heading" className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.EventDetail.location')}</h2>
+                <FadeUp delay={0.1}><section aria-labelledby="event-location-heading" className="mb-6">
+                  <h2 id="event-location-heading" className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4">{t('buyer.EventDetail.location')}</h2>
                   <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 p-4 sm:flex-row sm:items-center sm:p-5">
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -588,7 +636,7 @@ function EventDetailContent() {
       </div>
       {onSale && <>
         {/* Room for the buy bar so the last content never sits underneath it. */}
-        <div aria-hidden="true" className="h-[calc(5.5rem+env(safe-area-inset-bottom,0px))] bg-white lg:hidden" />
+        <div aria-hidden="true" className="h-[calc(4.5rem+env(safe-area-inset-bottom,0px))] bg-white lg:hidden" />
         <div ref={pageEnd} aria-hidden="true" className="h-px" />
         <MobileBuyBar priceLabel={buyBarPrice} targets={buyBarTargets} endMarker={pageEnd} />
       </>}

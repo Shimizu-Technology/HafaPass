@@ -53,7 +53,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
   return (
     <div className="tabular-nums">
-      <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
+      <h2 className="font-display text-2xl font-bold text-neutral-950 mb-4">{t('eventDetail.buyTickets')}</h2>
       <div className="space-y-3">
         {ticketTypes.map(tt => {
           const available = remainingTickets(tt) ?? 0
@@ -115,7 +115,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         aria-expanded={Boolean(expandedPasses[tt.id])}
                         aria-controls={`pass-nights-${tt.id}`}
                         onClick={() => togglePassSchedule(tt.id)}
-                        className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
+                        className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
                       >
                         <span>
                           {expandedPasses[tt.id]
