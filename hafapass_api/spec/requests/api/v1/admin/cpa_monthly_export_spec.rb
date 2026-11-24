@@ -83,7 +83,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
 
     BalanceAdjustment.create!(
       organization: org, event: event, kind: "reserve_hold", amount_cents: -1_000, currency: "usd",
-      status: :posted, reason: "10% 30-day chargeback reserve", effective_at: october_start_utc + 5.days
+      status: :posted, reason: "10% 30-day chargeback reserve",
+      created_at: october_start_utc + 5.days, effective_at: october_start_utc + 5.days
     )
     settlement = create(:settlement, event: event, organization: org)
     account = create(:connected_account, organization: org, provider: "manual", with_readiness_approval: false)
@@ -102,7 +103,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     )
     BalanceAdjustment.create!(
       organization: org, event: event, kind: "reserve_release", amount_cents: 1_000, currency: "usd",
-      status: :posted, reason: "30-day reserve released", effective_at: november_start_utc + 10.days
+      status: :posted, reason: "30-day reserve released",
+      created_at: november_start_utc + 10.days, effective_at: november_start_utc + 10.days
     )
     create(:payout,
       connected_account: account, settlement: settlement, event: event, organization: org,
@@ -143,7 +145,10 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "reserve_released" => "0.00",
       "ending_reserve_balance" => "10.00",
       "unallocated_refunds_exception" => "0.00",
+      "cumulative_unallocated_refunds_exception" => "0.00",
       "reconciliation_exception_flag" => "no",
+      "reconciliation_exception_note" => "",
+      "prior_period_note" => "",
       "non_custodial_settlement_bridge" => "0.00",
       "backup_withholding_memo" => "0.00",
       "fee_revenue_gross" => "6.00",
@@ -161,7 +166,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "event_id" => "",
       "w9_nonprofit_classification" => "",
       "drt_exemption_verified" => "not_tracked",
-      "nonprofit_exemption_note" => "1 W-9 nonprofit row(s); DRT exemption not tracked",
+      "nonprofit_exemption_note" => "1 W-9 nonprofit row(s) (current at export time); DRT exemption not tracked",
       "closing_custodial_liability" => "10.00",
       "closing_custodial_payables" => "10.00",
       "closing_organizer_deficits" => "0.00",
@@ -306,14 +311,14 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     BalanceAdjustment.create!(
       organization: adj_only_org, event: adj_only_event, kind: "manual_credit", amount_cents: 4_500,
       currency: "usd", status: :posted, reason: "Opening event balance credit",
-      effective_at: october_start_utc + 2.days
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
 
     org_level_only = create(:organization)
     BalanceAdjustment.create!(
       organization: org_level_only, event: nil, kind: "manual_credit", amount_cents: 2_500,
       currency: "usd", status: :posted, reason: "Org-level opening balance credit",
-      effective_at: october_start_utc + 2.days
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
 
     legacy_org = create(:organization)
@@ -410,7 +415,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     captured_order(event: event_a1, at: october_start_utc + 1.day, subtotal: 50_000, fee: 2_600)
     BalanceAdjustment.create!(
       organization: org_a, event: event_a2, kind: "manual_debit", amount_cents: -10_000,
-      currency: "usd", status: :posted, reason: "Same-org deficit", effective_at: october_start_utc + 2.days
+      currency: "usd", status: :posted, reason: "Same-org deficit",
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
 
     org_b = create(:organization)
@@ -418,7 +424,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     # Org B: -$200 deficit (MUST NOT net against Org A's +$400 payable!)
     BalanceAdjustment.create!(
       organization: org_b, event: event_b, kind: "manual_debit", amount_cents: -20_000,
-      currency: "usd", status: :posted, reason: "Unrelated org deficit", effective_at: october_start_utc + 2.days
+      currency: "usd", status: :posted, reason: "Unrelated org deficit",
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
 
     csv = fetch_csv(year: 2026, month: 10)
@@ -454,11 +461,13 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
 
     BalanceAdjustment.create!(
       organization: org, event: event, kind: "manual_debit", amount_cents: -250, currency: "usd",
-      status: :posted, reason: "Reconciled fee debit", effective_at: october_start_utc + 2.days
+      status: :posted, reason: "Reconciled fee debit",
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
     BalanceAdjustment.create!(
       organization: org, event: event, kind: "reserve_hold", amount_cents: -500, currency: "usd",
-      status: :posted, reason: "Reserve hold", effective_at: october_start_utc + 2.days
+      status: :posted, reason: "Reserve hold",
+      created_at: october_start_utc + 2.days, effective_at: october_start_utc + 2.days
     )
 
     row = CpaMonthlyReport.new(2026, 10).report[:rows].first
@@ -517,7 +526,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
 
     allow_any_instance_of(CpaMonthlyReport).to receive(:csv_rows).and_return([
       ["event", "2026-10", 1, 2, "yes", "not_tracked", "=HYPERLINK(\"http://evil.invalid\")",
-        FinanceExports.money(-110), *Array.new(14, FinanceExports.money(0)), "no",
+        FinanceExports.money(-110), *Array.new(15, FinanceExports.money(0)), "no", "", "",
         *Array.new(9, FinanceExports.money(0)), "USD"]
     ])
     get export_path, params: { year: 2026, month: 10 }, headers: auth_headers(admin)
@@ -547,5 +556,348 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body["error"]).to eq("Choose a month from 1 to 12")
     end
+  end
+
+  # Round 2 Finding #1: Reversal confirmed in Nov with bank evidence dated Oct
+  # stays in Nov (labelled "relates to Oct 2026") while Oct stays byte-identical;
+  # missing reversal audit evidence flags an exception instead of using updated_at.
+  it "books back-dated payout reversals by audit recording time with prior-period label and flags missing reversal audits" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    captured_order(event: event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600)
+    settlement = create(:settlement, event: event, organization: org)
+    account = create(:connected_account, organization: org, provider: "manual", with_readiness_approval: false)
+    payout = create(:payout,
+      connected_account: account, settlement: settlement, event: event, organization: org,
+      provider: "manual", provider_payout_id: "bank-oct-r2-1", status: :paid,
+      created_at: october_start_utc + 2.days, paid_at: october_start_utc + 5.days,
+      amount_cents: 9_000, withheld_cents: 0, carried_withholding_cents: 0)
+
+    oct_before = fetch_csv(year: 2026, month: 10).map(&:to_h)
+    expect(oct_before.first).to include(
+      "organizer_payouts_made" => "90.00",
+      "payout_reversals" => "0.00",
+      "closing_custodial_liability" => "10.00"
+    )
+
+    # Reconciled in November (Nov 5), but bank confirmation evidence is back-dated to October (Oct 20)!
+    travel_to(november_start_utc + 5.days) do
+      PayoutReconciler.call(
+        payout: payout,
+        actor: admin,
+        status: "reversed",
+        provider_payout_id: "bank-oct-r2-1",
+        evidence: {
+          reference: "bank/rev-backdated-oct",
+          confirmed_at: (october_start_utc + 20.days).iso8601,
+          reason: "ACH returned with October bank date"
+        }
+      )
+    end
+
+    # October MUST stay byte-identical (not rewritten from $10 to $100!)
+    oct_after = fetch_csv(year: 2026, month: 10).map(&:to_h)
+    expect(oct_after).to eq(oct_before)
+
+    # November books the reversal with a clear prior-period label
+    nov = fetch_csv(year: 2026, month: 11).first.to_h
+    expect(nov).to include(
+      "opening_custodial_liability" => "10.00",
+      "payout_reversals" => "90.00",
+      "closing_custodial_liability" => "100.00",
+      "reconciliation_exception_flag" => "no"
+    )
+    expect(nov["prior_period_note"]).to include("Payout reversal relates to Oct 2026")
+
+    # Separate event: reversed payout WITHOUT any reversal audit row must NOT fall
+    # back to mutable payouts.updated_at; it must flag a reconciliation exception.
+    unverified_event = create(:event, organization: org)
+    captured_order(event: unverified_event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600)
+    unverified_settlement = create(:settlement, event: unverified_event, organization: org)
+    create(:payout,
+      connected_account: account, settlement: unverified_settlement, event: unverified_event, organization: org,
+      provider: "manual", provider_payout_id: "bank-oct-no-audit", status: :reversed,
+      created_at: october_start_utc + 2.days, paid_at: october_start_utc + 5.days,
+      updated_at: november_start_utc + 3.days,
+      amount_cents: 9_000, withheld_cents: 0, carried_withholding_cents: 0)
+
+    nov_rows = fetch_csv(year: 2026, month: 11).map(&:to_h)
+    unverified_row = nov_rows.find { |row| row["event_id"] == unverified_event.id.to_s }
+    expect(unverified_row).to include(
+      "payout_reversals" => "0.00",
+      "reconciliation_exception_flag" => "yes"
+    )
+    expect(unverified_row["reconciliation_exception_note"]).to include("Reversed payout missing audit evidence ($90.00)")
+  end
+
+  # Round 2 Finding #2: Processing fee period uses immutable fee_components.created_at,
+  # independent of current stripe_fee_evidences.status (e.g. moving to review_required).
+  it "keeps processing fee period immutable when StripeFeeEvidence transitions to review_required" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    order, _item, capture = captured_order(
+      event: event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600, processing_bearer: "organizer"
+    )
+    # Component created in October, evidence verified in November (reproduces the fallback trap)
+    component = create(:fee_component, order: order, kind: "processing", estimated: false,
+      amount_cents: 320, provider_reference: "txn_flip_1", created_at: october_start_utc + 25.days)
+    evidence = StripeFeeEvidence.create!(
+      payment: capture, fee_component: component,
+      context_digest: StripeProcessingFees.context_digest(capture),
+      status: :verified, provider_charge_id: "ch_flip_1", provider_balance_transaction_id: "txn_flip_1",
+      evidence_digest: "digest_flip_1", amount_cents: order.total_cents, fee_cents: 320,
+      net_cents: order.total_cents - 320, currency: "usd",
+      verified_at: november_start_utc + 2.days
+    )
+
+    oct_before = fetch_csv(year: 2026, month: 10).map(&:to_h)
+    nov_before = fetch_csv(year: 2026, month: 11).map(&:to_h)
+    expect(oct_before.first).to include(
+      "organizer_processing_deducted" => "3.20",
+      "stripe_processing_costs_informational" => "3.20"
+    )
+    expect(nov_before.first).to include(
+      "organizer_processing_deducted" => "0.00",
+      "stripe_processing_costs_informational" => "0.00"
+    )
+
+    # Later evidence flips from verified -> review_required: NEITHER month may change!
+    evidence.update!(status: :review_required, last_error_code: "provider_fee_evidence_changed")
+    expect(fetch_csv(year: 2026, month: 10).map(&:to_h)).to eq(oct_before)
+    expect(fetch_csv(year: 2026, month: 11).map(&:to_h)).to eq(nov_before)
+
+    # Second event: processing fee recorded in November for an October order stays
+    # in November (labelled "Processing fee relates to Oct 2026") even if flipped.
+    event2 = create(:event, organization: org)
+    order2, _item2, capture2 = captured_order(
+      event: event2, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600, processing_bearer: "organizer"
+    )
+    oct2_before = fetch_csv(year: 2026, month: 10).map(&:to_h).find { |r| r["event_id"] == event2.id.to_s }
+    comp2 = create(:fee_component, order: order2, kind: "processing", estimated: false,
+      amount_cents: 320, provider_reference: "txn_late_r2", created_at: november_start_utc + 3.days)
+    ev2 = StripeFeeEvidence.create!(
+      payment: capture2, fee_component: comp2,
+      context_digest: StripeProcessingFees.context_digest(capture2),
+      status: :verified, provider_charge_id: "ch_late_r2", provider_balance_transaction_id: "txn_late_r2",
+      evidence_digest: "digest_late_r2", amount_cents: order2.total_cents, fee_cents: 320,
+      net_cents: order2.total_cents - 320, currency: "usd",
+      verified_at: november_start_utc + 3.days
+    )
+    ev2.update!(status: :review_required, last_error_code: "provider_fee_evidence_changed")
+    oct2_after = fetch_csv(year: 2026, month: 10).map(&:to_h).find { |r| r["event_id"] == event2.id.to_s }
+    expect(oct2_after).to eq(oct2_before)
+
+    nov2 = fetch_csv(year: 2026, month: 11).map(&:to_h).find { |r| r["event_id"] == event2.id.to_s }
+    expect(nov2).to include("organizer_processing_deducted" => "3.20")
+    expect(nov2["prior_period_note"]).to include("Processing fee relates to Oct 2026")
+  end
+
+  # Round 2 Finding #3: Adjustments linked to an open custodial dispute are
+  # included immediately regardless of dispute outcome; back-dated adjustments
+  # book in their recording month with a prior-period label.
+  it "scopes dispute-linked adjustments by immutable payment custody independent of dispute outcome and prevents back-dated adjustments from rewriting closed months" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    order, _item, capture = captured_order(
+      event: event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600
+    )
+    dispute = Dispute.create!(
+      order: order, payment: capture, provider: "stripe", provider_dispute_id: "dp_open_r2",
+      amount_cents: 2_000, currency: "usd", status: :open,
+      opened_at: october_start_utc + 3.days, closed_at: nil
+    )
+    # $1 debit linked to the OPEN Stripe dispute recorded in October
+    BalanceAdjustment.create!(
+      organization: org, event: event, order: order, dispute: dispute,
+      kind: "manual_debit", amount_cents: -100, currency: "usd", status: :posted,
+      reason: "Dispute handling debit while open",
+      created_at: october_start_utc + 4.days, effective_at: october_start_utc + 4.days
+    )
+
+    oct_before = fetch_csv(year: 2026, month: 10).map(&:to_h)
+    expect(oct_before.first).to include(
+      "proceeds_collected" => "100.00",
+      "other_adjustments" => "-1.00",
+      "chargebacks" => "0.00",
+      "closing_custodial_liability" => "99.00"
+    )
+
+    # In November, the dispute transitions open -> lost AND an admin posts a
+    # back-dated adjustment whose effective_at is October!
+    dispute.update!(status: :lost, closed_at: november_start_utc + 2.days)
+    BalanceAdjustment.create!(
+      organization: org, event: event, kind: "manual_debit", amount_cents: -500,
+      currency: "usd", status: :posted, reason: "Late fee adjustment back-dated to Oct",
+      created_at: november_start_utc + 4.days, effective_at: october_start_utc + 25.days
+    )
+
+    # October MUST remain byte-identical!
+    expect(fetch_csv(year: 2026, month: 10).map(&:to_h)).to eq(oct_before)
+
+    nov = fetch_csv(year: 2026, month: 11).first.to_h
+    expect(nov).to include(
+      "opening_custodial_liability" => "99.00",
+      "chargebacks" => "20.00",
+      "other_adjustments" => "-5.00",
+      "closing_custodial_liability" => "74.00"
+    )
+    expect(nov["prior_period_note"]).to include("Adjustment relates to Oct 2026")
+  end
+
+  # Round 2 Finding #4: Paid and reversed payouts on adjustment-only events are
+  # attributed immediately, independent of whether a Stripe order exists.
+  it "attributes paid and reversed payouts on adjustment-only events without requiring a Stripe order" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    BalanceAdjustment.create!(
+      organization: org, event: event, kind: "manual_credit", amount_cents: 4_500,
+      currency: "usd", status: :posted, reason: "Adjustment-only credit",
+      created_at: october_start_utc + 1.day, effective_at: october_start_utc + 1.day
+    )
+    settlement = create(:settlement, event: event, organization: org)
+    account = create(:connected_account, organization: org, provider: "manual", with_readiness_approval: false)
+    payout = create(:payout,
+      connected_account: account, settlement: settlement, event: event, organization: org,
+      provider: "manual", provider_payout_id: "bank-adj-only-1", status: :paid,
+      created_at: october_start_utc + 2.days, paid_at: october_start_utc + 3.days,
+      amount_cents: 4_500, withheld_cents: 0, carried_withholding_cents: 0)
+
+    oct_before = fetch_csv(year: 2026, month: 10).map(&:to_h)
+    expect(oct_before.first).to include(
+      "other_adjustments" => "45.00",
+      "organizer_payouts_made" => "45.00",
+      "closing_custodial_liability" => "0.00",
+      "closing_custodial_payables" => "0.00"
+    )
+
+    # Later in November: first Stripe sale arrives AND the October payout is reversed
+    captured_order(event: event, at: november_start_utc + 2.days, subtotal: 10_000, fee: 600)
+    travel_to(november_start_utc + 4.days) do
+      PayoutReconciler.call(
+        payout: payout,
+        actor: admin,
+        status: "reversed",
+        provider_payout_id: "bank-adj-only-1",
+        evidence: {
+          reference: "bank/rev-adj-only",
+          confirmed_at: (november_start_utc + 4.days).iso8601,
+          reason: "Returned transfer on adjustment-only event"
+        }
+      )
+    end
+
+    # October stays byte-identical even after a Stripe order arrives in November!
+    expect(fetch_csv(year: 2026, month: 10).map(&:to_h)).to eq(oct_before)
+
+    nov = fetch_csv(year: 2026, month: 11).first.to_h
+    expect(nov).to include(
+      "opening_custodial_liability" => "0.00",
+      "proceeds_collected" => "100.00",
+      "payout_reversals" => "45.00",
+      "closing_custodial_liability" => "145.00"
+    )
+    calc = Settlements::Calculator.call(event).attributes
+    expect(CpaMonthlyReport.new(2026, 11).report[:rows].first[:closing_custodial_liability_cents])
+      .to eq(settlement_unpaid_balance_cents(calc))
+  end
+
+  # Round 2 Finding #5: Bridge includes adjustments linked to non-custodial orders
+  # and surfaces Clover-only events, preserving the exact identity against
+  # Settlements::Calculator across mixed tenders.
+  it "reconciles mixed-tender events (Stripe + Clover + door cash + Clover-linked debit) and Clover-only events exactly with Settlements::Calculator" do
+    org = create(:organization)
+    mixed_event = create(:event, organization: org)
+
+    # $100 Stripe + $40 Clover + $20 door cash + $5 Clover-linked manual_debit
+    captured_order(event: mixed_event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600)
+    clover_order, = captured_order(
+      event: mixed_event, at: october_start_utc + 2.days, subtotal: 4_000, fee: 0,
+      provider: "boh_clover", environment: nil, payment_method: "door_card"
+    )
+    captured_order(
+      event: mixed_event, at: october_start_utc + 2.days, subtotal: 2_000, fee: 0,
+      provider: "door_cash", environment: nil, payment_method: "door_cash"
+    )
+    BalanceAdjustment.create!(
+      organization: org, event: mixed_event, order: clover_order,
+      kind: "manual_debit", amount_cents: -500, currency: "usd", status: :posted,
+      reason: "Clover terminal adjustment",
+      created_at: october_start_utc + 3.days, effective_at: october_start_utc + 3.days
+    )
+
+    # Separate Clover-only event (zero Stripe orders, zero adjustments, zero payouts)
+    clover_only_event = create(:event, organization: org)
+    captured_order(
+      event: clover_only_event, at: october_start_utc + 2.days, subtotal: 4_000, fee: 0,
+      provider: "boh_clover", environment: nil, payment_method: "door_card"
+    )
+
+    oct_report = CpaMonthlyReport.new(2026, 10).report
+    by_event = oct_report[:rows].index_by { |r| r[:event_id] }
+
+    mixed_row = by_event.fetch(mixed_event.id)
+    expect(mixed_row[:closing_custodial_liability_cents]).to eq(10_000)
+    expect(mixed_row[:non_custodial_settlement_bridge_cents]).to eq(3_500) # $40 Clover - $5 Clover-linked debit
+    mixed_calc = Settlements::Calculator.call(mixed_event).attributes
+    expect(settlement_unpaid_balance_cents(mixed_calc)).to eq(13_500)
+    expect(mixed_row[:closing_custodial_liability_cents] - mixed_row[:ending_reserve_balance_cents] + mixed_row[:non_custodial_settlement_bridge_cents])
+      .to eq(settlement_unpaid_balance_cents(mixed_calc))
+
+    clover_only_row = by_event.fetch(clover_only_event.id)
+    expect(clover_only_row[:closing_custodial_liability_cents]).to eq(0)
+    expect(clover_only_row[:non_custodial_settlement_bridge_cents]).to eq(4_000)
+    clover_calc = Settlements::Calculator.call(clover_only_event).attributes
+    expect(settlement_unpaid_balance_cents(clover_calc)).to eq(4_000)
+    expect(clover_only_row[:closing_custodial_liability_cents] - clover_only_row[:ending_reserve_balance_cents] + clover_only_row[:non_custodial_settlement_bridge_cents])
+      .to eq(settlement_unpaid_balance_cents(clover_calc))
+  end
+
+  # Round 2 Minors #1–#3: current-at-export W-9 label, cumulative unallocated
+  # refund visibility in later months, and pre-April 2018 BPT rate not_supported.
+  it "surfaces cumulative unallocated refunds in later months, labels W-9 as current at export time, and marks pre-April 2018 Guam BPT rates not_supported" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    order, _item, capture = captured_order(
+      event: event, at: october_start_utc + 1.day, subtotal: 5_000, fee: 350
+    )
+    # Unallocated legacy refund in November ($15.00)
+    create(:refund, order: order, payment: capture, succeeded_at: november_start_utc + 2.days, amount_cents: 1_500)
+
+    # In December, in-month unallocated is $0.00 but cumulative is STILL $15.00
+    dec_csv = fetch_csv(year: 2026, month: 12).map(&:to_h)
+    dec_event = dec_csv.find { |r| r["row_type"] == "event" }
+    dec_total = dec_csv.find { |r| r["row_type"] == "total" }
+    expect(dec_event).to include(
+      "unallocated_refunds_exception" => "0.00",
+      "cumulative_unallocated_refunds_exception" => "15.00",
+      "reconciliation_exception_flag" => "yes"
+    )
+    expect(dec_event["reconciliation_exception_note"]).to include("$15.00 cumulative ($0.00 in month)")
+    expect(dec_total).to include(
+      "unallocated_refunds_exception" => "0.00",
+      "cumulative_unallocated_refunds_exception" => "15.00",
+      "reconciliation_exception_flag" => "yes"
+    )
+
+    # Minor #1: JSON explicitly labels W-9 classification as current at export time
+    get json_path, params: { year: 2026, month: 12 }, headers: auth_headers(admin)
+    expect(response.parsed_body["w9_classification_as_of"]).to eq("current_at_export_time")
+
+    # Minor #3: 5.00% applies Apr 2018 – Sep 2025 (P.L. 34-87); earlier periods are not_supported
+    apr_2018 = CpaMonthlyReport.new(2018, 4)
+    expect(apr_2018.bpt_rate_bps).to eq(500)
+    expect(apr_2018.bpt_rate_pct).to eq("5.00")
+    expect(apr_2018.bpt_rate_note).to include("P.L. 34-87")
+
+    mar_2018 = CpaMonthlyReport.new(2018, 3)
+    expect(mar_2018.bpt_rate_bps).to be_nil
+    expect(mar_2018.bpt_rate_pct).to eq("not_supported")
+    expect(mar_2018.bpt_rate_note).to include("before April 2018")
+
+    mar_csv = fetch_csv(year: 2018, month: 3).first.to_h
+    expect(mar_csv).to include(
+      "estimated_bpt_rate_pct" => "not_supported",
+      "estimated_bpt_on_fee_revenue_estimate" => ""
+    )
   end
 end

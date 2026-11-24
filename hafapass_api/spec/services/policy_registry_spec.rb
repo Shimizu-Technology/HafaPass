@@ -42,7 +42,7 @@ RSpec.describe PolicyRegistry do
     draft_text = draft_organizer.map { |section| section.fetch("body") }.join("\n")
     expect(draft_text).to include(
       "no claim of right", "not {{operator_name}} revenue", "10%", "30 days",
-      "excluding door cash", "$97", "blocked while any refund or payment dispute is open",
+      "excluding door cash", "$97", "$10, not $14", "blocked while any refund or payment dispute is open",
       "separate documented balance-adjustment debit",
       "buyer list for your event belongs to you", "Specific Event Exemption Application"
     )

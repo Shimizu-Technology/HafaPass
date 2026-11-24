@@ -12,7 +12,9 @@ const CSV_HEADER = [
   'organizer_processing_deducted', 'other_adjustments', 'organizer_payouts_made', 'payout_reversals',
   'closing_custodial_liability', 'closing_custodial_payables', 'closing_organizer_deficits',
   'reserve_held', 'reserve_released', 'ending_reserve_balance',
-  'unallocated_refunds_exception', 'reconciliation_exception_flag', 'non_custodial_settlement_bridge',
+  'unallocated_refunds_exception', 'cumulative_unallocated_refunds_exception',
+  'reconciliation_exception_flag', 'reconciliation_exception_note', 'prior_period_note',
+  'non_custodial_settlement_bridge',
   'backup_withholding_memo', 'fee_revenue_gross', 'fee_refunds', 'fee_revenue_net',
   'stripe_processing_costs_informational', 'bpt_base_fee_revenue_estimate', 'estimated_bpt_rate_pct',
   'estimated_bpt_on_fee_revenue_estimate', 'currency',
@@ -31,21 +33,25 @@ const csvLine = values => `${values.map(csvCell).join(',')}\n`
 function bptRateBps(year, month) {
   if (year > 2026 || (year === 2026 && month >= 10)) return 400
   if (year > 2025 || (year === 2025 && month >= 10)) return 450
-  return 500
+  if (year > 2018 || (year === 2018 && month >= 4)) return 500
+  return null
 }
 
 function estimateBpt(baseCents, rateBps) {
+  if (rateBps == null) return null
   if (baseCents <= 0) return 0
   return Math.floor((baseCents * rateBps + 5000) / 10000)
 }
 
 function buildDemoCpaMonthly(year, month) {
   const rateBps = bptRateBps(year, month)
-  const ratePct = (rateBps / 100).toFixed(2)
+  const ratePct = rateBps == null ? 'not_supported' : (rateBps / 100).toFixed(2)
   const period = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
   const rateNote = (year > 2025 || (year === 2025 && month >= 10))
     ? `${ratePct}% statutory § 26202(c) service-business BPT estimate (P.L. 38-136; excludes § 26203.2 small-business relief — confirm with CPA)`
-    : `${ratePct}% pre-P.L. 38-136 historical BPT estimate (prior 11 GCA § 26202; confirm applicable rate with CPA)`
+    : rateBps != null
+      ? `${ratePct}% historical Guam BPT estimate (Apr 2018 – Sep 2025, P.L. 34-87; confirm applicable rate with CPA)`
+      : 'Periods before April 2018 are not supported for automatic Guam BPT estimation (the 5.00% rate took effect April 1, 2018 under P.L. 34-87) — confirm applicable historical rate with CPA'
 
   // Month 2 (February) intentionally demonstrates a zero-activity month.
   const rows = month === 2 ? [] : [
@@ -54,7 +60,7 @@ function buildDemoCpaMonthly(year, month) {
       event_id: 101,
       w9_nonprofit_classification: true,
       drt_exemption_verified: 'not_tracked',
-      nonprofit_exemption_note: 'W-9 nonprofit; DRT exemption not tracked — verify externally',
+      nonprofit_exemption_note: 'W-9 nonprofit (current at export time); DRT exemption not tracked — verify externally',
       opening_custodial_liability_cents: 125000,
       proceeds_collected_cents: 1204000,
       proceeds_refunded_cents: 24000,
@@ -70,7 +76,11 @@ function buildDemoCpaMonthly(year, month) {
       reserve_released_cents: 125000,
       ending_reserve_balance_cents: 120400,
       unallocated_refunds_exception_cents: 0,
+      cumulative_unallocated_refunds_exception_cents: 0,
+      missing_reversal_audit_exception_cents: 0,
       reconciliation_exception_flag: false,
+      reconciliation_exception_note: '',
+      prior_period_note: '',
       non_custodial_settlement_bridge_cents: 0,
       backup_withholding_memo_cents: 0,
       fee_revenue_gross_cents: 142300,
@@ -102,7 +112,11 @@ function buildDemoCpaMonthly(year, month) {
       reserve_released_cents: 0,
       ending_reserve_balance_cents: 49600,
       unallocated_refunds_exception_cents: 0,
+      cumulative_unallocated_refunds_exception_cents: 0,
+      missing_reversal_audit_exception_cents: 0,
       reconciliation_exception_flag: false,
+      reconciliation_exception_note: '',
+      prior_period_note: '',
       non_custodial_settlement_bridge_cents: 0,
       backup_withholding_memo_cents: 0,
       fee_revenue_gross_cents: 61000,
@@ -143,7 +157,7 @@ function buildDemoCpaMonthly(year, month) {
       w9_nonprofit_classification: null,
       drt_exemption_verified: 'not_tracked',
       w9_nonprofit_row_count: nonprofitCount,
-      nonprofit_exemption_note: `${nonprofitCount} W-9 nonprofit row(s); DRT exemption not tracked`,
+      nonprofit_exemption_note: `${nonprofitCount} W-9 nonprofit row(s) (current at export time); DRT exemption not tracked`,
       opening_custodial_liability_cents: sum('opening_custodial_liability_cents'),
       proceeds_collected_cents: sum('proceeds_collected_cents'),
       proceeds_refunded_cents: sum('proceeds_refunded_cents'),
@@ -159,8 +173,12 @@ function buildDemoCpaMonthly(year, month) {
       reserve_released_cents: sum('reserve_released_cents'),
       ending_reserve_balance_cents: sum('ending_reserve_balance_cents'),
       unallocated_refunds_exception_cents: sum('unallocated_refunds_exception_cents'),
+      cumulative_unallocated_refunds_exception_cents: sum('cumulative_unallocated_refunds_exception_cents'),
+      missing_reversal_audit_exception_cents: 0,
       reconciliation_exception_count: 0,
       reconciliation_exception_flag: false,
+      reconciliation_exception_note: '',
+      prior_period_note: '',
       non_custodial_settlement_bridge_cents: sum('non_custodial_settlement_bridge_cents'),
       backup_withholding_memo_cents: sum('backup_withholding_memo_cents'),
       fee_revenue_gross_cents: sum('fee_revenue_gross_cents'),
@@ -267,7 +285,10 @@ function buildCpaCsv(data) {
     fmt(row.reserve_released_cents),
     fmt(row.ending_reserve_balance_cents),
     fmt(row.unallocated_refunds_exception_cents),
+    fmt(row.cumulative_unallocated_refunds_exception_cents ?? row.unallocated_refunds_exception_cents),
     row.reconciliation_exception_flag ? 'yes' : 'no',
+    row.reconciliation_exception_note || '',
+    row.prior_period_note || '',
     fmt(row.non_custodial_settlement_bridge_cents),
     fmt(row.backup_withholding_memo_cents),
     fmt(row.fee_revenue_gross_cents),
@@ -276,7 +297,7 @@ function buildCpaCsv(data) {
     fmt(row.stripe_processing_costs_cents),
     fmt(row.bpt_base_fee_revenue_estimate_cents),
     row.estimated_bpt_rate_pct,
-    fmt(row.estimated_bpt_on_fee_revenue_estimate_cents),
+    row.estimated_bpt_on_fee_revenue_estimate_cents == null ? '' : fmt(row.estimated_bpt_on_fee_revenue_estimate_cents),
     'USD',
   ])
   return [

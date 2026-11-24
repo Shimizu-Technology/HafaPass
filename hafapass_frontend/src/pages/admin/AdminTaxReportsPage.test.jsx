@@ -206,6 +206,40 @@ describe('AdminTaxReportsPage', () => {
     expect(saveBlob).toHaveBeenCalledWith(blob, `hafapass-bpt-events-${year - 1}-03.csv`)
   })
 
+  it('shows cumulative unallocated-refund exception when current month is $0, renders prior-period labels, and marks pre-Apr 2018 BPT rate not supported', async () => {
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports') return Promise.resolve({ data: { ...report, year: Number(cfg?.params?.year || year) } })
+      if (url === '/admin/tax_reports/cpa_monthly') {
+        const data = makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth, {
+          bpt_rate_bps: null,
+          bpt_rate_pct: 'not_supported',
+          bpt_rate_note: 'Periods before April 2018 are not supported for automatic Guam BPT estimation — confirm with CPA',
+        })
+        data.rows[0].unallocated_refunds_exception_cents = 0
+        data.rows[0].cumulative_unallocated_refunds_exception_cents = 1500
+        data.rows[0].reconciliation_exception_flag = true
+        data.rows[0].reconciliation_exception_note = 'Unallocated legacy refunds: $15.00 cumulative ($0.00 in month)'
+        data.rows[0].prior_period_note = 'Payout reversal relates to Oct 2026'
+        data.rows[0].estimated_bpt_rate_pct = 'not_supported'
+        data.rows[0].estimated_bpt_on_fee_revenue_estimate_cents = null
+        data.totals.unallocated_refunds_exception_cents = 0
+        data.totals.cumulative_unallocated_refunds_exception_cents = 1500
+        data.totals.reconciliation_exception_flag = true
+        data.totals.reconciliation_exception_note = 'Unallocated legacy refunds: $15.00 cumulative ($0.00 in month)'
+        data.totals.estimated_bpt_rate_pct = 'not_supported'
+        data.totals.estimated_bpt_on_fee_revenue_estimate_cents = null
+        return Promise.resolve({ data })
+      }
+      return Promise.resolve({ data: report })
+    })
+
+    show()
+    expect(await screen.findByText(/Unallocated legacy refunds: \$15\.00 cumulative \(\$0\.00 in month\)/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Payout reversal relates to Oct 2026/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Not supported')).toBeInTheDocument()
+    expect(screen.getByText(/W-9 \(current\) \/ DRT status/)).toBeInTheDocument()
+  })
+
   it('shows recovery for failures and handles zero-activity months and empty annual reports', async () => {
     apiClient.get.mockRejectedValueOnce(new Error('offline'))
     show()

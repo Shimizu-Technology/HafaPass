@@ -29,12 +29,17 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
   const rows = periodMatches && Array.isArray(cpaMonthly?.rows) ? cpaMonthly.rows : []
   const periodLabel = `${monthLabels[Math.max(Number(month) - 1, 0)] || month} ${year}`
   const refundsAndDisputes = (totals?.proceeds_refunded_cents || 0) + (totals?.chargebacks_cents || 0)
+  const cumulativeUnalloc = totals?.cumulative_unallocated_refunds_exception_cents ?? totals?.unallocated_refunds_exception_cents ?? 0
+  const inMonthUnalloc = totals?.unallocated_refunds_exception_cents ?? 0
+  const missingRevAudit = totals?.missing_reversal_audit_exception_cents ?? 0
+  const rateUnsupported = cpaMonthly?.bpt_rate_pct === 'not_supported' || cpaMonthly?.bpt_rate_bps === null
+  const priorPeriodRows = rows.filter(row => row.prior_period_note)
 
   return <section aria-labelledby="cpa-monthly-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <h2 id="cpa-monthly-heading" className="text-lg font-semibold text-neutral-900">Monthly CPA custodial &amp; BPT report · {periodLabel}</h2>
-        <p className="mt-1 text-sm text-neutral-700">Period-stable monthly workpaper separating organizer proceeds held in custody (a liability) from HåfaPass service-fee revenue, with Guam BPT estimates and W-9 nonprofit flags (DRT verification is external). Identifies organizations and events by ID only (no PII).</p>
+        <p className="mt-1 text-sm text-neutral-700">Recording-time period-stable monthly workpaper separating organizer proceeds held in custody (a liability) from HåfaPass service-fee revenue, with Guam BPT estimates and current-at-export W-9 nonprofit flags (DRT verification is external). Identifies organizations and events by ID only (no PII).</p>
       </div>
     </div>
 
@@ -52,9 +57,24 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
     {!cpaError && (!periodMatches || cpaLoading) && <p role="status" className="mt-4 text-sm text-content-muted">Loading monthly CPA summary for {periodLabel}…</p>}
 
     {totals && <>
-      {totals.reconciliation_exception_flag && <p role="status" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-        Reconciliation exception: {money(totals.unallocated_refunds_exception_cents)} in unallocated legacy refunds requires manual review between organizer proceeds and fee refunds.
-      </p>}
+      {totals.reconciliation_exception_flag && <div role="status" className="mt-4 space-y-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        <p className="font-medium">Reconciliation exception requires manual review</p>
+        {totals.reconciliation_exception_note
+          ? <p>{totals.reconciliation_exception_note}</p>
+          : <>
+            {cumulativeUnalloc > 0 && <p>{money(cumulativeUnalloc)} in cumulative unallocated legacy refunds ({money(inMonthUnalloc)} in month) requires manual review between organizer proceeds and fee refunds.</p>}
+            {missingRevAudit > 0 && <p>{money(missingRevAudit)} in reversed payouts is missing append-only reversal audit evidence.</p>}
+          </>}
+      </div>}
+
+      {priorPeriodRows.length > 0 && <div role="status" className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+        <p className="font-medium">Prior-period movements recorded in {periodLabel} (earlier closed months remain unchanged)</p>
+        <ul className="mt-1 list-disc pl-5 text-xs">
+          {priorPeriodRows.map((row, idx) => <li key={`${row.organization_id}:${row.event_id ?? idx}`}>
+            Org #{row.organization_id} · {row.event_id ? `Event #${row.event_id}` : 'Org adj.'}: {row.prior_period_note}
+          </li>)}
+        </ul>
+      </div>}
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
@@ -86,12 +106,12 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
             <SummaryRow label="Fee revenue (gross)" value={money(totals.fee_revenue_gross_cents)} />
             <SummaryRow label="Fee refunds" value={money(-totals.fee_refunds_cents)} />
             <SummaryRow label="Fee revenue (net)" value={money(totals.fee_revenue_net_cents)} emphasis />
-            <SummaryRow label="Stripe processing costs (informational)" value={money(totals.stripe_processing_costs_cents)} hint="Recorded when evidence is verified; does not reduce Guam BPT gross receipts" />
+            <SummaryRow label="Stripe processing costs (informational)" value={money(totals.stripe_processing_costs_cents)} hint="Booked by recording time; does not reduce Guam BPT gross receipts" />
             <SummaryRow label="Estimated BPT base (net fees)" value={money(totals.bpt_base_fee_revenue_estimate_cents)} />
             <SummaryRow
-              label={`Estimated Guam BPT (${cpaMonthly.bpt_rate_pct}% estimate)`}
-              value={money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}
-              hint="Working position estimate — confirm rate & any § 26203.2 relief with CPA"
+              label={rateUnsupported ? 'Estimated Guam BPT (not supported pre-Apr 2018)' : `Estimated Guam BPT (${cpaMonthly.bpt_rate_pct}% estimate)`}
+              value={rateUnsupported ? 'Not supported' : money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}
+              hint={rateUnsupported ? 'Confirm pre-April 2018 historical rate with CPA' : 'Working position estimate — confirm rate & any § 26203.2 relief with CPA'}
               emphasis
             />
           </dl>
@@ -102,7 +122,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
       <div className="mt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-neutral-900">Event breakdown (IDs only · no PII)</h3>
-          {totals.w9_nonprofit_row_count > 0 && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{totals.w9_nonprofit_row_count} W-9 nonprofit row{totals.w9_nonprofit_row_count === 1 ? '' : 's'} · DRT not tracked</span>}
+          {totals.w9_nonprofit_row_count > 0 && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{totals.w9_nonprofit_row_count} W-9 nonprofit row{totals.w9_nonprofit_row_count === 1 ? '' : 's'} (current at export) · DRT not tracked</span>}
         </div>
         {rows.length === 0 ? <p className="mt-2 text-sm text-content-muted">No live custodial or fee activity for {periodLabel}. Exporting CSV still provides the zeroed totals row for monthly filing records.</p>
           : <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly CPA event breakdown table">
@@ -110,7 +130,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
               <caption className="sr-only">Monthly custodial liability and HåfaPass fee revenue by organization ID and event ID for {periodLabel} in USD</caption>
               <thead>
                 <tr className="border-b border-neutral-200 text-xs text-neutral-600">
-                  {['Org / Event ID', 'W-9 / DRT status', 'Opening liab.', 'Collected', 'Refunds', 'Chargebacks', 'Payouts', 'Reversals', 'Closing net', 'Ending reserve', 'Net fees', 'Est. BPT'].map(label => (
+                  {['Org / Event ID', 'W-9 (current) / DRT status', 'Opening liab.', 'Collected', 'Refunds', 'Chargebacks', 'Payouts', 'Reversals', 'Closing net', 'Ending reserve', 'Net fees', 'Est. BPT'].map(label => (
                     <th key={label} scope="col" className="whitespace-nowrap px-2 py-2 font-semibold">{label}</th>
                   ))}
                 </tr>
@@ -119,6 +139,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
                 {rows.map((row, idx) => <tr key={`${row.organization_id}:${row.event_id ?? `org-${idx}`}`} className="border-t border-neutral-200">
                   <th scope="row" className="whitespace-nowrap px-2 py-2 font-medium text-neutral-900">
                     Org #{row.organization_id} · {row.event_id ? `Event #${row.event_id}` : 'Org adj.'}
+                    {row.prior_period_note && <span className="block text-xs font-normal text-sky-900">{row.prior_period_note}</span>}
                   </th>
                   <td className="whitespace-nowrap px-2 py-2">
                     {row.w9_nonprofit_classification
@@ -134,7 +155,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
                   <td className="whitespace-nowrap px-2 py-2 font-medium tabular-nums">{money(row.closing_custodial_liability_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.ending_reserve_balance_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.fee_revenue_net_cents)}</td>
-                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{row.estimated_bpt_on_fee_revenue_estimate_cents == null ? '—' : money(row.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
                 </tr>)}
               </tbody>
               <tfoot>
@@ -150,7 +171,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.closing_custodial_liability_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.ending_reserve_balance_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.fee_revenue_net_cents)}</td>
-                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{totals.estimated_bpt_on_fee_revenue_estimate_cents == null ? '—' : money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
                 </tr>
               </tfoot>
             </table>

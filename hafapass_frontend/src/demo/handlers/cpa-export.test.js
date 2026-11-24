@@ -55,7 +55,19 @@ describe('cpa-export demo handler', () => {
       reader.readAsText(csv.data)
     })
     expect(text).toContain('"row_type","month","organization_id"')
+    expect(text).toContain('"cumulative_unallocated_refunds_exception"')
+    expect(text).toContain('"prior_period_note"')
     expect(text).toContain('"total","2026-02"')
+
+    const pre2018 = await handle({
+      method: 'get',
+      path: '/admin/tax_reports/cpa_monthly',
+      params: new URLSearchParams('year=2017&month=12'),
+    })
+    expect(pre2018.status).toBe(200)
+    expect(pre2018.data.bpt_rate_bps).toBeNull()
+    expect(pre2018.data.bpt_rate_pct).toBe('not_supported')
+    expect(pre2018.data.totals.estimated_bpt_on_fee_revenue_estimate_cents).toBeNull()
   })
 
   it('rejects invalid months', async () => {
