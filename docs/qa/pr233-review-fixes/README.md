@@ -62,3 +62,19 @@ Validation on implementation commit `0d6705ade5e6cd41da2f2f05459ede66eecbbacc`:
 - Task-owned API/Vite/browser processes stopped; lifecycle status has no active owned resources. Dropped `hafapass_round2fix233_test` and `hafapass_round2fix233_demo`; borrowed protected PostgreSQL remains available. Worktree and pre-existing untracked files retained. No merge, deploy or real email.
 
 PR mapping: B3 and N1–N5 are implemented in `0d6705ad`; this QA record is a separate documentation commit. Lead owns final-head CI/review and the merge decision.
+
+## Production-faithful schema correction (2026-11-24)
+
+Scope: preserve already-applied production migration history and limit the schema delta to PR #233. Baseline: `origin/main` at `debe3fb92afd87cd0d8b9f077bac39a4dc7973d5`; worker started at `4a402cd1`. HafaPass is the live Guam ticketing platform; this correction changes schema preparation, not buyer or organizer UI. Acceptance is agent-executed database migration/schema verification and automated regression checks; no new browser or real-provider acceptance is claimed.
+
+- Restored `20260720000002` and `20260720150000` byte-for-byte from `origin/main`. Kept the two-worker transactional/marketing assertions in `puma_cluster_spec`.
+- Created `hafapass_pr233_schema_fix_test` on the existing protected localhost PostgreSQL service. Loaded `origin/main`'s schema, then ran `db:migrate`; the log confirms only `20261124140000`, `20261124140100`, `20261124140200`, `20261124140300`, `20261124150000`, and `20261124150100` ran. Each explicit Rails database command first asserted `current_database()` against this exact task DB.
+- Rolled all six migrations down to `20261124100000`, then up again and dumped the schema. Preserved main's equivalent cast syntax for the existing attendee-info and door-check constraints to avoid unrelated PostgreSQL dump formatting changes. Reloaded the generated schema before full RSpec.
+- Schema diff against `origin/main`: **78 lines changed, 76 insertions, 2 deletions**. Only the version, five email tables, follow consent columns, delivery links/recipient index/expanded subject constraint, and their foreign keys differ. Removing exactly those changes reproduces main's schema byte-for-byte.
+- CI now explicitly uses `db:schema:load`; the two RSpec worker databases already use schema load in `scripts/ci_rspec.py`.
+
+Follow-up outside #233: investigate the pre-existing full migration-chain replay failures on main (historical checkout recovery uses the current `Order` model and references refund/payment tables before the commerce-ledger migration). No fresh full-chain replay repair is included here. This correction verifies the production-shaped schema-load plus new-migrations path; it does not claim a successful from-zero historical replay.
+
+Validation of the correction on the Mac mini (Ruby 3.3.14, PostgreSQL 16, Node 24): full RSpec **4,138 examples / 0 failures** (7m15s), full Vitest **2,426 passed / 3 skipped** (219 passing files, one skipped), RuboCop **1,100 files / no offenses**, CI-helper tests **6 passed**, `git diff --check` passed. The expanded delivery subject constraint and lower-recipient index are valid in the schema-loaded DB. All six new migrations completed both down and up.
+
+Cleanup: dropped the task DB; foreground test processes finished, including the self-cleaning Puma integration test. Lifecycle status has no active owned resources. Protected pre-existing PostgreSQL remains running. Preserved the worktree and pre-existing `.codex/` and `EMAIL_AUDIT.md`. No merge or deployment; final-head CI/review remain lead-owned. The shared-context read-only check could not run because this host lacks `~/.config/shimizu-technology/agent-context.json`; applicable synced guidance was read directly.

@@ -74,7 +74,7 @@ jobs:
           working-directory: hafapass_api
       - name: Prepare database
         working-directory: hafapass_api
-        run: bundle exec rails db:test:prepare
+        run: bundle exec rails db:schema:load
       - name: Run RSpec
         working-directory: hafapass_api
         run: python3 ../scripts/ci_rspec.py

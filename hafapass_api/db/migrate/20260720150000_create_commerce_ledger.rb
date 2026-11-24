@@ -211,18 +211,6 @@ class CreateCommerceLedger < ActiveRecord::Migration[8.1]
     add_check_constraint :reconciliation_exceptions, "status IN (0, 1)",
       name: "reconciliation_exceptions_status_valid"
 
-    # These references precede the ledger tables on a fresh migration replay.
-    reversible do |direction|
-      direction.up do
-        add_foreign_key :refund_tickets, :refunds, on_delete: :restrict unless foreign_key_exists?(:refund_tickets, :refunds)
-        add_foreign_key :disputes, :payments, on_delete: :restrict unless foreign_key_exists?(:disputes, :payments)
-      end
-      direction.down do
-        remove_foreign_key :refund_tickets, :refunds
-        remove_foreign_key :disputes, :payments
-      end
-    end
-
     add_reference :tickets, :order_item, null: true, foreign_key: { on_delete: :restrict }
   end
 end
