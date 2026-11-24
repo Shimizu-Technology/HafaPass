@@ -25,6 +25,10 @@ test('box office demo completes cash and provides ticket delivery actions', asyn
   await page.getByRole('textbox', { name: 'Confirm buyer email' }).fill('player@example.invalid')
   await page.getByRole('button', { name: 'Send tickets' }).click()
   await expect(page.getByText('Ticket email queued for player@example.invalid.')).toBeVisible()
+  // A reload restores the receipt instead of "Could not load the order".
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Print tickets' })).toBeVisible()
+  await expect(page.getByText(/Could not load the order/)).toHaveCount(0)
 })
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {

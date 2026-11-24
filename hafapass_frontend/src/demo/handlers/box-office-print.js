@@ -2,6 +2,28 @@ import { created, json, notFound, unprocessable } from './respond'
 import { recordBoxOfficeSale } from '../staff/responses'
 
 const fictionalEmail = 'player@example.invalid'
+// The demo keeps its data in memory, which a reload wipes. Keep completed
+// box-office receipts for this tab so a reload can show them again, as the
+// real API does. Preview-only convenience; storage failures are ignored.
+const STORAGE_KEY = 'hafapass-demo:box-office-receipts'
+const MAX_STORED = 20
+
+function loadStoredReceipts() {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]')
+    return new Map(Array.isArray(stored) ? stored.filter(entry => Array.isArray(entry) && entry.length === 2) : [])
+  } catch {
+    return new Map()
+  }
+}
+
+function saveStoredReceipts(orders) {
+  try {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...orders].slice(-MAX_STORED)))
+  } catch {
+    // Storage can be unavailable (private mode, quota); the demo still works in memory.
+  }
+}
 
 export async function handle({ method, path, body, state, config }) {
   const match = path.match(/^\/organizer\/events\/(\d+)\/box_office(?:\/orders\/(\d+)(\/email)?)?$/)
@@ -10,7 +32,7 @@ export async function handle({ method, path, body, state, config }) {
   const [, eventId, orderId, emailAction] = match
   const event = state.staff.events.find(item => String(item.id) === eventId)
   if (!event) return undefined
-  const fixtures = state.boxOfficePrint ||= { orders: new Map(), attempts: new Map() }
+  const fixtures = state.boxOfficePrint ||= { orders: loadStoredReceipts(), attempts: new Map() }
 
   if (method === 'post' && !orderId && body.payment_method === 'door_cash') {
     const key = config.headers?.get?.('Idempotency-Key')
@@ -40,7 +62,9 @@ export async function handle({ method, path, body, state, config }) {
       })),
     }
     const result = { ...order, receipt }
+    fixtures.orders.delete(order.id)
     fixtures.orders.set(order.id, receipt)
+    saveStoredReceipts(fixtures.orders)
     if (key) fixtures.attempts.set(key, result)
     return created(result)
   }
@@ -53,6 +77,7 @@ export async function handle({ method, path, body, state, config }) {
     if (!body.email) return unprocessable('Enter a fictional buyer email.')
     receipt.email = fictionalEmail
     receipt.email_status = 'queued'
+    saveStoredReceipts(fixtures.orders)
     return json({ email: receipt.email, email_status: receipt.email_status }, 202)
   }
   return undefined
