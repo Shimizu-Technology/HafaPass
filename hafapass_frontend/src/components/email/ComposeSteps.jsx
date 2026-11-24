@@ -171,28 +171,46 @@ export function SendStep({ timing, onTiming, scheduledAt, onScheduledAt, blocker
   )
 }
 
+// Ignore "Send now instead" this soon after the choice appears, so a click or held
+// key meant for "Schedule" can never carry over into an immediate send.
+export const FRESH_ACTIVATION_MS = 500
+
+// The picked time passed (or is under a minute away) while confirming. A separate
+// component, so React mounts new buttons instead of reusing the focused Schedule
+// button, and focus starts on the safe choice.
+function LapsedScheduleDialog({ count, scheduledAt, busy, onCancel, onSendNow }) {
+  const { t } = useTranslation()
+  const ids = useId()
+  const pickRef = useRef(null)
+  const shownAt = useRef(0)
+  useEffect(() => { shownAt.current = performance.now() }, [])
+  const past = !(Date.parse(scheduledAt) > Date.now())
+  const sendNow = () => {
+    if (performance.now() - shownAt.current < FRESH_ACTIVATION_MS) return
+    onSendNow()
+  }
+  return (
+    <Dialog labelledBy={`${ids}-title`} onClose={onCancel} busy={busy} className="max-w-lg" initialFocusRef={pickRef}>
+      <h2 id={`${ids}-title`} className="text-xl font-semibold text-neutral-950">{t(past ? 'emailFlow.send.lapsedTitlePast' : 'emailFlow.send.lapsedTitleSoon')}</h2>
+      <p className="mt-2 text-sm text-neutral-700">{t('emailFlow.send.lapsedBody', { time: formatDateTime(scheduledAt) })}</p>
+      <p className="mt-2 text-sm text-neutral-700 tabular-nums">{t('emailFlow.send.estimate', countValues(count))}</p>
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" className="btn-primary gap-2" disabled={busy} onClick={sendNow} onKeyDown={event => { if (event.repeat) event.preventDefault() }}>
+          {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
+          {busy ? t('emailFlow.send.sending') : t('emailFlow.send.sendNowInstead')}
+        </button>
+        <button ref={pickRef} type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>{t('emailFlow.send.pickNewTime')}</button>
+      </div>
+    </Dialog>
+  )
+}
+
 export function ConfirmSendDialog({ count, audienceLabel, subject, sender, timing, scheduledAt, lapsed, busy, onCancel, onConfirm, onSendNowInstead }) {
   const { t } = useTranslation()
   const ids = useId()
   const cancelRef = useRef(null)
   const later = timing === 'later'
-  if (lapsed) {
-    // The picked time passed while this dialog was open: ask, never silently send now.
-    return (
-      <Dialog labelledBy={`${ids}-title`} onClose={onCancel} busy={busy} className="max-w-lg" initialFocusRef={cancelRef}>
-        <h2 id={`${ids}-title`} className="text-xl font-semibold text-neutral-950">{t('emailFlow.send.lapsedTitle')}</h2>
-        <p className="mt-2 text-sm text-neutral-700">{t('emailFlow.send.lapsedBody', { time: formatDateTime(scheduledAt) })}</p>
-        <p className="mt-2 text-sm text-neutral-700 tabular-nums">{t('emailFlow.send.estimate', countValues(count))}</p>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>{t('emailFlow.send.pickNewTime')}</button>
-          <button type="button" className="btn-primary gap-2" disabled={busy} onClick={onSendNowInstead}>
-            {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
-            {busy ? t('emailFlow.send.sending') : t('emailFlow.send.sendNowInstead')}
-          </button>
-        </div>
-      </Dialog>
-    )
-  }
+  if (lapsed) return <LapsedScheduleDialog count={count} scheduledAt={scheduledAt} busy={busy} onCancel={onCancel} onSendNow={onSendNowInstead} />
   return (
     <Dialog labelledBy={`${ids}-title`} onClose={onCancel} busy={busy} className="max-w-lg" initialFocusRef={cancelRef}>
       <h2 id={`${ids}-title`} className="text-xl font-semibold text-neutral-950 tabular-nums">{t(later ? 'emailFlow.send.confirmLaterTitle' : 'emailFlow.send.confirmNowTitle', countValues(count))}</h2>

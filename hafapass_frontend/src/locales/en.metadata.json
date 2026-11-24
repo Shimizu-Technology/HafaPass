@@ -1838,6 +1838,9 @@
         "partial": {
           "context": "Status badge: the email went out, but some recipients were skipped or failed."
         }
+      },
+      "cancelAlreadyCancelled": {
+        "context": "Shown when someone tries to cancel a scheduled email that another team member (or they, in another tab) already cancelled."
       }
     },
     "errors": {
@@ -1852,8 +1855,11 @@
       "estimate_other": {
         "context": "Plural of estimate_one."
       },
-      "lapsedTitle": {
+      "lapsedTitlePast": {
         "context": "The date and time the sender picked for a scheduled email is now in the past (it passed while they were reviewing)."
+      },
+      "lapsedTitleSoon": {
+        "context": "The picked send time is still in the future but less than one minute away, which is too soon to schedule."
       }
     }
   }

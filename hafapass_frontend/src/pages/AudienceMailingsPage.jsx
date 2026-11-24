@@ -9,10 +9,19 @@ import AudienceStep from '../components/email/AudienceStep'
 import { ConfirmSendDialog, PreviewStep, SendDone, SendStep, WriteStep } from '../components/email/ComposeSteps'
 import MailingHistory from '../components/email/MailingHistory'
 import MailingSummary, { StepNav } from '../components/email/MailingSummary'
-import { STEP_KEYS, audienceBreakdown, describeFilters, errorKey, scheduleLapsed } from '../components/email/emailFlowModel'
+import { STEP_KEYS, audienceBreakdown, describeFilters, errorKey, mailingState, scheduleLapsed } from '../components/email/emailFlowModel'
 import { useCachedSelectedOrganization } from '../utils/organizerOrganizations'
 
 const EMPTY_FILTERS = { q: '', status: '', source: '', interest: '', since: '' }
+
+// Which message explains a refused cancel, from the email's refreshed state.
+function cancelConflictKey(row) {
+  const state = row ? mailingState(row) : null
+  if (state === 'cancelled') return 'cancelAlreadyCancelled'
+  if (state === 'notSent') return 'cancelBlocked'
+  if (['sending', 'sent', 'partial', 'notDelivered'].includes(state)) return 'cancelTooLate'
+  return 'cancelChanged'
+}
 
 export default function AudienceMailingsPage() {
   const identity = useOrganizerIdentity()
@@ -89,8 +98,10 @@ function AudienceMailingsSession({ identity }) {
     setHistoryLoading(true); setHistoryError(false)
     try {
       const { data } = await apiClient.get('/audience_mailings', { ...boundConfig, params: { scope } })
-      setHistory(Array.isArray(data?.mailings) ? data.mailings : [])
-    } catch { setHistoryError(true) } finally { setHistoryLoading(false) }
+      const rows = Array.isArray(data?.mailings) ? data.mailings : []
+      setHistory(rows)
+      return rows
+    } catch { setHistoryError(true); return null } finally { setHistoryLoading(false) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, identity.organizationId, identity.authContext])
   useEffect(() => { loadHistory() }, [loadHistory])
@@ -169,23 +180,28 @@ function AudienceMailingsSession({ identity }) {
     const id = draftId
     const count = preview?.eligible ?? audienceBreakdown(list, scope)?.eligible ?? 0
     const later = timing === 'later' && !sendNow
-    // The time can pass while the dialog is open; the server would then send at once.
+    // The time can pass while the dialog is open. Ask first; the server checks again on its own clock.
     if (later && scheduleLapsed(scheduledAt)) { setLapsed(true); return }
     const requestedAt = later ? new Date(scheduledAt).toISOString() : null
-    const data = await run(async () => {
-      const response = await apiClient.post(`/audience_mailings/${id}/send_now`, { scope, scheduled_at: requestedAt }, boundConfig)
-      return response?.data || {}
-    })
-    setConfirming(false); setLapsed(false)
-    if (data) {
-      const at = Date.parse(data.scheduled_at || requestedAt || '')
-      const startedNow = Number.isNaN(at) ? !later : at <= Date.now() + 5_000
-      if (sendNow) setTiming('now')
-      setSendResult({ startedNow, scheduledAt: data.scheduled_at || requestedAt, count })
-      setDraftId(null); setTestedDraftId(null); setTestState('idle')
-    } else {
+    setBusy(true); setNotice(null)
+    let data
+    try {
+      data = (await apiClient.post(`/audience_mailings/${id}/send_now`, { scope, scheduled_at: requestedAt }, boundConfig))?.data || {}
+    } catch (error) {
+      setBusy(false)
+      // The server refused a schedule that is no longer far enough ahead: offer the same choice.
+      if (errorKey(error) === 'scheduleLapsed') { setLapsed(true); return }
+      setConfirming(false); setLapsed(false)
+      setNotice({ tone: 'error', text: errorMessage(error) })
       loadHistory()
+      return
     }
+    setBusy(false); setConfirming(false); setLapsed(false)
+    // Show what the server accepted, never a guess from the browser clock.
+    const startedNow = data.disposition ? data.disposition === 'sending_now' : !later
+    if (sendNow) setTiming('now')
+    setSendResult({ startedNow, scheduledAt: data.scheduled_at || requestedAt, count })
+    setDraftId(null); setTestedDraftId(null); setTestState('idle')
   }
 
   function startOver() {
@@ -212,20 +228,26 @@ function AudienceMailingsSession({ identity }) {
   }
 
   async function cancelScheduled(row) {
-    const ok = await run(async () => {
-      try {
-        await apiClient.post(`/audience_mailings/${row.id}/cancel`, { scope }, boundConfig)
-      } catch (error) {
-        // The server's lock decides: 409 means sending already started.
-        if (error?.response?.status !== 409) throw error
-        setNotice({ tone: 'error', text: t('emailFlow.history.cancelTooLate') })
-        return 'tooLate'
+    setBusy(true); setNotice(null)
+    let conflict = false
+    try {
+      await apiClient.post(`/audience_mailings/${row.id}/cancel`, { scope }, boundConfig)
+    } catch (error) {
+      // 409: the server's lock found it no longer scheduled. Say what it is now, from fresh data.
+      if (error?.response?.status !== 409) {
+        setBusy(false)
+        setNotice({ tone: 'error', text: errorMessage(error) })
+        await loadHistory()
+        return false
       }
-      setNotice({ tone: 'success', text: t('emailFlow.history.cancelled') })
-      return true
-    })
-    await loadHistory()
-    return ok
+      conflict = true
+    }
+    const rows = await loadHistory()
+    setBusy(false)
+    if (!conflict) { setNotice({ tone: 'success', text: t('emailFlow.history.cancelled') }); return true }
+    const current = rows?.find(item => item.id === row.id)
+    setNotice({ tone: 'error', text: t(`emailFlow.history.${cancelConflictKey(current)}`) })
+    return 'conflict'
   }
 
   async function unsubscribe(row) {

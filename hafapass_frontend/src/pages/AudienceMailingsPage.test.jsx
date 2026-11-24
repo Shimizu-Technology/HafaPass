@@ -228,8 +228,8 @@ const localInput = ms => { const d = new Date(ms); return `${d.getFullYear()}-${
 
 async function reachSendStep(sendNowReply) {
   apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : { mailings: [] } }))
-  apiClient.post.mockImplementation((path, body) => Promise.resolve({ data: path.endsWith('/preview') ? { html: '<p>x</p>', eligible: 1 }
-    : path.endsWith('/test_send') ? { queued: true, recipient: 'me@example.test' } : path.endsWith('/send_now') ? sendNowReply(body) : { id: 17 } }))
+  apiClient.post.mockImplementation((path, body) => (path.endsWith('/send_now') ? Promise.resolve(sendNowReply(body)).then(data => ({ data }))
+    : Promise.resolve({ data: path.endsWith('/preview') ? { html: '<p>x</p>', eligible: 1 } : path.endsWith('/test_send') ? { queued: true, recipient: 'me@example.test' } : { id: 17 } })))
   renderPage()
   await screen.findByText('1 person will get this email')
   await writeAndPreview()
@@ -247,20 +247,22 @@ it('#3: asks before sending when the scheduled time passes while the confirm dia
   expect(within(screen.getByRole('dialog')).getByRole('heading')).toHaveTextContent('Schedule for about 1 person?')
 
   const clock = vi.spyOn(Date, 'now').mockReturnValue(realNow + 20 * 60_000)
+  const perf = vi.spyOn(performance, 'now').mockReturnValue(1_000)
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
   expect(await screen.findByText('That time has already passed')).toBeInTheDocument()
   expect(apiClient.post).not.toHaveBeenCalledWith('/audience_mailings/17/send_now', expect.anything(), expect.anything())
 
+  perf.mockReturnValue(2_000)
   fireEvent.click(screen.getByRole('button', { name: 'Send now instead' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: null }, { organizationId: null }))
   expect(await screen.findByText('Your email is on its way')).toBeInTheDocument()
-  clock.mockRestore()
+  clock.mockRestore(); perf.mockRestore()
 })
 
 it('#3: reports a schedule from the server reply, not from what was picked', async () => {
   const realNow = Date.now()
   const at = localInput(realNow + 2 * 3_600_000)
-  await reachSendStep(body => ({ id: 17, status: 'scheduled', scheduled_at: body.scheduled_at }))
+  await reachSendStep(body => ({ id: 17, status: 'scheduled', scheduled_at: body.scheduled_at, disposition: 'scheduled_for' }))
   fireEvent.change(screen.getByLabelText(/Date and time/), { target: { value: at } })
   fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
@@ -270,12 +272,13 @@ it('#3: reports a schedule from the server reply, not from what was picked', asy
 
 it('#4 #5: shows delivery outcomes and keeps Cancel while the server still says scheduled', async () => {
   const past = new Date(Date.now() - 120_000).toISOString()
+  let firstStatus = 'scheduled'
   apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : { mailings: [
-    { id: 1, subject: 'Starting soon', status: 'scheduled', scheduled_at: past, created_at: '2026-11-20T00:00:00Z', counts: {}, unsubscribed: 0, audience: 'platform', recipient_count: 0 },
+    { id: 1, subject: 'Starting soon', status: firstStatus, scheduled_at: past, created_at: '2026-11-20T00:00:00Z', counts: firstStatus === 'scheduled' ? {} : { queued: 5 }, unsubscribed: 0, audience: 'platform', recipient_count: firstStatus === 'scheduled' ? 0 : 5 },
     { id: 2, subject: 'All suppressed', status: 'queued', recipient_count: 50, scheduled_at: '2026-11-19T00:00:00Z', created_at: '2026-11-19T00:00:00Z', counts: { suppressed: 48, failed: 2 }, unsubscribed: 0, audience: 'platform' },
     { id: 3, subject: 'Mostly sent', status: 'queued', recipient_count: 290, scheduled_at: '2026-11-18T00:00:00Z', created_at: '2026-11-18T00:00:00Z', counts: { delivered: 280, suppressed: 10 }, unsubscribed: 0, audience: 'platform' },
   ] } }))
-  apiClient.post.mockRejectedValue({ response: { status: 409, data: {} } })
+  apiClient.post.mockImplementation(() => { firstStatus = 'queueing'; return Promise.reject({ response: { status: 409, data: {} } }) })
   renderPage(`${PLATFORM}&view=history`)
   expect(await screen.findByText('Not delivered')).toBeInTheDocument()
   expect(screen.getByText('Not delivered: 48 skipped (unsubscribed or blocked by send time), 2 failed.')).toBeInTheDocument()
@@ -289,4 +292,72 @@ it('#4 #5: shows delivery outcomes and keeps Cancel while the server still says 
   fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel it' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/1/cancel', { scope: 'platform' }, { organizationId: null }))
   expect(await screen.findByText('It had already started sending, so it couldn’t be cancelled. History shows where it stands now.')).toBeInTheDocument()
+})
+
+// Review round 2 regressions (PR #244).
+it('round 2 #1 #2: a server-refused schedule asks again, starts on the safe choice, and needs a fresh activation', async () => {
+  const realNow = Date.now()
+  const perf = vi.spyOn(performance, 'now').mockReturnValue(5_000)
+  await reachSendStep(body => (body.scheduled_at
+    ? Promise.reject({ response: { status: 422, data: { error: 'Schedule lapsed', code: 'schedule_lapsed' } } })
+    : { id: 17, status: 'scheduled', scheduled_at: new Date().toISOString(), disposition: 'sending_now' }))
+  fireEvent.change(screen.getByLabelText(/Date and time/), { target: { value: localInput(realNow + 10 * 60_000) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
+
+  expect(await screen.findByText('That time is less than a minute away')).toBeInTheDocument()
+  expect(screen.getByText(/A scheduled email needs to be at least a minute ahead/)).toBeInTheDocument()
+  expect(document.activeElement).toHaveTextContent('Pick a new time')
+  const sendNow = screen.getByRole('button', { name: 'Send now instead' })
+  expect(fireEvent.keyDown(sendNow, { key: 'Enter', repeat: true })).toBe(false)
+  fireEvent.click(sendNow)
+  expect(apiClient.post).not.toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: null }, expect.anything())
+
+  perf.mockReturnValue(5_600)
+  fireEvent.click(sendNow)
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: null }, { organizationId: null }))
+  expect(await screen.findByText('Your email is on its way')).toBeInTheDocument()
+  perf.mockRestore()
+})
+
+it('round 2 #1: the done screen follows the server disposition, not the browser clock', async () => {
+  const realNow = Date.now()
+  await reachSendStep(body => ({ id: 17, status: 'scheduled', scheduled_at: body.scheduled_at, disposition: 'sending_now' }))
+  fireEvent.change(screen.getByLabelText(/Date and time/), { target: { value: localInput(realNow + 3 * 3_600_000) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
+  expect(await screen.findByText('Your email is on its way')).toBeInTheDocument()
+})
+
+it.each([
+  ['cancelled', { status: 'cancelled' }, 'It was already cancelled, perhaps by someone else on your team.'],
+  ['blocked', { status: 'blocked', blocked_reason: 'Invalid schedule' }, 'It was stopped before sending. History shows why.'],
+  ['sending', { status: 'queueing', recipient_count: 5, counts: { queued: 5 } }, 'It had already started sending, so it couldn’t be cancelled. History shows where it stands now.'],
+  ['gone', null, 'This email changed. History shows its current status.'],
+])('round 2 #4: a refused cancel explains the refreshed status (%s)', async (_name, after, message) => {
+  let current = { status: 'scheduled', scheduled_at: '2999-01-01T00:00:00Z', counts: {} }
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : {
+    mailings: current ? [{ id: 1, subject: 'Upcoming', created_at: '2026-11-20T00:00:00Z', unsubscribed: 0, audience: 'platform', ...current }] : [],
+  } }))
+  apiClient.post.mockImplementation(() => { current = after && { scheduled_at: '2999-01-01T00:00:00Z', counts: {}, ...after }; return Promise.reject({ response: { status: 409, data: {} } }) })
+  renderPage(`${PLATFORM}&view=history`)
+  fireEvent.click(await screen.findByRole('button', { name: 'Open details for Upcoming' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel scheduled send' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel it' }))
+  expect(await screen.findByText(message)).toBeInTheDocument()
+})
+
+it('round 2 #3 and minor: classifies mixed bounces and never says Sent for a send that reached no one', async () => {
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : { mailings: [
+    { id: 1, subject: 'Mixed', status: 'queued', recipient_count: 10, handed_off: 10, scheduled_at: '2026-11-19T00:00:00Z', created_at: '2026-11-19T00:00:00Z', counts: { delivered: 1, bounced: 9 }, unsubscribed: 0, audience: 'platform' },
+    { id: 2, subject: 'Nobody', status: 'queued', recipient_count: 0, scheduled_at: '2026-11-18T00:00:00Z', created_at: '2026-11-18T00:00:00Z', counts: {}, unsubscribed: 0, audience: 'platform' },
+  ] } }))
+  renderPage(`${PLATFORM}&view=history`)
+  expect(await screen.findByText('Partly sent')).toBeInTheDocument()
+  expect(screen.getByText('Some didn’t arrive: 9 bounced.')).toBeInTheDocument()
+  expect(screen.getByText('10 recipients · 1 delivered · 9 bounced')).toBeInTheDocument()
+  expect(screen.getByText('Not delivered: no one on the list could get email when it sent.')).toBeInTheDocument()
+  const nobody = screen.getByRole('button', { name: 'Open details for Nobody' })
+  expect(within(nobody).getByText(/^Started /)).toBeInTheDocument()
+  expect(within(nobody).queryByText(/^Sent /)).not.toBeInTheDocument()
 })

@@ -97,6 +97,8 @@ function platformHistory(scenario) {
     // Past its start time but the server still says `scheduled`, so it can still be cancelled.
     mailing(506, { subject: 'Gates open early on Saturday (demo)', status: 'scheduled', created_at: iso(Date.now() - 3_600_000), scheduled_at: iso(Date.now() - 120_000), recipient_count: 0, counts: {} }),
     // Every delivery was suppressed at send time: nothing reached anyone.
+    // One arrived, nine bounced: partly sent, not "Sent".
+    mailing(508, { subject: 'Lost and found at the field house (demo)', status: 'queued', created_at: iso(NOW - 4 * DAY), scheduled_at: iso(NOW - 4 * DAY), recipient_count: 10, handed_off: 10, counts: { delivered: 1, bounced: 9 } }),
     mailing(507, { subject: 'Rain delay update (demo)', status: 'queued', created_at: iso(NOW - 3 * DAY), scheduled_at: iso(NOW - 3 * DAY), recipient_count: 50, counts: { suppressed: 48, failed: 2 } }),
     mailing(503, { subject: 'Draft: New Year market (demo)', status: 'draft', created_at: iso(NOW - 2 * 3_600_000), scheduled_at: null, body: 'Save the date for the New Year night market (demo).' }),
     mailing(504, { subject: 'Holiday concert on sale (demo)', status: 'blocked', blocked_reason: 'Missing mailing address or marketing permission', created_at: iso(NOW - 12 * DAY), scheduled_at: iso(NOW - 12 * DAY) }),
@@ -246,14 +248,17 @@ export async function handle({ method, path, body, params, state }) {
       return json(row)
     }
     if (row.status !== 'draft') return json({ error: 'Conflict' }, 409)
-    const when = body.scheduled_at ? Date.parse(body.scheduled_at) : Date.now()
-    if (Number.isNaN(when) || when < Date.now() - 60_000) return unprocessable('Invalid schedule')
+    // Like the API: an explicit schedule must be over a minute ahead, or it is refused;
+    // only a request without a time sends now. The reply says which one happened.
+    const explicit = Boolean(body.scheduled_at)
+    const when = explicit ? Date.parse(body.scheduled_at) : Date.now()
+    if (Number.isNaN(when)) return unprocessable('Invalid schedule')
+    if (explicit && when <= Date.now() + 60_000) return json({ error: 'Schedule lapsed', code: 'schedule_lapsed' }, 422)
     const audience = audienceResponse(data, scope, new URLSearchParams({ audience: row.audience, ...row.filters }))
-    // Like the API: a time that is now or past starts at once; the reply carries the real time.
     Object.assign(row, { scheduled_at: new Date(when).toISOString() })
-    if (when > Date.now()) row.status = 'scheduled'
-    else Object.assign(row, { status: 'queued', recipient_count: audience.eligible, counts: { sent: audience.eligible } })
-    return json(row)
+    if (explicit) row.status = 'scheduled'
+    else Object.assign(row, { status: 'queued', recipient_count: audience.eligible, handed_off: audience.eligible, counts: { sent: audience.eligible } })
+    return json({ ...row, disposition: explicit ? 'scheduled_for' : 'sending_now' })
   }
   const suppress = path.match(/^\/audience_mailings\/suppress\/(\d+)$/)
   if (method === 'post' && suppress && scope === 'platform') {

@@ -1760,10 +1760,11 @@
       "another": "Write another email",
       "estimate_one": "About {{n}} person (final count when it sends)",
       "estimate_other": "About {{n}} people (final count when it sends)",
-      "lapsedTitle": "That time has already passed",
-      "lapsedBody": "You picked {{time}}. Send it now instead, or pick a new time.",
+      "lapsedBody": "You picked {{time}}. A scheduled email needs to be at least a minute ahead. Send it now instead, or pick a new time.",
       "pickNewTime": "Pick a new time",
-      "sendNowInstead": "Send now instead"
+      "sendNowInstead": "Send now instead",
+      "lapsedTitlePast": "That time has already passed",
+      "lapsedTitleSoon": "That time is less than a minute away"
     },
     "summary": {
       "heading": "Summary",
@@ -1838,7 +1839,7 @@
       "outcome": {
         "nobody": "Not delivered: no one on the list could get email when it sent.",
         "none": "Not delivered: {{reasons}}.",
-        "partial": "Some weren’t sent: {{reasons}}.",
+        "partial": "Some didn’t arrive: {{reasons}}.",
         "skipped_one": "{{n}} skipped (unsubscribed or blocked by send time)",
         "skipped_other": "{{n}} skipped (unsubscribed or blocked by send time)",
         "failed_one": "{{n}} failed",
@@ -1847,7 +1848,11 @@
         "bounced_other": "{{n}} bounced"
       },
       "cancelTooLate": "It had already started sending, so it couldn’t be cancelled. History shows where it stands now.",
-      "startingNote": "Its start time has passed and it should begin any moment. You can still try to cancel it."
+      "startingNote": "Its start time has passed and it should begin any moment. You can still try to cancel it.",
+      "startedAt": "Started {{time}}",
+      "cancelAlreadyCancelled": "It was already cancelled, perhaps by someone else on your team.",
+      "cancelBlocked": "It was stopped before sending. History shows why.",
+      "cancelChanged": "This email changed. History shows its current status."
     },
     "errors": {
       "generic": "Something went wrong. Check your connection and access, then try again.",

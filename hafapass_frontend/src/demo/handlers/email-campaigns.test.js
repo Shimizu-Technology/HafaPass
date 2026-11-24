@@ -16,13 +16,16 @@ it('serves the whole platform flow from fictional data and keeps changes in memo
   const draft = (await call('post', '/audience_mailings', { body: { scope: 'platform', subject: 'Hello', body: 'Body' }, state })).data
   expect((await call('post', `/audience_mailings/${draft.id}/test_send`, { body: { scope: 'platform' }, state })).data.recipient).toMatch(/@example\.invalid$/)
   const sent = (await call('post', `/audience_mailings/${draft.id}/send_now`, { body: { scope: 'platform', scheduled_at: null }, state })).data
-  expect(sent).toMatchObject({ status: 'queued', recipient_count: 312 })
+  expect(sent).toMatchObject({ status: 'queued', recipient_count: 312, disposition: 'sending_now' })
   expect((await call('post', `/audience_mailings/${draft.id}/send_now`, { body: { scope: 'platform' }, state })).status).toBe(409)
 
   const later = (await call('post', '/audience_mailings', { body: { scope: 'platform', subject: 'Later', body: 'Body' }, state })).data
   const when = new Date(Date.now() + 3_600_000).toISOString()
   expect((await call('post', `/audience_mailings/${later.id}/send_now`, { body: { scope: 'platform', scheduled_at: when }, state })).data)
-    .toMatchObject({ status: 'scheduled', scheduled_at: when })
+    .toMatchObject({ status: 'scheduled', scheduled_at: when, disposition: 'scheduled_for' })
+  const soon = (await call('post', '/audience_mailings', { body: { scope: 'platform', subject: 'Soon', body: 'Body' }, state })).data
+  const refused = await call('post', `/audience_mailings/${soon.id}/send_now`, { body: { scope: 'platform', scheduled_at: new Date(Date.now() + 20_000).toISOString() }, state })
+  expect(refused).toMatchObject({ status: 422, data: { code: 'schedule_lapsed' } })
   expect(await call('get', '/organizer/events', { state })).toBeUndefined()
 })
 

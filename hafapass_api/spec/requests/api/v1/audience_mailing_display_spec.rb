@@ -100,6 +100,54 @@ RSpec.describe "Audience mailing display fields", type: :request do
     end
   end
 
+  describe "explicit schedules (review round 2, #1)" do
+    let(:mailing) { AudienceMailing.create!(created_by: admin, subject: "Events", body: "Body", audience: "platform") }
+
+    before { stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST FIXTURE ADDRESS — not for delivery")) }
+
+    def send_now(params)
+      post "/api/v1/audience_mailings/#{mailing.id}/send_now", params: { scope: "platform" }.merge(params), headers: auth_headers(admin), as: :json
+    end
+
+    it "refuses a schedule that has passed or is inside the guard window instead of sending at once" do
+      [15.seconds.ago, 30.seconds.from_now].each do |time|
+        expect { send_now(scheduled_at: time.iso8601) }.not_to have_enqueued_job(AudienceMailingJob)
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body).to eq("error" => "Schedule lapsed", "code" => "schedule_lapsed")
+        expect(mailing.reload).to have_attributes(status: "draft", scheduled_at: nil)
+      end
+    end
+
+    it "reports the disposition the server accepted" do
+      time = 5.minutes.from_now.change(usec: 0)
+      expect { send_now(scheduled_at: time.iso8601) }.to have_enqueued_job(AudienceMailingJob).with(mailing.id).at(time)
+      expect(response.parsed_body).to include("disposition" => "scheduled_for", "status" => "scheduled")
+
+      other = AudienceMailing.create!(created_by: admin, subject: "Now", body: "Body", audience: "platform")
+      expect {
+        post "/api/v1/audience_mailings/#{other.id}/send_now", params: { scope: "platform" }, headers: auth_headers(admin), as: :json
+      }.to have_enqueued_job(AudienceMailingJob).with(other.id)
+      expect(response.parsed_body).to include("disposition" => "sending_now")
+    end
+  end
+
+  it "counts deliveries handed to the provider from acceptance evidence (review round 2, #3)" do
+    mailing = AudienceMailing.create!(created_by: admin, subject: "Events", body: "Body", audience: "platform", status: "queued", recipient_count: 13)
+    plan = [["delivered", "re_1"]] + Array.new(9) { |i| ["bounced", "re_b#{i}"] } + [["failed", "re_f"], ["failed", nil], ["suppressed", nil], ["queued", nil]]
+    plan.each_with_index do |(status, provider_id), index|
+      delivery = mailing.delivery("person#{index}@example.test")
+      delivery.assign_attributes(status: status, provider_id: provider_id)
+      delivery.save!
+    end
+
+    get "/api/v1/audience_mailings", params: { scope: "platform" }, headers: auth_headers(admin)
+
+    row = response.parsed_body["mailings"].find { |item| item["id"] == mailing.id }
+    expect(row).to include("handed_off" => 11)
+    expect(row["counts"]).to include("delivered" => 1, "bounced" => 9, "failed" => 2, "suppressed" => 1, "queued" => 1)
+  end
+
   it "returns the address a self-test went to" do
     stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST FIXTURE ADDRESS — not for delivery"))
     allow(ClerkIdentity).to receive(:email_matches?).and_return(true)

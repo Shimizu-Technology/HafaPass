@@ -37,7 +37,9 @@ function outcomeText(t, state, totals) {
 
 function whenText(t, row, state) {
   if (state === 'scheduled' || state === 'starting') return t('emailFlow.history.scheduledFor', { time: formatDateTime(row.scheduled_at) })
-  if (['sent', 'sending', 'partial', 'notDelivered'].includes(state) && row.scheduled_at) return t('emailFlow.history.sentAt', { time: formatDateTime(row.scheduled_at) })
+  // Nothing went out for a not-delivered send, so never say "Sent".
+  if (state === 'notDelivered' && row.scheduled_at) return t('emailFlow.history.startedAt', { time: formatDateTime(row.scheduled_at) })
+  if (['sent', 'sending', 'partial'].includes(state) && row.scheduled_at) return t('emailFlow.history.sentAt', { time: formatDateTime(row.scheduled_at) })
   return t('emailFlow.history.created', { time: formatDateTime(row.created_at) })
 }
 

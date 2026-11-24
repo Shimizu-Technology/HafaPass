@@ -72,6 +72,12 @@ describe('history', () => {
     [{ status: 'queued', recipient_count: 2, counts: { bounced: 2 } }, 'notDelivered'],
     [{ status: 'queued', recipient_count: 0, counts: {} }, 'notDelivered'],
     [{ status: 'queued', recipient_count: 290, counts: { delivered: 280, suppressed: 10 } }, 'partial'],
+    // Review round 2 #3: mixed outcomes.
+    [{ status: 'queued', recipient_count: 10, handed_off: 10, counts: { delivered: 1, bounced: 9 } }, 'partial'],
+    [{ status: 'queued', recipient_count: 5, counts: { sent: 3, failed: 2 } }, 'partial'],
+    [{ status: 'queued', recipient_count: 5, handed_off: 2, counts: { failed: 5 } }, 'notDelivered'],
+    [{ status: 'queued', recipient_count: 5, counts: { sent: 5 } }, 'sent'],
+    [{ status: 'queued', recipient_count: 2, counts: { delivered: 1, complained: 1 } }, 'sent'],
     [{ status: 'blocked' }, 'notSent'],
     [{ status: 'cancelled' }, 'cancelled'],
   ])('%o is %s', (row, expected) => expect(mailingState(row, now)).toBe(expected))
@@ -79,12 +85,21 @@ describe('history', () => {
   it('groups provider statuses into delivery totals', () => {
     expect(deliveryTotals({ status: 'queueing', recipient_count: 48000, counts: { queued: 46800, sent: 900, delivered: 288, bounced: 12 }, unsubscribed: 1 }))
       .toEqual({ recipients: 48000, queued: 46800, accepted: 900, delivered: 288, spam: 0, bounced: 12, failed: 0, skipped: 0,
-        handedOff: 1200, notSent: 0, reached: 1188, waiting: 47700, processed: 1200, unsubscribed: 1 })
+        handedOff: 1200, processed: 1200, notSent: 0, arrived: 288, problems: 12, waiting: 47700, unsubscribed: 1 })
   })
 
   it('#4: never counts suppressed or failed deliveries as handed to the email service', () => {
     expect(deliveryTotals({ status: 'queueing', recipient_count: 100, counts: { queued: 50, sent: 30, suppressed: 15, failed: 5 } }))
       .toMatchObject({ handedOff: 30, notSent: 20, processed: 50, recipients: 100 })
+  })
+
+  it('round 2 #3: takes handed-off counts from provider acceptance evidence when the API sends it', () => {
+    expect(deliveryTotals({ status: 'queued', recipient_count: 13, handed_off: 11, counts: { delivered: 1, bounced: 9, failed: 2, suppressed: 1 } }))
+      .toMatchObject({ processed: 13, handedOff: 11, notSent: 2, problems: 12, arrived: 1 })
+  })
+
+  it('round 2 #1: recognizes the server lapsed-schedule refusal', () => {
+    expect(errorKey({ response: { status: 422, data: { error: 'Schedule lapsed', code: 'schedule_lapsed' } } })).toBe('scheduleLapsed')
   })
 
   it('#2: uses the job’s recorded recipient count once sending starts, and no count before', () => {

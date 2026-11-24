@@ -50,9 +50,13 @@ export function zeroReason({ list, scope, filterCount }) {
   return 'allLeftOut'
 }
 
-// Delivery outcomes, from MessageDelivery statuses. Only `delivered` means the
-// provider confirmed delivery; `sent`/`delayed` were handed off with no result
-// yet; `failed`, `suppressed` and `cancelled` never left HåfaPass.
+// Delivery outcomes, from MessageDelivery statuses. `delivered` (and `complained`,
+// which follows delivery) means it arrived; `sent`/`delayed` were accepted by the
+// provider with no result yet; `bounced`, `failed`, `suppressed` and `cancelled`
+// did not arrive. Whether a row was handed to the provider comes from the API's
+// `handed_off` (provider acceptance evidence), not from its final status.
+const ACCEPTED_STATUSES = ['sent', 'delivered', 'delayed', 'bounced', 'complained']
+
 export function deliveryTotals(row) {
   const counts = row?.counts || {}
   const n = key => Number(counts[key]) || 0
@@ -61,19 +65,22 @@ export function deliveryTotals(row) {
   const started = ['queueing', 'queued'].includes(row?.status)
   const recipients = started ? Number(row?.recipient_count) || tracked : tracked
   const queued = n('queued')
-  const accepted = n('sent') + n('delayed')
+  const processed = Math.max(0, tracked - queued)
+  // Older APIs omit `handed_off`; then only statuses that imply acceptance count.
+  const reported = Number(row?.handed_off)
+  const handedOff = Math.min(processed, Number.isFinite(reported) && row?.handed_off != null ? reported : ACCEPTED_STATUSES.reduce((sum, key) => sum + n(key), 0))
   const delivered = n('delivered')
   const spam = n('complained')
+  const accepted = n('sent') + n('delayed')
   const bounced = n('bounced')
   const failed = n('failed')
   const skipped = n('suppressed') + n('cancelled')
-  const handedOff = accepted + delivered + spam + bounced
-  const notSent = failed + skipped
   return {
-    recipients, queued, accepted, delivered, spam, bounced, failed, skipped, handedOff, notSent,
-    reached: accepted + delivered + spam,
+    recipients, queued, accepted, delivered, spam, bounced, failed, skipped, handedOff, processed,
+    notSent: processed - handedOff,
+    arrived: delivered + spam,
+    problems: bounced + failed + skipped,
     waiting: queued + accepted,
-    processed: handedOff + notSent,
     unsubscribed: Number(row?.unsubscribed) || 0,
   }
 }
@@ -89,8 +96,9 @@ export function mailingState(row, now = Date.now()) {
       const totals = deliveryTotals(row)
       if (totals.recipients === 0) return 'notDelivered'
       if (totals.queued > 0) return 'sending'
-      if (totals.reached === 0) return 'notDelivered'
-      return totals.notSent > 0 ? 'partial' : 'sent'
+      // Nothing arrived and nothing is still on its way.
+      if (totals.arrived + totals.accepted === 0) return 'notDelivered'
+      return totals.problems > 0 ? 'partial' : 'sent'
     }
     case 'scheduled': return row.scheduled_at && Date.parse(row.scheduled_at) > now ? 'scheduled' : 'starting'
     default: return 'sent'
@@ -134,6 +142,7 @@ export function localZoneName() {
 export function errorKey(error) {
   const message = String(error?.response?.data?.error || '')
   if (/postal address/i.test(message)) return 'addressMissing'
+  if (error?.response?.data?.code === 'schedule_lapsed') return 'scheduleLapsed'
   if (/invalid schedule/i.test(message)) return 'scheduleInvalid'
   if (error?.response?.status === 409) return 'conflict'
   if (error?.response?.status === 403) return 'forbidden'
