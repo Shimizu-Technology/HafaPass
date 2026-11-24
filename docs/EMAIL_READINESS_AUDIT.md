@@ -33,3 +33,16 @@ Configure `RESEND_API_KEY`, sending-domain SPF/DKIM/DMARC, verified `MAILER_FROM
 Leon must approve consent wording/version `event-alerts-v1` and the default-on double opt-in policy. Home redesign PR #231 should place/reuse the self-contained `EventAlertsSignup` band and avoid duplicate capture surfaces. Optional waitlist signup, reviewed translations, large-list SQL pagination, real Clerk/organizer/device browser acceptance, live controlled mailbox/DKIM/webhook checks and independent cross-family review remain follow-ups. New consent tables have explicit keep retention classifications pending policy review; no destructive retention policy was invented.
 
 Do not merge before cross-family review and Leon's OK.
+
+## Final automated verification
+
+Implementation `eb7c23ddec9ce437a74982da4728e761215f3e52`; follow-up commit adds recovery regression coverage and this verification record.
+
+- Full serial RSpec: **4,063 examples, 0 failures** (`/tmp/email-base-rspec-serial.log`).
+- Final affected RSpec, including the added recovery regression: **37 examples, 0 failures** (`/tmp/email-base-final-affected.log`). Earlier transport/inventory regression batch: 149/0; serial commerce/new feature retest: 94/0.
+- Full Vitest: **214 files passed, 1 skipped; 2,391 tests passed, 3 skipped** (`/tmp/email-base-vitest-last.log`).
+- Frontend lint and production build passed (`/tmp/email-base-lint-final.log`, `/tmp/email-base-build-final.log`).
+- RuboCop: **1,083 files, no offenses** (`/tmp/email-base-rubocop-final.log`). Brakeman: **no warnings** (`/tmp/email-base-brakeman-final.log`). Ruby and production npm dependency audits: **no vulnerabilities** (`/tmp/email-base-audit-final.log`, `/tmp/email-base-npm-audit.log`). Advisory Impeccable returned `[]`.
+- Browser acceptance/evidence: the eight required local captured-mail stages passed with the fixture and device limits in `evidence/README.md`. No real email or external provider verification.
+
+Required CI and cross-family review remain lead-owned. No merge or deployment was performed. Shared-guidance setup remains missing its agent-context configuration; no shared settings changed.

@@ -18,3 +18,16 @@ The initial Send now browser attempt exposed use of the scheduled adapter even f
 Desktop Chromium at 1280×800 and resized Chromium at 375×812 were inspected; admin list and captured email had no horizontal document overflow. Real phone keyboards, Safari/WebKit, real Clerk authentication, organizer browser journeys, external provider webhooks/DKIM and future-clock scheduling in a running queue were not exercised. RSpec covers role scoping, consent, preference state, scheduling, webhook suppression, provider contract and retries; Vitest covers signup, preferences, compose/preview/self-test/send. These local checks do not replace cross-family review or Leon's approval.
 
 Captured HTML contains only synthetic reserved `.test` addresses and local signed links. Tokens become unusable when the task database is dropped. Screenshots and this directory are local evidence, not deployed assets.
+
+## Final automated verification
+
+Implementation `eb7c23ddec9ce437a74982da4728e761215f3e52`; follow-up commit adds recovery regression coverage and this verification record.
+
+- Full serial RSpec: **4,063 examples, 0 failures** (`/tmp/email-base-rspec-serial.log`).
+- Final affected RSpec, including the added recovery regression: **37 examples, 0 failures** (`/tmp/email-base-final-affected.log`). Earlier transport/inventory regression batch: 149/0; serial commerce/new feature retest: 94/0.
+- Full Vitest: **214 files passed, 1 skipped; 2,391 tests passed, 3 skipped** (`/tmp/email-base-vitest-last.log`).
+- Frontend lint and production build passed (`/tmp/email-base-lint-final.log`, `/tmp/email-base-build-final.log`).
+- RuboCop: **1,083 files, no offenses** (`/tmp/email-base-rubocop-final.log`). Brakeman: **no warnings** (`/tmp/email-base-brakeman-final.log`). Ruby and production npm dependency audits: **no vulnerabilities** (`/tmp/email-base-audit-final.log`, `/tmp/email-base-npm-audit.log`). Advisory Impeccable returned `[]`.
+- Browser acceptance/evidence: the eight required local captured-mail stages passed with the fixture and device limits in `evidence/README.md`. No real email or external provider verification.
+
+Required CI and cross-family review remain lead-owned. No merge or deployment was performed. Shared-guidance setup remains missing its agent-context configuration; no shared settings changed.

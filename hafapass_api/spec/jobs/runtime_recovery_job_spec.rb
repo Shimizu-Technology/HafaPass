@@ -127,4 +127,15 @@ RSpec.describe RuntimeRecoveryJob do
     described_class.perform_now
     expect(SolidQueue::Job.where(class_name: "CommunicationCampaignJob").count).to eq(2)
   end
+  it "recovers an authorized audience dispatcher without duplicating pending work" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_RUNTIME" => "embedded", "HAFAPASS_POSTAL_ADDRESS" => "TEST FIXTURE ADDRESS"))
+    mailing = AudienceMailing.create!(created_by: create(:user, role: :admin), audience: "platform",
+      subject: "Events", body: "Fixture", status: "queueing", scheduled_at: 1.minute.ago)
+    described_class.perform_now
+    jobs = SolidQueue::Job.where(class_name: "AudienceMailingJob")
+    expect(jobs.count).to eq(1)
+    expect(jobs.first.arguments["arguments"]).to eq([mailing.id])
+    described_class.perform_now
+    expect(jobs.count).to eq(1)
+  end
 end
