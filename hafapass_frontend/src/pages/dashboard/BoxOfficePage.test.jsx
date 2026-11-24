@@ -12,13 +12,18 @@ vi.mock('../../components/QRCode', () => ({ default: () => null }))
 function mountBoxOffice() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/box-office']}><Routes><Route path="/dashboard/events/:id/box-office" element={<BoxOfficePage />} /></Routes></MemoryRouter>) }
 
 // A retry keeps the operation fixed but receives its own cancellable transport.
+const receipt = {
+  id: 922, reference: 'DEMO-DOOR-1', status: 'completed', total_cents: 500,
+  event_title: 'Demo Door Event', admissions: [], email_available: true,
+}
+
 const operation = ([url, payload, { signal: _signal, ...config }]) => [url, payload, config]
 
 describe('uncertain box office sale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.sessionStorage.clear()
-    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : url.endsWith('/orders/922') ? receipt : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
   })
 
   it('retries the original operation and immutable payload after losing a response and reloading', async () => {
@@ -36,7 +41,7 @@ describe('uncertain box office sale', () => {
     expect(screen.getByLabelText('Buyer name')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
     first.unmount()
-    apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Door Buyer', total_cents: 500, tickets: [] } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed', buyer_name: 'Door Buyer', total_cents: 500, tickets: [] } })
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
@@ -77,12 +82,32 @@ describe('uncertain box office sale', () => {
     const original = apiClient.post.mock.calls[0]
     expect(original[1].payment_method).toBe('door_cash')
     first.unmount()
-    apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed', buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await screen.findByText('Sale complete!')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
+  })
+
+  it('reloads the confirmed order and adds a missing email through fulfillment', async () => {
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed' } })
+    const user = userEvent.setup()
+    const first = mountBoxOffice()
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
+    await screen.findByRole('button', { name: 'Email tickets' })
+    first.unmount()
+    mountBoxOffice()
+
+    await user.click(await screen.findByRole('button', { name: 'Email tickets' }))
+    await user.type(screen.getByLabelText('Confirm buyer email'), 'buyer@example.test')
+    apiClient.post.mockResolvedValueOnce({ data: { email: 'buyer@example.test', email_status: 'queued' } })
+    await user.click(screen.getByRole('button', { name: 'Send tickets' }))
+    expect(await screen.findByText('Ticket email queued for buyer@example.test.')).toBeInTheDocument()
+    expect(apiClient.post.mock.lastCall.slice(0, 2)).toEqual([
+      '/organizer/events/37/box_office/orders/922/email', { email: 'buyer@example.test' },
+    ])
   })
 
   it('retains the original card key and locks new sales when an initiated replay requires reconciliation', async () => {

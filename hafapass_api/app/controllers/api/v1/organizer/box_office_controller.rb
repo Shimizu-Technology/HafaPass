@@ -173,6 +173,7 @@ module Api
             payment_method: order.payment_method,
             completed_at: order.completed_at,
             test_payment: order.test_payment?,
+            receipt: Commerce::BoxOfficeReceipt.new(order).as_json,
             card_present_payment: order.card_present_payment_attempts.order(:id).last&.then { |attempt|
               {
                 status: attempt.status,

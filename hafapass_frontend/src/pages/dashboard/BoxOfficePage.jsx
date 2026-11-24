@@ -2,9 +2,9 @@ import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } fro
 import EventWorkspace from '../../components/EventWorkspace'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, CheckCircle2 } from 'lucide-react'
+import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus } from 'lucide-react'
 import apiClient from '../../api/client'
-import QRCode from '../../components/QRCode'
+import BoxOfficeReceipt from './BoxOfficeReceipt'
 import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
 import SupportLink from '../../components/SupportLink'
@@ -54,7 +54,6 @@ function BoxOfficePageSession({ id, identity }) {
   const [buyerEmail, setBuyerEmail] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('door_cash')
   const [submitting, setSubmitting] = useState(false)
-  const [lastOrder, setLastOrder] = useState(null)
   const [summary, setSummary] = useState(null)
   const eventLoadGeneration = useRef(0)
   const summaryLoadGeneration = useRef(0)
@@ -64,6 +63,13 @@ function BoxOfficePageSession({ id, identity }) {
   const [seatSelectorKey, setSeatSelectorKey] = useState(0)
   const legacyStorageKey = `hafapass:pending-box-office:${identity.owner}:${id}`
   const saleStorageKey = `hafapass:pending-box-office:v2:${identity.owner}:${identity.organizationId ?? 'default'}:${id}`
+  const receiptStorageKey = `hafapass:box-office-receipt:${identity.owner}:${identity.organizationId ?? 'default'}:${id}`
+  const [lastOrder, setLastOrder] = useState(() => {
+    try {
+      const orderId = Number(window.sessionStorage.getItem(receiptStorageKey))
+      return Number.isSafeInteger(orderId) && orderId > 0 ? { id: orderId } : null
+    } catch { return null }
+  })
   const authorizedEvent = useRef(false)
   const [accessRefreshing, setAccessRefreshing] = useState(false)
   const importedLegacyKey = useRef(null)
@@ -168,7 +174,6 @@ function BoxOfficePageSession({ id, identity }) {
     if (submitting || (!pendingSaleRef.current && totalItems === 0)) return
     const recoveringSavedSale = Boolean(pendingSaleRef.current)
     setSubmitting(true)
-    setLastOrder(null)
     setSaleError(null)
 
     const line_items = Object.entries(quantities)
@@ -198,7 +203,14 @@ function BoxOfficePageSession({ id, identity }) {
       }
       const res = await requestApi('post', `/organizer/events/${id}/box_office`, sale.payload, { headers: { 'Idempotency-Key': sale.key } })
       if (!current()) return
-      setLastOrder(res.data)
+      if (res.data.status === 'completed') {
+        setLastOrder({ id: res.data.id, receipt: res.data.receipt })
+        try {
+          window.sessionStorage.setItem(receiptStorageKey, String(res.data.id))
+        } catch {
+          // The confirmed order is available in this tab even if storage is full.
+        }
+      }
       window.sessionStorage.removeItem(saleStorageKey)
       if (importedLegacyKey.current === pendingSaleRef.current?.key) window.sessionStorage.removeItem(legacyStorageKey)
       pendingSaleRef.current = null
@@ -249,6 +261,9 @@ function BoxOfficePageSession({ id, identity }) {
           <p className="text-sm text-neutral-500">{event.title}</p>
         </div>
       </div>
+
+      {lastOrder && !pendingSale && <BoxOfficeReceipt key={lastOrder.id} eventId={id} order={lastOrder}
+        requestApi={requestApi} current={current} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
@@ -397,7 +412,7 @@ function BoxOfficePageSession({ id, identity }) {
           </button>
         </div>
 
-        {/* Right: Summary + Last Order */}
+        {/* Right: Summary */}
         <div className="space-y-6">
           {/* Session Summary */}
           {summary && (
@@ -424,28 +439,6 @@ function BoxOfficePageSession({ id, identity }) {
                   <span className="text-sm font-medium text-neutral-900">Total revenue</span>
                   <span className="font-bold text-brand-600">${((summary.total_revenue_cents || 0) / 100).toFixed(2)}</span>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Last Order */}
-          {lastOrder && (
-            <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-semibold text-emerald-800">Sale complete!</h3>
-              </div>
-              <p className="text-sm text-emerald-700 mb-2">{lastOrder.buyer_name} · ${(lastOrder.total_cents / 100).toFixed(2)}</p>
-              <div className="space-y-3">
-                {lastOrder.tickets?.map(ticket => (
-                  <div key={ticket.id} className="bg-white p-3 rounded-lg border border-emerald-100">
-                    <p className="text-xs text-neutral-500 mb-1">{ticket.ticket_type.name}</p>
-                    <div className="flex justify-center">
-                      <QRCode value={ticket.scan_credential} size={120} />
-                    </div>
-                    <p className="text-xs text-center text-neutral-600 mt-1 font-mono">HP-T{ticket.id}</p>
-                  </div>
-                ))}
               </div>
             </div>
           )}

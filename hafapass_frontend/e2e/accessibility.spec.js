@@ -291,6 +291,10 @@ for (const width of [375, 1440]) {
       total_cents: 2000, source: 'box_office', payment_method: 'door_cash',
       tickets: [{ id: 7, scan_credential: 'test-credential', ticket_type: { name: 'Admission' } }],
     }, 201))
+    await page.route('**/api/v1/organizer/events/601/box_office/orders/99', route => json(route, {
+      id: 99, reference: 'DEMO-99', status: 'completed', total_cents: 2000, event_title: doorEvent.title,
+      email_available: true, admissions: [{ id: 7, tier: 'Admission', scan_credential: 'test-credential', event: doorEvent }],
+    }))
     await page.route('**/api/v1/organizer/events/601/cancellation_refunds?**', route => json(route,
       { preview: { count: 1, total_cents: 2000, cash_count: 1 }, run: null }))
     await page.goto('/dashboard/events/601/box-office')
@@ -303,6 +307,7 @@ for (const width of [375, 1440]) {
     await tabTo(page, sale)
     await page.keyboard.press('Enter')
     await expect(page.getByText('Sale complete!')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Show QR' })).toBeVisible()
     await scan(page, 'box office sale result')
     await page.goto('/dashboard/events/601/edit')
     const review = page.locator('button[aria-controls="cancellation-refund-progress"]')
