@@ -201,12 +201,15 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
     action = result.action
     json = action_json(action)
     if action.source_online? && (action.kind_admit? || action.kind_exit?) && action.result_accepted? && result.ticket
-      json[:ticket] = Admissions::DoorPayload.call(result.ticket).merge(
-        ticket_id: result.ticket.id,
-        occupancy_state: result.ticket.occupancy_state,
-        occupancy_day: result.ticket.occupancy_day&.iso8601,
-        re_entry_count: result.ticket.re_entry_count
-      )
+      ticket_payload = Admissions::DoorPayload.call(result.ticket).merge(ticket_id: result.ticket.id)
+      if @event.re_entry_enabled?
+        ticket_payload.merge!(
+          occupancy_state: result.ticket.occupancy_state,
+          occupancy_day: result.ticket.occupancy_day&.iso8601,
+          re_entry_count: result.ticket.re_entry_count
+        )
+      end
+      json[:ticket] = ticket_payload
     end
     json
   end

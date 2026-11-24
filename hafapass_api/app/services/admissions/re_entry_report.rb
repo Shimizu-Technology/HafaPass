@@ -271,7 +271,8 @@ module Admissions
         max_count: @event.re_entry_max_count,
         cutoff_time: @event.re_entry_cutoff_time,
         cooldown_minutes: @event.re_entry_cooldown_minutes,
-        rollover_hour: @event.re_entry_rollover_hour
+        rollover_hour: @event.re_entry_rollover_hour,
+        current_service_day: @event.occupancy_day_for(Time.current).iso8601
       }
     end
   end

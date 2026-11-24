@@ -8,6 +8,12 @@ module Admissions
 
     Result = Data.define(:action, :ticket)
     FUTURE_TOLERANCE = 5.minutes
+    # Phone clocks across separate door scanners routinely drift by 5–60 seconds.
+    # Online scans are decided in real time by the server, so we never reject them
+    # on client-clock ordering against another scanner's timestamp. Offline scans
+    # only conflict as out-of-order when they predate the opposite transition by
+    # more than this tolerance.
+    CLOCK_SKEW_TOLERANCE = 2.minutes
     MAX_BATCH_SIZE = 500
     CLIENT_KINDS = %w[admit reverse exit].freeze
     CLIENT_SOURCES = %w[online offline].freeze
@@ -376,15 +382,15 @@ module Admissions
         }
       end
 
-      if ticket.last_entry_at.present? && occurred_at < ticket.last_entry_at
+      if input[:source] == "offline" && ticket.last_entry_at.present? && occurred_at < (ticket.last_entry_at - CLOCK_SKEW_TOLERANCE)
         return {
           result: :conflict,
           reason_code: "exit_before_latest_entry",
-          flag_conflict: input[:source] == "offline",
+          flag_conflict: true,
           details: {
             prior_entry_at: ticket.last_entry_at.iso8601(6),
             prior_gate_name: ticket.last_entry_device&.name,
-            offline_conflict: input[:source] == "offline"
+            offline_conflict: true
           }.compact
         }
       end
@@ -429,17 +435,16 @@ module Admissions
       end
 
       if same_day
-        if ticket.last_exit_at.present? && occurred_at < ticket.last_exit_at
-          offline = input[:source] == "offline"
+        if input[:source] == "offline" && ticket.last_exit_at.present? && occurred_at < (ticket.last_exit_at - CLOCK_SKEW_TOLERANCE)
           return {
             result: :conflict,
             reason_code: "admit_before_latest_exit",
-            flag_conflict: offline,
+            flag_conflict: true,
             details: {
               last_exit_at: ticket.last_exit_at.iso8601(6),
               prior_entry_at: ticket.last_entry_at&.iso8601(6),
               prior_gate_name: ticket.last_entry_device&.name,
-              offline_conflict: (true if offline)
+              offline_conflict: true
             }.compact
           }
         end
@@ -523,17 +528,16 @@ module Admissions
         }
       end
 
-      if event.re_entry_exit_scan?
+      if event.re_entry_exit_scan? && input[:source] == "offline"
         last_exit = day_actions.select(&:kind_exit?).last
-        if last_exit && occurred_at < last_exit.occurred_at
-          offline = input[:source] == "offline"
+        if last_exit && occurred_at < (last_exit.occurred_at - CLOCK_SKEW_TOLERANCE)
           return {
             result: :conflict,
             reason_code: "admit_before_latest_exit",
-            flag_conflict: offline,
+            flag_conflict: true,
             details: {
               last_exit_at: last_exit.occurred_at.iso8601(6),
-              offline_conflict: (true if offline)
+              offline_conflict: true
             }.compact
           }
         end
@@ -556,7 +560,7 @@ module Admissions
     def evaluate_historical_day_exit(ticket, input, occurred_at, scan_day)
       day_actions = ticket.admission_actions.result_accepted.where(occupancy_day: scan_day).order(:occurred_at, :received_at, :id)
       last = day_actions.last
-      unless last&.kind_admit? && occurred_at >= last.occurred_at
+      unless last&.kind_admit? && (input[:source] == "online" || occurred_at >= (last.occurred_at - CLOCK_SKEW_TOLERANCE))
         return { result: :conflict, reason_code: "not_inside", details: { offline_conflict: (true if input[:source] == "offline") }.compact }
       end
 

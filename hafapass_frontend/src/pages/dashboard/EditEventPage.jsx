@@ -836,6 +836,9 @@ function EditEventSession({ id, identity }) {
               timezone={event?.timezone || 'Pacific/Guam'}
               savedMode={event?.re_entry_mode || 'off'}
               isLiveEvent={['published', 'postponed'].includes(event?.status)}
+              startsAt={form.starts_at}
+              endsAt={form.ends_at}
+              doorsOpenAt={form.doors_open_at}
             />
           </div>
         </section>

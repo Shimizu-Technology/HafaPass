@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import apiClient, { getApiAuthContext } from '../api/client'
 import { captureScannerBindingContext, scannerBindingContextCurrent, currentScannerOwner } from './scannerAccountBinding'
 import { serviceDayString } from './reEntryRules'
+import { getServerNow } from './serverClock'
 
 export { currentScannerOwner } from './scannerAccountBinding'
 
@@ -512,7 +513,7 @@ export async function queueAdmission({
     return null
   }
   const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
-  const occurredAt = new Date().toISOString()
+  const occurredAt = new Date(getServerNow()).toISOString()
   const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
   const action = {
     action_uuid: crypto.randomUUID(),
@@ -565,7 +566,7 @@ export async function queueExit({
   const scanStates = transaction.objectStore('scan_states')
   const prior = await scanStates.get([Number(eventId), Number(ticket.ticket_id)])
   const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
-  const occurredAt = new Date().toISOString()
+  const occurredAt = new Date(getServerNow()).toISOString()
   const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
   const action = {
     action_uuid: crypto.randomUUID(),

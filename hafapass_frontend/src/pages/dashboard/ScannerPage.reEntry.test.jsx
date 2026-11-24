@@ -439,11 +439,40 @@ describe('ReEntrySettings & AttendanceReport re-entry views', () => {
     expect(screen.getByLabelText(/Max re-entries per ticket/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Daily re-entry cutoff time/)).toHaveAttribute('type', 'time')
     expect(screen.getByText(/Event time zone \(America\/New_York\)/)).toBeInTheDocument()
+
+    // Single-session 14:00-22:00 with cutoff 12:00 (no doors time) -> warns that cutoff falls after event ends
+    rerender(
+      <ReEntrySettings
+        form={{ ...form, re_entry_mode: 'exit_scan', re_entry_cutoff_time: '12:00' }}
+        updateField={updateField}
+        timezone="Pacific/Guam"
+        startsAt="2027-01-30T14:00"
+        endsAt="2027-01-30T22:00"
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(/will not block re-entry/i)
+
+    // Overnight 22:00-07:00 with cutoff 06:00 -> valid overnight cutoff, no warning
+    rerender(
+      <ReEntrySettings
+        form={{ ...form, re_entry_mode: 'exit_scan', re_entry_cutoff_time: '06:00' }}
+        updateField={updateField}
+        timezone="Pacific/Guam"
+        startsAt="2027-01-30T22:00"
+        endsAt="2027-01-31T07:00"
+      />,
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('renders entries, exits, re-entries, peak headcount with time, and per-day table in AttendanceReport', () => {
+  it('renders entries, exits, re-entries, peak headcount with time, and per-day table using event service day in AttendanceReport', () => {
     render(
       <AttendanceReport
+        event={{
+          timezone: 'Pacific/Guam',
+          starts_at: '2027-01-30T22:00:00+10:00',
+          ends_at: '2027-01-31T07:00:00+10:00',
+        }}
         data={{
           total_active_tickets: 500,
           checked_in_count: 320,
@@ -454,6 +483,7 @@ describe('ReEntrySettings & AttendanceReport re-entry views', () => {
           pace: [],
           re_entry: {
             mode: 'exit_scan',
+            current_service_day: '2027-01-30',
             entries: 320,
             exits: 85,
             re_entries: 62,
@@ -471,5 +501,6 @@ describe('ReEntrySettings & AttendanceReport re-entry views', () => {
     expect(screen.getByRole('heading', { name: 'Re-entry & Headcount' })).toBeInTheDocument()
     expect(screen.getAllByText('312 · 2:15 PM').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByRole('region', { name: 'Daily headcount and re-entry breakdown' })).toBeInTheDocument()
+    expect(screen.getAllByText('297').length).toBeGreaterThanOrEqual(2)
   })
 })

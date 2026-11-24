@@ -125,8 +125,11 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
 
       first = sync_actions(device, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1)])
       expect(first.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")
-      # Minor #1: Off-mode sync summary stays identical to main (exact keys, no extra re-entry subqueries)
+      # Minor #1 & R3: Off-mode sync summary and results[].ticket stay identical to main
       expect(first.fetch("summary").keys).to match_array(%w[total issued admitted cancelled eligible_unadmitted conflicts rejected remaining])
+      %w[occupancy_state occupancy_day re_entry_count].each do |key|
+        expect(first.dig("results", 0, "ticket")).not_to have_key(key)
+      end
 
       duplicate = sync_actions(device, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2)])
       expect(duplicate.dig("results", 0)).to include("result" => "conflict", "reason_code" => "already_admitted")
@@ -753,34 +756,85 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       expect(early_event.occupancy_day_for(Time.zone.parse("2027-01-30T05:30:00+10:00"))).to eq(Date.new(2027, 1, 30))
     end
 
-    it "flags an offline admit older than last_exit_at as a conflict and keeps authoritative live headcount at 0" do
+    it "tolerates normal scanner clock skew (8 s and 30 s) on online/offline re-entries and exits, while flagging genuinely stale offline scans (>2 min)" do
       event.update!(re_entry_mode: "exit_scan")
       travel_to(Time.zone.parse("2027-01-30T18:00:00+10:00"))
-      gate1 = register_device(user: owner, identifier: "gate-online", name: "Gate 1")
-      gate2 = register_device(user: owner, identifier: "gate-offline", name: "Gate 2")
-      manifest = fetch_manifest(gate1)
+      gate_a = register_device(user: owner, identifier: "gate-skew-a", name: "Gate A")
+      gate_b = register_device(user: owner, identifier: "gate-skew-b", name: "Gate B")
+      manifest = fetch_manifest(gate_a)
 
-      # 18:00 online entry at Gate 1
-      sync_actions(gate1, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1, occurred_at: Time.current)])
-      expect(Admissions::Counts.call(event: event)[:live_headcount]).to eq(1)
-
-      # 18:10 online exit at Gate 1
+      # 1. Online entry at Gate A (18:00:00), online exit at Gate A (18:10:00)
+      sync_actions(gate_a, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1, occurred_at: Time.current)])
       travel_to(Time.zone.parse("2027-01-30T18:10:00+10:00"))
-      exit_res = sync_actions(gate1, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "exit", occurred_at: Time.current)])
-      expect(exit_res.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
-      expect(exit_res.dig("summary", "live_headcount")).to eq(0)
+      sync_actions(gate_a, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "exit", occurred_at: Time.current)])
+      expect(ticket.reload.occupancy_state).to eq("outside")
 
-      # 18:15 Gate 2 reconnects and syncs an offline admit captured at 18:05 (before the 18:10 exit!)
-      travel_to(Time.zone.parse("2027-01-30T18:15:00+10:00"))
-      stale_offline = sync_actions(gate2, [
-        scan_payload(
-          ticket: ticket, manifest: manifest, sequence: 1, kind: "admit", source: "offline",
-          occurred_at: Time.zone.parse("2027-01-30T18:05:00+10:00")
-        )
+      # 2. Re-enter online at Gate B 5 s later, with Gate B's clock 8 s behind (18:09:57) -> ACCEPTED!
+      travel_to(Time.zone.parse("2027-01-30T18:10:05+10:00"))
+      preview_8s = preview_scan(gate_b, ticket: ticket, manifest: manifest, kind: "admit")
+      expect(preview_8s).to include("status" => "ready", "re_entry" => true)
+      skew_8s_online = sync_actions(gate_b, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 1, kind: "admit", source: "online",
+          occurred_at: Time.zone.parse("2027-01-30T18:09:57+10:00"))
       ])
-      expect(stale_offline.dig("results", 0)).to include("result" => "conflict", "reason_code" => "admit_before_latest_exit")
-      expect(stale_offline.dig("summary", "live_headcount")).to eq(0)
-      expect(ticket.reload).to have_attributes(occupancy_state: "outside", re_entry_conflict_flagged: true, re_entry_count: 0)
+      expect(skew_8s_online.dig("results", 0)).to include("result" => "accepted", "reason_code" => "re_entered")
+      expect(skew_8s_online.dig("summary", "live_headcount")).to eq(1)
+      expect(ticket.reload).to have_attributes(occupancy_state: "inside", re_entry_conflict_flagged: false)
+
+      # Guest's next exit succeeds (and tolerates Gate A's clock being 30 s fast on exit!)
+      travel_to(Time.zone.parse("2027-01-30T18:12:00+10:00"))
+      fast_exit = sync_actions(gate_a, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 3, kind: "exit", source: "online",
+          occurred_at: Time.zone.parse("2027-01-30T18:12:30+10:00"))
+      ])
+      expect(fast_exit.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+
+      # 3. Exit scanner was 30 s fast (last_exit_at = 18:12:30), server clock is 18:12:05 -> online preview AND sync accept re-entry!
+      travel_to(Time.zone.parse("2027-01-30T18:12:05+10:00"))
+      preview_30s = preview_scan(gate_b, ticket: ticket, manifest: manifest, kind: "admit")
+      expect(preview_30s).to include("status" => "ready", "re_entry" => true)
+      skew_30s_online = sync_actions(gate_b, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "admit", source: "online", occurred_at: Time.current)
+      ])
+      expect(skew_30s_online.dig("results", 0)).to include("result" => "accepted", "reason_code" => "re_entered")
+
+      # 4. Offline exit with 30 s backward clock skew (last_entry_at = 18:12:05, exit occurred_at = 18:11:35) -> ACCEPTED!
+      travel_to(Time.zone.parse("2027-01-30T18:13:00+10:00"))
+      skew_30s_offline_exit = sync_actions(gate_b, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 3, kind: "exit", source: "offline",
+          occurred_at: Time.zone.parse("2027-01-30T18:11:35+10:00"))
+      ])
+      expect(skew_30s_offline_exit.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+
+      # 5. Offline admit with 8 s and 30 s backward skew (last_exit_at = 18:11:35, admit at 18:11:05) -> ACCEPTED!
+      skew_30s_offline_admit = sync_actions(gate_b, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 4, kind: "admit", source: "offline",
+          occurred_at: Time.zone.parse("2027-01-30T18:11:05+10:00"))
+      ])
+      expect(skew_30s_offline_admit.dig("results", 0)).to include("result" => "accepted", "reason_code" => "re_entered")
+
+      # 6. Mirror stale offline exit: 10 minutes before latest entry (18:11:05 -> exit at 18:01:05) -> CONFLICT & flagged!
+      stale_offline_exit = sync_actions(gate_a, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 4, kind: "exit", source: "offline",
+          occurred_at: Time.zone.parse("2027-01-30T18:01:05+10:00"))
+      ])
+      expect(stale_offline_exit.dig("results", 0)).to include("result" => "conflict", "reason_code" => "exit_before_latest_entry")
+      expect(ticket.reload).to have_attributes(occupancy_state: "inside", re_entry_conflict_flagged: true)
+
+      # 7. Online exit succeeds (even with 30 s backward clock skew vs last_entry_at), then genuinely stale offline admit 10 min before exit -> CONFLICT & flagged!
+      ticket.update!(re_entry_conflict_flagged: false)
+      travel_to(Time.zone.parse("2027-01-30T18:20:00+10:00"))
+      sync_actions(gate_a, [scan_payload(ticket: ticket, manifest: manifest, sequence: 5, kind: "exit", source: "online", occurred_at: Time.current)])
+      expect(Admissions::Counts.call(event: event)[:live_headcount]).to eq(0)
+
+      travel_to(Time.zone.parse("2027-01-30T18:25:00+10:00"))
+      stale_offline_admit = sync_actions(gate_b, [
+        scan_payload(ticket: ticket, manifest: manifest, sequence: 5, kind: "admit", source: "offline",
+          occurred_at: Time.zone.parse("2027-01-30T18:10:00+10:00"))
+      ])
+      expect(stale_offline_admit.dig("results", 0)).to include("result" => "conflict", "reason_code" => "admit_before_latest_exit")
+      expect(stale_offline_admit.dig("summary", "live_headcount")).to eq(0)
+      expect(ticket.reload).to have_attributes(occupancy_state: "outside", re_entry_conflict_flagged: true)
     end
 
     it "caches headcount_by_day briefly on sync while keeping authoritative live_headcount fresh" do

@@ -63,7 +63,7 @@ function Bar({ percent }) {
   </span>
 }
 
-export function AttendanceReport({ data }) {
+export function AttendanceReport({ data, event = null }) {
   const peak = Math.max(1, ...data.pace.map(bucket => bucket.count))
   const dates = new Set(data.pace.map(bucket => bucket.bucket_start.slice(0, 10)))
   const reEntry = data.re_entry
@@ -71,7 +71,13 @@ export function AttendanceReport({ data }) {
   const isCooldown = reEntry?.mode === 'cooldown'
   const isExitScan = reEntry?.mode === 'exit_scan'
   const multiDay = (reEntry?.by_day?.length || 0) > 1
-  const currentServiceDay = serviceDayString(Date.now(), { timezone: data.timezone, re_entry_rollover_hour: reEntry?.rollover_hour })
+  const currentServiceDay = reEntry?.current_service_day || serviceDayString(Date.now(), {
+    timezone: data.timezone || event?.timezone,
+    starts_at: event?.starts_at ?? data.starts_at,
+    ends_at: event?.ends_at ?? data.ends_at,
+    doors_open_at: event?.doors_open_at ?? data.doors_open_at,
+    re_entry_rollover_hour: reEntry?.rollover_hour,
+  })
   const modeLabel = isExitScan
     ? 'Exit scan (in & out)'
     : isCooldown

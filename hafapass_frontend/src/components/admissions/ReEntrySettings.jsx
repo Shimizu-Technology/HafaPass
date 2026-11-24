@@ -19,6 +19,45 @@ const RE_ENTRY_MODES = [
   },
 ]
 
+const LOCAL_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/
+const CUTOFF_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function parseLocalWallClockMs(value) {
+  const match = LOCAL_DATETIME_RE.exec(String(value || '').trim())
+  if (!match) return Number.NaN
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), 0)
+}
+
+function getCutoffScheduleWarning({ cutoffTime, startsAt, endsAt, doorsOpenAt }) {
+  const cutMatch = CUTOFF_TIME_RE.exec(String(cutoffTime || '').trim())
+  if (!cutMatch) return null
+  const startMs = parseLocalWallClockMs(startsAt)
+  if (!Number.isFinite(startMs)) return null
+  const endMs = parseLocalWallClockMs(endsAt)
+  const isSingleSession = !Number.isFinite(endMs) || (endMs - startMs) <= 24 * 3_600_000
+  if (!isSingleSession) return null
+
+  const doorsMs = parseLocalWallClockMs(doorsOpenAt)
+  const hasEarlierDoors = Number.isFinite(doorsMs) && doorsMs < startMs
+  const anchorMs = hasEarlierDoors ? doorsMs : startMs
+  const anchorDate = new Date(anchorMs)
+  const cutHour = Number(cutMatch[1])
+  const cutMin = Number(cutMatch[2])
+  let candidateMs = Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), anchorDate.getUTCDate(), cutHour, cutMin, 0)
+  const rolledToNextDay = candidateMs < anchorMs
+  if (rolledToNextDay) candidateMs += 24 * 3_600_000
+
+  if (Number.isFinite(endMs) && candidateMs >= endMs) {
+    return rolledToNextDay
+      ? 'This cutoff is earlier than the event start time, so it falls after the event ends and will not block re-entry. Pick a time between start and end (or set Doors open).'
+      : 'This cutoff is at or after the event end time, so it will not block re-entry during the event.'
+  }
+  if (!Number.isFinite(endMs) && !hasEarlierDoors && rolledToNextDay) {
+    return 'This cutoff is earlier than the event start time, so it will apply the next morning.'
+  }
+  return null
+}
+
 export default function ReEntrySettings({
   form,
   updateField,
@@ -27,11 +66,15 @@ export default function ReEntrySettings({
   timezone = 'Pacific/Guam',
   savedMode = 'off',
   isLiveEvent = false,
+  startsAt = '',
+  endsAt = '',
+  doorsOpenAt = '',
 }) {
   const groupId = useId()
   const mode = form.re_entry_mode || 'off'
   const showRules = mode === 'exit_scan' || mode === 'cooldown'
   const switchingOffMidEvent = isLiveEvent && savedMode !== 'off' && mode === 'off'
+  const cutoffWarning = showRules ? getCutoffScheduleWarning({ cutoffTime: form.re_entry_cutoff_time, startsAt, endsAt, doorsOpenAt }) : null
 
   const handleModeChange = nextMode => {
     updateField('re_entry_mode', nextMode)
@@ -156,6 +199,12 @@ export default function ReEntrySettings({
             <p id="re_entry_cutoff_time-help" className="mt-1 text-xs text-neutral-600">
               Event time zone ({timezone}). Applies each day of the event; guests who left cannot re-enter after this time, while first-time arrivals can still enter.
             </p>
+            {cutoffWarning && (
+              <p role="alert" className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-950">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
+                <span>{cutoffWarning}</span>
+              </p>
+            )}
             {formErrors.re_entry_cutoff_time && (
               <p id="re_entry_cutoff_time-error" className="mt-1 text-sm text-red-600">{formErrors.re_entry_cutoff_time}</p>
             )}
