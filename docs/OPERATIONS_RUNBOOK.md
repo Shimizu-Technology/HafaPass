@@ -79,11 +79,12 @@ Create these alerts in the production monitoring project before a pilot:
 | `exhausted_message_deliveries` | Failed deliveries with 5+ attempts that failed in the last 24 h | Check Resend status, then use **Resend failed messages** in the support console (below) |
 | `failed_payment_webhooks` | Stripe webhook events in `failed` status | Admin → Operations; reconcile against Stripe before any replay |
 | `stripe_webhook_failures` | Stripe receipts that failed in the last 15 minutes or hung in `processing` for over 10 minutes, once there are 3 or more | First three actions in [Incident response](INCIDENT_RESPONSE.md#monitoring-alerts-what-they-mean-and-the-first-three-actions) |
-| `stripe_webhooks_silent` | No Stripe receipt for 30 minutes **and** either payments recorded as paid with no success webhook, or 10+ payments started with no webhook at all | Same list. Never fires because nobody is buying |
+| `stripe_webhook_signature_failures` | 3+ deliveries in 15 minutes failed signature verification or arrived with no signing secret configured (no receipt is stored for these; a counter is) | Same list. Wrong or rotated signing secret |
+| `stripe_webhooks_silent` | A payment recorded as paid has no success webhook after 30 minutes, **or** 10+ payments started in 30 minutes with no webhook at all. Live mode in production | Same list. Never fires because nobody is buying |
 | `open_reconciliation_exceptions` | Open reconciliation exceptions | Finance review; never close with a database edit |
 | `failed_background_jobs` | Solid Queue failed executions in the last hour | Inspect the job class and error before retrying |
 
-The two Stripe webhook signals behave a little differently: they repeat hourly instead of every six hours, do not re-alert when more evidence arrives during the same incident, and send an `info` recovery message (fingerprint `operational-alert-recovered/<signal>`, tag `operational_state:recovered`) once the count returns to zero. Thresholds are environment variables; see [Monitoring setup](MONITORING_SETUP.md).
+The three Stripe webhook signals behave a little differently: they repeat hourly instead of every six hours, do not re-alert when more evidence arrives during the same incident, and send one `info` message when the count returns to zero: `recovered` (a webhook was processed after the incident opened) or `quiet` (the evidence only aged out; unresolved rows remain), with separate fingerprints and no re-page inside the hourly interval. Thresholds are environment variables; see [Monitoring setup](MONITORING_SETUP.md).
 
 The same line is written to the log as `{"event":"operational_alert",...}`, so it is visible without Sentry.
 
