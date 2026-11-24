@@ -238,6 +238,8 @@ Rails.application.routes.draw do
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
+            get "orders/:order_id", to: "box_office_receipts#show", as: :order
+            post "orders/:order_id/email", to: "box_office_receipts#email", as: :order_email
           end
           resource :seating, only: [:show, :create], controller: "event_seating" do
             post :suspend

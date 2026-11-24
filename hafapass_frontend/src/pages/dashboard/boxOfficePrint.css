@@ -1,0 +1,37 @@
+.box-office-print {
+  display: none;
+}
+
+@media print {
+  @page box-office {
+    margin: 14mm;
+  }
+
+  body:has(> .box-office-print) > :not(.box-office-print) {
+    display: none !important;
+  }
+
+  .box-office-print {
+    display: block;
+    color: #000;
+    background: #fff;
+  }
+
+  .box-office-print-ticket {
+    page: box-office;
+    margin-inline: auto;
+    max-width: 150mm;
+    padding: 10mm 0;
+    text-align: center;
+    break-inside: avoid;
+  }
+
+  .box-office-print-ticket + .box-office-print-ticket {
+    break-before: page;
+  }
+
+  .box-office-print-ticket svg {
+    width: 55mm;
+    height: 55mm;
+  }
+}
