@@ -10,7 +10,7 @@ Written 24 November 2026 for the Copa de Marianas on-sale (about 4 January 2027)
 |---|---|---|
 | Sentry, backend and frontend | `config/initializers/sentry.rb`, `src/monitoring.js` | Errors, release, request id. No PII (`TelemetryPrivacy`). Checkout, webhook, scanner and box-office errors carry the tag `area` (API, including the webhook controller, and frontend). |
 | `OperationalAlertJob` | every 5 minutes (`config/recurring.yml`) | Turns database counts into Sentry messages with a stable fingerprint `operational-alert/<signal>` and tag `operational_signal`. State is kept in `runtime_alert_states`. One failing check never stops the others. |
-| Stripe webhook watch | `Operations::StripeWebhookHealth`, `Operations::WebhookRejections` | Three signals: `stripe_webhook_failures`, `stripe_webhook_signature_failures`, `stripe_webhooks_silent`. Live mode in production, test mode elsewhere. |
+| Stripe webhook watch | `Operations::StripeWebhookHealth`, `Operations::WebhookRejections` | Three signals: `stripe_webhook_failures`, `stripe_unverified_deliveries`, `stripe_webhooks_silent`. Live mode in production, test mode elsewhere. |
 | Daily summary | `GET /api/v1/ops/summary`, `scripts/fetch_ops_summary.py` | Guam-day sales and health, no buyer data, for the morning brief. |
 | Admin page | `/admin/monitoring` | Webhook health, the current summary and a **Send test alert** button. |
 | Test alert | admin page, `POST /api/v1/admin/monitoring/test_alert`, `bin/rails "hafapass:monitoring:test_alert[kind]"` | One `[TEST]` event to Sentry, tagged like the real alert. |
@@ -27,7 +27,8 @@ You set these in the Render dashboard; this change does not touch `render.yaml`.
 | `SENTRY_ENABLED_ENVIRONMENTS` | default `production,staging` | The SDK sends nothing from an environment missing here. The test alert reports this failure instead of pretending it sent. |
 | `OPS_SUMMARY_TOKEN` | A long random token **you** create (below) | Only for the daily summary |
 | `HAFAPASS_WEBHOOK_FAILURE_THRESHOLD` / `_WINDOW_MINUTES` | default `3` failed receipts in `15` minutes | Optional |
-| `HAFAPASS_WEBHOOK_SIGNATURE_FAILURE_THRESHOLD` | default `3` rejected deliveries in the same window | Optional |
+| `HAFAPASS_WEBHOOK_UNVERIFIED_THRESHOLD` | default `3` rejected deliveries in the same window (pages only with missing-delivery evidence) | Optional |
+| `HAFAPASS_WEBHOOK_REJECTION_FLUSH_SECONDS` | default `10`: at most one database write per this many seconds per process for rejected-delivery counts; `0` writes through | Optional |
 | `HAFAPASS_WEBHOOK_SILENCE_MINUTES` | default `30`: no receipt of any kind for this long | Optional |
 | `HAFAPASS_WEBHOOK_SILENCE_LOOKBACK_MINUTES` | default `360`: how far back to look for paid-but-unconfirmed payments | Optional |
 | `HAFAPASS_WEBHOOK_SILENCE_MIN_ATTEMPTS` | default `10` payments started inside the silence window | Optional |
@@ -50,37 +51,45 @@ To **rotate**, set `OPS_SUMMARY_TOKEN` to `new,old`, update the morning brief, t
 |---|---|---|
 | `area` | `checkout`, `webhook`, `scanner`, `box_office` | API request scope (`MonitoringArea`), the webhook controller's own scope, and the frontend for its checkout, scanner and box-office pages |
 | `integration` + `operation` | `stripe_webhook` + `webhook_processing` | The webhook controller on any processing exception (#220) |
-| `operational_signal` | `stripe_webhooks_silent`, `stripe_webhook_failures`, `stripe_webhook_signature_failures`, `failed_payment_webhooks`, `open_reconciliation_exceptions`, `failed_background_jobs`, `exhausted_message_deliveries` | `OperationalAlertJob` |
+| `operational_signal` | `stripe_webhooks_silent`, `stripe_webhook_failures`, `stripe_unverified_deliveries`, `failed_payment_webhooks`, `open_reconciliation_exceptions`, `failed_background_jobs`, `exhausted_message_deliveries` | `OperationalAlertJob` |
 | `operational_state` | `recovered`, `quiet`, `check_failed` | Lifecycle notices (level `info`) and a failed check (an exception event) |
 | `monitoring_test` | `true` | Test alerts only. Real events never set this tag. |
 
 ### The three Stripe webhook signals
 
-All three look at one Stripe mode: **live in production, test everywhere else**, matched on the `livemode` flag Stripe signs into each event and on each payment's `provider_environment`. Test-mode traffic cannot hide, or cause, a live incident.
+Failures and silence look at one Stripe mode: **live in production, test everywhere else**, matched on the `livemode` flag Stripe signs into each event and on each payment's `provider_environment`. Test-mode traffic cannot hide, or cause, a live incident.
 
 - **`stripe_webhook_failures`**: 3 or more receipts failed in 15 minutes, or hung in `processing` for over 10 minutes.
-- **`stripe_webhook_signature_failures`**: 3 or more deliveries in 15 minutes carried a Stripe-shaped signature that failed verification, or arrived with no signing secret configured. This is the wrong or rotated secret case. No receipt is stored for these, so the app keeps a counter per five-minute bucket (table `webhook_rejection_counts`: a provider, a reason, a time and a number; never a payload, header or address; purged after 7 days). Deliveries with no signature, or a header that is not Stripe-shaped, are counted but never alert, because the endpoint is public and bots probe it.
 - **`stripe_webhooks_silent`**: both of these count, independently.
   - A payment recorded as paid has no `payment_intent.succeeded` receipt 30 minutes later (looking back 6 hours). Other webhooks arriving does **not** hide it.
   - 10 or more payments started in the last 30 minutes and no webhook of any kind arrived.
   - A quiet night with no buyers has neither, so it never alerts.
+- **`stripe_unverified_deliveries`**: **unverified** deliveries were rejected, and real deliveries look missing. A rejected delivery proves nothing about who sent it or in which mode (the signature failed, so its contents can't be trusted, and anyone can post to the public URL). So rejections alone **never page**. It pages only when 3 or more were rejected in 15 minutes **and** no verified receipt has arrived for 30 minutes **while payments were started or a paid payment is still waiting for its success webhook**. That pattern is what a wrong or rotated signing secret looks like. Otherwise the job records one `info` note (`operational_state:note`, at most every 6 hours) and nothing pages. A header that is not Stripe-shaped, or no header, is counted as noise on every code path and never counts toward this.
+  - No receipt is stored for rejections, so the app keeps a counter per five-minute bucket (table `webhook_rejection_counts`: a provider, a reason, a time and a number; never a payload, header or address; purged after 7 days).
+  - **Write budget.** Counting happens in memory and is written in one statement at most every 10 seconds per process (`HAFAPASS_WEBHOOK_REJECTION_FLUSH_SECONDS`), so a flood of junk costs one small write per interval, not one per request, and cannot take database capacity from real deliveries.
 
 ### Incident lifecycle (so the phone stays useful)
 
-- One alert when an incident opens, then a reminder once an hour while it stands. More evidence in the same incident does not send another.
-- If the same signal re-opens inside that hour it does not page again. It pages once the hour has passed.
-- When the count returns to zero you get exactly one `info` message, and it says which of two things happened:
-  - **Recovered** (`operational_state:recovered`): a webhook was successfully processed after the incident opened (for signature failures, a verified delivery arrived). The path works again.
-  - **Quiet, not confirmed recovered** (`operational_state:quiet`): the evidence only aged out of its window and no webhook has been processed since. The message lists the rows that still need a person. Look at them.
-- Neither message can reopen the alert's Sentry issue (separate fingerprints) or match a `level: error` rule.
+- **Opening:** one alert. A new incident that opens after the previous one was closed (a "recovered" or "quiet" message went out) pages again, because you were told it was over. A short storm guard (10 minutes since the last page) defers a very quick re-open, and a deferred incident pages as soon as the guard passes if it still stands.
+- **Standing:** a reminder once an hour. More evidence in the same incident does not send another.
+- **Clearing:** exactly one `info` message, and it says which of three things happened:
+  - **Recovered** (`operational_state:recovered`): the thing that opened the incident was put right after it opened.
+    - *Failures:* a receipt was processed after the incident opened **and** none of the incident's failed or hung receipts is still failed.
+    - *Silence:* a `payment_intent.succeeded` receipt was processed after the incident opened (a `charge.updated` or other event type does not count) **and** no paid-but-unconfirmed payment from the last 7 days is still waiting for its success receipt. A payment that merely aged out of the 6-hour alert window does not count as fixed.
+    - *Unverified deliveries:* a verified delivery (a stored receipt) arrived after the incident opened.
+  - **Quiet, not confirmed recovered** (`operational_state:quiet`): the evidence aged out of its window but the cause was not confirmed fixed. The message lists the rows that still need a person. Look at them.
+  - **Quiet, cleared before it could be paged** (`operational_state:quiet`, `paged: false`): new evidence appeared and went away inside the storm guard, so it never paged. You are told anyway.
+- None of these messages can reopen the alert's Sentry issue (separate fingerprints) or match a `level: error` rule.
 
 ## 3. Sentry alert rules
 
-Create these in Sentry under **Monitors > Alerts > Create Alert** ([Sentry docs: Creating an Alert](https://docs.sentry.io/product/alerts/create-alerts/issue-alert-config/), [Alerts overview](https://docs.sentry.io/product/alerts/)). The recipe is the same for every rule:
+Create these in Sentry under **Monitors > Alerts > Create Alert** ([Sentry docs: Creating an Alert](https://docs.sentry.io/product/monitors-and-alerts/alerts/create-alerts/#if-filters), [Alerts overview](https://docs.sentry.io/product/monitors-and-alerts/alerts/)). The recipe is the same for every rule:
 
 - **Source:** all issues in the HåfaPass API project (a rule per project; the frontend rules use the frontend project).
 - **Environment:** `production`. Copy each rule to `staging` for testing (see the one difference below).
-- **When (trigger):** *An event or issue activity is captured*. Use this trigger, not *A new issue is created*, for the `operational_signal` rules. The app sends one message per incident hour on a fixed fingerprint, which is **one Sentry issue forever**. A new-issue trigger would notify only the very first incident and stay silent on a second one next week unless you remembered to resolve the issue. The docs say the event and frequency filters work with this trigger and with *A new issue is created*.
+- **When (trigger):** only *A new issue is created* and *An event or issue activity is captured* work with tag, level and frequency filters; the Sentry docs say "Frequency and event attribute filters only work with" those two triggers ([If: Filters](https://docs.sentry.io/product/monitors-and-alerts/alerts/create-alerts/#if-filters)). So every rule below uses one of those two, never *A resolved issue regresses* or *An issue escalates* (those can't be combined with tag or level filters).
+  - **`operational_signal` rules and W4 use *An event or issue activity is captured*.** The app sends one message per incident hour on a fixed fingerprint, which is **one Sentry issue forever**. A new-issue trigger would notify only the very first incident and stay silent on a second one next week unless you remembered to resolve the issue.
+  - **A1 to A4 (the "new error" rules) use *A new issue is created***. This trades coverage: an old issue that was resolved and returns does not re-trigger these. Repeats are covered by the S1 spike rules (event-captured trigger with a frequency filter), and a resolved issue that regresses still sends Sentry's own regression email to project members ([Sentry Notifications](https://docs.sentry.io/product/notifications/)).
 - **If (all):** the tag and level filters in the table. Match types available are listed in the same docs (`equals`, `is set`, `is not set`, `is one of`, `does not equal` and others).
 - **Then:** *Notify* yourself (member), plus the chat action you choose in section 4. Use *Send Test Notification* on the block to check the integration.
 - **Throttling:** per the table. Throttling is per issue.
@@ -96,30 +105,32 @@ Every incident rule has the same two exclusions so recovery messages and drills 
 |---|---|---|---|
 | W1 | **Stripe webhooks silent** | tag `operational_signal` equals `stripe_webhooks_silent` | 30 minutes |
 | W2 | **Stripe webhook failures** | tag `operational_signal` equals `stripe_webhook_failures` | 30 minutes |
-| W3 | **Stripe signing secret rejected** | tag `operational_signal` equals `stripe_webhook_signature_failures` | 30 minutes |
-| W4 | **Stripe webhook processing exception** | tag `integration` equals `stripe_webhook` and tag `operation` equals `webhook_processing`. Trigger: *A new issue is created* or *A resolved issue regresses*. | 15 minutes |
+| W3 | **Stripe deliveries rejected while real ones look missing** | tag `operational_signal` equals `stripe_unverified_deliveries` | 30 minutes |
+| W4 | **Stripe webhook processing exception** | tag `integration` equals `stripe_webhook` and tag `operation` equals `webhook_processing`. Trigger: *An event or issue activity is captured* (every processing exception notifies, at most once per 15 minutes per issue, as in the runbook). | 15 minutes |
 | O1 | Failed payment updates | tag `operational_signal` equals `failed_payment_webhooks` | 6 hours |
 | O2 | Open reconciliation exceptions | tag `operational_signal` equals `open_reconciliation_exceptions` | 6 hours |
 | O3 | Failed background jobs | tag `operational_signal` equals `failed_background_jobs` | 6 hours |
 | O4 | Exhausted email deliveries | tag `operational_signal` equals `exhausted_message_deliveries` | 6 hours |
-| A1 | **New error on checkout** | tag `area` equals `checkout`. Trigger: *A new issue is created* or *A resolved issue regresses*. Create it on the API project and again on the frontend project. | 5 minutes |
-| A2 | **New error in the webhook controller** | tag `area` equals `webhook`, API project | 5 minutes |
-| A3 | **New error on the scanner** | tag `area` equals `scanner`, API and frontend projects | 5 minutes |
-| A4 | **New error in box office** | tag `area` equals `box_office`, API and frontend projects | 5 minutes |
+| A1 | **New error on checkout** | tag `area` equals `checkout`. Trigger: *A new issue is created* only (see above). Create it on the API project and again on the frontend project. | 5 minutes |
+| A2 | **New error in the webhook controller** | tag `area` equals `webhook`, API project. Trigger: *A new issue is created* | 5 minutes |
+| A3 | **New error on the scanner** | tag `area` equals `scanner`, API and frontend projects. Trigger: *A new issue is created* | 5 minutes |
+| A4 | **New error in box office** | tag `area` equals `box_office`, API and frontend projects. Trigger: *A new issue is created* | 5 minutes |
 | S1 | **Error spike on checkout** | tag `area` equals `checkout`, trigger *An event or issue activity is captured*, plus *Number of events is more than 5 in 5 minutes* (the issue-level frequency filter). Repeat for `webhook`, `scanner`, `box_office`. On the frontend project use 20 in 10 minutes. | 30 minutes |
-| N1 | Recovered / quiet notices (not an incident) | tag `operational_state` is one of `recovered`, `quiet`, level `info`. **Email only**, not chat push. | 30 minutes |
+| N1 | Recovered / quiet / note messages (not an incident) | Trigger *An event or issue activity is captured*; tag `operational_state` is one of `recovered`, `quiet`, `note` and level equals `info` (this rule does **not** use the two exclusions). **Email only**, not chat push. | 30 minutes |
 | D1 | **Drill** (test alerts only) | tag `monitoring_test` equals `true` | none |
-| U1 | Readiness and uptime | Uptime monitor, see `OPERATIONS_RUNBOOK.md` | n/a |
+| U1 | Readiness and uptime | An external uptime monitor as in `OPERATIONS_RUNBOOK.md` (not a Sentry rule) | n/a |
 
 **The one difference between production and staging:** the staging copy of W1 to O4, A1 to A4 and S1 leaves out the `monitoring_test is not set` filter, so a test alert can drive the real rule. Everything else is identical.
 
-An error rule fires per Sentry issue; a flood of many different errors on one path produces many first-seen alerts, throttled per issue. The S1 spike rules count repeats of one issue. I could not verify how Sentry counts the *Number of events* filter against a throttle, so test S1 with the `checkout` kind (section 5).
+An error rule fires per Sentry issue; a flood of many different errors on one path produces many first-seen alerts, throttled per issue. The S1 spike rules use the *Number of events* frequency filter with a sub-filter on the `area` tag ([Filter by Frequency](https://docs.sentry.io/product/monitors-and-alerts/alerts/create-alerts/#if-filters)); the docs describe it as the issue's event count, so it counts repeats of one issue, not a whole area. I could not verify how it interacts with throttling, so test S1 with the `checkout` kind (section 5).
+
+**Re-checked against the current docs (24 November 2026):** triggers and which filters they allow, the *Tagged event* and *Event level* filters, the match types (`equals`, `is set`, `is not set`, `is one of`, `does not equal`), the "all / any / none" qualifier, *Send Test Notification*, per-issue throttling, the Notify-a-member, Slack and Discord actions. Not verified: how long a rule takes to start matching after you save it, and any plan limits on the number of alerts.
 
 ## 4. Getting alerts on your phone: your choice
 
 **Do not use the Sentry mobile app.** Sentry's own repository for it, `getsentry/sentry-mobile-release-health-app`, says in its README "this project is currently not actively maintained. PRs will not be merged." (note added February 2023, last release 2022; see the [repository](https://github.com/getsentry/sentry-mobile-release-health-app)). It is an old Release Health viewer, and nothing in Sentry's current notification docs describes it as an alert channel.
 
-What Sentry's docs do describe: the *Notify a member* action "delivers via each recipient's notification settings" ([Creating an Alert](https://docs.sentry.io/product/alerts/create-alerts/issue-alert-config/)), set in **User Settings > Notifications** ([Sentry Notifications](https://docs.sentry.io/product/notifications/)); and chat actions for Slack and Discord ([Slack](https://docs.sentry.io/organization/integrations/notification-incidents/slack/), [Discord](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)). The docs do not tell you the default channel for *Notify a member*, so check your own settings and rely on the test, not on a guess.
+What Sentry's docs do describe: the *Notify a member* action "delivers via each recipient's notification settings" ([Creating an Alert](https://docs.sentry.io/product/monitors-and-alerts/alerts/create-alerts/#if-filters)), set in **User Settings > Notifications** ([Sentry Notifications](https://docs.sentry.io/product/notifications/)); and chat actions for Slack and Discord ([Slack](https://docs.sentry.io/organization/integrations/notification-incidents/slack/), [Discord](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)). The docs do not tell you the default channel for *Notify a member*, so check your own settings and rely on the test, not on a guess.
 
 You need at least one path to your phone. Choose, then run section 5 against it:
 
@@ -144,7 +155,7 @@ You need at least one path to your phone. Choose, then run section 5 against it:
 
 The test alert sends one event titled `[TEST] HafaPass monitoring test alert: <kind>` with the same tag the real alert carries, plus `monitoring_test=true`, and its own fingerprint `monitoring-test-alert/<kind>`. It never changes `runtime_alert_states`, never touches a real issue, and sends nothing to Stripe or buyers. It needs `SENTRY_DSN`, is admin only, and is limited to one send per 30 seconds.
 
-- **If it fails it says so.** When Sentry's SDK does not queue the event (for example the environment is not in `SENTRY_ENABLED_ENVIRONMENTS`) the admin page shows a failure and **no audit row is written**. When it succeeds it says "Queued for delivery to Sentry": that means the SDK accepted it, not that Sentry received it. The phone is the proof.
+- **If it fails it says so.** The test alert is sent **synchronously**, not through the SDK's background queue (sentry-ruby returns an event object even when that queue is full and drops the event, so a queued send proves nothing). The admin page says "Sentry accepted the test alert" only after Sentry's server answered success. A network error, a rejected response, an environment not in `SENTRY_ENABLED_ENVIRONMENTS`, or a rate-limited project shows a failure, writes **no audit row** and does not use up the 30-second cooldown. "Accepted" means Sentry has the event; the phone is still the proof the rule and your delivery path work.
 - **Button:** sign in as a platform admin, open **Admin > Monitoring & alerts**, pick a kind, press **Send test alert**. Each send is audited (`monitoring.test_alert_sent`).
 - **Shell** (Render shell on the staging API service): `bin/rails "hafapass:monitoring:test_alert[stripe_webhooks_silent]"`. Same cooldown and the same failure behavior. One difference: a shell has no signed-in user, so it writes a log line (`monitoring_test_alert`) instead of an audit row.
 
@@ -152,7 +163,7 @@ The test alert sends one event titled `[TEST] HafaPass monitoring test alert: <k
 |---|---|---|---|
 | W1 | `stripe_webhooks_silent` | W1 (staging copy), D1 | Push or email within about two minutes |
 | W2 | `stripe_webhook_failures` | W2 (staging copy), D1 | same |
-| W3 | `stripe_webhook_signature_failures` | W3 (staging copy), D1 | same |
+| W3 | `stripe_unverified_deliveries` | W3 (staging copy), D1 | same. To exercise the real path: on staging, put a wrong signing secret, make a test purchase, send a Stripe test event, then restore it. |
 | W4 + A2 | `webhook` | W4 and A2 (staging copies), D1 | A push for each, or one if throttled |
 | A1, A3, A4 | `checkout`, `scanner`, `box_office` | the matching A rule (staging copy), D1 | Push per kind. For the frontend copies, throw a deliberate test error on staging. |
 | S1 | `checkout`, six times 30 seconds apart | S1 (staging copy) | Fires once the sixth lands inside 5 minutes. If it does not, tell the agent so the rule can be changed. |
