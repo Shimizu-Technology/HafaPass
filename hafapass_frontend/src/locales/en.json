@@ -443,6 +443,7 @@
       "getTickets": "Get Tickets ",
       "nextUpOnGuam": "Next Up on Guam",
       "viewAllEvents": "View all events",
+      "seeAll": "See all",
       "loadingUpcomingEvents": "Loading upcoming events…",
       "eventsCouldntLoad": "Events couldn’t load",
       "pleaseTryAgainToSeeWhatsComingUp": "Please try again to see what's coming up.",
@@ -857,17 +858,18 @@
       "tryATicketPrice": "Try a ticket price",
       "doorDemo": {
         "tryIt": "Tap a ticket to try the door scanner",
-        "adultTicket": "Adult Ticket",
-        "alumniTicket": "Free Alumni Ticket",
+        "adultTicket": "Adult",
+        "alumniTicket": "Free alumni",
         "verifyFirst": "Verify before admitting",
         "alumniAlert": "Free alumni — check ID",
         "for": "For:",
         "gradYear": "Grad year:",
-        "confirmAdmit": "Confirm & Admit",
+        "confirmAdmit": "Admit",
         "cancel": "Cancel",
         "notAdmitted": "Not admitted",
         "notUsed": "The ticket wasn’t used. Ready for the next guest.",
-        "fictional": "Example · names are fictional"
+        "fictional": "Example · names are fictional",
+        "scanning": "Scanning QR pass…"
       }
     },
     "organizer": {
@@ -1403,7 +1405,20 @@
       "storyDoorBody": "Show the QR on your phone. Staff scan it and you walk right in.",
       "storyExampleEvent": "Your night out",
       "storyAdmitted": "Admitted",
-      "dateAndVillage": "Choose a date or village"
+      "dateAndVillage": "Choose a date or village",
+      "brandCardKicker": "HåfaPass Guam",
+      "brandCardHeadline": "Tickets for everything happening on Guam",
+      "brandArtTitle": "Your pass to",
+      "brandArtAccent": "what’s on",
+      "brandArtCategories": "Concerts · Sports · Food · Community",
+      "instantTickets": "Instant mobile QR tickets",
+      "emailDelivery": "Arrives by email in seconds",
+      "islandWide": "Island-wide",
+      "admitOne": "GU · ADMIT ONE",
+      "deckLabel": "HåfaPass featured events deck",
+      "choosePass": "Choose featured pass",
+      "previousPass": "Previous featured pass",
+      "nextPass": "Next featured pass"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

@@ -53,7 +53,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
   return (
     <div className="tabular-nums">
-      <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
+      <h2 className="font-display text-2xl font-bold text-neutral-950 mb-4">{t('eventDetail.buyTickets')}</h2>
       <div className="space-y-3">
         {ticketTypes.map(tt => {
           const available = remainingTickets(tt) ?? 0
@@ -91,7 +91,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
 
           return (
-            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-soft' : ''}`}>
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div data-selected={qty > 0 ? 'true' : 'false'} className={`rounded-xl border p-4 transition-[border-color,background-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-600 bg-brand-50/25 shadow-soft ring-1 ring-brand-500/20' : 'border-neutral-200 bg-white'}`}>
               <div className="flex flex-col gap-3">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -115,7 +115,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         aria-expanded={Boolean(expandedPasses[tt.id])}
                         aria-controls={`pass-nights-${tt.id}`}
                         onClick={() => togglePassSchedule(tt.id)}
-                        className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
+                        className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
                       >
                         <span>
                           {expandedPasses[tt.id]
@@ -205,7 +205,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="min-h-12 min-w-12 rounded-xl border-2 border-neutral-300 flex items-center justify-center text-neutral-800 hover:bg-neutral-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
+                      className="tactile-press min-h-12 min-w-12 rounded-xl border-2 border-neutral-300 flex items-center justify-center text-neutral-800 hover:bg-neutral-50 disabled:border-neutral-200 disabled:text-neutral-400" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
                     >
                       <Minus aria-hidden="true" className="w-5 h-5" />
                     </button>
@@ -213,7 +213,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="min-h-12 min-w-12 rounded-xl border-2 border-brand-700 flex items-center justify-center text-brand-800 hover:bg-brand-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
+                      className="tactile-press min-h-12 min-w-12 rounded-xl border-2 border-brand-700 flex items-center justify-center text-brand-800 hover:bg-brand-50 disabled:border-neutral-200 disabled:text-neutral-400" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
                     >
                       <Plus aria-hidden="true" className="w-5 h-5" />
                     </button>

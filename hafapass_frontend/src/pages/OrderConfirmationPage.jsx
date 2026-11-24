@@ -5,9 +5,10 @@ import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Armchair, Clock3, Ticket, RotateCcw, XCircle, Loader2, Mail, RefreshCw, Send } from 'lucide-react'
 import apiClient from '../api/client'
 import SupportLink from '../components/SupportLink'
+import ChipRow from '../components/ui/ChipRow'
 import { SUPPORT_FALLBACK_PATH } from '../utils/supportContact'
 import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import SEO from '../components/SEO'
@@ -17,6 +18,7 @@ import PassTicketCard from '../components/PassTicketCard'
 import { formatEventDate, formatEventDateTime, formatEventTime, formatEventTimeRange } from '../utils/eventTime'
 import { checkoutBuyerIdentity, clearActiveCheckout, getBuyerRefundAttempt, getOrderAccess, orderAccessHeaders, prepareBuyerRefundAttempt, recordBuyerRefundOutcome, saveOrderAccess } from '../utils/orderAccess'
 import { SellerLine } from '../components/PriceDisclosure'
+import { isClerkEnabled } from '../utils/demoMode'
 
 const emailInFlightStatuses = new Set(['queued', 'sent'])
 const EMAIL_REFRESH_INTERVAL = 10_000
@@ -26,7 +28,7 @@ const finalStatuses = new Set(['completed', 'partially_refunded', 'refunded', 'c
 
 export default function OrderConfirmationPage() {
   const { id } = useParams()
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedOrderConfirmation key={id} /> : <OrderConfirmationContent key={id} />
+  return isClerkEnabled() ? <AuthenticatedOrderConfirmation key={id} /> : <OrderConfirmationContent key={id} />
 }
 
 function AuthenticatedOrderConfirmation() {
@@ -474,8 +476,13 @@ function OrderConfirmationContent() {
       <SEO title={t('buyerAccount.orderConfirmationPage.order', { reference: order.reference })} noIndex />
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <div className="mb-7 text-center">
-          <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100'}`}>
-            {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <CheckCircle aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="h-8 w-8 text-emerald-700" />}
+          <div className={`relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isProcessing || isPartiallyRefunded ? 'bg-amber-100' : isClosed || isRefunded ? 'bg-neutral-100' : 'bg-emerald-100 confirm-check-badge'}`} data-testid={order.status === 'completed' ? 'order-confirmed-badge' : undefined}>
+            {isProcessing ? <Clock3 aria-label={t('buyerAccount.orderConfirmationPage.paymentPending')} className="h-8 w-8 text-amber-700" /> : isClosed ? <XCircle aria-label={t('buyerAccount.orderConfirmationPage.orderClosed')} className="h-8 w-8 text-neutral-600" /> : isRefunded ? <RotateCcw aria-label={t('buyerAccount.orderConfirmationPage.orderRefunded')} className="h-8 w-8 text-neutral-600" /> : isPartiallyRefunded ? <AlertTriangle aria-label={t('buyerAccount.orderConfirmationPage.orderPartiallyRefunded')} className="h-8 w-8 text-amber-700" /> : <>
+              <span aria-hidden="true" className="confirm-check-ring" />
+              <svg role="img" aria-label={t('buyerAccount.orderConfirmationPage.orderConfirmed')} className="confirm-check-svg h-8 w-8 text-emerald-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 13l4.5 4.5L19 7.5" />
+              </svg>
+            </>}
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-neutral-950">
             {awaitingPayment ? t('buyerAccount.orderConfirmationPage.yourPaymentIsNotComplete') : isProcessing ? t('buyerAccount.orderConfirmationPage.paymentIsProcessing') : order.status === 'refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasRefunded') : order.status === 'partially_refunded' ? t('buyerAccount.orderConfirmationPage.yourOrderWasPartiallyRefunded') : order.status === 'cancelled' ? t('buyerAccount.orderConfirmationPage.orderCancelled') : order.status === 'expired' ? t('buyerAccount.orderConfirmationPage.reservationExpired') : t('buyerAccount.orderConfirmationPage.yourOrderIsConfirmed')}
@@ -542,13 +549,14 @@ function OrderConfirmationContent() {
             {ticketActionError && <p className="mb-3 text-sm text-red-700">{ticketActionError}</p>}
             {ticketActionNotice && <p role="status" className="mb-3 text-sm text-brand-800">{ticketActionNotice}</p>}
             {transferTarget && <TransferTicketDialog ticketLabel={t('buyerAccount.orderConfirmationPage.transferTicketLabel', { name: transferTarget.ticket_type.name })} onSend={sendTransfer(transferTarget)} onClose={() => setTransferTarget(null)} />}
-            <div className="divide-y divide-neutral-100">
+            <div className={order.status === 'completed' ? 'space-y-3' : 'divide-y divide-neutral-100'}>
               {order.tickets.map(ticket => {
                 const ticketRefundAttempt = getBuyerRefundAttempt(id, `ticket:${ticket.id}`)
                 if (ticket.pass_parent || (ticket.is_pass && !ticket.pass_child)) {
                   const canCancelPass = (ticket.status === 'issued' && ticketRefundOpen) || refundNeedsStatusCheck(ticketRefundAttempt)
                   return (
-                    <div key={ticket.id} className="py-3">
+                    <div key={ticket.id} className={order.status === 'completed' ? 'confirm-issued-pass ticket-shadow-light relative overflow-hidden rounded-2xl border border-neutral-300/90 bg-surface p-4' : 'py-3'}>
+                      {order.status === 'completed' && <span aria-hidden="true" className="confirm-issued-glint" />}
                       <PassTicketCard
                         ticket={ticket}
                         event={event}
@@ -559,7 +567,7 @@ function OrderConfirmationContent() {
                               type="button"
                               onClick={() => cancelTicket(ticket)}
                               disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'}
-                              className="min-h-11 px-2 text-xs font-semibold text-red-600"
+                              className="min-h-11 px-2 text-sm font-semibold text-red-700"
                             >
                               {cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}
                             </button>
@@ -572,15 +580,22 @@ function OrderConfirmationContent() {
                   )
                 }
                 const canOpenTicket = ticket.status === 'issued' && usableTickets && ticket.admission_allowed === true && !ticket.admission_block_reason
+                const canRotate = ticket.status === 'issued'
+                const canCancel = (ticket.status === 'issued' && (ticket.refundable_cents === 0 || ticketRefundOpen)) || refundNeedsStatusCheck(ticketRefundAttempt)
+                const canTransfer = ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && transfersOpen
+                const canExchangeSeat = ticket.status === 'issued' && Boolean(ticket.seat)
+                const hasSecondaryActions = canRotate || canCancel || canTransfer || canExchangeSeat
                 const exchangeOptions = exchangeMap?.sections.flatMap(section => section.rows.flatMap(row =>
                   row.seats.filter(seat => seat.status === 'available' && seat.ticket_type_id === ticket.ticket_type.id &&
                     seat.accessibility_kind === ticket.seat?.accessibility_kind)
                 )) || []
                 const selectedExchangeSeat = exchangeOptions.find(seat => seat.id === Number(exchangeSeatId))
-                return <div key={ticket.id} className="py-3">
-                <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words font-medium text-neutral-900">{ticket.ticket_type.name}</p>
+                const punched = order.status === 'completed'
+                return <div key={ticket.id} data-punched={punched ? 'true' : undefined} className={punched ? 'confirm-issued-pass ticket-shadow-light relative overflow-hidden rounded-2xl border border-neutral-300/90 bg-surface px-4 py-4 sm:px-5' : 'py-3'}>
+                {punched && <span aria-hidden="true" className="confirm-issued-glint" />}
+                <div className="flex flex-col gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold text-neutral-950">{ticket.ticket_type.name}</p>
                     {ticket.seat && <p className="text-sm font-semibold text-brand-700">{ticket.seat.display_label}</p>}
                     <p className="text-xs text-neutral-600">{ticket.attendee_name || t('buyerAccount.orderConfirmationPage.newHolder')} · {t(`buyerAccount.orderConfirmationPage.ticketStatus.${ticket.status}`, { defaultValue: ticket.status.replace('_', ' ') })}</p>
                     {ticket.admission_block_reason && <p className="mt-1 text-sm text-amber-800">{ticket.admission_block_reason}</p>}
@@ -588,25 +603,40 @@ function OrderConfirmationContent() {
                       onCancel={() => apiClient.delete(`/orders/${id}/tickets/${ticket.id}/transfer`, { headers: orderHeaders() })}
                       onSettled={({ message }) => { setTicketActionNotice(message); fetchOrder({ preserveOrder: true }) }} />}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-col gap-2">
                     {ticket.display_credential && <Link to={`/tickets/${encodeURIComponent(ticket.display_credential)}?order=${id}`}
-                      className={canOpenTicket ? 'btn-primary min-h-11 gap-2' : 'btn-secondary min-h-11 gap-2'}
+                      className={`${canOpenTicket ? 'btn-primary' : 'btn-secondary'} min-h-11 w-full gap-2`}
                       aria-label={canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket', { name: ticket.ticket_type.name }) : t('buyerAccount.orderConfirmationPage.viewTicket')}>
                       <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket2') : t('buyerAccount.orderConfirmationPage.viewTicketStatus')}
                     </Link>}
-                    {ticket.status === 'issued' && (
-                      <button onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="min-h-11 px-2 text-xs font-semibold text-neutral-600">{rotatingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.refreshing') : t('buyerAccount.orderConfirmationPage.refreshQR')}</button>
+                    {hasSecondaryActions && (
+                      <div className="flex items-center justify-between gap-1 border-t border-neutral-200/80 pt-1">
+                        {canRotate && (
+                          <button type="button" onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100">
+                            <RefreshCw aria-hidden="true" className="h-4 w-4 shrink-0" />
+                            <span>{rotatingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.refreshing') : t('buyerAccount.orderConfirmationPage.refreshQR')}</span>
+                          </button>
+                        )}
+                        {canTransfer && (
+                          <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
+                            <Send aria-hidden="true" className="h-4 w-4 shrink-0" />
+                            <span>{t('buyerAccount.orderConfirmationPage.transfer')}</span>
+                          </button>
+                        )}
+                        {canExchangeSeat && (
+                          <button type="button" onClick={() => openSeatExchange(ticket)} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
+                            <Armchair aria-hidden="true" className="h-4 w-4 shrink-0" />
+                            <span>{t('buyerAccount.orderConfirmationPage.changeSeat')}</span>
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button type="button" onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                            <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+                            <span>{cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}</span>
+                          </button>
+                        )}
+                      </div>
                     )}
-                    {(ticket.status === 'issued' && (ticket.refundable_cents === 0 || ticketRefundOpen) || refundNeedsStatusCheck(ticketRefundAttempt)) && (
-                      <button onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="min-h-11 px-2 text-xs font-semibold text-red-600">{cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}</button>
-                    )}
-                    {ticket.status === 'issued' && !ticket.pending_transfer && capabilities.ticket_transfers === true && event.transfers_enabled === true && transfersOpen && (
-                      <button type="button" onClick={() => { setTicketActionError(null); setTransferTarget(ticket) }} className="min-h-11 px-2 text-xs font-semibold text-brand-700">{t('buyerAccount.orderConfirmationPage.transfer')}</button>
-                    )}
-                    {ticket.status === 'issued' && ticket.seat && (
-                      <button onClick={() => openSeatExchange(ticket)} className="min-h-11 px-2 text-xs font-semibold text-brand-700">{t('buyerAccount.orderConfirmationPage.changeSeat')}</button>
-                    )}
-
                   </div>
                 </div>
                 {ticketRefundAttempt && <p role="status" className="mt-2 text-sm text-neutral-700">{refundNotice(ticketRefundAttempt)}</p>}
@@ -684,12 +714,12 @@ function OrderConfirmationContent() {
         </section>
 
 
-        <div className="flex items-center justify-center gap-5 text-sm font-medium">
-          <button onClick={fetchOrder} className="inline-flex items-center gap-1.5 text-neutral-600"><RefreshCw className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.refresh')}</button>
-          <Link to="/events" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.browseEvents')}</Link>
-          {!getOrderAccess(id) && <Link to="/my-tickets" className="text-brand-700">{t('buyerAccount.orderConfirmationPage.myTickets')}</Link>}
-          <Link to={getOrderAccess(id) ? `/privacy/guest/${id}` : '/account/settings'} className="text-brand-700">{t('buyerAccount.orderConfirmationPage.privacyRequests')}</Link>
-        </div>
+        <ChipRow role="group" ariaLabel="Order links" className="sm:justify-center">
+          <button type="button" onClick={fetchOrder} className="chip-ghost !text-neutral-700"><RefreshCw aria-hidden="true" className="h-4 w-4 shrink-0" />{t('buyerAccount.orderConfirmationPage.refresh')}</button>
+          <Link to="/events" className="chip-ghost">{t('buyerAccount.orderConfirmationPage.browseEvents')}</Link>
+          {!getOrderAccess(id) && <Link to="/my-tickets" className="chip-ghost">{t('buyerAccount.orderConfirmationPage.myTickets')}</Link>}
+          <Link to={getOrderAccess(id) ? `/privacy/guest/${id}` : '/account/settings'} className="chip-ghost">{t('buyerAccount.orderConfirmationPage.privacyRequests')}</Link>
+        </ChipRow>
       </div>
     </div>
   )

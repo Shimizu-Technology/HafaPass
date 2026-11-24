@@ -1,44 +1,74 @@
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FadeUp, StaggerContainer, StaggerItem } from './ScrollReveal'
 
-const state = vi.hoisted(() => ({ inView: false, reduced: false, props: [] }))
-vi.mock('framer-motion', async () => {
-  const { forwardRef } = await import('react')
-  return {
-    useInView: () => state.inView,
-    useReducedMotion: () => state.reduced,
-    motion: { div: forwardRef(({ children, className, ...props }, ref) => {
-      state.props.push(props)
-      return <div ref={ref} className={className}>{children}</div>
-    }) },
+let observers = []
+class FakeIntersectionObserver {
+  constructor(callback) {
+    this.callback = callback
+    this.elements = []
+    observers.push(this)
   }
+  observe(element) { this.elements.push(element) }
+  disconnect() {}
+}
+
+const reduceMotion = reduce => vi.stubGlobal('matchMedia', vi.fn(query => ({
+  matches: reduce && query === '(prefers-reduced-motion: reduce)',
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+})))
+
+beforeEach(() => {
+  observers = []
+  reduceMotion(false)
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
 
-beforeEach(() => { state.inView = false; state.reduced = false; state.props = [] })
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('content availability independent of scroll reveals', () => {
-  it('keeps content visible while the intersection observer has not fired', () => {
-    render(<FadeUp delay={0.1}><button>Buy tickets</button></FadeUp>)
+  it('keeps content visible while the intersection observer has not fired, then settles on view', () => {
+    const { container } = render(
+      <>
+        <FadeUp delay={0.1}><button>Buy tickets</button></FadeUp>
+        <StaggerContainer><StaggerItem>Available event</StaggerItem></StaggerContainer>
+      </>,
+    )
     expect(screen.getByRole('button', { name: 'Buy tickets' })).toBeEnabled()
-    expect(state.props[0].initial.opacity).toBe(1)
-    expect(state.props[0].animate.opacity).toBe(1)
-    render(<StaggerContainer><StaggerItem>Available event</StaggerItem></StaggerContainer>)
-    const item = state.props.find(props => props.variants?.resting?.opacity)
-    expect(item.variants.resting.opacity).toBe(1)
-    expect(item.variants.settled.opacity).toBe(1)
+    expect(screen.getByText('Available event')).toBeVisible()
+    const reveal = container.querySelector('.scroll-reveal')
+    const stagger = container.querySelector('.scroll-reveal-stagger')
+    expect(reveal).toHaveAttribute('data-reveal', 'resting')
+    expect(stagger).toHaveAttribute('data-reveal', 'resting')
+
+    act(() => {
+      observers.forEach(observer => observer.callback([{ isIntersecting: true }]))
+    })
+    expect(reveal).toHaveAttribute('data-reveal', 'settled')
+    expect(stagger).toHaveAttribute('data-reveal', 'settled')
   })
 
-  it('settles with no translation, delay or stagger under reduced motion', () => {
-    state.reduced = true
-    render(<FadeUp delay={0.5}>Event details</FadeUp>)
-    expect(state.props[0]).toMatchObject({ initial: false, animate: { opacity: 1, y: 0 }, transition: { duration: 0, delay: 0 } })
-    render(<StaggerContainer><StaggerItem>Available event</StaggerItem></StaggerContainer>)
-    const container = state.props.find(props => props.variants?.settled?.transition?.staggerChildren === 0)
-    const item = state.props.find(props => props.variants?.resting?.opacity)
-    expect(container.initial).toBe(false)
-    expect(container.animate).toBe('settled')
-    expect(item.variants.resting.y).toBe(0)
-    expect(item.variants.settled).toMatchObject({ y: 0, transition: { duration: 0 } })
+  it('settles immediately with no translation, delay or stagger under reduced motion', () => {
+    reduceMotion(true)
+    const { container } = render(
+      <>
+        <FadeUp delay={0.5}>Event details</FadeUp>
+        <StaggerContainer><StaggerItem>Available event</StaggerItem></StaggerContainer>
+      </>,
+    )
+    const reveal = container.querySelector('.scroll-reveal')
+    const stagger = container.querySelector('.scroll-reveal-stagger')
+    const item = container.querySelector('.scroll-reveal-item')
+    expect(reveal).toHaveAttribute('data-reveal', 'settled')
+    expect(reveal.style.transform).toBe('none')
+    expect(reveal.style.transitionDuration).toBe('0ms')
+    expect(reveal.style.transitionDelay).toBe('')
+    expect(stagger).toHaveAttribute('data-reveal', 'settled')
+    expect(stagger).toHaveAttribute('data-reduced-motion', 'true')
+    expect(item.style.transform).toBe('none')
+    expect(item.style.transitionDuration).toBe('0ms')
   })
 })

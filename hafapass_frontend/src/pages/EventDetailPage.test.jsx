@@ -6,7 +6,6 @@ import apiClient from '../api/client'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ isLoaded: true, userId: null }) }))
-vi.mock('framer-motion', async original => ({ ...(await original()), useReducedMotion: () => true }))
 const seo = vi.hoisted(() => ({ props: null }))
 vi.mock('../components/SEO', () => ({ default: props => { seo.props = props; return null } }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => children }))

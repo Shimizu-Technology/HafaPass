@@ -31,7 +31,7 @@ export default function WhosGoing({ attendeeCount, attendeesPreview, showAttende
 
   return (
     <div className="mb-8">
-      <h2 className="text-lg font-semibold text-neutral-900 mb-3">{t('buyer.WhosGoing.whosGoing')}</h2>
+      <h2 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4">{t('buyer.WhosGoing.whosGoing')}</h2>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex max-w-full -space-x-2">
           {shown.map((name, i) => (
