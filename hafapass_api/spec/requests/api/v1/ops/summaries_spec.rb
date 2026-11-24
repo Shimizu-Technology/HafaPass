@@ -59,6 +59,19 @@ RSpec.describe "GET /api/v1/ops/summary", type: :request do
       expect(due_change.reload).to have_attributes(blocked_at: nil, activated_at: nil)
     end
 
+    it "counts rejected deliveries that are still buffered in memory, without trying to write them" do
+      Operations::WebhookRejections.reset!
+      5.times { Operations::WebhookRejections.record!(provider: "stripe", reason: "invalid_signature") }   # 1 flushed, 4 pending
+      allow(Rails.logger).to receive(:error)
+
+      get "/api/v1/ops/summary", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("health", "stripe_webhooks", "rejected_in_window")).to eq(5)
+      expect(Rails.logger).not_to have_received(:error).with(/webhook_rejection_flush_failed/)
+      expect(Operations::WebhookRejections.pending_count).to eq(4)
+    end
+
     it "reports the readiness check it skipped instead of claiming it passed" do
       get "/api/v1/ops/summary", headers: headers
       expect(response.parsed_body.dig("health", "skipped_checks")).to eq(["provider_policy_controls"])

@@ -47,6 +47,18 @@ if RuntimeConfiguration.clustered?
 else
   workers 0
 end
+# Rejected-webhook counts are buffered in memory (Operations::WebhookRejections);
+# write what is pending when the process stops so a deploy doesn't lose a burst.
+flush_rejected_webhooks = lambda do
+  Operations::WebhookRejections.flush! if defined?(Operations::WebhookRejections)
+rescue StandardError
+  nil
+end
+if RuntimeConfiguration.clustered?
+  before_worker_shutdown { flush_rejected_webhooks.call }
+elsif ENV["RAILS_ENV"] != "test"
+  at_exit { flush_rejected_webhooks.call }
+end
 threads_count = RuntimeConfiguration.web_threads
 threads threads_count, threads_count
 

@@ -278,6 +278,23 @@ RSpec.describe Operations::StripeWebhookHealth do
     end
   end
 
+  it "shows an aged-out paid-but-unconfirmed payment instead of all clear" do
+    paid_payment(succeeded_at: now - 2.days)
+    paid_payment(succeeded_at: now - 45.minutes)
+    paid_payment(succeeded_at: now - 45.minutes, confirmed: true)
+    snapshot = described_class.call
+    expect(snapshot).to include(silent: true, paid_without_webhook: 1, unresolved_paid_without_webhook: 2)
+
+    Payment.where(succeeded_at: ..(now - 1.day)).update_all(succeeded_at: now - 8.days)   # beyond the 7-day lookback
+    expect(described_class.call).to include(unresolved_paid_without_webhook: 1)
+  end
+
+  it "keeps the aged-out stuck payment visible after the alert window has passed" do
+    paid_payment(succeeded_at: now - 7.hours)
+    snapshot = described_class.call
+    expect(snapshot).to include(silent: false, paid_without_webhook: 0, unresolved_paid_without_webhook: 1)
+  end
+
   it "reports the last receipt and processing time without secrets or payloads" do
     receipt(at: now - 3.minutes)
     snapshot = described_class.call

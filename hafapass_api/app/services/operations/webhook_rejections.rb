@@ -50,8 +50,12 @@ module Operations
       key = [provider, reason, Time.zone.at((at.to_i / BUCKET.to_i) * BUCKET.to_i)]
       flush_now, delay = @mutex.synchronize do
         @pending[key] += 1 if @pending.key?(key) || @pending.size < MAX_PENDING_KEYS
-        elapsed = @last_flush && (monotonic_now - @last_flush)
+        now = monotonic_now
+        elapsed = @last_flush && (now - @last_flush)
         if elapsed.nil? || elapsed >= flush_seconds
+          # Claim the slot here, inside the lock, so concurrent requests can't
+          # each decide the interval has passed and all write.
+          @last_flush = now
           [true, nil]
         elsif !@timer_scheduled
           @timer_scheduled = true
@@ -67,12 +71,14 @@ module Operations
     end
 
     # One INSERT ... ON CONFLICT for everything pending. A failed write puts the
-    # counts back (bounded) so a database blip doesn't lose them.
+    # counts back (bounded) so a database blip doesn't lose them. Does nothing
+    # while writes are blocked (the read-only ops summary): the counts stay
+    # pending, and #count adds them in. The flush clock only advances on a
+    # successful write.
     def flush!
-      batch = @mutex.synchronize do
-        @last_flush = monotonic_now
-        @pending.dup.tap { @pending.clear }
-      end
+      return if ActiveRecord::Base.current_preventing_writes
+
+      batch = @mutex.synchronize { @pending.dup.tap { @pending.clear } }
       return if batch.empty?
 
       now = Time.current
@@ -81,6 +87,7 @@ module Operations
       end
       WebhookRejectionCount.upsert_all(rows, unique_by: :index_webhook_rejection_counts_on_bucket,
         on_duplicate: Arel.sql("count = webhook_rejection_counts.count + EXCLUDED.count, updated_at = EXCLUDED.updated_at"))
+      @mutex.synchronize { @last_flush = monotonic_now }
     rescue StandardError => e
       @mutex.synchronize do
         batch&.each { |key, count| @pending[key] += count if @pending.key?(key) || @pending.size < MAX_PENDING_KEYS }
@@ -88,9 +95,17 @@ module Operations
       Rails.logger.error({ event: "webhook_rejection_flush_failed", error_class: e.class.name }.to_json)
     end
 
+    # Persisted counts plus this process's pending ones, so a read never
+    # under-reports. Flushes first when it may write; inside a read-only block
+    # (the ops summary) it reads without writing.
     def count(provider:, since:, reasons: ALERT_REASONS)
       flush!
-      WebhookRejectionCount.where(provider: provider, reason: reasons, bucket_started_at: (since - BUCKET + 1.second)..).sum(:count)
+      from = since - BUCKET + 1.second
+      persisted = WebhookRejectionCount.where(provider: provider, reason: reasons, bucket_started_at: from..).sum(:count)
+      pending = @mutex.synchronize do
+        @pending.sum { |(key_provider, reason, bucket), count| key_provider == provider && reasons.include?(reason) && bucket >= from ? count : 0 }
+      end
+      persisted + pending
     end
 
     # Specs: forget pending counts and the flush clock.

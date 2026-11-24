@@ -150,6 +150,8 @@ module Operations
         failed_total: receipts.failed.count,
         rejected_in_window: rejected_in_window,
         paid_without_webhook: paid_without_webhook_count,
+        # Paid, still no success receipt, looking back 7 days (past the 6-hour alert window): an aged-out stuck payment is not "all clear".
+        unresolved_paid_without_webhook: unresolved_count("stripe_webhooks_silent"),
         recent_payment_attempts: recent_attempt_count,
         silent: silent_count.positive?,
         failing: failure_count.positive?,

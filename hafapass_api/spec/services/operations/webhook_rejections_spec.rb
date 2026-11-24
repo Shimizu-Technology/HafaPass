@@ -76,6 +76,56 @@ RSpec.describe Operations::WebhookRejections do
     original.nil? ? ENV.delete("HAFAPASS_WEBHOOK_REJECTION_FLUSH_SECONDS") : ENV["HAFAPASS_WEBHOOK_REJECTION_FLUSH_SECONDS"] = original
   end
 
+  describe "inside a read-only block (the ops summary)" do
+    it "reads without writing, counts the pending rejections too, and leaves the flush clock alone" do
+      record(5)                                          # 1 written at once, 4 pending
+      expect(WebhookRejectionCount.sum(:count)).to eq(1)
+      expect(described_class.pending_count).to eq(4)
+      clock_before = described_class.instance_variable_get(:@last_flush)
+      allow(WebhookRejectionCount).to receive(:upsert_all).and_call_original
+
+      total = ActiveRecord::Base.while_preventing_writes do
+        described_class.count(provider: "stripe", since: 1.hour.ago)
+      end
+
+      expect(total).to eq(5)                              # not 1: pending counts are included
+      expect(WebhookRejectionCount).not_to have_received(:upsert_all)
+      expect(described_class.pending_count).to eq(4)      # nothing re-queued, nothing lost
+      expect(described_class.instance_variable_get(:@last_flush)).to eq(clock_before)
+
+      described_class.flush!                              # outside the block it writes the rest
+      expect(WebhookRejectionCount.sum(:count)).to eq(5)
+      expect(described_class.count(provider: "stripe", since: 1.hour.ago)).to eq(5)
+    end
+
+    it "logs no flush failure and raises nothing" do
+      record(3)
+      allow(Rails.logger).to receive(:error)
+      expect { ActiveRecord::Base.while_preventing_writes { described_class.flush! } }.not_to raise_error
+      expect(Rails.logger).not_to have_received(:error).with(/webhook_rejection_flush_failed/)
+    end
+  end
+
+  it "advances the flush clock only when a write succeeds" do
+    record(1)                                           # first write at t=1000
+    clock[:now] += 20
+    allow(WebhookRejectionCount).to receive(:upsert_all).and_raise(ActiveRecord::StatementInvalid, "down")
+    described_class.flush!
+    expect(described_class.instance_variable_get(:@last_flush)).to eq(1000.0)
+    allow(WebhookRejectionCount).to receive(:upsert_all).and_call_original
+    record(1)                                           # due again, writes both
+    expect(WebhookRejectionCount.sum(:count)).to eq(2)
+  end
+
+  it "claims the flush slot inside the lock, so two concurrent first rejections write once" do
+    allow(WebhookRejectionCount).to receive(:upsert_all).and_call_original
+    threads = Array.new(8) { Thread.new { record(5) } }
+    threads.each(&:join)
+    expect(WebhookRejectionCount).to have_received(:upsert_all).once
+    described_class.flush!
+    expect(WebhookRejectionCount.sum(:count)).to eq(40)
+  end
+
   it "recognizes only Stripe-shaped signature headers" do
     expect(described_class.stripe_shaped?("t=1700000000,v1=#{'a' * 64}")).to be(true)
     ["garbage", "t=1,v1=bad", "", nil, "v1=#{'a' * 64}"].each { |bad| expect(described_class.stripe_shaped?(bad)).to be(false) }
