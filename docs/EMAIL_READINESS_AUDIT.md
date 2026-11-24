@@ -60,3 +60,6 @@ Do not merge before cross-family review and Leon's OK.
 - Shared-guidance read-only check failed: this host is missing `~/.config/shimizu-technology/agent-context.json`. Canonical synced skill files were read directly. No shared guidance was changed.
 
 - Final full RSpec: 4,045 examples, 0 failures (`/tmp/hafapass-email-rspec-final.log`), using the completed implementation.
+
+- CI initially rejected one extra blank line in a new spec; corrected with RuboCop. Final local RuboCop: 1,064 files, no offenses; Brakeman: no warnings; dependency audit: no vulnerabilities. Final follow-up commit changes only spec whitespace and this audit, so full behavioral results above remain applicable. CI on the updated head is lead-owned and pending.
+- Authorized PR creation triggered the repository's existing Netlify preview automation. Worker did not issue any deployment command or change hosting settings; production was not deployed.

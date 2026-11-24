@@ -76,5 +76,4 @@ RSpec.describe "Waitlist commercial email" do
     expect(delivery.reload).to be_cancelled
     expect(EmailService).not_to have_received(:send_delivery_payload)
   end
-
 end
