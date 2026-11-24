@@ -478,6 +478,8 @@ function ClerkNavContent() {
 }
 
 export default function Navbar() {
+  // Preview only: signed in as the fictional demo staff member, without Clerk.
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return <NavContent isSignedIn isLoaded userId="demo_staff_user" sessionId="demo_staff_session" clerkEnabled={false} />
   if (clerkPubKey) {
     return <ClerkNavContent />
   }

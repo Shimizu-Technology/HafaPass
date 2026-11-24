@@ -13,6 +13,8 @@ import {
   buildDemoPublicConfig,
 } from './demoFixtures'
 import { lowestPurchasablePrice } from '../utils/ticketPricing'
+import { runDemoHandlers } from './handlers/registry'
+import { createDemoStaffState } from './staff/fixtures'
 
 function ok(config, data, status = 200) {
   return Promise.resolve({
@@ -129,12 +131,23 @@ export function createDemoAdapter() {
   const preferences = buildDemoEmailPreferences()
   const follows = new Map()
   let consentSequence = 0
+  // In-memory only: organizer/admin/door handlers read and change this and
+  // nothing is ever saved. A reload starts from the fictional fixtures again.
+  const state = createDemoStaffState()
 
   return async function demoAdapter(config) {
     const method = String(config.method || 'get').toLowerCase()
     const { path, params } = normalizePath(config)
     const body = parseBody(config.data)
     const serverNow = new Date().toISOString()
+
+    // Registered feature handlers (organizer, admin, door) answer first.
+    const handled = await runDemoHandlers({ method, path, body, params, config, state, serverNow })
+    if (handled != null) {
+      const status = handled.status || 200
+      if (status >= 400) return fail(config, status, handled.data)
+      return ok(config, handled.data, status)
+    }
 
     if (method === 'post' && path === '/platform_subscriptions') {
       return ok(config, { accepted: true, message: 'Check your email to confirm.' }, 202)
@@ -306,7 +319,15 @@ export function createDemoAdapter() {
       return fail(config, 401, { error: 'Sign-in is disabled in demo preview.' })
     }
 
-    // Never fall through to the real network in demo mode.
-    return fail(config, 404, { error: `Endpoint ${method.toUpperCase()} ${path} is not available in demo preview.` })
+    // Any organizer/admin change no handler claimed succeeds in memory only.
+    // This runs after every registered handler, so feature files always win.
+    if (['post', 'put', 'patch', 'delete'].includes(method) && /^\/(organizer|admin)\//.test(path)) {
+      return ok(config, { demo: true, saved: false, message: 'Demo preview: nothing was saved.' })
+    }
+
+    // Never fall through to the real network in demo mode. Staff screens get a
+    // friendly answer and a console hint for whoever is adding fixtures.
+    console.warn(`[demo-api] unhandled ${method.toUpperCase()} ${path}`)
+    return fail(config, 404, { error: 'This part is not available in the demo preview yet.' })
   }
 }

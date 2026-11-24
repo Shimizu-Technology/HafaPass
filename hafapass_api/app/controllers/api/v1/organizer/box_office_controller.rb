@@ -8,6 +8,8 @@ module Api
 
         # POST /api/v1/organizer/events/:event_id/box_office
         def create
+          # The response carries live scan credentials; never let a shared cache keep it.
+          response.headers["Cache-Control"] = "private, no-store"
           line_items = params[:line_items]
           unless line_items.is_a?(Array) && line_items.any?
             render json: { error: "line_items is required" }, status: :unprocessable_entity
@@ -173,6 +175,7 @@ module Api
             payment_method: order.payment_method,
             completed_at: order.completed_at,
             test_payment: order.test_payment?,
+            receipt: Commerce::BoxOfficeReceipt.new(order).as_json,
             card_present_payment: order.card_present_payment_attempts.order(:id).last&.then { |attempt|
               {
                 status: attempt.status,
