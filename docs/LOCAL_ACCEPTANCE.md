@@ -9,7 +9,11 @@ DATABASE_URL=postgresql://localhost/hafapass_qa_readiness RAILS_ENV=development 
 DATABASE_URL=postgresql://localhost/hafapass_qa_readiness HAFAPASS_QA_FIXTURES=1 bundle exec rails qa:seed
 ```
 
-The schema load is the baseline for an empty fixture database. Apply pending migrations to existing databases with `bin/rails db:migrate`.
+The schema load is the baseline for an empty fixture database. To apply pending migrations to an existing fixture database, target it explicitly so the default development database is never touched:
+
+```sh
+DATABASE_URL=postgresql://localhost/hafapass_qa_readiness RAILS_ENV=development bundle exec rails db:migrate
+```
 
 The fixture task is additive and repeatable. It creates two organizations, 21 paginated events in the first organization, an additional free-registration event, an event in the second organization, 21 simulated purchases, and one organizer-collected cash purchase. The oldest main event has the order history and a scanner assignment. The JSON output gives the relevant event IDs, cash order reference, free-event slug and local user IDs. It contains no passwords or access tokens. Existing fixtures are preserved; use another fixture name or a fresh owned database when a previous journey has changed them.
 

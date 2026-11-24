@@ -103,7 +103,9 @@ HåfaPass has run in production with live card payments since 2026-10-21. The Ph
    For an existing database, use `bundle exec rails db:migrate` to apply pending migrations.
    When adding a migration, apply it to a database loaded from the previous branch's schema,
    then commit the updated `db/schema.rb` with the migration. CI checks that loading and
-   re-dumping the committed schema after migration produces no changes.
+   re-dumping the committed schema after migration produces no changes. PostgreSQL 16 rewrites
+   string `IN (...)` check constraints after a schema load, so before committing run
+   `db:schema:load` and then `db:migrate db:schema:dump` on a throwaway test database and commit that dump.
 
 4. **Start the frontend** (in another terminal)
    ```bash
