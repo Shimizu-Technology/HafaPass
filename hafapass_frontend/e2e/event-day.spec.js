@@ -210,6 +210,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
 
 test('box office exposes card sales only for a verified terminal and sends an idempotency key', async ({ page }) => {
   let receivedIdempotencyKey
+  const receipt = {
+    id: 99, reference: 'DEMO-CARD-99', status: 'completed', total_cents: 2500, event_title: 'Guam Night Market',
+    email: 'walkin@example.com', email_status: 'queued', email_available: true, admissions: [],
+  }
   const event = {
     id: 42, organization_id: 1, permissions: { box_office: true },
     title: 'Guam Night Market',
@@ -224,8 +228,10 @@ test('box office exposes card sales only for a verified terminal and sends an id
       id: 99, status: 'completed', buyer_name: 'Walk-in', buyer_email: 'walkin@example.com', total_cents: 2500,
       source: 'box_office', payment_method: 'door_card', card_present_payment: { status: 'succeeded', provider: 'boh_clover' },
       tickets: [{ id: 77, scan_credential: 'issued-secret', ticket_type: { name: 'General Admission' } }],
+      receipt,
     }, 201)
   })
+  await page.route('**/api/v1/organizer/events/42/box_office/orders/99', route => json(route, receipt))
 
   await page.goto('/dashboard/events/42/box-office')
   await page.getByRole('button', { name: 'Add General Admission' }).click()

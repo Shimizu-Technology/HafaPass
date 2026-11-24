@@ -2,12 +2,15 @@ import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } fro
 import EventWorkspace from '../../components/EventWorkspace'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, CheckCircle2 } from 'lucide-react'
+import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus } from 'lucide-react'
 import apiClient from '../../api/client'
-import QRCode from '../../components/QRCode'
+import BoxOfficeReceipt from './BoxOfficeReceipt'
 import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
 import SupportLink from '../../components/SupportLink'
+
+// A refresh that fails for connectivity or server reasons says nothing about permissions.
+const permissionLost = error => error?.fatal === true || [401, 403, 404].includes(error?.response?.status)
 
 const readSavedSale = key => {
   try {
@@ -49,12 +52,14 @@ function BoxOfficePageSession({ id, identity }) {
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [countsStale, setCountsStale] = useState(false)
+  const eventLoaded = useRef(false)
+  const saleErrorRef = useRef(null)
   const [quantities, setQuantities] = useState({})
   const [buyerName, setBuyerName] = useState('')
   const [buyerEmail, setBuyerEmail] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('door_cash')
   const [submitting, setSubmitting] = useState(false)
-  const [lastOrder, setLastOrder] = useState(null)
   const [summary, setSummary] = useState(null)
   const eventLoadGeneration = useRef(0)
   const summaryLoadGeneration = useRef(0)
@@ -64,6 +69,13 @@ function BoxOfficePageSession({ id, identity }) {
   const [seatSelectorKey, setSeatSelectorKey] = useState(0)
   const legacyStorageKey = `hafapass:pending-box-office:${identity.owner}:${id}`
   const saleStorageKey = `hafapass:pending-box-office:v2:${identity.owner}:${identity.organizationId ?? 'default'}:${id}`
+  const receiptStorageKey = `hafapass:box-office-receipt:${identity.owner}:${identity.organizationId ?? 'default'}:${id}`
+  const [lastOrder, setLastOrder] = useState(() => {
+    try {
+      const orderId = Number(window.sessionStorage.getItem(receiptStorageKey))
+      return Number.isSafeInteger(orderId) && orderId > 0 ? { id: orderId } : null
+    } catch { return null }
+  })
   const authorizedEvent = useRef(false)
   const [accessRefreshing, setAccessRefreshing] = useState(false)
   const importedLegacyKey = useRef(null)
@@ -76,6 +88,7 @@ function BoxOfficePageSession({ id, identity }) {
     const generation = ++eventLoadGeneration.current
     const canApply = () => current() && generation === eventLoadGeneration.current
     if (!current()) return
+    const wasAuthorized = authorizedEvent.current
     setError(null)
     authorizedEvent.current = false
     setAccessRefreshing(true)
@@ -83,10 +96,12 @@ function BoxOfficePageSession({ id, identity }) {
       const res = await requestApi('get', `/organizer/events/${id}`)
       if (!canApply()) return
       if (String(res.data.id) !== String(id) || res.data.organization_id == null || (identity.organizationId != null && String(res.data.organization_id) !== String(identity.organizationId))) {
-        throw new Error('Event authorization does not match this page')
+        throw Object.assign(new Error('Event authorization does not match this page'), { fatal: true })
       }
-      if (res.data.permissions?.box_office !== true) throw new Error('Box office access is not available for your role')
+      if (res.data.permissions?.box_office !== true) throw Object.assign(new Error('Box office access is not available for your role'), { fatal: true })
       authorizedEvent.current = true
+      eventLoaded.current = true
+      setCountsStale(false)
       // Legacy operations have no organization namespace. Import only after
       // this bound event response proves their original event is accessible.
       try {
@@ -117,9 +132,16 @@ function BoxOfficePageSession({ id, identity }) {
         setBuyerEmail(payload.buyer_email || '')
         setPaymentMethod(payload.payment_method)
       }
-    } catch {
+    } catch (refreshError) {
       if (!canApply()) return
-      setError('Failed to load event.')
+      if (eventLoaded.current && !permissionLost(refreshError)) {
+        // Bad signal after a sale must not take the receipt away: keep the page and say the counts are old.
+        authorizedEvent.current = wasAuthorized
+        setCountsStale(true)
+      } else {
+        eventLoaded.current = false
+        setError('Failed to load event.')
+      }
     } finally {
       if (canApply()) { setLoading(false); setAccessRefreshing(false) }
     }
@@ -158,6 +180,17 @@ function BoxOfficePageSession({ id, identity }) {
     }))
   }
 
+  const updateReceipt = useCallback(receipt => {
+    setLastOrder(previous => previous && previous.id === receipt.id ? { ...previous, receipt } : previous)
+  }, [])
+
+  // A failed sale explains itself where the volunteer is looking, not above the fold.
+  useEffect(() => {
+    if (!saleError) return
+    saleErrorRef.current?.focus({ preventScroll: true })
+    saleErrorRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [saleError])
+
   const totalItems = Object.values(quantities).reduce((s, q) => s + q, 0)
   const totalCents = seatReservation
     ? seatReservation.seats.reduce((sum, seat) => sum + seat.price_cents, 0)
@@ -168,8 +201,10 @@ function BoxOfficePageSession({ id, identity }) {
     if (submitting || (!pendingSaleRef.current && totalItems === 0)) return
     const recoveringSavedSale = Boolean(pendingSaleRef.current)
     setSubmitting(true)
-    setLastOrder(null)
     setSaleError(null)
+    // Starting the next sale dismisses the previous buyer's receipt so it can never be mistaken for this one.
+    setLastOrder(null)
+    try { window.sessionStorage.removeItem(receiptStorageKey) } catch { /* the receipt is already dismissed on screen */ }
 
     const line_items = Object.entries(quantities)
       .filter(([, qty]) => qty > 0)
@@ -198,7 +233,14 @@ function BoxOfficePageSession({ id, identity }) {
       }
       const res = await requestApi('post', `/organizer/events/${id}/box_office`, sale.payload, { headers: { 'Idempotency-Key': sale.key } })
       if (!current()) return
-      setLastOrder(res.data)
+      if (res.data.status === 'completed') {
+        setLastOrder({ id: res.data.id, receipt: res.data.receipt, fresh: true })
+        try {
+          window.sessionStorage.setItem(receiptStorageKey, String(res.data.id))
+        } catch {
+          // The confirmed order is available in this tab even if storage is full.
+        }
+      }
       window.sessionStorage.removeItem(saleStorageKey)
       if (importedLegacyKey.current === pendingSaleRef.current?.key) window.sessionStorage.removeItem(legacyStorageKey)
       pendingSaleRef.current = null
@@ -249,6 +291,14 @@ function BoxOfficePageSession({ id, identity }) {
           <p className="text-sm text-neutral-500">{event.title}</p>
         </div>
       </div>
+
+      {countsStale && <div role="status" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        <span>Ticket counts may be out of date.</span>
+        <button type="button" onClick={fetchEvent} disabled={accessRefreshing} className="min-h-11 font-semibold underline disabled:opacity-50">Retry</button>
+      </div>}
+
+      {lastOrder && !pendingSale && <BoxOfficeReceipt key={lastOrder.id} eventId={id} order={lastOrder}
+        requestApi={requestApi} current={current} onReceiptChange={updateReceipt} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
@@ -375,7 +425,7 @@ function BoxOfficePageSession({ id, identity }) {
           </div>
 
           {saleError && (
-            <div className={`rounded-xl border p-4 text-sm ${saleError.reconciliationRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+            <div ref={saleErrorRef} tabIndex={-1} data-route-focus role="alert" className={`rounded-xl border p-4 text-sm ${saleError.reconciliationRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
               <p className="font-semibold">{saleError.reconciliationRequired ? paymentMethod === 'door_card' ? 'Do not charge the card again' : 'Do not record another cash sale' : 'Sale not completed'}</p>
               <p className="mt-1">{saleError.message}</p>
               {saleError.orderId && <p className="mt-1 font-mono text-xs">Order #{saleError.orderId}</p>}
@@ -397,7 +447,7 @@ function BoxOfficePageSession({ id, identity }) {
           </button>
         </div>
 
-        {/* Right: Summary + Last Order */}
+        {/* Right: Summary */}
         <div className="space-y-6">
           {/* Session Summary */}
           {summary && (
@@ -424,28 +474,6 @@ function BoxOfficePageSession({ id, identity }) {
                   <span className="text-sm font-medium text-neutral-900">Total revenue</span>
                   <span className="font-bold text-brand-600">${((summary.total_revenue_cents || 0) / 100).toFixed(2)}</span>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Last Order */}
-          {lastOrder && (
-            <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-semibold text-emerald-800">Sale complete!</h3>
-              </div>
-              <p className="text-sm text-emerald-700 mb-2">{lastOrder.buyer_name} · ${(lastOrder.total_cents / 100).toFixed(2)}</p>
-              <div className="space-y-3">
-                {lastOrder.tickets?.map(ticket => (
-                  <div key={ticket.id} className="bg-white p-3 rounded-lg border border-emerald-100">
-                    <p className="text-xs text-neutral-500 mb-1">{ticket.ticket_type.name}</p>
-                    <div className="flex justify-center">
-                      <QRCode value={ticket.scan_credential} size={120} />
-                    </div>
-                    <p className="text-xs text-center text-neutral-600 mt-1 font-mono">HP-T{ticket.id}</p>
-                  </div>
-                ))}
               </div>
             </div>
           )}
