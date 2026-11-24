@@ -14,7 +14,7 @@ test('flag-off checkout creates a mocked pending order and reaches the payment s
   await page.route('https://js.stripe.com/**', route => route.abort())
   await page.goto('/events/community-night')
   await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
-  await page.getByRole('button', { name: /Buy tickets/ }).click()
+  await page.getByRole('button', { name: /Checkout/ }).click()
   await page.getByLabel('Full name').fill('Synthetic Buyer')
   await page.getByLabel('Email address', { exact: true }).fill('buyer@example.invalid')
   await page.locator('#termsAccepted').check()

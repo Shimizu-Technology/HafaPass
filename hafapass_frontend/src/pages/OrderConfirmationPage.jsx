@@ -538,7 +538,7 @@ function OrderConfirmationContent() {
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-950">{t('buyerAccount.orderConfirmationPage.tickets', { count: order.tickets.length })}</h2>
               {['completed', 'partially_refunded'].includes(order.status) && (
-                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.resend')}</button>
+                <button onClick={resend} disabled={resendState === 'sending' || resendState === 'uncertain' || deliveryUnconfirmed} className="inline-flex min-h-11 items-center -my-3 px-2 gap-1.5 text-sm font-semibold text-brand-700"><Mail className="h-4 w-4" />{t('buyerAccount.orderConfirmationPage.resend')}</button>
               )}
             </div>
             {usableTickets && <p className="mb-3 text-sm text-neutral-600">{t('buyerAccount.orderConfirmationPage.saveTicketsForTheDoor')}</p>}
@@ -610,7 +610,7 @@ function OrderConfirmationContent() {
                       <Ticket aria-hidden="true" className="h-4 w-4" />{canOpenTicket ? t('buyerAccount.orderConfirmationPage.openTicket2') : t('buyerAccount.orderConfirmationPage.viewTicketStatus')}
                     </Link>}
                     {hasSecondaryActions && (
-                      <div className="flex flex-wrap items-center justify-between gap-1 border-t border-neutral-200/80 pt-1">
+                      <div className="grid grid-cols-2 items-center gap-1 border-t border-neutral-200/80 pt-1">
                         {canRotate && (
                           <button type="button" onClick={() => rotateTicket(ticket)} disabled={rotatingTicketId === ticket.id} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100">
                             <RefreshCw aria-hidden="true" className="h-4 w-4 shrink-0" />
@@ -630,10 +630,11 @@ function OrderConfirmationContent() {
                           </button>
                         )}
                         {canCancel && (
-                          <button type="button" onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                          <details className="col-span-2"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-neutral-700">{t('eventActions.moreActions')}</summary>
+                          <button type="button" onClick={() => cancelTicket(ticket)} disabled={cancellingTicketId === ticket.id || ticketRefundAttempt?.status === 'succeeded'} className="tactile-press inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100">
                             <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
                             <span>{cancellingTicketId === ticket.id ? t('buyerAccount.orderConfirmationPage.checking') : ticketRefundAttempt || ticket.refundable_cents > 0 ? refundButton(ticketRefundAttempt) : t('buyerAccount.orderConfirmationPage.cancel')}</span>
-                          </button>
+                          </button></details>
                         )}
                       </div>
                     )}

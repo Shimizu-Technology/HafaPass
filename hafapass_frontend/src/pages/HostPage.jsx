@@ -384,10 +384,10 @@ function faqItems(pricing, payout, t) {
     { q: t('buyerDiscovery.host.howMuchDoesHåfaPassCost'), a: feeAnswer },
     { q: t('buyerDiscovery.host.whoPaysTheFeeMeOrMy'), a: t('buyerDiscovery.host.youDecideForEachEventBuyersCan') },
     { q: t('buyerDiscovery.host.canIHostAFreeEvent'), a: t('buyerDiscovery.host.yesFreeTicketsHaveNoHåfaPassFee') },
-    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{payout.summary}{' '}{payout.detail && `${payout.detail} `}{t('buyerDiscovery.host.payoutSettlementStatement')}{' '}<Link to="/policies/organizer-agreement" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></> },
-    { q: t('buyerDiscovery.host.howDoRefundsWork'), a: <>{t('buyerDiscovery.host.cancellationPromise')}{' '}{t('buyerDiscovery.host.youSetTheRefundRulesForYour')}<Link to="/policies/refunds" className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.refundCancellationPolicy')}</Link>.</> },
+    { q: t('buyerDiscovery.host.whenDoIGetPaid'), a: <>{payout.summary}{' '}{payout.detail && `${payout.detail} `}{t('buyerDiscovery.host.payoutSettlementStatement')}{' '}<Link to="/policies/organizer-agreement" className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.payoutAgreementLink')}</Link></> },
+    { q: t('buyerDiscovery.host.howDoRefundsWork'), a: <>{t('buyerDiscovery.host.cancellationPromise')}{' '}{t('buyerDiscovery.host.youSetTheRefundRulesForYour')}<Link to="/policies/refunds" className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.refundCancellationPolicy')}</Link>.</> },
     { q: t('buyerDiscovery.host.doesMyDoorStaffNeedAnApp'), a: t('buyerDiscovery.host.noStaffOpenTheScannerInTheir') },
-    { q: t('buyerDiscovery.host.howDoIGetHelp'), a: <>{t('buyerDiscovery.host.emailTheHåfaPassTeamAtAnyPoint')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.contactSupport')}</SupportLink>.</> },
+    { q: t('buyerDiscovery.host.howDoIGetHelp'), a: <>{t('buyerDiscovery.host.emailTheHåfaPassTeamAtAnyPoint')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.contactSupport')}</SupportLink>.</> },
   ]
 }
 
@@ -476,7 +476,7 @@ function HostContent({ targets }) {
               </details>
             ))}
           </div>
-          {support.email && <p className="mt-6 flex items-center gap-2 text-sm text-content-muted"><Mail aria-hidden="true" className="h-4 w-4" />{t('buyerDiscovery.host.somethingElse')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.askUs')}</SupportLink></p>}
+          {support.email && <p className="mt-6 flex items-center gap-2 text-sm text-content-muted"><Mail aria-hidden="true" className="h-4 w-4" />{t('buyerDiscovery.host.somethingElse')}<SupportLink subject={t('buyerDiscovery.host.hostingOnHåfaPass')} className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-4">{t('buyerDiscovery.host.askUs')}</SupportLink></p>}
         </div>
       </section>
 

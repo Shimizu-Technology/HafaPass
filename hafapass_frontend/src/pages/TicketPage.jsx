@@ -288,6 +288,10 @@ function TicketContent({ authContext, siblings: orderTickets = [], shown, framed
   async function handleDownload() {
     const current = currentOperation()
     if (!current()) return
+    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') {
+      setDownloadError('PDF download is off in this demo preview. The sample ticket stays available here; real purchases include a downloadable PDF.')
+      return
+    }
     let downloadUrl
     let downloadLink
     try {

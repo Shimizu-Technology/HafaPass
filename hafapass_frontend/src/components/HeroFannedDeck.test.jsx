@@ -167,7 +167,7 @@ describe('HeroFannedDeck', () => {
     ])
   })
 
-  it('auto-advances every 6s when motion is allowed, pauses on mouse hover and keyboard focus, and resumes after pointer tap', () => {
+  it('auto-advances every 6s when motion is allowed, pauses on mouse hover and keyboard focus, and resumes after pointer tap', async () => {
     vi.useFakeTimers()
     reduceMotion(false)
     const { unmount } = mount(sampleEvents)
@@ -208,14 +208,24 @@ describe('HeroFannedDeck', () => {
     act(() => { vi.advanceTimersByTime(6000) })
     expect(deck).toHaveAttribute('data-paused', 'false')
 
-    // Keyboard focus keeps auto-advance paused until focus leaves the deck.
-    fireEvent.keyDown(window, { key: 'Tab' })
-    fireEvent.focus(nextBtn)
+    // Move out, then Tab back into the deck using a real focus transition.
+    const outside = document.createElement('button')
+    outside.textContent = 'Outside deck'
+    document.body.insertBefore(outside, document.body.firstChild)
+    act(() => outside.focus())
+    expect(outside).toHaveFocus()
+    vi.useRealTimers()
+    const keyboard = userEvent.setup()
+    await act(async () => { await keyboard.tab() })
+    const frontLink = screen.getByTestId('hero-fanned-deck').querySelector('[data-front="true"] a')
+    expect(frontLink).toHaveFocus()
+    vi.useFakeTimers()
     expect(deck).toHaveAttribute('data-paused', 'true')
     act(() => { vi.advanceTimersByTime(12000) })
     expect(deck).toHaveAttribute('data-paused', 'true')
-    fireEvent.blur(nextBtn, { relatedTarget: document.body })
+    act(() => outside.focus())
     expect(deck).toHaveAttribute('data-paused', 'false')
+    outside.remove()
     unmount()
 
     // Reduced motion disables auto-advance completely.

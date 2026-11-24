@@ -35,9 +35,12 @@ function manualChunks(id) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Domains are deploy configuration: VITE_PUBLIC_WEB_URL and VITE_API_URL.
   const env = loadEnv(mode, process.cwd(), 'VITE_')
+  if (env.VITE_HAFAPASS_DEMO_DATA === '1' && (process.env.CONTEXT === 'production' || (command === 'build' && process.env.CONTEXT !== 'deploy-preview'))) {
+    throw new Error('Demo data can only be built in the deploy-preview context; production is forbidden')
+  }
   const precache = offlinePrecache()
   return {
     // Demo builds replace the provider at the module boundary so Stripe's eager

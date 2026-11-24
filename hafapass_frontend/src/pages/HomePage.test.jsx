@@ -40,7 +40,7 @@ describe('the public ticket', () => {
     await screen.findByRole('heading', { name: 'The first events are on their way.' })
     await userEvent.setup().click(screen.getByText('Add to Home Screen', { selector: 'summary' }))
     expect(screen.getByText(/On iPhone or iPad, open HåfaPass in Safari/)).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveAttribute('href', '/orders/recover')
+    expect(screen.getAllByRole('link', { name: 'Find my tickets' })[0]).toHaveAttribute('href', '/orders/recover')
     const steps = screen.getByRole('region', { name: 'How your pass works' })
     expect(within(steps).getAllByRole('listitem').map(item => item.textContent)).toEqual([
       'Find an eventEverything on Guam, in Guam time.',
@@ -68,7 +68,7 @@ describe('the public ticket', () => {
     apiClient.get.mockResolvedValue({ data: { events: [event] } })
     mount()
     await screen.findByRole('list', { name: 'Coming up on Guam' })
-    expect(screen.getAllByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: 'Find my tickets' }).filter(link => link.closest('footer') === null)).toHaveLength(1)
     expect(screen.queryByRole('region', { name: 'How your pass works' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Planning an event?' })).toBeInTheDocument()
   })

@@ -16,10 +16,10 @@ export default function DemoPreviewBanner() {
         </span>
         <span aria-hidden="true" className="hidden text-amber-700/60 sm:inline">|</span>
         <span className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-amber-900">
-          <Link to="/orders/demo-copa-2027/confirmation" className="underline underline-offset-2 hover:text-amber-950">
+          <Link to="/orders/demo-copa-2027/confirmation" className="inline-flex min-h-11 items-center underline underline-offset-2 hover:text-amber-950">
             Sample confirmation
           </Link>
-          <Link to="/tickets/demo-ticket-copa-adult-1?order=demo-copa-2027" className="underline underline-offset-2 hover:text-amber-950">
+          <Link to="/tickets/demo-ticket-copa-adult-1?order=demo-copa-2027" className="inline-flex min-h-11 items-center underline underline-offset-2 hover:text-amber-950">
             Sample ticket
           </Link>
         </span>

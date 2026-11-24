@@ -236,6 +236,7 @@ export default function EventsPage() {
               <h2 className="text-xl font-bold text-neutral-900 mb-2">
                 {search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village ? t('buyer.Events.noMatchingEvents') : t('buyer.Events.noEventsYet')}
               </h2>
+              {(search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village) && <button type="button" className="btn-secondary mt-4 mb-4" onClick={clearFilters}>{t('buyer.Events.clearFilters')}</button>}
               <p className="text-neutral-600 max-w-md mx-auto mb-8">
                 {!search && activeCategory === 'all' && dateRange === 'upcoming' && price === 'all' && !village
                   ? t('buyer.Events.thereAreNoUpcomingEventsListedRightNow')

@@ -22,7 +22,7 @@ try {
  await cards.first().click()
  await page.getByRole('heading',{name:'Guam community night',exact:true}).waitFor()
  await page.getByRole('button',{name:'Increase quantity for General admission',exact:true}).click()
- await page.getByRole('button',{name:/Buy tickets/}).click()
+ await page.getByRole('button',{name:/Checkout/}).click()
  await page.waitForURL('**/checkout/guam-community-night')
  await page.getByLabel('Full name').waitFor()
  await page.reload();await page.getByLabel('Full name').waitFor()

@@ -50,7 +50,7 @@ export default function OrderRecoveryPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="reference" className="mb-1.5 block text-sm font-medium text-neutral-700">{t('buyerAccount.orderRecoveryPage.orderReference')}</label>
-                <input id="reference" className="input uppercase" value={reference} onChange={event => setReference(event.target.value)} placeholder={t('buyerAccount.orderRecoveryPage.hPAB12CD34')} required />
+                <input id="reference" className="input uppercase placeholder:normal-case" value={reference} onChange={event => setReference(event.target.value)} placeholder={t('buyerAccount.orderRecoveryPage.hPAB12CD34')} required />
               </div>
               <div>
                 <label htmlFor="recovery-email" className="mb-1.5 block text-sm font-medium text-neutral-700">{t('buyerAccount.orderRecoveryPage.emailAddress')}</label>

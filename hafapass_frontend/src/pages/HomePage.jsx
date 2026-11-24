@@ -218,7 +218,7 @@ export default function HomePage() {
               <section aria-label={t('buyer.Home.eventOrVenue')}>
                 {!lgUp && searchForm}
 
-                <ChipRow role="group" ariaLabel={t('pass.home.quickFilters')} className={lgUp ? '' : 'mt-4'}>
+                <ChipRow role="group" ariaLabel={t('pass.home.quickFilters')} activeKey={activeFilterId} className={lgUp ? '' : 'mt-4'}>
                   {quickFilters.map(item => {
                     const active = item.id === activeFilter.id
                     return (
@@ -332,8 +332,7 @@ export default function HomePage() {
           )}
 
           {/* 6. "Planning an event?" host CTA. */}
-          {(
-            <section className={discovery ? 'mt-4 sm:mt-12' : 'mt-9 sm:mt-12'}>
+          <section className={discovery ? 'mt-4 sm:mt-12' : 'mt-9 sm:mt-12'}>
               <Ticket
                 className="planning-ticket"
                 topClassName="!bg-brand-950 text-white"
@@ -352,8 +351,7 @@ export default function HomePage() {
                   <p className="mt-2 max-w-lg leading-relaxed text-brand-100">{t('buyer.Home.sellTicketsRunTheDoorFromAnyPhone')}</p>
                 </div>
               </Ticket>
-            </section>
-          )}
+          </section>
         </div>
       </div>
 

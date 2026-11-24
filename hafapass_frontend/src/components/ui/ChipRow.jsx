@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Children, useEffect, useRef } from 'react'
 import usePrefersReducedMotion from '../../hooks/usePrefersReducedMotion'
 
 function useEdgeFade(ref, deps = []) {
@@ -55,7 +55,7 @@ export default function ChipRow({
   const reducedMotion = usePrefersReducedMotion()
   const Tag = as
 
-  useEdgeFade(rowRef, [activeKey, children])
+  useEdgeFade(rowRef, [activeKey, Children.count(children)])
 
   useEffect(() => {
     const row = rowRef.current

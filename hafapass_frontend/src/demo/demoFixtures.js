@@ -104,7 +104,7 @@ export const DEMO_VENUES = {
     id: 604,
     slug: 'pelican-row-plaza-demo',
     name: 'Pelican Row Plaza',
-    address: '88 Pelican Row, Hagatna, GU 96910',
+    address: '88 Pelican Row, Hagåtña, GU 96910',
     village: 'Hagåtña',
     verified: true,
     description: 'Central plaza for weekend craft booths, local food tents, and live acoustic sets.',

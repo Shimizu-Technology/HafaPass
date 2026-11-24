@@ -21,17 +21,17 @@ function getColor(name) {
   return AVATAR_COLORS[hashName(name) % AVATAR_COLORS.length]
 }
 
-export default function WhosGoing({ attendeeCount, attendeesPreview, showAttendees }) {
+export default function WhosGoing({ attendeeCount, attendeesPreview, showAttendees, compact = false }) {
   const { t } = useTranslation()
   if (!showAttendees || !attendeeCount || attendeeCount === 0) return null
 
-  const maxShow = 8
+  const maxShow = compact ? 4 : 8
   const shown = (attendeesPreview || []).slice(0, maxShow)
   const remaining = attendeeCount - shown.length
 
   return (
-    <div className="mb-8">
-      <h2 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4">{t('buyer.WhosGoing.whosGoing')}</h2>
+    <div className={compact ? "mt-3" : "mb-8"}>
+      {!compact && <h2 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4">{t('buyer.WhosGoing.whosGoing')}</h2>}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex max-w-full -space-x-2">
           {shown.map((name, i) => (
@@ -43,7 +43,7 @@ export default function WhosGoing({ attendeeCount, attendeesPreview, showAttende
               {getInitial(name)}
             </div>
           ))}
-          {remaining > 0 && (
+          {remaining > 0 && !compact && (
             <div
               className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-neutral-200 text-neutral-600 text-xs font-bold border-2 border-white"
             >

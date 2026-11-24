@@ -1,13 +1,17 @@
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import SEO from '../components/SEO'
 import useAuthReturnPath from '../hooks/useAuthReturnPath'
 import { SignUp } from '@clerk/clerk-react'
 import { clerkPublishableKey } from '../utils/demoMode'
 
+const DemoAccountNotice = import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' ? lazy(() => import('../demo/DemoAccountNotice')) : null
+
 const clerkPubKey = clerkPublishableKey()
 
 export default function SignUpPage() {
   const { t } = useTranslation()
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return <Suspense><DemoAccountNotice /></Suspense>
   return <>
     <SEO title={t('buyerDiscovery.signUp.documentTitle')} noIndex />
     {!clerkPubKey ? (

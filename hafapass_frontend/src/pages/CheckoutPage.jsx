@@ -739,11 +739,11 @@ function CheckoutContent({ buyerId }) {
             }
             {t('checkout.yourInfo')}
           </div>
-          <div className="w-8 h-px bg-neutral-200" />
+          {displayedTotal > 0 && <><div className="w-8 h-px bg-neutral-200" />
           <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-800' : 'text-neutral-600'}`}>
             <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-800 text-white' : 'bg-neutral-200 text-neutral-700'}`}>2</span>
             {t('checkout.payment')}
-          </div>
+          </div></>}
         </div>
 
         {/* Event summary card */}
@@ -828,14 +828,14 @@ function CheckoutContent({ buyerId }) {
           <hr className="border-neutral-100 my-4" />
           <div className="space-y-3 rounded-xl bg-surface p-4 text-sm">
             <div className="flex justify-between"><span className="text-neutral-700">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
-            <div className="flex justify-between gap-4">
+            {displayedTotal > 0 && <div className="flex justify-between gap-4">
               <span className="text-neutral-700">
                 {t('checkout.serviceFee')}
                 {feeIncludesProcessing && <span className="block text-sm text-neutral-600">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
               {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
               <span>{formatMoneyCents(displayedFee)}</span>
-            </div>
+            </div>}
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-success-700">
                 <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || t('buyer.Checkout.discount')}</span>
@@ -931,7 +931,7 @@ function CheckoutContent({ buyerId }) {
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     {t('checkout.phone')} <span className="text-neutral-600 font-normal">({t('checkout.optional')})</span>
                   </label>
-                  <input id="buyerPhone" type="tel" value={buyerPhone}
+                  <input id="buyerPhone" type="tel" autoComplete="tel" inputMode="tel" value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
                 </div>
@@ -1015,7 +1015,7 @@ function CheckoutContent({ buyerId }) {
                   <span>{t('buyer.Checkout.marketingOptIn', { organizer: event.organizer?.business_name?.trim() || event.seller?.seller_name?.trim() || 'the organizer' })}</span>
                 </label>
                 <div>
-                  <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
+                  <label className="flex min-h-11 items-start gap-3 rounded-xl border border-neutral-200 p-3 text-sm text-neutral-600" htmlFor="termsAccepted">
                     <input
                       id="termsAccepted"
                       aria-invalid={Boolean(formErrors.terms)}

@@ -5,7 +5,6 @@ import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'reac
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Share2, CalendarPlus, Check, Heart, Bell, UserPlus, Navigation, ChevronRight, AlertTriangle, BadgeCheck } from 'lucide-react'
 import apiClient from '../api/client'
 import usePricingScheduleRefresh from '../hooks/usePricingScheduleRefresh'
-import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import { isTimeoutError, slowConnectionMessage } from '../api/errors'
 import WhosGoing from '../components/WhosGoing'
 import TicketTypesSection from '../components/TicketTypesSection'
@@ -28,29 +27,19 @@ import { PUBLIC_WEB_URL } from '../utils/site'
 import { eventBrowseReturn } from '../utils/browseReturn'
 import { formatTicketPrice, priceSummary, purchasableAllInPrices } from '../utils/ticketPricing'
 import { AllInPriceNote, SellerLine } from '../components/PriceDisclosure'
+import { getPrimaryAction, selectionAction } from '../utils/eventPrimaryAction'
+import { getServerNow } from '../utils/serverClock'
 import { captureQueryAttribution, trackFunnel } from '../utils/marketplaceAttribution'
 
 // React 18 does not know `inert` and only renders it from a string (''), while React 19
 // treats it as a boolean and drops ''. Emit the value each version needs.
 const INERT_VALUE = Number(reactVersion.split('.')[0]) >= 19 ? true : ''
 
-// Moves to the ticket panel in place. Following the #tickets hash instead would
-// remount this page (it is keyed by the hash) and refetch the event.
-function showTicketPanel(event, behavior) {
-  const panel = document.getElementById('tickets')
-  if (!panel) return
-  event.preventDefault()
-  panel.scrollIntoView({ behavior, block: 'start' })
-  panel.focus({ preventScroll: true })
-}
-
 // Phones see the ticket panel once near the top; this bar keeps the purchase one tap
 // away while the hero button and the panel are out of view. It also stays hidden once
 // the visitor reaches (or scrolls past) the end of the event content, so it never
 // covers the footer.
-function MobileBuyBar({ priceLabel, targets, endMarker }) {
-  const { t } = useTranslation()
-  const reducedMotion = usePrefersReducedMotion()
+function MobileBuyBar({ priceLabel, targets, endMarker, label, onAction, actionTarget }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -67,7 +56,6 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
     return () => observer.disconnect()
   }, [targets, endMarker])
 
-  const openTickets = event => showTicketPanel(event, reducedMotion ? 'auto' : 'smooth')
 
   return (
     <div
@@ -79,7 +67,7 @@ function MobileBuyBar({ priceLabel, targets, endMarker }) {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
         <p className="min-w-0 truncate text-base font-semibold text-neutral-900">{priceLabel}</p>
-        <a href="#tickets" onClick={openTickets} className="btn-primary shrink-0 !px-5 !py-2.5">{t('buyer.EventDetail.getTickets')}<ChevronRight aria-hidden="true" className="ml-1 h-4 w-4" />
+        <a href={`#${actionTarget || 'tickets'}`} onClick={onAction} className="btn-primary event-buy shrink-0 !px-5 !py-2.5">{label}<ChevronRight aria-hidden="true" className="ml-1 h-4 w-4" />
         </a>
       </div>
     </div>
@@ -131,6 +119,11 @@ function EventDetailContent() {
   const [error, setError] = useState(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [shareFallback, setShareFallback] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
+  const [selection, setSelection] = useState({ lineItems: [], count: 0, totalCents: 0 })
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false)
+  const resumedAction = useRef(false)
   const [waitlistOffer, setWaitlistOffer] = useState(null)
   useEffect(() => {
     if (!legacyPreviewToken) return
@@ -144,6 +137,27 @@ function EventDetailContent() {
   const [buyBarTargets] = useState(() => [heroTicketsLink, ticketPanel])
   const waitlistOfferToken = searchParams.get('waitlist_offer')
   const content = useTranslatedContent(event)
+  useLayoutEffect(() => {
+    const panel = ticketPanel.current
+    const inner = panel?.firstElementChild
+    if (!inner) return undefined
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      // Fit on first paint as well as after the panel sticks below the header.
+      inner.style.setProperty('--ticket-panel-space', `${Math.max(112, panel.getBoundingClientRect().top + 16)}px`)
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
+    measure()
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule)
+    }
+  }, [event, loading])
+
   const contentLanguage = useContentLanguage()
   const loadedLanguage = useRef(contentLanguage)
 
@@ -242,25 +256,50 @@ function EventDetailContent() {
     })
   }
 
-  const marketplaceAction = async (kind) => {
+  const marketplaceAction = async (kind, ensureOn = false) => {
+    if (!event || event.private_preview) return
+    const enabled = kind === 'favorite' ? event.favorited : kind === 'follow' ? event.organizer?.followed : event.reminder
+    if (ensureOn && enabled) return
+    const update = () => setEvent(current => kind === 'follow'
+      ? { ...current, organizer: { ...current.organizer, followed: !enabled } }
+      : { ...current, [kind === 'favorite' ? 'favorited' : 'reminder']: !enabled })
+    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') {
+      update()
+      setActionNotice('Saved for this demo visit. Sign-in and email notifications are off in this preview.')
+      return
+    }
     try {
-      if (kind === 'favorite') {
-        if (event.favorited) await apiClient.delete(`/me/event_favorites/${event.id}`)
-        else await apiClient.post('/me/event_favorites', { event_id: event.id })
-        setEvent(current => ({ ...current, favorited: !current.favorited }))
-      } else if (kind === 'follow') {
-        if (event.organizer.followed) await apiClient.delete(`/me/organizer_follows/${event.organizer.id}`)
-        else await apiClient.post('/me/organizer_follows', { organization_id: event.organizer.id })
-        setEvent(current => ({ ...current, organizer: { ...current.organizer, followed: !current.organizer.followed } }))
-      } else if (kind === 'reminder') {
-        if (event.reminder) await apiClient.delete(`/me/event_reminders/${event.id}`)
-        else await apiClient.post('/me/event_reminders', { event_id: event.id })
-        setEvent(current => ({ ...current, reminder: current.reminder ? null : true }))
-      }
+      const collection = kind === 'favorite' ? 'event_favorites' : kind === 'follow' ? 'organizer_follows' : 'event_reminders'
+      const id = kind === 'follow' ? event.organizer.id : event.id
+      if (enabled) await apiClient.delete(`/me/${collection}/${id}`)
+      else await apiClient.post(`/me/${collection}`, kind === 'follow' ? { organization_id: id } : { event_id: id })
+      if (mounted.current) update()
+      setActionNotice(t('eventActions.actionSaved'))
     } catch (error) {
-      if (error.response?.status === 401) navigate('/sign-in')
+      if (error.response?.status === 401) {
+        const params = new URLSearchParams(location.search)
+        params.set('marketplace_action', kind)
+        const returnTo = `${location.pathname}?${params}${location.hash}`
+        navigate(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`)
+      } else setActionNotice(t('eventActions.actionFailed'))
     }
   }
+
+  const marketplaceActionRef = useRef(marketplaceAction)
+  marketplaceActionRef.current = marketplaceAction
+
+  // The return URL carries an idempotent intent, consumed once after the event
+  // loads. Only this event's action is resumed; ordinary visits never mutate it.
+  useEffect(() => {
+    const kind = searchParams.get('marketplace_action')
+    if (!event || loading || resumedAction.current || !['favorite', 'follow', 'reminder'].includes(kind)) return
+    resumedAction.current = true
+    const params = new URLSearchParams(location.search)
+    params.delete('marketplace_action')
+    navigate(`${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`, { replace: true, state: location.state })
+    void marketplaceActionRef.current(kind, true)
+    // The intent is consumed once, after this route's event is ready.
+  }, [event, loading, searchParams, location, navigate])
 
   const ageLabels = { all_ages: t('buyer.EventDetail.allAges'), eighteen_plus: '18+', twenty_one_plus: '21+' }
 
@@ -295,9 +334,11 @@ function EventDetailContent() {
         // Share cancellation is user-driven; no visible error needed.
       }
     } else {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      try {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch { setShareFallback(url) }
     }
   }
 
@@ -317,6 +358,7 @@ function EventDetailContent() {
   )
   if (!event) return null
 
+  const organizerName = event.organizer?.business_name || event.organizer?.name || ''
   const truncatedDescription = (event.short_description || event.description || '').slice(0, 160)
   const eventUrl = `${PUBLIC_WEB_URL}/events/${event.slug}`
   const summary = priceSummary(event.ticket_types || [])
@@ -325,8 +367,22 @@ function EventDetailContent() {
   // A direct link still opens after a postponement or cancellation so ticket
   // holders can read the status; sales are closed and the page offers no buying.
   const closedStatus = ['postponed', 'cancelled'].includes(event.status) ? event.status : null
-  const onSale = !closedStatus && !event.private_preview && event.purchasable === true && (event.assigned_seating || summary !== null)
-  const buyBarPrice = summary?.kind === 'free' ? t('buyer.EventDetail.free') : summary ? t('buyer.EventDetail.from', { value1: formatTicketPrice(summary.cents) }) : t('buyer.EventDetail.ticketsAvailable')
+  const primaryAction = getPrimaryAction(event, summary, getServerNow())
+  const onSale = ['paid', 'free'].includes(primaryAction.kind)
+  const selectedAction = selectionAction({ ...selection, formattedTotal: formatTicketPrice(selection.totalCents) })
+  const openPrimaryAction = click => {
+    click.preventDefault()
+    if (primaryAction.kind === 'notify') return void marketplaceAction('reminder')
+    const panel = document.getElementById(primaryAction.target || 'tickets')
+    panel?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    if (primaryAction.kind === 'waitlist') panel?.querySelector('input')?.focus({ preventScroll: true })
+    else panel?.focus({ preventScroll: true })
+  }
+  const barAction = click => {
+    if (onSale && selection.count && !event.assigned_seating) { click.preventDefault(); handleCheckout(selection.lineItems) }
+    else openPrimaryAction(click)
+  }
+  const buyBarPrice = primaryAction.kind === 'waitlist' ? t('events.soldOut') : primaryAction.kind === 'notify' ? t('eventActions.salesOpen', { date: formatEventDate(primaryAction.opensAt, event.timezone, { month: 'short', year: undefined }) }) : summary?.kind === 'free' ? t('buyer.EventDetail.free') : summary ? t('buyer.EventDetail.from', { value1: formatTicketPrice(summary.cents) }) : t('buyer.EventDetail.ticketsAvailable')
 
   // Build JSON-LD structured data for the event
   const ticketTypes = event.ticket_types || []
@@ -392,15 +448,25 @@ function EventDetailContent() {
       </div>}
       {/* One grid keeps purchasing beside the title on desktop and after the artwork on phones. */}
       <div className="bg-white">
-        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 ${onSale ? 'pb-4 lg:pb-8' : 'pb-8'}`}>
-          <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
-            <section className="min-w-0 -mx-4 border-b border-neutral-200 bg-surface px-4 pb-8 sm:-mx-6 sm:px-6 sm:pb-10 lg:col-span-2 lg:mx-0 lg:rounded-2xl lg:border lg:p-6">
-              {/* Back link */}
-              <Link to={browseFrom} className="mb-6 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 ${onSale ? 'pb-4 lg:pb-8' : 'pb-8'}`}>
+                        {/* Back link */}
+              <Link to={browseFrom} className="mb-3 flex min-h-11 w-fit items-center gap-1.5 text-sm font-medium text-brand-800 transition-colors hover:text-brand-900">
                 <ArrowLeft aria-hidden="true" className="w-4 h-4" />{t('buyer.EventDetail.allEvents')}</Link>
 
+
+          <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
+            <section className="min-w-0 lg:col-span-2">
+              {coverImage && (
+                <div className="event-art relative mb-5">
+                  <div className="relative aspect-video overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
+                    <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
+                      className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
+                  </div>
+                </div>
+              )}
+
               {event.category && event.category !== 'other' && (
-                <span className="block text-sm font-semibold text-brand-800 mb-2">
+                <span className="block text-sm font-semibold text-brand-800 mb-1">
                   {t(`buyer.categories.${event.category}`, { defaultValue: event.category_label || event.category })}
                 </span>
               )}
@@ -414,43 +480,34 @@ function EventDetailContent() {
                   <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventDate(event.starts_at, event.timezone, { weekday: 'long', month: 'long' })}</dd>
                   <dd className="text-base text-neutral-700 [overflow-wrap:anywhere]">{formatEventTimeRange(event.starts_at, event.ends_at, event.timezone)}</dd>
                 </div>}
-                {event.venue_name && <div className="bg-white px-4 py-3">
-                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><MapPin aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.venue')}</dt>
-                  <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.venue_name}</dd>
-                  {event.venue_city && <dd className="text-base text-neutral-700">{event.venue_city}</dd>}
-                </div>}
                 {event.doors_open_at && <div className="bg-white px-4 py-3">
                   <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Clock aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.doorsOpen')}</dt>
                   <dd className="mt-1 text-base font-semibold text-neutral-950">{formatEventTime(event.doors_open_at, event.timezone)}</dd>
                 </div>}
-                {event.organizer?.business_name && <div className="bg-white px-4 py-3">
-                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><Users aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.hostedBy')}</dt>
-                  <dd className="mt-1 text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.organizer.business_name}</dd>
+                {(event.venue_name || event.venue_address) && <div className="bg-white px-4 py-3 sm:col-span-2">
+                  <dt className="flex items-center gap-2 text-sm font-semibold text-neutral-600"><MapPin aria-hidden="true" className="h-4 w-4 text-brand-800" />{t('buyer.EventDetail.venue')}</dt>
+                  <dd className="text-base font-semibold text-neutral-950 [overflow-wrap:anywhere]">{event.venue?.slug
+                    ? <Link to={`/venues/${event.venue.slug}`} className="inline-flex min-h-11 items-center text-brand-800 hover:underline">{event.venue_name}</Link>
+                    : event.venue_name}</dd>
+                  <dd className="text-base text-neutral-700 [overflow-wrap:anywhere]">{event.venue_address || event.venue_city}</dd>
+                  <dd><a href={buildMapsUrl(event)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-brand-800"><Navigation aria-hidden="true" className="h-4 w-4" />{t('buyer.EventDetail.directions')}<span className="sr-only">{t('buyer.EventDetail.opensGoogleMapsInANewTab')}</span></a></dd>
                 </div>}
               </dl>
-              {!event.private_preview && !closedStatus && <a ref={heroTicketsLink} href="#tickets" onClick={click => showTicketPanel(click, 'auto')} className="btn-primary mt-5 min-h-12 lg:hidden">{t('buyer.EventDetail.chooseTickets')}</a>}
-
-              {coverImage && (
-                <div className="event-art relative mt-6">
-                  {/* The artwork's own colors, softly blurred behind its frame. */}
-                  <div aria-hidden="true" className="event-art-glow" style={{ backgroundImage: `url("${coverImage}")` }} />
-                  <div className="relative aspect-video overflow-hidden rounded-2xl bg-neutral-100 shadow-card ring-1 ring-black/5">
-                    <img src={coverImage} alt={event.title} width="1600" height="900" fetchpriority="high"
-                      className="h-full w-full object-cover" style={{ objectPosition: focalPosition(design) }} />
-                  </div>
-                </div>
-              )}
+              {primaryAction.actionable && <a ref={heroTicketsLink} href={`#${primaryAction.target || 'tickets'}`} onClick={openPrimaryAction} className="btn-primary event-buy mt-5 min-h-12 w-full sm:w-auto lg:hidden">{t(primaryAction.labelKey)}</a>}
+              {primaryAction.kind === 'notify' && <p className="mt-2 text-sm text-neutral-600">{t('eventActions.onSale', { date: formatEventDate(primaryAction.opensAt, event.timezone, { weekday: 'short', month: 'short', year: undefined }), time: formatEventTime(primaryAction.opensAt, event.timezone) })}</p>}
+              {primaryAction.kind === 'past' && <div className="mt-5"><button disabled className="min-h-12 w-full rounded-xl bg-neutral-200 px-6 font-semibold text-neutral-600 sm:w-auto">{t(primaryAction.labelKey)}</button><Link to="/orders/recover" className="mt-2 flex min-h-11 items-center font-semibold text-brand-800 underline">{t('buyer.EventDetail.findMyTickets')}</Link></div>}
+              <WhosGoing compact attendeeCount={event.attendee_count} attendeesPreview={event.attendees_preview} showAttendees={event.show_attendees} />
             </section>
 
             {/* Sidebar - Tickets */}
-            <div
+            {primaryAction.kind !== 'past' && <div
               ref={ticketPanel}
               id="tickets"
               tabIndex={-1}
               className="min-w-0 scroll-mt-24 rounded-2xl focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:self-stretch"
             >
-              <div className="lg:sticky lg:top-24">
-                {waitlistOffer && !waitlistOffer.error && (
+              <div className="lg:sticky lg:top-24 lg:max-h-[calc(100dvh-var(--ticket-panel-space,7rem))] lg:overflow-y-auto overscroll-contain">
+                {!closedStatus && !event.private_preview && waitlistOffer && !waitlistOffer.error && (
                   <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                     <p className="text-sm font-semibold text-emerald-900">{t('buyer.EventDetail.yourTicketsAreReserved')}</p>
                     <p className="mt-1 text-sm text-emerald-800">{t('buyer.EventDetail.reservedUntil', { quantity: waitlistOffer.quantity, ticket: waitlistOffer.ticket_type_name, time: formatEventTime(waitlistOffer.expires_at, event.timezone) })}</p>
@@ -461,6 +518,7 @@ function EventDetailContent() {
                   </div>
                 )}
                 {waitlistOffer?.error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{waitlistOffer.error}</div>}
+                {primaryAction.kind === 'waitlist' && <div id="waitlist" className="scroll-mt-24"><WaitlistForm event={event} ticketTypes={event.ticket_types} showOriginal={content.showingOriginal} accent soldOutFirst /></div>}
                 <div className="card p-3 sm:p-5">
                   {closedStatus ? (
                     <div className="p-2 text-sm text-neutral-700">
@@ -475,7 +533,7 @@ function EventDetailContent() {
                   ) : event.assigned_seating ? (
                     <SeatSelector event={event} onReserved={handleSeatCheckout} />
                   ) : event.ticket_types && event.ticket_types.length > 0 ? (
-                    <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} />
+                    primaryAction.kind === 'waitlist' ? <details><summary className="min-h-11 cursor-pointer font-semibold text-neutral-700">{t('eventActions.soldOutTypes', { count: event.ticket_types.length })}</summary><TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} onSelectionChange={setSelection} primaryAction={primaryAction} onPrimaryAction={openPrimaryAction} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} /></details> : <TicketTypesSection ticketTypes={event.ticket_types} onCheckout={handleCheckout} onSelectionChange={setSelection} primaryAction={primaryAction} onPrimaryAction={openPrimaryAction} showOriginal={content.showingOriginal} showTranslationNotice={!content.notice} />
                   ) : (
                     <p className="text-neutral-500 text-center py-4">{t('buyer.EventDetail.noTicketsAvailable')}</p>
                   )}
@@ -485,23 +543,14 @@ function EventDetailContent() {
                     <SellerLine seller={event.seller} />
                   </div>}
                 </div>
-                {/* Waitlist form when all ticket types are sold out */}
-                {event.ticket_types?.length > 0 &&
-                  event.status === 'published' &&
-                  !event.private_preview &&
-                  event.ticket_types.every(tt => (tt.quantity_remaining ?? (tt.quantity_available - tt.quantity_sold)) <= 0) && (
-                  <div className="mt-4">
-                    <WaitlistForm event={event} ticketTypes={event.ticket_types} showOriginal={content.showingOriginal} />
-                  </div>
-                )}
               </div>
-            </div>
+            </div>}
 
             {/* Main content */}
             <div className="min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-2">
               {/* Action buttons */}
               {!event.private_preview && (
-                <ChipRow role="group" ariaLabel="Event actions" bleed="mobile" className="mb-6">
+                <ChipRow role="group" ariaLabel="Event actions" bleed="mobile" className="">
                   {event.starts_at && !closedStatus && (
                     <a
                       href={buildGoogleCalendarUrl(event)}
@@ -521,7 +570,7 @@ function EventDetailContent() {
                     <Heart aria-hidden="true" className={`h-4 w-4 shrink-0 ${event.favorited ? 'fill-current' : ''}`} />
                     {event.favorited ? t('buyer.EventDetail.saved') : t('buyer.EventDetail.save')}
                   </button>
-                  {!closedStatus && (
+                  {!closedStatus && primaryAction.kind !== 'notify' && primaryAction.kind !== 'past' && (
                     <button type="button" onClick={() => marketplaceAction('reminder')} aria-pressed={Boolean(event.reminder)} className="chip">
                       <Bell aria-hidden="true" className={`h-4 w-4 shrink-0 ${event.reminder ? 'fill-current' : ''}`} />
                       {event.reminder ? t('buyer.EventDetail.reminderSet') : t('buyer.EventDetail.remindMe')}
@@ -530,6 +579,8 @@ function EventDetailContent() {
                 </ChipRow>
               )}
 
+              {actionNotice && <p role="status" className="mt-3 text-sm text-neutral-600">{actionNotice}</p>}
+              {shareFallback && <label className="mt-3 block text-sm text-neutral-600">{t('eventActions.copyLink')}<input readOnly className="input mt-2" value={shareFallback} onFocus={e => e.target.select()} /><button type="button" className="btn-secondary mt-2" onClick={async () => { try { await navigator.clipboard.writeText(shareFallback); setCopied(true); setShareFallback('') } catch { /* The selected URL can be copied manually. */ } }}>{t('eventActions.copy')}</button></label>}
               {/* Badges */}
               {event.age_restriction && event.age_restriction !== 'all_ages' && (
                 <ChipRow bleed="mobile" className="mb-6">
@@ -540,24 +591,20 @@ function EventDetailContent() {
                 </ChipRow>
               )}
 
-              {/* Who's Going */}
-              <WhosGoing
-                attendeeCount={event.attendee_count}
-                attendeesPreview={event.attendees_preview}
-                showAttendees={event.show_attendees}
-              />
-
               {/* Description */}
               {content.description && (
-                <FadeUp><div className="prose prose-neutral max-w-none mb-8">
+                <FadeUp><div className="mt-9 sm:mt-12">
                   <h2 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4 mt-0">{t('buyer.EventDetail.about')}</h2>
-                  <EventDescription text={content.description} format={design.description_format} />
+                  <div id="event-description" className={!descriptionExpanded && content.description.length > 600 ? 'line-clamp-6' : ''}><EventDescription text={content.description} format={design.description_format} /></div>
+                  {content.description.length > 600 && <button type="button" aria-controls="event-description" aria-expanded={descriptionExpanded} onClick={() => setDescriptionExpanded(value => !value)} className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-800">{t(descriptionExpanded ? 'eventActions.readLess' : 'eventActions.readMore')}</button>}
                 </div></FadeUp>
               )}
 
+              <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
+
               {event.organizer && (
                 <FadeUp>
-                  <div className="mb-8 rounded-2xl border border-neutral-200 p-5">
+                  <div className="mt-9 sm:mt-12 rounded-2xl border border-neutral-200 p-5">
                     <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-600">{t('buyer.EventDetail.organizer')}</p>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -567,23 +614,23 @@ function EventDetailContent() {
                         <p className="min-w-0 text-lg font-bold leading-snug text-neutral-950">
                           {event.private_preview ? (
                             <span>
-                              {event.organizer.business_name}
+                              {organizerName.split(' ').slice(0, -1).join(' ')}{' '}<span className="whitespace-nowrap">{organizerName.split(' ').at(-1)}
                               {event.organizer.verified && (
                                 <BadgeCheck
                                   aria-label={t('buyer.EventDetail.verified')}
                                   className="ml-1.5 inline-block h-[0.95em] w-[0.95em] align-[-0.14em] text-emerald-700"
                                 />
-                              )}
+                              )}</span>
                             </span>
                           ) : (
                             <Link to={`/organizers/${event.organizer.slug}`} className="hover:text-brand-600">
-                              {event.organizer.business_name}
+                              {organizerName.split(' ').slice(0, -1).join(' ')}{' '}<span className="whitespace-nowrap">{organizerName.split(' ').at(-1)}
                               {event.organizer.verified && (
                                 <BadgeCheck
                                   aria-label={t('buyer.EventDetail.verified')}
                                   className="ml-1.5 inline-block h-[0.95em] w-[0.95em] align-[-0.14em] text-emerald-700"
                                 />
-                              )}
+                              )}</span>
                             </Link>
                           )}
                         </p>
@@ -599,46 +646,18 @@ function EventDetailContent() {
                 </FadeUp>
               )}
 
-              <EventPageSections design={design} imageAssetHost={event.image_asset_host} />
-
-              {/* Venue Location Section */}
-              {event.venue_address && (
-                <FadeUp delay={0.1}><section aria-labelledby="event-location-heading" className="mb-6">
-                  <h2 id="event-location-heading" className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl mb-4">{t('buyer.EventDetail.location')}</h2>
-                  <div className="flex flex-col gap-4 rounded-2xl border border-neutral-200 p-4 sm:flex-row sm:items-center sm:p-5">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-                        <MapPin aria-hidden="true" className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0">
-                        {event.venue_name && (event.venue?.slug
-                          ? <Link to={`/venues/${event.venue.slug}`} className="font-semibold text-neutral-900 break-words hover:text-brand-700 hover:underline">{event.venue_name}</Link>
-                          : <p className="font-semibold text-neutral-900 break-words">{event.venue_name}</p>)}
-                        <p className="mt-0.5 text-sm text-neutral-600 [overflow-wrap:anywhere]">{event.venue_address}</p>
-                      </div>
-                    </div>
-                    <a
-                      href={buildMapsUrl(event)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-secondary shrink-0 gap-2 !px-4 !py-2.5 text-sm"
-                    >
-                      <Navigation aria-hidden="true" className="h-4 w-4" />{t('buyer.EventDetail.directions')}<span className="sr-only">{t('buyer.EventDetail.opensGoogleMapsInANewTab')}</span>
-                    </a>
-                  </div>
-                </section></FadeUp>
-              )}
             </div>
 
 
           </div>
         </div>
       </div>
-      {onSale && <>
+      {primaryAction.actionable && <>
         {/* Room for the buy bar so the last content never sits underneath it. */}
         <div aria-hidden="true" className="h-[calc(4.5rem+env(safe-area-inset-bottom,0px))] bg-white lg:hidden" />
         <div ref={pageEnd} aria-hidden="true" className="h-px" />
-        <MobileBuyBar priceLabel={buyBarPrice} targets={buyBarTargets} endMarker={pageEnd} />
+        <MobileBuyBar priceLabel={selection.count ? t('eventActions.selection', { count: selection.count, total: formatTicketPrice(selection.totalCents) }) : buyBarPrice} targets={buyBarTargets} endMarker={pageEnd} actionTarget={primaryAction.target}
+          label={onSale && selection.count ? t(selection.totalCents === 0 ? selectedAction.key : 'eventActions.checkout', selectedAction.values) : t(primaryAction.labelKey)} onAction={barAction} />
       </>}
     </div>
   )

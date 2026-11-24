@@ -167,23 +167,28 @@ function Video({ url }) {
 export default function EventPageSections({ design, imageAssetHost }) {
   const { t } = useTranslation()
   const page = normalizePageCustomization(design)
+  const [expanded, setExpanded] = useState({})
+  const order = ['lineup', 'schedule', 'faq', 'gallery', 'video', 'sponsors', 'links']
   return page.sections
     .filter((section) => section.enabled)
+    .sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))
     .map((section) => {
       const items = section.items || []
+      const collapsible = ['lineup', 'schedule'].includes(section.type) && items.length > 4
+      const visibleItems = collapsible && !expanded[section.type] ? items.slice(0, 4) : items
       if (section.type !== 'video' && section.type !== 'gallery' && !items.length) return null
       if (section.type === 'gallery' && !page.gallery.some(photo => approvedImageUrl(photo.url, imageAssetHost))) return null
       if (section.type === 'video' && !videoEmbed(section.url)) return null
       if (section.type === 'links' && !items.some(item => safeLink(item.url))) return null
       const title = t(`buyer.EventDetail.design.${section.type}`)
       return (
-        <section key={section.type} className="mb-8" aria-label={title}>
+        <section key={section.type} className="mt-9 sm:mt-12" aria-label={title}>
           <h2 className="mb-4 font-display text-2xl font-bold text-neutral-950 sm:text-3xl">{title}</h2>
           {section.type === 'gallery' && <Gallery photos={page.gallery.filter(photo => approvedImageUrl(photo.url, imageAssetHost))} />}
           {section.type === 'video' && <Video url={section.url} />}
           {section.type === 'lineup' && (
             <div className="grid gap-3 sm:grid-cols-2">
-              {items.map((item, index) => (
+              {visibleItems.map((item, index) => (
                 <div key={index} className="flex min-w-0 items-center gap-3 rounded-xl border border-neutral-200 p-3">
                   {approvedImageUrl(item.photo_url, imageAssetHost) && (
                     <img
@@ -218,7 +223,7 @@ export default function EventPageSections({ design, imageAssetHost }) {
           )}
           {section.type === 'schedule' && (
             <ol className="space-y-2">
-              {items.map((item, index) => (
+              {visibleItems.map((item, index) => (
                 <li key={index} className="flex items-baseline gap-4 rounded-xl border border-neutral-200 p-3.5">
                   <time className="w-[4.75rem] shrink-0 whitespace-nowrap tabular-nums text-sm font-semibold event-link">{item.time}</time>
                   <div className="min-w-0">
@@ -229,7 +234,8 @@ export default function EventPageSections({ design, imageAssetHost }) {
               ))}
             </ol>
           )}
-          {section.type === 'faq' && (
+          {collapsible && <button type="button" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand-800" aria-expanded={Boolean(expanded[section.type])} onClick={() => setExpanded(value => ({ ...value, [section.type]: !value[section.type] }))}>{t(expanded[section.type] ? 'eventActions.showLess' : section.type === 'lineup' ? 'eventActions.showAll' : 'eventActions.fullSchedule', { count: items.length })}</button>}
+          {section.type === 'faq'  && (
             <div className="space-y-2">
               {items.map((item, index) => (
                 <details key={index} className="group rounded-xl border border-neutral-200 bg-white">

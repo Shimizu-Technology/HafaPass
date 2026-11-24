@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, CheckCircle, XCircle, ClipboardList } from 'lucide-react'
 import apiClient from '../api/client'
 
-export default function WaitlistForm({ event, ticketTypes = [], showOriginal = false }) {
+export default function WaitlistForm({ event, ticketTypes = [], showOriginal = false, accent = false, soldOutFirst = false }) {
   const { t } = useTranslation()
   const [originalTickets, setOriginalTickets] = useState(false)
   const [form, setForm] = useState({ email: '', name: '', phone: '', ticket_type_id: '', quantity: 1 })
@@ -94,7 +94,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-4">
           <ClipboardList className="w-5 h-5 text-brand-500" />
-          <h3 className="text-lg font-semibold text-neutral-900">{t('waitlist.joinTitle')}</h3>
+          <h3 className="text-lg font-semibold text-neutral-900">{t(soldOutFirst ? 'eventActions.soldOutWaitlist' : 'waitlist.joinTitle')}</h3>
         </div>
         <p className="text-sm text-neutral-500 mb-4">{t('waitlist.getNotified')}</p>
 
@@ -157,7 +157,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
             </div>
           )}
 
-          <button type="submit" disabled={submitting} className="w-full btn-primary !py-3 gap-2">
+          <button type="submit" disabled={submitting} className={`w-full btn-primary !py-3 gap-2 ${accent ? 'event-buy' : ''}`}>
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
             {t('waitlist.join')}
           </button>
@@ -165,8 +165,8 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
       </div>
 
       {/* Check Status */}
-      <div className="card p-5">
-        <h4 className="text-sm font-semibold text-neutral-900 mb-2">{t('waitlist.alreadyOnWaitlist')}</h4>
+      <details className="card p-5">
+        <summary className="min-h-11 cursor-pointer text-sm font-semibold text-neutral-900">{t('eventActions.checkWaitlist')}</summary>
         <div className="flex gap-2">
           <input
             type="email"
@@ -204,7 +204,7 @@ export default function WaitlistForm({ event, ticketTypes = [], showOriginal = f
             )}
           </div>
         )}
-      </div>
+      </details>
     </div>
   )
 }

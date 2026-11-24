@@ -16,7 +16,7 @@ test('guest header offers ticket recovery and optional account creation at 1024'
   await page.getByPlaceholder('Search events...').fill('music')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
   await nav.getByRole('link', { name: 'Find my tickets' }).click()
-  await expect(page.getByRole('heading', { name: 'Find your order', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Find your tickets', exact: true })).toBeVisible()
 })
 
 test('mobile one-line filters persist through reload and clear', async ({ page }) => {
@@ -109,7 +109,7 @@ test('checkout configuration failure keeps cached support reachable at 390px', a
   await expect(page.locator('footer').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
   await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
   await page.route('**/api/v1/config', route => route.fulfill({ status: 503, json: { error: 'Synthetic config outage' } }))
-  await page.getByRole('button', { name: /Buy tickets/ }).click()
+  await page.getByRole('button', { name: /Checkout/ }).click()
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
   await expect(page.locator('main').getByRole('link', { name: 'Contact support', exact: true })).toHaveAttribute('href', /^mailto:shimizutechnology@gmail\.com\?/)
   await expect(page.locator('main').getByRole('link', { name: '(671) 483-0219', exact: true })).toHaveAttribute('href', 'tel:6714830219')

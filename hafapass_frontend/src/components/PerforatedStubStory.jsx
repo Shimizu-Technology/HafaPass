@@ -313,7 +313,7 @@ export default function PerforatedStubStory({ event }) {
                   <CheckCircle2 className="h-4 w-4" />
                   {t('pass.home.storyAdmitted')}
                 </p>
-                <p className="mt-1.5 text-xs tabular-nums text-content-muted">Avery Lindqvist · Ticket HP-DEMO</p>
+                <p className="mt-1.5 text-xs tabular-nums text-content-muted">{t('pass.home.examplePass')}</p>
               </div>
             </div>
           </div>

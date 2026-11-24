@@ -521,6 +521,8 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
         window.clearTimeout(exitTimerRef.current)
         exitTimerRef.current = null
       }
+      exitAnimsRef.current.forEach(animation => { try { animation.cancel() } catch { /* Already cancelled. */ } })
+      exitAnimsRef.current = []
     }
   }, [count, exiting])
 
@@ -917,7 +919,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                 })}
               </div>
               <div className="flex items-center gap-1">
-                <span className="sr-only" aria-live="polite" data-testid="hero-deck-live">
+                <span className="sr-only" aria-live={isPaused ? 'polite' : 'off'} data-testid="hero-deck-live">
                   {t('pass.home.passPosition', { index: safeIndex + 1, count, label: cards[safeIndex]?.label })}
                 </span>
                 <button
@@ -938,7 +940,6 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                 </button>
                 <button type="button" onClick={() => setRotationStopped(value => !value)}
                   aria-label={t(rotationStopped ? 'pass.home.resumeRotation' : 'pass.home.pauseRotation')}
-                  aria-pressed={rotationStopped}
                   className="hero-deck-nav inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/25 text-white">
                   {rotationStopped ? <Play aria-hidden="true" className="h-4 w-4" /> : <Pause aria-hidden="true" className="h-4 w-4" />}
                 </button>

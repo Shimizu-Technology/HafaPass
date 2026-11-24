@@ -1,3 +1,4 @@
+import { nextSalesOpening } from '../utils/eventPrimaryAction'
 import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
@@ -120,7 +121,7 @@ export default function EventCard({ event }) {
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
                   {hasAvailability ? t('events.ticketsAvailable') : hasInventory
-                    ? t('events.salesUnavailable') : t('events.soldOut')}
+                    ? nextSalesOpening(event.ticket_types) ? t('eventActions.cardOnSale', { date: formatEventDate(nextSalesOpening(event.ticket_types), event.timezone, { month: 'short', year: undefined }) }) : t('events.salesUnavailable') : t('events.soldOut')}
                 </span>
               </>
             )}

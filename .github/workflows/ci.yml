@@ -287,7 +287,7 @@ jobs:
           npx playwright test --config playwright.production.config.js
       - name: Demo preview deck and buyer acceptance
         run: |
-          VITE_HAFAPASS_DEMO_DATA=1 npm run build
+          CONTEXT=deploy-preview VITE_HAFAPASS_DEMO_DATA=1 npm run build
           VITE_HAFAPASS_DEMO_DATA=1 npx playwright test --config playwright.demo.config.js --workers=2
       - name: Production service-worker deploy and offline test
         run: npm run test:e2e:pwa

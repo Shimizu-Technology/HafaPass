@@ -39,7 +39,7 @@ test.describe('preview-only demo-data mode', () => {
 
     // 3. Select 1 Adult Spectator ticket and proceed to checkout
     await page.getByRole('button', { name: /increase quantity for adult spectator/i }).click()
-    await page.getByRole('button', { name: /buy tickets/i }).click()
+    await page.getByRole('button', { name: /checkout/i }).click()
 
     // 4. Checkout shows clear payments-off notice and never loads Stripe
     await expect(page).toHaveURL(/\/checkout\/copa-de-marianas-2027/)
@@ -68,7 +68,7 @@ test.describe('preview-only demo-data mode', () => {
 
     await page.goto('/events/tumon-bay-acoustic-sessions')
     await expect(page.getByRole('heading', { level: 1, name: 'Tumon Bay Acoustic Sessions (demo)' })).toBeVisible()
-    await expect(page.getByText(/join.*waitlist/i).first()).toBeVisible()
+    await expect(page.locator('#waitlist').getByRole('heading', { name: 'Sold out — join the waitlist' })).toBeVisible()
 
     await page.goto('/events/guam-night-market-spring-preview')
     await expect(page.getByRole('heading', { level: 1, name: /Guam Night Market/i })).toBeVisible()

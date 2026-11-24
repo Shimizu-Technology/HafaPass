@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@clerk/clerk-react'
 import { Navigate, useLocation } from 'react-router-dom'
@@ -5,6 +6,8 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { signInDestination } from '../utils/authDestination'
 import PageLoading from './PageLoading'
 import { clerkPublishableKey } from '../utils/demoMode'
+
+const DemoAccountNotice = import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' ? lazy(() => import('../demo/DemoAccountNotice')) : null
 
 const clerkPubKey = clerkPublishableKey()
 
@@ -23,6 +26,7 @@ function AuthGate({ children }) {
 }
 
 export default function ProtectedRoute({ children }) {
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return <Suspense><DemoAccountNotice /></Suspense>
   // If Clerk is not configured, allow access (dev mode without auth)
   if (!clerkPubKey && !import.meta.env.PROD) {
     return <>{children}</>

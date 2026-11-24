@@ -134,7 +134,7 @@ describe('EventDetailPage buyer polish', () => {
   it('keeps the back link on its own row above the category label', async () => {
     mount(baseEvent)
     const back = await screen.findByRole('link', { name: 'All events' })
-    expect(back).toHaveClass('flex', 'mb-6')
+    expect(back).toHaveClass('flex', 'mb-3')
     expect(screen.getByText('Nightlife')).toHaveClass('block')
   })
 
@@ -203,7 +203,8 @@ describe('EventDetailPage buyer polish', () => {
 
   it('shows the venue as an address row with a Directions link instead of a map placeholder', async () => {
     mount(baseEvent)
-    const location = await screen.findByRole('region', { name: 'Location' })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    const location = document.querySelector('.event-bento')
     expect(within(location).getByText('Tumon Bay Pavilion')).toBeInTheDocument()
     expect(within(location).getByText('123 Pale San Vitores Rd, Tumon')).toBeInTheDocument()
     const directions = within(location).getByRole('link', { name: /Directions/ })
@@ -213,7 +214,8 @@ describe('EventDetailPage buyer polish', () => {
 
   it('links the venue name to its venue page when the venue has one', async () => {
     mount({ ...baseEvent, venue: { slug: 'tumon-bay-pavilion' } })
-    const location = await screen.findByRole('region', { name: 'Location' })
+    await screen.findByRole('heading', { name: 'Reef Night' })
+    const location = document.querySelector('.event-bento')
     expect(within(location).getByRole('link', { name: 'Tumon Bay Pavilion' })).toHaveAttribute('href', '/venues/tumon-bay-pavilion')
     expect(within(location).getByRole('link', { name: /Directions/ })).toHaveAttribute('href', expect.stringContaining('google.com/maps'))
   })
