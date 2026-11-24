@@ -10,7 +10,8 @@ export async function runDemoHandlers(ctx, handlers = DEMO_HANDLERS) {
       console.warn('[demo-api] handler failed', ctx.method.toUpperCase(), ctx.path, error)
       continue
     }
-    if (result !== undefined) return result
+    // `undefined` or `null` means "not mine"; try the next handler.
+    if (result != null) return result
   }
   return undefined
 }
