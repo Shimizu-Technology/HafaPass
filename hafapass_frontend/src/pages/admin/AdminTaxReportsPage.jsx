@@ -31,7 +31,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
   const refundsAndDisputes = (totals?.proceeds_refunded_cents || 0) + (totals?.chargebacks_cents || 0)
   const cumulativeUnalloc = totals?.cumulative_unallocated_refunds_exception_cents ?? totals?.unallocated_refunds_exception_cents ?? 0
   const inMonthUnalloc = totals?.unallocated_refunds_exception_cents ?? 0
-  const missingRevAudit = totals?.missing_reversal_audit_exception_cents ?? 0
+  const integrityAlerts = periodMatches ? cpaMonthly?.current_integrity_alerts : null
   const rateUnsupported = cpaMonthly?.bpt_rate_pct === 'not_supported' || cpaMonthly?.bpt_rate_bps === null
   const priorPeriodRows = rows.filter(row => row.prior_period_note)
 
@@ -61,10 +61,12 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
         <p className="font-medium">Reconciliation exception requires manual review</p>
         {totals.reconciliation_exception_note
           ? <p>{totals.reconciliation_exception_note}</p>
-          : <>
-            {cumulativeUnalloc > 0 && <p>{money(cumulativeUnalloc)} in cumulative unallocated legacy refunds ({money(inMonthUnalloc)} in month) requires manual review between organizer proceeds and fee refunds.</p>}
-            {missingRevAudit > 0 && <p>{money(missingRevAudit)} in reversed payouts is missing append-only reversal audit evidence.</p>}
-          </>}
+          : cumulativeUnalloc > 0 && <p>{money(cumulativeUnalloc)} in cumulative unallocated legacy refunds ({money(inMonthUnalloc)} in month) requires manual review between organizer proceeds and fee refunds.</p>}
+      </div>}
+
+      {integrityAlerts?.has_alerts && <div role="status" className="mt-3 space-y-1 rounded-xl border border-amber-300 bg-amber-50/80 px-3 py-2 text-sm text-amber-950">
+        <p className="font-medium">Current ledger integrity alerts (as of export — excluded from closed-month CSV)</p>
+        <p>{integrityAlerts.summary}</p>
       </div>}
 
       {priorPeriodRows.length > 0 && <div role="status" className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
@@ -86,7 +88,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
             <SummaryRow label="Refunds & chargebacks" value={money(-refundsAndDisputes)} hint={`Refunds ${money(totals.proceeds_refunded_cents)} · Chargebacks ${money(totals.chargebacks_cents)}`} />
             {totals.organizer_processing_deducted_cents !== 0 && <SummaryRow label="Organizer-borne processing" value={money(-totals.organizer_processing_deducted_cents)} />}
             {totals.other_adjustments_cents !== 0 && <SummaryRow label="Other balance adjustments" value={money(totals.other_adjustments_cents)} />}
-            <SummaryRow label="Organizer payouts made" value={money(-totals.organizer_payouts_made_cents)} hint={totals.backup_withholding_memo_cents > 0 ? `Includes ${money(totals.backup_withholding_memo_cents)} backup withholding memo` : null} />
+            <SummaryRow label="Organizer payouts made" value={money(-totals.organizer_payouts_made_cents)} hint={totals.backup_withholding_memo_cents !== 0 ? `Net backup withholding memo (paid minus reversed): ${money(totals.backup_withholding_memo_cents)}` : null} />
             {totals.payout_reversals_cents !== 0 && <SummaryRow label="Payout reversals (restored to custody)" value={money(totals.payout_reversals_cents)} />}
             <SummaryRow label="Closing custodial payables (owed to organizers)" value={money(totals.closing_custodial_payables_cents)} hint="Offset within same organization only; never nets unrelated organizers" emphasis />
             <SummaryRow label="Organizer deficits / receivables (owed to HåfaPass)" value={money(totals.closing_organizer_deficits_cents)} />
@@ -219,7 +221,12 @@ function TaxReportsSession({ identity }) {
       const response = await apiClient.get('/admin/tax_reports/cpa_monthly', { ...request.config, params: { year, month } })
       if (request.current() && epoch === cpaGeneration.current) {
         const data = response.data
-        setCpaMonthly(data?.totals && data.period === targetPeriod ? data : null)
+        if (data?.totals && data.period === targetPeriod) {
+          setCpaMonthly(data)
+        } else {
+          setCpaMonthly(null)
+          setCpaError('Received an unexpected monthly CPA summary response. Please retry.')
+        }
       }
     } catch (e) {
       if (request.current() && epoch === cpaGeneration.current && !request.handleError(e)) {

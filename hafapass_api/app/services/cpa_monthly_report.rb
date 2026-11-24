@@ -7,39 +7,52 @@
 #
 # Recording-time period-stability rule:
 #   - Every movement is booked in the Guam calendar month its immutable record
-#     was created (ledger row / append-only audit row recording time), never by
+#     was created (ledger row / append-only audit row `created_at`), never by
 #     a later-supplied confirmation/effective date, never by current mutable
 #     status, and never by mutable columns such as `updated_at`:
-#     * Paid payouts: `COALESCE(paid_audit.occurred_at, paid_audit.created_at,
-#       payouts.paid_at)` across all live (non-simulated) USD payouts, whether
-#       or not the event has a Stripe order.
-#     * Payout reversals: `COALESCE(rev_audit.occurred_at, rev_audit.created_at)`
-#       from the earliest append-only reversal audit row. Never falls back to
-#       `confirmed_at` or `payouts.updated_at`; reversed payouts missing audit
-#       evidence are flagged as reconciliation exceptions instead.
+#     * Custodial captures: `agent_captures` only sees live/legacy USD Stripe
+#       captures with `payments.created_at < month_end`, and order custodial
+#       booking time is `GREATEST(COALESCE(orders.completed_at, orders.created_at),
+#       agent_cap.first_capture_created_at)`. A capture backfilled in a later
+#       month leaves closed months unchanged and enters custody in the capture's
+#       creation month labelled `"Stripe capture backfill relates to <Mon YYYY>"`.
+#     * Paid payouts: `COALESCE(paid_audit.created_at, payouts.paid_at)` across
+#       all live (non-simulated) USD payouts. Audit joins rely on fields that
+#       survive `DataRetention.anonymize!` (`action`, `auditable_id`,
+#       `created_at`, and `payouts.status` transition cardinality), not only
+#       redacted `after_data`.
+#     * Payout reversals: `rev_audit.created_at` from the surviving-field
+#       reversal audit join. Never falls back to `confirmed_at` or
+#       `payouts.updated_at`. Reversed payouts missing reversal audit evidence
+#       are excluded from closed-month CSV rows (so corrupt/auditless reversals
+#       never rewrite closed months) and surfaced separately in top-level
+#       `current_integrity_alerts`.
 #     * Stripe processing fees (`FeeComponent` kind: "processing", estimated:
 #       false, AppendOnlyRecord): strictly `fee_components.created_at`,
 #       independent of current `stripe_fee_evidences.status`.
-#     * Balance adjustments: `GREATEST(balance_adjustments.created_at,
-#       balance_adjustments.effective_at)` (never back-dated into a closed
-#       month), scoped by immutable payment custody (`agent_orders` and
-#       `agent_disputes_base`), independent of current dispute status.
-#     * Lost disputes: `COALESCE(dispute_lost_audit.occurred_at,
-#       disputes.closed_at, disputes.created_at)` (never `disputes.updated_at`).
-#   - When a movement recorded in Month M relates to an earlier closed month
-#     (e.g., reversal with bank date in Oct, processing fee for an Oct order,
-#     back-dated adjustment), Month M includes the movement and labels it in
-#     `prior_period_note` ("relates to Oct 2026") while October stays
-#     byte-identical.
-#   - Balance sheet totals compute custodial payables and organizer deficits
-#     per organization (offsetting only within the same organization_id, never
-#     netting unrelated organizers).
+#     * Balance adjustments: strictly `balance_adjustments.created_at` (never
+#       overridden by past or future `effective_at`, which remains for
+#       `Settlements::Calculator` eligibility), scoped by immutable payment
+#       custody (`agent_orders` and `agent_disputes_base`), independent of
+#       current dispute status.
+#     * Lost disputes: `COALESCE(dispute_lost_audit.created_at,
+#       disputes.closed_at)` (never `disputes.updated_at`). Auditless lost
+#       disputes that also lack `closed_at` have no reliable loss timestamp
+#       (`disputes.created_at` is the opened date, not loss date), so they are
+#       excluded from closed-month chargebacks and surfaced in
+#       `current_integrity_alerts`.
+#   - All queries execute inside a single REPEATABLE READ read-only transaction
+#     snapshot (guarded when already inside an outer transaction) so refund and
+#     allocation totals cannot drift mid-export.
+#   - Monetary and period roll-forward columns in closed months stay
+#     byte-identical across later activity and audit redaction; informational
+#     W-9 nonprofit columns reflect current W-9 classification at export time.
 #   - Reconciles to Settlements::Calculator via `non_custodial_settlement_bridge`
 #     (non-custodial non-cash sales like Clover, their refunds/disputes, and
 #     settlement adjustments linked to non-custodial orders or disputes).
 class CpaMonthlyReport
   GUAM_TIMEZONE = TaxReports::GUAM_TIMEZONE
-  NOTE = "Preparation aid only — not a filed return. Closed months are defined by immutable recording time (prior-period movements are labelled in the recording month so closed months stay byte-identical). Under our working position for CPA and counsel review, ticket and event proceeds collected as limited agent are a custodial liability owed to organizers, separate from HåfaPass service-fee revenue. W-9 nonprofit flags reflect the current W-9 at export time; DRT exemptions are not tracked. Estimated Guam BPT applies the statutory 11 GCA § 26202(c) service-business rate (P.L. 38-136; P.L. 34-87 from Apr 2018) to net HåfaPass fee revenue only; confirm base, rate, any § 26203.2 small-business relief, and external DRT exemptions with your CPA."
+  NOTE = "Preparation aid only — not a filed return. Closed months are defined by immutable recording time (created_at); monetary and roll-forward columns stay byte-identical while prior-period movements are labelled in the recording month. W-9 nonprofit flags reflect the current W-9 at export time and can change if a W-9 is updated later; DRT exemptions are not tracked. Under our working position for CPA and counsel review, ticket and event proceeds collected as limited agent are a custodial liability owed to organizers, separate from HåfaPass service-fee revenue. Estimated Guam BPT applies the statutory 11 GCA § 26202(c) service-business rate (P.L. 38-136; P.L. 34-87 from Apr 2018) to net HåfaPass fee revenue only; confirm base, rate, any § 26203.2 small-business relief, and external DRT exemptions with your CPA."
   NONPROFIT_NOTE = "W-9 nonprofit (current at export time); DRT exemption not tracked — verify externally"
   DRT_VERIFIED_STATUS = "not_tracked"
   RATE_NOT_SUPPORTED = "not_supported"
@@ -98,7 +111,6 @@ class CpaMonthlyReport
     ending_reserve_balance_cents
     unallocated_refunds_exception_cents
     cumulative_unallocated_refunds_exception_cents
-    missing_reversal_audit_exception_cents
     non_custodial_settlement_bridge_cents
     backup_withholding_memo_cents
     fee_revenue_gross_cents
@@ -153,24 +165,7 @@ class CpaMonthlyReport
   end
 
   def report
-    @report ||= begin
-      rows = build_rows
-      totals = build_totals(rows)
-      {
-        year: year,
-        month: month,
-        period: period,
-        timezone: GUAM_TIMEZONE,
-        currency: "usd",
-        bpt_rate_bps: bpt_rate_bps,
-        bpt_rate_pct: bpt_rate_pct,
-        bpt_rate_note: bpt_rate_note,
-        w9_classification_as_of: "current_at_export_time",
-        note: NOTE,
-        rows: rows,
-        totals: totals
-      }
-    end
+    @report ||= with_consistent_snapshot { build_report }
   end
 
   def organization_ids
@@ -189,6 +184,41 @@ class CpaMonthlyReport
 
   private
 
+  # Run every aggregate in one REPEATABLE READ read-only snapshot so concurrent
+  # writes cannot cause refund totals and RefundItem allocations to disagree.
+  # Guarded like EventSeriesReport#call so an outer transaction (e.g. specs)
+  # does not raise ActiveRecord::TransactionIsolationError.
+  def with_consistent_snapshot
+    if ActiveRecord::Base.connection.open_transactions.zero?
+      ActiveRecord::Base.transaction(isolation: :repeatable_read) do
+        ActiveRecord::Base.connection.execute("SET TRANSACTION READ ONLY")
+        yield
+      end
+    else
+      yield
+    end
+  end
+
+  def build_report
+    rows = build_rows
+    totals = build_totals(rows)
+    {
+      year: year,
+      month: month,
+      period: period,
+      timezone: GUAM_TIMEZONE,
+      currency: "usd",
+      bpt_rate_bps: bpt_rate_bps,
+      bpt_rate_pct: bpt_rate_pct,
+      bpt_rate_note: bpt_rate_note,
+      w9_classification_as_of: "current_at_export_time",
+      note: NOTE,
+      rows: rows,
+      totals: totals,
+      current_integrity_alerts: build_current_integrity_alerts
+    }
+  end
+
   def month_start
     @month_start ||= ActiveSupport::TimeZone[GUAM_TIMEZONE].local(year, month, 1)
   end
@@ -205,12 +235,14 @@ class CpaMonthlyReport
 
   def agent_captures
     @agent_captures ||= Payment.live_or_legacy_capture.where(provider: "stripe", currency: "usd")
+      .where("payments.created_at < ?", month_end)
       .where("LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'")
       .where("provider_payload->>'simulated' IS DISTINCT FROM 'true' AND provider_payload->>'livemode' IS DISTINCT FROM 'false'")
   end
 
   def nonlive_stripe_order_ids
     @nonlive_stripe_order_ids ||= Payment.where(provider: "stripe")
+      .where("payments.created_at < ?", month_end)
       .where(
         "provider_environment IN ('test', 'simulate') OR LEFT(COALESCE(provider_payment_id, ''), 4) = 'sim_' " \
         "OR provider_payload->>'simulated' = 'true' OR provider_payload->>'livemode' = 'false'"
@@ -228,19 +260,47 @@ class CpaMonthlyReport
     end
   end
 
+  # Earliest live/legacy non-simulated USD Stripe capture recorded on or before
+  # month_end. A capture backfilled in a later month (e.g. StripeWebhookProcessor
+  # #backfill_legacy_payment) is invisible to earlier closed months and enters
+  # custodial liability in the month the capture row was created.
+  def agent_capture_join_sql
+    succeeded_statuses = Payment.statuses.values_at("succeeded", "partially_refunded", "refunded")
+    ActiveRecord::Base.sanitize_sql_array([
+      <<~SQL.squish,
+        INNER JOIN (
+          SELECT order_id, MIN(created_at) AS first_capture_created_at
+          FROM payments
+          WHERE provider = 'stripe'
+            AND currency = 'usd'
+            AND status IN (?)
+            AND (provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))
+            AND LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'
+            AND provider_payload->>'simulated' IS DISTINCT FROM 'true'
+            AND provider_payload->>'livemode' IS DISTINCT FROM 'false'
+            AND created_at < ?
+          GROUP BY order_id
+        ) agent_cap ON agent_cap.order_id = orders.id
+      SQL
+      succeeded_statuses,
+      month_end
+    ])
+  end
+
   def agent_orders
     @agent_orders ||= real_usd_orders.where(id: agent_captures.select(:order_id))
   end
 
+  ORDER_CUSTODIAL_AT_SQL = "GREATEST(COALESCE(orders.completed_at, orders.created_at), agent_cap.first_capture_created_at)"
+
   def orders_before
-    @orders_before ||= agent_orders.where("COALESCE(orders.completed_at, orders.created_at) < ?", month_start)
+    @orders_before ||= agent_orders.joins(agent_capture_join_sql)
+      .where("#{ORDER_CUSTODIAL_AT_SQL} < ?", month_start)
   end
 
   def orders_in_month
-    @orders_in_month ||= agent_orders.where(
-      "COALESCE(orders.completed_at, orders.created_at) >= ? AND COALESCE(orders.completed_at, orders.created_at) < ?",
-      month_start, month_end
-    )
+    @orders_in_month ||= agent_orders.joins(agent_capture_join_sql)
+      .where("#{ORDER_CUSTODIAL_AT_SQL} >= ? AND #{ORDER_CUSTODIAL_AT_SQL} < ?", month_start, month_end)
   end
 
   def agent_refunds
@@ -275,15 +335,15 @@ class CpaMonthlyReport
     @lost_disputes_base ||= agent_disputes_base.lost
   end
 
-  DISPUTE_LOST_AT_SQL = "COALESCE(dispute_lost_audit.occurred_at, dispute_lost_audit.created_at, disputes.closed_at, disputes.created_at)"
-  PAID_RECORDED_AT_SQL = "COALESCE(paid_audit.occurred_at, paid_audit.created_at, payouts.paid_at)"
-  REVERSAL_RECORDED_AT_SQL = "COALESCE(rev_audit.occurred_at, rev_audit.created_at)"
-  ADJUSTMENT_RECORDED_AT_SQL = "GREATEST(balance_adjustments.created_at, balance_adjustments.effective_at)"
+  DISPUTE_LOST_AT_SQL = "COALESCE(dispute_lost_audit.created_at, disputes.closed_at)"
+  PAID_RECORDED_AT_SQL = "COALESCE(paid_audit.created_at, payouts.paid_at)"
+  REVERSAL_RECORDED_AT_SQL = "rev_audit.created_at"
+  ADJUSTMENT_RECORDED_AT_SQL = "balance_adjustments.created_at"
 
   def dispute_lost_audit_join_sql
     <<~SQL.squish
       LEFT JOIN LATERAL (
-        SELECT occurred_at, created_at
+        SELECT id, created_at
         FROM audit_logs
         WHERE audit_logs.auditable_type = 'Dispute'
           AND audit_logs.auditable_id = disputes.id
@@ -311,38 +371,76 @@ class CpaMonthlyReport
       .where("LEFT(COALESCE(payouts.provider_payout_id, ''), 4) <> 'sim_'")
   end
 
+  # Redaction-safe paid audit join: relies on immutable fields that survive
+  # DataRetention.anonymize! (`action`, `auditable_id`, `created_at`) plus
+  # `payouts.status` transition cardinality (Payout#may_reconcile_to? permits
+  # at most one transition to `paid` and one terminal `paid -> reversed`).
+  # When `after_data` has been redacted (`after_data->>'status'` is blank), a
+  # `payout.reconciled` row is matched as the paid transition iff the payout is
+  # currently `paid` OR a higher-id reversal audit exists on the same payout.
   def paid_audit_join_sql
-    <<~SQL.squish
-      LEFT JOIN LATERAL (
-        SELECT id, occurred_at, created_at
-        FROM audit_logs
-        WHERE audit_logs.auditable_type = 'Payout'
-          AND audit_logs.auditable_id = payouts.id
-          AND (
-            (audit_logs.action = 'payout.reconciled' AND audit_logs.after_data->>'status' = 'paid')
-            OR audit_logs.action = 'payout.paid'
-          )
-        ORDER BY audit_logs.id ASC
-        LIMIT 1
-      ) paid_audit ON true
-    SQL
+    paid_status = Payout.statuses.fetch("paid")
+    ActiveRecord::Base.sanitize_sql_array([
+      <<~SQL.squish,
+        LEFT JOIN LATERAL (
+          SELECT a.id, a.created_at
+          FROM audit_logs a
+          WHERE a.auditable_type = 'Payout'
+            AND a.auditable_id = payouts.id
+            AND (
+              a.action = 'payout.paid'
+              OR (a.action = 'payout.reconciled' AND a.after_data->>'status' = 'paid')
+              OR (
+                a.action = 'payout.reconciled'
+                AND COALESCE(a.after_data->>'status', '') = ''
+                AND (
+                  payouts.status = ?
+                  OR EXISTS (
+                    SELECT 1 FROM audit_logs later_a
+                    WHERE later_a.auditable_type = 'Payout'
+                      AND later_a.auditable_id = payouts.id
+                      AND later_a.action IN ('payout.reconciled', 'payout.reversed')
+                      AND later_a.id > a.id
+                  )
+                )
+              )
+            )
+          ORDER BY a.id ASC
+          LIMIT 1
+        ) paid_audit ON true
+      SQL
+      paid_status
+    ])
   end
 
+  # Redaction-safe reversal audit join: matches `payout.reversed`, unredacted
+  # `payout.reconciled` with `after_data->>'status' = 'reversed'`, or (after
+  # DataRetention.anonymize! clears `after_data`) the latest `payout.reconciled`
+  # row on a `status = reversed` payout.
   def reversal_audit_join_sql
-    <<~SQL.squish
-      LEFT JOIN LATERAL (
-        SELECT id, occurred_at, created_at, metadata
-        FROM audit_logs
-        WHERE audit_logs.auditable_type = 'Payout'
-          AND audit_logs.auditable_id = payouts.id
-          AND (
-            (audit_logs.action = 'payout.reconciled' AND audit_logs.after_data->>'status' = 'reversed')
-            OR audit_logs.action = 'payout.reversed'
-          )
-        ORDER BY audit_logs.id ASC
-        LIMIT 1
-      ) rev_audit ON true
-    SQL
+    reversed_status = Payout.statuses.fetch("reversed")
+    ActiveRecord::Base.sanitize_sql_array([
+      <<~SQL.squish,
+        LEFT JOIN LATERAL (
+          SELECT a.id, a.created_at, a.metadata
+          FROM audit_logs a
+          WHERE a.auditable_type = 'Payout'
+            AND a.auditable_id = payouts.id
+            AND (
+              a.action = 'payout.reversed'
+              OR (a.action = 'payout.reconciled' AND a.after_data->>'status' = 'reversed')
+              OR (
+                a.action = 'payout.reconciled'
+                AND COALESCE(a.after_data->>'status', '') = ''
+                AND payouts.status = ?
+              )
+            )
+          ORDER BY a.id DESC
+          LIMIT 1
+        ) rev_audit ON true
+      SQL
+      reversed_status
+    ])
   end
 
   # Recording-time paid payouts: booked in the month recorded (audit recording
@@ -443,18 +541,56 @@ class CpaMonthlyReport
         prior_period_labels[event_id] << "Payout reversal relates to #{label}" if label
       end
 
-    # Flag reversed payouts missing append-only reversal audit evidence instead
-    # of falling back to mutable `payouts.updated_at`.
-    missing_audit = live_usd_payouts.status_reversed
+    [before_amounts, month_amounts, month_withholding]
+  end
+
+  # Current-state ledger integrity alerts (as of export time), intentionally
+  # kept OUTSIDE the closed-month CSV rows/totals so auditless/corrupt status
+  # mutations made in a later month can NEVER alter a closed month's CSV bytes:
+  #   1. Reversed USD payouts with paid_at present but no surviving reversal
+  #      audit row (never booked via mutable payouts.updated_at).
+  #   2. Lost custodial Stripe disputes lacking both a `dispute.lost` audit row
+  #      and `closed_at` (cannot establish loss period from disputes.created_at).
+  def build_current_integrity_alerts
+    missing_reversals = live_usd_payouts.status_reversed
       .where.not(paid_at: nil)
-      .joins(paid_audit_join_sql)
       .joins(reversal_audit_join_sql)
       .where("rev_audit.id IS NULL")
-      .where("#{PAID_RECORDED_AT_SQL} < ?", month_end)
-      .group("payouts.event_id")
-      .sum("payouts.amount_cents")
+      .order(:organization_id, :event_id, :id)
+      .pluck(:organization_id, :event_id, :id, :amount_cents)
+      .map do |org_id, event_id, payout_id, amount_cents|
+        { organization_id: org_id, event_id: event_id, payout_id: payout_id, amount_cents: amount_cents.to_i }
+      end
 
-    [before_amounts, month_amounts, month_withholding, missing_audit]
+    auditless_disputes = lost_disputes_base.joins(dispute_lost_audit_join_sql)
+      .joins(:order)
+      .where("dispute_lost_audit.id IS NULL AND disputes.closed_at IS NULL")
+      .order("orders.event_id", "disputes.id")
+      .pluck("orders.event_id", "disputes.id", "disputes.amount_cents")
+      .map do |event_id, dispute_id, amount_cents|
+        { event_id: event_id, dispute_id: dispute_id, amount_cents: amount_cents.to_i }
+      end
+
+    notes = []
+    rev_total = missing_reversals.sum { |item| item[:amount_cents] }
+    disp_total = auditless_disputes.sum { |item| item[:amount_cents] }
+    if rev_total.positive?
+      notes << "Reversed payout(s) missing reversal audit evidence ($#{FinanceExports.money(rev_total)})"
+    end
+    if disp_total.positive?
+      notes << "Lost dispute(s) missing dispute.lost audit and closed_at timestamp ($#{FinanceExports.money(disp_total)})"
+    end
+
+    {
+      as_of: "current_at_export_time",
+      excluded_from_closed_month_csv: true,
+      has_alerts: notes.any?,
+      missing_reversal_audit_total_cents: rev_total,
+      missing_reversal_audit_payouts: missing_reversals,
+      auditless_lost_disputes_total_cents: disp_total,
+      auditless_lost_disputes: auditless_disputes,
+      summary: notes.join("; ")
+    }
   end
 
   def all_recorded_adjustments
@@ -483,6 +619,15 @@ class CpaMonthlyReport
     proceeds_month = OrderItem.joins(:order).where(order_id: orders_in_month.select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
 
+    # Label late Stripe capture backfills (capture created in this month for an earlier order)
+    orders_in_month
+      .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_start)
+      .pluck("orders.event_id", Arel.sql("COALESCE(orders.completed_at, orders.created_at)"))
+      .each do |event_id, order_at|
+        label = format_guam_month(order_at)
+        prior_period_event_labels[event_id] << "Stripe capture backfill relates to #{label}" if label
+      end
+
     refunded_proceeds_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
       .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
     refunded_proceeds_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
@@ -498,8 +643,17 @@ class CpaMonthlyReport
     chargebacks_before = disputes_before.joins(:order).group("orders.event_id").sum(:amount_cents)
     chargebacks_month = disputes_in_month.joins(:order).group("orders.event_id").sum(:amount_cents)
 
+    # Label chargebacks lost in this month for disputes opened in an earlier closed month
+    disputes_in_month.joins(:order)
+      .where("disputes.opened_at < ?", month_start)
+      .pluck("orders.event_id", "disputes.opened_at")
+      .each do |event_id, opened_at|
+        label = format_guam_month(opened_at)
+        prior_period_event_labels[event_id] << "Chargeback relates to #{label}" if label
+      end
+
     payouts_gross_before, payouts_gross_month, withholding_paid_month = paid_payouts_by_event(prior_period_event_labels)
-    reversals_before, reversals_month, withholding_reversed_month, missing_reversal_audit = payout_reversals_by_event(prior_period_event_labels)
+    reversals_before, reversals_month, withholding_reversed_month = payout_reversals_by_event(prior_period_event_labels)
 
     fee_gross_month = FeeComponent.joins(:order).where(order_id: orders_in_month.select(:id), kind: "platform")
       .group("orders.event_id").sum(:amount_cents)
@@ -508,7 +662,7 @@ class CpaMonthlyReport
 
     processing = processing_totals_by_event_sql(prior_period_event_labels)
     event_adjustments, org_adjustments = adjustment_totals_sql(prior_period_event_labels, prior_period_org_labels)
-    settlement_bridge_by_event = non_custodial_settlement_bridge_by_event
+    settlement_bridge_by_event = non_custodial_settlement_bridge_by_event(prior_period_event_labels)
 
     # Union EVERY activity source before loading events so adjustment-only,
     # payout-only, Clover-only, and exception-only events are never omitted.
@@ -519,7 +673,6 @@ class CpaMonthlyReport
       chargebacks_before.keys | chargebacks_month.keys |
       payouts_gross_before.keys | payouts_gross_month.keys |
       reversals_before.keys | reversals_month.keys |
-      missing_reversal_audit.keys |
       fee_gross_month.keys | fee_refunds_month.keys |
       processing.keys | event_adjustments.keys |
       settlement_bridge_by_event.keys
@@ -563,13 +716,9 @@ class CpaMonthlyReport
       unalloc_before = refunds_total_before.fetch(event_id, 0) - allocated_before.fetch(event_id, 0)
       unalloc_month = refunds_total_month.fetch(event_id, 0) - allocated_month.fetch(event_id, 0)
       unalloc_cumulative = unalloc_before + unalloc_month
-      missing_rev_cents = missing_reversal_audit.fetch(event_id, 0)
       exception_notes = []
       if !unalloc_month.zero? || !unalloc_cumulative.zero?
         exception_notes << "Unallocated legacy refunds: $#{FinanceExports.money(unalloc_cumulative)} cumulative ($#{FinanceExports.money(unalloc_month)} in month)"
-      end
-      if missing_rev_cents.positive?
-        exception_notes << "Reversed payout missing audit evidence ($#{FinanceExports.money(missing_rev_cents)})"
       end
       has_exception = exception_notes.any?
 
@@ -583,7 +732,7 @@ class CpaMonthlyReport
         opening, collected, refunded, chargebacks, proc_month_org, other_adj,
         payouts_made, payout_rev, closing,
         reserve_held, reserve_released, ending_reserve,
-        unalloc_month, unalloc_cumulative, missing_rev_cents, bridge_cents,
+        unalloc_month, unalloc_cumulative, bridge_cents,
         fee_gross, fee_refund, proc_month_total
       ]
       next if active_values.all?(&:zero?)
@@ -611,7 +760,6 @@ class CpaMonthlyReport
         ending_reserve_balance_cents: ending_reserve,
         unallocated_refunds_exception_cents: unalloc_month,
         cumulative_unallocated_refunds_exception_cents: unalloc_cumulative,
-        missing_reversal_audit_exception_cents: missing_rev_cents,
         reconciliation_exception_flag: has_exception,
         reconciliation_exception_note: exception_notes.join("; "),
         prior_period_note: prior_period_event_labels[event_id].uniq.join("; "),
@@ -779,9 +927,9 @@ class CpaMonthlyReport
   #   - organizer share of any non-estimated processing fees on non-custodial orders
   #   - lost disputes on non-custodial orders or non-agent payments
   #   + settlement adjustments excluded from custodial scope (linked to non-custodial orders/disputes)
-  def non_custodial_settlement_bridge_by_event
+  def non_custodial_settlement_bridge_by_event(prior_period_event_labels)
     cash_order_ids = Order.where(payment_method: "door_cash")
-      .or(Order.where(id: Payment.where(provider: "door_cash").select(:order_id)))
+      .or(Order.where(id: Payment.where(provider: "door_cash").where("payments.created_at < ?", month_end).select(:order_id)))
       .select(:id)
 
     non_custodial_orders = real_usd_orders
@@ -822,13 +970,25 @@ class CpaMonthlyReport
 
     # Event-level settlement adjustments excluded from custodial scope (e.g.,
     # manual_debit / manual_credit linked to a Clover order or non-agent dispute).
-    all_recorded_adjustments
+    bridge_adjustments = all_recorded_adjustments
       .where.not(event_id: nil)
       .where.not(kind: %w[reserve_hold reserve_release])
       .where.not(id: in_scope_adjustments.select(:id))
+
+    bridge_adjustments
       .group(:event_id)
       .sum(:amount_cents)
       .each { |event_id, cents| bridge[event_id] += cents }
+
+    # Label back-dated non-custodial bridge adjustments recorded in this month
+    bridge_adjustments
+      .where("#{ADJUSTMENT_RECORDED_AT_SQL} >= ?", month_start)
+      .where("balance_adjustments.effective_at < ?", month_start)
+      .pluck(:event_id, :effective_at)
+      .each do |event_id, effective_at|
+        label = format_guam_month(effective_at)
+        prior_period_event_labels[event_id] << "Bridge adjustment relates to #{label}" if label
+      end
 
     bridge.delete_if { |_event_id, cents| cents.zero? }
     bridge
@@ -868,7 +1028,6 @@ class CpaMonthlyReport
         ending_reserve_balance_cents: ending_reserve,
         unallocated_refunds_exception_cents: 0,
         cumulative_unallocated_refunds_exception_cents: 0,
-        missing_reversal_audit_exception_cents: 0,
         reconciliation_exception_flag: false,
         reconciliation_exception_note: "",
         prior_period_note: prior_period_org_labels[org_id].uniq.join("; "),
@@ -898,9 +1057,6 @@ class CpaMonthlyReport
     total_exception_notes = []
     if !sums[:cumulative_unallocated_refunds_exception_cents].zero? || !sums[:unallocated_refunds_exception_cents].zero?
       total_exception_notes << "Unallocated legacy refunds: $#{FinanceExports.money(sums[:cumulative_unallocated_refunds_exception_cents])} cumulative ($#{FinanceExports.money(sums[:unallocated_refunds_exception_cents])} in month)"
-    end
-    if sums[:missing_reversal_audit_exception_cents].positive?
-      total_exception_notes << "Reversed payouts missing audit evidence ($#{FinanceExports.money(sums[:missing_reversal_audit_exception_cents])})"
     end
 
     # Offset positive and negative balances ONLY within the same organization_id;

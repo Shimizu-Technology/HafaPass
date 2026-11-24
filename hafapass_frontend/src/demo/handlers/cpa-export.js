@@ -151,6 +151,16 @@ function buildDemoCpaMonthly(year, month) {
     note: 'Preparation aid only — not a filed return. Demo preview data; all figures and entities are fictional.',
     demo_marker: DEMO_CPA_EXPORT_SENTINEL,
     rows,
+    current_integrity_alerts: {
+      as_of: 'current_at_export_time',
+      excluded_from_closed_month_csv: true,
+      has_alerts: false,
+      missing_reversal_audit_total_cents: 0,
+      missing_reversal_audit_payouts: [],
+      auditless_lost_disputes_total_cents: 0,
+      auditless_lost_disputes: [],
+      summary: '',
+    },
     totals: {
       organization_id: null,
       event_id: null,

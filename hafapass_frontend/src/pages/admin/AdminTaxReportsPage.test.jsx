@@ -101,17 +101,23 @@ describe('AdminTaxReportsPage', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/tax_reports', expect.objectContaining({ params: { year: String(year - 1) } })))
   })
 
-  // Regression test for Material Finding #7: never render one month's figures
-  // under another month's heading while a slow request is pending or arrives late.
+  // Regression test for Material Finding #7 (and CodeRabbit #8): never render one
+  // month's figures under another month's heading while a slow request is pending
+  // or arrives late; enable deferral only after initial load so the test works in
+  // every calendar month (including March and April Guam time).
   it('hides stale month figures while loading and ignores out-of-order responses', async () => {
-    let resolveMarch
-    let resolveApril
+    const firstTarget = currentMonth === '03' ? '05' : '03'
+    const secondTarget = currentMonth === '04' ? '06' : '04'
+    const monthName = m => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long' }).format(Date.UTC(2000, Number(m) - 1, 1))
+    let deferTargets = false
+    let resolveFirst
+    let resolveSecond
     apiClient.get.mockImplementation((url, cfg) => {
       if (url === '/admin/tax_reports') return Promise.resolve({ data: report })
       if (url === '/admin/tax_reports/cpa_monthly') {
         const m = String(cfg?.params?.month)
-        if (m === '03') return new Promise(resolve => { resolveMarch = resolve })
-        if (m === '04') return new Promise(resolve => { resolveApril = resolve })
+        if (deferTargets && m === firstTarget) return new Promise(resolve => { resolveFirst = resolve })
+        if (deferTargets && m === secondTarget) return new Promise(resolve => { resolveSecond = resolve })
         return Promise.resolve({ data: makeCpaMonthly(year, m) })
       }
       return Promise.resolve({ data: report })
@@ -121,36 +127,57 @@ describe('AdminTaxReportsPage', () => {
     expect(await screen.findByText('Custodial liability (organizer proceeds)')).toBeInTheDocument()
     expect(screen.getAllByText('$120.00').length).toBeGreaterThan(0)
 
+    deferTargets = true
     const monthSelect = screen.getByLabelText('Guam calendar month')
-    await userEvent.selectOptions(monthSelect, '03')
+    await userEvent.selectOptions(monthSelect, firstTarget)
 
-    // While March is pending, previous month's $120.00 figures MUST NOT appear under March heading
-    expect(screen.getByRole('heading', { name: new RegExp(`March ${year}`) })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(`Loading monthly CPA summary for March ${year}`)
+    // While firstTarget is pending, previous month's $120.00 figures MUST NOT appear under the new heading
+    expect(screen.getByRole('heading', { name: new RegExp(`${monthName(firstTarget)} ${year}`) })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(`Loading monthly CPA summary for ${monthName(firstTarget)} ${year}`)
     expect(screen.queryByText('Custodial liability (organizer proceeds)')).not.toBeInTheDocument()
 
-    // Switch immediately to April before March resolves
-    await userEvent.selectOptions(monthSelect, '04')
-    expect(screen.getByRole('heading', { name: new RegExp(`April ${year}`) })).toBeInTheDocument()
+    // Switch immediately to secondTarget before firstTarget resolves
+    await userEvent.selectOptions(monthSelect, secondTarget)
+    expect(screen.getByRole('heading', { name: new RegExp(`${monthName(secondTarget)} ${year}`) })).toBeInTheDocument()
 
-    // April resolves first with $444.00
-    const aprilData = makeCpaMonthly(year, '04')
-    aprilData.totals.closing_custodial_payables_cents = 44400
-    aprilData.totals.closing_custodial_liability_cents = 44400
-    aprilData.rows[0].closing_custodial_liability_cents = 44400
-    resolveApril({ data: aprilData })
+    // secondTarget resolves first with $444.00
+    const secondData = makeCpaMonthly(year, secondTarget)
+    secondData.totals.closing_custodial_payables_cents = 44400
+    secondData.totals.closing_custodial_liability_cents = 44400
+    secondData.rows[0].closing_custodial_liability_cents = 44400
+    resolveSecond({ data: secondData })
     expect(await screen.findAllByText('$444.00')).not.toHaveLength(0)
 
-    // Stale March response arrives late with $333.00 — MUST be ignored
-    const marchData = makeCpaMonthly(year, '03')
-    marchData.totals.closing_custodial_payables_cents = 33300
-    marchData.totals.closing_custodial_liability_cents = 33300
-    marchData.rows[0].closing_custodial_liability_cents = 33300
-    resolveMarch({ data: marchData })
+    // Stale firstTarget response arrives late with $333.00 — MUST be ignored
+    const firstData = makeCpaMonthly(year, firstTarget)
+    firstData.totals.closing_custodial_payables_cents = 33300
+    firstData.totals.closing_custodial_liability_cents = 33300
+    firstData.rows[0].closing_custodial_liability_cents = 33300
+    resolveFirst({ data: firstData })
     await waitFor(() => {
       expect(screen.getAllByText('$444.00').length).toBeGreaterThan(0)
       expect(screen.queryByText('$333.00')).not.toBeInTheDocument()
     })
+  })
+
+  it('shows a retryable error instead of endless loading when the current CPA response has a mismatched period or missing totals', async () => {
+    let returnBad = true
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports') return Promise.resolve({ data: report })
+      if (url === '/admin/tax_reports/cpa_monthly') {
+        if (returnBad) return Promise.resolve({ data: { period: '1999-01', totals: null } })
+        return Promise.resolve({ data: makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth) })
+      }
+      return Promise.resolve({ data: report })
+    })
+
+    show()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Received an unexpected monthly CPA summary response')
+    expect(screen.queryByText(/Loading monthly CPA summary/)).not.toBeInTheDocument()
+
+    returnBad = false
+    await userEvent.click(screen.getByRole('button', { name: 'Retry monthly CPA report' }))
+    expect(await screen.findByText('Custodial liability (organizer proceeds)')).toBeInTheDocument()
   })
 
   it('keeps full TINs off the admin page', async () => {
@@ -224,10 +251,17 @@ describe('AdminTaxReportsPage', () => {
         data.rows[0].estimated_bpt_on_fee_revenue_estimate_cents = null
         data.totals.unallocated_refunds_exception_cents = 0
         data.totals.cumulative_unallocated_refunds_exception_cents = 1500
+        data.totals.backup_withholding_memo_cents = -120
         data.totals.reconciliation_exception_flag = true
         data.totals.reconciliation_exception_note = 'Unallocated legacy refunds: $15.00 cumulative ($0.00 in month)'
         data.totals.estimated_bpt_rate_pct = 'not_supported'
         data.totals.estimated_bpt_on_fee_revenue_estimate_cents = null
+        data.current_integrity_alerts = {
+          as_of: 'current_at_export_time',
+          excluded_from_closed_month_csv: true,
+          has_alerts: true,
+          summary: 'Reversed payout(s) missing reversal audit evidence ($90.00)',
+        }
         return Promise.resolve({ data })
       }
       return Promise.resolve({ data: report })
@@ -235,6 +269,9 @@ describe('AdminTaxReportsPage', () => {
 
     show()
     expect(await screen.findByText(/Unallocated legacy refunds: \$15\.00 cumulative \(\$0\.00 in month\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Current ledger integrity alerts \(as of export — excluded from closed-month CSV\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Reversed payout\(s\) missing reversal audit evidence \(\$90\.00\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Net backup withholding memo \(paid minus reversed\): -\$1\.20/)).toBeInTheDocument()
     expect(screen.getAllByText(/Payout reversal relates to Oct 2026/).length).toBeGreaterThan(0)
     expect(screen.getByText('Not supported')).toBeInTheDocument()
     expect(screen.getByText(/W-9 \(current\) \/ DRT status/)).toBeInTheDocument()
