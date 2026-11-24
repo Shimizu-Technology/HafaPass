@@ -56,3 +56,7 @@ Each run used a fresh fixture from `seed_fixture.rb` (free and paid event, capac
 | Part 1 prerequisites | Each requirement was read in the cited file and line; nothing was run against production |
 
 Checks this round: `ruby -c` on all `hafapass_api/script/rush_test/*.rb`, `bash -n` on the shell scripts, `node --check` on `check_k6_script.mjs` and `fd_championship_rush.js`, `python3 -m unittest scripts/test_rush_test_helpers.py` (14 tests), `rspec spec/scripts/rush_test_guard_spec.rb` (15 examples), RuboCop on the changed Ruby. No Vite build, browser run or load run.
+
+## Fix round 2 (CodeRabbit review of head 292e3c3d)
+
+Checks (no Vite build, browser run or load run): `ruby -c`, `bash -n`, `node --check`, `check_k6_script.mjs` 22/22 (adds the ramp-only `dropped_iterations` threshold and its absence in burst), `python3 -m unittest scripts/test_rush_test_helpers.py` 23 tests (recording `curl` stub on every preflight refusal; a `run_k6.sh` run with a failing stub k6 deletes the stale summary, records exit 99 and the collector then exits 1; collector rows for exit status, thresholds, dropped iterations, no orders and a missing summary), `rspec spec/scripts/rush_test_guard_spec.rb` 15 examples, RuboCop on the changed Ruby. Locally, `consistency_check.rb` now fails on an empty selection and on `RUSH_EVENT_IDS` entries that do not exist (ids 999 and 1,2,77 tried), passes the two selection checks for real ids, and `consistency.sql` runs with the new completed-orders-without-tickets query.

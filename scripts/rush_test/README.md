@@ -39,9 +39,13 @@ createdb -h localhost hafapass_<you>_rush_staging
 cd hafapass_api
 source ../scripts/rush_test/local_stage_env.sh hafapass_<you>_rush_staging
 bundle exec rails db:schema:load
-bundle exec rails runner script/rush_test/seed_fixture.rb
-bundle exec puma -C script/rush_test/puma_sentry_probe.rb &   # or -C config/puma.rb
-BASE_URL=http://localhost:3108 FORWARDED_PROTO=https SCENARIO=free_saturation FREE_VUS=250 ... ../scripts/rush_test/run_k6.sh
+RUSH_RUN_LABEL=local1 bundle exec rails runner script/rush_test/seed_fixture.rb
+bundle exec puma -C script/rush_test/puma_sentry_probe.rb &   # or -C config/puma.rb; wait for "Listening"
+cd ..
+# Use the slugs and ids the seed script printed (the example values are for RUSH_RUN_LABEL=local1 on a fresh database).
+BASE_URL=http://localhost:3108 FORWARDED_PROTO=https SCENARIO=free_saturation PROFILE=burst FREE_VUS=250 \
+  ORG_SLUG=rush-test-org EVENT_SLUG=load-test-copa-rush-free-local1 TICKET_TYPE_ID=1 \
+  RUN_LABEL=local-free-burst scripts/rush_test/run_k6.sh
 ```
 
 Local numbers compare code revisions. They are not hosted capacity.

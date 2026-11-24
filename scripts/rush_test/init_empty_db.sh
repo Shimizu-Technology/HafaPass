@@ -30,7 +30,11 @@ run() {
   else
     out="$(bundle exec rails "$@" 2>&1)" || rc=$?
   fi
-  printf '%s\n' "$out" | grep -v 'Stripe' || true
+  if [[ "$rc" -eq 0 ]]; then
+    printf '%s\n' "$out" | grep -v 'Stripe' || true   # drop the harmless "No Stripe keys" banner on success only
+  else
+    printf '%s\n' "$out" >&2                          # on failure show everything, including lines that mention Stripe
+  fi
   return "$rc"
 }
 run runner script/rush_test/empty_check.rb

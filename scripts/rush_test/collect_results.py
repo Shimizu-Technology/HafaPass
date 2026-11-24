@@ -2,7 +2,7 @@
 """Turn the files a rush run leaves behind into the automated rows of RESULTS_TEMPLATE.md.
 
 Inputs (all optional, pass what you have; every file is plain JSON written by this folder's tools):
-  --k6          rush-results/<label>.summary.json   (k6 handleSummary output)
+  --k6          rush-results/<label>.summary.json   (k6 handleSummary output; a path that does not exist is a FAIL)
   --times       rush-results/<label>.times.json     (run_k6.sh start/end, UTC)
   --consistency consistency.json                    (script/rush_test/consistency_check.rb, RUSH_OUT=...)
   --sampler     pg_sampler.json                     (script/rush_test/pg_sampler.rb, RUSH_OUT=...)
@@ -17,6 +17,7 @@ It reads files only; it never contacts anything.
 """
 import argparse
 import json
+import os
 import sys
 
 TARGETS = {"order_p95_ms": 1500, "listing_p95_ms": 300}
@@ -42,9 +43,19 @@ def latency(summary, key):
     return block if block else None
 
 
-def evaluate(k6=None, consistency=None, sampler=None, rtt=None):
+def evaluate(k6=None, consistency=None, sampler=None, rtt=None, times=None, k6_missing=None):
     rows = []
+    if k6_missing:
+        rows.append(row("k6 summary file", f"missing: {k6_missing}", "present (run_k6.sh deletes the old one before each run)", "FAIL"))
+    if times is not None and "k6_exit_status" in times:
+        status = times["k6_exit_status"]
+        rows.append(row("k6 exit status", status, "0", verdict(status == 0)))
     if k6:
+        if "thresholds_passed" in k6:
+            rows.append(row("k6 thresholds passed (its own pass/fail)", k6["thresholds_passed"], "true", verdict(k6["thresholds_passed"] is True)))
+        if "dropped_iterations" in k6.get("counts", {}):
+            dropped = k6["counts"]["dropped_iterations"]
+            rows.append(row("Dropped iterations (ramp ran out of VUs)", dropped, "0", verdict(dropped == 0)))
         counts = k6.get("counts", {})
         sold = counts.get("free_order_success", 0) + counts.get("paid_hold_success", 0)
         refused = counts.get("free_order_clean_422", 0) + counts.get("paid_hold_clean_422", 0)
@@ -120,8 +131,9 @@ def main(argv=None):
     for name in ("k6", "times", "consistency", "sampler", "rtt"):
         parser.add_argument(f"--{name}")
     args = parser.parse_args(argv)
-    k6, times = load(args.k6), load(args.times)
-    rows = evaluate(k6, load(args.consistency), load(args.sampler), load(args.rtt))
+    k6_missing = args.k6 if args.k6 and not os.path.exists(args.k6) else None
+    k6, times = (None if k6_missing else load(args.k6)), load(args.times)
+    rows = evaluate(k6, load(args.consistency), load(args.sampler), load(args.rtt), times=times, k6_missing=k6_missing)
     print(render(rows, times, k6))
     return 1 if overall(rows) == "FAIL" else 0
 

@@ -20,6 +20,12 @@ SELECT e.id, e.title, e.max_capacity,
                  WHERE h.event_id = e.id AND h.status = 0 AND h.expires_at > now()), 0) AS live_hold_qty
 FROM events e WHERE e.title LIKE '[LOAD TEST]%' ORDER BY e.id;
 
+-- 2b. Completed orders without tickets must be 0 (a counter and capacity can both look fine while this is wrong).
+SELECT COUNT(*) AS completed_orders_without_tickets
+FROM orders o JOIN events e ON e.id = o.event_id
+WHERE e.title LIKE '[LOAD TEST]%' AND o.status = 1
+  AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.order_id = o.id);
+
 -- 3. Sell-out timing (server clock). Completion is empty while paid orders are still pending holds
 --    (PAYMENT_MODE=test); use seconds_first_to_last_order_created then.
 SELECT e.id AS event_id, COUNT(o.id) AS orders_total,

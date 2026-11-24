@@ -148,6 +148,10 @@ if (runPaid) {
   thresholds.rush_paid_hold_success = ['count>0']
 }
 
+// A ramp is an open model: when every VU is busy k6 drops the arrival instead of queueing it.
+// Dropped arrivals mean the test did not apply the load it claims, so they fail the run.
+if (profile === 'ramp') thresholds.dropped_iterations = ['count==0']
+
 export const options = {
   scenarios,
   thresholds,
@@ -469,6 +473,7 @@ export function handleSummary(data) {
       payment_resume_success: metricCount(data, 'rush_payment_resume_success'),
       throttled_429: metricCount(data, 'rush_throttled_429'),
       server_errors_5xx: metricCount(data, 'rush_server_errors_5xx'),
+      ...(profile === 'ramp' ? { dropped_iterations: metricCount(data, 'dropped_iterations') } : {}),
     },
     latencies_ms: {
       events_index: metricLatency(data, 'rush_events_index_latency'),

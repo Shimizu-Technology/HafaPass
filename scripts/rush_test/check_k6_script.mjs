@@ -122,6 +122,15 @@ const base = { ISOLATED_LOAD_TARGET_ACK: ACK, BASE_URL: 'https://rush-copy.onren
     JSON.stringify(t))
 }
 
+{
+  const ramp = await load({ ...base, SCENARIO: 'free_saturation', PROFILE: 'ramp' })
+  const burst = await load({ ...base, SCENARIO: 'free_saturation', PROFILE: 'burst' })
+  record('ramp fails on dropped iterations (arrivals k6 could not start)',
+    JSON.stringify(ramp.options.thresholds.dropped_iterations) === JSON.stringify(['count==0']), JSON.stringify(ramp.options.thresholds))
+  record('burst thresholds are unchanged (no dropped_iterations threshold)', !('dropped_iterations' in burst.options.thresholds),
+    JSON.stringify(burst.options.thresholds))
+}
+
 // --- safety rails: refuse before any HTTP call --------------------------------
 await expectRefusal('refuses without the acknowledgement', { ...base, ISOLATED_LOAD_TARGET_ACK: '' }, /ISOLATED_LOAD_TARGET_ACK/)
 await expectRefusal('refuses an empty BASE_URL', { ...base, BASE_URL: '' }, /BASE_URL is required/)

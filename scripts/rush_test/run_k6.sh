@@ -25,6 +25,8 @@ results_dir="${RESULTS_DIR:-./rush-results}"
 mkdir -p "$results_dir"
 export BASE_URL="${BASE_URL:-https://$HAFAPASS_RUSH_TARGET}"
 export SUMMARY_OUT="$results_dir/$label.summary.json"
+# A summary left by an earlier run with this label must never be mistaken for this run's.
+rm -f "$SUMMARY_OUT" "$results_dir/$label.times.json"
 export SCENARIO="${SCENARIO:-paid_holds}"
 export PROFILE="${PROFILE:-burst}"
 

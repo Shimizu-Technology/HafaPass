@@ -58,6 +58,13 @@ conn.transaction do
     FROM events e WHERE #{scope} ORDER BY e.id
   SQL
   report[:tables][:events] = events
+  add.call("at least one event selected (otherwise every scoped check passes vacuously)", events.size, events.size.positive?,
+    ids.empty? ? "scope: every [LOAD TEST] event" : "scope: RUSH_EVENT_IDS=#{ids.join(',')}")
+  unless ids.empty?
+    missing = ids - events.map { |row| row["event_id"].to_i }
+    add.call("every id in RUSH_EVENT_IDS exists (ids from before a database reset are missing)", missing.size, missing.empty?,
+      missing.empty? ? nil : "missing: #{missing.join(', ')}")
+  end
   over_capacity = events.select { |row| row["max_capacity"] && row["tickets_not_cancelled"].to_i + row["active_hold_qty"].to_i > row["max_capacity"].to_i }
   add.call("event capacity: tickets + live holds <= max_capacity (events over)", over_capacity.size, over_capacity.empty?)
 

@@ -1,8 +1,13 @@
 """Regression tests for scripts/rush_test (offline: no network, no k6, no database)."""
+import contextlib
 import importlib.util
+import io
+import json
 import os
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,37 +19,95 @@ collect_results = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collect_results)
 
 
-def run_preflight(env):
+def write_stub(directory, name, body):
+    path = Path(directory) / name
+    path.write_text("#!/usr/bin/env bash\n" + body)
+    path.chmod(0o755)
+    return path
+
+
+def run_preflight(env, path_prefix=None):
     clean = {key: value for key, value in os.environ.items() if not key.startswith(("HAFAPASS_", "BASE_URL"))}
     clean.update(env)
+    if path_prefix:
+        clean["PATH"] = f"{path_prefix}:{clean['PATH']}"
     return subprocess.run(["bash", str(RUSH / "preflight.sh")], env=clean, capture_output=True, text=True, timeout=30)
 
 
 class PreflightRefusals(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.calls = Path(self.tmp.name) / "curl-calls.txt"
+        # A recording curl placed first on PATH: a refusal must happen before any request is made.
+        write_stub(self.tmp.name, "curl", f'echo "$@" >> "{self.calls}"\nexit 7\n')
+
+    def refuse(self, env):
+        result = run_preflight(env, self.tmp.name)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists(), f"curl was called before the refusal: {self.calls.read_text() if self.calls.exists() else ''}")
+        return result
+
     def test_requires_explicit_target(self):
-        result = run_preflight({})
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("HAFAPASS_RUSH_TARGET is not set", result.stderr)
+        self.assertIn("HAFAPASS_RUSH_TARGET is not set", self.refuse({}).stderr)
 
     def test_refuses_production_hosts_before_any_request(self):
         for host in ("hafapass-api.onrender.com", "hafapass.shimizu-technology.com", "api.hafapass.com", "hafapass.netlify.app"):
             with self.subTest(host=host):
-                result = run_preflight({"HAFAPASS_RUSH_TARGET": host})
-                self.assertEqual(result.returncode, 2)
-                self.assertIn("production host", result.stderr)
+                self.assertIn("production host", self.refuse({"HAFAPASS_RUSH_TARGET": host}).stderr)
 
     def test_refuses_extra_production_host(self):
-        result = run_preflight({"HAFAPASS_RUSH_TARGET": "api.example.org", "HAFAPASS_PRODUCTION_HOSTS": "x.test, API.example.org"})
-        self.assertEqual(result.returncode, 2)
+        self.refuse({"HAFAPASS_RUSH_TARGET": "api.example.org", "HAFAPASS_PRODUCTION_HOSTS": "x.test, API.example.org"})
 
     def test_target_must_match_base_url(self):
-        result = run_preflight({"HAFAPASS_RUSH_TARGET": "rush-copy.onrender.com", "BASE_URL": "https://other-copy.onrender.com"})
-        self.assertEqual(result.returncode, 2)
+        result = self.refuse({"HAFAPASS_RUSH_TARGET": "rush-copy.onrender.com", "BASE_URL": "https://other-copy.onrender.com"})
         self.assertIn("does not match", result.stderr)
 
     def test_target_must_be_a_bare_host(self):
-        result = run_preflight({"HAFAPASS_RUSH_TARGET": "https://rush-copy.onrender.com"})
-        self.assertEqual(result.returncode, 2)
+        self.refuse({"HAFAPASS_RUSH_TARGET": "https://rush-copy.onrender.com"})
+
+    def test_the_recording_stub_does_see_a_real_request(self):
+        # Guards the guard: with an allowed target preflight does call curl, so an empty record above means something.
+        result = run_preflight({"HAFAPASS_RUSH_TARGET": "rush-copy.onrender.com"}, self.tmp.name)
+        self.assertNotEqual(result.returncode, 2)
+        self.assertTrue(self.calls.exists())
+
+
+class RunK6StaleSummary(unittest.TestCase):
+    """run_k6.sh must delete the previous summary, so a failed run cannot be judged on old numbers."""
+
+    def test_stale_summary_is_removed_and_failure_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            write_stub(bin_dir, "curl", r'''
+case "$*" in
+  *"-w"*) printf 200; exit 0 ;;
+  *"/api/v1/health"*) echo '{"status":"ok","revision":"0123456789abcdef0123456789abcdef01234567"}' ;;
+  *"/api/v1/config"*) echo '{"payment_mode":"simulate","environment":"staging"}' ;;
+  *) echo '{}' ;;
+esac
+''')
+            write_stub(bin_dir, "fake-k6", 'if [ "$1" = "version" ]; then echo "k6 fake"; exit 0; fi\nexit 99\n')
+            results = Path(tmp) / "results"
+            results.mkdir()
+            stale = results / "r1.summary.json"
+            stale.write_text('{"counts": {"paid_hold_success": 200}, "thresholds_passed": true}')
+            env = {key: value for key, value in os.environ.items() if not key.startswith(("HAFAPASS_", "BASE_URL"))}
+            env.update({"PATH": f"{bin_dir}:{env['PATH']}", "K6_BIN": str(bin_dir / "fake-k6"), "HAFAPASS_RUSH_TARGET": "rush-copy.onrender.com",
+                        "ISOLATED_LOAD_TARGET_ACK": "I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_ENVIRONMENT",
+                        "RESULTS_DIR": str(results), "RUN_LABEL": "r1"})
+            result = subprocess.run(["bash", str(RUSH / "run_k6.sh")], env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 99, result.stdout + result.stderr)
+            self.assertFalse(stale.exists(), "the stale summary survived a run that wrote none")
+            times = json.loads((results / "r1.times.json").read_text())
+            self.assertEqual(times["k6_exit_status"], 99)
+            # And the collector refuses to pass that run.
+            outcome = subprocess.run([sys.executable, str(RUSH / "collect_results.py"), "--k6", str(stale), "--times", str(results / "r1.times.json")],
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(outcome.returncode, 1, outcome.stdout)
+            self.assertIn("Automated verdict: FAIL", outcome.stdout)
+            self.assertIn("k6 summary file", outcome.stdout)
 
 
 class CollectResults(unittest.TestCase):
@@ -88,6 +151,46 @@ class CollectResults(unittest.TestCase):
         rows = collect_results.evaluate(None, consistency)
         self.assertIn("no completed orders; 7.4 s first to last order created", rows[0]["value"])
         self.assertEqual(rows[0]["status"], "INFO")
+
+    def test_nonzero_k6_exit_status_fails_even_with_clean_counts(self):
+        rows = collect_results.evaluate(self.summary, times={"k6_exit_status": 99})
+        self.assertEqual(collect_results.overall(rows), "FAIL")
+        self.assertEqual(self.statuses(rows)["k6 exit status"], "FAIL")
+
+    def test_zero_exit_status_is_a_pass_row(self):
+        rows = collect_results.evaluate(self.summary, times={"k6_exit_status": 0})
+        self.assertEqual(self.statuses(rows)["k6 exit status"], "PASS")
+        self.assertEqual(collect_results.overall(rows), "PASS")
+
+    def test_failed_k6_thresholds_fail(self):
+        rows = collect_results.evaluate({**self.summary, "thresholds_passed": False})
+        self.assertEqual(self.statuses(rows)["k6 thresholds passed (its own pass/fail)"], "FAIL")
+        self.assertEqual(collect_results.overall(rows), "FAIL")
+
+    def test_no_orders_ran_fails(self):
+        empty = {**self.summary, "counts": {**self.summary["counts"], "paid_hold_success": 0, "paid_hold_clean_422": 0}}
+        rows = collect_results.evaluate(empty)
+        self.assertEqual(self.statuses(rows)["Orders accepted (201)"], "FAIL")
+        self.assertEqual(collect_results.overall(rows), "FAIL")
+
+    def test_dropped_iterations_fail_a_ramp(self):
+        rows = collect_results.evaluate({**self.summary, "counts": {**self.summary["counts"], "dropped_iterations": 3}})
+        self.assertEqual(self.statuses(rows)["Dropped iterations (ramp ran out of VUs)"], "FAIL")
+        ok = collect_results.evaluate({**self.summary, "counts": {**self.summary["counts"], "dropped_iterations": 0}})
+        self.assertEqual(collect_results.overall(ok), "PASS")
+
+    def test_missing_summary_file_fails_and_main_exits_nonzero(self):
+        rows = collect_results.evaluate(None, k6_missing="rush-results/x.summary.json")
+        self.assertEqual(collect_results.overall(rows), "FAIL")
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(collect_results.main(["--k6", str(Path(tmp) / "absent.json")]), 1)
+
+    def test_main_exits_zero_on_a_clean_run(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            summary, times = Path(tmp) / "s.json", Path(tmp) / "t.json"
+            summary.write_text(json.dumps({**self.summary, "thresholds_passed": True}))
+            times.write_text(json.dumps({"label": "x", "started_utc": "a", "ended_utc": "b", "k6_exit_status": 0}))
+            self.assertEqual(collect_results.main(["--k6", str(summary), "--times", str(times)]), 0)
 
     def test_no_data(self):
         self.assertEqual(collect_results.overall(collect_results.evaluate()), "NO DATA")

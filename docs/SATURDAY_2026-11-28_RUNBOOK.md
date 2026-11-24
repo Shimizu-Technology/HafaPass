@@ -282,7 +282,7 @@ It refuses production hosts, a mismatch between target and URL, live payment mod
 ```sh
 HAFAPASS_RUSH_TARGET=<host> RUSH_OUT=/tmp/rtt.json bin/rails runner script/rush_test/neon_rtt.rb
 ```
-Reports `SELECT 1` p50/p95/p99 and new-connection time for the pooled and direct endpoints, then the sell-out time it implies for 200 tickets. Paste the JSON into the sheet. If the pooled p50 is above about 2 ms, expect the hosted sell-out to be slower than #232's estimate.
+Reports `SELECT 1` p50/p95/p99 and new-connection time for the pooled and direct endpoints, then the sell-out time it implies for 200 tickets. Paste the JSON into the sheet, or save it as `rtt.json` on your laptop (see step 5 for how to copy a file out of the Render shell). If the pooled p50 is above about 2 ms, expect the hosted sell-out to be slower than #232's estimate.
 
 ### 3. Sentry after fork (before load)
 
@@ -335,12 +335,16 @@ Also watch Render's CPU, memory and request queue graphs and Neon's connection g
 HAFAPASS_RUSH_TARGET=<host> RUSH_EVENT_IDS=<ids> RUSH_OUT=/tmp/consistency.json \
   bin/rails runner script/rush_test/consistency_check.rb
 ```
-Read-only. Exit status 1 means a check failed. The same queries as plain SQL, for the Neon SQL editor, are in `scripts/rush_test/consistency.sql`. Then, on your laptop:
+Read-only. Exit status 1 means a check failed, including an empty event selection or a `RUSH_EVENT_IDS` id that does not exist. The same queries as plain SQL, for the Neon SQL editor, are in `scripts/rush_test/consistency.sql`.
+
+**Bring the three JSON files to your laptop.** The Render shell has no file transfer, and `/tmp` is wiped by any redeploy or restart, so do this before the next deploy. In the Render shell run `cat /tmp/consistency.json`, select the output and save it on your laptop as `consistency.json` in the folder you run the collector from; do the same for `/tmp/pg.json` → `pg.json` and `/tmp/rtt.json` → `rtt.json`. (`pg.json` and `rtt.json` are optional: leave out `--sampler` or `--rtt` if you did not run those steps.) The collector reads exactly these local names. The k6 files are already on your laptop in `rush-results/`.
+
+Then, on your laptop:
 ```sh
 python3 scripts/rush_test/collect_results.py --k6 rush-results/paid-burst-1.summary.json \
   --times rush-results/paid-burst-1.times.json --consistency consistency.json --sampler pg.json --rtt rtt.json
 ```
-It prints the filled rows and the verdict against the targets. Paste into the results sheet.
+It prints the filled rows and the verdict against the targets, and exits 1 when the verdict is FAIL. A missing `.summary.json`, a nonzero k6 exit status, k6's own failed thresholds, dropped ramp iterations or zero accepted orders each show as a FAIL row (`run_k6.sh` deletes the old summary before every run, so a stale file cannot pass). Paste into the results sheet.
 
 ## Verified locally (Nov 24, Mac mini, `RAILS_ENV=staging`, `WEB_CONCURRENCY=2 RAILS_MAX_THREADS=5 DB_POOL=11`)
 
