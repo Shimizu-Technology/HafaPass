@@ -70,14 +70,12 @@ for (const width of [320, 390, 1024, 1280]) {
     for (const id of ['event-date-range', 'event-price', 'event-village']) await verifySelect(page.locator(`#${id}`))
     if (width < 640) await verifySelect(page.locator('#event-category'))
     await page.goto('/')
-    // Phones keep Home's date and village selects behind a labeled 48px toggle.
-    if (width < 640) {
-      const toggle = page.getByRole('button', { name: 'Choose a date or village' })
-      expect((await toggle.boundingBox()).height).toBeGreaterThanOrEqual(48)
-      await toggle.click()
-      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // At sm+ Home keeps the date and village selects inline; phones use one-tap quick filter chips.
+    if (width >= 640) {
+      for (const id of ['home-when', 'home-where']) await verifySelect(page.locator(`#${id}`))
+    } else {
+      await expect(page.getByRole('button', { name: 'Choose a date or village' })).toHaveCount(0)
     }
-    for (const id of ['home-when', 'home-where']) await verifySelect(page.locator(`#${id}`))
   })
 }
 

@@ -198,25 +198,21 @@ describe('discovery first — Mockup E flow', () => {
     expect(within(screen.getByRole('list', { name: 'Coming up on Guam' })).getAllByRole('link')).toHaveLength(3)
   })
 
-  it('opens the date and village choices from a labeled 48px button on phones', async () => {
+  it('keeps date and village selects inline at sm+ without a redundant phone toggle', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [event] } })
     mount()
-    const toggle = await screen.findByRole('button', { name: 'Choose a date or village' })
-    expect(toggle).toHaveClass('min-h-12', 'sm:hidden')
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    const filters = document.getElementById(toggle.getAttribute('aria-controls'))
+    await screen.findByRole('list', { name: 'Coming up on Guam' })
+    expect(screen.queryByRole('button', { name: 'Choose a date or village' })).not.toBeInTheDocument()
+    const filters = document.getElementById('home-filters')
     expect(filters).toHaveClass('hidden', 'sm:grid')
-    await userEvent.setup().click(toggle)
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(filters).toHaveClass('grid')
-    expect(filters).not.toHaveClass('hidden')
   })
 
-  it('tells the ticket story finished and still before motion is allowed', async () => {
+  it('tells the ticket story finished and still with a neutral example pass before motion is allowed', async () => {
     apiClient.get.mockResolvedValue({ data: { events: [event] } })
     mount()
     const story = await screen.findByRole('region', { name: 'From your phone to the door' })
     expect(within(story).getAllByRole('heading', { level: 3 }).map(item => item.textContent)).toEqual(['Pick your night', 'Instant QR pass', 'Fast scan at the door'])
-    expect(story).toHaveTextContent('Community night')
+    expect(story).toHaveTextContent('Your night out')
+    expect(story).not.toHaveTextContent('Community night')
   })
 })

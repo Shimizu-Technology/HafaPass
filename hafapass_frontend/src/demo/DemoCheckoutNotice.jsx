@@ -13,16 +13,16 @@ export default function DemoCheckoutNotice() {
       <p className="mt-1 text-amber-900">
         This preview uses fictional data. Stripe checkout is disabled and no real order or charge will be created.
       </p>
-      <div className="mt-3 flex flex-wrap gap-3">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <Link
           to="/orders/demo-copa-2027/confirmation"
-          className="btn-secondary min-h-11 !px-4 !py-2 text-sm"
+          className="btn-secondary min-h-11 w-full !px-3 !py-2 text-center text-sm leading-tight"
         >
           View sample confirmation
         </Link>
         <Link
           to="/tickets/demo-ticket-copa-adult-1?order=demo-copa-2027"
-          className="btn-secondary min-h-11 !px-4 !py-2 text-sm"
+          className="btn-secondary min-h-11 w-full !px-3 !py-2 text-center text-sm leading-tight"
         >
           View sample ticket
         </Link>

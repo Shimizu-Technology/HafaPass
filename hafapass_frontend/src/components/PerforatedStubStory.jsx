@@ -269,7 +269,7 @@ export default function PerforatedStubStory({ event }) {
             </div>
           </div>
 
-          <div aria-hidden="true" className="mx-auto w-full max-w-[19rem] select-none pb-6">
+          <div aria-hidden="true" className="mx-auto w-full max-w-[19rem] select-none pb-4">
             <div className="ticket stub-story-ticket ticket-shadow-light">
               <div className="ticket-notch ticket-top relative z-[2] !bg-brand-950 px-5 pb-4 pt-4 text-white sm:pb-5 sm:pt-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-300">HåfaPass · Digital Pass</p>

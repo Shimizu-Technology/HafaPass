@@ -450,7 +450,7 @@ function TicketContent({ authContext, siblings: orderTickets = [], shown, framed
           {motionOk && finePointer() && <span aria-hidden="true" className="wallet-foil"><span ref={tilt.sheenRef} /></span>}
           {/* Cover image banner */}
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
-            <div className="h-32 sm:h-36 overflow-hidden relative">
+            <div className="aspect-video overflow-hidden relative">
               <img
                 src={event.cover_image_url}
                 alt={eventContent.title}

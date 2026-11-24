@@ -138,7 +138,35 @@ describe('HeroFannedDeck', () => {
     expect(deck).toHaveAttribute('data-active-index', '2')
   })
 
-  it('auto-advances every 6s when motion is allowed, pauses on hover, and stops under reduced motion', () => {
+  it('reserves stacked skeleton back cards and disabled controls while loading to prevent hero shift', () => {
+    reduceMotion(false)
+    render(
+      <MemoryRouter>
+        <HeroFannedDeck events={[]} loading />
+      </MemoryRouter>,
+    )
+    const deck = screen.getByTestId('hero-fanned-deck')
+    expect(deck.querySelector('.hero-deck-stage')).toHaveClass('pb-8')
+    expect(screen.getAllByTestId('hero-deck-skeleton')).toHaveLength(2)
+    expect(screen.getByTestId('hero-deck-controls')).toBeInTheDocument()
+    const disabledBtns = within(screen.getByTestId('hero-deck-controls')).getAllByRole('button', { hidden: true })
+    expect(disabledBtns.every(btn => btn.disabled)).toBe(true)
+  })
+
+  it('keeps back cards opaque (depths 0-2) and only hides depth >= 3 so text never bleeds through', () => {
+    reduceMotion(true)
+    mount(sampleEvents)
+    const deck = screen.getByTestId('hero-fanned-deck')
+    const cards = Array.from(deck.querySelectorAll('.hero-deck-card'))
+    expect(cards.map(c => [Number(c.dataset.depth), Number(c.style.opacity)])).toEqual([
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [3, 0],
+    ])
+  })
+
+  it('auto-advances every 6s when motion is allowed, pauses on mouse hover and keyboard focus, and resumes after pointer tap', () => {
     vi.useFakeTimers()
     reduceMotion(false)
     const { unmount } = mount(sampleEvents)
@@ -149,16 +177,44 @@ describe('HeroFannedDeck', () => {
     act(() => { vi.advanceTimersByTime(6000) })
     expect(deck).toHaveAttribute('data-active-index', '1')
 
-    // Hover pauses auto-advance.
-    fireEvent.mouseEnter(deck)
+    // Touch pointerenter must NOT pause hover forever (iOS Safari fix).
+    const dispatchPointer = (el, type, pointerType) => {
+      const evt = new Event(type, { bubbles: true })
+      Object.defineProperty(evt, 'pointerType', { value: pointerType })
+      fireEvent(el, evt)
+    }
+    dispatchPointer(deck, 'pointerover', 'touch')
+    expect(deck).toHaveAttribute('data-paused', 'false')
+
+    // Mouse hover pauses auto-advance until pointer leaves.
+    dispatchPointer(deck, 'pointerover', 'mouse')
     expect(deck).toHaveAttribute('data-paused', 'true')
     act(() => { vi.advanceTimersByTime(12000) })
     expect(deck).toHaveAttribute('data-active-index', '1')
 
-    fireEvent.mouseLeave(deck)
+    dispatchPointer(deck, 'pointerout', 'mouse')
     expect(deck).toHaveAttribute('data-paused', 'false')
     act(() => { vi.advanceTimersByTime(6000) })
     expect(deck).toHaveAttribute('data-active-index', '2')
+
+    // Pointer tap on Next pauses briefly, then auto-resumes after 6s idle.
+    const nextBtn = screen.getByRole('button', { name: 'Next featured pass' })
+    dispatchPointer(nextBtn, 'pointerdown', 'touch')
+    fireEvent.focus(nextBtn)
+    fireEvent.click(nextBtn, { detail: 1 })
+    expect(deck).toHaveAttribute('data-active-index', '3')
+    expect(deck).toHaveAttribute('data-paused', 'true')
+    act(() => { vi.advanceTimersByTime(6000) })
+    expect(deck).toHaveAttribute('data-paused', 'false')
+
+    // Keyboard focus keeps auto-advance paused until focus leaves the deck.
+    fireEvent.keyDown(window, { key: 'Tab' })
+    fireEvent.focus(nextBtn)
+    expect(deck).toHaveAttribute('data-paused', 'true')
+    act(() => { vi.advanceTimersByTime(12000) })
+    expect(deck).toHaveAttribute('data-paused', 'true')
+    fireEvent.blur(nextBtn, { relatedTarget: document.body })
+    expect(deck).toHaveAttribute('data-paused', 'false')
     unmount()
 
     // Reduced motion disables auto-advance completely.

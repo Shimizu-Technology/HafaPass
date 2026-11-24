@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, ChevronDown, Search, Ticket as TicketIcon } from 'lucide-react'
+import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
@@ -119,9 +119,8 @@ export default function HomePage() {
   const [date, setDate] = useState('upcoming')
   const [village, setVillage] = useState('')
   const [activeFilterId, setActiveFilterId] = useState('all')
-  // Phones open the date and village selects on request; chips cover the common picks.
-  const [moreFilters, setMoreFilters] = useState(false)
   const smUp = useMediaMatch('(min-width: 640px)')
+  const lgUp = useMediaMatch('(min-width: 1024px)')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -169,11 +168,56 @@ export default function HomePage() {
     navigate(`/events${params.size ? `?${params}` : ''}`)
   }
 
+  const searchForm = (
+    <form role="search" onSubmit={browse} className="hero-search rounded-2xl bg-white p-5 text-content shadow-card sm:p-6">
+      <label htmlFor="home-event-search" className="mb-2 block text-base font-medium">{t('buyer.Home.eventOrVenue')}</label>
+      <div className="flex gap-3">
+        <div className="relative min-w-0 flex-1">
+          <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" />
+          <input
+            id="home-event-search"
+            name="search"
+            type="search"
+            enterKeyHint="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={smUp ? t('buyer.Home.searchEventsAndVenues') : t('nav.searchEvents')}
+            className="input min-h-12 !pl-10 text-base border-neutral-500 hover:border-neutral-600"
+          />
+        </div>
+        <button type="submit" className="btn-primary min-h-12 shrink-0 !px-5">{t('buyer.Home.search')}</button>
+      </div>
+      <div id="home-filters" className="mt-4 hidden grid-cols-1 gap-3 sm:grid sm:grid-cols-2">
+        <div className="min-w-0">
+          <label htmlFor="home-when" className="mb-2 block text-base font-medium">{t('pass.home.when')}</label>
+          <select id="home-when" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={date} onChange={e => setDate(e.target.value)}>
+            {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
+          </select>
+        </div>
+        <div className="min-w-0">
+          <label htmlFor="home-where" className="mb-2 block text-base font-medium">{t('pass.home.where')}</label>
+          <select id="home-where" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={village} onChange={e => setVillage(e.target.value)}>
+            <option value="">{t('buyer.Events.allVillages')}</option>
+            {GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-sm text-content-muted">{t('pass.home.guamTime')}</p>
+        <FindTicketLink />
+      </div>
+    </form>
+  )
+
   return (
     <div className="public-intros min-h-dvh bg-brand-950 text-content">
       <SEO />
-      {/* 1. Hero: headline, subline, and Deck (HåfaPass default pass + featured events). */}
-      <HomeHero events={discovery ? upcoming : []} />
+      {/* 1. Hero: headline, subline, desktop search at lg+, and Deck (HåfaPass default pass + featured events). */}
+      <HomeHero
+        events={discovery ? upcoming : []}
+        loading={loading}
+        searchCard={discovery && lgUp ? searchForm : null}
+      />
 
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -198,58 +242,11 @@ export default function HomePage() {
 
           {discovery && (
             <>
-              {/* 2. Find: search + one-line ChipRow quick filters. */}
+              {/* 2. Find: search (below lg) + one-line ChipRow quick filters. */}
               <section aria-label={t('buyer.Home.eventOrVenue')}>
-                <form role="search" onSubmit={browse} className="hero-search rounded-2xl bg-white p-5 text-content shadow-card sm:p-6">
-                  <label htmlFor="home-event-search" className="mb-2 block text-base font-medium">{t('buyer.Home.eventOrVenue')}</label>
-                  <div className="flex gap-3">
-                    <div className="relative min-w-0 flex-1">
-                      <Search aria-hidden="true" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-content-muted" />
-                      <input
-                        id="home-event-search"
-                        name="search"
-                        type="search"
-                        enterKeyHint="search"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder={smUp ? t('buyer.Home.searchEventsAndVenues') : t('nav.searchEvents')}
-                        className="input min-h-12 !pl-10 text-base border-neutral-500 hover:border-neutral-600"
-                      />
-                    </div>
-                    <button type="submit" className="btn-primary min-h-12 shrink-0 !px-5">{t('buyer.Home.search')}</button>
-                  </div>
-                  <button
-                    type="button"
-                    aria-expanded={moreFilters}
-                    aria-controls="home-filters"
-                    onClick={() => setMoreFilters(open => !open)}
-                    className="mt-3 inline-flex min-h-12 w-full items-center justify-between gap-2 rounded-xl border-2 border-neutral-500 px-4 text-base font-semibold text-neutral-900 sm:hidden"
-                  >
-                    {t('pass.home.dateAndVillage')}
-                    <ChevronDown aria-hidden="true" className={`h-5 w-5 shrink-0 ${moreFilters ? 'rotate-180' : ''}`} />
-                  </button>
-                  <div id="home-filters" className={`${moreFilters ? 'grid' : 'hidden'} mt-3 grid-cols-1 gap-3 sm:mt-4 sm:grid sm:grid-cols-2`}>
-                    <div className="min-w-0">
-                      <label htmlFor="home-when" className="mb-2 block text-base font-medium">{t('pass.home.when')}</label>
-                      <select id="home-when" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={date} onChange={e => setDate(e.target.value)}>
-                        {EVENT_DATES.map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}
-                      </select>
-                    </div>
-                    <div className="min-w-0">
-                      <label htmlFor="home-where" className="mb-2 block text-base font-medium">{t('pass.home.where')}</label>
-                      <select id="home-where" className="input min-h-12 !pl-3 text-base border-neutral-500 hover:border-neutral-600" value={village} onChange={e => setVillage(e.target.value)}>
-                        <option value="">{t('buyer.Events.allVillages')}</option>
-                        {GUAM_VILLAGES.map(item => <option key={item}>{item}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                    <p className="text-sm text-content-muted">{t('pass.home.guamTime')}</p>
-                    <FindTicketLink />
-                  </div>
-                </form>
+                {!lgUp && searchForm}
 
-                <ChipRow role="group" ariaLabel={t('pass.home.quickFilters')} className="mt-4">
+                <ChipRow role="group" ariaLabel={t('pass.home.quickFilters')} className={lgUp ? '' : 'mt-4'}>
                   {quickFilters.map(item => {
                     const active = item.id === activeFilter.id
                     return (
@@ -325,8 +322,8 @@ export default function HomePage() {
                 </ChipRow>
               </section>
 
-              {/* 5. "From your phone to the door" QR scan story. */}
-              <PerforatedStubStory event={upcoming[0]} />
+              {/* 5. "From your phone to the door" QR scan story (neutral example pass). */}
+              <PerforatedStubStory />
             </>
           )}
 
@@ -364,7 +361,7 @@ export default function HomePage() {
 
           {/* 6. "Planning an event?" host CTA. */}
           {!loading && (
-            <section className="mt-9 sm:mt-12">
+            <section className={discovery ? 'mt-4 sm:mt-12' : 'mt-9 sm:mt-12'}>
               <Ticket
                 className="planning-ticket"
                 topClassName="!bg-brand-950 text-white"

@@ -441,7 +441,7 @@
 .hero-rise-clip { overflow: clip; padding-bottom: 0.12em; margin-bottom: -0.12em; }
 .hero-rise { text-wrap: wrap; }
 @media (prefers-reduced-motion: no-preference) {
-  .hero-rise { animation: hero-headline-rise 580ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .hero-rise[data-hero-animate="true"] { animation: hero-headline-rise 580ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 }
 @keyframes hero-headline-rise { from { transform: translate3d(0, 26px, 0); } to { transform: translate3d(0, 0, 0); } }
 
@@ -563,19 +563,32 @@
 }
 .hero-deck-card {
   transform-origin: center bottom;
-  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1), opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1), opacity 360ms cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
   -webkit-user-select: none;
   will-change: transform, opacity;
 }
+.hero-deck-card-front {
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 .hero-deck-back-veil {
-  background: linear-gradient(180deg, rgb(226 232 240 / 0.25) 0%, rgb(226 232 240 / 0.88) 72%, rgb(226 232 240 / 0.96) 100%);
-  transition: opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  background: #0d3f3c;
+  transition: opacity 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hero-deck-card[data-depth="2"] .hero-deck-back-veil,
+.hero-deck-skeleton[data-depth="2"] .hero-deck-back-veil {
+  background: #082f2d;
 }
 .hero-deck-link { transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
 .hero-deck-link:active { transform: scale(0.985); }
 .hero-deck-link:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
-.hero-deck-dot { transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease; }
+.hero-deck-dot {
+  width: 8px;
+  transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease;
+}
+.hero-deck-dot[data-active="true"] {
+  width: 20px;
+}
 .hero-deck-nav { transition: background-color 150ms ease, border-color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
 @media (hover: hover) and (pointer: fine) {
   .hero-deck-nav:hover { background-color: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.34); }
@@ -603,7 +616,7 @@
   height: calc(var(--pinned) + var(--travel));
 }
 .stub-story-sticky {
-  padding-block: 1.5rem;
+  padding-block: 1.5rem 0.25rem;
 }
 .stub-story-pinned[data-mode="live"] .stub-story-sticky {
   position: sticky;
@@ -612,7 +625,7 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  padding-block: 0.75rem;
+  padding-block: 0.75rem 0.25rem;
 }
 .stub-story-step {
   transition: background-color 220ms cubic-bezier(0.23, 1, 0.32, 1), border-color 220ms cubic-bezier(0.23, 1, 0.32, 1);

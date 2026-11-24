@@ -37,14 +37,12 @@ const BRAND_QR_PATH = (() => {
 
 function stackTransform(depth) {
   if (depth === 0) return 'translate3d(0px, 0px, 0px) scale(1)'
-  if (depth === 1) return 'translate3d(0px, 14px, 0px) scale(0.955)'
-  return 'translate3d(0px, 26px, 0px) scale(0.91)'
+  if (depth === 1) return 'translate3d(0px, 12px, 0px) scale(0.915)'
+  return 'translate3d(0px, 22px, 0px) scale(0.84)'
 }
 
 function stackOpacity(depth) {
-  if (depth === 0) return 1
-  if (depth === 1) return 0.92
-  if (depth === 2) return 0.76
+  if (depth <= 2) return 1
   return 0
 }
 
@@ -73,7 +71,7 @@ function BrandDefaultTicketFace() {
           <div className="relative flex h-full flex-col justify-between p-5 text-white sm:p-6">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center rounded-full border border-brand-300/35 bg-brand-950/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-brand-200">
-                Guam · Official Pass
+                Guam · Digital pass
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -108,7 +106,7 @@ function BrandDefaultTicketFace() {
             </div>
             <div className="min-w-0 space-y-0.5">
               <p className="truncate font-semibold text-neutral-950">Instant mobile QR tickets</p>
-              <p className="truncate text-xs text-content-muted">{t('pass.home.guamTime')}</p>
+              <p className="truncate text-xs text-content-muted">Arrives by email in seconds</p>
             </div>
           </div>
           <div className="mt-auto flex items-center justify-between gap-3 pt-1">
@@ -116,7 +114,6 @@ function BrandDefaultTicketFace() {
               <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-neutral-600">
                 GU · ADMIT ONE
               </p>
-              <p className="text-xs text-content-muted">No account needed</p>
             </div>
             <span className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-action px-4 text-sm font-semibold text-white">
               {t('buyer.Home.browseEvents')}
@@ -129,7 +126,7 @@ function BrandDefaultTicketFace() {
   )
 }
 
-function EventDeckTicketFace({ event, isFront }) {
+function EventDeckTicketFace({ event, isFront, showFace }) {
   const { t } = useTranslation()
   const content = useTranslatedContent(event)
   const [failedArtwork, setFailedArtwork] = useState(null)
@@ -139,7 +136,10 @@ function EventDeckTicketFace({ event, isFront }) {
   const place = [event.venue_name, event.venue_city].filter(Boolean).join(' · ')
 
   return (
-    <div className="ticket featured-ticket flex h-full flex-col text-content">
+    <div
+      className="ticket featured-ticket flex h-full flex-col text-content"
+      style={{ visibility: showFace ? 'visible' : 'hidden' }}
+    >
       <TicketTop>
         <div className="relative aspect-video overflow-hidden bg-brand-800">
           {hasArtwork ? (
@@ -231,7 +231,7 @@ function EventDeckTicketFace({ event, isFront }) {
  * momentum, and 6s auto-advance paused on touch, hover, focus, hidden tab, or
  * offscreen. Reduced motion disables auto-advance and swaps cards instantly.
  */
-export default function HeroFannedDeck({ events = [] }) {
+export default function HeroFannedDeck({ events = [], loading = false }) {
   const location = useLocation()
   const reducedMotion = usePrefersReducedMotion()
 
@@ -249,6 +249,8 @@ export default function HeroFannedDeck({ events = [] }) {
   }, [events])
 
   const count = cards.length
+  const showStack = loading || count > 1
+  const isSkeleton = loading && count <= 1
   const [activeIndex, setActiveIndex] = useState(0)
   const [exiting, setExiting] = useState(null)
   const [hoverPaused, setHoverPaused] = useState(false)
@@ -261,29 +263,75 @@ export default function HeroFannedDeck({ events = [] }) {
   const rootRef = useRef(null)
   const cardRefs = useRef([])
   const activeIndexRef = useRef(0)
+  const exitingRef = useRef(null)
   const dragState = useRef(null)
   const swallowClickRef = useRef(false)
+  const lastInteractionWasPointerRef = useRef(false)
   const exitSeqRef = useRef(0)
   const exitTimerRef = useRef(null)
-  const exitAnimRef = useRef(null)
+  const exitSettleTimerRef = useRef(null)
+  const exitAnimsRef = useRef([])
   const touchResumeTimerRef = useRef(null)
   const snapBackTimerRef = useRef(null)
 
   const safeIndex = count > 0 ? activeIndex % count : 0
   activeIndexRef.current = safeIndex
+  exitingRef.current = exiting
 
   const isPaused = reducedMotion || hoverPaused || focusPaused || touchPaused || tabHidden || offscreen || dragging || count < 2
+
+  const restoreCardNode = useCallback((node, idx, activeIdx, total) => {
+    if (!node || !node.isConnected) return
+    const depth = (idx - activeIdx + total) % total
+    const isFront = depth === 0
+    node.style.transition = ''
+    node.style.transform = stackTransform(depth)
+    node.style.opacity = String(stackOpacity(depth))
+    node.style.zIndex = String(isFront ? Math.max(total + 1, 4) : total - depth)
+    const veil = node.querySelector('.hero-deck-back-veil')
+    if (veil) {
+      veil.style.transition = ''
+      veil.style.opacity = isFront ? '0' : '1'
+    }
+    const face = node.querySelector('.ticket')
+    if (face) face.style.visibility = isFront ? 'visible' : 'hidden'
+  }, [])
+
+  const pauseForPointer = useCallback(() => {
+    if (touchResumeTimerRef.current) {
+      window.clearTimeout(touchResumeTimerRef.current)
+      touchResumeTimerRef.current = null
+    }
+    setTouchPaused(true)
+    touchResumeTimerRef.current = window.setTimeout(() => {
+      touchResumeTimerRef.current = null
+      setTouchPaused(false)
+    }, AUTO_ADVANCE_MS)
+  }, [])
 
   const clearExitAnimation = useCallback(() => {
     if (exitTimerRef.current) {
       window.clearTimeout(exitTimerRef.current)
       exitTimerRef.current = null
     }
-    if (exitAnimRef.current) {
-      try { exitAnimRef.current.cancel() } catch { /* ignore */ }
-      exitAnimRef.current = null
+    if (exitSettleTimerRef.current) {
+      window.clearTimeout(exitSettleTimerRef.current)
+      exitSettleTimerRef.current = null
     }
-  }, [])
+    if (exitAnimsRef.current.length > 0) {
+      exitAnimsRef.current.forEach(anim => {
+        try { anim.cancel() } catch { /* ignore */ }
+      })
+      exitAnimsRef.current = []
+    }
+    const prevExiting = exitingRef.current
+    if (prevExiting) {
+      const prevNode = cardRefs.current[prevExiting.index]
+      if (prevNode && prevNode.isConnected) {
+        restoreCardNode(prevNode, prevExiting.index, activeIndexRef.current, count)
+      }
+    }
+  }, [count, restoreCardNode])
 
   // Cleanup timers and animations on unmount.
   useEffect(() => () => {
@@ -291,6 +339,18 @@ export default function HeroFannedDeck({ events = [] }) {
     if (touchResumeTimerRef.current) window.clearTimeout(touchResumeTimerRef.current)
     if (snapBackTimerRef.current) window.clearTimeout(snapBackTimerRef.current)
   }, [clearExitAnimation])
+
+  // Distinguish keyboard navigation into the deck from pointer taps/clicks.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const onGlobalKeyDown = event => {
+      if (event.key === 'Tab' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        lastInteractionWasPointerRef.current = false
+      }
+    }
+    window.addEventListener('keydown', onGlobalKeyDown, true)
+    return () => window.removeEventListener('keydown', onGlobalKeyDown, true)
+  }, [])
 
   // Pause auto-advance when tab is hidden.
   useEffect(() => {
@@ -329,12 +389,13 @@ export default function HeroFannedDeck({ events = [] }) {
       return
     }
 
-    // Clear any lingering inline drag styles on non-exiting cards before transition.
+    // Clear only lingering inline transition overrides on non-exiting cards so
+    // React's target transform/opacity/veil values animate cleanly.
     cardRefs.current.forEach((el, idx) => {
       if (!el || idx === current) return
       el.style.transition = ''
-      el.style.transform = ''
-      el.style.opacity = ''
+      const veil = el.querySelector('.hero-deck-back-veil')
+      if (veil) veil.style.transition = ''
     })
 
     exitSeqRef.current += 1
@@ -363,26 +424,26 @@ export default function HeroFannedDeck({ events = [] }) {
     transitionTo(target, { direction })
   }, [count, transitionTo])
 
-  // Drive the outgoing card's smooth composite-only glide via WAAPI so it starts
-  // seamlessly from startX (0 or drag release px) without snapping or jumping.
+  // Drive the outgoing card's smooth composite-only glide via WAAPI.
+  // Transform glides out over the full duration while opacity holds at 1 until
+  // 60% of the glide (when the card has cleared the stack), preventing ghosting.
   useLayoutEffect(() => {
     if (!exiting) return undefined
     const el = cardRefs.current[exiting.index]
     if (!el) return undefined
 
-    // Clear any inline drag transform before launching WAAPI.
     el.style.transition = 'none'
-    el.style.transform = ''
-    el.style.opacity = ''
+    el.style.transform = stackTransform(0)
+    el.style.opacity = '1'
 
     const fromTransform = `translate3d(${exiting.startX}px, 0px, 0px) scale(1)`
     const toTransform = `translate3d(${exiting.direction * 108}%, -6px, 0px) scale(0.96)`
 
     if (typeof el.animate === 'function') {
-      const anim = el.animate(
+      const transformAnim = el.animate(
         [
-          { transform: fromTransform, opacity: 1 },
-          { transform: toTransform, opacity: 0 },
+          { transform: fromTransform },
+          { transform: toTransform },
         ],
         {
           duration: exiting.durationMs,
@@ -390,27 +451,57 @@ export default function HeroFannedDeck({ events = [] }) {
           fill: 'forwards',
         },
       )
-      exitAnimRef.current = anim
+      const opacityAnim = el.animate(
+        [
+          { opacity: 1 },
+          { opacity: 1, offset: 0.6 },
+          { opacity: 0 },
+        ],
+        {
+          duration: exiting.durationMs,
+          easing: 'linear',
+          fill: 'forwards',
+        },
+      )
+      exitAnimsRef.current = [transformAnim, opacityAnim]
     }
 
     exitTimerRef.current = window.setTimeout(() => {
-      if (exitAnimRef.current) {
-        try { exitAnimRef.current.cancel() } catch { /* ignore */ }
-        exitAnimRef.current = null
-      }
-      // Keep the card hidden at its new back-of-stack slot for one frame so it
-      // never slides back from offscreen, then let it settle softly into depth.
-      if (el) {
+      exitAnimsRef.current.forEach(anim => {
+        try { anim.cancel() } catch { /* ignore */ }
+      })
+      exitAnimsRef.current = []
+
+      if (el && el.isConnected) {
+        const newDepth = (exiting.index - activeIndexRef.current + count) % count
+        const targetOpacity = stackOpacity(newDepth)
+        const veil = el.querySelector('.hero-deck-back-veil')
         el.style.transition = 'none'
-        el.style.opacity = '0'
-        window.requestAnimationFrame(() => {
-          if (!el.isConnected) return
-          el.style.transition = 'opacity 260ms ease-out'
-          el.style.opacity = ''
-          window.setTimeout(() => {
-            if (el.isConnected) el.style.transition = ''
-          }, 280)
-        })
+        el.style.transform = stackTransform(newDepth)
+        el.style.zIndex = String(newDepth === 0 ? count + 1 : count - newDepth)
+        if (veil) {
+          veil.style.transition = 'none'
+          veil.style.opacity = newDepth === 0 ? '0' : '1'
+        }
+        if (targetOpacity === 0) {
+          el.style.opacity = '0'
+          window.requestAnimationFrame(() => {
+            if (!el.isConnected) return
+            el.style.transition = ''
+            if (veil) veil.style.transition = ''
+          })
+        } else {
+          el.style.opacity = '0'
+          window.requestAnimationFrame(() => {
+            if (!el.isConnected) return
+            el.style.transition = `opacity 360ms ${GLIDE_EASE}`
+            el.style.opacity = String(targetOpacity)
+            if (veil) veil.style.transition = ''
+            exitSettleTimerRef.current = window.setTimeout(() => {
+              if (el.isConnected) el.style.transition = ''
+            }, 380)
+          })
+        }
       }
       setExiting(null)
     }, exiting.durationMs + 16)
@@ -421,7 +512,7 @@ export default function HeroFannedDeck({ events = [] }) {
         exitTimerRef.current = null
       }
     }
-  }, [exiting])
+  }, [count, exiting])
 
   // Auto-advance every 6s when active, visible, and not paused.
   useEffect(() => {
@@ -436,6 +527,7 @@ export default function HeroFannedDeck({ events = [] }) {
   const handlePointerDown = event => {
     if (count < 2) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
+    lastInteractionWasPointerRef.current = true
     if (touchResumeTimerRef.current) {
       window.clearTimeout(touchResumeTimerRef.current)
       touchResumeTimerRef.current = null
@@ -454,6 +546,7 @@ export default function HeroFannedDeck({ events = [] }) {
       startTime: now,
       dx: 0,
       locked: null,
+      lastNextIdx: null,
       samples: [{ x: event.clientX, t: now }],
     }
   }
@@ -485,24 +578,38 @@ export default function HeroFannedDeck({ events = [] }) {
     if (reducedMotion) return
 
     // Direct 1:1 transform write without React re-renders (composite-only).
+    // Keep the dragged front card fully opaque (opacity 1) so the next card never bleeds through.
     const frontNode = cardRefs.current[activeIndexRef.current]
     if (frontNode) {
       const clamped = Math.abs(dx) > 260 ? Math.sign(dx) * (260 + (Math.abs(dx) - 260) * 0.25) : dx
       frontNode.style.transition = 'none'
       frontNode.style.transform = `translate3d(${clamped}px, 0px, 0px) scale(1)`
-      frontNode.style.opacity = String(Math.max(0.55, 1 - Math.abs(clamped) / 540).toFixed(3))
+      frontNode.style.opacity = '1'
     }
 
-    // Gently lift the peeking next card as the user pulls the top card away.
+    // Gently lift the peeking next card and fade its solid veil in proportion to drag distance.
     const nextIdx = (activeIndexRef.current + (dx < 0 ? 1 : count - 1)) % count
+    if (state.lastNextIdx !== null && state.lastNextIdx !== nextIdx) {
+      restoreCardNode(cardRefs.current[state.lastNextIdx], state.lastNextIdx, activeIndexRef.current, count)
+    }
+    state.lastNextIdx = nextIdx
+
     const nextNode = cardRefs.current[nextIdx]
     if (nextNode && nextIdx !== activeIndexRef.current) {
       const progress = Math.min(1, Math.abs(dx) / 220)
-      const y = (14 * (1 - progress * 0.65)).toFixed(1)
-      const sc = (0.955 + 0.03 * progress).toFixed(4)
+      const y = (12 * (1 - progress * 0.65)).toFixed(1)
+      const sc = (0.915 + 0.065 * progress).toFixed(4)
       nextNode.style.transition = 'none'
       nextNode.style.transform = `translate3d(0px, ${y}px, 0px) scale(${sc})`
-      nextNode.style.opacity = String((0.92 + 0.08 * progress).toFixed(3))
+      nextNode.style.opacity = '1'
+      if (dx > 0) nextNode.style.zIndex = String(count)
+      const veil = nextNode.querySelector('.hero-deck-back-veil')
+      if (veil) {
+        veil.style.transition = 'none'
+        veil.style.opacity = String((1 - progress).toFixed(3))
+      }
+      const nextFace = nextNode.querySelector('.ticket')
+      if (nextFace) nextFace.style.visibility = 'visible'
     }
   }
 
@@ -514,20 +621,39 @@ export default function HeroFannedDeck({ events = [] }) {
     const now = performance.now()
 
     // Instantaneous release velocity from recent pointer samples (last ~90ms).
+    // Only treat velocity as a commit flick when it moves in the same direction as dx,
+    // so dragging out and pulling back toward center always snaps back cleanly.
     const recent = state.samples.find(sample => now - sample.t <= 90) || state.samples[0]
     const dt = Math.max(1, now - recent.t)
     const vx = (event.clientX - recent.x) / dt
     const avgVelocity = Math.abs(dx) / Math.max(1, now - state.startTime)
-    const releaseSpeed = Math.max(Math.abs(vx), avgVelocity)
+    const sameDirectionVx = vx * dx > 0 ? Math.abs(vx) : 0
+    const releaseSpeed = Math.abs(dx) >= SWIPE_DISTANCE_PX
+      ? Math.max(sameDirectionVx, avgVelocity)
+      : sameDirectionVx
     dragState.current = null
 
-    const frontNode = cardRefs.current[activeIndexRef.current]
-    // Restore any nudged next card so it glides smoothly via CSS transition.
+    const frontIdx = activeIndexRef.current
+    const frontNode = cardRefs.current[frontIdx]
+
+    const shouldCommit = wasLocked && !cancelled && (
+      Math.abs(dx) >= SWIPE_DISTANCE_PX ||
+      (releaseSpeed >= SWIPE_VELOCITY_PX_MS && Math.abs(dx) >= SWIPE_MIN_FLICK_PX)
+    )
+    const commitDelta = dx < 0 ? 1 : -1
+    const committedNextIdx = shouldCommit ? (frontIdx + commitDelta + count) % count : null
+
+    // Restore non-front cards to their exact resting values (or let the committed
+    // incoming card glide cleanly from its dragged lift into depth 0).
     cardRefs.current.forEach((node, idx) => {
-      if (!node || idx === activeIndexRef.current) return
-      node.style.transition = ''
-      node.style.transform = ''
-      node.style.opacity = ''
+      if (!node || idx === frontIdx) return
+      if (idx === committedNextIdx) {
+        node.style.transition = ''
+        const veil = node.querySelector('.hero-deck-back-veil')
+        if (veil) veil.style.transition = ''
+      } else {
+        restoreCardNode(node, idx, frontIdx, count)
+      }
     })
 
     if (wasLocked) {
@@ -535,34 +661,26 @@ export default function HeroFannedDeck({ events = [] }) {
       swallowClickRef.current = true
       window.setTimeout(() => { swallowClickRef.current = false }, 350)
 
-      const shouldCommit = !cancelled && (
-        Math.abs(dx) >= SWIPE_DISTANCE_PX ||
-        (releaseSpeed >= SWIPE_VELOCITY_PX_MS && Math.abs(dx) >= SWIPE_MIN_FLICK_PX)
-      )
-
       if (shouldCommit) {
-        const delta = dx < 0 ? 1 : -1
         const durationMs = Math.round(Math.max(550, Math.min(680, 660 - releaseSpeed * 80)))
-        step(delta, { startX: dx, durationMs })
+        step(commitDelta, { startX: dx, durationMs })
       } else if (frontNode) {
-        // Glide smoothly back to rest.
+        // Glide smoothly back to rest while staying fully opaque.
         frontNode.style.transition = reducedMotion
           ? 'none'
-          : `transform 560ms ${GLIDE_EASE}, opacity 560ms ${GLIDE_EASE}`
+          : `transform 560ms ${GLIDE_EASE}`
         frontNode.style.transform = stackTransform(0)
         frontNode.style.opacity = '1'
         snapBackTimerRef.current = window.setTimeout(() => {
           if (frontNode.isConnected) {
             frontNode.style.transition = ''
-            frontNode.style.transform = ''
-            frontNode.style.opacity = ''
           }
         }, reducedMotion ? 0 : 580)
       }
     }
 
     if (state.pointerType === 'touch') {
-      touchResumeTimerRef.current = window.setTimeout(() => setTouchPaused(false), AUTO_ADVANCE_MS)
+      pauseForPointer()
     } else {
       setTouchPaused(false)
     }
@@ -579,6 +697,15 @@ export default function HeroFannedDeck({ events = [] }) {
     }
   }
 
+  const handleControlClick = (clickEvent, action) => {
+    if (clickEvent.detail !== 0) {
+      lastInteractionWasPointerRef.current = true
+      setFocusPaused(false)
+      pauseForPointer()
+    }
+    action()
+  }
+
   return (
     <div
       ref={rootRef}
@@ -590,26 +717,62 @@ export default function HeroFannedDeck({ events = [] }) {
       data-active-index={safeIndex}
       data-card-count={count}
       data-paused={isPaused ? 'true' : 'false'}
-      onMouseEnter={() => setHoverPaused(true)}
-      onMouseLeave={() => setHoverPaused(false)}
-      onFocus={() => setFocusPaused(true)}
+      onPointerDownCapture={() => { lastInteractionWasPointerRef.current = true }}
+      onKeyDownCapture={() => { lastInteractionWasPointerRef.current = false }}
+      onPointerEnter={event => {
+        if (event.pointerType === 'mouse') setHoverPaused(true)
+      }}
+      onPointerLeave={event => {
+        if (event.pointerType === 'mouse') setHoverPaused(false)
+      }}
+      onFocus={() => {
+        if (lastInteractionWasPointerRef.current) {
+          setFocusPaused(false)
+          pauseForPointer()
+        } else {
+          setFocusPaused(true)
+        }
+      }}
       onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusPaused(false)
       }}
       onKeyDown={handleKeyDown}
     >
       <div
-        className={`hero-deck-stage relative grid ${count > 1 ? 'pb-8' : ''}`}
+        className={`hero-deck-stage relative grid ${showStack ? 'pb-8' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={event => finishDrag(event, false)}
         onPointerCancel={event => finishDrag(event, true)}
       >
+        {isSkeleton && [2, 1].map(depth => (
+          <div
+            key={`skeleton-${depth}`}
+            aria-hidden="true"
+            data-testid="hero-deck-skeleton"
+            data-depth={depth}
+            className="hero-deck-skeleton hero-deck-card hero-deck-card-back pointer-events-none col-start-1 row-start-1 h-full"
+            style={{
+              zIndex: 3 - depth,
+              opacity: 1,
+              transform: stackTransform(depth),
+            }}
+          >
+            <div className="relative h-full rounded-[1.25rem]">
+              <div className="ticket featured-ticket flex h-full flex-col">
+                <TicketTop className="flex-1" />
+                <TicketStub className="flex-1" />
+              </div>
+              <span className="hero-deck-back-veil pointer-events-none absolute inset-0 rounded-[1.25rem]" style={{ opacity: 1 }} />
+            </div>
+          </div>
+        ))}
+
         {cards.map((card, index) => {
           const isExiting = exiting?.index === index
           const depth = (index - safeIndex + count) % count
           const isFront = depth === 0 && !isExiting
-          const zIndex = isExiting ? count + 2 : count - depth
+          const zIndex = isExiting ? count + 3 : isFront ? Math.max(count + 1, 4) : count - depth
           const opacity = isExiting ? 1 : stackOpacity(depth)
           const transform = isExiting ? stackTransform(0) : stackTransform(depth)
           const to = card.kind === 'brand' ? '/events' : `/events/${card.event.slug || card.event.id}`
@@ -647,7 +810,7 @@ export default function HeroFannedDeck({ events = [] }) {
                 {card.kind === 'brand' ? (
                   <BrandDefaultTicketFace />
                 ) : (
-                  <EventDeckTicketFace event={card.event} isFront={isFront} />
+                  <EventDeckTicketFace event={card.event} isFront={isFront} showFace={isFront || isExiting || dragging} />
                 )}
                 <span
                   aria-hidden="true"
@@ -660,54 +823,92 @@ export default function HeroFannedDeck({ events = [] }) {
         })}
       </div>
 
-      {count > 1 && (
+      {showStack && (
         <div className="mt-1 flex items-center justify-between gap-2" data-testid="hero-deck-controls">
-          <div className="flex items-center gap-0.5" role="tablist" aria-label="Choose featured pass">
-            {cards.map((card, index) => {
-              const active = index === safeIndex
-              return (
+          {isSkeleton ? (
+            <>
+              <div className="flex items-center gap-0.5" aria-hidden="true">
+                {[0, 1, 2, 3].map(idx => (
+                  <button
+                    key={idx}
+                    type="button"
+                    disabled
+                    tabIndex={-1}
+                    className="hero-deck-dot-btn inline-flex h-11 w-11 items-center justify-center rounded-full"
+                  >
+                    <span
+                      data-active={idx === 0 ? 'true' : 'false'}
+                      className={`hero-deck-dot block h-2 rounded-full ${idx === 0 ? 'bg-brand-300/60' : 'bg-white/20'}`}
+                    />
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1" aria-hidden="true">
                 <button
-                  key={card.id}
                   type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-label={`Show ${card.label} (${index + 1} of ${count})`}
-                  onClick={() => goTo(index)}
-                  className="hero-deck-dot-btn inline-flex min-h-11 min-w-11 items-center justify-center rounded-full"
+                  disabled
+                  tabIndex={-1}
+                  className="hero-deck-nav inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/40"
                 >
-                  <span
-                    aria-hidden="true"
-                    className={`hero-deck-dot block h-2 w-5 rounded-full ${active ? 'bg-brand-300' : 'bg-white/35'}`}
-                    style={{ transform: active ? 'scaleX(1)' : 'scaleX(0.4)' }}
-                  />
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
-              )
-            })}
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="sr-only" aria-live="polite" data-testid="hero-deck-live">
-              {safeIndex + 1} of {count}: {cards[safeIndex]?.label}
-            </span>
-            <span aria-hidden="true" className="mr-1.5 text-xs font-semibold tabular-nums text-brand-200/90">
-              {safeIndex + 1} / {count}
-            </span>
-            <button
-              type="button"
-              onClick={() => step(-1)}
-              aria-label="Previous featured pass"
-              className="hero-deck-nav tactile-press inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white"
-            >
-              <ChevronLeft aria-hidden="true" className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => step(1)}
-              aria-label="Next featured pass"
-              className="hero-deck-nav tactile-press inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white"
-            >
-              <ChevronRight aria-hidden="true" className="h-5 w-5" />
-            </button>
-          </div>
+                <button
+                  type="button"
+                  disabled
+                  tabIndex={-1}
+                  className="hero-deck-nav inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/40"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-0.5" role="tablist" aria-label="Choose featured pass">
+                {cards.map((card, index) => {
+                  const active = index === safeIndex
+                  return (
+                    <button
+                      key={card.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      aria-label={`Show ${card.label} (${index + 1} of ${count})`}
+                      onClick={clickEvent => handleControlClick(clickEvent, () => goTo(index))}
+                      className="hero-deck-dot-btn inline-flex h-11 w-11 items-center justify-center rounded-full"
+                    >
+                      <span
+                        aria-hidden="true"
+                        data-active={active ? 'true' : 'false'}
+                        className={`hero-deck-dot block h-2 rounded-full ${active ? 'bg-brand-300' : 'bg-white/35'}`}
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="sr-only" aria-live="polite" data-testid="hero-deck-live">
+                  {safeIndex + 1} of {count}: {cards[safeIndex]?.label}
+                </span>
+                <button
+                  type="button"
+                  onClick={clickEvent => handleControlClick(clickEvent, () => step(-1))}
+                  aria-label="Previous featured pass"
+                  className="hero-deck-nav tactile-press inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white"
+                >
+                  <ChevronLeft aria-hidden="true" className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={clickEvent => handleControlClick(clickEvent, () => step(1))}
+                  aria-label="Next featured pass"
+                  className="hero-deck-nav tactile-press inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white"
+                >
+                  <ChevronRight aria-hidden="true" className="h-5 w-5" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
