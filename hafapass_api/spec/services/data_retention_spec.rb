@@ -52,7 +52,7 @@ RSpec.describe DataRetention do
       end
       application_tables = tables.reject { |table| table.start_with?("solid_queue_") ||
         %w[ar_internal_metadata schema_migrations site_settings runtime_alert_states runtime_executions runtime_throttle_buckets
-          privacy_email_suppressions].include?(table) }
+          privacy_email_suppressions public_cache_generations].include?(table) }
       expect(described_class.schedule.keys.sort).to eq(application_tables.sort)
     end
 

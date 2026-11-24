@@ -30,6 +30,19 @@ module RuntimeConfiguration
     positive_integer("RAILS_MAX_THREADS", 3)
   end
 
+  # Puma processes serving requests. 1 (the default) keeps Puma's single mode,
+  # as on the 512 MB plan. 2 or more runs cluster mode: more request threads in
+  # total and, on a 2-CPU plan, one GVL per process. It does not confine
+  # checkouts waiting on an event's inventory lock to one process; Puma's
+  # shared socket sends them to every worker.
+  def web_processes
+    positive_integer("WEB_CONCURRENCY", 1)
+  end
+
+  def clustered?
+    web_processes > 1
+  end
+
   def worker_concurrency
     positive_integer("SIDEKIQ_CONCURRENCY", 3)
   end

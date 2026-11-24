@@ -156,7 +156,8 @@ module Api
       end
 
       def public_cacheable_request?
-        @current_user.nil? &&
+        PublicEventCache.enabled? &&
+          @current_user.nil? &&
           request.authorization.blank? &&
           params[:preview] != "true" &&
           params[:live_money_proof] != "true"
@@ -186,9 +187,14 @@ module Api
         true
       end
 
-      def site_setting_cache_version
-        updated_at = SiteSetting.pick(:updated_at) || listing_settings.updated_at
-        updated_at&.utc&.iso8601(6).to_s
+      # Site settings and the shared inventory generation, read in one query.
+      # A sell-out or returned inventory bumps the generation in every worker.
+      def public_cache_version
+        @public_cache_version ||= begin
+          settings_updated_at, generation = PublicEventCache.key_version
+          settings_updated_at ||= listing_settings.updated_at
+          [settings_updated_at.respond_to?(:iso8601) ? settings_updated_at.utc.iso8601(6) : settings_updated_at.to_s, generation]
+        end
       end
 
       def normalized_page_param
@@ -230,21 +236,21 @@ module Api
 
       def index_cache_key
         [
-          "public_events/v2/index",
+          "public_events/v3/index",
           request_locale.to_s,
           I18n.locale.to_s,
-          site_setting_cache_version,
+          *public_cache_version,
           normalized_index_cache_params
         ]
       end
 
       def show_cache_key
         [
-          "public_events/v2/show",
+          "public_events/v3/show",
           params[:slug].to_s,
           request_locale.to_s,
           I18n.locale.to_s,
-          site_setting_cache_version,
+          *public_cache_version,
           normalized_show_cache_params
         ]
       end

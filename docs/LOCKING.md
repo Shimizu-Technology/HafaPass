@@ -47,6 +47,13 @@ This is the lock contract for code that changes admissions, staff authority, wai
 | Unsubscribe and rejoin | Organization → event → advisory → active offer → entry. Each request commits before the next; the claimed offer of an existing order is left for that order's lifecycle. |
 | Waitlist receipt, alert round, and delivery job | Organization → event → advisory → offer (if any) → entry → delivery. The receipt record is idempotency evidence; it never determines the order of waitlist row locks. |
 
+### Rush-time shortcuts (no change to the order above)
+
+- **Sold-out refusal before any lock.** Public buyer checkout (`enforce_buyer_limits`) without a waitlist offer or seat hold first reads committed inventory with no lock. If a requested ticket type has nothing left, it is refused with the locked path's message (`Only 0 tickets available for …`). Refusing never oversells. It answers only when the locked path would give the same answer: a checkout key that already has an order (a same-key retry still recovers that order under the usual locks), an unknown ticket type, a launch-scope refusal, a closed event (ended, paused, held, unverified organizer, every pass night cancelled) and, in ticket type order, an off-sale type or a pass with no eligible nights all fall through to the locked path and its own error. Staff sales keep the full path.
+- **Completion inside checkout reuses its event locks.** Free, cash and simulated orders complete inside the checkout transaction, which already holds the event and every included night. `OrderLifecycle.complete!(…, event_context_locked: true)` skips re-deriving and re-locking them (the same set `lock_event_context!` would take) and then takes order → holds → offer → ticket types → tiers → seat session exactly as before. Only `Commerce::OrderCreator` passes the flag, and only inside its open transaction.
+- **One snapshot for both sales checks.** Checkout evaluates `sales_open?` twice under the event locks. Ticket type and pass-night edits take those same event locks first, so one snapshot of the event, its ticket types and included nights, loaded after the locks, replaces a dozen per-check queries for a pass.
+- **Public cache generation.** `PublicEventCache.bump!` runs after the outermost commit, in its own statement, holding no other lock, at most once per transaction however many records changed (`bump_after_commit!`). `HAFAPASS_PUBLIC_EVENT_CACHE=off` stops these writes too.
+
 The order is covered by latch-based PostgreSQL specs with a short `lock_timeout`. Each competing worker signals immediately before attempting its contested lock; a failed cycle raises instead of hanging. No timed sleep is used as a concurrency assertion.
 
 ### Admission counterpaths and foreign keys

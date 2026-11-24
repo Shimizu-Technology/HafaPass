@@ -18,7 +18,15 @@ class EventCapacity
     end
 
     def remaining_for_events(events, at: Time.current)
-      bounded = Array(events).compact.uniq(&:id).select { |ev| ev.persisted? && ev.max_capacity.present? }
+      bounded = bounded_events(events)
+      committed = committed_for_events(bounded, at: at)
+      bounded.to_h { |ev| [ev.id, [ev.max_capacity - committed.fetch(ev.id), 0].max] }
+    end
+
+    # Unclamped committed_for for each persisted event with a max_capacity, in
+    # one batch of aggregate queries (the same rows committed_for sums).
+    def committed_for_events(events, at: Time.current)
+      bounded = bounded_events(events)
       return {} if bounded.empty?
 
       ids = bounded.map(&:id)
@@ -36,14 +44,17 @@ class EventCapacity
         .count
       pass_committed_map = pass_committed_by_event_ids(ids, at: at)
 
-      bounded.each_with_object({}) do |ev, result|
-        committed = direct_sold_map.fetch(ev.id, 0) +
+      bounded.to_h do |ev|
+        [ev.id, direct_sold_map.fetch(ev.id, 0) +
           direct_holds_map.fetch(ev.id, 0) +
           direct_waitlist_map.fetch(ev.id, 0) +
           direct_seat_holds_map.fetch(ev.id, 0) +
-          pass_committed_map.fetch(ev.id, 0)
-        result[ev.id] = [ev.max_capacity - committed, 0].max
+          pass_committed_map.fetch(ev.id, 0)]
       end
+    end
+
+    def bounded_events(events)
+      Array(events).compact.uniq(&:id).select { |ev| ev.persisted? && ev.max_capacity.present? }
     end
 
     def pass_committed_for(event, at: Time.current)

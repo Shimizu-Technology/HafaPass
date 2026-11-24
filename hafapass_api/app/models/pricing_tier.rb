@@ -1,5 +1,8 @@
 class PricingTier < ApplicationRecord
   include OperationalAuditable
+  include PublicEventCacheBuster
+
+  busts_public_event_cache
 
   audits_operations :pricing_tier,
     fields: %w[ticket_type_id price_cents tier_type quantity_limit starts_at ends_at position],

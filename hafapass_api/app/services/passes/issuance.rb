@@ -34,7 +34,9 @@ module Passes
           attendee_name: parent_ticket.attendee_name,
           attendee_email: parent_ticket.attendee_email,
           holder_user: parent_ticket.holder_user,
-          holder_email: parent_ticket.holder_email
+          holder_email: parent_ticket.holder_email,
+          # Assigned at insert; issue_qr_code! stays as a no-op guard.
+          qr_code: SecureRandom.uuid
         )
         child.issue_qr_code!
         created << child
