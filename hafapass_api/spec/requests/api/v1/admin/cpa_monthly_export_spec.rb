@@ -1161,4 +1161,185 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     )
     expect(alerts["summary"]).to include("Lost dispute(s) missing dispute.lost audit and closed_at timestamp ($15.00)")
   end
+
+  # Follow-up #1 (CodeRabbit r4680402368): a redacted October paid audit must NOT
+  # be misread as a reversal when an auditless reversal happens in November.
+  it "does not misread a lone redacted October paid audit as a reversal after an auditless November reversal" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    captured_order(event: event, at: october_start_utc + 1.day, subtotal: 10_000, fee: 600)
+    settlement = create(:settlement, event: event, organization: org)
+    account = create(:connected_account, organization: org, provider: "manual", with_readiness_approval: false)
+    payout = create(:payout,
+      connected_account: account, settlement: settlement, event: event, organization: org,
+      provider: "manual", status: :processing, created_at: october_start_utc + 2.days,
+      paid_at: nil, amount_cents: 9_000, withheld_cents: 0, carried_withholding_cents: 0)
+
+    # Reconciled as paid in October (writes the single payout.reconciled audit)
+    travel_to(october_start_utc + 5.days) do
+      PayoutReconciler.call(
+        payout: payout,
+        actor: admin,
+        status: "paid",
+        provider_payout_id: "bank-oct-redacted-paid",
+        evidence: {
+          reference: "bank/paid-oct-only",
+          confirmed_at: (october_start_utc + 5.days).iso8601,
+          reason: "Wire settled",
+          approved_payee_confirmed: true,
+          approved_tax_payee_confirmed: true
+        }
+      )
+    end
+
+    # Redact the October paid audit row
+    allow(DataRetention).to receive(:ensure_destructive_enabled!)
+    AuditLog.where(auditable: payout).find_each { |log| DataRetention.anonymize!(log) }
+
+    fetch_csv(year: 2026, month: 10)
+    oct_body_before = response.body.dup
+
+    # In November, payout is reversed WITHOUT writing a reversal audit row
+    payout.update_columns(status: Payout.statuses.fetch("reversed"), updated_at: november_start_utc + 3.days)
+
+    # October raw CSV MUST remain byte-identical (paid audit NOT misread as an October reversal!)
+    fetch_csv(year: 2026, month: 10)
+    expect(response.body).to eq(oct_body_before)
+
+    # Missing reversal audit alert MUST be raised in current_integrity_alerts
+    get json_path, params: { year: 2026, month: 11 }, headers: auth_headers(admin)
+    alerts = response.parsed_body["current_integrity_alerts"]
+    expect(alerts).to include(
+      "has_alerts" => true,
+      "missing_reversal_audit_total_cents" => 9_000
+    )
+    expect(alerts["summary"]).to include("Reversed payout(s) missing reversal audit evidence ($90.00)")
+  end
+end
+
+# Follow-up #2 (CodeRabbit r4680406308): non-transactional snapshot isolation
+# specs proving REPEATABLE READ READ ONLY runs when no outer transaction is open,
+# inherits caller isolation inside an outer transaction, and prevents a concurrent
+# mid-report refund commit from producing a negative unallocated refund exception.
+RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
+  self.use_transactional_tests = false
+
+  let(:october_start_utc) { Time.utc(2026, 9, 30, 14, 0, 0) }
+
+  before do
+    raise "Non-transactional snapshot specs require test" unless Rails.env.test?
+
+    clean_test_data
+  end
+
+  after { clean_test_data }
+
+  it "runs inside a REPEATABLE READ READ ONLY transaction when no transaction is open and inherits caller isolation inside an outer transaction" do
+    observed = []
+    report = CpaMonthlyReport.new(2026, 10)
+    allow(report).to receive(:build_rows).and_wrap_original do |method, *args|
+      observed << ActiveRecord::Base.connection.select_rows(
+        "SELECT current_setting('transaction_isolation'), current_setting('transaction_read_only')"
+      ).first
+      method.call(*args)
+    end
+
+    expect(ActiveRecord::Base.connection.open_transactions).to eq(0)
+    report.report
+    expect(observed).to eq([["repeatable read", "on"]])
+
+    # Inside an outer transaction, inherits caller isolation without TransactionIsolationError
+    inner_observed = []
+    inner_report = CpaMonthlyReport.new(2026, 10)
+    allow(inner_report).to receive(:build_rows).and_wrap_original do |method, *args|
+      inner_observed << ActiveRecord::Base.connection.select_rows(
+        "SELECT current_setting('transaction_isolation'), current_setting('transaction_read_only')"
+      ).first
+      method.call(*args)
+    end
+    ActiveRecord::Base.transaction do
+      expect(ActiveRecord::Base.connection.open_transactions).to be > 0
+      inner_report.report
+    end
+    expect(inner_observed).to eq([["read committed", "off"]])
+  end
+
+  it "prevents a refund committed mid-report on a second connection from producing a negative unallocated refund exception" do
+    org = create(:organization)
+    event = create(:event, organization: org)
+    order = create(:order, :completed,
+      event: event, completed_at: october_start_utc + 1.day, created_at: october_start_utc + 1.day,
+      currency: "usd", payment_method: "stripe",
+      subtotal_cents: 10_000, discount_cents: 0, service_fee_cents: 600, organizer_fee_cents: 0,
+      total_cents: 10_600, processing_fee_bearer_snapshot: "platform")
+    item = create(:order_item,
+      order: order, quantity: 1, unit_price_cents: 10_000, subtotal_cents: 10_000,
+      discount_cents: 0, fee_cents: 600, organizer_fee_cents: 0, organizer_proceeds_cents: 10_000)
+    capture = create(:payment, :succeeded,
+      order: order, provider: "stripe", provider_environment: "live",
+      amount_cents: 10_600, currency: "usd", created_at: october_start_utc + 1.day)
+
+    ready_to_commit = Queue.new
+    commit_finished = Queue.new
+
+    writer = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        next if ready_to_commit.pop == :abort
+
+        refund = Refund.create!(
+          order: order, payment: capture, status: :succeeded,
+          amount_cents: 1_000, currency: "usd",
+          idempotency_key: "snap-test-refund-#{order.id}",
+          succeeded_at: october_start_utc + 5.days, created_at: october_start_utc + 5.days
+        )
+        RefundItem.create!(
+          refund: refund, order_item: item,
+          amount_cents: 1_000, organizer_proceeds_cents: 1_000, fee_cents: 0, organizer_fee_cents: 0
+        )
+        commit_finished << :committed
+      end
+    end
+
+    # Pause right after `refunds_total_month` reads Refunds (call #2 to
+    # `refunds_in_month`) and BEFORE `allocated_month` reads RefundItems (call #3),
+    # letting the second connection commit a new Refund + RefundItem. Under READ
+    # COMMITTED, `refunds_total_month` would see $0 while `allocated_month` would
+    # see $10 -> -$10 unallocated! Under REPEATABLE READ, both see $0.
+    report = CpaMonthlyReport.new(2026, 10)
+    calls = 0
+    triggered = false
+    allow(report).to receive(:refunds_in_month).and_wrap_original do |method, *args|
+      calls += 1
+      if calls == 3 && !triggered
+        triggered = true
+        ready_to_commit << :go
+        commit_finished.pop
+      end
+      method.call(*args)
+    end
+
+    result = nil
+    begin
+      result = report.report
+    ensure
+      ready_to_commit << :abort unless triggered
+      writer.join(10)
+    end
+    expect(triggered).to be(true)
+    row = result[:rows].first
+    expect(row[:unallocated_refunds_exception_cents]).to eq(0)
+    expect(row[:cumulative_unallocated_refunds_exception_cents]).to eq(0)
+    expect(row[:reconciliation_exception_flag]).to be(false)
+  end
+
+  def clean_test_data
+    unless Rails.env.test? && ActiveRecord::Base.connection_db_config.database.end_with?("_test")
+      raise "Isolated test database required"
+    end
+
+    ActiveRecord::Base.connection.execute(<<~SQL)
+      TRUNCATE TABLE audit_logs, audit_write_failures, organizations, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
+      RESTART IDENTITY CASCADE
+    SQL
+  end
 end

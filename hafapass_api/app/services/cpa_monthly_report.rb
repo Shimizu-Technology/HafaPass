@@ -184,10 +184,12 @@ class CpaMonthlyReport
 
   private
 
-  # Run every aggregate in one REPEATABLE READ read-only snapshot so concurrent
-  # writes cannot cause refund totals and RefundItem allocations to disagree.
-  # Guarded like EventSeriesReport#call so an outer transaction (e.g. specs)
-  # does not raise ActiveRecord::TransactionIsolationError.
+  # Run every aggregate in one REPEATABLE READ read-only snapshot when no outer
+  # transaction is open so concurrent writes cannot cause refund totals and
+  # RefundItem allocations to disagree. Guarded like EventSeriesReport#call:
+  # inside an already-open outer transaction (e.g. transactional specs or a
+  # caller-managed transaction), it inherits the caller's isolation level
+  # instead of raising ActiveRecord::TransactionIsolationError.
   def with_consistent_snapshot
     if ActiveRecord::Base.connection.open_transactions.zero?
       ActiveRecord::Base.transaction(isolation: :repeatable_read) do
@@ -372,51 +374,41 @@ class CpaMonthlyReport
   end
 
   # Redaction-safe paid audit join: relies on immutable fields that survive
-  # DataRetention.anonymize! (`action`, `auditable_id`, `created_at`) plus
-  # `payouts.status` transition cardinality (Payout#may_reconcile_to? permits
-  # at most one transition to `paid` and one terminal `paid -> reversed`).
-  # When `after_data` has been redacted (`after_data->>'status'` is blank), a
-  # `payout.reconciled` row is matched as the paid transition iff the payout is
-  # currently `paid` OR a higher-id reversal audit exists on the same payout.
+  # DataRetention.anonymize! (`action`, `auditable_id`, `created_at`). Because
+  # Payout#may_reconcile_to? permits at most one transition to `paid` before a
+  # terminal `paid -> reversed` transition, the earliest (`id ASC`) `payout.paid`
+  # or redacted/paid `payout.reconciled` row on a payout with `paid_at` present
+  # is its paid recording audit — even if `payouts.status` later flips to
+  # `reversed` without a reversal audit.
   def paid_audit_join_sql
-    paid_status = Payout.statuses.fetch("paid")
-    ActiveRecord::Base.sanitize_sql_array([
-      <<~SQL.squish,
-        LEFT JOIN LATERAL (
-          SELECT a.id, a.created_at
-          FROM audit_logs a
-          WHERE a.auditable_type = 'Payout'
-            AND a.auditable_id = payouts.id
-            AND (
-              a.action = 'payout.paid'
-              OR (a.action = 'payout.reconciled' AND a.after_data->>'status' = 'paid')
-              OR (
-                a.action = 'payout.reconciled'
-                AND COALESCE(a.after_data->>'status', '') = ''
-                AND (
-                  payouts.status = ?
-                  OR EXISTS (
-                    SELECT 1 FROM audit_logs later_a
-                    WHERE later_a.auditable_type = 'Payout'
-                      AND later_a.auditable_id = payouts.id
-                      AND later_a.action IN ('payout.reconciled', 'payout.reversed')
-                      AND later_a.id > a.id
-                  )
-                )
-              )
+    <<~SQL.squish
+      LEFT JOIN LATERAL (
+        SELECT a.id, a.created_at
+        FROM audit_logs a
+        WHERE a.auditable_type = 'Payout'
+          AND a.auditable_id = payouts.id
+          AND (
+            a.action = 'payout.paid'
+            OR (a.action = 'payout.reconciled' AND a.after_data->>'status' = 'paid')
+            OR (
+              a.action = 'payout.reconciled'
+              AND COALESCE(a.after_data->>'status', '') = ''
             )
-          ORDER BY a.id ASC
-          LIMIT 1
-        ) paid_audit ON true
-      SQL
-      paid_status
-    ])
+          )
+        ORDER BY a.id ASC
+        LIMIT 1
+      ) paid_audit ON true
+    SQL
   end
 
   # Redaction-safe reversal audit join: matches `payout.reversed`, unredacted
   # `payout.reconciled` with `after_data->>'status' = 'reversed'`, or (after
-  # DataRetention.anonymize! clears `after_data`) the latest `payout.reconciled`
-  # row on a `status = reversed` payout.
+  # DataRetention.anonymize! clears `after_data`) a later `payout.reconciled`
+  # row on a `status = reversed` payout ONLY when an earlier paid/reconciled
+  # audit (`earlier_a.id < a.id`) exists on the same payout. This prevents a
+  # single redacted paid audit from ever being misread as a reversal when an
+  # auditless reversal occurs later (which instead surfaces in
+  # `current_integrity_alerts` without altering closed months).
   def reversal_audit_join_sql
     reversed_status = Payout.statuses.fetch("reversed")
     ActiveRecord::Base.sanitize_sql_array([
@@ -433,6 +425,13 @@ class CpaMonthlyReport
                 a.action = 'payout.reconciled'
                 AND COALESCE(a.after_data->>'status', '') = ''
                 AND payouts.status = ?
+                AND EXISTS (
+                  SELECT 1 FROM audit_logs earlier_a
+                  WHERE earlier_a.auditable_type = 'Payout'
+                    AND earlier_a.auditable_id = payouts.id
+                    AND earlier_a.action IN ('payout.reconciled', 'payout.paid')
+                    AND earlier_a.id < a.id
+                )
               )
             )
           ORDER BY a.id DESC
