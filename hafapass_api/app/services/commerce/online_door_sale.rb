@@ -100,8 +100,11 @@ module Commerce
       if session.status == "open" && (order.expired? || !order.expires_at&.future?)
         raise StripeService::PaymentError, "Stripe has not closed the expired reservation"
       end
+      if session.status == "complete" && session.payment_status != "paid"
+        raise StripeService::PaymentError, "Stripe has not confirmed payment for the completed checkout"
+      end
 
-      session.status == "complete" && session.payment_status == "paid"
+      session.status == "complete"
     rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error
       error = ProviderUnknown.new("Could not confirm the saved payment with Stripe. Check its status before charging again.")
       error.order_id = order.id

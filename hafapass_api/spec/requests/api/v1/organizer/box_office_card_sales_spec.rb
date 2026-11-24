@@ -115,6 +115,19 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(response.parsed_body).to include("order_id" => order.id, "reconciliation_required" => true)
   end
 
+  it "blocks a second checkout while a complete Stripe Session still reports unpaid" do
+    order = create_sale
+    session = session_fixture(order.payments.sole, order.expires_at, status: "complete")
+    session.payment_status = "unpaid"
+    allow(StripeService).to receive(:retrieve_door_checkout_session).and_return(session)
+
+    expect do
+      post path, params: cart, headers: headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+    end.not_to change(Order, :count)
+    expect(response).to have_http_status(:bad_gateway)
+    expect(response.parsed_body).to include("order_id" => order.id, "reconciliation_required" => true)
+  end
+
   [false, true].each do |includes_ended_night|
     it "refunds after #{includes_ended_night ? 'an included night' : 'the event'} ends" do
       start = Time.current
