@@ -18,6 +18,14 @@ class WaitlistUnsubscribe
   end
 
   def self.stop!(entry, all: false)
+    if all
+      EmailPreferences.with_platform_locks(entry.email, create_preference: false) { stop_with_consent_lock!(entry, all: true) }
+    else
+      stop_with_consent_lock!(entry)
+    end
+  end
+
+  def self.stop_with_consent_lock!(entry, all: false)
     WaitlistLocks.with(entry: entry) do
       if entry.active?
         entry.waitlist_offers.where(status: [:offered, :claimed]).find_each do |offer|

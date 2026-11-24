@@ -141,3 +141,21 @@ Baseline: `15ae78df5bc31a994fcfcdd483e859fba9d0072a`. One final commit; no front
 - **C5 / r4677328473:** the verified-email-only deletion fixture now includes another account whose saved follow address differs from its current contact address. It verifies the address/timestamp are cleared while both the follow and account remain.
 
 Validation: focused **99 examples / 0 failures**; final **631 examples / 0 failures** across 52 email, privacy, retention, webhook/receipt, consent, lock-order and marketplace spec files. RuboCop **1,104 files / no offenses**; whitespace check passed. Tests use local fixtures and simulated/mocked transport; no real email. No merge, deployment or sub-agents. Task database/resources are cleaned before handback; pre-existing PostgreSQL and untracked audit files are preserved. Lead owns final-head CI/review and any remaining residuals; no further worker review rounds are planned.
+
+## A1: consent lock for absent rows (2026-11-24)
+
+Baseline: `24bc4705126fe26f116619518ac7582e4bbc9179`. `EmailPreferences.with_platform_locks` now takes a transaction-scoped address advisory lock before any row lookup or creation, in both normal and lock-only modes. It uses the existing typed-bind two-integer query pattern from `WaitlistLocks`, with a distinct email-consent namespace `20_261_124` and `hashtext` of the stripped/downcased address. Waitlist's namespace is `20_261_022`, legal holds use `728314`, and slug locks use the separate single-key space. The sorted multi-email helper retains sorted advisory/row nesting. No personal-data rows are created by lock-only mode.
+
+Documented order: address advisory lock → preference → subscriber → follow → organization/waitlist → unsubscribe/consent rows.
+
+All three direct callers of `unsubscribe_organizer!` were checked:
+
+- `Api::V1::MarketingUnsubscribesController#create`: ordinary email-link withdrawal has no preceding domain lock. Its waitlist-token route delegates to `WaitlistUnsubscribe.stop!`.
+- `WaitlistUnsubscribe.stop!`: organizer-wide withdrawal now wraps its entire body in the consent helper before the first `WaitlistLocks.with`, rather than obtaining consent locks after cancelling the initial entry. Recursive entry-only cancellations stay inside the same address lock.
+- `WaitlistDelivery.record_complaint!`: called from the consent-locked failure-reconciliation body. `WaitlistDelivery.reconcile_failure!` continues to wrap `WaitlistLocks.for_delivery` in the consent helper. The provider-receipt route, `MessageProviderEventProcessor#process_receipt!`, takes the same outer consent lock before receipt/domain locks. MessageDeliveryJob's direct failure-reconciliation calls occur after its delivery-lock blocks return.
+
+Regression coverage in `platform_consent_lock_order_spec`: existing consent operations now assert advisory-first ordering; lock-only mode with neither row asserts advisory-before-lookups and zero inserts; a separate native PostgreSQL connection gets `false` from `pg_try_advisory_xact_lock` while the first holds the same normalized address lock; organizer-wide waitlist withdrawal asserts the consent lock before the first organization lock and no preference creation. The native connection is rolled back and closed. The privacy no-row erasure regression remains covered.
+
+Targeted lock-order/privacy/waitlist run: **43 examples / 0 failures**. No frontend, schema or migration changes. No real email, merge, deployment or sub-agents. Task database/resources are cleaned before handback; final-head CI/review remain lead-owned.
+
+Final broader validation: **634 examples / 0 failures** across 52 email, privacy, waitlist/receipt, consent, retention and marketplace spec files; RuboCop **1,104 files / no offenses**; whitespace check passed.

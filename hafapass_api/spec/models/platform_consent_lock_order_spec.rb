@@ -12,8 +12,9 @@ RSpec.describe "Platform consent lock order", type: :request do
     ]
     operations.each do |operation|
       locks = []
-      callback = ->(*args) { locks << args.last[:sql] if args.last[:sql].match?(/FOR UPDATE/) }
+      callback = ->(*args) { locks << args.last[:sql] if args.last[:sql].match?(/FOR UPDATE|pg_advisory_xact_lock/) }
       ActiveSupport::Notifications.subscribed(callback, "sql.active_record", &operation)
+      expect(locks.first).to include("pg_advisory_xact_lock")
       tables = locks.filter_map { |sql| sql[/FROM "(email_preferences|platform_subscribers)"/, 1] }
       expect(tables).to eq(%w[email_preferences platform_subscribers])
     end
@@ -78,5 +79,56 @@ RSpec.describe "Platform consent lock order", type: :request do
     expect(follow_lock).to be >= pairs.size
     expect(follow_lock).to be < organization_lock
     expect(request.reload.status).to eq("completed")
+  end
+  it "A1: takes the address advisory lock before lookups even when lock-only mode has no rows" do
+    email = "  NO-ROWS@example.test  "
+    statements = []
+    callback = ->(*args) { statements << args.last[:sql] unless args.last[:sql].match?(/BEGIN|SAVEPOINT/) }
+    before = [EmailPreference.count, PlatformSubscriber.count]
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      EmailPreferences.with_platform_locks(email, create_preference: false) do |preference, subscriber|
+        expect(preference).to be_nil
+        expect(subscriber).to be_nil
+      end
+    end
+    expect(statements.first).to include("pg_advisory_xact_lock")
+    expect(statements.none? { |sql| sql.include?("INSERT INTO") }).to be(true)
+    expect([EmailPreference.count, PlatformSubscriber.count]).to eq(before)
+  end
+
+  it "A1: excludes another connection for the same normalized address without creating rows" do
+    email = "  EMPTY@example.test  "
+    main_pid = ApplicationRecord.connection.select_value("SELECT pg_backend_pid()")
+    EmailPreferences.with_platform_locks(email, create_preference: false) do
+      config = ApplicationRecord.connection_db_config.configuration_hash
+      other = PG.connect(host: config[:host], port: config[:port], dbname: config[:database],
+        user: config[:username], password: config[:password])
+      begin
+        other.exec("BEGIN")
+        pid = other.exec("SELECT pg_backend_pid()").getvalue(0, 0).to_i
+        acquired = other.exec_params("SELECT pg_try_advisory_xact_lock($1, hashtext($2))",
+          [EmailPreferences::ADVISORY_NAMESPACE, email.strip.downcase]).getvalue(0, 0)
+        expect(pid).not_to eq(main_pid)
+        expect(acquired).to eq("f")
+      ensure
+        other.exec("ROLLBACK")
+        other.close
+      end
+    end
+    expect(EmailPreference.where(email: email.strip.downcase)).not_to exist
+    expect(PlatformSubscriber.where(email: email.strip.downcase)).not_to exist
+  end
+  it "A1: locks the address before the first organization lock in waitlist organizer withdrawal" do
+    entry = create(:waitlist_entry)
+    locks = []
+    callback = ->(*args) { locks << args.last if args.last[:sql].match?(/FOR UPDATE|pg_advisory_xact_lock/) }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      WaitlistUnsubscribe.stop!(entry, all: true)
+    end
+    expect(locks.first[:name]).to eq("Email consent lock")
+    expect(locks.index { |payload| payload[:sql].include?('FROM "organizations"') }).to be > 0
+    expect(entry.reload.status).to eq("cancelled")
+    expect(MarketingUnsubscribe.exists?(organization: entry.event.organization, email: entry.email)).to be(true)
+    expect(EmailPreference.where(email: entry.email)).not_to exist
   end
 end

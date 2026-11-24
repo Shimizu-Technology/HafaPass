@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 class EmailPreferences
+  # Two-int key space, distinct from WaitlistLocks (20_261_022) and LegalHold (728314).
+  ADVISORY_NAMESPACE = 20_261_124
+
   def self.token(email, scope: "preferences")
     encryptor.encrypt_and_sign([email.to_s.strip.downcase, scope], purpose: scope)
   end
@@ -53,13 +56,17 @@ class EmailPreferences
     enabled.uniq - blocked
   end
 
-  # Consent lock order (including creation): preference, then subscriber, then
-  # follow rows, then organization/waitlist locks, then unsubscribe and consent rows.
-  # For multiple addresses, nest each preference/subscriber pair in sorted order.
+  # Consent lock order: address advisory lock, preference, subscriber, follow,
+  # organization/waitlist, then unsubscribe/consent rows.
+  # For multiple addresses, nest each address's advisory/row locks in sorted order.
   # Lock-only callers must not manufacture new personal-data rows.
   def self.with_platform_locks(email, create_preference: true, create_subscriber: false, subscriber_attributes: {})
     email = email.to_s.strip.downcase
     EmailPreference.transaction do
+      EmailPreference.connection.exec_query("SELECT 1 FROM pg_advisory_xact_lock($1, hashtext($2))", "Email consent lock", [
+        ActiveRecord::Relation::QueryAttribute.new("namespace", ADVISORY_NAMESPACE, ActiveRecord::Type::Integer.new),
+        ActiveRecord::Relation::QueryAttribute.new("email", email, ActiveRecord::Type::String.new)
+      ])
       preference = create_preference ? EmailPreference.find_or_create_by!(email: email) : EmailPreference.find_by(email: email)
       preference&.lock!
       subscriber = PlatformSubscriber.find_by(email: email)
