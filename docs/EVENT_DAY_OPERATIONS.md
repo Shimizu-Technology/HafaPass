@@ -107,6 +107,14 @@ Required production configuration:
 - `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_<id>`: encrypted OAuth/access token scoped to that HåfaPass organization (for example, organization 42 uses `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_42`). A global shared merchant token is intentionally unsupported. Never store the token in a card-present account row or return it to a browser.
 - One admin-reviewed `CardPresentAccount` with Guam merchant approval evidence, merchant ID, device ID, and POS ID.
 
+### Stripe Checkout without a reader
+
+An admin can enable **Online door card sales** for an event under Admin → Events → Launch reviews. Staff can choose **Pay on buyer’s phone** to show a checkout QR, or **Enter card on this device** to open a Stripe-hosted card form. To offer a payment link by email, enter the buyer’s email before preparing their phone checkout. Enter card details only in the Stripe-hosted form. Both methods use normal HåfaPass online service fees and the existing Stripe processing cost allocation. Staff-keyed cards have greater fraud risk than card-present payments. Stripe publishes an extra fee for manually entered cards where applicable. Radar and issuer authentication stay active. [Stripe pricing](https://stripe.com/pricing)
+
+A sale reserves the cart for 35 minutes, including any assigned seats and pass-night capacity. The same reservation counts against online and door inventory. Stripe Checkout requires at least 30 minutes for a configured session expiry. Cancel abandoned sales promptly to release inventory early. The sale resumes on reload in the same browser tab and organization. If setup is uncertain, retry the saved checkout or refresh its status. Only **Paid — tickets ready** confirms that the signed Stripe payment reached HåfaPass and it issued tickets. A decline can be retried on the same Checkout Session. An expired or cancelled reservation never issues tickets. A confirmed capture after inventory is released, including one received after the reservation deadline, follows the automatic late-capture refund and reconciliation path. [Stripe Checkout expiry](https://docs.stripe.com/api/checkout/sessions/create) [Stripe cancellation](https://docs.stripe.com/api/checkout/sessions/expire)
+
+Before enabling an event, confirm the correct Stripe account and mode are configured for HåfaPass. Add `checkout.session.expired` to the existing Stripe webhook in test mode and in the production mode intended for the event. Keep the current PaymentIntent, refund, dispute, and Radar events enabled. Verify the Checkout payment page and refunds with test-mode fixtures before enabling a live event. The two new reporting methods are **Phone checkout** and **Staff-keyed checkout**. Their payments settle through Stripe. Only cash retained by the organizer is subtracted from platform payout custody.
+
 ## Outage and fallback decisions
 
 | Condition | Door action |

@@ -201,14 +201,19 @@ module Settlements
     end
 
     def sale_items
+      online_door_methods = orders.select(&:online_door_card?).to_h { |order| [order.id, order.payment_method] }
       order_items.map do |item|
+        metadata = { order_id: item.order_id, subtotal_cents: item.subtotal_cents, discount_cents: item.discount_cents }
+        if online_door_methods.key?(item.order_id)
+          metadata[:payment_method] = online_door_methods.fetch(item.order_id)
+        end
         statement_item(
           kind: "sale_proceeds",
           amount_cents: item.organizer_proceeds_cents,
           source: item,
           description: "#{item.quantity} × #{item.name}",
           occurred_at: item.created_at,
-          metadata: { order_id: item.order_id, subtotal_cents: item.subtotal_cents, discount_cents: item.discount_cents }
+          metadata: metadata
         )
       end
     end

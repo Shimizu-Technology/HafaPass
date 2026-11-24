@@ -59,6 +59,8 @@ class EventSeriesReport
   CHANNEL_DEFINITIONS = [
     [:online_stripe, "Online (Stripe)"],
     [:door_card, "Door (Card)"],
+    [:door_card_link, "Door (Phone Checkout)"],
+    [:door_card_keyed, "Door (Staff-Keyed Checkout)"],
     [:door_cash, "Door Cash"],
     [:free_comp, "Free / Comp"]
   ].freeze
@@ -423,6 +425,7 @@ class EventSeriesReport
   def classify_order_channel(order)
     return :door_cash if @cash_order_ids.include?(order.id)
     return :door_card if order.payment_method == "door_card"
+    return order.payment_method.to_sym if order.online_door_card?
     return :free_comp if order.total_cents.zero?
 
     :online_stripe

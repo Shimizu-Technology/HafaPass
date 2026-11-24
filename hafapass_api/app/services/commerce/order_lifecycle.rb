@@ -27,13 +27,8 @@ module Commerce
       # normally when the inventory is still free; otherwise release it and
       # refund the buyer automatically (LateCaptureRefundJob).
       #
-      # event_context_locked: only Commerce::OrderCreator passes true, when it
-      # completes an order it created inside the same transaction. That
-      # transaction already holds this order's event and every included night
-      # (the same set lock_event_context! derives from the order's pass ticket
-      # types), plus the organization when a waitlist offer is claimed, so
-      # re-deriving and re-acquiring them is skipped. Every later lock is taken
-      # exactly as before.
+      # The creator and hosted-checkout webhook already hold the event context
+      # when passing event_context_locked. Every later lock is still acquired.
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
         late_completion: false, event_context_locked: false)
         if event_context_locked && !Order.connection.transaction_open?
@@ -192,7 +187,7 @@ module Commerce
         end
       end
 
-      def cancel!(order, reason: "buyer_cancelled")
+      def cancel!(order, reason: "buyer_cancelled", closed_checkout_session_id: nil)
         payments_to_cancel = []
         Passes::Locking.with_lock_retry do
           payments_to_cancel = []
@@ -203,19 +198,24 @@ module Commerce
 
             holds, catalog_holds = lock_order_holds!(order)
             payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+            if reason == "box_office_cancelled" &&
+                payments_to_cancel.any? { |payment| payment.stripe_checkout_session_id != closed_checkout_session_id }
+              raise InvalidTransition, "The Stripe checkout changed. Reload to cancel it."
+            end
+
             release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
               holds: holds, catalog_holds: catalog_holds)
-            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: Time.current)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], stripe_checkout_url: nil, updated_at: Time.current)
           end
         end
         cancel_provider_payments!(order, payments_to_cancel)
       end
 
-      def expire!(order, at: Time.current)
+      def expire!(order, at: Time.current, provider_expired: false)
         # Ask the provider before releasing: a payment that already succeeded
         # (for example, its webhook is delayed) must be fulfilled or refunded,
         # never cancelled underneath the buyer.
-        if (late = succeeded_provider_payment(order, at: at))
+        if !order.online_door_card? && (late = succeeded_provider_payment(order, at: at))
           payment, intent = late
           complete!(order, payment: payment, provider_amount_cents: intent.amount_received,
             provider_currency: intent.currency, late_completion: true)
@@ -230,13 +230,13 @@ module Commerce
           Order.transaction do
             lock_event_context!(order)
             order.lock!
-            return false unless order.pending? && order.expires_at.present? && order.expires_at <= at
+            return false unless order.pending? && order.expires_at.present? && (provider_expired || order.expires_at <= at)
 
             holds, catalog_holds = lock_order_holds!(order)
             payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
             release_locked_order!(order, reason: "hold_expired", expired: true, at: at,
               claimed_offer: lock_claimed_waitlist_offer!(order), holds: holds, catalog_holds: catalog_holds)
-            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: at)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], stripe_checkout_url: nil, updated_at: at)
             expired_now = true
           end
         end
@@ -566,7 +566,7 @@ module Commerce
 
       def cancel_provider_payments!(order, payments)
         payments.each do |payment|
-          next if payment.provider_payment_id.blank?
+          next if payment.provider_payment_id.blank? || order.online_door_card?
 
           Timeout.timeout(30.seconds) do
             StripeService.cancel_payment_intent(

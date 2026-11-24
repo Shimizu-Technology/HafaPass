@@ -8,6 +8,7 @@ Reviewed on 2026-10-22 against `EmailService.prepare_delivery_payload`, its emai
 | --- | --- | --- |
 | `order_confirmation` | Transactional | Confirms a completed order and provides receipt/ticket access. |
 | `fulfillment_resend` | Transactional | Resends the requested order confirmation. |
+| `door_payment_link` | Transactional | Sends the buyer the Stripe Checkout link they requested for a pending door sale. |
 | `ticket_delivery` | Transactional | Delivers an issued ticket. |
 | `order_recovery` | Transactional | Restores access to an existing order. |
 | `event_change` | Transactional | Reports a material change to a purchased event. |

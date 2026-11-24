@@ -700,7 +700,8 @@
       "action": "anonymize",
       "pii_columns": [
         "failure_message",
-        "provider_payload"
+        "provider_payload",
+        "stripe_checkout_url"
       ]
     },
     "payout_check_adjustments": {
@@ -1734,6 +1735,7 @@
     },
     "events": {
       "id": "system",
+      "online_door_card_enabled": "system",
       "preview_token_digest": "pii",
       "preview_token_version": "system",
       "age_restriction": "non-personal",
@@ -2359,6 +2361,8 @@
     },
     "payments": {
       "id": "system",
+      "stripe_checkout_session_id": "system",
+      "stripe_checkout_url": "pii",
       "amount_cents": "financial",
       "created_at": "system",
       "currency": "financial",

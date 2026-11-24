@@ -12,7 +12,7 @@ class Event < ApplicationRecord
 
   audits_operations :event,
     fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
-      category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees
+      category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees online_door_card_enabled
       transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
     observe: %w[title slug description short_description cover_image_url venue_name venue_address venue_city
       localized_content]

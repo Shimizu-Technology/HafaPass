@@ -1,6 +1,7 @@
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { Loader2, ShoppingCart, CreditCard, Banknote, Plus, Minus, CheckCircle2 } from 'lucide-react'
 import apiClient from '../../api/client'
@@ -8,6 +9,13 @@ import QRCode from '../../components/QRCode'
 import { useLaunchCapabilityState } from '../../hooks/useLaunchCapabilities'
 import SeatSelector from '../../components/SeatSelector'
 import SupportLink from '../../components/SupportLink'
+import BoxOfficeCardSale from './BoxOfficeCardSale'
+
+const onlineCardMethods = [
+  ['door_card_link', 'boxOfficeCard.link'],
+  ['door_card_keyed', 'boxOfficeCard.keyed'],
+]
+const isOnlineCard = method => onlineCardMethods.some(([key]) => method === key)
 
 const readSavedSale = key => {
   try {
@@ -16,7 +24,8 @@ const readSavedSale = key => {
     const sale = JSON.parse(raw)
     const payload = sale?.payload
     const valid = typeof sale?.key === 'string' && sale.key.trim() && Number.isSafeInteger(sale.total_cents) && sale.total_cents >= 0
-      && payload && ['door_cash', 'door_card'].includes(payload.payment_method)
+      && payload && (['door_cash', 'door_card'].includes(payload.payment_method) || isOnlineCard(payload.payment_method))
+      && (sale.online_order_id == null || (isOnlineCard(payload.payment_method) && Number.isSafeInteger(sale.online_order_id) && sale.online_order_id > 0))
       && Array.isArray(payload.line_items) && payload.line_items.length > 0
       && payload.line_items.every(item => Number.isSafeInteger(item?.ticket_type_id) && item.ticket_type_id > 0 && Number.isSafeInteger(item?.quantity) && item.quantity > 0)
     return valid ? sale : { recoveryRequired: true }
@@ -33,6 +42,7 @@ export default function BoxOfficePage() {
 }
 
 function BoxOfficePageSession({ id, identity }) {
+ const { t } = useTranslation()
  const { current, beginRequest } = useOrganizerRequests(identity, `/dashboard/events/${id}/box-office`)
  const requestApi = useCallback(async (method, url, payload, options = {}) => {
   const request = beginRequest()
@@ -60,6 +70,8 @@ function BoxOfficePageSession({ id, identity }) {
   const summaryLoadGeneration = useRef(0)
   const [cardAccount, setCardAccount] = useState(null)
   const [saleError, setSaleError] = useState(null)
+  const [onlineSaleInitial, setOnlineSaleInitial] = useState(null)
+  const saleRequestBusy = useRef(false)
   const [seatReservation, setSeatReservation] = useState(null)
   const [seatSelectorKey, setSeatSelectorKey] = useState(0)
   const legacyStorageKey = `hafapass:pending-box-office:${identity.owner}:${id}`
@@ -70,6 +82,9 @@ function BoxOfficePageSession({ id, identity }) {
   const [pendingSale, setPendingSale] = useState(() => readSavedSale(saleStorageKey))
   const pendingSaleRef = useRef(pendingSale)
   const saleLocked = submitting || accessRefreshing || Boolean(pendingSale)
+  const onlineOrderId = pendingSale?.online_order_id
+  const cardSalePath = `/organizer/events/${id}/box_office_card_sales`
+  const onlinePayment = isOnlineCard(paymentMethod)
 
 
   const fetchEvent = useCallback(async () => {
@@ -163,9 +178,48 @@ function BoxOfficePageSession({ id, identity }) {
     ? seatReservation.seats.reduce((sum, seat) => sum + seat.price_cents, 0)
     : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * (tt.current_price_cents ?? tt.price_cents), 0) || 0
 
+  const postOnlineCardSale = useCallback(async sale => {
+    const { payload, key } = sale
+    const { expected_total_cents: _cashQuote, ...checkoutPayload } = payload
+    const response = await requestApi('post', cardSalePath, checkoutPayload, { headers: { 'Idempotency-Key': key } })
+    return response.data
+  }, [cardSalePath, requestApi])
+
+  const restoreOnlineSetup = useCallback(() => postOnlineCardSale(pendingSaleRef.current), [postOnlineCardSale])
+
+  const keepOnlineSale = (sale, orderId, initial = null) => {
+    const saved = { ...sale, online_order_id: orderId }
+    window.sessionStorage.setItem(saleStorageKey, JSON.stringify(saved))
+    pendingSaleRef.current = saved
+    setPendingSale(saved)
+    setOnlineSaleInitial(initial)
+  }
+
+  const finishOnlineSale = () => {
+    if (!current()) return
+    try {
+      window.sessionStorage.removeItem(saleStorageKey)
+    } catch {
+      setSaleError({ message: t('boxOfficeCard.storageError') })
+      return
+    }
+    pendingSaleRef.current = null
+    setPendingSale(null)
+    setOnlineSaleInitial(null)
+    setPaymentMethod('door_cash')
+    setBuyerName('')
+    setBuyerEmail('')
+    setSeatReservation(null)
+    setSeatSelectorKey(value => value + 1)
+    setSaleError(null)
+    fetchEvent()
+    fetchSummary()
+  }
+
   const handleSale = async () => {
     if (!current() || !authorizedEvent.current || pendingSaleRef.current?.recoveryRequired) return
-    if (submitting || (!pendingSaleRef.current && totalItems === 0)) return
+    if (saleRequestBusy.current || pendingSaleRef.current?.online_order_id || (!pendingSaleRef.current && totalItems === 0)) return
+    saleRequestBusy.current = true
     const recoveringSavedSale = Boolean(pendingSaleRef.current)
     setSubmitting(true)
     setLastOrder(null)
@@ -196,6 +250,11 @@ function BoxOfficePageSession({ id, identity }) {
         pendingSaleRef.current = sale
         setPendingSale(sale)
       }
+      if (isOnlineCard(sale.payload.payment_method)) {
+        const onlineOrder = await postOnlineCardSale(sale)
+        if (current()) keepOnlineSale(sale, onlineOrder.id, onlineOrder)
+        return
+      }
       const res = await requestApi('post', `/organizer/events/${id}/box_office`, sale.payload, { headers: { 'Idempotency-Key': sale.key } })
       if (!current()) return
       setLastOrder(res.data)
@@ -217,7 +276,12 @@ function BoxOfficePageSession({ id, identity }) {
       if (!current()) return
       const data = err.response?.data
       const priceChanged = data?.code === 'price_changed'
-      const uncertain = !priceChanged && ((recoveringSavedSale && data?.reconciliation_required !== false) || !err.response || err.response.status >= 500 || [408, 409, 429].includes(err.response.status) || Boolean(data?.reconciliation_required))
+      if (onlinePayment && data?.order_id && pendingSaleRef.current) {
+        keepOnlineSale(pendingSaleRef.current, data.order_id)
+        return
+      }
+      const onlineUncertain = onlinePayment && (data?.reconciliation_required ?? (!err.response || err.response.status >= 500))
+      const uncertain = onlinePayment ? onlineUncertain : !priceChanged && ((recoveringSavedSale && data?.reconciliation_required !== false) || !err.response || err.response.status >= 500 || [408, 409, 429].includes(err.response.status) || Boolean(data?.reconciliation_required))
       setSaleError({
         message: data?.error || (uncertain ? 'The connection was interrupted. This sale may have completed. Retry this saved sale or ask a manager to verify its outcome.' : 'Failed to process sale.'),
         reconciliationRequired: uncertain,
@@ -231,6 +295,7 @@ function BoxOfficePageSession({ id, identity }) {
         if (priceChanged) fetchEvent()
       }
     } finally {
+      saleRequestBusy.current = false
       if (current()) setSubmitting(false)
     }
   }
@@ -252,7 +317,10 @@ function BoxOfficePageSession({ id, identity }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 min-w-0 space-y-4">
+          {onlineOrderId ? <BoxOfficeCardSale key={onlineOrderId} path={`${cardSalePath}/${onlineOrderId}`}
+            initial={onlineSaleInitial} requestApi={requestApi} current={current} retrySetup={restoreOnlineSetup}
+            onPaid={fetchSummary} onNext={finishOnlineSale} /> : <>
           {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><SupportLink subject="Recover an unreadable box office sale" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
           {pendingSale && !pendingSale.recoveryRequired && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
             <p className="font-semibold">A saved sale needs confirmation</p>
@@ -363,23 +431,36 @@ function BoxOfficePageSession({ id, identity }) {
                 <CreditCard className="w-5 h-5" /> Card at Door
               </button>
             </div>
-            {!capabilities.door_card && capabilityStatus === 'loading' && (
+            {event.online_door_card_enabled && <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {onlineCardMethods.map(([method, label]) => (
+                <button key={method} type="button" aria-pressed={paymentMethod === method}
+                  disabled={saleLocked} onClick={() => setPaymentMethod(method)}
+                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-sm font-semibold ${paymentMethod === method
+                    ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-neutral-200 text-neutral-700'}`}>
+                  <CreditCard aria-hidden="true" className="h-5 w-5 shrink-0" /> {t(label)}
+                </button>
+              ))}
+            </div>}
+            {event.online_door_card_enabled && onlinePayment && <p className="mt-2 text-sm text-neutral-700">
+              {t('boxOfficeCard.feeHelp')}
+            </p>}
+            {!event.online_door_card_enabled && !capabilities.door_card && capabilityStatus === 'loading' && (
               <p role="status" className="mt-2 text-xs text-neutral-600">Checking whether card payments at the door are available…</p>
             )}
-            {!capabilities.door_card && capabilityStatus === 'error' && (
+            {!event.online_door_card_enabled && !capabilities.door_card && capabilityStatus === 'error' && (
               <p role="alert" className="mt-2 text-xs text-amber-800">We couldn&apos;t check whether card payments at the door are available.{pendingSale ? '' : ' Use cash, or'} <button type="button" onClick={retryCapabilities} className="font-semibold underline">try again</button>. Never record a card payment manually.</p>
             )}
-            {(capabilities.door_card || capabilityStatus === 'ready') && (!capabilities.door_card || !cardAccount?.payment_ready) && (
+            {!event.online_door_card_enabled && (capabilities.door_card || capabilityStatus === 'ready') && (!capabilities.door_card || !cardAccount?.payment_ready) && (
               <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Card payments at the door aren't available on HåfaPass yet.${pendingSale ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
             )}
           </div>
 
           {saleError && (
             <div className={`rounded-xl border p-4 text-sm ${saleError.reconciliationRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-              <p className="font-semibold">{saleError.reconciliationRequired ? paymentMethod === 'door_card' ? 'Do not charge the card again' : 'Do not record another cash sale' : 'Sale not completed'}</p>
+              <p className="font-semibold">{saleError.reconciliationRequired ? paymentMethod !== 'door_cash' ? 'Do not charge the card again' : 'Do not record another cash sale' : 'Sale not completed'}</p>
               <p className="mt-1">{saleError.message}</p>
               {saleError.orderId && <p className="mt-1 font-mono text-xs">Order #{saleError.orderId}</p>}
-              {saleError.reconciliationRequired && <p className="mt-2">Use Retry saved sale to check the original sale, or ask a manager to compare {paymentMethod === 'door_card' ? 'the terminal receipt' : 'the cash sale records'}. The saved reference survives a reload in this tab.</p>}
+              {saleError.reconciliationRequired && <p className="mt-2">Use Retry saved sale to check the original sale, or ask a manager to compare {onlinePayment ? t('boxOfficeCard.stripeRecords') : paymentMethod === 'door_card' ? 'the terminal receipt' : 'the cash sale records'}. The saved reference survives a reload in this tab.</p>}
             </div>
           )}
 
@@ -391,10 +472,14 @@ function BoxOfficePageSession({ id, identity }) {
           >
             {submitting ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> {paymentMethod === 'door_card' ? 'Waiting for terminal…' : 'Processing…'}</>
+            ) : onlinePayment ? (
+              <>{pendingSale ? 'Retry saved sale' : t('boxOfficeCard.prepare')}</>
             ) : (
               <>{pendingSale ? 'Retry saved sale' : 'Process sale'} · ${((pendingSale?.total_cents ?? totalCents) / 100).toFixed(2)} ({totalItems} ticket{totalItems !== 1 ? 's' : ''})</>
             )}
           </button>
+          </>}
+          {onlineOrderId && saleError && <p role="alert" className="text-sm text-red-800">{saleError.message}</p>}
         </div>
 
         {/* Right: Summary + Last Order */}
@@ -420,6 +505,13 @@ function BoxOfficePageSession({ id, identity }) {
                   <span className="text-sm text-neutral-600">Card</span>
                   <span className="font-semibold">${((summary.by_payment_method?.door_card || 0) / 100).toFixed(2)}</span>
                 </div>
+                {onlineCardMethods.map(([method]) => {
+                  const cents = summary.by_payment_method?.[method] || 0
+                  return (event.online_door_card_enabled || cents !== 0) && <div key={method} className="flex justify-between gap-2">
+                    <span className="text-sm text-neutral-600">{t(`boxOfficeCard.channel.${method}`)}</span>
+                    <span className="font-semibold">${(cents / 100).toFixed(2)}</span>
+                  </div>
+                })}
                 <div className="flex justify-between pt-2 border-t border-neutral-100">
                   <span className="text-sm font-medium text-neutral-900">Total revenue</span>
                   <span className="font-bold text-brand-600">${((summary.total_revenue_cents || 0) / 100).toFixed(2)}</span>

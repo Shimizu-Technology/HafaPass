@@ -30,6 +30,7 @@ class MessageDelivery < ApplicationRecord
   # Keep this classification in sync with docs/EMAIL_COMPLIANCE.md.
   EMAIL_TEMPLATE_CLASSIFICATION = {
     "order_confirmation" => :transactional, "fulfillment_resend" => :transactional,
+    "door_payment_link" => :transactional,
     "ticket_delivery" => :transactional, "order_recovery" => :transactional,
     "event_change" => :transactional, "pass_event_change" => :transactional,
     "refund_notification" => :transactional,

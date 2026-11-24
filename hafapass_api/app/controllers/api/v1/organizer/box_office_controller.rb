@@ -63,17 +63,16 @@ module Api
 
         # GET /api/v1/organizer/events/:event_id/box_office/summary
         def summary
-          orders = @event.orders.where(source: "box_office")
+          orders = @event.orders.excluding_test_payments.where(source: "box_office")
           settled_orders = orders.where(status: [:completed, :partially_refunded, :refunded])
           financials = Commerce::LedgerTotals.call(settled_orders)
 
           render json: {
             total_orders: settled_orders.count,
             total_revenue_cents: financials[:net_cents],
-            total_tickets: @event.tickets.joins(:order).where(orders: { source: "box_office" }).where.not(tickets: { status: :cancelled }).count,
-            by_payment_method: {
-              door_cash: Commerce::LedgerTotals.call(settled_orders.where(payment_method: "door_cash"))[:net_cents],
-              door_card: Commerce::LedgerTotals.call(settled_orders.where(payment_method: "door_card"))[:net_cents]
+            total_tickets: @event.tickets.where(order_id: settled_orders.select(:id)).where.not(status: :cancelled).count,
+            by_payment_method: (%w[door_cash door_card] + Order::ONLINE_DOOR_CARD_METHODS).index_with { |method|
+              Commerce::LedgerTotals.call(settled_orders.where(payment_method: method))[:net_cents]
             }
           }
         end

@@ -43,6 +43,7 @@ const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 const BoxOfficePage = lazy(() => import('./pages/dashboard/BoxOfficePage'))
 const WaitlistPage = lazy(() => import('./pages/dashboard/WaitlistPage'))
 const TicketTransferAcceptPage = lazy(() => import('./pages/purchaseFlow').then(module => ({ default: module.TicketTransferAcceptPage })))
+const DoorPaymentReturnPage = lazy(() => import('./pages/DoorPaymentReturnPage'))
 const SalesToolsPage = lazy(() => import('./pages/dashboard/SalesToolsPage'))
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
 const CollectionPage = lazy(() => import('./pages/CollectionPage'))
@@ -95,6 +96,7 @@ function App() {
           <Route path="/go/:code" element={<DistributionRedirectPage />} />
           <Route path="/refer/:code" element={<DistributionRedirectPage />} />
           <Route path="/checkout/:slug" element={<CheckoutPage />} />
+          <Route path="/door-payment" element={<DoorPaymentReturnPage />} />
           <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />

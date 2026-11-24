@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_164200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -811,6 +811,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.integer "preview_token_version", default: 0, null: false
     t.datetime "organizer_sales_suspended_at"
     t.text "organizer_sales_suspension_reason"
+    t.boolean "online_door_card_enabled", default: false, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -1673,10 +1674,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.string "provider_account_id"
     t.string "provider_platform_account_id"
     t.datetime "retention_anonymized_at"
+    t.string "stripe_checkout_session_id"
+    t.text "stripe_checkout_url"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payments_on_retention_anonymized_at"
+    t.index ["stripe_checkout_session_id"], name: "index_payments_on_stripe_checkout_session_id", unique: true, where: "(stripe_checkout_session_id IS NOT NULL)"
     t.check_constraint "amount_cents >= 0", name: "payments_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payments_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
@@ -2690,9 +2694,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.text "door_instructions"
     t.boolean "scanner_show_buyer", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
-    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
+    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying::text, 'name_only'::character varying::text, 'name_and_email'::character varying::text])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
-    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying, 'verify'::character varying]::text[])", name: "ticket_types_door_check_mode_valid"
+    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying::text, 'verify'::character varying::text])", name: "ticket_types_door_check_mode_valid"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"

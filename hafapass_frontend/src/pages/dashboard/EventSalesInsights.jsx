@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import BarList from '../../components/charts/BarList'
 import DailyColumnChart from '../../components/charts/DailyColumnChart'
 import { formatDay } from '../../components/charts/chartScale'
@@ -116,12 +117,13 @@ function Traffic({ traffic, acquisitionSources }) {
 // Sales analytics for one event: daily sales, ticket types, channels and
 // traffic. Older API responses without these fields render empty states.
 export default function EventSalesInsights({ stats, currency = 'USD' }) {
+  const { t } = useTranslation()
   const money = cents => formatMoneyCents(cents, currency)
   const ticketTypes = (stats.tickets_by_type || []).map((type, index) => ({
     key: `${index}:${type.name}`, label: type.name, value: type.sold, detail: money(type.revenue_cents),
   }))
   const channels = (stats.sales_by_channel || []).map(channel => ({
-    key: channel.channel, label: CHANNEL_LABELS[channel.channel] || channel.channel, value: channel.tickets,
+    key: channel.channel, label: CHANNEL_LABELS[channel.channel] || t(`boxOfficeCard.channel.${channel.channel}`, { defaultValue: channel.channel }), value: channel.tickets,
     detail: `${money(channel.amount_cents)} · ${plural(channel.orders, 'order')}`,
   }))
   return (

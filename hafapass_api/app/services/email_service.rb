@@ -53,6 +53,16 @@ class EmailService
         send_order_confirmation(delivery.order, delivery: delivery)
       when "ticket_delivery"
         send_ticket_email(delivery.ticket, delivery: delivery)
+      when "door_payment_link"
+        order = delivery.order
+        url = order.payments.sole.stripe_checkout_url
+        subject = "Complete your HåfaPass box office payment"
+        html = email_wrapper(subject) do
+          %(<p>Your box office order for #{h(order.event.title)} is waiting for payment.</p>) +
+            %(<p><a href="#{h(url)}">Pay securely on Stripe</a></p>) +
+            %(<p>Show the box office your confirmation after paying so staff can give you your tickets.</p>)
+        end
+        deliver(to: delivery.recipient, subject: subject, html: html, tag: "door_payment_link", delivery: delivery)
       when "order_recovery"
         send_order_recovery(delivery.order, delivery: delivery)
       when "event_change"
@@ -139,6 +149,13 @@ class EmailService
     rescue StandardError => e
       record_enqueue_failure(delivery, e)
       raise
+    end
+
+    def send_door_payment_link_async(order, requested_by:)
+      delivery = create_delivery(order: order, event: order.event, requested_by: requested_by, template: "door_payment_link",
+        recipient: order.buyer_email, idempotency_key: "door-payment-link/#{order.id}")
+      MessageDeliveryJob.perform_later(delivery.id)
+      delivery
     end
 
     def send_guest_privacy_challenge_now(privacy_request, code)

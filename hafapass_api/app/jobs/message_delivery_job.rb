@@ -38,6 +38,10 @@ class MessageDeliveryJob < ApplicationJob
         self.class.set(wait_until: delivery.send_lease_expires_at).perform_later(delivery.id)
         next :busy
       end
+      if delivery.template == "door_payment_link" && !Commerce::OnlineDoorSale.link_available?(delivery.order)
+        delivery.update!(status: :cancelled, last_error: "Door payment link is no longer active")
+        next :done
+      end
       if obsolete_reminder?(delivery)
         delivery.update!(status: :cancelled, last_error: "Reminder was cancelled or rescheduled")
         next :done
