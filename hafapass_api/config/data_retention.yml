@@ -580,7 +580,8 @@
         "buyer_phone",
         "refund_reason",
         "marketing_opt_in",
-        "checkout_ip_digest"
+        "checkout_ip_digest",
+        "platform_opt_in_at"
       ],
       "pending_rule": {
         "period": "90_days",
@@ -621,7 +622,9 @@
       "period": "account_lifetime",
       "trigger": "created_at",
       "action": "keep",
-      "pii_columns": []
+      "pii_columns": [
+        "email_opted_in_address"
+      ]
     },
     "organizer_profiles": {
       "category": "organizer PII",
@@ -1162,6 +1165,58 @@
         "last_error",
         "payload"
       ]
+    },
+    "platform_subscribers": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "confirmation_nonce",
+        "email",
+        "interests",
+        "name",
+        "villages"
+      ]
+    },
+    "email_consents": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email",
+        "ip",
+        "user_agent"
+      ]
+    },
+    "email_preferences": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "email"
+      ]
+    },
+    "audience_mailings": {
+      "category": "marketing consent",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": [
+        "body",
+        "recipient_emails",
+        "filters",
+        "subject"
+      ]
+    },
+    "email_rate_slots": {
+      "category": "operational",
+      "period": "7_years_after_year_end",
+      "trigger": "available_at",
+      "action": "keep",
+      "pii_columns": []
     }
   },
   "column_classifications": {
@@ -2049,7 +2104,9 @@
       "privacy_request_id": "system",
       "retention_anonymized_at": "system",
       "reconciled_at": "system",
-      "replay_requested_at": "system"
+      "replay_requested_at": "system",
+      "audience_mailing_id": "non-personal",
+      "platform_subscriber_id": "non-personal"
     },
     "message_provider_events": {
       "id": "system",
@@ -2137,7 +2194,8 @@
       "processing_fee_bearer_snapshot": "money",
       "locale": "non-personal",
       "marketing_opt_in": "pii",
-      "retention_anonymized_at": "non-personal"
+      "retention_anonymized_at": "non-personal",
+      "platform_opt_in_at": "pii"
     },
     "organization_invitation_dispatches": {
       "id": "system",
@@ -2181,7 +2239,10 @@
       "created_at": "system",
       "organization_id": "system",
       "updated_at": "system",
-      "user_id": "system"
+      "user_id": "system",
+      "email_opted_in_at": "non-personal",
+      "email_consent_version": "non-personal",
+      "email_opted_in_address": "pii"
     },
     "organizer_profiles": {
       "id": "system",
@@ -3219,6 +3280,61 @@
       "status": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system"
+    },
+    "platform_subscribers": {
+      "id": "non-personal",
+      "email": "pii",
+      "name": "pii",
+      "status": "non-personal",
+      "source": "non-personal",
+      "interests": "pii",
+      "villages": "pii",
+      "confirmation_nonce": "pii",
+      "confirmed_at": "non-personal",
+      "created_at": "non-personal",
+      "updated_at": "non-personal"
+    },
+    "email_consents": {
+      "id": "non-personal",
+      "email": "pii",
+      "organization_id": "non-personal",
+      "scope": "non-personal",
+      "action": "non-personal",
+      "version": "non-personal",
+      "source": "non-personal",
+      "ip": "pii",
+      "user_agent": "pii",
+      "created_at": "non-personal",
+      "updated_at": "non-personal"
+    },
+    "email_preferences": {
+      "id": "non-personal",
+      "email": "pii",
+      "all_unsubscribed": "non-personal",
+      "created_at": "non-personal",
+      "updated_at": "non-personal"
+    },
+    "audience_mailings": {
+      "id": "non-personal",
+      "organization_id": "non-personal",
+      "created_by_id": "non-personal",
+      "subject": "pii",
+      "body": "pii",
+      "audience": "non-personal",
+      "status": "non-personal",
+      "scheduled_at": "non-personal",
+      "cursor": "non-personal",
+      "created_at": "non-personal",
+      "updated_at": "non-personal",
+      "recipient_emails": "pii",
+      "filters": "pii",
+      "recipient_count": "non-personal",
+      "blocked_reason": "non-personal"
+    },
+    "email_rate_slots": {
+      "id": "non-personal",
+      "name": "non-personal",
+      "available_at": "non-personal"
     }
   }
 }

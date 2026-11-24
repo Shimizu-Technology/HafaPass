@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import WaitlistPage from './WaitlistPage'
+import { saveBlob } from '../../utils/download'
 import apiClient from '../../api/client'
 
 const organizerRequests = vi.hoisted(() => ({
@@ -10,6 +11,7 @@ const organizerRequests = vi.hoisted(() => ({
   beginRequest: () => ({ controller: new AbortController(), config: {}, current: () => true, release: () => {} }),
 }))
 
+vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 vi.mock('../../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('../../components/EventWorkspace', () => ({ default: ({ children }) => <div>{children}</div> }))
 vi.mock('../../hooks/useOrganizerContext', () => ({
@@ -65,4 +67,32 @@ it('keeps the folded phone list out of the tab order and makes the scrollable ta
   mount()
   expect(await screen.findByRole('region', { name: 'Waitlist entries' })).toHaveAttribute('tabindex', '0')
   vi.unstubAllGlobals()
+})
+
+
+it('exports the searched audience through the authenticated API', async () => {
+  const blob = new Blob(['email\nbuyer@example.test'], { type: 'text/csv' })
+  const original = apiClient.get.getMockImplementation()
+  apiClient.get.mockImplementation((url, config) => url.endsWith('/export') ? Promise.resolve({ data: blob }) : original(url, config))
+  render(<MemoryRouter initialEntries={['/dashboard/events/7/waitlist']}><Routes>
+    <Route path="/dashboard/events/:id/waitlist" element={<WaitlistPage />} />
+  </Routes></MemoryRouter>)
+  const user = userEvent.setup()
+  await user.type(await screen.findByRole('searchbox', { name: 'Search waitlist' }), 'buyer')
+  await user.click(screen.getByRole('button', { name: 'Export filtered CSV' }))
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/organizer/events/7/waitlist/export', expect.objectContaining({
+    responseType: 'blob', params: { status: '', q: 'buyer' },
+  })))
+  expect(saveBlob).toHaveBeenCalledWith(blob, 'event-7-waitlist.csv')
+})
+
+it('shows an export failure instead of saving an error document', async () => {
+  const original = apiClient.get.getMockImplementation()
+  apiClient.get.mockImplementation((url, config) => url.endsWith('/export') ? Promise.reject(new Error('offline')) : original(url, config))
+  render(<MemoryRouter initialEntries={['/dashboard/events/7/waitlist']}><Routes>
+    <Route path="/dashboard/events/:id/waitlist" element={<WaitlistPage />} />
+  </Routes></MemoryRouter>)
+  await userEvent.click(await screen.findByRole('button', { name: 'Export filtered CSV' }))
+  expect(await screen.findByText('The waitlist export could not be downloaded. Try again.')).toBeInTheDocument()
+  expect(saveBlob).not.toHaveBeenCalled()
 })

@@ -14,6 +14,21 @@ RSpec.describe RuntimeRecoveryJob do
     ActiveJob::Base.queue_adapter = previous_adapter
   end
 
+  %w[cancelled queued].each do |status|
+    it "preserves #{status} when the mailing changes between selection and locking" do
+      mailing = AudienceMailing.create!(created_by: create(:user), audience: "platform",
+        subject: "Events", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago)
+      allow_any_instance_of(AudienceMailing).to receive(:with_lock).and_wrap_original do |method, &block|
+        AudienceMailing.where(id: method.receiver.id).update_all(status: status)
+        method.call(&block)
+      end
+      described_class.perform_now
+      expect(mailing.reload.status).to eq(status)
+      expect(mailing.blocked_reason).to be_nil
+      expect(SolidQueue::Job.where(class_name: "AudienceMailingJob")).to be_empty
+    end
+  end
+
   let(:order) { create(:order, :completed) }
 
   it "recovers a committed outbox row without a queue entry and avoids another entry while one is pending" do
@@ -126,5 +141,33 @@ RSpec.describe RuntimeRecoveryJob do
     expect(SolidQueue::Job.where(class_name: "CommunicationCampaignJob").map { |job| job.arguments["arguments"] }).to include(expected)
     described_class.perform_now
     expect(SolidQueue::Job.where(class_name: "CommunicationCampaignJob").count).to eq(2)
+  end
+  it "recovers an authorized audience dispatcher without duplicating pending work" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_RUNTIME" => "embedded", "HAFAPASS_POSTAL_ADDRESS" => "TEST FIXTURE ADDRESS"))
+    mailing = AudienceMailing.create!(created_by: create(:user, role: :admin), audience: "platform",
+      subject: "Events", body: "Fixture", status: "queueing", scheduled_at: 1.minute.ago)
+    described_class.perform_now
+    jobs = SolidQueue::Job.where(class_name: "AudienceMailingJob")
+    expect(jobs.count).to eq(1)
+    expect(jobs.first.arguments["arguments"]).to eq([mailing.id])
+    described_class.perform_now
+    expect(jobs.count).to eq(1)
+  end
+end
+
+RSpec.describe RuntimeRecoveryJob do
+  it "moves fifty blocked mailings aside so a later eligible mailing recovers" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_RUNTIME" => "embedded", "HAFAPASS_POSTAL_ADDRESS" => "TEST ADDRESS"))
+    previous = ActiveJob::Base.queue_adapter
+    actor = create(:user)
+    50.times { AudienceMailing.create!(created_by: actor, audience: "platform", subject: "Blocked", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago) }
+    eligible = AudienceMailing.create!(created_by: create(:user, role: :admin), audience: "platform", subject: "Eligible", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago)
+    previous = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :solid_queue
+    2.times { described_class.perform_now }
+    expect(AudienceMailing.where(status: "blocked").count).to eq(50)
+    expect(SolidQueue::Job.where(class_name: "AudienceMailingJob").map { |job| job.arguments["arguments"] }).to include([eligible.id])
+  ensure
+    ActiveJob::Base.queue_adapter = previous
   end
 end

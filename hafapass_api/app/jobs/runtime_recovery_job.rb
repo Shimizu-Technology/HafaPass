@@ -4,7 +4,7 @@ class RuntimeRecoveryJob < ApplicationJob
   # These jobs are domain-idempotent or only retrieve provider evidence. Never
   # reinterpret an arbitrary failed charge/refund/payout as permission to POST.
   SAFE_INTERRUPTED_JOBS = %w[MessageDeliveryJob StripeProcessingFeeJob SweepPendingStripeFeesJob
-    ExpireInventoryHoldsJob ExpireSeatHoldsJob EventReminderJob CommunicationCampaignJob
+    ExpireInventoryHoldsJob ExpireSeatHoldsJob EventReminderJob CommunicationCampaignJob AudienceMailingJob
     PurgeMarketplaceAnalyticsJob RuntimeRetentionJob RuntimeRecoveryJob].freeze
   INTERRUPTED_ERRORS = %w[SolidQueue::Processes::ProcessPrunedError SolidQueue::Processes::ThreadTerminatedError
     SolidQueue::Processes::ProcessMissingError].freeze
@@ -38,6 +38,19 @@ class RuntimeRecoveryJob < ApplicationJob
       .where(no_pending_job_sql("CommunicationCampaignJob", scheduled_arguments_sql("communication_campaigns", "scheduled_at")))
       .order(:id).limit(BATCH_SIZE).each do |campaign|
       enqueue_unless_pending(CommunicationCampaignJob, campaign.id, campaign.scheduled_at.utc.iso8601)
+    end
+    AudienceMailing.where(status: %w[scheduled queueing]).where("scheduled_at IS NULL OR scheduled_at <= ?", Time.current)
+      .where(no_pending_job_sql("AudienceMailingJob", "jsonb_build_array(audience_mailings.id)"))
+      .order(:id).limit(BATCH_SIZE).each do |mailing|
+      mailing.with_lock do
+        next unless %w[scheduled queueing].include?(mailing.status)
+
+        if (reason = mailing.block_reason)
+          mailing.update!(status: "blocked", blocked_reason: reason)
+        else
+          enqueue_unless_pending(AudienceMailingJob, mailing.id)
+        end
+      end
     end
     MessageProviderEvent.where(processed_at: nil)
       .joins("INNER JOIN message_deliveries ON message_deliveries.provider = message_provider_events.provider " \

@@ -72,7 +72,7 @@ class MessageProviderEventProcessor
   end
 
   def process_receipt!(receipt, delivery)
-    MessageProviderEvent.transaction do
+    EmailPreferences.with_platform_locks(delivery.recipient, create_preference: false) do
       receipt.lock!
       validate_receipt_identity!(receipt, provider: delivery.provider, message_id: delivery.provider_id)
       return receipt if receipt.processed_at.present?
@@ -159,6 +159,9 @@ class MessageProviderEventProcessor
       attributes[:metadata] = delivery.metadata.merge("provider_address_invalid" => true) if invalid_address
       attributes[timestamp_column(status)] = receipt.occurred_at if timestamp_column(status)
       delivery.update!(attributes)
+      if %w[bounced complained].include?(delivery.status) && (delivery.complained? || receipt.payload.dig("bounce", "type") != "Transient")
+        PlatformSubscriber.where(email: delivery.recipient.to_s.strip.downcase).update_all(status: delivery.status, updated_at: Time.current)
+      end
       WaitlistDelivery.reconcile_success_locked!(delivery) if status == :delivered
       WaitlistDelivery.reconcile_failure!(delivery) if %i[failed bounced complained suppressed].include?(status)
     end

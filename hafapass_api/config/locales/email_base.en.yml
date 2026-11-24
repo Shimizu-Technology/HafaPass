@@ -1,0 +1,10 @@
+en:
+  emails:
+    alerts:
+      confirm_title: Confirm event alerts
+      confirm_subject: Confirm your HåfaPass event alerts
+      confirm_intro: Confirm that you asked for event alerts on Guam.
+      confirm_expiry: This link expires in two days. Ignore it if you did not sign up.
+      sender: Sent by %{name} through HåfaPass.
+      unsubscribe: Unsubscribe
+      preferences: Email preferences

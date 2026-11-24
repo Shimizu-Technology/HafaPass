@@ -6,6 +6,9 @@ default: &default
     - queues: [default, emails, low]
       threads: 1
       polling_interval: 5
+    - queues: [marketing]
+      threads: 1
+      polling_interval: 5
 
 production:
   <<: *default

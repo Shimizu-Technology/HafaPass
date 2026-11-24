@@ -988,3 +988,9 @@ export function buildDemoPublicConfig() {
     server_now: new Date().toISOString(),
   }
 }
+
+export const DEMO_EMAIL_TOKEN = 'demo-email-preferences'
+export const buildDemoEmailPreferences = () => ({
+  platform: true,
+  organizers: [{ id: Object.values(DEMO_ORGANIZERS)[0].id, name: Object.values(DEMO_ORGANIZERS)[0].business_name, enabled: true }],
+})

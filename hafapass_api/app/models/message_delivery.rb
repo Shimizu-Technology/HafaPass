@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class MessageDelivery < ApplicationRecord
+  belongs_to :audience_mailing, optional: true
+  belongs_to :platform_subscriber, optional: true
   belongs_to :order, optional: true
   belongs_to :ticket, optional: true
   belongs_to :event, optional: true
@@ -38,12 +40,19 @@ class MessageDelivery < ApplicationRecord
     "organization_invitation" => :transactional,
     "platform_invitation" => :transactional, "fee_change_notice" => :transactional,
     "waitlist_notification" => :commercial,
-    "waitlist_offer" => :commercial, "communication_campaign" => :commercial
+    "audience_mailing" => :commercial, "audience_test" => :commercial,
+    "platform_confirmation" => :transactional, "waitlist_offer" => :commercial, "communication_campaign" => :commercial
   }.freeze
   PROMOTIONAL_TEMPLATES = EMAIL_TEMPLATE_CLASSIFICATION.select { |_, kind| kind == :commercial }.keys.freeze
 
   def promotional?
     channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
+  end
+
+  # User-requested waitlist notices/offers keep their commercial consent rules,
+  # but never wait behind bulk campaigns.
+  def bulk_marketing?
+    channel == "email" && %w[audience_mailing communication_campaign].include?(template)
   end
 
   def transactional?
@@ -55,6 +64,8 @@ class MessageDelivery < ApplicationRecord
   end
 
   def marketing_unsubscribed?
+    return true if %w[communication_campaign audience_mailing audience_test].include?(template) && EmailPreference.blocked?(recipient)
+    return audience_mailing.nil? || !audience_mailing.eligible?(recipient) if template == "audience_mailing"
     return false unless promotional? && event&.organization_id.present?
 
     unsubscribe = MarketingUnsubscribe.find_by(organization_id: event.organization_id, email: recipient.to_s.strip.downcase)
@@ -204,7 +215,7 @@ class MessageDelivery < ApplicationRecord
   end
 
   def subject_present
-    subjects = [order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id, privacy_request_id]
+    subjects = [audience_mailing_id, platform_subscriber_id, order_id, ticket_id, event_id, organization_membership_id, platform_invitation_id, privacy_request_id]
     errors.add(:base, "Order, ticket, event, or invitation is required") if subjects.all?(&:blank?)
   end
 

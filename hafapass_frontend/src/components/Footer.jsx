@@ -1,3 +1,4 @@
+import EventAlertsSignup from './EventAlertsSignup'
 import { ChevronDown, ExternalLink } from 'lucide-react'
 import { guamPhotos } from '../config/photoCredits'
 import HafaPassMark from './HafaPassMark'
@@ -91,6 +92,7 @@ export default function Footer() {
           </ul>
         </details>}
 
+        <EventAlertsSignup source="footer" />
         {/* Divider + Copyright */}
         <div className="border-t border-white/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <p className="text-xs text-content-inverse-muted">

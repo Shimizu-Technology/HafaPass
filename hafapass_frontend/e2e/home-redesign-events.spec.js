@@ -123,6 +123,7 @@ for (const [label, action, collection] of [['Save', 'favorite', 'event_favorites
     let authorized = false
     let saves = 0
     await page.route(`**/api/v1/me/${collection}`, route => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { organizers: [{ id: 7, email_opt_in: false }] } })
       if (authorized) { saves++; return route.fulfill({ json: {} }) }
       return route.fulfill({ status: 401, json: {} })
     })

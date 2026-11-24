@@ -12,6 +12,10 @@ if defined?(Sidekiq) && !RuntimeConfiguration.solid_queue?
 
   Sidekiq.configure_server do |config|
     config.redis = { url: redis_url }
+    config.capsule("marketing") do |capsule|
+      capsule.concurrency = 1
+      capsule.queues = %w[marketing]
+    end
 
     # Configure server-side logger
     config.logger.level = Rails.env.production? ? Logger::WARN : Logger::INFO

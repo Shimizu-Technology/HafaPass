@@ -388,6 +388,7 @@ function WorkspaceNav({ authContext, role, workspace, isSignedIn, clerkEnabled, 
   const links = [
     ...(showDashboard ? [{ to: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/events') }] : []),
+    ...(showDashboard ? [{ to: role === 'admin' ? '/dashboard/email?scope=platform' : '/dashboard/email', label: t('emailBase.audiences'), icon: LayoutDashboard, active: pathname === '/dashboard/email' }] : []),
     ...(canViewSeries ? [{ to: '/dashboard/series', label: t('nav.series'), icon: Layers }] : []),
     ...(!workspace || workspace.scanner === true ? [{ to: '/dashboard/scanner', label: t('nav.scanner'), icon: ScanLine }] : []),
     ...(canViewFinances ? [{ to: '/dashboard/finances', label: t('nav.finances'), icon: WalletCards }] : []),

@@ -1,6 +1,8 @@
 import { matchesGuamWindow } from '../utils/guamDiscoveryWindow'
 import { AxiosError } from 'axios'
 import {
+  DEMO_EMAIL_TOKEN,
+  buildDemoEmailPreferences,
   DEMO_CATEGORIES,
   DEMO_COLLECTIONS,
   DEMO_EVENTS,
@@ -124,11 +126,55 @@ function filterEvents(params) {
 }
 
 export function createDemoAdapter() {
+  const preferences = buildDemoEmailPreferences()
+  const follows = new Map()
+  let consentSequence = 0
+
   return async function demoAdapter(config) {
     const method = String(config.method || 'get').toLowerCase()
     const { path, params } = normalizePath(config)
     const body = parseBody(config.data)
     const serverNow = new Date().toISOString()
+
+    if (method === 'post' && path === '/platform_subscriptions') {
+      return ok(config, { accepted: true, message: 'Check your email to confirm.' }, 202)
+    }
+    if (method === 'post' && path === `/platform_subscriptions/confirm/${DEMO_EMAIL_TOKEN}`) {
+      preferences.platform = true
+      return ok(config, { confirmed: true })
+    }
+    if (path === `/email_preferences/${DEMO_EMAIL_TOKEN}` && ['get', 'patch'].includes(method)) {
+      if (method === 'patch') {
+        if (typeof body.platform === 'boolean') preferences.platform = body.platform
+        for (const update of body.organizers || []) {
+          const org = preferences.organizers.find(org => org.id === update.id)
+          if (org && typeof update.enabled === 'boolean') org.enabled = update.enabled
+          const follow = follows.get(update.id)
+          if (follow && typeof update.enabled === 'boolean') { follow.email_opt_in = update.enabled; follow.consent_marker = ++consentSequence }
+        }
+        if (body.unsubscribe_all === true) {
+          preferences.platform = false
+          preferences.organizers.forEach(org => { org.enabled = false })
+          follows.forEach(follow => { follow.email_opt_in = false; follow.consent_marker = ++consentSequence })
+        }
+      }
+      return ok(config, structuredClone(preferences))
+    }
+    if (path === '/me/organizer_follows') {
+      if (method === 'get') return ok(config, { organizers: [...follows.values()] })
+      if (method === 'post') {
+        const previous = follows.get(body.organization_id)
+        if (body.consent_only === true && !previous) return fail(config, 404, { error: 'Follow no longer exists' })
+        if (body.consent_only === true && body.consent_marker !== previous.consent_marker) return fail(config, 409, { error: 'Email preferences changed' })
+        follows.set(body.organization_id, { id: body.organization_id, email_opt_in: body.email_opt_in ?? previous?.email_opt_in ?? false, consent_marker: ++consentSequence })
+        return ok(config, { followed: true }, 201)
+      }
+    }
+    const followMatch = path.match(/^\/me\/organizer_follows\/([^/]+)$/)
+    if (method === 'delete' && followMatch) {
+      follows.delete(Number(followMatch[1]))
+      return ok(config, { followed: false })
+    }
 
     if (method === 'get' && path === '/health') {
       return ok(config, { status: 'ok', demo: true, server_now: serverNow })

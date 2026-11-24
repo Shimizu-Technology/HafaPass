@@ -3,6 +3,13 @@ require "rails_helper"
 RSpec.describe MessageProviderEventProcessor do
   let(:delivery) { create(:message_delivery, provider: "resend", provider_id: "email_123", status: :sent) }
 
+  it "L1: processes a recipient webhook without creating preferences" do
+    event = provider_event("email.delivered")
+    expect(EmailPreference.where(email: delivery.recipient)).not_to exist
+    expect { described_class.call(provider_event_id: "no-profile", event: event) }.not_to change(EmailPreference, :count)
+    expect(delivery.reload.status).to eq("delivered")
+  end
+
   def provider_event(type, at: Time.current, message: "Temporary transport failure", code: nil, bounce_type: "Permanent")
     {
       "type" => type,

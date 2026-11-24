@@ -153,7 +153,8 @@ RSpec.describe "Embedded Solid Queue under clustered Puma", :non_transactional d
 
     wait_for(90, log) do
       kinds = SolidQueue::Process.distinct.pluck(:kind)
-      (%w[Dispatcher Scheduler Supervisor(async) Worker] - kinds).empty? && child_pids(pid).size == 2
+      (%w[Dispatcher Scheduler Supervisor(async) Worker] - kinds).empty? &&
+        SolidQueue::Process.where(kind: "Worker").count == 2 && child_pids(pid).size == 2
     end
     # A supervisor started per worker would register within the same boot.
     sleep 3
@@ -161,7 +162,8 @@ RSpec.describe "Embedded Solid Queue under clustered Puma", :non_transactional d
 
     supervisor = processes.find { |process| process.kind == "Supervisor(async)" }
     workers = child_pids(pid)
-    expect(processes.size).to eq(4)
+    # Transactional and marketing lanes each have their own queue worker.
+    expect(processes.map(&:kind).tally).to eq("Dispatcher" => 1, "Scheduler" => 1, "Supervisor(async)" => 1, "Worker" => 2)
     expect(processes.map(&:pid).uniq).to eq([supervisor.pid])
     expect(workers).to include(supervisor.pid)
     expect(processes.map(&:pid)).not_to include(pid)
@@ -192,7 +194,8 @@ RSpec.describe "Embedded Solid Queue under clustered Puma", :non_transactional d
     expect(replacement.pid).not_to eq(pid)
     expect(replacement.metadata["runtime_instance"]).to eq(supervisor.metadata["runtime_instance"])
     wait_for(30, log) do
-      SolidQueue::Process.where(pid: replacement.pid).distinct.pluck(:kind).sort == %w[Dispatcher Scheduler Supervisor(async) Worker]
+      SolidQueue::Process.where(pid: replacement.pid).pluck(:kind).tally ==
+        { "Dispatcher" => 1, "Scheduler" => 1, "Supervisor(async)" => 1, "Worker" => 2 }
     end
     expect_database_requests_answered(port)
   ensure

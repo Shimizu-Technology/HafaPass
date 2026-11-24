@@ -1,3 +1,4 @@
+import EventAlertsSignup from '../components/EventAlertsSignup'
 import { matchesGuamWindow } from '../utils/guamDiscoveryWindow'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
@@ -330,6 +331,11 @@ export default function HomePage() {
               </section>
             </>
           )}
+
+          {/* Reserve the complete signup footprint while inventory settles. */}
+          <div className={loading ? 'invisible' : undefined} inert={loading ? '' : undefined} aria-hidden={loading || undefined}>
+            <EventAlertsSignup source="home" />
+          </div>
 
           {/* 6. "Planning an event?" host CTA. */}
           <section className={discovery ? 'mt-4 sm:mt-12' : 'mt-9 sm:mt-12'}>

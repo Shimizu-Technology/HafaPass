@@ -108,6 +108,15 @@ class AuditActions
 
   DEFINITIONS = begin
     registry = {}
+    define registry, area: "messaging", audience: %w[admin_only], tenant: false, event_required: false,
+      metadata: %w[scope count], actions: {
+        "email.audience_exported" => "Exported an email audience.",
+        "email.subscriber_suppressed" => "Unsubscribed a platform subscriber."
+      }
+    define registry, area: "exports", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true, metadata: %w[row_count], actions: {
+        "waitlist.exported" => "Exported an event waitlist."
+      }
     # Platform-wide admin exports have no organization; organizer exports always
     # pass an explicit tenant and are projected only inside that tenant.
     define registry, area: "exports", audience: %w[org_owner org_manager org_finance],

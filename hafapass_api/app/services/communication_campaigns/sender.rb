@@ -146,7 +146,7 @@ module CommunicationCampaigns
     end
 
     def blocked?(email)
-      MarketingUnsubscribe.exists?(organization: campaign.event.organization, email: email) ||
+      EmailPreference.blocked?(email) || PrivacyEmailSuppression.for?(email) || MarketingUnsubscribe.exists?(organization: campaign.event.organization, email: email) ||
         MessageDelivery.new(recipient: email, channel: "email", template: "communication_campaign").suppressed_recipient?
     end
   end

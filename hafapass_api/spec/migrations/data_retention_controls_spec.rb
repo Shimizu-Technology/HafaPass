@@ -20,7 +20,7 @@ RSpec.describe "Retention migration safety" do
     expect(controls).to include('validate_check_constraint :message_deliveries, name: "message_deliveries_subject_present_with_privacy"')
     expect(controls.index("validate_check_constraint")).to be < controls.index('remove_check_constraint :message_deliveries')
     expect(ActiveRecord::Base.connection.check_constraints(:message_deliveries).map(&:name))
-      .to include("message_deliveries_subject_present_with_privacy")
+      .to include("message_deliveries_subject_present_email_base")
   end
 
   it "creates every new index on an existing table concurrently in a separate transaction" do

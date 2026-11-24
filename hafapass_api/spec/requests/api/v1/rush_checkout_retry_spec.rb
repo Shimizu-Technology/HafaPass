@@ -8,15 +8,39 @@ RSpec.describe "Checkout retries during a sell-out", type: :request do
   let(:event) { create(:event, :published, starts_at: 5.days.from_now) }
   let!(:ticket_type) { create(:ticket_type, :free, event: event, name: "Final GA", quantity_available: 1, max_per_order: 1) }
 
-  def checkout(key, email)
+  def checkout(key, email, platform_opt_in: false)
     params = { event_id: event.id, buyer_email: email, buyer_name: "Rush Buyer", terms_accepted: true,
-      terms_version: PolicyRegistry.buyer_terms[:version], checkout_key: key,
+      terms_version: PolicyRegistry.buyer_terms[:version], checkout_key: key, platform_opt_in: platform_opt_in,
       line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }] }
     post "/api/v1/orders", params: params.to_json, headers: { "Content-Type" => "application/json" }
   end
 
   def attempt_for(key)
     CheckoutAttempt.find_by!(checkout_key_digest: Digest::SHA256.hexdigest(key))
+  end
+
+  it "keeps a final-ticket order and its recovery when optional consent enqueue fails" do
+    allow(CheckoutSubscriptionJob).to receive(:perform_later).and_raise(ActiveRecord::RecordInvalid)
+    expect(PublicEventCache).to receive(:bump_after_commit!).at_least(:once).and_call_original
+    key = SecureRandom.hex(32)
+
+    checkout(key, "winner@example.invalid", platform_opt_in: true)
+    expect(response).to have_http_status(:created)
+    order = Order.find(response.parsed_body.fetch("id"))
+    expect(order).to be_completed
+    expect(order.tickets.count).to eq(1)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(CheckoutSubscriptionJob).to have_received(:perform_later).once
+
+    expect { checkout(key, "winner@example.invalid", platform_opt_in: true) }.not_to change(Order, :count)
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("id")).to eq(order.id)
+
+    expect { checkout(SecureRandom.hex(32), "late@example.invalid", platform_opt_in: true) }.not_to change(Order, :count)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.fetch("error")).to eq("Only 0 tickets available for Final GA")
+    expect(CheckoutSubscriptionJob).to have_received(:perform_later).with(order.id,
+      consent_at: order.platform_opt_in_at.iso8601(6), ip: anything, user_agent: anything).twice
   end
 
   it "returns the winner's order to its same-key retry and refuses a late buyer for good" do

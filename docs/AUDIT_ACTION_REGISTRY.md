@@ -431,6 +431,7 @@ entries are described above and defined in the registry's audience variants.
 | `waitlist.cancelled` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Cancelled waitlist. |
 | `waitlist.converted` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Converted waitlist. |
 | `waitlist.deleted` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Deleted a waitlist entry. |
+| `waitlist.exported` | yes | exports | O/M | yes | yes | — | `row_count` | Exported an event waitlist. |
 | `waitlist.expired` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Expired waitlist. |
 | `waitlist.joined` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Joined the waitlist. |
 | `waitlist.notification_requested` | yes | attendees | O/M | yes | yes | `event_id`, `ticket_type_id`, `quantity`, `position`, `status`, `notified_at`, `expires_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Requested a waitlist notification. |
@@ -484,3 +485,6 @@ captured context fall back to stable record IDs; no live buyer record is loaded
 to reconstruct a sentence. Organization JSON and CSV use the same presenter.
 Search reads only the allowlisted display context, and masking also applies to
 exact actor filters. Admin drilldowns retain sanitized technical data.
+
+| `email.audience_exported` | messaging | admin_only | Scoped audience CSV export; scope/count only. |
+| `email.subscriber_suppressed` | messaging | admin_only | Manual platform unsubscribe; no copied address in metadata. |

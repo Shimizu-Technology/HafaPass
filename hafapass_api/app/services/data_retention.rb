@@ -229,7 +229,7 @@ class DataRetention
 
     order.update_columns(buyer_email: replacement, buyer_name: "Deleted buyer", buyer_phone: nil,
       refund_reason: nil, checkout_ip_digest: nil,
-      marketing_opt_in: false, user_id: nil, guest_access_revoked_at: Time.current,
+      marketing_opt_in: false, platform_opt_in_at: nil, user_id: nil, guest_access_revoked_at: Time.current,
       retention_anonymized_at: Time.current, updated_at: Time.current)
     true
   end
@@ -365,7 +365,7 @@ class DataRetention
     scopes << ["user", record.initiated_by_user_id.to_s] if record.respond_to?(:initiated_by_user_id) && record.initiated_by_user_id
     scopes << ["user", record.created_by_id.to_s] if record.respond_to?(:created_by_id) && record.created_by_id
     scopes << ["user", record.owner_id.to_s] if record.respond_to?(:owner_id) && record.owner_id
-    %i[email buyer_email requester_email recipient recipient_email holder_email].each do |field|
+    %i[email buyer_email requester_email recipient recipient_email holder_email email_opted_in_address].each do |field|
       scopes << ["buyer_email", record.public_send(field).to_s.downcase] if
         record.respond_to?(field) && record.public_send(field).present?
     end

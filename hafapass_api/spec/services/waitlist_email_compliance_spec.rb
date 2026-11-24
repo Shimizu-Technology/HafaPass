@@ -47,4 +47,33 @@ RSpec.describe "Waitlist commercial email" do
     MessageDeliveryJob.perform_now(uncertified.id)
     expect(uncertified.reload).to be_suppressed
   end
+  it "does not send an offer after its deadline while the expiry sweep is delayed" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(template: "waitlist_offer", idempotency_key: "waitlist-offer/#{offer.id}")
+    offer.update!(expires_at: 1.second.ago)
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    MessageDeliveryJob.perform_now(delivery.id)
+
+    expect(delivery.reload).to be_cancelled
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
+
+  it "rechecks an offer deadline after preparing the payload" do
+    ticket = create(:ticket_type, event: event, quantity_available: 3)
+    offer = WaitlistOffers::Issuer.call(entry: entry, ticket_type: ticket)
+    delivery = MessageDelivery.find_by!(template: "waitlist_offer", idempotency_key: "waitlist-offer/#{offer.id}")
+    allow(EmailService).to receive(:prepare_delivery_payload).and_wrap_original do |method, *args|
+      payload = method.call(*args)
+      offer.update!(expires_at: 1.second.ago)
+      payload
+    end
+    allow(EmailService).to receive(:send_delivery_payload)
+
+    MessageDeliveryJob.perform_now(delivery.id)
+
+    expect(delivery.reload).to be_cancelled
+    expect(EmailService).not_to have_received(:send_delivery_payload)
+  end
 end

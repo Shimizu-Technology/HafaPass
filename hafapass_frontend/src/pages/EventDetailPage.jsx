@@ -1,3 +1,4 @@
+import OrganizerEmailOptIn from '../components/OrganizerEmailOptIn'
 import { allInPriceNoteKey } from '../utils/priceDisclosure'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useLayoutEffect, useRef, version as reactVersion } from 'react'
@@ -263,7 +264,7 @@ function EventDetailContent() {
     const update = () => setEvent(current => kind === 'follow'
       ? { ...current, organizer: { ...current.organizer, followed: !enabled } }
       : { ...current, [kind === 'favorite' ? 'favorited' : 'reminder']: !enabled })
-    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') {
+    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' && kind !== 'follow') {
       update()
       setActionNotice('Saved for this demo visit. Sign-in and email notifications are off in this preview.')
       return
@@ -642,6 +643,7 @@ function EventDetailContent() {
                         </button>
                       )}
                     </div>
+                    {event.organizer.followed && <OrganizerEmailOptIn organizationId={event.organizer.id} />}
                   </div>
                 </FadeUp>
               )}

@@ -14,6 +14,46 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
     allow(EmailService).to receive(:send_waitlist_offer_async)
   end
 
+
+  describe "audience management" do
+    it "exports only this event's matching entries, including request provenance and opt-out" do
+      entry = create(:waitlist_entry, event: event, email: "export@example.test", name: "=HYPERLINK(1)")
+      create(:waitlist_entry, email: "export@other.test")
+      MarketingUnsubscribe.create!(organization: event.organization, email: entry.email, unsubscribed_at: Time.current)
+      get "/api/v1/organizer/events/#{event.id}/waitlist/export", params: { q: "export@", status: "waiting" }, headers: headers
+      expect(response).to have_http_status(:ok)
+      rows = CSV.parse(response.body, headers: true)
+      expect(rows.length).to eq(1)
+      expect(rows.first.to_h).to include("email" => entry.email, "name" => "\t=HYPERLINK(1)",
+        "request_source" => "event_waitlist", "organizer_unsubscribed" => "true", "requested_at" => entry.requested_at.iso8601)
+      expect(response.headers["Cache-Control"]).to include("no-store")
+      expect(AuditLog.where(event: event, action: "waitlist.exported")).to exist
+    end
+
+    it "rejects unauthorized exports and cross-organizer audience access" do
+      stranger = create(:user, :organizer)
+      create(:organizer_profile, user: stranger)
+      get "/api/v1/organizer/events/#{event.id}/waitlist/export", headers: auth_headers(stranger)
+      expect(response).to have_http_status(:not_found)
+      get "/api/v1/organizer/events/#{event.id}/waitlist/export"
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "searches names and email addresses without interpreting SQL wildcards" do
+      create(:waitlist_entry, event: event, email: "match@example.test", name: "100% Guam")
+      create(:waitlist_entry, event: event, name: "1000 Guam")
+      get "/api/v1/organizer/events/#{event.id}/waitlist", params: { q: "100%" }, headers: headers
+      expect(response.parsed_body.fetch("waitlist").map { |e| e.fetch("email") }).to eq(["match@example.test"])
+    end
+
+    it "rejects invalid statuses and notify counts instead of raising or silently changing them" do
+      get "/api/v1/organizer/events/#{event.id}/waitlist/export", params: { status: "unknown" }, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+      post "/api/v1/organizer/events/#{event.id}/waitlist/notify_next", params: { count: -1 }, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+  end
+
   describe "POST /api/v1/organizer/events/:event_id/waitlist/:id/offer" do
     it "refuses before reserving inventory when the address is uncertified" do
       event.organization.update!(marketing_address_certified_at: nil)

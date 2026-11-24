@@ -1,3 +1,5 @@
+import EmailPreferencesPage from './pages/EmailPreferencesPage'
+import AudienceMailingsPage from './pages/AudienceMailingsPage'
 import { lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import HomePage from './pages/HomePage'
@@ -97,6 +99,9 @@ function App() {
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />
           <Route path="/policies/:policy" element={<PolicyPage />} />
+          <Route path="/email-confirm/:token" element={<EmailPreferencesPage confirm />} />
+          <Route path="/email-preferences/:token" element={<EmailPreferencesPage />} />
+          <Route path="/dashboard/email" element={<ProtectedRoute><AudienceMailingsPage /></ProtectedRoute>} />
           <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
           <Route path="/my-tickets" element={<ProtectedRoute><MyTicketsPage /></ProtectedRoute>} />
           <Route path="/privacy" element={<ProtectedRoute><PrivacyRequestsPage /></ProtectedRoute>} />

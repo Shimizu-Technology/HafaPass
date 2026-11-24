@@ -1,0 +1,161 @@
+# PR 233 review fixes — 2026-11-24
+
+This round starts at `5bf1b133044531837356f2226f07a1b7f324747b` in the existing `fix/email-readiness` worktree. Sources: Opus's report at `/Users/agent/work/hafapass-email-reviews/opus-review-REPORT.md`, the current controllers/jobs/models, and unresolved GitHub review threads. HåfaPass serves Guam ticket buyers, organizers and administrators. Acceptance covers explicit consent, exact filtered recipients, recoverable scheduling, fast transactional delivery during campaigns, privacy handling and simulated transport. No production access, real email, merge or deploy is authorized.
+
+| Finding | Change and permanent coverage |
+| --- | --- |
+| B1 | Dedicated marketing worker in Solid Queue and Sidekiq; provider-boundary serial pacing without recipient re-poll jobs. Orders, tickets, transfers, refunds and requested waitlist offers/notices bypass this lane. `email_marketing_lane_spec` covers a backed-off blast plus immediate order delivery and priority template routing. |
+| B2 | After-commit checkout job, capped name, enqueue/write rescue and class-only logging. `orders_spec` and `email_marketing_lane_spec` cover 121-character names and write/enqueue failures. |
+| S1 | Strict ISO scheduling, 422 before mutation, stale/invalid recovery blocked. Request regressions reject invalid/past dates. |
+| S2 | Saved filter snapshot used by list eligibility, preview and delivery selection; changing filters invalidates frontend draft/preview. Regression compares displayed count to deliveries. |
+| S3 | Locked cancellation, blocked reason, six-hour default schedule grace; blocked content requires a new confirmed draft. API/job and recovery regressions cover cancellation, address loss and blocked batches. |
+| S4 | Exact subject/audience/count confirmation; TEST prerequisite help; successful test required before enabling send. Frontend regression covers failed tests and locked composition. |
+| S5 | Set-based batched eligibility/consent/suppression queries and concurrent lower-recipient index; bulk delivery inserts in the background dispatcher. Query-count regression covers 110 subscribers. |
+| S6 | Grouped history queries; batched consent history and waitlist unsubscribe lookups. |
+| S7 | Only filter snapshot and count on mailing; recipient addresses reside in delivery rows, using existing delivery retention. The legacy recipient JSON is empty on new dispatches and excluded from API serialization. |
+| S8 | Unfollow records unsubscribe; preference center includes consent/unsubscribe/waitlist organizations. Permanent P3 regression. |
+| S9 | Per-wording source versions, named HåfaPass checkout wording and associated checkbox label. Frontend covers unchecked defaults, independent fields and recovery payload. |
+| S10 | Fresh double opt-in permitted after unsubscribe-all; confirmation restores platform permission while organizer opt-outs remain. Permanent P5 regression. |
+| S11 | New visible preference links do not expire; scoped one-click links remain independent. Eight-year regression. |
+| S12 | ENV-configurable carrier-NAT IP budget, durable three-per-address confirmation cap in 30 days, honeypot, normalized path matching. Rate-limit and confirmation-cap regressions. |
+| S13 | Subscription, consent, preference and recipient export; hold-aware profile/identity redaction and legacy snapshot removal on deletion. Privacy regressions. |
+| S14 | Encrypted, URL-safe purpose-scoped preference identities; old signed links accepted for compatibility. Permanent P6 regression. |
+| S15 | Reversible constraint restoration with NOT VALID and recipient-column rollback. Migration regression. |
+
+P1–P7 are permanent tests across `email_review_regression_spec.rb`, `email_marketing_lane_spec.rb` and `orders_spec.rb`. The captured transport request journey exercises signup, confirmation, admin audience, preview, test, send, unsubscribe and exclusion. These simulated results do not prove provider deliverability, real Clerk login or Safari behavior.
+
+Recipient retention: mailing JSON must remain empty; delivery rows are the sole recipient snapshot and retain the existing message-delivery retention/redaction policy. Privacy deletion redacts subscriber profile/preferences and consent identity using the existing legal-hold guard. Consent action/version timestamps remain as deidentified evidence. The broader seven-year retention policy remains the repository's engineering draft pending counsel/CPA review.
+
+Validation completed on this fix round:
+
+- Full serial RSpec: 4,088 examples, zero failures. Final affected retest after the small follow/preference/blocked-dispatch fixes: 122 examples, zero failures.
+- Full Vitest: 214 files passed, one skipped; 2,396 tests passed, three skipped. Final confirmation-dialog assertion retest also passed.
+- CI Chromium suite: 211 passed initially; six signup payload assertions needed the newly added honeypot field. All six then passed. PWA deploy/offline suite: two passed. WebKit/real devices were not run on this headless Mac mini.
+- Captured-mail browser journey: all eight stages passed against local Rails and simulated transport, with a synthetic admin and verified-address fixture. Evidence: `/Users/agent/work/hafapass-email-evidence/review-fixes/` (`result.json`, captured HTML, screenshots). Priority-lane regression sent the simulated order confirmation with 100 blast recipients pending and a backed-off limiter.
+- Production Vite build, frontend lint, RuboCop (1,089 files), Brakeman (no warnings), Bundler Audit and production npm audit (no vulnerabilities) passed. Impeccable advisory returned `[]`.
+- Actual migration 140200 down/up succeeded inside a rolled-back transaction against the isolated demo DB. Every Rails database command followed an explicit database-name assertion.
+- Borrowed PostgreSQL remains running. Task-owned API/Vite/browser processes stopped; task databases dropped. Worktree retained; pre-existing `.codex/` and `EMAIL_AUDIT.md` preserved.
+
+The read-only shared-context check failed because this host lacks `/Users/agent/.config/shimizu-technology/agent-context.json`; synced canonical guidance was read directly. No shared settings changed.
+
+Lead follow-up: final-head CI/review and the eventual merge/release decision. No merge/deploy or real email occurred. External sender-domain/webhook/inbox acceptance and real Clerk/Safari checks remain the existing pre-campaign owner checks.
+
+## Round 2 fixes (starts at 57d9a6f2)
+
+Acceptance: same-organizer door locks remain responsive during marketing pacing and HTTP; priority mail never waits on the bulk backoff; organizer verification stays at five/hour; checkout consent preserves request evidence; unsafe rollback refuses before schema changes. Agent-executed affected-flow QA uses isolated local databases and captured/simulated transport only.
+
+- B3: future slots are reserved and committed before waiting, before the delivery lease or organizer locks. Authorization commits before HTTP; the existing frozen request/key, lease ownership check and sent-state persistence remain intact. A permission change during HTTP cannot recall an accepted message.
+- N1: priority 429s use delayed job retries and never call the marketing backoff. Threaded probes also acquire the slot backoff promptly while marketing waits or performs HTTP.
+- N2: organizer verification is independently fixed at five/hour, with a six-request throttle regression.
+- N3: checkout captures IP and at most 500 user-agent characters and passes them through the background job into the append-only consent ledger. Request and job regressions cover both boundaries.
+- N4: migration down refuses before DDL if any delivery lacks a legacy subject; see `docs/EMAIL_COMPLIANCE.md` for reconciliation requirements. Regressions cover safe restoration and refusal with an actual platform-only delivery.
+- N5: self-tests use `emails`, checkout subscription capture uses `default`, and its confirmation uses `emails`. Commercial consent/suppression rules remain in effect.
+
+Captured-mail Chromium journey: eight stages passed, using a synthetic admin and verified-address fixture, on the Round 2 implementation. Evidence: `/Users/agent/work/hafapass-email-evidence/round2-fixes/` (`result.json`, captured HTML and screenshots). No real Clerk authentication, external delivery, mobile Safari or real-device checks are claimed. No frontend files changed.
+
+Validation on implementation commit `0d6705ade5e6cd41da2f2f05459ede66eecbbacc`:
+
+- Full serial RSpec: **4,098 examples, zero failures**, 4 minutes 12.3 seconds. Final probe timings from that run: organizer lock **1.11 ms during slot wait**, **0.48 ms during HTTP** (required <200 ms); slot backoff **1.33 ms / 0.62 ms** respectively. Both barriers assert no open transaction, and replay sends no second request.
+- RuboCop: **1,090 files, no offenses**. Brakeman: **zero errors, zero security warnings**.
+- Actual migration refusal with populated email-base-only rows and an empty-delivery down/up cycle passed in a rolled-back transaction on the task demo DB.
+- Captured-mail Chromium journey: **8/8 stages passed**. Frontend lint/Vitest not rerun because no frontend files changed.
+- Task-owned API/Vite/browser processes stopped; lifecycle status has no active owned resources. Dropped `hafapass_round2fix233_test` and `hafapass_round2fix233_demo`; borrowed protected PostgreSQL remains available. Worktree and pre-existing untracked files retained. No merge, deploy or real email.
+
+PR mapping: B3 and N1–N5 are implemented in `0d6705ad`; this QA record is a separate documentation commit. Lead owns final-head CI/review and the merge decision.
+
+## Production-faithful schema correction (2026-11-24)
+
+Scope: preserve already-applied production migration history and limit the schema delta to PR #233. Baseline: `origin/main` at `debe3fb92afd87cd0d8b9f077bac39a4dc7973d5`; worker started at `4a402cd1`. HafaPass is the live Guam ticketing platform; this correction changes schema preparation, not buyer or organizer UI. Acceptance is agent-executed database migration/schema verification and automated regression checks; no new browser or real-provider acceptance is claimed.
+
+- Restored `20260720000002` and `20260720150000` byte-for-byte from `origin/main`. Kept the two-worker transactional/marketing assertions in `puma_cluster_spec`.
+- Created `hafapass_pr233_schema_fix_test` on the existing protected localhost PostgreSQL service. Loaded `origin/main`'s schema, then ran `db:migrate`; the log confirms only `20261124140000`, `20261124140100`, `20261124140200`, `20261124140300`, `20261124150000`, and `20261124150100` ran. Each explicit Rails database command first asserted `current_database()` against this exact task DB.
+- Rolled all six migrations down to `20261124100000`, then up again and dumped the schema. Preserved main's equivalent cast syntax for the existing attendee-info and door-check constraints to avoid unrelated PostgreSQL dump formatting changes. Reloaded the generated schema before full RSpec.
+- Schema diff against `origin/main`: **78 lines changed, 76 insertions, 2 deletions**. Only the version, five email tables, follow consent columns, delivery links/recipient index/expanded subject constraint, and their foreign keys differ. Removing exactly those changes reproduces main's schema byte-for-byte.
+- CI now explicitly uses `db:schema:load`; the two RSpec worker databases already use schema load in `scripts/ci_rspec.py`.
+
+Follow-up outside #233: investigate the pre-existing full migration-chain replay failures on main (historical checkout recovery uses the current `Order` model and references refund/payment tables before the commerce-ledger migration). No fresh full-chain replay repair is included here. This correction verifies the production-shaped schema-load plus new-migrations path; it does not claim a successful from-zero historical replay.
+
+Validation of the correction on the Mac mini (Ruby 3.3.14, PostgreSQL 16, Node 24): full RSpec **4,138 examples / 0 failures** (7m15s), full Vitest **2,426 passed / 3 skipped** (219 passing files, one skipped), RuboCop **1,100 files / no offenses**, CI-helper tests **6 passed**, `git diff --check` passed. The expanded delivery subject constraint and lower-recipient index are valid in the schema-loaded DB. All six new migrations completed both down and up.
+
+Cleanup: dropped the task DB; foreground test processes finished, including the self-cleaning Puma integration test. Lifecycle status has no active owned resources. Protected pre-existing PostgreSQL remains running. Preserved the worktree and pre-existing `.codex/` and `EMAIL_AUDIT.md`. No merge or deployment; final-head CI/review remain lead-owned. The shared-context read-only check could not run because this host lacks `~/.config/shimizu-technology/agent-context.json`; applicable synced guidance was read directly.
+
+## Address consent and stale-request review fixes (2026-11-24)
+
+Scope: Greptile's five findings on `4a402cd1` and CodeRabbit's five comments on `5c0c5d6b` (two overlap). Implementation is one commit above the pushed production-faithful schema correction.
+
+| Finding | Result | Regression |
+| --- | --- | --- |
+| G1 / CR r4676445732 | Followers store a normalized consenting address after Clerk verification. Audience selection, consent intersection, preference discovery and send-time eligibility use that snapshot. Signed preferences update only that address; opt-outs clear it. | `email_consent_identity_spec`: G1 sync attack, token update, withdrawal and legacy-fail-closed cases. |
+| G2 / CR r4676445739 | `OrderCreator` saves the initial platform choice/time atomically as `orders.platform_opt_in_at`. Recovery still enqueues, using that stored time; the job reloads it and ignores the legacy keyword. | `orders_spec`: G2 replay after withdrawal with both opt-in settings, and declined-choice replay; `rush_checkout_retry_spec` checks both retry enqueues have the exact saved time. |
+| G3 | Shared lock helper takes `EmailPreference` before `PlatformSubscriber`. Subscription, confirmation, preferences, unsubscribe and admin suppression follow this order. | `platform_consent_lock_order_spec`: actual SQL lock order for confirmation, withdrawal, subscription and restoration. |
+| G4 | Shared scope restoration materializes global withdrawal for other known organizers and preserves platform withdrawal before enabling the chosen organizer. Both organizer-follow and signed-preferences endpoints use it. | `email_consent_identity_spec`: G4 organizer A/B/platform through each endpoint. |
+| G5 | Single opt-in and double-opt-in confirmation share platform-only restoration; organizer withdrawals remain. | `email_consent_identity_spec`: G5 with `EMAIL_DOUBLE_OPT_IN=true` and `false`, including a legacy global-only block. |
+| CR r4676445771 | Toggle sends `consent_only: true`; backend uses an existing follow and rechecks it with a row lock after the shared consent locks. Missing follows return 404 without recreation or confirmation. Demo adapter has the same boundary. | API C6 DELETE-then-POST and existing-follow update; `OrganizerEmailOptIn.test.jsx` covers 404 and 409; demo regression checks no resurrection. |
+| CR r4676445748 | Signup email input is disabled in flight; success displays the submitted address. | `EventAlertsSignup.test.jsx`: delayed response, attempted editing, exact sent address and success notice. |
+| CR r4676445763 | Audience count has one `role="status"` region; preview count has no duplicate live announcement. | `AudienceMailingsPage.test.jsx`: filter changes count in the same unique status region. |
+
+Migration `20261124160000_pin_email_consent_identity` adds both columns in one migration. **No legacy follower address is backfilled**: editable current contact information cannot prove which address consented. Null snapshots grant no follower email permission; a fresh verified follow opt-in establishes one. Old orders also receive no invented consent timestamp. Historical migrations remain byte-for-byte equal to `origin/main`.
+
+Schema rebuilt by loading `origin/main`'s schema into isolated `hafapass_pr233_greptile_test`, applying only the seven #233 migrations, then dumping. Equivalent pre-existing ticket-constraint cast syntax is preserved. Schema diff versus main: **78 insertions / 2 deletions**; versus `5c0c5d6b`: only the version and two added columns. Database name was asserted before every explicit Rails database command.
+
+Validation: **473 examples / 0 failures** across all 43 email, messaging/delivery, privacy and affected API spec files; **12 frontend tests** across the four touched component/page/demo spec files; **RuboCop 1,103 files / no offenses**; ESLint and the production/PWA build (translation generation skipped) passed; Impeccable `[]`; whitespace check passed. Fixtures use simulated email transport; no real email was sent. The lock regression inspects real SQL ordering rather than relying on a timing-sensitive concurrent deadlock reproduction. No browser/device acceptance is claimed for this correction.
+
+Lead owns new-head CI/review, merge and deployment. The pre-existing fresh full-chain replay follow-up from the schema correction remains outside this PR.
+
+## Round 3: consent association, lock order and retention inventory (2026-11-24)
+
+Baseline: `d2494c0d5bed02bbbc3fc5bf7e13e57d26597944`; same isolated worktree. Scope is the four lead-verified findings below, including the three CI-confirmed inventory failures. No new migration or schema change.
+
+| Finding | Implementation | Regression |
+| --- | --- | --- |
+| R1 / Greptile r4676558397 | Follow toggle, per-organizer preferences and unsubscribe-all clear only active consent time, retaining the pinned address association. Signed preferences can find and re-enable that follow; new verified follow opt-in can replace the address. | `email_consent_round_three_spec` R1 covers all three withdrawal paths, preference discovery, signed restore, followers audience and `organizer_enabled_ids`. |
+| R2 / Greptile r4676558404 | Unfollow takes the preference and subscriber locks before the follow. Consent creation, preference changes and scope restoration lock follows before suppression/consent rows. Email-link and waitlist withdrawals share the helper and ledger. Provider reconciliation takes consent locks before waitlist/domain locks, so complaint handling cannot invert the order. Helper documents preference → subscriber → follow → unsubscribe/consent rows. | `platform_consent_lock_order_spec` R2 records actual SQL for DELETE, including both suppression and consent inserts; existing lock-order and waitlist/provider concurrency specs also run. |
+| R3 / Greptile r4676558412 | Classify pinned follow address and saved checkout consent time as PII and list them in the relevant personal-data inventories. Export includes both for the owner and excludes order consent time from another holder's export. Order anonymization clears consent time. Follow erasure scrubs matching unheld addresses (including requests without a linked user), and account deletion removes unheld follow rows as before. Explicitly inventory scope-restore suppression deletion: it replaces the current denial index under consent locks while append-only withdrawal evidence remains. | `privacy_request_processor_spec` R3 verifies saved-address/time export and erasure. `data_retention_spec` covers complete column classification, order inventory and populated-PII anonymization; `retention_deletion_paths_spec` checks every deletion path. |
+| R4 / CodeRabbit r4676445771 follow-up | GET follows returns the latest relevant organizer/global consent id for each organizer. Consent-only writes compare the observed marker under the shared locks and return 409 without mutation when it changed. Frontend reloads state on conflict and shows a short message; a deliberate retry sends the fresh marker. Demo adapter supports markers and conflict checks. | API R4 tests delayed writes after organizer preferences, unsubscribe-all and email-link withdrawal, then fresh retry. `OrganizerEmailOptIn.test.jsx` checks conflict reload/retry; demo regression covers stale rejection. |
+
+Validation on the Mac mini, schema-loaded local `hafapass_pr233_round3_test`: **542 examples / 0 failures** across 49 email, messaging/delivery, privacy, retention and affected API spec files. Both CI-named files (`data_retention_spec.rb` and `retention_deletion_paths_spec.rb`) also passed separately: **45 examples / 0 failures**. Frontend: **13 passing tests** across the four consent/signup/audience/demo spec files; ESLint passed. RuboCop: **1,104 files / no offenses**. The focused privacy plus both CI-named inventory files passed together: **74 examples / 0 failures**, including verified guest-request erasure. Production/PWA build passed (translation generation skipped), Impeccable returned `[]`, and whitespace check passed.
+
+No real email, merge or deployment. Existing historical migrations and schema remain unchanged. No new browser/device acceptance or timing-sensitive concurrent deadlock claim: regressions use actual SQL order and deterministic request ordering. Further CodeRabbit/Greptile minors or repeats are lead-owned residuals, not another worker fix round. Final-head CI/review and release decisions remain with the lead.
+
+## Round 4: privacy consent locking and changed-address withdrawal (2026-11-24)
+
+Baseline: `9d28eae93299dc25c486651766c9e0f683e14cd5`. Scope is the two lead-verified Greptile findings, each with its own regression.
+
+- **F1 / r4677272537:** `EmailPreferences.with_platform_locks_for` normalizes, removes blank/duplicate addresses and nests each preference/subscriber pair in sorted address order. Privacy deletion takes these locks for verified subject emails, current account email and saved follow addresses, then locks affected follows before any organization/event/order locks. This places receipt processing and deletion in the same consent-before-domain lock order. `platform_consent_lock_order_spec` F1 records actual SQL and verifies all sorted pairs, including the former saved address, and the follow lock before the first organization lock.
+- **Retention-path check:** scheduled `DataRetentionPurgeJob::RUNNABLE` excludes subscribers, preferences and follows; its organization-ranked purge paths do not later acquire these consent locks. The generic `DataRetention.update_unheld` writes to these models from privacy deletion, now inside the outer consent locks. No additional inverted purge path was found, so no unrelated retention behavior changed.
+- **F2 / r4677272550:** one grouped `consent_markers` function is used by GET and the locked POST check. Each organizer's marker is the maximum organizer/global consent id across its current and saved follow addresses. Consent-only writes lock both addresses using the sorted helper. `email_consent_round_three_spec` F2 opts in as A, syncs contact to B, loads the marker, successfully withdraws A, verifies suppression/ledger and inactive consent, and rejects stale markers after both A's withdrawal and a later global withdrawal for B.
+
+Validation: **544 examples / 0 failures** across the 49-file full email/messaging, privacy, data-retention and affected API set; the new F1/F2 tests also passed in the **47-example** targeted run. RuboCop: **1,104 files / no offenses**; whitespace check passed. No frontend, migration or schema changes. No real email, merge, deployment or sub-agents. Final-head CI/review remain lead-owned.
+
+Existing marketplace/follow request specs also passed: see the round-4 worker report for the exact count. Task-owned database/resources are cleaned before worker handback; the worktree and pre-existing untracked audit files are retained.
+
+## Final follow-up: lock-only erasure and CodeRabbit C1–C5 (2026-11-24)
+
+Baseline: `15ae78df5bc31a994fcfcdd483e859fba9d0072a`. One final commit; no frontend, migration or schema changes.
+
+- **L1:** `with_platform_locks` and its sorted multi-email helper accept `create_preference: false`. This mode locks only existing preference/subscriber rows, creates neither, and yields nil for absent rows. Privacy deletion, receipt processing, waitlist reconciliation, organizer email-link/complaint withdrawals, follow destruction and admin suppression use lock-only mode. Genuine opt-in/preferences paths retain row creation because subsequent writes require that row. Privacy regression verifies that erasing verified A does not create plaintext preference rows for unverified current/saved addresses; a webhook regression verifies that ordinary receipt processing does not manufacture preferences. Existing sorted lock-order tests passed.
+- **C1 / r4677328461:** include the pinned follow address in `DataRetention.held?` email hold scopes. `RetentionGuard.protected?` already delegates to that method, so no duplicate follow branch is needed. Regression deletes verified A+B with held A, preserving A's entire follow consent and scrubbing unheld B's address/timestamp.
+- **C2 / r4677328444:** disabling a follow writes organizer suppression and unsubscribe consent for both normalized current and saved addresses, while clearing active follow consent. Unified A+B marker checks remain. Regression gives B a completed opted-in order, then verifies the index is disabled and neither A nor B is eligible or in follower/buyer audiences.
+- **C3 / r4677328436:** admin suppression returns 409 with `Subscriber changed; reload` if the locked subscriber disappeared from that address. Regression simulates erasure rewriting the address between lookup and lock, and verifies no consent, suppression audit or preference row is written.
+- **C4 / r4677328450:** deletion writes existing preference rows before subscriber rows. A SQL-notification regression verifies that write sequence.
+- **C5 / r4677328473:** the verified-email-only deletion fixture now includes another account whose saved follow address differs from its current contact address. It verifies the address/timestamp are cleared while both the follow and account remain.
+
+Validation: focused **99 examples / 0 failures**; final **631 examples / 0 failures** across 52 email, privacy, retention, webhook/receipt, consent, lock-order and marketplace spec files. RuboCop **1,104 files / no offenses**; whitespace check passed. Tests use local fixtures and simulated/mocked transport; no real email. No merge, deployment or sub-agents. Task database/resources are cleaned before handback; pre-existing PostgreSQL and untracked audit files are preserved. Lead owns final-head CI/review and any remaining residuals; no further worker review rounds are planned.
+
+## A1: consent lock for absent rows (2026-11-24)
+
+Baseline: `24bc4705126fe26f116619518ac7582e4bbc9179`. `EmailPreferences.with_platform_locks` now takes a transaction-scoped address advisory lock before any row lookup or creation, in both normal and lock-only modes. It uses the existing typed-bind two-integer query pattern from `WaitlistLocks`, with a distinct email-consent namespace `20_261_124` and `hashtext` of the stripped/downcased address. Waitlist's namespace is `20_261_022`, legal holds use `728314`, and slug locks use the separate single-key space. The sorted multi-email helper retains sorted advisory/row nesting. No personal-data rows are created by lock-only mode.
+
+Documented order: address advisory lock → preference → subscriber → follow → organization/waitlist → unsubscribe/consent rows.
+
+All three direct callers of `unsubscribe_organizer!` were checked:
+
+- `Api::V1::MarketingUnsubscribesController#create`: ordinary email-link withdrawal has no preceding domain lock. Its waitlist-token route delegates to `WaitlistUnsubscribe.stop!`.
+- `WaitlistUnsubscribe.stop!`: organizer-wide withdrawal now wraps its entire body in the consent helper before the first `WaitlistLocks.with`, rather than obtaining consent locks after cancelling the initial entry. Recursive entry-only cancellations stay inside the same address lock.
+- `WaitlistDelivery.record_complaint!`: called from the consent-locked failure-reconciliation body. `WaitlistDelivery.reconcile_failure!` continues to wrap `WaitlistLocks.for_delivery` in the consent helper. The provider-receipt route, `MessageProviderEventProcessor#process_receipt!`, takes the same outer consent lock before receipt/domain locks. MessageDeliveryJob's direct failure-reconciliation calls occur after its delivery-lock blocks return.
+
+Regression coverage in `platform_consent_lock_order_spec`: existing consent operations now assert advisory-first ordering; lock-only mode with neither row asserts advisory-before-lookups and zero inserts; a separate native PostgreSQL connection gets `false` from `pg_try_advisory_xact_lock` while the first holds the same normalized address lock; organizer-wide waitlist withdrawal asserts the consent lock before the first organization lock and no preference creation. The native connection is rolled back and closed. The privacy no-row erasure regression remains covered.
+
+Targeted lock-order/privacy/waitlist run: **43 examples / 0 failures**. No frontend, schema or migration changes. No real email, merge, deployment or sub-agents. Task database/resources are cleaned before handback; final-head CI/review remain lead-owned.
+
+Final broader validation: **634 examples / 0 failures** across 52 email, privacy, waitlist/receipt, consent, retention and marketplace spec files; RuboCop **1,104 files / no offenses**; whitespace check passed.

@@ -55,7 +55,7 @@ test('preview Save, Remind me, Follow, PDF, account and pass summary have clear 
     await expect(page.getByRole('button', { name: result, exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(page).toHaveURL(/\/events\/copa-de-marianas-2027$/)
   }
-  await expect(page.getByText('Saved for this demo visit.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Saved. Your preference is up to date.', { exact: true })).toBeVisible()
   await page.goto('/tickets/demo-ticket-copa-adult-1?order=demo-copa-2027')
   await page.getByRole('button', { name: /Download PDF/ }).click()
   await expect(page.getByText(/PDF download is off in this demo preview/)).toBeVisible()

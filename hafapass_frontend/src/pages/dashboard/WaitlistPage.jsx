@@ -7,6 +7,7 @@ import { Bell, Trash2, Loader2, ClipboardList, Send } from 'lucide-react'
 import apiClient from '../../api/client'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import SupportLink from '../../components/SupportLink'
+import { saveBlob } from '../../utils/download'
 import { foldCell, foldRow, foldTable } from '../../utils/foldTable'
 
 const STATUS_COLORS = {
@@ -72,6 +73,8 @@ function WaitlistSession({ eventId, identity }) {
   }, [])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
+  const [query, setQuery] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [notifyCount, setNotifyCount] = useState('1')
   const validNotifyCount = notifyCount !== '' && Number.isInteger(Number(notifyCount))
     && Number(notifyCount) >= 1 && Number(notifyCount) <= 50
@@ -90,7 +93,7 @@ function WaitlistSession({ eventId, identity }) {
     setRefreshing(true); setLoadError('')
     try {
       const [entriesResponse, eventResponse] = await Promise.all([
-        apiClient.get(`/organizer/events/${eventId}/waitlist`, { ...request.config, params: filter ? { status: filter } : {} }),
+        apiClient.get(`/organizer/events/${eventId}/waitlist`, { ...request.config, params: { ...(filter ? { status: filter } : {}), ...(query ? { q: query } : {}) } }),
         apiClient.get(`/organizer/events/${eventId}`, request.config),
       ])
       if (!canApply()) return
@@ -109,11 +112,28 @@ function WaitlistSession({ eventId, identity }) {
       if (canApply()) { setLoading(false); setRefreshing(false) }
       request.release()
     }
-  }, [beginRequest, clearPrivateState, eventId, filter])
+  }, [beginRequest, clearPrivateState, eventId, filter, query])
   fetchDataRef.current = fetchData
   useEffect(() => { fetchData() }, [fetchData])
   const canManage = event?.permissions?.manage_attendees === true
   const mutationsLocked = !canManage || refreshing || Boolean(loadError) || Boolean(activeMutation) || Boolean(unconfirmed)
+
+  const exportWaitlist = async () => {
+    const request = beginRequest()
+    if (!request || exporting) return
+    setExporting(true); setMutationError('')
+    try {
+      const response = await apiClient.get(`/organizer/events/${eventId}/waitlist/export`, {
+        ...request.config, responseType: 'blob', params: { status: filter, q: query },
+      })
+      if (request.current()) saveBlob(response.data, `event-${eventId}-waitlist.csv`)
+    } catch {
+      if (request.current()) setMutationError('The waitlist export could not be downloaded. Try again.')
+    } finally {
+      if (request.current()) setExporting(false)
+      request.release()
+    }
+  }
 
   const askConfirmation = (operation, message, label, send, complete) => {
     if (!current() || (operation !== 'remove_entry' && !addressReady) || mutationsLocked || mutationBusy.current) return
@@ -251,6 +271,12 @@ function WaitlistSession({ eventId, identity }) {
    {unconfirmed && <section aria-label="Unconfirmed operation" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>An earlier {unconfirmed.operation.replaceAll('_', ' ')} request is not confirmed. Changes are paused to avoid repeating an unconfirmed request. Refresh the list and contact support before repeating it.</p><div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={refreshing || Boolean(activeMutation)} onClick={fetchData} className="min-h-11 font-semibold underline">Refresh latest list</button><SupportLink subject="Verify an unconfirmed event-tool operation" className="inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div></section>}
    {notice && <p role="status" className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">{notice}</p>}
 
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm font-medium">Search waitlist
+          <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Name or email" className="input min-h-11" />
+        </label>
+        <button type="button" className="btn-secondary min-h-11" onClick={exportWaitlist} disabled={!canManage || exporting || Boolean(loadError)}> {exporting ? 'Exporting…' : 'Export filtered CSV'}</button>
+      </div>
       {/* Filters */}
       <div className="mb-4 flex min-w-0 max-w-full flex-wrap gap-2" role="group" aria-label="Filter by status">
         {['', 'waiting', 'notified', 'expired', 'converted'].map(s => (

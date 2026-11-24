@@ -76,6 +76,12 @@ class EmailService
       when "waitlist_offer"
         offer = WaitlistOffer.find(delivery.metadata.fetch("waitlist_offer_id"))
         send_waitlist_offer(offer, delivery: delivery)
+      when "platform_confirmation"
+        link = "#{frontend_url}/email-confirm/#{ERB::Util.url_encode(delivery.metadata.fetch('token'))}"
+        html = email_wrapper(t("alerts.confirm_title")) { %(<p>#{ht("alerts.confirm_intro")}</p><p><a href="#{h(link)}">#{ht("alerts.confirm_title")}</a></p><p>#{ht("alerts.confirm_expiry")}</p>) }
+        deliver(to: delivery.recipient, subject: t("alerts.confirm_subject"), html: html, delivery: delivery)
+      when "audience_mailing", "audience_test"
+        send_audience_mailing(delivery)
       when "communication_campaign"
         send_communication_campaign(delivery)
       when "event_reminder"
@@ -854,6 +860,25 @@ class EmailService
         unsubscribe_url: details[:one_click_url], sender_name: details[:organizer_name])
     end
 
+    def send_audience_mailing(delivery)
+      mailing = delivery.audience_mailing
+      token = if mailing.organization
+        MarketingUnsubscribe.token(organization: mailing.organization, email: delivery.recipient)
+      else
+        EmailPreferences.token(delivery.recipient, scope: "platform_unsubscribe")
+      end
+      api = PublicSiteUrl.api || "http://localhost:3000"
+      one_click = mailing.organization ? "#{api}/api/v1/marketing/unsubscribe/#{ERB::Util.url_encode(token)}" :
+        "#{api}/api/v1/platform_subscriptions/unsubscribe/#{ERB::Util.url_encode(token)}"
+      visible = mailing.organization ? "#{frontend_url}/unsubscribe/#{ERB::Util.url_encode(token)}" :
+        "#{frontend_url}/email-preferences/#{ERB::Util.url_encode(EmailPreferences.token(delivery.recipient))}"
+      html = email_wrapper(delivery.metadata.fetch("subject")) do
+        %(<h2>#{h(delivery.metadata.fetch('subject'))}</h2><div style="white-space:pre-wrap">#{h(delivery.metadata.fetch('body'))}</div><p>#{ht("alerts.sender", name: delivery.metadata.fetch("organizer_name"))}</p><p>#{h(delivery.metadata.fetch('mailing_address'))}</p><p><a href="#{h(visible)}">#{ht("alerts.unsubscribe")}</a> · <a href="#{h(EmailPreferences.url(delivery.recipient))}">#{ht("alerts.preferences")}</a></p>)
+      end
+      deliver(to: delivery.recipient, subject: delivery.metadata.fetch("subject"), html: html, delivery: delivery,
+        tag: delivery.template, unsubscribe_url: one_click, sender_name: delivery.metadata.fetch("organizer_name"))
+    end
+
     def send_communication_campaign(delivery)
       organization = delivery.event.organization
       token = MarketingUnsubscribe.token(organization: organization, email: delivery.recipient)
@@ -865,6 +890,7 @@ class EmailService
           <div style="color:#4b5563;white-space:pre-wrap">#{h(delivery.metadata.fetch('body'))}</div>
           <p style="color:#6b7280;font-size:13px">Sent by #{h(delivery.metadata.fetch('organizer_name'))} through HåfaPass.</p>
           <p style="color:#6b7280;font-size:13px">#{h(delivery.metadata.fetch('mailing_address'))}</p>
+          <p><a href="#{h(EmailPreferences.url(delivery.recipient))}">Email preferences</a></p>
           <p><a href="#{h(unsubscribe_url)}">Unsubscribe from #{h(delivery.metadata.fetch('organizer_name'))} emails</a></p>
         HTML
       end
@@ -964,7 +990,7 @@ class EmailService
       footer = <<~HTML
         <p style="color:#6b7280;font-size:13px">Sent by #{h(name)} through HåfaPass.</p>
         <p style="color:#6b7280;font-size:13px">#{h(address)}</p>
-        <p><a href="#{h("#{frontend_url}/unsubscribe/#{encoded_token}")}">Stop alerts for this event</a></p>
+        <p><a href="#{h("#{frontend_url}/unsubscribe/#{encoded_token}")}">Stop alerts for this event</a> · <a href="#{h(EmailPreferences.url(delivery.recipient))}">Email preferences</a></p>
       HTML
       { footer: footer, organizer_name: name,
         one_click_url: "#{PublicSiteUrl.api || 'http://localhost:3000'}/api/v1/marketing/unsubscribe/#{encoded_token}" }
