@@ -107,7 +107,7 @@ class Api::V1::OrdersController < ApplicationController
     if params[:platform_opt_in] == true
       begin
         ActiveRecord.after_all_transactions_commit do
-          CheckoutSubscriptionJob.perform_later(result.order.id)
+          CheckoutSubscriptionJob.perform_later(result.order.id, ip: request.remote_ip, user_agent: request.user_agent.to_s.first(500))
         end
       rescue StandardError => error
         Rails.logger.warn("Platform subscription enqueue skipped: #{error.class}")

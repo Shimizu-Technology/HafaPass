@@ -8,6 +8,16 @@ class ExtendEmailDeliverySubjects < ActiveRecord::Migration[8.1]
   end
 
   def down
+    if select_value(<<~SQL)
+      SELECT 1 FROM message_deliveries
+      WHERE order_id IS NULL AND ticket_id IS NULL AND event_id IS NULL
+        AND organization_membership_id IS NULL AND platform_invitation_id IS NULL AND privacy_request_id IS NULL
+      LIMIT 1
+    SQL
+      raise ActiveRecord::IrreversibleMigration,
+        "Reconcile email-base-only message deliveries before rollback; the restored subject constraint would reject their updates"
+    end
+
     add_check_constraint :message_deliveries,
       "order_id IS NOT NULL OR ticket_id IS NOT NULL OR event_id IS NOT NULL OR organization_membership_id IS NOT NULL OR platform_invitation_id IS NOT NULL OR privacy_request_id IS NOT NULL",
       name: "message_deliveries_subject_present_with_privacy", validate: false

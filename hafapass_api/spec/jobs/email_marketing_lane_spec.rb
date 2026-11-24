@@ -43,4 +43,32 @@ RSpec.describe "Marketing dispatch lane", type: :job do
     expect(Rails.logger).to receive(:warn).with(/Platform subscription skipped/)
     expect { CheckoutSubscriptionJob.perform_now(order.id) }.not_to raise_error
   end
+  it "N1: schedules a transactional 429 retry without touching bulk backoff" do
+    order = create(:order, :completed)
+    message = create(:message_delivery, order: order, template: "order_confirmation")
+    allow(EmailService).to receive(:send_delivery_payload).and_raise(Resend::Error::RateLimitExceededError.new("rate limited"))
+    expect(EmailRateSlot).not_to receive(:backoff!)
+    expect { MessageDeliveryJob.perform_now(message.id) }.to have_enqueued_job(MessageDeliveryJob)
+    expect(message.reload.status).to eq("failed")
+  end
+
+  it "N3: retains bounded checkout request evidence in the consent ledger" do
+    order = create(:order)
+    CheckoutSubscriptionJob.perform_now(order.id, ip: "203.0.113.24", user_agent: "x" * 600)
+    consent = EmailConsent.find_by!(email: order.buyer_email, action: "requested")
+    expect(consent).to have_attributes(ip: "203.0.113.24", user_agent: "x" * 500, source: "checkout")
+  end
+
+  it "N5: prioritizes self-tests and double opt-in ahead of bulk blasts" do
+    mailing = AudienceMailing.create!(created_by: create(:user, role: :admin), subject: "Test", body: "Shows", audience: "platform")
+    message = mailing.delivery("test@example.test", test: true)
+    message.save!
+    expect(message.template).to eq("audience_test")
+    expect(MessageDeliveryJob.new(message.id).queue_name).to eq("emails")
+    expect(message.bulk_marketing?).to be(false)
+    expect(CheckoutSubscriptionJob.new(1).queue_name).to eq("default")
+    subscriber = PlatformSubscription.call({ email: "priority@example.test", source: "checkout" })
+    confirmation = subscriber.message_deliveries.sole
+    expect(MessageDeliveryJob.new(confirmation.id).queue_name).to eq("emails")
+  end
 end

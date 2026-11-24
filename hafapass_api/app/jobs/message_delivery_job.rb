@@ -18,6 +18,8 @@ class MessageDeliveryJob < ApplicationJob
       raise ArgumentError, "Email provider deadline must be shorter than the send lease"
     end
     delivery = MessageDelivery.find(delivery_id)
+    # Pace before taking any domain lock or starting the bounded send lease.
+    EmailRateSlot.dispatch! { nil } if delivery.bulk_marketing? && EmailService.configured? && !terminal?(delivery)
     lease_token = SecureRandom.uuid
     previously_unknown = nil
     outcome = with_delivery_lock(delivery) do
@@ -198,11 +200,7 @@ class MessageDeliveryJob < ApplicationJob
     # Lease, payload and unknown marker are durable before any network activity.
     # This works with transaction-pooled PostgreSQL, without session affinity.
     response = dispatch_with_campaign_authorization(delivery, previously_unknown) do
-      if delivery.bulk_marketing? && delivery.provider == "resend"
-        EmailRateSlot.dispatch! { Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) } }
-      else
-        Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
-      end
+      Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
     end
     return if response == :authorization_cancelled
     simulated = response.is_a?(Hash) && (response[:simulated] || response["simulated"])
@@ -221,7 +219,7 @@ class MessageDeliveryJob < ApplicationJob
     end
     MessageProviderEventProcessor.reconcile_for!(delivery)
   rescue StandardError => error
-    EmailRateSlot.backoff! if error.is_a?(Resend::Error::RateLimitExceededError)
+    EmailRateSlot.backoff! if delivery&.bulk_marketing? && error.is_a?(Resend::Error::RateLimitExceededError)
     with_delivery_lock(delivery) do
       if !terminal?(delivery) && (delivery.send_lease_token.nil? || delivery.send_lease_token == lease_token)
         # A definite rejection can clear uncertainty only if no older attempt
@@ -245,33 +243,30 @@ class MessageDeliveryJob < ApplicationJob
 
   private
 
-  # The durable lease is committed before this bounded provider call. Team
-  # revocation takes the same organization lock, so it cannot complete between
-  # this permission check and provider dispatch. Other email templates retain
-  # their existing delivery/consent behavior.
+  # Authorization is checked after pacing, in a short transaction. Revocation
+  # after this check cannot withdraw an in-flight provider request. Never hold
+  # an organizer lock across HTTP; the durable lease/key govern retries.
   def dispatch_with_campaign_authorization(delivery, previously_unknown)
     return yield unless delivery.template == "communication_campaign"
 
     organization = delivery.event&.organization
-    dispatch = lambda do
+    authorized = organization&.with_lock do
       delivery.reload
       sender = delivery.requested_by
-      if organization && sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
-          permission: :manage_marketing, event: delivery.event)
-        yield
-      else
-        delivery.with_lock do
-          delivery.update!(status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR,
-            provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
-        end
-        delivery.communication_campaign&.with_lock do
-          campaign = delivery.communication_campaign
-          campaign.fail_authorization!(preserve_state: campaign.draft? || campaign.scheduled? || campaign.cancelled?)
-        end
-        :authorization_cancelled
-      end
+      sender && OrganizationAuthorization.allowed?(user: sender, organization: organization,
+        permission: :manage_marketing, event: delivery.event)
     end
-    organization ? organization.with_lock(&dispatch) : dispatch.call
+    return yield if authorized
+
+    delivery.with_lock do
+      delivery.update!(status: :cancelled, last_error: CommunicationCampaign::DELIVERY_AUTHORIZATION_ERROR,
+        provider_outcome_unknown: previously_unknown, send_lease_token: nil, send_lease_expires_at: nil)
+    end
+    delivery.communication_campaign&.with_lock do
+      campaign = delivery.communication_campaign
+      campaign.fail_authorization!(preserve_state: campaign.draft? || campaign.scheduled? || campaign.cancelled?)
+    end
+    :authorization_cancelled
   end
 
   def with_delivery_lock(delivery, &block)

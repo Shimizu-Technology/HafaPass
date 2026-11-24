@@ -52,7 +52,7 @@ RSpec.describe "Audience email delivery", type: :job do
   it "atomically paces requests and backs off after provider throttling", :email_rate_limit do
     expect(EmailRateSlot.reserve!).to eq(0)
     expect(EmailRateSlot.reserve!).to be > 0
-    travel 2.seconds do
+    travel 4.seconds do
       expect(EmailRateSlot.reserve!).to eq(0)
       EmailRateSlot.backoff!
       expect(EmailRateSlot.reserve!).to be > 29

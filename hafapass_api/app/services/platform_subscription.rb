@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class PlatformSubscription
-  def self.call(attributes, request: nil)
+  def self.call(attributes, request: nil, ip: nil, user_agent: nil)
     email = attributes[:email].to_s.strip.downcase
     return unless email.match?(URI::MailTo::EMAIL_REGEXP) && email.length <= 254
 
@@ -14,7 +14,7 @@ class PlatformSubscription
       return subscriber if subscriber.status == "pending" && subscriber.message_deliveries.where("created_at > ?", 1.hour.ago).exists?
 
       subscriber.update!(source: attributes[:source].presence || subscriber.source, status: "pending", confirmation_nonce: SecureRandom.hex(24))
-      EmailConsent.record!(email: email, scope: "platform", action: "requested", source: subscriber.source, request: request)
+      EmailConsent.record!(email: email, scope: "platform", action: "requested", source: subscriber.source, request: request, ip: ip, user_agent: user_agent)
       if PlatformSubscriber.confirmation_required?
         delivery = subscriber.message_deliveries.create!(channel: "email", template: "platform_confirmation", recipient: email,
           provider: EmailService.configured? ? "resend" : "simulated", status: :queued,
@@ -23,7 +23,7 @@ class PlatformSubscription
         ActiveRecord.after_all_transactions_commit { MessageDeliveryJob.perform_later(delivery.id) }
       else
         subscriber.update!(status: "confirmed", confirmed_at: Time.current)
-        EmailConsent.record!(email: email, scope: "platform", action: "confirmed", source: subscriber.source, request: request)
+        EmailConsent.record!(email: email, scope: "platform", action: "confirmed", source: subscriber.source, request: request, ip: ip, user_agent: user_agent)
       end
     end
     subscriber

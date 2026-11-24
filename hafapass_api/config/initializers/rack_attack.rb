@@ -230,7 +230,7 @@ class Rack::Attack
   end
 
   # Requesting organizer verification emails every admin.
-  throttle("organizer-verification/ip", limit: env_limit("RACK_ATTACK_PLATFORM_SUBSCRIBE_PER_IP_1H", 30), period: 1.hour) do |req|
+  throttle("organizer-verification/ip", limit: 5, period: 1.hour) do |req|
     req.ip if req.post? && req.path == "/api/v1/organizer_profile/submit_verification"
   end
 
