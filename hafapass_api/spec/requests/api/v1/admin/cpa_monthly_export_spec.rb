@@ -1282,6 +1282,7 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
     ready_to_commit = Queue.new
     commit_finished = Queue.new
 
+    writer_error = nil
     writer = Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
         next if ready_to_commit.pop == :abort
@@ -1297,8 +1298,13 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
           amount_cents: 1_000, organizer_proceeds_cents: 1_000, fee_cents: 0, organizer_fee_cents: 0
         )
         commit_finished << :committed
+      rescue StandardError => e
+        # Always wake the reader so a writer failure can't hang the suite.
+        writer_error = e
+        commit_finished << :failed
       end
     end
+    writer.report_on_exception = false
 
     # Pause right after `refunds_total_month` reads Refunds (call #2 to
     # `refunds_in_month`) and BEFORE `allocated_month` reads RefundItems (call #3),
@@ -1313,7 +1319,7 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
       if calls == 3 && !triggered
         triggered = true
         ready_to_commit << :go
-        commit_finished.pop
+        Timeout.timeout(15) { commit_finished.pop }
       end
       method.call(*args)
     end
@@ -1323,8 +1329,10 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
       result = report.report
     ensure
       ready_to_commit << :abort unless triggered
-      writer.join(10)
+      writer.kill unless writer.join(10)
     end
+    raise writer_error if writer_error
+
     expect(triggered).to be(true)
     row = result[:rows].first
     expect(row[:unallocated_refunds_exception_cents]).to eq(0)
