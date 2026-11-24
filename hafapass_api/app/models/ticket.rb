@@ -1,5 +1,9 @@
 class Ticket < ApplicationRecord
   include OperationalAuditable
+  include PublicEventCacheBuster
+
+  # Cancelling or refunding a ticket returns its inventory (or pass night capacity).
+  busts_public_event_cache on: :update, condition: -> { saved_change_to_status? && cancelled? }
 
   audits_operations :ticket,
     fields: %w[status cancelled_at scan_credential_version display_credential_version],

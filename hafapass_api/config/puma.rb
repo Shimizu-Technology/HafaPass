@@ -26,9 +26,18 @@
 # be configured to provide at least as many connections as the number of
 # threads. This includes Active Record's `pool` parameter in `database.yml`.
 require_relative "runtime_configuration"
-# Keep the initial 512 MB service in one process; increase process count only
-# after measuring memory and request latency on a larger service.
-workers 0
+# WEB_CONCURRENCY (default 1) sets the number of Puma processes. One process is
+# Puma's single mode, which the 512 MB plan uses. Larger plans may run two or
+# more, so requests waiting on one event's inventory lock cannot take every
+# request thread. docs/SINGLE_SERVICE_RUNTIME.md lists the settings per plan.
+if RuntimeConfiguration.clustered?
+  workers RuntimeConfiguration.web_processes
+  # Load the app once in the master: workers fork copy-on-write, and the
+  # embedded Solid Queue supervisor below runs in the master.
+  preload_app!
+else
+  workers 0
+end
 threads_count = RuntimeConfiguration.web_threads
 threads threads_count, threads_count
 
@@ -41,8 +50,17 @@ plugin :tmp_restart
 if RuntimeConfiguration.embedded?
   # Released Solid Queue 1.7.0 supervises its actors inside this Puma process.
   # Async supervisor mode does not change queue persistence to an async adapter.
+  #
+  # Exactly one supervisor per Puma instance: plugins start in the Puma master,
+  # and the plugin's after_booted hook starts the async supervisor there once,
+  # never in the forked request workers. With one process, the master is the
+  # only process.
   plugin :solid_queue
   solid_queue_mode :async
+  # Readiness matches queue heartbeats to RuntimeConfiguration.instance_id.
+  # Fix it in the master before workers fork, so every worker inherits the id
+  # the supervisor records.
+  RuntimeConfiguration.instance_id
 end
 
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.

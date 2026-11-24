@@ -130,10 +130,15 @@ module Commerce
       end
       order = nil
       payment = nil
+      # Late arrivals after a sell-out are refused here, without queueing for
+      # the event lock that every successful checkout needs.
+      reject_exhausted_ticket_types!
 
       Passes::Locking.with_lock_retry do
         order = nil
         payment = nil
+        @inventory_exhausted = false
+        @sales_snapshot = nil
         Order.transaction do
         if @checkout_attempt
           @checkout_attempt.lock!
@@ -161,7 +166,7 @@ module Commerce
         end
         validate_launch_scope!
         at = Time.current.utc
-        unless event.sales_open?(at: at)
+        unless sales_open_under_lock?(at)
           if event.sales_blocker(at: at) == :pass_nights_cancelled
             raise CheckoutError, "All included nights for this pass have been cancelled"
           end
@@ -280,7 +285,8 @@ module Commerce
             order,
             payment: payment,
             provider_amount_cents: payment.amount_cents,
-            provider_currency: payment.currency
+            provider_currency: payment.currency,
+            event_context_locked: true
           )
         elsif order.total_cents.positive? && !Rails.env.production? && SiteSetting.instance.simulate_mode?
           payment = order.payments.create!(
@@ -294,13 +300,16 @@ module Commerce
             status: :pending
           )
           OrderLifecycle.complete!(order, payment: payment, provider_amount_cents: payment.amount_cents,
-            provider_currency: payment.currency)
+            provider_currency: payment.currency, event_context_locked: true)
         else
-          OrderLifecycle.complete!(order)
+          OrderLifecycle.complete!(order, event_context_locked: true)
         end
         @checkout_attempt&.reserve!(order)
         end
       end
+      # After commit, so a public page rebuilt for the new generation already
+      # sees the committed sale.
+      PublicEventCache.bump_after_commit! if @inventory_exhausted
 
       intent = if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?
         PaymentRecovery.call(order: order).payment_intent
@@ -341,6 +350,51 @@ module Commerce
 
     def stripe_payment?
       payment_provider.blank? || payment_provider == "stripe"
+    end
+
+    # Public buyer checkout only, before any lock. When a requested ticket
+    # type that is on sale has nothing left in the committed data, refuse with
+    # the message the locked selection gives ("Only 0 tickets available for
+    # ..."), so buyers arriving after a sell-out do not queue for the event lock.
+    # Refusing never oversells, and the locked check taken at the same instant
+    # would refuse too.
+    #
+    # Skipped whenever the locked path could still sell or must answer
+    # differently: a waitlist offer or seat hold brings its own reserved
+    # inventory, a checkout key that already has an order is a recovery that
+    # returns that order, and an unpublished, paused or held event reports its
+    # own sales state. Staff sales (box office, guest list) keep the full path.
+    def reject_exhausted_ticket_types!
+      return unless @enforce_buyer_limits
+      return if waitlist_offer_token.present? || seat_hold_token.present?
+      return unless event.published? && !event.sales_suspended? && event.policy_hold_at.nil?
+      return unless line_items.is_a?(Array) && line_items.any?
+
+      ids = begin
+        normalized_quantities.keys
+      rescue CheckoutError
+        return # The full path reports invalid line items in its usual order.
+      end
+      at = Time.current
+      exhausted = event.ticket_types.where(id: ids).order(:id).find do |ticket_type|
+        ticket_type.on_sale?(at: at) && ticket_type.available_quantity.zero?
+      end
+      return unless exhausted
+      return if @checkout_attempt&.order_id
+      return if @checkout_key_digest && Order.exists?(checkout_key_digest: @checkout_key_digest)
+
+      raise CheckoutError, "Only 0 tickets available for #{exhausted.name}"
+    end
+
+    # Both sales checks in a checkout run while this transaction holds the
+    # event (and every included night) lock. Ticket type and pass night edits
+    # take the same event locks first (Organizer::TicketTypesController), so one
+    # snapshot loaded after the locks equals re-reading them, in a handful of
+    # queries instead of a dozen per check for a multi-night pass.
+    def sales_open_under_lock?(at)
+      @sales_snapshot ||= Event.where(id: event.id)
+        .preload(:organizer_profile, ticket_types: { ticket_type_included_events: :included_event }).first!
+      @sales_snapshot.sales_open?(at: at)
     end
 
     # A blank limit means 10 for public checkout. Staff sales (box office,
@@ -440,7 +494,7 @@ module Commerce
       provisional_session = Seating::Credential.find_session(seat_hold_token) if seat_hold_token.present?
       provisional_holds = provisional_session&.seat_holds&.status_active&.includes(:pricing_tier)&.to_a || []
       at = Time.current.utc
-      unless event.sales_open?(at: at)
+      unless sales_open_under_lock?(at)
         raise SalesClosed.new("This event is not currently on sale", at: at)
       end
       tiers = quantities.to_h do |ticket_type_id, _quantity|
@@ -477,6 +531,7 @@ module Commerce
         if quantity > available
           raise CheckoutError, "Only #{available} tickets available for #{ticket_type.name}"
         end
+        @inventory_exhausted = true if quantity == available
         max_per_order = max_per_order_for(ticket_type)
         if max_per_order && quantity > max_per_order
           raise CheckoutError, "Maximum #{max_per_order} tickets per order for #{ticket_type.name}"
@@ -687,6 +742,8 @@ module Commerce
       remaining = [tier.quantity_limit - tier.quantity_sold - tier.inventory_holds.current.sum(:quantity) -
         tier.waitlist_offers.holding_inventory.sum(:quantity) - tier.active_seat_holds_quantity(Time.current) +
         reserved_offer_quantity + reserved_seat_quantity, 0].max
+      # The active price changes once a quantity tier is used up.
+      @inventory_exhausted = true if requested_quantity == remaining
       return if requested_quantity <= remaining
 
       noun = "ticket".pluralize(remaining)
@@ -694,15 +751,12 @@ module Commerce
       raise CheckoutError, "Only #{remaining} #{noun} #{verb} at the #{tier.name} price"
     end
 
+    # Runs under the locks of this event and every included night. One batch
+    # of aggregate queries covers all of them (EventCapacity.committed_for_events
+    # sums the same rows as committed_for/remaining_for, per event).
     def enforce_event_capacity!(selections, offer: nil)
       now = Time.current
       requested_quantity = selections.sum { |selection| selection[:quantity] }
-      if event.max_capacity.present?
-        committed = EventCapacity.committed_for(event, at: now) - (offer&.quantity || 0)
-        reserved_seats = seat_hold_token.present? ? seat_hold_session_for_checkout.seat_holds.status_active.count : 0
-        remaining = [event.max_capacity - committed + reserved_seats, 0].max
-        raise CheckoutError, "Only #{remaining} tickets remain within event capacity" if requested_quantity > remaining
-      end
 
       pass_demand_by_event = Hash.new(0)
       selections.each do |selection|
@@ -713,14 +767,24 @@ module Commerce
           pass_demand_by_event[included_event] += selection[:quantity]
         end
       end
+      committed = EventCapacity.committed_for_events([event, *pass_demand_by_event.keys], at: now)
+
+      if event.max_capacity.present?
+        reserved_seats = seat_hold_token.present? ? seat_hold_session_for_checkout.seat_holds.status_active.count : 0
+        remaining = [event.max_capacity - (committed.fetch(event.id) - (offer&.quantity || 0)) + reserved_seats, 0].max
+        raise CheckoutError, "Only #{remaining} tickets remain within event capacity" if requested_quantity > remaining
+
+        @inventory_exhausted = true if requested_quantity == remaining
+      end
 
       pass_demand_by_event.each do |included_event, demand|
         next if included_event.max_capacity.blank?
 
-        remaining = EventCapacity.remaining_for(included_event, at: now)
+        remaining = [included_event.max_capacity - committed.fetch(included_event.id), 0].max
         if demand > remaining
           raise CheckoutError, "Only #{remaining} spots remain for #{included_event.title}"
         end
+        @inventory_exhausted = true if demand == remaining
       end
     end
 
@@ -1052,9 +1116,11 @@ module Commerce
     def record_acquisition!(order)
       return if order.source == "box_office"
 
-      event_referral = EventReferral.find_by(code: attribution_value(:event_referral_code).to_s.upcase, event: event,
-        active: true)
-      link = DistributionLink.available.find_by(code: attribution_value(:distribution_code).to_s.upcase, event: event) unless event_referral
+      # A blank code matches nothing, so it is not looked up.
+      referral_code = attribution_value(:event_referral_code).to_s.upcase
+      distribution_code = attribution_value(:distribution_code).to_s.upcase
+      event_referral = EventReferral.find_by(code: referral_code, event: event, active: true) if referral_code.present?
+      link = DistributionLink.available.find_by(code: distribution_code, event: event) if !event_referral && distribution_code.present?
       visitor_hash = begin
         Marketplace::VisitorIdentity.hash(attribution_value(:anonymous_id))
       rescue Marketplace::VisitorIdentity::InvalidIdentifier

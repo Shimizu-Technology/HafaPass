@@ -29,6 +29,9 @@ const paidMaxDuration = __ENV.PAID_MAX_DURATION || '3m'
 const sharedNat = String(__ENV.SHARED_NAT || 'true').toLowerCase() !== 'false'
 const distributedIpHeaders = String(__ENV.DISTRIBUTED_IP_HEADERS || 'false').toLowerCase() === 'true'
 const summaryOut = (__ENV.SUMMARY_OUT || 'fd-championship-rush-summary.json').trim()
+// Local production-mode runs only: Puma on plain HTTP with no TLS proxy in front.
+// FORWARDED_PROTO=https marks requests the way Render's proxy does.
+const forwardedProto = (__ENV.FORWARDED_PROTO || '').trim().toLowerCase()
 const runId = `${Date.now().toString(16)}${Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0')}`
 
 // Step latency trends (milliseconds)
@@ -134,6 +137,7 @@ function isCleanSoldOut422(response) {
 
 function buildRequestHeaders(baseHeaders = {}) {
   const headers = Object.assign({}, baseHeaders)
+  if (forwardedProto === 'https') headers['X-Forwarded-Proto'] = 'https'
   if (!sharedNat && distributedIpHeaders) {
     const octet3 = Math.floor((__VU - 1) / 250) % 250
     const octet4 = ((__VU - 1) % 250) + 1
@@ -160,7 +164,7 @@ function recordHttpStatus(response, expectedStatuses) {
 }
 
 function validateLoadFixtureEvent(slug, label) {
-  const res = http.get(`${baseUrl}/api/v1/events/${encodeURIComponent(slug)}`)
+  const res = http.get(`${baseUrl}/api/v1/events/${encodeURIComponent(slug)}`, { headers: buildRequestHeaders() })
   if (res.status !== 200) fail(`${label} event lookup failed (${res.status}) for slug "${slug}".`)
   const event = res.json()
   if (!String(event.title || '').startsWith('[LOAD TEST]')) {
@@ -189,7 +193,8 @@ export function setup() {
     fail(`Refusing to run load test against production host "${host}". Use an isolated staging URL.`)
   }
 
-  const configRes = http.get(`${baseUrl}/api/v1/config`)
+  if (forwardedProto && forwardedProto !== 'https') fail('FORWARDED_PROTO may only be "https".')
+  const configRes = http.get(`${baseUrl}/api/v1/config`, { headers: buildRequestHeaders() })
   if (configRes.status !== 200) fail(`GET /api/v1/config failed with ${configRes.status}.`)
   const config = configRes.json()
   if (String(config.payment_mode || '').toLowerCase() === 'live') {

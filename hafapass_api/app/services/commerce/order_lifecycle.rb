@@ -26,17 +26,29 @@ module Commerce
       # payment succeeded and the hold has only lapsed by time. Fulfil it
       # normally when the inventory is still free; otherwise release it and
       # refund the buyer automatically (LateCaptureRefundJob).
+      #
+      # event_context_locked: only Commerce::OrderCreator passes true, when it
+      # completes an order it created inside the same transaction. That
+      # transaction already holds this order's event and every included night
+      # (the same set lock_event_context! derives from the order's pass ticket
+      # types), plus the organization when a waitlist offer is claimed, so
+      # re-deriving and re-acquiring them is skipped. Every later lock is taken
+      # exactly as before.
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
-        late_completion: false)
+        late_completion: false, event_context_locked: false)
+        if event_context_locked && !Order.connection.transaction_open?
+          raise ArgumentError, "event_context_locked requires the caller's open transaction"
+        end
+
         AuditContext.set(fail_open: true) do
           complete_with_audit!(order, payment: payment, webhook_event: webhook_event,
             provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type,
-            late_completion: late_completion)
+            late_completion: late_completion, event_context_locked: event_context_locked)
         end
       end
 
       def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
-        late_completion: false)
+        late_completion: false, event_context_locked: false)
         completed_now = false
         completed_late = false
 
@@ -44,7 +56,7 @@ module Commerce
           completed_now = false
           completed_late = false
           Order.transaction do
-          lock_event_context!(order)
+          lock_event_context!(order) unless event_context_locked
           order.lock!
           payment&.lock!
 
@@ -407,11 +419,13 @@ module Commerce
             next
           end
           (item.quantity - existing.length).times do
+            # Assigned at insert, so issue_qr_code! below needs no second write.
             existing << order.tickets.create!(
               order_item: item,
               ticket_type: item.ticket_type,
               pricing_tier: item.pricing_tier,
               event: order.event,
+              qr_code: SecureRandom.uuid,
               **attendee_attributes(order, attendees[existing.length])
             )
           end

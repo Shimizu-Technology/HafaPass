@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1963,6 +1963,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_210100) do
     t.index ["event_id", "code"], name: "index_promoters_on_event_id_and_code", unique: true
     t.index ["event_id"], name: "index_promoters_on_event_id"
     t.check_constraint "commission_bps >= 0 AND commission_bps <= 10000", name: "promoters_commission_valid"
+  end
+
+  create_table "public_cache_generations", force: :cascade do |t|
+    t.string "name", null: false
+    t.bigint "value", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["name"], name: "index_public_cache_generations_on_name", unique: true
   end
 
   create_table "reconciliation_exceptions", force: :cascade do |t|

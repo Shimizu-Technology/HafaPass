@@ -2553,6 +2553,13 @@
       "name": "pii",
       "updated_at": "system"
     },
+    "public_cache_generations": {
+      "id": "system",
+      "name": "system",
+      "value": "non-personal",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "reconciliation_exceptions": {
       "id": "system",
       "actual_amount_cents": "financial",
