@@ -593,14 +593,17 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       manifest = fetch_manifest(gate)
 
       # Day 1: enter at 18:00, exit at 19:00, re-entry at 21:30 -> blocked by 21:00 cutoff
-      sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1, occurred_at: Time.zone.parse("2027-01-30T18:00:00+10:00"))])
-      sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "exit", occurred_at: Time.zone.parse("2027-01-30T19:00:00+10:00"))])
+      sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1, occurred_at: Time.current)])
+      travel_to(Time.zone.parse("2027-01-30T19:00:00+10:00"))
+      day1_exit = sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "exit", occurred_at: Time.current)])
+      expect(day1_exit.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
       travel_to(Time.zone.parse("2027-01-30T21:30:00+10:00"))
       day1_late = sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest, sequence: 3, kind: "admit", occurred_at: Time.current)])
       expect(day1_late.dig("results", 0)).to include("result" => "rejected", "reason_code" => "re_entry_cutoff_passed")
 
       # Day 2: enter at 10:00, exit at 12:00, re-enter at 14:00 -> ALLOWED (before Day 2's 21:00 cutoff!)
       travel_to(Time.zone.parse("2027-01-31T10:00:00+10:00"))
+      gate = register_device(user: owner, identifier: "cutoff-multi", name: "Main Gate")
       manifest2 = fetch_manifest(gate)
       d2_in = sync_actions(gate, [scan_payload(ticket: ticket, manifest: manifest2, sequence: 4, kind: "admit", occurred_at: Time.current)])
       expect(d2_in.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")

@@ -65,7 +65,7 @@ function initReEntryState(state) {
     event101.re_entry_mode = 'exit_scan'
     event101.re_entry_max_count = 2
     event101.re_entry_cutoff_at = null
-    event101.re_entry_cutoff_time = '21:00'
+    event101.re_entry_cutoff_time = '23:30'
     event101.re_entry_cooldown_minutes = null
   }
   const event102 = staff.events.find(e => e.id === 102)

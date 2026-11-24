@@ -57,137 +57,146 @@ module Admissions
       overall.merge(by_day: by_day).merge(policy_metadata)
     end
 
-    def sql_days(target_event, ticket_ids:, event_title:, zone:)
-      return [] if !ticket_ids.nil? && ticket_ids.empty?
+    BASE_SQL = <<~SQL
+      WITH relevant_actions AS (
+        SELECT
+          a.id,
+          a.ticket_id,
+          a.kind,
+          a.result,
+          a.reason_code,
+          a.occurred_at,
+          a.received_at,
+          COALESCE(
+            a.occupancy_day,
+            (((a.occurred_at AT TIME ZONE 'UTC') AT TIME ZONE :tz_name) - (:rollover_hours * INTERVAL '1 hour'))::date
+          ) AS day,
+          CASE
+            WHEN a.result = :accepted AND a.kind = :admit AND NOT EXISTS (
+              SELECT 1 FROM admission_actions rev
+              WHERE rev.reverses_action_id = a.id
+                AND rev.kind = :reverse
+                AND rev.result = :accepted
+            ) THEN 'inside'
+            WHEN a.result = :accepted AND a.kind = :exit_kind THEN 'outside'
+            WHEN a.result = :accepted AND a.kind = :override AND a.reason_code = 'lead_override_admitted' THEN 'inside'
+            WHEN a.result = :accepted AND a.kind = :override AND a.reason_code = 'lead_override_cleared' THEN 'outside'
+            ELSE NULL
+          END AS target_state
+        FROM admission_actions a
+        WHERE a.event_id = :event_id
+          %<ticket_clause>s
+      ),
+      state_steps AS (
+        SELECT
+          day,
+          occurred_at,
+          received_at,
+          id,
+          CASE
+            WHEN ticket_id IS NULL THEN 0
+            WHEN target_state = 'inside' AND COALESCE(
+              LAG(target_state) OVER (
+                PARTITION BY day, ticket_id
+                ORDER BY occurred_at ASC, received_at ASC, id ASC
+              ), 'outside'
+            ) <> 'inside' THEN 1
+            WHEN target_state = 'outside' AND COALESCE(
+              LAG(target_state) OVER (
+                PARTITION BY day, ticket_id
+                ORDER BY occurred_at ASC, received_at ASC, id ASC
+              ), 'outside'
+            ) = 'inside' THEN -1
+            ELSE 0
+          END AS delta
+        FROM relevant_actions
+        WHERE target_state IS NOT NULL
+      ),
+      running AS (
+        SELECT
+          day,
+          occurred_at,
+          received_at,
+          id,
+          SUM(delta) OVER (
+            PARTITION BY day
+            ORDER BY occurred_at ASC, received_at ASC, id ASC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ) AS running_inside
+        FROM state_steps
+      ),
+      peaks AS (
+        SELECT DISTINCT ON (day)
+          day,
+          GREATEST(running_inside, 0) AS peak_headcount,
+          CASE WHEN running_inside > 0 THEN occurred_at ELSE NULL END AS peak_headcount_at
+        FROM running
+        ORDER BY day, running_inside DESC, occurred_at ASC, received_at ASC, id ASC
+      ),
+      day_totals AS (
+        SELECT
+          day,
+          COUNT(*) FILTER (WHERE result = :accepted AND kind = :admit AND target_state = 'inside' AND reason_code <> 're_entered') AS entries,
+          COUNT(*) FILTER (WHERE result = :accepted AND kind = :exit_kind) AS exits,
+          COUNT(*) FILTER (WHERE result = :accepted AND kind = :admit AND target_state = 'inside' AND reason_code = 're_entered') AS re_entries,
+          COUNT(*) FILTER (WHERE result = :accepted AND kind = :override) AS overrides,
+          COUNT(*) FILTER (WHERE result = :conflict) AS conflicts_count
+        FROM relevant_actions
+        GROUP BY day
+      ),
+      final_inside AS (
+        SELECT day, GREATEST(SUM(delta), 0) AS current_headcount
+        FROM state_steps
+        GROUP BY day
+      )
+      SELECT
+        t.day,
+        t.entries,
+        t.exits,
+        t.re_entries,
+        t.overrides,
+        t.conflicts_count,
+        COALESCE(f.current_headcount, 0) AS current_headcount,
+        COALESCE(p.peak_headcount, 0) AS peak_headcount,
+        p.peak_headcount_at
+      FROM day_totals t
+      LEFT JOIN final_inside f ON f.day = t.day
+      LEFT JOIN peaks p ON p.day = t.day
+      ORDER BY t.day ASC
+    SQL
+    SQL_ALL_TICKETS = format(BASE_SQL, ticket_clause: "").freeze
+    SQL_FILTERED_TICKETS = format(BASE_SQL, ticket_clause: "AND a.ticket_id IN (:ticket_ids)").freeze
 
+    def sql_days(target_event, ticket_ids:, event_title:, zone:)
       conn = ActiveRecord::Base.connection
-      tz_name = conn.quote(zone.tzinfo.name)
-      rollover_hours = target_event.re_entry_rollover_hour.to_i
-      ticket_filter = if ticket_ids.nil?
-        ""
+      binds = {
+        tz_name: zone.tzinfo.name,
+        rollover_hours: target_event.re_entry_rollover_hour.to_i,
+        event_id: target_event.id.to_i,
+        admit: AdmissionAction.kinds.fetch("admit"),
+        reverse: AdmissionAction.kinds.fetch("reverse"),
+        exit_kind: AdmissionAction.kinds.fetch("exit"),
+        override: AdmissionAction.kinds.fetch("override"),
+        accepted: AdmissionAction.results.fetch("accepted"),
+        conflict: AdmissionAction.results.fetch("conflict")
+      }
+
+      template = if ticket_ids.nil?
+        SQL_ALL_TICKETS
       else
-        ids = Array(ticket_ids).map(&:to_i).uniq
+        ids = if ticket_ids.is_a?(ActiveRecord::Relation)
+          ticket_ids.pluck(:id)
+        else
+          Array(ticket_ids).map { |v| v.respond_to?(:id) ? v.id : v.to_i }
+        end.uniq
         return [] if ids.empty?
 
-        "AND a.ticket_id IN (#{ids.join(',')})"
+        binds[:ticket_ids] = ids
+        SQL_FILTERED_TICKETS
       end
 
-      admit = AdmissionAction.kinds.fetch("admit")
-      reverse = AdmissionAction.kinds.fetch("reverse")
-      exit_kind = AdmissionAction.kinds.fetch("exit")
-      override = AdmissionAction.kinds.fetch("override")
-      accepted = AdmissionAction.results.fetch("accepted")
-      conflict = AdmissionAction.results.fetch("conflict")
-
-      sql = <<~SQL
-        WITH relevant_actions AS (
-          SELECT
-            a.id,
-            a.ticket_id,
-            a.kind,
-            a.result,
-            a.reason_code,
-            a.occurred_at,
-            a.received_at,
-            COALESCE(
-              a.occupancy_day,
-              (((a.occurred_at AT TIME ZONE 'UTC') AT TIME ZONE #{tz_name}) - INTERVAL '#{rollover_hours} hours')::date
-            ) AS day,
-            CASE
-              WHEN a.result = #{accepted} AND a.kind = #{admit} AND NOT EXISTS (
-                SELECT 1 FROM admission_actions rev
-                WHERE rev.reverses_action_id = a.id
-                  AND rev.kind = #{reverse}
-                  AND rev.result = #{accepted}
-              ) THEN 'inside'
-              WHEN a.result = #{accepted} AND a.kind = #{exit_kind} THEN 'outside'
-              WHEN a.result = #{accepted} AND a.kind = #{override} AND a.reason_code = 'lead_override_admitted' THEN 'inside'
-              WHEN a.result = #{accepted} AND a.kind = #{override} AND a.reason_code = 'lead_override_cleared' THEN 'outside'
-              ELSE NULL
-            END AS target_state
-          FROM admission_actions a
-          WHERE a.event_id = #{target_event.id.to_i}
-            #{ticket_filter}
-        ),
-        state_steps AS (
-          SELECT
-            day,
-            occurred_at,
-            received_at,
-            id,
-            CASE
-              WHEN ticket_id IS NULL THEN 0
-              WHEN target_state = 'inside' AND COALESCE(
-                LAG(target_state) OVER (
-                  PARTITION BY day, ticket_id
-                  ORDER BY occurred_at ASC, received_at ASC, id ASC
-                ), 'outside'
-              ) <> 'inside' THEN 1
-              WHEN target_state = 'outside' AND COALESCE(
-                LAG(target_state) OVER (
-                  PARTITION BY day, ticket_id
-                  ORDER BY occurred_at ASC, received_at ASC, id ASC
-                ), 'outside'
-              ) = 'inside' THEN -1
-              ELSE 0
-            END AS delta
-          FROM relevant_actions
-          WHERE target_state IS NOT NULL
-        ),
-        running AS (
-          SELECT
-            day,
-            occurred_at,
-            received_at,
-            id,
-            SUM(delta) OVER (
-              PARTITION BY day
-              ORDER BY occurred_at ASC, received_at ASC, id ASC
-              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            ) AS running_inside
-          FROM state_steps
-        ),
-        peaks AS (
-          SELECT DISTINCT ON (day)
-            day,
-            GREATEST(running_inside, 0) AS peak_headcount,
-            CASE WHEN running_inside > 0 THEN occurred_at ELSE NULL END AS peak_headcount_at
-          FROM running
-          ORDER BY day, running_inside DESC, occurred_at ASC, received_at ASC, id ASC
-        ),
-        day_totals AS (
-          SELECT
-            day,
-            COUNT(*) FILTER (WHERE result = #{accepted} AND kind = #{admit} AND target_state = 'inside' AND reason_code <> 're_entered') AS entries,
-            COUNT(*) FILTER (WHERE result = #{accepted} AND kind = #{exit_kind}) AS exits,
-            COUNT(*) FILTER (WHERE result = #{accepted} AND kind = #{admit} AND target_state = 'inside' AND reason_code = 're_entered') AS re_entries,
-            COUNT(*) FILTER (WHERE result = #{accepted} AND kind = #{override}) AS overrides,
-            COUNT(*) FILTER (WHERE result = #{conflict}) AS conflicts_count
-          FROM relevant_actions
-          GROUP BY day
-        ),
-        final_inside AS (
-          SELECT day, GREATEST(SUM(delta), 0) AS current_headcount
-          FROM state_steps
-          GROUP BY day
-        )
-        SELECT
-          t.day,
-          t.entries,
-          t.exits,
-          t.re_entries,
-          t.overrides,
-          t.conflicts_count,
-          COALESCE(f.current_headcount, 0) AS current_headcount,
-          COALESCE(p.peak_headcount, 0) AS peak_headcount,
-          p.peak_headcount_at
-        FROM day_totals t
-        LEFT JOIN final_inside f ON f.day = t.day
-        LEFT JOIN peaks p ON p.day = t.day
-        ORDER BY t.day ASC
-      SQL
-
-      conn.select_all(sql).map do |row|
+      sanitized = ActiveRecord::Base.sanitize_sql_array([template, binds])
+      conn.select_all(sanitized).map do |row|
         day = row["day"].is_a?(Date) ? row["day"] : Date.iso8601(row["day"].to_s)
         peak_raw = row["peak_headcount_at"]
         peak_time = if peak_raw.is_a?(Time) || peak_raw.is_a?(ActiveSupport::TimeWithZone)

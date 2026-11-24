@@ -244,6 +244,7 @@ describe('ScannerPage re-entry UX', () => {
   })
 
   it('shows live headcount formatted cleanly (including 9,999), per-day pills, and lead override for scanner leads', async () => {
+    const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
     const manifest = await signedManifest(eventId, [{
       ticket_id: 201, state: 'admitted', occupancy_state: 'inside',
       attendee_name: 'Aleksandra Wiśniewska-Kowalczyk', ticket_type: '2-Day Pass',
@@ -262,8 +263,8 @@ describe('ScannerPage re-entry UX', () => {
           counts: {
             admitted: 9999, remaining: 1, conflicts: 1, rejected: 0, live_headcount: 9999,
             headcount_by_day: [
-              { day: '2027-01-30', label: 'Jan 30, 2027', headcount: 4200 },
-              { day: '2027-01-31', label: 'Jan 31, 2027', headcount: 9999 },
+              { day: '2026-01-30', label: 'Jan 30, 2026', entries: 4200, headcount: 4200 },
+              { day: today, label: 'Today', entries: 9999, headcount: 9999 },
             ],
           },
           flagged_conflicts: [{
@@ -290,7 +291,8 @@ describe('ScannerPage re-entry UX', () => {
 
     render(<ScannerPage />)
     expect(await screen.findByTestId('scanner-live-headcount')).toHaveTextContent('9,999')
-    expect(screen.getByText(/Jan 30, 2027: 4,200 entered/)).toBeInTheDocument()
+    expect(screen.getByText(/Jan 30, 2026: 4,200 entered/)).toBeInTheDocument()
+    expect(screen.getByText(/Today: 9,999 inside/)).toBeInTheDocument()
     expect(screen.getByText(/Flagged offline conflicts \(1\)/)).toBeInTheDocument()
 
     const user = userEvent.setup()
@@ -344,8 +346,9 @@ describe('ScannerPage re-entry UX', () => {
 
     render(<ScannerPage />)
     const tile = await screen.findByTestId('scanner-live-headcount')
-    expect(tile).toHaveTextContent('Entered')
-    expect(tile).not.toHaveTextContent('Inside now')
+    expect(tile).toHaveTextContent('42')
+    expect(tile.parentElement).toHaveTextContent('Entered')
+    expect(tile.parentElement).not.toHaveTextContent('Inside now')
 
     const user = userEvent.setup()
     await enterCode(user, 'qr-301', 'Check in ticket')

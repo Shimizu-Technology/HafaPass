@@ -129,6 +129,7 @@ describe('scanner authorization through actual service and auth boundaries', () 
       credential_hash: await sha256Hex('synthetic-private-qr'),
     }
     await saveVerifiedManifest(await signedManifest(eventId, [reEntryTicket], {
+      version: 2,
       schema_version: 2,
       event: { id: eventId, title: 'Re-entry outage check', timezone: 'Pacific/Guam', re_entry_mode: 'exit_scan' },
     }))

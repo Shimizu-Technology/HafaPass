@@ -26,6 +26,7 @@ test('box office demo completes cash and provides ticket delivery actions', asyn
   await page.getByRole('button', { name: 'Send tickets' }).click()
   await expect(page.getByText('Ticket email queued for player@example.invalid.')).toBeVisible()
 })
+
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   test.describe(`demo staff screens at ${viewport.width}px`, () => {
     test.use({ viewport })
