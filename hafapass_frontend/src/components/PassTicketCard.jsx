@@ -15,8 +15,10 @@ export default function PassTicketCard({
   const [expanded, setExpanded] = useState(false)
   const scheduleId = useId()
   const currentTime = now || new Date()
+  const Heading = showSummaryBanner ? 'h1' : 'h2'
 
   const parentEvent = ticket.event || fallbackEvent
+  const passTitle = parentEvent?.series?.name || ticket.ticket_type?.name || parentEvent?.title
   const childTickets = ticket.child_tickets || []
   const nightsCount = ticket.pass_nights_count ?? childTickets.length
   const { kind, ticket: spotlight, ordered } = selectSpotlightNight(childTickets, currentTime)
@@ -60,14 +62,14 @@ export default function PassTicketCard({
         </div>
 
         <div className="mt-2 min-w-0">
-          {parentEvent?.title && (
-            <h2 className="font-display text-xl font-bold leading-snug text-neutral-950 [overflow-wrap:anywhere]">
-              {parentEvent.slug ? (
+          {passTitle && (
+            <Heading className="font-display text-xl font-bold leading-snug text-neutral-950 [overflow-wrap:anywhere]">
+              {parentEvent?.slug ? (
                 <Link to={`/events/${parentEvent.slug}`} className="hover:text-brand-800 hover:underline">
-                  {parentEvent.title}
+                  {passTitle}
                 </Link>
-              ) : parentEvent.title}
-            </h2>
+              ) : passTitle}
+            </Heading>
           )}
           <p className="mt-0.5 text-sm font-semibold text-brand-800 [overflow-wrap:anywhere]">
             {ticket.ticket_type?.name || 'Multi-Night Pass'}

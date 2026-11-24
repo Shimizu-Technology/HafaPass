@@ -4,7 +4,7 @@ import { Linter } from 'eslint'
 import { describe, expect, it } from 'vitest'
 
 const pages = ['EventDetailPage', 'EventsPage', 'HomePage', 'CheckoutPage', 'OrderConfirmationPage', 'TicketPage', 'MyTicketsPage', 'OrderRecoveryPage', 'TicketTransferAcceptPage', 'PolicyPage', 'HostPage', 'OrganizerPage', 'VenuePage', 'SavedPage', 'CollectionsPage', 'CollectionPage', 'PrivatePreviewPage', 'SignInPage', 'SignUpPage']
-const components = ['EventCard', 'TicketTypesSection', 'SeatSelector', 'TransferTicketDialog', 'PendingTransfer', 'WaitlistForm', 'WhosGoing', 'PaymentForm', 'PaymentModeBanner', 'MarketplacePagination', 'Footer', 'NotFound', 'QRCode', 'EnvironmentBanner', 'Layout']
+const components = ['EventCard', 'TicketTypesSection', 'SeatSelector', 'TransferTicketDialog', 'PendingTransfer', 'WaitlistForm', 'WhosGoing', 'PaymentForm', 'PaymentModeBanner', 'MarketplacePagination', 'Footer', 'NotFound', 'QRCode', 'EnvironmentBanner', 'Layout', 'HomeHero', 'HeroFannedDeck', 'BrandTicketCover']
 // ServiceCheck also owns the staff-only offline scanner, which retains English copy.
 const files = [...pages.map(name => `pages/${name}.jsx`), ...components.map(name => `components/${name}.jsx`)]
 // Product names, example card numbers and literal currency symbols stay as written.

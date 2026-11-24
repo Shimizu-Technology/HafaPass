@@ -1,6 +1,7 @@
 import TranslatedTicketContent from './TranslatedTicketContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { selectionAction, nextSalesOpening } from '../utils/eventPrimaryAction'
 import { useTranslation } from 'react-i18next'
 import { Minus, Plus, ShoppingCart, Clock, Zap, ChevronDown, Sparkles } from 'lucide-react'
 import PaidCheckoutGate from './PaidCheckoutGate'
@@ -15,7 +16,7 @@ import { DEFAULT_EVENT_TIME_ZONE, formatEventDate } from '../utils/eventTime'
 // ones only for platform admins.
 // `showOriginal` follows the event page's "Show original" switch for
 // machine-translated ticket names.
-export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true }) {
+export default function TicketTypesSection({ ticketTypes = [], onCheckout, showOriginal = false, showTranslationNotice = true, onSelectionChange, primaryAction, onPrimaryAction }) {
   const { t } = useTranslation()
   const [quantities, setQuantities] = useState({})
   const [expandedPasses, setExpandedPasses] = useState({})
@@ -45,6 +46,15 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
     if (lineItems.length > 0) onCheckout(lineItems)
   }
 
+  const selectionKey = JSON.stringify(ticketTypes.flatMap(tt => {
+    const quantity = getClampedQty(tt)
+    return quantity > 0 ? [{ ticket_type_id: tt.id, quantity }] : []
+  }))
+  useEffect(() => {
+    onSelectionChange?.({ lineItems: JSON.parse(selectionKey), count: totalSelected, totalCents })
+  }, [onSelectionChange, selectionKey, totalSelected, totalCents])
+  const submitAction = selectionAction({ count: totalSelected, totalCents, formattedTotal: formatPrice(totalCents) })
+
   const daysUntil = (dateStr) => {
     if (!dateStr) return null
     const diff = Date.parse(dateStr) - getServerNow()
@@ -53,7 +63,9 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
   return (
     <div className="tabular-nums">
-      <h2 className="text-lg font-semibold text-neutral-900 mb-4">{t('eventDetail.buyTickets')}</h2>
+      <h2 className="font-display text-2xl font-bold text-neutral-950 mb-4">{t('eventActions.tickets')}</h2>
+      {primaryAction?.kind === 'notify' && <p className="mb-4 text-sm text-neutral-700">{t('eventActions.salesOpen', { date: formatEventDate(primaryAction.opensAt, ticketTypes[0]?.pricing_schedule?.timezone) })}</p>}
+      {primaryAction?.kind === 'notify' && <button type="button" className="btn-primary event-buy mb-4 min-h-12 w-full" onClick={onPrimaryAction}>{t(primaryAction.labelKey)}</button>}
       <div className="space-y-3">
         {ticketTypes.map(tt => {
           const available = remainingTickets(tt) ?? 0
@@ -91,7 +103,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
 
 
           return (
-            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div className={`rounded-xl border border-neutral-200 bg-white p-4 transition-[border-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-500/40 shadow-soft' : ''}`}>
+            <TranslatedTicketContent key={tt.id} record={tt} showOriginal={showOriginal}>{content => <div data-selected={qty > 0 ? 'true' : 'false'} className={`rounded-xl border p-4 transition-[border-color,background-color,box-shadow] duration-200 ease-out-strong ${qty > 0 ? 'border-brand-600 bg-brand-50/25 shadow-soft ring-1 ring-brand-500/20' : 'border-neutral-200 bg-white'}`}>
               <div className="flex flex-col gap-3">
                 <div className="min-w-0 w-full sm:flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -103,7 +115,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                       </span>
                     )}
                     {soldOut && (
-                      <span className="text-xs bg-accent-50 text-accent-600 px-2 py-0.5 rounded-full font-medium">{available <= 0 ? t('events.soldOut') : t('buyer.TicketTypesSection.salesUnavailable')}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${nextSalesOpening([tt]) ? 'bg-amber-50 text-amber-900' : 'bg-neutral-100 text-neutral-700'}`}>{available <= 0 ? t('events.soldOut') : nextSalesOpening([tt]) ? t('buyer.TicketTypesSection.opensOn', { date: formatEventDate(nextSalesOpening([tt]), schedule?.timezone, { month: 'short', year: undefined }) }) : t('buyer.TicketTypesSection.salesUnavailable')}</span>
                     )}
                   </div>
                   {content.description && <p className="text-sm text-neutral-600 mt-0.5 break-words">{content.description}</p>}
@@ -115,7 +127,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         aria-expanded={Boolean(expandedPasses[tt.id])}
                         aria-controls={`pass-nights-${tt.id}`}
                         onClick={() => togglePassSchedule(tt.id)}
-                        className="flex min-h-9 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
+                        className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-xs font-semibold text-brand-800 hover:text-brand-950"
                       >
                         <span>
                           {expandedPasses[tt.id]
@@ -165,7 +177,6 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                         {t('pricing.ticketPlusFee', { price: formatTicketPrice(basePrice), fee: formatTicketPrice(feeCents) })}
                       </p>
                     )}
-                    {currentPrice === 0 && !soldOut && <p className="text-sm text-neutral-700">{t('buyer.TicketTypesSection.freeNoPayment')}</p>}
                   </div>
 
                   {/* Urgency indicators */}
@@ -205,7 +216,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, qty - 1)}
                       disabled={qty === 0}
-                      className="min-h-12 min-w-12 rounded-xl border-2 border-neutral-300 flex items-center justify-center text-neutral-800 hover:bg-neutral-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
+                      className="tactile-press min-h-12 min-w-12 rounded-xl border-2 border-neutral-300 flex items-center justify-center text-neutral-800 hover:bg-neutral-50 disabled:border-neutral-200 disabled:text-neutral-400" aria-label={t('buyer.TicketTypesSection.decreaseQuantityFor', { value1: tt.name })}
                     >
                       <Minus aria-hidden="true" className="w-5 h-5" />
                     </button>
@@ -213,7 +224,7 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
                     <button
                       onClick={() => setQty(tt.id, Math.min(qty + 1, maxQty))}
                       disabled={qty >= maxQty}
-                      className="min-h-12 min-w-12 rounded-xl border-2 border-brand-700 flex items-center justify-center text-brand-800 hover:bg-brand-50 disabled:border-neutral-200 disabled:text-neutral-400 transition-colors" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
+                      className="tactile-press min-h-12 min-w-12 rounded-xl border-2 border-brand-700 flex items-center justify-center text-brand-800 hover:bg-brand-50 disabled:border-neutral-200 disabled:text-neutral-400" aria-label={t('buyer.TicketTypesSection.increaseQuantityFor', { value1: tt.name })}
                     >
                       <Plus aria-hidden="true" className="w-5 h-5" />
                     </button>
@@ -225,12 +236,12 @@ export default function TicketTypesSection({ ticketTypes = [], onCheckout, showO
         })}
       </div>
 
-      {totalSelected > 0 && <PaidCheckoutGate active={paidAdminOnly && totalCents > 0}>
-        <button onClick={handleCheckout} className="w-full mt-5 btn-primary text-base !py-4 gap-2">
+      {totalSelected > 0 && <div className="lg:sticky lg:bottom-0 z-10 border-t border-neutral-100 bg-white pt-3 pb-1"><PaidCheckoutGate active={paidAdminOnly && totalCents > 0}>
+        <button onClick={handleCheckout} className="w-full event-buy btn-primary text-base !py-4 gap-2">
           <ShoppingCart className="w-5 h-5" />
-          {t('eventDetail.buyTickets')} &mdash; {formatPrice(totalCents)}
+          {t(submitAction.key, submitAction.values)}
         </button>
-      </PaidCheckoutGate>}
+      </PaidCheckoutGate></div>}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { nextSalesOpening } from '../utils/eventPrimaryAction'
 import { focalPosition, approvedImageUrl } from '../utils/eventPageDesign'
 import useTranslatedContent from '../hooks/useTranslatedContent'
 import MachineTranslationNotice from './MachineTranslationNotice'
@@ -9,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Calendar, MapPin, Clock, ArrowRight } from 'lucide-react'
 import { WhosGoingBadge } from './WhosGoing'
 import { formatEventDate, formatEventTimeRange } from '../utils/eventTime'
-import { formatTicketPrice, lowestPurchasablePrice, isTicketPurchasable, remainingTickets, ticketAllInCents, ticketServiceFeeCents } from '../utils/ticketPricing'
+import { formatTicketPrice, priceSummary, isTicketPurchasable, remainingTickets, ticketServiceFeeCents } from '../utils/ticketPricing'
 
 export default function EventCard({ event }) {
   const { t } = useTranslation()
@@ -17,11 +18,11 @@ export default function EventCard({ event }) {
   const content = useTranslatedContent(event)
   const [failedArtwork, setFailedArtwork] = useState(null)
   const hasArtwork = approvedImageUrl(event.cover_image_url, event.image_asset_host) && failedArtwork !== event.cover_image_url
-  const lowestPrice = lowestPurchasablePrice(event.ticket_types)
-  const lowestTicket = event.ticket_types?.find(ticket => isTicketPurchasable(ticket) && ticketAllInCents(ticket) === lowestPrice)
-  const priceLabel = lowestPrice === null ? ''
-    : lowestPrice === 0 ? t('events.free')
-    : `${t('events.from')} ${formatTicketPrice(lowestPrice)}`
+  const summary = priceSummary(event.ticket_types)
+  const lowestTicket = summary?.ticket || null
+  const priceLabel = !summary ? ''
+    : summary.kind === 'free' ? t('events.free')
+    : `${t('events.from')} ${formatTicketPrice(summary.cents)}`
   const hasAvailability = !event.ticket_types || event.ticket_types.some(isTicketPurchasable)
   const hasInventory = !event.ticket_types || event.ticket_types.some(ticket => remainingTickets(ticket) === null || remainingTickets(ticket) > 0)
 
@@ -34,12 +35,12 @@ export default function EventCard({ event }) {
       <div className="ticket event-ticket">
       <TicketTop>
       {/* Image */}
-      <div className={hasArtwork ? 'h-44 overflow-hidden bg-neutral-100 relative' : 'relative h-44 bg-brand-800'}>
+      <div className={hasArtwork ? 'relative aspect-video overflow-hidden bg-neutral-100' : 'relative h-44 bg-brand-800'}>
         {hasArtwork ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
-            width="800" height="500" loading="lazy"
+            width="1600" height="900" loading="lazy"
             onError={() => setFailedArtwork(event.cover_image_url)}
             className="w-full h-full object-cover"
             style={{ objectPosition: focalPosition(event.page_customization) }}
@@ -68,13 +69,13 @@ export default function EventCard({ event }) {
           </span>
         )}
 
-        <h3 className="text-lg font-semibold text-neutral-900 mb-3 break-words line-clamp-2 min-h-[3.5rem]">
+        <h3 className="font-display text-lg font-bold leading-snug text-neutral-950 mb-3 break-words line-clamp-2">
           {content.title}
         </h3>
         {/* Cards link to the event, so the "Show original" switch lives on the event page. */}
         {content.notice && <MachineTranslationNotice {...content.notice} labelOnly className="-mt-2 mb-3" />}
 
-        <div className="space-y-1.5 mb-4 flex-1">
+        <div className="space-y-1.5 mb-4">
           {event.starts_at && (
             <>
               <div className="flex items-start gap-2 text-sm text-content-muted">
@@ -95,18 +96,19 @@ export default function EventCard({ event }) {
           )}
         </div>
 
-        {priceLabel && <div className="mb-4 text-neutral-900">
+        {priceLabel && <div className="mt-auto mb-4 text-neutral-900">
           <p className="text-base font-semibold tabular-nums">{priceLabel}</p>
+          {summary?.kind === 'from' && summary.hasFree && <p className="mt-0.5 text-xs text-content-muted">{t('events.freeTicketsAvailable')}</p>}
           {lowestTicket && ticketServiceFeeCents(lowestTicket) > 0 && <p className="mt-1 text-xs text-content-muted">{t('buyer.SeatSelector.feeIncluded', { fee: formatTicketPrice(ticketServiceFeeCents(lowestTicket)) })}</p>}
         </div>}
 
         {event.attendee_count > 0 && (
-          <div className="mb-3">
+          <div className={`${priceLabel ? '' : 'mt-auto '}mb-3`}>
             <WhosGoingBadge attendeeCount={event.attendee_count} />
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-3 border-t border-neutral-100">
+        <div className={`${priceLabel || event.attendee_count > 0 ? '' : 'mt-auto '}flex items-center justify-between pt-3 border-t border-neutral-100`}>
           {/* Availability indicator */}
           <div className="flex items-center gap-1.5">
             {event.status === 'completed' ? (
@@ -119,7 +121,7 @@ export default function EventCard({ event }) {
                 <span className={`w-1.5 h-1.5 rounded-full ${hasAvailability ? 'bg-emerald-400' : 'bg-neutral-300'}`} />
                 <span className={`text-xs font-medium ${hasAvailability ? 'text-emerald-700' : 'text-neutral-600'}`}>
                   {hasAvailability ? t('events.ticketsAvailable') : hasInventory
-                    ? t('events.salesUnavailable') : t('events.soldOut')}
+                    ? nextSalesOpening(event.ticket_types) ? t('eventActions.cardOnSale', { date: formatEventDate(nextSalesOpening(event.ticket_types), event.timezone, { month: 'short', year: undefined }) }) : t('events.salesUnavailable') : t('events.soldOut')}
                 </span>
               </>
             )}

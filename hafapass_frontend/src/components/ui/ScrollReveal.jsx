@@ -1,54 +1,76 @@
-import { motion, useInView, useReducedMotion } from 'framer-motion';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react'
+import usePrefersReducedMotion from '../../hooks/usePrefersReducedMotion'
 
-const ease = [0.23, 1, 0.32, 1];
+function useInViewOnce(ref, disabled) {
+  const [inView, setInView] = useState(disabled)
+  useEffect(() => {
+    if (disabled || inView) return undefined
+    const node = ref.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setInView(true)
+      return undefined
+    }
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          setInView(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '-40px 0px' },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [ref, disabled, inView])
+  return disabled || inView
+}
 
 export const FadeUp = ({ children, delay = 0, className = '' }) => {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: '-80px' });
-  const reducedMotion = useReducedMotion();
+  const ref = useRef(null)
+  const reducedMotion = usePrefersReducedMotion()
+  const settled = useInViewOnce(ref, reducedMotion)
+  const delayMs = reducedMotion ? 0 : Math.round(delay * 1000)
+
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial={reducedMotion ? false : { opacity: 1, y: 8 }}
-      animate={{ opacity: 1, y: reducedMotion || isInView ? 0 : 8 }}
-      transition={{ duration: reducedMotion ? 0 : 0.22, delay: reducedMotion ? 0 : delay, ease }}
-      className={className}
+      data-reveal={settled ? 'settled' : 'resting'}
+      className={`scroll-reveal ${className}`.trim()}
+      style={{
+        transitionDelay: delayMs ? `${delayMs}ms` : undefined,
+        ...(reducedMotion ? { transform: 'none', transitionDuration: '0ms' } : {}),
+      }}
     >
       {children}
-    </motion.div>
-  );
-};
+    </div>
+  )
+}
 
 export const StaggerContainer = ({ children, className = '' }) => {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: '-80px' });
-  const reducedMotion = useReducedMotion();
+  const ref = useRef(null)
+  const reducedMotion = usePrefersReducedMotion()
+  const settled = useInViewOnce(ref, reducedMotion)
+
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial={reducedMotion ? false : 'resting'}
-      animate={reducedMotion || isInView ? 'settled' : 'resting'}
-      variants={{ resting: {}, settled: { transition: { staggerChildren: reducedMotion ? 0 : 0.04 } } }}
-      className={className}
+      data-reveal={settled ? 'settled' : 'resting'}
+      data-reduced-motion={reducedMotion ? 'true' : 'false'}
+      className={`scroll-reveal-stagger ${className}`.trim()}
     >
       {children}
-    </motion.div>
-  );
-};
+    </div>
+  )
+}
 
 export const StaggerItem = ({ children, className = '' }) => {
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = usePrefersReducedMotion()
   return (
-    <motion.div
-      variants={{
-        // Readable before the observer fires, including when it never fires.
-        resting: { opacity: 1, y: reducedMotion ? 0 : 8 },
-        settled: { opacity: 1, y: 0, transition: { duration: reducedMotion ? 0 : 0.22, ease } },
-      }}
-      className={className}
+    <div
+      className={`scroll-reveal-item ${className}`.trim()}
+      style={reducedMotion ? { transform: 'none', transitionDuration: '0ms', transitionDelay: '0ms' } : undefined}
     >
       {children}
-    </motion.div>
-  );
-};
+    </div>
+  )
+}

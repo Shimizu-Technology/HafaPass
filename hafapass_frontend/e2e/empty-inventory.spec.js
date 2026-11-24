@@ -34,10 +34,11 @@ for (const width of [375, 1280]) {
         // hero keeps order recovery as its only action. Phones are covered below.
         await expect(main.getByText('Add to Home Screen', { exact: true })).toHaveCount(0)
         await expect(main.getByRole('button', { name: 'Install HåfaPass' })).toHaveCount(0)
-        await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveAttribute('href', '/orders/recover')
+        await expect(main.locator('a[href="/orders/recover"]:not(footer a)')).toHaveAttribute('href', '/orders/recover')
         await expect(main.getByRole('heading', { name: 'How your pass works' })).toBeVisible()
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
-        await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(0)
+        await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(1)
+        await expect(page.getByRole('button', { name: 'Next featured pass' })).toHaveCount(0)
         await expect(main.getByRole('heading', { name: 'Coming up' })).toHaveCount(0)
       } else {
         await expect(main.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
@@ -60,7 +61,7 @@ for (const width of [375, 1280]) {
       }
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([])
-      await page.getByRole('button', { name: 'Clear filters' }).click()
+      await page.getByRole('button', { name: 'Clear filters' }).last().click()
       await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toBeVisible()
       await expect(page).toHaveURL(/\/events$/)
     }
@@ -71,12 +72,12 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Coming up on Guam' })).toBeVisible()
     // The event shows as the hero's featured pass and as a card in the list.
-    await expect(page.locator('a.featured-pass')).toContainText('Community night')
+    await expect(page.locator('[data-card-kind="event"]')).toContainText('Community night')
     await expect(page.locator('a.event-card').filter({ hasText: 'Community night' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toHaveCount(0)
     await page.goto('/events?search=nothing')
     await expect(page.getByRole('heading', { name: 'No matching events' })).toBeVisible()
-    await page.getByRole('button', { name: 'Clear filters' }).click()
+    await page.getByRole('button', { name: 'Clear filters' }).last().click()
     await expect(page.getByRole('link', { name: /Community night/ })).toBeVisible()
     await page.goto('/discover')
     // Scoped to the page: the footer has its own Browse events link, and matching
@@ -135,7 +136,7 @@ test.describe('on a touch phone', () => {
     const main = page.getByRole('main')
     const install = main.locator('summary', { hasText: 'Add to Home Screen' })
     await expect(install).toBeVisible()
-    await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toBeVisible()
+    await expect(main.locator('a[href="/orders/recover"]:not(footer a)')).toBeVisible()
     await install.tap()
     await expect(main.getByText(/On iPhone or iPad, open HåfaPass in Safari/)).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375)

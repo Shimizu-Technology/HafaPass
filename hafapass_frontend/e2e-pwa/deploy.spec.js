@@ -130,7 +130,7 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     await checkout.goto(`${origin}/events/deploy-test`)
     await installed(checkout)
     await checkout.getByRole('button', { name: 'Increase quantity for General', exact: true }).click()
-    await checkout.getByRole('button', { name: /Buy tickets/i }).click()
+    await checkout.getByRole('button', { name: /Checkout/i }).click()
     await checkout.getByLabel('Full name').fill('Unsaved buyer')
     await checkout.evaluate(() => { window.originalCheckoutDocument = true })
 
@@ -202,7 +202,7 @@ test('legacy A upgrades to B, B fetches C on first navigation, and protected/off
     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
     expect(await selection.evaluate(() => window.originalSelectionDocument)).toBe(true)
     await selection.screenshot({ path: testInfo.outputPath('selection-preserved.png'), fullPage: true })
-    await selection.getByRole('button', { name: /Buy tickets/i }).click()
+    await selection.getByRole('button', { name: /Checkout/i }).click()
     await expect(selection.getByLabel('Full name')).toBeVisible()
     await expect(selection.locator('#deploy-marker')).toHaveText('Build A')
     // The same A document must also complete the task after B removed A assets.
