@@ -78,8 +78,12 @@ Create these alerts in the production monitoring project before a pilot:
 |---|---|---|
 | `exhausted_message_deliveries` | Failed deliveries with 5+ attempts that failed in the last 24 h | Check Resend status, then use **Resend failed messages** in the support console (below) |
 | `failed_payment_webhooks` | Stripe webhook events in `failed` status | Admin → Operations; reconcile against Stripe before any replay |
+| `stripe_webhook_failures` | Stripe receipts that failed in the last 15 minutes or hung in `processing` for over 10 minutes, once there are 3 or more | First three actions in [Incident response](INCIDENT_RESPONSE.md#monitoring-alerts-what-they-mean-and-the-first-three-actions) |
+| `stripe_webhooks_silent` | No Stripe receipt for 30 minutes **and** either payments recorded as paid with no success webhook, or 10+ payments started with no webhook at all | Same list. Never fires because nobody is buying |
 | `open_reconciliation_exceptions` | Open reconciliation exceptions | Finance review; never close with a database edit |
 | `failed_background_jobs` | Solid Queue failed executions in the last hour | Inspect the job class and error before retrying |
+
+The two Stripe webhook signals behave a little differently: they repeat hourly instead of every six hours, do not re-alert when more evidence arrives during the same incident, and send an `info` recovery message (fingerprint `operational-alert-recovered/<signal>`, tag `operational_state:recovered`) once the count returns to zero. Thresholds are environment variables; see [Monitoring setup](MONITORING_SETUP.md).
 
 The same line is written to the log as `{"event":"operational_alert",...}`, so it is visible without Sentry.
 
@@ -89,7 +93,7 @@ After a Resend outage, the support console's **Resend failed messages** button (
 
 These live outside the code. Record the owner and date here once each is done.
 
-1. Sentry (backend project): an alert rule for new issues, and one for each `operational-alert/*` fingerprint above, routed to Leon and a backup contact.
+1. Sentry (backend project): create the rules in [Monitoring setup](MONITORING_SETUP.md#2-sentry-alert-rules) (they supersede the one-per-fingerprint idea), routed to Leon's phone and a backup contact, and test each one with the labelled test alert.
 2. Uptime monitor on `https://hafapass-api.onrender.com/api/v1/readiness`, every 1–5 minutes, alerting when the response lacks the keyword `"status":"ready"` twice in a row. The public body is enough; don't put the readiness token in a third-party monitor.
 3. Uptime monitor on the frontend root, `https://hafapass.shimizu-technology.com/`.
 4. Render: deploy-failed and service-health notifications for `hafapass-api`, to the same people.
@@ -279,8 +283,11 @@ logs to investigate those, as well as requests that never reached Rails.
 [Stripe delivery troubleshooting](https://docs.stripe.com/webhooks#fix-http-status-codes)
 and [Sentry issue alert rules](https://docs.sentry.io/api/monitors/create-an-alert-for-an-organization/).
 
-A trusted operator or morning-brief agent with access to the deployed
-application shell can run `bin/rails hafapass:daily_summary` from
+The morning brief reads the daily sales and health summary from
+`GET /api/v1/ops/summary` with a dedicated token, using
+`scripts/fetch_ops_summary.py`; see [Monitoring setup](MONITORING_SETUP.md#5-the-daily-summary-for-the-morning-brief).
+A trusted operator with access to the deployed
+application shell can still run `bin/rails hafapass:daily_summary` from
 `hafapass_api` using its normal runtime environment. Read the final JSON line.
 It contains the release SHA, readiness verdict, previous full Guam day's
 live Stripe order count and gross USD cents at capture, and current failed

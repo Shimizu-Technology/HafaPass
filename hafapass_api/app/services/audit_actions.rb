@@ -482,6 +482,7 @@ class AuditActions
     define registry, area: "platform", audience: %w[admin_only],
       tenant: false, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {
+        "monitoring.test_alert_sent" => "Sent a labelled test alert to error monitoring.",
         "support.lookup" => "Looked up a support subject.",
         "user.role_updated" => "Updated a platform user role.",
         "operations.synthetic_data_purged" => "Purged synthetic platform data."

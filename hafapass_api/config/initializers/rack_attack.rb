@@ -104,6 +104,12 @@ class Rack::Attack
     req.ip if provider_webhook.call(req)
   end
 
+  # The morning brief reads this once a day. The limit exists to stop token
+  # guessing, so it counts every request, valid or not.
+  throttle("ops-summary/ip", limit: 10, period: 1.minute) do |req|
+    req.ip if req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/ops/summary(?:\.[a-z0-9]+)?/*\z})
+  end
+
   throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|
     Digest::SHA256.hexdigest(ticket_view_credential.call(req)) if ticket_view.call(req)
   end

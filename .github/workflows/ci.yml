@@ -102,7 +102,7 @@ jobs:
           bundler-cache: true
           working-directory: hafapass_api
       - name: CI helper regression tests
-        run: python3 -m unittest discover -s scripts -p test_ci_helpers.py
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: RuboCop
         working-directory: hafapass_api
         run: bundle exec rubocop --format github

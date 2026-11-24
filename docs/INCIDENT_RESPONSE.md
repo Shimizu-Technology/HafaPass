@@ -18,6 +18,24 @@ If HåfaPass owns or licenses covered data, notify affected Guam residents **wit
 
 Permitted notice methods are postal writing, telephone, or electronic notice. Substitute notice is available only when statutory cost, class size, or contact/consent conditions are met, and requires any two of email, conspicuous website posting, or major Guam media. Counsel should approve the channel and text. See [§48.20(g)](https://col.guamcourts.gov/sites/default/files/9gc048.pdf).
 
+## Monitoring alerts: what they mean and the first three actions
+
+These are operational alerts, not data-exposure incidents. If any step shows buyer, organizer, payment or ticket data was exposed, switch to **First response** above. Setup and tests are in [Monitoring setup](MONITORING_SETUP.md). Never put buyer details in chat while you work an alert.
+
+| Alert (Sentry tag) | What it means | First three actions |
+|---|---|---|
+| **Stripe webhooks silent** (`operational_signal:stripe_webhooks_silent`) | The app has seen no Stripe webhook for 30 minutes while it has evidence it should have: a payment recorded as paid with no success webhook, or 10 or more payments started with none arriving. Buyers may have paid and not received tickets. | 1. In Stripe, open the live webhook destination and look at **Failed deliveries** and whether the endpoint is disabled; confirm its URL is the API. 2. Check Render for the API: a deploy in progress, a crash loop, or `/api/v1/readiness` not ready. 3. Do **not** replay anything blind. After the endpoint is fixed, resend the missed events from Stripe, then compare with Admin → Monitoring (the "Paid, no webhook yet" count should reach 0) and Admin → Reconciliation. |
+| **Stripe webhooks failing** (`stripe_webhook_failures`) | 3 or more receipts failed or hung in the last 15 minutes. Stripe retries, but orders may be stuck pending. | 1. Open the Sentry event tagged `integration:stripe_webhook` for the exception and release. 2. If it began with a deploy, roll back the API. 3. Compare the failed receipts with Stripe's event before any replay (Admin → Operational review → Failed payment updates); resolve reconciliation exceptions with a note. |
+| **Stripe webhook processing exception** (`integration:stripe_webhook`, `operation:webhook_processing`) | One webhook raised an error while processing. | Same as failing, starting at step 1. A signature rejection returns 400 before this point; check Stripe's failed deliveries for those. |
+| **Failed payment updates** (`failed_payment_webhooks`) | Standing count of failed receipts. | Compare each with Stripe before replay; never edit the database to close one. |
+| **Open reconciliation exceptions** | A payment or refund disagrees with Stripe. Payouts for the organization are held while it is open. | Open Admin → Reconciliation, read the code, resolve with a note. Don't release a payout first. |
+| **Failed background jobs** (`failed_background_jobs`) | Solid Queue jobs failed in the last hour. | 1. Read the job class and error in the Sentry issue. 2. Check `/api/v1/readiness` for worker and clock. 3. Retry only jobs known to be safe to repeat; see [Operations runbook](OPERATIONS_RUNBOOK.md). |
+| **Exhausted email deliveries** | Emails failed 5 or more times. | Check Resend status, then use **Resend failed messages** in the support console. |
+| **Error on checkout, webhook, scanner or box office** (`area:*`) | A new or returning error on a money or door path. | 1. Check whether sales or scanning are actually failing (try a test purchase or scan). 2. Match the Sentry release to the last deploy. 3. If it began with a deploy, roll back; on event day, switch scanners to the offline manifest per [Event-day operations](EVENT_DAY_OPERATIONS.md). |
+| **Recovered** (`operational_state:recovered`) | The count returned to zero. | Confirm in Admin → Monitoring, then resolve the Sentry issue so the next incident notifies. |
+
+A `[TEST]` event is a drill sent by an admin from Admin → Monitoring & alerts. It is safe to ignore; resolve it.
+
 ## Contacts and ownership
 
 | Role | Contact path | Action |

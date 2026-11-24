@@ -150,4 +150,84 @@ RSpec.describe OperationalAlertJob do
       expect(RuntimeAlertState.pluck(:signal)).to eq(["open_reconciliation_exceptions"])
     end
   end
+
+  describe "Stripe webhook signals" do
+    def failed_receipt(at: 1.minute.ago)
+      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_#{SecureRandom.hex(6)}",
+        event_type: "payment_intent.succeeded", status: :failed, created_at: at, updated_at: at)
+    end
+
+    def run_after(duration)
+      travel(duration)
+      described_class.perform_now
+    end
+
+    it "alerts on a burst of failures with a stable fingerprint, tag and context, and not before the threshold" do
+      2.times { failed_receipt }
+      described_class.perform_now
+      expect(Sentry).not_to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", anything)
+
+      failed_receipt
+      described_class.perform_now
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", level: :error,
+        fingerprint: ["operational-alert", "stripe_webhook_failures"], tags: { operational_signal: "stripe_webhook_failures" },
+        extra: { count: 3, window_minutes: 15, threshold: 3, stuck_processing: 0 })
+    end
+
+    it "alerts when webhooks go silent while payments are being made, and never during a quiet night" do
+      described_class.perform_now
+      expect(Sentry).not_to have_received(:capture_message)
+
+      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
+      described_class.perform_now
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhooks_silent", level: :error,
+        fingerprint: ["operational-alert", "stripe_webhooks_silent"], tags: { operational_signal: "stripe_webhooks_silent" },
+        extra: hash_including(count: 1, paid_without_webhook: 1, silence_minutes: 30)).once
+    end
+
+    it "dedupes: a standing incident repeats hourly, and extra evidence does not re-alert" do
+      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
+      described_class.perform_now
+      create(:payment, status: :succeeded, succeeded_at: 44.minutes.ago)
+      run_after(5.minutes)
+      run_after(54.minutes)
+      expect(Sentry).to have_received(:capture_message).with(/stripe_webhooks_silent/, anything).once
+
+      run_after(1.minute)
+      expect(Sentry).to have_received(:capture_message).with(/stripe_webhooks_silent/, anything).twice
+    end
+
+    it "sends one info-level recovery notice when the incident clears, then stays quiet" do
+      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
+      described_class.perform_now
+
+      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_resumed", event_type: "charge.updated",
+        status: :processed, processed_at: Time.current)
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).with("Operational alert recovered: stripe_webhooks_silent", level: :info,
+        fingerprint: ["operational-alert-recovered", "stripe_webhooks_silent"],
+        tags: { operational_signal: "stripe_webhooks_silent", operational_state: "recovered" }).once
+
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).with(/recovered/, anything).once
+    end
+
+    it "alerts again at once if the incident returns after recovering" do
+      3.times { failed_receipt }
+      described_class.perform_now
+      WebhookEvent.failed.update_all(status: WebhookEvent.statuses[:processed])
+      run_after(5.minutes)
+      3.times { failed_receipt(at: Time.current) }
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", anything).twice
+    end
+
+    it "sends no recovery notice for the older signals" do
+      create(:reconciliation_exception, status: :open)
+      described_class.perform_now
+      ReconciliationException.update_all(status: ReconciliationException.statuses[:resolved])
+      run_after(5.minutes)
+      expect(Sentry).not_to have_received(:capture_message).with(/recovered/, anything)
+    end
+  end
 end

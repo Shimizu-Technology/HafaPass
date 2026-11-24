@@ -8,6 +8,11 @@
 # The last count and alert time live in runtime_alert_states, so a deploy or
 # restart doesn't re-alert. A stable fingerprint keeps each signal in one
 # Sentry issue; only the signal name and count leave the app.
+#
+# The Stripe webhook signals (Operations::StripeWebhookHealth) differ in two
+# ways: they repeat hourly instead of every six hours and don't re-alert on
+# every rise in count (one more unconfirmed payment is the same incident), and
+# they send a "recovered" message once their count falls back to zero.
 class OperationalAlertJob < ApplicationJob
   queue_as :low
 
@@ -15,6 +20,8 @@ class OperationalAlertJob < ApplicationJob
   EXHAUSTED_DELIVERY_WINDOW = 24.hours
   FAILED_JOB_WINDOW = 1.hour
   REPEAT_INTERVAL = 6.hours
+  INCIDENT_SIGNALS = Operations::StripeWebhookHealth::SIGNALS
+  INCIDENT_REPEAT_INTERVAL = 1.hour
 
   def perform
     now = Time.current
@@ -22,9 +29,11 @@ class OperationalAlertJob < ApplicationJob
     states = RuntimeAlertState.where(signal: signals.keys).index_by(&:signal)
     signals.each do |signal, count|
       state = states[signal] || RuntimeAlertState.new(signal: signal)
-      if count.positive? && alert_due?(state, count, now)
+      if count.positive? && alert_due?(signal, state, count, now)
         alert(signal, count)
         state.last_alerted_at = now
+      elsif count.zero? && state.last_count.positive? && INCIDENT_SIGNALS.include?(signal)
+        recover(signal)
       end
       state.last_count = count
       state.save! if state.new_record? ? count.positive? : state.changed?
@@ -32,13 +41,14 @@ class OperationalAlertJob < ApplicationJob
   end
 
   def self.signals(now: Time.current)
+    webhook_health = Operations::StripeWebhookHealth.new(now: now)
     {
       "exhausted_message_deliveries" => MessageDelivery.failed.where(attempts: EXHAUSTED_DELIVERY_ATTEMPTS..)
         .where(failed_at: (now - EXHAUSTED_DELIVERY_WINDOW)..).count,
       "failed_payment_webhooks" => WebhookEvent.failed.count,
       "open_reconciliation_exceptions" => ReconciliationException.open.count,
       "failed_background_jobs" => failed_background_jobs(now)
-    }
+    }.merge(webhook_health.signals)
   end
 
   def self.failed_background_jobs(now)
@@ -49,13 +59,27 @@ class OperationalAlertJob < ApplicationJob
 
   private
 
-  def alert_due?(state, count, now)
-    state.last_alerted_at.nil? || count > state.last_count || state.last_alerted_at <= now - REPEAT_INTERVAL
+  def alert_due?(signal, state, count, now)
+    incident = INCIDENT_SIGNALS.include?(signal)
+    interval = incident ? INCIDENT_REPEAT_INTERVAL : REPEAT_INTERVAL
+    state.last_alerted_at.nil? || (!incident && count > state.last_count) ||
+      (incident && state.last_count.zero?) || state.last_alerted_at <= now - interval
   end
 
   def alert(signal, count)
     Rails.logger.warn({ event: "operational_alert", signal: signal, count: count }.to_json)
+    extra = { count: count }
+    extra.merge!(Operations::StripeWebhookHealth.new.details(signal)) if INCIDENT_SIGNALS.include?(signal)
     Sentry.capture_message("Operational alert: #{signal}", level: :error,
-      fingerprint: ["operational-alert", signal], tags: { operational_signal: signal }, extra: { count: count })
+      fingerprint: ["operational-alert", signal], tags: { operational_signal: signal }, extra: extra)
+  end
+
+  # Same signal tag, but its own fingerprint (so it never reopens the alert's
+  # issue) and level info, so a Sentry rule on level=error stays quiet.
+  def recover(signal)
+    Rails.logger.info({ event: "operational_alert_recovered", signal: signal }.to_json)
+    Sentry.capture_message("Operational alert recovered: #{signal}", level: :info,
+      fingerprint: ["operational-alert-recovered", signal],
+      tags: { operational_signal: signal, operational_state: "recovered" })
   end
 end
