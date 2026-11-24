@@ -1,5 +1,10 @@
 class Event < ApplicationRecord
   include OperationalAuditable
+  include PublicEventCacheBuster
+
+  PUBLIC_AVAILABILITY_ATTRIBUTES = %w[status max_capacity published_at starts_at ends_at sales_suspended_at
+    organizer_sales_suspended_at policy_hold_at policy_hold_scope].freeze
+  busts_public_event_cache on: :update, condition: -> { saved_changes.keys.intersect?(PUBLIC_AVAILABILITY_ATTRIBUTES) }
 
   # Source identity is transient, supplied by the clone operation before save.
   attr_accessor :audit_clone_source, :audit_sales_note

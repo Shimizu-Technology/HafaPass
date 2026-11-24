@@ -20,6 +20,26 @@ Readiness checks real current-release actor heartbeats, successful current-relea
 
 `/up` bypasses database-backed throttles and does not query dependencies. The deeper readiness endpoint can return 503 while `/up` remains 200. The supervisor itself requires database access on boot; a failed queue boot is not a usable release.
 
+## Puma processes and event-week settings
+
+`WEB_CONCURRENCY` sets the number of Puma processes and defaults to 1. With 1, Puma runs in single mode exactly as before: the right setting for the 512 MB plan. With 2 or more, Puma runs in cluster mode with `preload_app!`. Each process has its own GVL, so a 2-CPU plan runs requests in parallel, and the service has `WEB_CONCURRENCY × RAILS_MAX_THREADS` request threads in total. Extra processes do **not** isolate lock waiters. Checkouts for one event wait on that event's inventory lock, each waiting checkout holds a request thread, and Puma's shared listening socket hands checkouts to every worker, so a rush can still fill every thread in every process. Bounding concurrent checkouts per event (admission control or a waiting room) is the fix for that, and is not built yet.
+
+The embedded Solid Queue supervisor runs **once per Puma instance**. In single mode the plugin's `after_booted` hook starts it in the only process, as before. In cluster mode `config/puma.rb` starts it in request worker 0 (`before_worker_boot`) and stops it in that worker's `before_worker_shutdown`; the master runs no job threads. That matters on worker respawn: when a worker dies (OOM, timeout, `SIGKILL`), Puma forks the replacement from the master, and `fork()` copies only the calling thread. A master running Solid Queue threads could pass the new worker a mutex (connection pool, logger, libpq) held by a thread that no longer exists, and the worker would hang. With no job threads in the master, every respawn forks cleanly. The master also closes its preload connections in `before_fork`; each worker's pools are discarded at fork by Active Record's fork tracker and reconnect on first use.
+
+If worker 0 dies, jobs pause until Puma respawns it (normally seconds). The replacement starts a new supervisor. The dead one's rows stop counting for readiness after 90 seconds and are pruned with their claimed jobs, the same as after a crash in single mode. There is still one worker, one dispatcher and one scheduler, so no duplicate recurring ticks. `config/puma.rb` fixes `RuntimeConfiguration.instance_id` before forking, so every request worker's readiness check matches the supervisor's heartbeats. `spec/config/puma_cluster_spec.rb` boots two workers, checks both, then kills each worker and checks the respawn. For a long-term clustered setup, prefer `HAFAPASS_RUNTIME=solid_queue` with a dedicated `bin/jobs` worker (`render.tournament.yaml`), which keeps job threads out of the web service entirely.
+
+Each process has its own pool of `DB_POOL` connections, opened only as needed. Request workers use up to `RAILS_MAX_THREADS` connections each, and worker 0's supervisor about six more. The master holds none after forking. Peak use is about `WEB_CONCURRENCY × RAILS_MAX_THREADS + 6`; the pool ceiling is `WEB_CONCURRENCY × DB_POOL` in cluster mode. `DB_POOL` must still cover `RAILS_MAX_THREADS + 6` (boot refuses less). During a Render zero-downtime deploy, the old and new instances overlap briefly, so the ceiling doubles for that window, plus one direct connection for `bin/release-migrate`.
+
+| Use | Render plan | `WEB_CONCURRENCY` | `RAILS_MAX_THREADS` | `DB_POOL` | Peak / ceiling connections |
+| --- | --- | --- | --- | --- | --- |
+| Normal weeks (`render.yaml`) | Starter `0.5c-512mb` | unset (1) | 3 | 10 | ~9 / 10 |
+| Sales open and event week | Standard (1 CPU, 2 GB) | 2 | 5 | 11 | ~16 / 22 (44 during a deploy) |
+| Sales open, if Standard is CPU-bound | Pro / `2c-4g` (2 CPU, 4 GB) | 3 | 5 | 11 | ~21 / 33 (66 during a deploy) |
+
+Keep `HAFAPASS_RUNTIME=embedded` for all three. On a 1-CPU plan, a second process adds request threads but no CPU. Move to the 2-CPU plan if Render shows CPU pinned during the rush. Check Neon's `max_connections` for the minimum compute size in the console and keep the ceiling well below it. Use the pooled endpoint for the service. For the sales-open window, raise Neon's minimum compute and turn off scale-to-zero, so the first buyers do not wait for a cold start. Return to the Starter row after the event. In cluster mode, restart with a redeploy or `SIGTERM`; do not rely on `bin/rails restart` (`tmp/restart.txt`).
+
+Rollback: unset `WEB_CONCURRENCY` (or set it to 1) and redeploy. The service returns to single mode with no data or queue migration. `HAFAPASS_PUBLIC_EVENT_CACHE=off` turns the public event cache off with an environment change and restart, without a code change.
+
 ## Recovery boundaries
 
 Confirmation, refund, transfer, waitlist offer/notification, guest-list and event-change outbox records commit with their domain state. Their operation keys prevent duplicate intent creation. Enqueue can still be interrupted after that commit; the bounded recovery job locates missing entries using the journal. Scheduled reminder/campaign recovery matches the current scheduled timestamp, so an obsolete future job cannot suppress an earlier reschedule.

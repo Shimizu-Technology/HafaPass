@@ -13,11 +13,13 @@
 #      `HAFAPASS_RUNTIME=solid_queue`, `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`,
 #      `DB_POOL=15`, `HAFAPASS_MAX_HELD_TICKETS_PER_IP=250`, plus explicit
 #      Guam CGNAT-safe `RACK_ATTACK_*` env vars.
-#      Note: `hafapass_api/config/puma.rb` currently pins `workers 0` for the
-#      512 MB single-process plan; before switching `WEB_CONCURRENCY=2` live,
-#      enable `workers ENV.fetch("WEB_CONCURRENCY", 0).to_i` in `puma.rb` and
-#      confirm Neon pool headroom (`2 * 15 + 10 = 40` max connections across
-#      web + worker).
+#      `hafapass_api/config/puma.rb` reads `WEB_CONCURRENCY` (default 1, single
+#      mode); 2 or more runs Puma cluster mode. Confirm Neon pool headroom
+#      (`2 * 15 + 10 = 40` connection ceiling across the two web workers and
+#      the separate worker; the master closes its connections before forking). The single-service alternative keeps
+#      `HAFAPASS_RUNTIME=embedded` with `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`,
+#      `DB_POOL=11` and no worker service; see
+#      docs/SINGLE_SERVICE_RUNTIME.md, "Puma processes and event-week settings".
 #   2. Dedicated background worker `hafapass-worker`: `starter` (`0.5c-512mb`),
 #      `startCommand: bundle exec bin/jobs`, `HAFAPASS_RUNTIME=solid_queue`,
 #      `DB_POOL=10`, isolating Solid Queue job execution (emails, PDFs,

@@ -2,6 +2,10 @@
 
 class WaitlistOffer < ApplicationRecord
   include OperationalAuditable
+  include PublicEventCacheBuster
+
+  # Offers hold inventory while open, so issuing or ending one moves availability.
+  busts_public_event_cache
 
   audits_operations :waitlist_offer,
     fields: %w[waitlist_entry_id event_id ticket_type_id pricing_tier_id quantity unit_price_cents status expires_at claimed_at converted_at order_id]

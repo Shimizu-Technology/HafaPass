@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class AddCheckoutRecoveryAndTicketSecurity < ActiveRecord::Migration[8.1]
+  # Replay against the schema at this migration, independent of later Order
+  # enums and callbacks whose columns do not exist yet.
+  class LegacyOrder < ActiveRecord::Base
+    self.table_name = "orders"
+  end
+
   def up
     add_column :orders, :reference, :string
     add_column :orders, :guest_access_version, :integer, default: 1, null: false
@@ -9,8 +15,8 @@ class AddCheckoutRecoveryAndTicketSecurity < ActiveRecord::Migration[8.1]
     add_index :orders, :reference, unique: true
     add_check_constraint :orders, "guest_access_version > 0", name: "orders_guest_access_version_positive"
 
-    Order.reset_column_information
-    Order.find_each do |order|
+    LegacyOrder.reset_column_information
+    LegacyOrder.find_each do |order|
       order.update_columns(reference: unique_order_reference(order.id))
     end
     change_column_null :orders, :reference, false
@@ -26,7 +32,7 @@ class AddCheckoutRecoveryAndTicketSecurity < ActiveRecord::Migration[8.1]
     add_check_constraint :ticket_types, "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
 
     create_table :refund_tickets do |t|
-      t.references :refund, null: false, foreign_key: { on_delete: :restrict }
+      t.references :refund, null: false, foreign_key: table_exists?(:refunds) ? { on_delete: :restrict } : false
       t.references :ticket, null: false, foreign_key: { on_delete: :restrict }, index: { unique: true }
       t.integer :amount_cents, null: false
       t.timestamps
@@ -56,7 +62,7 @@ class AddCheckoutRecoveryAndTicketSecurity < ActiveRecord::Migration[8.1]
 
     create_table :disputes do |t|
       t.references :order, null: false, foreign_key: { on_delete: :restrict }
-      t.references :payment, foreign_key: { on_delete: :restrict }
+      t.references :payment, foreign_key: table_exists?(:payments) ? { on_delete: :restrict } : false
       t.string :provider, default: "stripe", null: false
       t.string :provider_dispute_id, null: false
       t.string :reason

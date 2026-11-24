@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class InventoryHold < ApplicationRecord
+  include PublicEventCacheBuster
+
+  # Released or expired holds return inventory to the public pages.
+  busts_public_event_cache on: :update, condition: -> { saved_change_to_status? && (released? || expired?) }
+
   belongs_to :order
   belongs_to :order_item
   belongs_to :event

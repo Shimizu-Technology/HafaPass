@@ -1,5 +1,10 @@
 class TicketType < ApplicationRecord
   include OperationalAuditable
+  include PublicEventCacheBuster
+
+  # Organizer saves only: checkout and refunds move quantity_sold with
+  # increment!/decrement!, which run no callbacks.
+  busts_public_event_cache
 
   audits_operations :ticket_type,
     fields: %w[event_id price_cents quantity_available max_per_order max_per_buyer door_allocation sort_order sales_start_at sales_end_at

@@ -108,6 +108,23 @@ k6 run load_tests/fd_championship_rush.js
 - `rush_events_index_latency`: `p(95) <= 300ms`
 - `rush_free_order_latency` / `rush_paid_hold_latency`: `p(95) <= 1500ms`
 
+### Local production-mode benchmark (same machine, before/after comparisons)
+
+Local numbers compare code revisions; they are not hosted capacity. Run the API with `RAILS_ENV=staging` (production settings, `StageSafety` checks) against a throwaway local database whose name contains `bench` or `load` and `staging` (for example `hafapass_rush_bench_staging`), with simulated payments:
+
+1. `bin/rails db:create db:schema:load`, then `bin/rails runner ../load_tests/local_rush_fixture.rb`. It prints the `EVENT_SLUG`/`TICKET_TYPE_ID` pairs for a 200-ticket single event and a 200-pass two-night bundle. Recreate the database before every run: the PostgreSQL throttle counters and sold inventory persist.
+2. Start Puma with the topology under test, for example `WEB_CONCURRENCY=2 RAILS_MAX_THREADS=5 DB_POOL=11 HAFAPASS_RUNTIME=embedded PORT=3101 bundle exec puma -C config/puma.rb`. On macOS, cluster mode also needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES PGGSSENCMODE=disable`. Raise `RACK_ATTACK_ORDERS_PER_IP_1M` (650 covers 600 buyers on one address).
+3. Run plain HTTP with `FORWARDED_PROTO=https`, which marks requests the way Render's TLS proxy does (staging forces SSL):
+
+```bash
+ISOLATED_LOAD_TARGET_ACK=I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_ENVIRONMENT \
+SCENARIO=free_saturation BASE_URL=http://localhost:3101 FORWARDED_PROTO=https \
+EVENT_SLUG=load-test-copa-rush-single TICKET_TYPE_ID=1 FREE_VUS=600 FREE_ITERATIONS=1 SHARED_NAT=true \
+k6 run load_tests/fd_championship_rush.js
+```
+
+Each virtual buyer requests the listing, the event page and an order with no pause between them, so all 600 orders arrive within about a second. That is harsher than a real sales open.
+
 ---
 
 ## Telemetry Checks During & Immediately After the Run
