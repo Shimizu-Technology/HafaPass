@@ -94,7 +94,7 @@ After a Resend outage, the support console's **Resend failed messages** button (
 
 These live outside the code. Record the owner and date here once each is done.
 
-1. Sentry (backend project): create the rules in [Monitoring setup](MONITORING_SETUP.md#2-sentry-alert-rules) (they supersede the one-per-fingerprint idea), routed to Leon's phone and a backup contact, and test each one with the labelled test alert.
+1. Sentry (backend project): create the rules in [Monitoring setup](MONITORING_SETUP.md#3-sentry-alert-rules) (they supersede the one-per-fingerprint idea), routed to Leon's phone and a backup contact, and test each one with the labelled test alert.
 2. Uptime monitor on `https://hafapass-api.onrender.com/api/v1/readiness`, every 1–5 minutes, alerting when the response lacks the keyword `"status":"ready"` twice in a row. The public body is enough; don't put the readiness token in a third-party monitor.
 3. Uptime monitor on the frontend root, `https://hafapass.shimizu-technology.com/`.
 4. Render: deploy-failed and service-health notifications for `hafapass-api`, to the same people.

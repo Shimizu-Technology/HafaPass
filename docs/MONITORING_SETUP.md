@@ -52,7 +52,7 @@ To **rotate**, set `OPS_SUMMARY_TOKEN` to `new,old`, update the morning brief, t
 | `area` | `checkout`, `webhook`, `scanner`, `box_office` | API request scope (`MonitoringArea`), the webhook controller's own scope, and the frontend for its checkout, scanner and box-office pages |
 | `integration` + `operation` | `stripe_webhook` + `webhook_processing` | The webhook controller on any processing exception (#220) |
 | `operational_signal` | `stripe_webhooks_silent`, `stripe_webhook_failures`, `stripe_unverified_deliveries`, `failed_payment_webhooks`, `open_reconciliation_exceptions`, `failed_background_jobs`, `exhausted_message_deliveries` | `OperationalAlertJob` |
-| `operational_state` | `recovered`, `quiet`, `check_failed` | Lifecycle notices (level `info`) and a failed check (an exception event) |
+| `operational_state` | `recovered`, `quiet`, `note`, `check_failed` | Lifecycle notices and notes (level `info`) and a failed check (an exception event) |
 | `monitoring_test` | `true` | Test alerts only. Real events never set this tag. |
 
 ### The three Stripe webhook signals
@@ -92,32 +92,32 @@ Create these in Sentry under **Monitors > Alerts > Create Alert** ([Sentry docs:
   - **A1 to A4 (the "new error" rules) use *A new issue is created***. This trades coverage: an old issue that was resolved and returns does not re-trigger these. Repeats are covered by the S1 spike rules (event-captured trigger with a frequency filter), and a resolved issue that regresses still sends Sentry's own regression email to project members ([Sentry Notifications](https://docs.sentry.io/product/notifications/)).
 - **If (all):** the tag and level filters in the table. Match types available are listed in the same docs (`equals`, `is set`, `is not set`, `is one of`, `does not equal` and others).
 - **Then:** *Notify* yourself (member), plus the chat action you choose in section 4. Use *Send Test Notification* on the block to check the integration.
-- **Throttling:** per the table. Throttling is per issue.
+- **Throttling:** per the table. Sentry's throttle is per issue, and the app's messages for one signal share one fingerprint, so they are **one Sentry issue**. **The app governs pacing** (an hourly reminder, a 10-minute storm guard before a quick re-open pages, a 6-hour repeat for the standing counts), so the Sentry throttle on an `operational_signal` rule must be shorter than every app interval: **5 minutes**. A longer one (the first draft used 30 minutes) would silently swallow a message the app deliberately sent, for example a second incident detected 25 minutes after the first, and the app would then wait an hour before sending another. Rules for errors the app does not pace (W4, A1 to A4, S1) use the throttles in the table.
 
-Every incident rule has the same two exclusions so recovery messages and drills never count as incidents:
+Every **incident** rule (W1 to W4, O1 to O4, A1 to A4 and S1, but not N1 or D1) has the same two exclusions so recovery messages and drills never count as incidents:
 
 - `Event level equals error` (recovery and quiet notices are `info`, so they can't match).
 - `Tagged event monitoring_test is not set` (every test alert sets it; real events never do). Use *is not set*, not *does not equal*: it is unambiguous when the tag is missing.
 
 ### Production rules (each signal and area has its own rule)
 
-| # | Rule | Extra If filters (on top of the two exclusions) | Throttle |
+| # | Rule | Extra If filters (on top of the two exclusions, for the incident rules) | Throttle |
 |---|---|---|---|
-| W1 | **Stripe webhooks silent** | tag `operational_signal` equals `stripe_webhooks_silent` | 30 minutes |
-| W2 | **Stripe webhook failures** | tag `operational_signal` equals `stripe_webhook_failures` | 30 minutes |
-| W3 | **Stripe deliveries rejected while real ones look missing** | tag `operational_signal` equals `stripe_unverified_deliveries` | 30 minutes |
+| W1 | **Stripe webhooks silent** | tag `operational_signal` equals `stripe_webhooks_silent` | 5 minutes (the app paces it) |
+| W2 | **Stripe webhook failures** | tag `operational_signal` equals `stripe_webhook_failures` | 5 minutes (the app paces it) |
+| W3 | **Stripe deliveries rejected while real ones look missing** | tag `operational_signal` equals `stripe_unverified_deliveries` | 5 minutes (the app paces it) |
 | W4 | **Stripe webhook processing exception** | tag `integration` equals `stripe_webhook` and tag `operation` equals `webhook_processing`. Trigger: *An event or issue activity is captured* (every processing exception notifies, at most once per 15 minutes per issue, as in the runbook). | 15 minutes |
-| O1 | Failed payment updates | tag `operational_signal` equals `failed_payment_webhooks` | 6 hours |
-| O2 | Open reconciliation exceptions | tag `operational_signal` equals `open_reconciliation_exceptions` | 6 hours |
-| O3 | Failed background jobs | tag `operational_signal` equals `failed_background_jobs` | 6 hours |
-| O4 | Exhausted email deliveries | tag `operational_signal` equals `exhausted_message_deliveries` | 6 hours |
+| O1 | Failed payment updates | tag `operational_signal` equals `failed_payment_webhooks` | 5 minutes (the app paces it) |
+| O2 | Open reconciliation exceptions | tag `operational_signal` equals `open_reconciliation_exceptions` | 5 minutes (the app paces it) |
+| O3 | Failed background jobs | tag `operational_signal` equals `failed_background_jobs` | 5 minutes (the app paces it) |
+| O4 | Exhausted email deliveries | tag `operational_signal` equals `exhausted_message_deliveries` | 5 minutes (the app paces it) |
 | A1 | **New error on checkout** | tag `area` equals `checkout`. Trigger: *A new issue is created* only (see above). Create it on the API project and again on the frontend project. | 5 minutes |
 | A2 | **New error in the webhook controller** | tag `area` equals `webhook`, API project. Trigger: *A new issue is created* | 5 minutes |
 | A3 | **New error on the scanner** | tag `area` equals `scanner`, API and frontend projects. Trigger: *A new issue is created* | 5 minutes |
 | A4 | **New error in box office** | tag `area` equals `box_office`, API and frontend projects. Trigger: *A new issue is created* | 5 minutes |
 | S1 | **Error spike on checkout** | tag `area` equals `checkout`, trigger *An event or issue activity is captured*, plus *Number of events is more than 5 in 5 minutes* (the issue-level frequency filter). Repeat for `webhook`, `scanner`, `box_office`. On the frontend project use 20 in 10 minutes. | 30 minutes |
-| N1 | Recovered / quiet / note messages (not an incident) | Trigger *An event or issue activity is captured*; tag `operational_state` is one of `recovered`, `quiet`, `note` and level equals `info` (this rule does **not** use the two exclusions). **Email only**, not chat push. | 30 minutes |
-| D1 | **Drill** (test alerts only) | tag `monitoring_test` equals `true` | none |
+| N1 | Recovered / quiet / note messages (not an incident) | Trigger *An event or issue activity is captured*; tag `operational_state` is one of `recovered`, `quiet`, `note` and level equals `info` (this rule does **not** use the two exclusions). **Email only**, not chat push. | 5 minutes |
+| D1 | **Drill** (test alerts only). Trigger: *An event or issue activity is captured*. If (all): `Event level equals error` and tagged event `monitoring_test` equals `true`. **It does not use `monitoring_test is not set`** (that would make it impossible to match), and it is not one of the incident rules. | none |
 | U1 | Readiness and uptime | An external uptime monitor as in `OPERATIONS_RUNBOOK.md` (not a Sentry rule) | n/a |
 
 **The one difference between production and staging:** the staging copy of W1 to O4, A1 to A4 and S1 leaves out the `monitoring_test is not set` filter, so a test alert can drive the real rule. Everything else is identical.
@@ -170,7 +170,7 @@ The test alert sends one event titled `[TEST] HafaPass monitoring test alert: <k
 | O1 to O4 | the matching signal kind | the matching O rule (staging copy), D1 | Push or email |
 | Phone path only | `sentry_connectivity` | D1 | Event appears in Issues and reaches your phone |
 
-A test issue notifies on every send with the *event captured* trigger; with a new-issue trigger it notifies only the first time. **Resolve and archive the `[TEST]` issues when finished** so they never get confused with a real incident.
+A test issue notifies on every send with the *event captured* trigger (at most once per rule throttle, 5 minutes on the signal rules, so wait five minutes between two sends of the same kind); with a new-issue trigger it notifies only the first time. **Resolve and archive the `[TEST]` issues when finished** so they never get confused with a real incident.
 
 **Production drill, once, before sales open:** send `sentry_connectivity`, then `stripe_webhooks_silent`. Only D1 should reach your phone. W1 must **not** (the exclusion works). Production tests are clearly labelled `[TEST]`; tell anyone else who gets these alerts first.
 
@@ -198,7 +198,7 @@ For an end-to-end check on staging: pause the Stripe test webhook destination fo
 | Audit | One JSON log line per request: `ops_summary_read`, outcome (`ok`, `unauthorized`, `not_configured`, `bad_request`), request id, date, client address. Never the token. A log line and not an `audit_logs` row because the token has no user to attribute a row to. Search Render logs for `ops_summary_read`. |
 | No PII | Counts, money, event titles, ticket type names. No buyer or attendee names, emails, phones, order references or provider ids. A spec fails if any appear. |
 
-**What it contains** for one Guam day (default yesterday; `?date=YYYY-MM-DD` or `?date=today`): orders, tickets, gross, refunds, fees by kind, door cash against online, the same by event, capacity left on events selling now, readiness checks, Stripe webhook health, job queue depth and age, and the operational signal counts. Orders count on the Guam day they completed; refunds on the day they succeeded. In production, test and simulated Stripe payments are excluded, the same rule as the admin dashboard. Sentry error counts are not included (that needs a Sentry API token).
+**What it contains** for one Guam day (default yesterday; `?date=YYYY-MM-DD` or `?date=today`): orders, tickets, gross, refunds, fees by kind, door cash against online, the same by event, capacity left on events selling now, readiness checks, Stripe webhook health (including paid payments from the last 7 days that still have no success webhook, so one that aged out of the alert window is not shown as all clear), job queue depth and age, and the operational signal counts. Orders count on the Guam day they completed; refunds on the day they succeeded. In production, test and simulated Stripe payments are excluded, the same rule as the admin dashboard. Sentry error counts are not included (that needs a Sentry API token).
 
 **Run it.**
 
@@ -226,7 +226,7 @@ See **Monitoring alerts: what they mean and the first three actions** in `INCIDE
 - [ ] Create `OPS_SUMMARY_TOKEN` (section 1), store it in your password manager, set it on the production and staging API services. Put it in a mode-600 file on the MacBook for the morning brief.
 - [ ] Confirm `SENTRY_DSN`, `SENTRY_ENVIRONMENT` and `SENTRY_ENABLED_ENVIRONMENTS` on both API services.
 - [ ] Choose your phone path (section 4: email + VIP, Slack, Discord, or a mix) and a backup contact.
-- [ ] Create the rules W1 to W4, O1 to O4, A1 to A4, S1, N1 and D1 in Sentry, production environment, with the two exclusions. Copy them to staging without the `monitoring_test` exclusion.
+- [ ] Create the rules W1 to W4, O1 to O4, A1 to A4, S1, N1 and D1 in Sentry, production environment, with the two exclusions on the incident rules (W1 to W4, O1 to O4, A1 to A4, S1); N1 and D1 are built as described in their table rows. Copy the incident rules to staging without the `monitoring_test is not set` exclusion. Set the throttles from the table (5 minutes on the `operational_signal` rules).
 - [ ] Run every test in section 5 on staging, then the production drill.
 - [ ] Resolve and archive the `[TEST]` issues.
 - [ ] Record the owner and date next to each rule in the OPERATIONS_RUNBOOK checklist.
