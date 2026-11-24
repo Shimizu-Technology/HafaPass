@@ -3,7 +3,9 @@
 // answers the request. To add a feature, create `./<feature>.js` exporting
 // `handle(ctx)` and add ONE import + ONE list entry below (see ../README.md).
 import * as baseline from './baseline'
+import * as emailCampaigns from './email-campaigns'
 
 export const DEMO_HANDLERS = [
+  emailCampaigns,
   baseline,
 ]

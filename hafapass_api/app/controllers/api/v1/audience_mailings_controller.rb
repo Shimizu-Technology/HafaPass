@@ -30,15 +30,21 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
       page = scope.limit(200).to_a
       consents = EmailConsent.where(email: page.map(&:email)).order(created_at: :desc).group_by(&:email)
       rows = page.map { |row| row.as_json.merge(consents: consents.fetch(row.email, []).first(30).as_json) }
-      render json: { subscribers: rows, count: scope.count, counts: PlatformSubscriber.group(:status).count,
-        growth: PlatformSubscriber.where("created_at >= ?", 90.days.ago).group("DATE(created_at)").count, eligible: draft.audience_emails.size }
+      considered = scope.count
+      # Display-only additions: `considered` and `status_breakdown` describe the filtered list so the
+      # screen can explain who is left out. Recipient selection still comes only from audience_emails.
+      render json: { subscribers: rows, count: considered, counts: PlatformSubscriber.group(:status).count,
+        growth: PlatformSubscriber.where("created_at >= ?", 90.days.ago).group("DATE(created_at)").count, eligible: draft.audience_emails.size,
+        considered: considered, status_breakdown: scope.unscope(:order).group(:status).count }
     else
-      emails = draft.audience_emails
+      mailing = draft
+      emails = mailing.audience_emails
       if params[:format] == "csv"
         AuditLogger.record!(action: "email.audience_exported", auditable: @organization, metadata: { scope: params[:audience], count: emails.size })
         return send_data(csv(emails.map { |email| [email] }), filename: "organizer-audience.csv")
       end
-      render json: { subscribers: emails.first(200).map { |email| { email: email } }, count: emails.size, eligible: emails.size }
+      render json: { subscribers: emails.first(200).map { |email| { email: email } }, count: emails.size, eligible: emails.size,
+        considered: [mailing.candidate_count, emails.size].max }
     end
   end
 
@@ -93,7 +99,7 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     delivery.requested_by = current_user
     delivery.save!
     MessageDeliveryJob.perform_later(delivery.id)
-    render json: { queued: true }
+    render json: { queued: true, recipient: current_user.email }
   end
 
   def send_now

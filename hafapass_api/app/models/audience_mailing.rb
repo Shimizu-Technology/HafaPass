@@ -32,15 +32,14 @@ class AudienceMailing < ApplicationRecord
     organization ? EmailPreferences.organizer_enabled?(organization, email) : PlatformSubscriber.find_by(email: email)&.status == "confirmed"
   end
 
+  # Display only: people in the chosen organizer list who match the search,
+  # before consent and suppression checks. Never used to select recipients.
+  def candidate_count
+    base_emails.count { |email| email.downcase.include?(filters["q"].to_s.downcase) }
+  end
+
   def audience_emails
-    emails = case audience
-    when "platform" then PlatformSubscriber.where(status: "confirmed").pluck(:email)
-    when "buyers" then Order.joins(:event).where(events: { organization_id: organization_id }).where(status: [:completed, :partially_refunded, :refunded]).pluck(:buyer_email)
-    when "followers" then OrganizerFollow.where(organization: organization).where.not(email_opted_in_at: nil).where.not(email_opted_in_address: nil).pluck(:email_opted_in_address)
-    when "waitlists" then WaitlistEntry.joins(:event).where(events: { organization_id: organization_id }).where.not(status: :cancelled).pluck(:email)
-    else []
-    end
-    emails = emails.map { |email| email.to_s.strip.downcase }.uniq.sort
+    emails = base_emails
     if audience == "platform"
       subscribers = PlatformSubscriber.where(email: emails, status: "confirmed")
       subscribers = subscribers.where(source: filters["source"]) if filters["source"].present?
@@ -67,6 +66,18 @@ class AudienceMailing < ApplicationRecord
     end
     emails - blocked
   end
+
+  def base_emails
+    emails = case audience
+    when "platform" then PlatformSubscriber.where(status: "confirmed").pluck(:email)
+    when "buyers" then Order.joins(:event).where(events: { organization_id: organization_id }).where(status: [:completed, :partially_refunded, :refunded]).pluck(:buyer_email)
+    when "followers" then OrganizerFollow.where(organization: organization).where.not(email_opted_in_at: nil).where.not(email_opted_in_address: nil).pluck(:email_opted_in_address)
+    when "waitlists" then WaitlistEntry.joins(:event).where(events: { organization_id: organization_id }).where.not(status: :cancelled).pluck(:email)
+    else []
+    end
+    emails.map { |email| email.to_s.strip.downcase }.uniq.sort
+  end
+  private :base_emails
 
   def block_reason
     return "Missing mailing address or marketing permission" unless authorized? && address.present?
