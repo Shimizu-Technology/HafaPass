@@ -64,7 +64,8 @@ module Api
         end
 
         def valid_address?(address)
-          address.bytesize <= 254 && URI::MailTo::EMAIL_REGEXP.match?(address) && !address.end_with?("@boxoffice.local")
+          address.bytesize <= 254 && URI::MailTo::EMAIL_REGEXP.match?(address) &&
+            Commerce::BoxOfficeReceipt.deliverable_address?(address)
         end
 
         def add_email!(order, address)

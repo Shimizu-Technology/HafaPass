@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Mail, Printer, QrCode, X } from 'lucide-react'
 import QRCode from '../../components/QRCode'
-import { formatEventDateTime } from '../../utils/eventTime'
+import { eventTimeZone, formatEventDateTime } from '../../utils/eventTime'
 import './boxOfficePrint.css'
 
 const emailInProgress = ['queued', 'sent', 'delivered', 'delayed']
-const actionClass = 'btn-secondary min-h-12 justify-center px-4'
+const actionClass = 'btn-secondary min-h-12 gap-2 justify-center px-4'
 
-export default function BoxOfficeReceipt({ eventId, order, requestApi, current }) {
+export default function BoxOfficeReceipt({ eventId, order, requestApi, current, onReceiptChange }) {
   const { t } = useTranslation()
   const [receipt, setReceipt] = useState(order.receipt ?? null)
   const [loadError, setLoadError] = useState(false)
@@ -37,9 +37,16 @@ export default function BoxOfficeReceipt({ eventId, order, requestApi, current }
   }, [current, orderPath, requestApi])
 
   useEffect(() => { if (!order.receipt) loadReceipt() }, [order.receipt, loadReceipt])
+  // Hand every update (reload, email status) back to the page so a remount starts from what staff last saw.
   useEffect(() => {
+    if (receipt && receipt !== order.receipt) onReceiptChange?.(receipt)
+  }, [receipt, order.receipt, onReceiptChange])
+  // Only a sale that just completed takes focus; a restored receipt must not pull focus from the page.
+  useEffect(() => {
+    if (!order.fresh) return
     heading.current?.focus({ preventScroll: true })
     heading.current?.scrollIntoView?.({ block: 'nearest' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const sendEmail = async event => {
@@ -66,12 +73,13 @@ export default function BoxOfficeReceipt({ eventId, order, requestApi, current }
     ? t('boxOfficeReceipt.orderUpdated')
     : t('boxOfficeReceipt.saleComplete')
   const emailRecorded = emailInProgress.includes(receipt?.email_status)
+  const emailSuppressed = receipt?.email_status === 'suppressed'
 
   return (
     <section className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5" aria-labelledby="box-office-receipt-title">
       <div className="flex items-center gap-2">
         <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0 text-emerald-700" />
-        <h3 ref={heading} tabIndex={-1} id="box-office-receipt-title" className="font-semibold text-emerald-950">{headingText}</h3>
+        <h3 ref={heading} tabIndex={-1} data-route-focus id="box-office-receipt-title" className="font-semibold text-emerald-950">{headingText}</h3>
       </div>
       {loadError && <div className="mt-3">
         <p role="alert" className="text-sm text-red-800">{t('boxOfficeReceipt.loadError')}</p>
@@ -92,13 +100,13 @@ export default function BoxOfficeReceipt({ eventId, order, requestApi, current }
               <Printer aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeReceipt.print')}
             </button>
           </>}
-          {receipt.email_available && !emailRecorded && <button type="button" className={actionClass} aria-expanded={emailOpen}
+          {receipt.email_available && !emailRecorded && !emailSuppressed && <button type="button" className={actionClass} aria-expanded={emailOpen}
             onClick={() => setEmailOpen(value => !value)}>
             <Mail aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeReceipt.email')}
           </button>}
         </div>
         {qrShown && <p role="status" className="mt-2 text-sm text-emerald-950">{t('boxOfficeReceipt.qrShown')}</p>}
-        {receipt.email_status === 'suppressed' && <p role="status" className="mt-2 text-sm text-amber-900">
+        {emailSuppressed && <p role="status" className="mt-2 text-sm text-amber-900">
           {t('boxOfficeReceipt.emailUnavailable')}
         </p>}
         {printOpened && <p role="status" className="mt-2 text-sm text-emerald-950">{t('boxOfficeReceipt.printOpened')}</p>}
@@ -156,7 +164,7 @@ function TicketDetails({ ticket, receipt, t }) {
     <div className="space-y-1 break-words [overflow-wrap:anywhere]">
       <h4 className="text-xl font-bold">{receipt.event_title}</h4>
       {ticket.pass_night && <p className="font-semibold">{event.title}</p>}
-      <p>{formatEventDateTime(event.starts_at, event.timezone || 'Pacific/Guam', { locale: 'en-US' })}</p>
+      <p>{formatEventDateTime(event.starts_at, eventTimeZone(event.timezone), { locale: 'en-US' })}</p>
       <p>{[event.venue_name, event.venue_address].filter(Boolean).join(' · ')}</p>
       <p className="font-semibold">{[ticket.tier, ticket.seat].filter(Boolean).join(' · ')}</p>
       {ticket.attendee_name && <p>{ticket.attendee_name}</p>}

@@ -119,4 +119,65 @@ RSpec.describe "Box office receipts", type: :request do
     expect(response).to have_http_status(:accepted)
     expect(response.parsed_body.fetch("email_status")).to eq("queued")
   end
+
+  it "reloads a 20-ticket receipt with the same few queries as a single ticket" do
+    reload_query_count = lambda do |order|
+      count = 0
+      counter = lambda do |*, payload|
+        count += 1 unless payload[:name] == "SCHEMA" || payload[:sql].match?(/\A\s*(BEGIN|COMMIT|SAVEPOINT|RELEASE)/i)
+      end
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        get "#{sale_path}/orders/#{order.id}", headers: headers
+      end
+      expect(response).to have_http_status(:ok)
+      count
+    end
+    single = reload_query_count.call(record_sale(ticket_type: ticket_type))
+    twenty_order = record_sale(ticket_type: ticket_type, quantity: 20)
+    twenty = reload_query_count.call(twenty_order)
+    expect(response.parsed_body.fetch("admissions").size).to eq(20)
+    expect(twenty).to eq(single)
+    expect(twenty).to be <= 16
+  end
+
+  it "does not let a shared cache keep the sale response that carries scan credentials" do
+    record_sale(ticket_type: ticket_type)
+    expect(response.headers["Cache-Control"]).to eq("private, no-store")
+  end
+
+  it "reports a suppressed address consistently after reload and stays suppressed on retry" do
+    PrivacyEmailSuppression.suppress!("optout@example.test")
+    order = record_sale(ticket_type: ticket_type)
+    post "#{sale_path}/orders/#{order.id}/email", params: { email: " OptOut@Example.test " }, headers: headers
+    expect(response).to have_http_status(:accepted)
+    expect(response.parsed_body).to eq("email" => "optout@example.test", "email_status" => "suppressed")
+    expect(order.message_deliveries.last.recipient).to eq("deleted@privacy.invalid")
+
+    get "#{sale_path}/orders/#{order.id}", headers: headers
+    expect(response.parsed_body).to include("email" => "optout@example.test", "email_status" => "suppressed")
+  end
+
+  it "ignores surrounding whitespace on the address already on the order" do
+    order = record_sale(ticket_type: ticket_type, buyer_email: "player@example.test")
+    order.update_columns(buyer_email: " Player@Example.test ")
+    expect do
+      post "#{sale_path}/orders/#{order.id}/email", params: { email: "player@example.test" }, headers: headers
+    end.not_to change { order.reload.buyer_email }
+    expect(response).to have_http_status(:accepted)
+    get "#{sale_path}/orders/#{order.id}", headers: headers
+    expect(response.parsed_body.fetch("email")).to eq("Player@Example.test")
+  end
+
+  it "treats reserved placeholder addresses as no buyer email and refuses to add one" do
+    order = record_sale(ticket_type: ticket_type)
+    %w[guest@hafapass.invalid deleted+order-1@privacy.invalid walkin@boxoffice.local].each do |placeholder|
+      post "#{sale_path}/orders/#{order.id}/email", params: { email: placeholder }, headers: headers
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+    expect(order.message_deliveries.where(template: "fulfillment_resend")).to be_empty
+
+    order.update_columns(buyer_email: "deleted+order-#{order.id}@privacy.invalid")
+    get "#{sale_path}/orders/#{order.id}", headers: headers
+    expect(response.parsed_body).to include("email" => nil, "email_status" => nil)
+  end
 end

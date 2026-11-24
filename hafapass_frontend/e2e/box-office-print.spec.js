@@ -97,3 +97,48 @@ for (const [width, admissions] of [[390, widePass], [1280, bulk]]) {
     await expect(page.getByText('Ticket email queued for player@example.test.')).toBeVisible()
   })
 }
+
+for (const width of [390, 1280]) {
+  test(`a failed next sale never brings back the previous buyer's receipt at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await prepare(page, bulk.slice(0, 2))
+    await page.goto('/dashboard/events/601/box-office')
+    await page.getByRole('button', { name: 'Add Admission' }).click()
+    await page.getByRole('button', { name: /Process sale/ }).click()
+    await expect(page.getByText('Sale complete!')).toBeVisible()
+
+    await page.route(`${base}/box_office`, route => route.fulfill({ status: 422, json: { error: 'Only 0 Admission left.' } }))
+    await page.getByRole('button', { name: 'Add Admission' }).click()
+    await page.getByRole('button', { name: /Process sale/ }).click()
+    const alert = page.getByRole('alert').filter({ hasText: 'Only 0 Admission left.' })
+    await expect(alert).toBeVisible()
+    await expect(alert).toBeFocused()
+    await expect(page.getByText('Sale complete!')).toHaveCount(0)
+    await expect(page.getByText('DEMO-W4A')).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    const evidence = env.HAFAPASS_W4A_QA_DIR
+    if (evidence) {
+      await mkdir(evidence, { recursive: true })
+      await page.screenshot({ path: `${evidence}/failed-next-sale-${width}.png` })
+    }
+  })
+}
+
+test('a weak-signal count refresh after a sale keeps the receipt and QR on screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await prepare(page, bulk.slice(0, 2))
+  await page.goto('/dashboard/events/601/box-office')
+  await page.getByRole('button', { name: 'Add Admission' }).click()
+  await page.route(base, route => route.abort('failed'))
+  await page.getByRole('button', { name: /Process sale/ }).click()
+  await expect(page.getByText('Ticket counts may be out of date.')).toBeVisible()
+  await expect(page.getByText('Sale complete!')).toBeVisible()
+  await page.getByRole('button', { name: 'Show QR' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Show QR' })
+  await expect(dialog.getByText('Ticket 1 of 2')).toBeVisible()
+  await page.route(base, route => route.fulfill({ json: event }))
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.getByText('Ticket counts may be out of date.')).toHaveCount(0)
+  await expect(page.getByText('Sale complete!')).toBeVisible()
+})

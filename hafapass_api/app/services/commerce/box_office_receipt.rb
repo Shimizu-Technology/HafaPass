@@ -3,9 +3,22 @@
 module Commerce
   class BoxOfficeReceipt
     ACTIVE_EMAIL_STATUSES = %w[queued sent delivered delayed].freeze
+    # Reserved placeholder domains can never receive mail, so they never count
+    # as a buyer address (walk-in placeholder, guest list, privacy deletion).
+    PLACEHOLDER_DOMAINS = %w[@boxoffice.local @hafapass.invalid @privacy.invalid].freeze
+    # Deliveries suppressed at creation (privacy deletion) store this recipient
+    # instead of the buyer address, so a reload must look for it too.
+    SUPPRESSED_RECIPIENT = "deleted@privacy.invalid"
+
+    def self.deliverable_address?(address)
+      normalized = address.to_s.strip.downcase
+      normalized.present? && PLACEHOLDER_DOMAINS.none? { |domain| normalized.end_with?(domain) }
+    end
 
     def initialize(order)
       @order = order
+      # One query per association instead of one per ticket and per check.
+      ActiveRecord::Associations::Preloader.new(records: [order], associations: [:disputes, :refunds, :payments]).call
     end
 
     def as_json
@@ -29,12 +42,13 @@ module Commerce
     def email_status
       return unless email
 
-      order.message_deliveries.ticket_email.where(recipient: email.downcase).order(id: :desc).pick(:status)
+      order.message_deliveries.ticket_email.where(recipient: [email.downcase, SUPPRESSED_RECIPIENT])
+        .order(id: :desc).pick(:status)
     end
 
     def email
-      address = order.buyer_email
-      address if address.present? && !address.downcase.end_with?("@boxoffice.local")
+      address = order.buyer_email.to_s.strip
+      address if self.class.deliverable_address?(address)
     end
 
     private

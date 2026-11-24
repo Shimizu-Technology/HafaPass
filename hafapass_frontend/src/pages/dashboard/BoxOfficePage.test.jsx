@@ -179,3 +179,101 @@ it.each(['door_cash', 'door_card'])('does not suggest cash while a saved %s sale
   expect(await screen.findByText(/Card payments at the door aren't available/)).not.toHaveTextContent('Use cash')
   expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
 })
+
+describe('receipt stays dependable on bad signal', () => {
+  const eventBody = { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] }
+  const sale = (id, reference) => ({ data: { id, status: 'completed', total_cents: 500, receipt: { ...receipt, id, reference } } })
+  const receiptKey = 'hafapass:box-office-receipt:local-preview:default:37'
+
+  // `eventReply` decides how each event request after the first one answers.
+  const serve = eventReply => {
+    let eventCalls = 0
+    apiClient.get.mockImplementation(url => {
+      if (url === '/config') return Promise.resolve({ data: { launch_capabilities: { door_card: true } } })
+      if (url === '/organizer/card_present_account') return Promise.resolve({ data: { payment_ready: true } })
+      if (url.endsWith('/summary')) return Promise.resolve({ data: {} })
+      eventCalls += 1
+      return eventCalls === 1 ? Promise.resolve({ data: eventBody }) : eventReply()
+    })
+  }
+  const sell = async user => {
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
+  }
+
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+
+  it.each([
+    ['a lost connection', () => Promise.reject(new Error('Network Error'))],
+    ['a server error', () => Promise.reject({ response: { status: 503 } })],
+  ])('keeps the receipt when the count refresh after a sale fails with %s', async (_label, eventReply) => {
+    serve(eventReply)
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Sale complete!')).toBeInTheDocument()
+    expect(await screen.findByText('Ticket counts may be out of date.')).toBeInTheDocument()
+    expect(screen.getByText(/DEMO-A/)).toBeInTheDocument()
+    expect(screen.queryByText('Failed to load event.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Admission' })).toBeEnabled()
+
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/summary') ? {} : eventBody }))
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByText('Ticket counts may be out of date.')).not.toBeInTheDocument())
+    expect(screen.getByText('Sale complete!')).toBeInTheDocument()
+  })
+
+  it.each([401, 403, 404])('still fails closed when the refresh after a sale reports %s', async status => {
+    serve(() => Promise.reject({ response: { status } }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Failed to load event.')).toBeInTheDocument()
+    expect(screen.queryByText('Sale complete!')).not.toBeInTheDocument()
+  })
+
+  it('fails closed when the refreshed event no longer grants box office access', async () => {
+    serve(() => Promise.resolve({ data: { ...eventBody, permissions: { box_office: false } } }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Failed to load event.')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['sold out', { response: { status: 422, data: { error: 'Only 0 Admission left.' } } }, 'Only 0 Admission left.'],
+    ['price changed', { response: { status: 409, data: { code: 'price_changed', error: 'Ticket price changed. Review the updated total before paying.' } } }, 'Ticket price changed. Review the updated total before paying.'],
+  ])('dismisses the previous buyer\'s receipt and focuses the error when the next sale is %s', async (_label, failure, message) => {
+    serve(() => Promise.resolve({ data: eventBody }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Sale complete!')).toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBe('922')
+
+    apiClient.post.mockRejectedValueOnce(failure)
+    await sell(user)
+    const alert = await screen.findByText(message)
+    expect(screen.queryByText('Sale complete!')).not.toBeInTheDocument()
+    expect(screen.queryByText(/DEMO-A/)).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBeNull()
+    expect(document.activeElement).toBe(alert.closest('[role="alert"]'))
+  })
+
+  it('shows only the newest buyer\'s receipt after two sales', async () => {
+    serve(() => Promise.resolve({ data: eventBody }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A')).mockResolvedValueOnce(sale(923, 'DEMO-B'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    await screen.findByText(/DEMO-A/)
+    await sell(user)
+    expect(await screen.findByText(/DEMO-B/)).toBeInTheDocument()
+    expect(screen.queryByText(/DEMO-A/)).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBe('923')
+  })
+})
