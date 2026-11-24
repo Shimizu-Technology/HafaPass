@@ -51,31 +51,23 @@ test.describe('Mockup D — Combined Clean Version checks', () => {
     test(`meets all layout, straightness, single-line chip, and tap-target gates at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height })
 
-      // 1. Home: flat hero, Copa "From $11.50", single-line ChipRows, straight deck, straight QR story
+      // 1. Home: flat hero deck, single-line ChipRows, straight QR story
       await page.goto('/')
       await expect(page.locator('h1.hero-rise')).toBeVisible()
-      const heroPass = page.locator('.featured-pass').first()
-      await expect(heroPass).toBeVisible()
-      expect(await heroPass.evaluate(el => getComputedStyle(el).transform)).toBe('none')
-      await expect(heroPass).toContainText('From $11.50')
-      await expect(heroPass).toContainText('Free tickets available')
+      const deck = page.getByTestId('hero-fanned-deck')
+      await expect(deck).toBeVisible()
+      await expect(deck).toHaveAttribute('data-active-index', '0')
       await expectNoHorizontalOverflow(page)
       await expectAllChipRowsSingleLine(page)
 
-      // Stub deck: straight top card, no text overlay on artwork, next/prev work, 44px controls
-      const deck = page.getByTestId('event-stub-deck')
-      await expect(deck).toBeVisible()
-      const topCard = deck.locator('[data-top="true"]')
-      expect(await topCard.evaluate(el => getComputedStyle(el).transform)).toBe('none')
-      // Cover container contains only the <img> (no overlaid text nodes)
-      const artText = await topCard.locator('.aspect-video').innerText()
-      expect(artText.trim()).toBe('')
-      const nextBtn = deck.getByRole('button', { name: 'Next featured event' })
+      const nextBtn = deck.getByRole('button', { name: 'Next featured pass' })
       const nextBox = await nextBtn.boundingBox()
       expect(nextBox.height).toBeGreaterThanOrEqual(44)
       expect(nextBox.width).toBeGreaterThanOrEqual(44)
       await nextBtn.click()
-      await expect(deck.getByTestId('deck-live-status')).toContainText('2 of 4:')
+      await expect(deck).toHaveAttribute('data-active-index', '1')
+      await expect(deck.locator('[data-front="true"]')).toContainText('From $11.50')
+      await expect(deck.locator('[data-front="true"]')).toContainText('Free tickets available')
 
       // QR story: scroll to bottom of story and assert settled 0° straight stub + crisp Admitted pill
       const story = page.getByTestId('perforated-stub-story')
@@ -164,16 +156,16 @@ test.describe('Mockup D — Combined Clean Version checks', () => {
     const page = await context.newPage()
 
     await page.goto('/')
-    expect(await page.locator('.featured-pass').first().evaluate(el => getComputedStyle(el).transform)).toBe('none')
+    const deck = page.getByTestId('hero-fanned-deck')
+    await expect(deck).toHaveAttribute('data-paused', 'true')
     const story = page.getByTestId('perforated-stub-story')
     await expect(story).toHaveAttribute('data-mode', 'still')
     await expect(story).toHaveAttribute('data-step', 'done')
     expect(isPureTranslateOrNone(await page.getByTestId('stub-story-stub').evaluate(el => getComputedStyle(el).transform))).toBe(true)
     expect(isPureTranslateOrNone(await page.getByTestId('stub-story-admitted').evaluate(el => getComputedStyle(el).transform))).toBe(true)
 
-    const deck = page.getByTestId('event-stub-deck')
-    await deck.getByRole('button', { name: 'Next featured event' }).click()
-    await expect(deck.getByTestId('deck-live-status')).toContainText('2 of 4:')
+    await deck.getByRole('button', { name: 'Next featured pass' }).click()
+    await expect(deck).toHaveAttribute('data-active-index', '1')
     await expectNoHorizontalOverflow(page)
 
     await page.goto('/orders/demo-copa-2027/confirmation')

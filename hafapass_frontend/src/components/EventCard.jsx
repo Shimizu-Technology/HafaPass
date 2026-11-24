@@ -34,12 +34,12 @@ export default function EventCard({ event }) {
       <div className="ticket event-ticket">
       <TicketTop>
       {/* Image */}
-      <div className={hasArtwork ? 'h-44 overflow-hidden bg-neutral-100 relative' : 'relative h-44 bg-brand-800'}>
+      <div className={hasArtwork ? 'relative aspect-video overflow-hidden bg-neutral-100' : 'relative h-44 bg-brand-800'}>
         {hasArtwork ? (
           <img
             src={event.cover_image_url}
             alt={content.title}
-            width="800" height="500" loading="lazy"
+            width="1600" height="900" loading="lazy"
             onError={() => setFailedArtwork(event.cover_image_url)}
             className="w-full h-full object-cover"
             style={{ objectPosition: focalPosition(event.page_customization) }}

@@ -438,12 +438,12 @@
    still state is the finished page; motion only plays when the component's
    useMotionOk gate allows it, and the reduced-motion rule above stops the
    rest. Checkout, forms, dashboards and the scanner never use these. */
-.hero-rise-mask { display: inline-block; overflow: clip; vertical-align: bottom; padding-bottom: 0.08em; margin-bottom: -0.08em; }
-.hero-rise-word { display: inline-block; }
+.hero-rise-clip { overflow: clip; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+.hero-rise { text-wrap: wrap; }
 @media (prefers-reduced-motion: no-preference) {
-  .hero-rise-word { animation: hero-word-rise 520ms cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--word, 0) * 45ms); }
+  .hero-rise { animation: hero-headline-rise 580ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 }
-@keyframes hero-word-rise { from { transform: translateY(108%); } to { transform: translateY(0); } }
+@keyframes hero-headline-rise { from { transform: translate3d(0, 26px, 0); } to { transform: translate3d(0, 0, 0); } }
 
 /* Pure CSS replacements for ScrollReveal & TicketPage motion (zero framer-motion). */
 .scroll-reveal,
@@ -551,25 +551,43 @@
   .door-result-pop { animation: door-result-enter 240ms cubic-bezier(0.23, 1, 0.32, 1) both; }
 }
 
-/* Flat production hero pass: no perspective, no 3D, no tilt. */
+/* Flat hero deck: smooth 620ms glide using composite-only transform & opacity. */
 .featured-pass-stage { max-width: 26rem; width: 100%; margin-inline: auto; }
 .featured-pass { filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28)); }
 .featured-pass:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
 .featured-ticket { --notch-radius: 14px; }
 
-/* Swipeable stub deck: straight stack, drag tilt only while pointer moves. */
-.stub-deck { position: relative; }
-.stub-deck-card {
-  grid-area: 1 / 1;
+.hero-deck-stage {
   touch-action: pan-y;
+  filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.28));
+}
+.hero-deck-card {
+  transform-origin: center bottom;
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1), opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1), opacity 240ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform, opacity;
 }
-.stub-deck-card[data-top="true"] { cursor: grab; }
-.stub-deck-card[data-dragging="true"] { transition: none; cursor: grabbing; }
+.hero-deck-back-veil {
+  background: linear-gradient(180deg, rgb(226 232 240 / 0.25) 0%, rgb(226 232 240 / 0.88) 72%, rgb(226 232 240 / 0.96) 100%);
+  transition: opacity 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hero-deck-link { transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.hero-deck-link:active { transform: scale(0.985); }
+.hero-deck-link:focus-visible { outline: 3px solid var(--focus-ring, theme('colors.focus')); outline-offset: 4px; }
+.hero-deck-dot { transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease; }
+.hero-deck-nav { transition: background-color 150ms ease, border-color 150ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+@media (hover: hover) and (pointer: fine) {
+  .hero-deck-nav:hover { background-color: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.34); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .stub-deck-card { transition: none; }
+  .hero-deck-card,
+  .hero-deck-back-veil,
+  .hero-deck-link,
+  .hero-deck-dot,
+  .hero-deck-nav { transition: none !important; will-change: auto; }
+  .hero-deck-link:active,
+  .hero-deck-nav:active { transform: none !important; }
 }
 
 /* Pinned QR assembly story: fits phone cleanly and settles dead straight. */

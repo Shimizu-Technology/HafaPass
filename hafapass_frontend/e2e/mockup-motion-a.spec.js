@@ -24,7 +24,7 @@ test.describe('Option A — Subtle Polish motion checks', () => {
       await page.goto('/')
       const h1 = page.locator('h1.hero-rise')
       await expect(h1).toBeVisible()
-      await expect(h1.locator('.hero-rise-mask .hero-rise-word').first()).toHaveCSS('opacity', '1')
+      await expect(h1).toHaveCSS('opacity', '1')
       await expectNoHorizontalOverflow(page)
 
       // 2. Event Detail: tactile ticket stepper + crisp selected tier border
@@ -57,9 +57,9 @@ test.describe('Option A — Subtle Polish motion checks', () => {
     const page = await context.newPage()
 
     await page.goto('/')
-    const word = page.locator('.hero-rise-word').first()
-    await expect(word).toBeVisible()
-    await expect(word).toHaveCSS('animation-name', 'none')
+    const h1 = page.locator('h1.hero-rise')
+    await expect(h1).toBeVisible()
+    await expect(h1).toHaveCSS('animation-name', 'none')
     await expectNoHorizontalOverflow(page)
 
     await page.goto('/orders/demo-copa-2027/confirmation')
