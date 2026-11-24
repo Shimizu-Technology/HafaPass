@@ -46,6 +46,8 @@ function AdminGate({ children }) {
 }
 
 export default function AdminRoute({ children, clerkConfigured = Boolean(clerkPubKey) }) {
+  // Preview only: the demo staff identity is a fictional platform admin.
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return <>{children}</>
   if (!clerkConfigured && !import.meta.env.PROD) return <>{children}</>
   if (!clerkConfigured) return <p className="mx-auto max-w-md px-4 py-12" role="alert">Sign-in is temporarily unavailable. Please try again later.</p>
   return <AdminGate>{children}</AdminGate>
