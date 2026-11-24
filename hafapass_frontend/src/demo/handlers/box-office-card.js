@@ -34,7 +34,7 @@ function view(sale, event) {
 }
 
 export async function handle({ method, path, body, config, state }) {
-  if (!path.startsWith(eventPath)) return undefined
+  if (path !== eventPath && !path.startsWith(`${eventPath}/`)) return undefined
   const event = state.staff.events.find(item => item.id === 101)
   if (!event) return undefined
   if (method === 'get' && path === eventPath) {

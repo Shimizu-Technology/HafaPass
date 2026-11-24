@@ -1463,51 +1463,6 @@
       "promptFailed": "Use your browser’s menu to add HåfaPass to your home screen."
     }
   },
-  "boxOfficeCard": {
-    "link": "Pay on buyer’s phone",
-    "keyed": "Enter card on this device",
-    "prepare": "Prepare Stripe checkout",
-    "feeHelp": "Stripe shows the full total, including applicable online service fees, before payment.",
-    "loading": "Loading saved payment…",
-    "refresh": "Refresh payment status",
-    "cancel": "Cancel sale",
-    "nextSale": "Start next sale",
-    "retrySetup": "Retry payment setup",
-    "scanToPay": "Scan to pay",
-    "qrLabel": "Stripe payment QR",
-    "buyerScan": "Ask the buyer to scan with their phone camera.",
-    "keyedHelp": "Enter the card on Stripe. Return here to confirm payment before handing over tickets.",
-    "openStripe": "Open Stripe checkout",
-    "declined": "Stripe declined the card. Retry on the same checkout or cancel.",
-    "expiresAt": "Reservation expires {{time}}.",
-    "expiredHelp": "The ticket reservation ended. Any late payment will be refunded.",
-    "emailLink": "Email payment link",
-    "emailQueued": "Payment link email requested.",
-    "connectionError": "Could not confirm payment status. Check the connection and refresh before starting another sale.",
-    "storageError": "Could not clear the local sale reference. Reload the box office and try again.",
-    "stripeRecords": "the Stripe payment records",
-    "channel": {
-      "door_card_link": "Phone checkout",
-      "door_card_keyed": "Staff-keyed checkout"
-    },
-    "ticketPosition": "Ticket {{number}} of {{total}}",
-    "previous": "Previous ticket",
-    "next": "Next ticket",
-    "enableAdmin": "Enable online door card sales",
-    "disableAdmin": "Disable online door card sales",
-    "returnFinished": "Checkout finished",
-    "returnCancelled": "Checkout closed",
-    "returnHelp": "Ask the box office to check your payment and give you your tickets.",
-    "state": {
-      "waiting": "Waiting for payment…",
-      "paid": "Paid — tickets ready",
-      "paidUnavailable": "Paid — check ticket status",
-      "expired": "Expired",
-      "failed": "Failed",
-      "cancelled": "Cancelled",
-      "refunded": "Refunded"
-    }
-  },
   "pageTitles": {
     "dashboard": "Dashboard",
     "createEvent": "Create event",
@@ -1631,6 +1586,51 @@
       "Missing mailing address or marketing permission": "Missing mailing address or marketing permission",
       "Invalid schedule": "Invalid schedule",
       "Schedule expired; create and confirm a new mailing": "Schedule expired; create and confirm a new mailing"
+    }
+  },
+  "boxOfficeCard": {
+    "link": "Pay on buyer’s phone",
+    "keyed": "Enter card on this device",
+    "prepare": "Prepare Stripe checkout",
+    "feeHelp": "Stripe shows the full total, including applicable online service fees, before payment.",
+    "loading": "Loading saved payment…",
+    "refresh": "Refresh payment status",
+    "cancel": "Cancel sale",
+    "nextSale": "Start next sale",
+    "retrySetup": "Retry payment setup",
+    "scanToPay": "Scan to pay",
+    "qrLabel": "Stripe payment QR",
+    "buyerScan": "Ask the buyer to scan with their phone camera.",
+    "keyedHelp": "Enter the card on Stripe. Return here to confirm payment before handing over tickets.",
+    "openStripe": "Open Stripe checkout",
+    "declined": "Stripe declined the card. Retry on the same checkout or cancel.",
+    "expiresAt": "Reservation expires {{time}}.",
+    "expiredHelp": "The ticket reservation ended. Any late payment will be refunded.",
+    "emailLink": "Email payment link",
+    "emailQueued": "Payment link email requested.",
+    "connectionError": "Could not confirm payment status. Check the connection and refresh before starting another sale.",
+    "storageError": "Could not clear the local sale reference. Reload the box office and try again.",
+    "stripeRecords": "the Stripe payment records",
+    "channel": {
+      "door_card_link": "Phone checkout",
+      "door_card_keyed": "Staff-keyed checkout"
+    },
+    "ticketPosition": "Ticket {{number}} of {{total}}",
+    "previous": "Previous ticket",
+    "next": "Next ticket",
+    "enableAdmin": "Enable online door card sales",
+    "disableAdmin": "Disable online door card sales",
+    "returnFinished": "Checkout finished",
+    "returnCancelled": "Checkout closed",
+    "returnHelp": "Ask the box office to check your payment and give you your tickets.",
+    "state": {
+      "waiting": "Waiting for payment…",
+      "paid": "Paid — tickets ready",
+      "paidUnavailable": "Paid — check ticket status",
+      "expired": "Expired",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "refunded": "Refunded"
     }
   },
   "eventActions": {
