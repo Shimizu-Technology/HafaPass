@@ -6,6 +6,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { signInDestination } from '../utils/authDestination'
 import PageLoading from './PageLoading'
 import { clerkPublishableKey } from '../utils/demoMode'
+import { isWorkspacePath } from '../utils/workspacePath'
 
 const DemoAccountNotice = import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' ? lazy(() => import('../demo/DemoAccountNotice')) : null
 
@@ -26,7 +27,12 @@ function AuthGate({ children }) {
 }
 
 export default function ProtectedRoute({ children }) {
-  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return <Suspense><DemoAccountNotice /></Suspense>
+  const location = useLocation()
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') {
+    // Preview only: staff screens open with the fictional demo staff identity;
+    // buyer account pages (my tickets, saved) keep the sign-in-is-off notice.
+    return isWorkspacePath(location.pathname) ? <>{children}</> : <Suspense><DemoAccountNotice /></Suspense>
+  }
   // If Clerk is not configured, allow access (dev mode without auth)
   if (!clerkPubKey && !import.meta.env.PROD) {
     return <>{children}</>

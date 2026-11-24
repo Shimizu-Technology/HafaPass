@@ -12,7 +12,7 @@ export default function DemoPreviewBanner() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-3 gap-y-1">
         <span className="inline-flex items-center gap-1.5 font-semibold">
           <span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-600" />
-          Demo preview · fictional data
+          Demo preview · fictional data, nothing is saved
         </span>
         <span aria-hidden="true" className="hidden text-amber-700/60 sm:inline">|</span>
         <span className="inline-flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-amber-900">
