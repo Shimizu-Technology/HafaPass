@@ -117,7 +117,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(alumniButton).toHaveAttribute('aria-pressed', 'true')
     await expect(door).toContainText('Verify before admitting')
     await expect(door).toContainText('Calla Yorke')
-    await door.getByRole('button', { name: 'Confirm & Admit', exact: true }).click()
+    await door.getByRole('button', { name: 'Admit', exact: true }).click()
     await expect(door).toContainText('Admitted')
     await door.getByRole('button', { name: 'Adult', exact: true }).click()
     await expect(door).toContainText('Avery Lindqvist')
