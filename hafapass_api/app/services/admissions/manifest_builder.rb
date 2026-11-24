@@ -82,26 +82,37 @@ module Admissions
     attr_reader :event, :actor
 
     def manifest_tickets
-      event.tickets.scannable.preload(:ticket_type, :inventory_retention, :pending_refund_tickets, :last_entry_device,
+      re_entry_enabled = event.re_entry_enabled?
+      preloads = [
+        :ticket_type, :inventory_retention, :pending_refund_tickets,
         { parent_ticket: [:pending_refund_tickets, :inventory_retention] },
         { order: [:disputes, :refunds, :payments, { registration_responses: :registration_question }] },
-        event_seat: { venue_seat: { seating_row: :seating_section } }).order(:id).map do |ticket|
-        {
+        { event_seat: { venue_seat: { seating_row: :seating_section } } }
+      ]
+      preloads << :last_entry_device if re_entry_enabled
+
+      event.tickets.scannable.preload(*preloads).order(:id).map do |ticket|
+        entry = {
           ticket_id: ticket.id,
           code: "HP-T#{ticket.id}",
           credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential),
           ticket_type: [ticket.ticket_type.name, ticket.seat_label].compact.join(" · "),
           seat: ticket.seat_label,
           state: admission_state(ticket),
-          occupancy_state: ticket.occupancy_state,
-          occupancy_day: ticket.occupancy_day&.iso8601,
-          last_entry_at: ticket.last_entry_at&.iso8601(6),
-          last_entry_gate: ticket.last_entry_device&.name,
-          last_exit_at: ticket.last_exit_at&.iso8601(6),
-          re_entry_count: ticket.re_entry_count,
-          re_entry_conflict_flagged: ticket.re_entry_conflict_flagged,
           reversed_admission_action_uuids: reversed_admissions_by_ticket.fetch(ticket.id, [])
-        }.merge(DoorPayload.call(ticket))
+        }
+        if re_entry_enabled
+          entry.merge!(
+            occupancy_state: ticket.occupancy_state,
+            occupancy_day: ticket.occupancy_day&.iso8601,
+            last_entry_at: ticket.last_entry_at&.iso8601(6),
+            last_entry_gate: ticket.last_entry_device&.name,
+            last_exit_at: ticket.last_exit_at&.iso8601(6),
+            re_entry_count: ticket.re_entry_count,
+            re_entry_conflict_flagged: ticket.re_entry_conflict_flagged
+          )
+        end
+        entry.merge(DoorPayload.call(ticket))
       end
     end
 
@@ -128,21 +139,25 @@ module Admissions
     end
 
     def event_payload
-      {
+      base = {
         id: event.id,
         title: event.title,
         status: event.status,
         venue_name: event.venue_name,
         starts_at: event.starts_at&.iso8601(6),
         ends_at: event.ends_at&.iso8601(6),
-        timezone: event.timezone,
+        timezone: event.timezone
+      }
+      return base unless event.re_entry_enabled?
+
+      base.merge(
+        doors_open_at: event.doors_open_at&.iso8601(6),
         re_entry_mode: event.re_entry_mode,
         re_entry_max_count: event.re_entry_max_count,
-        re_entry_cutoff_at: event.re_entry_cutoff_at&.iso8601(6),
         re_entry_cutoff_time: event.re_entry_cutoff_time,
         re_entry_cooldown_minutes: event.re_entry_cooldown_minutes,
         re_entry_rollover_hour: event.re_entry_rollover_hour
-      }
+      )
     end
 
     # The payment mode decides whether test-card tickets admit people, so a

@@ -74,7 +74,8 @@ module Admissions
           CASE
             WHEN a.result = :accepted AND a.kind = :admit AND NOT EXISTS (
               SELECT 1 FROM admission_actions rev
-              WHERE rev.reverses_action_id = a.id
+              WHERE rev.event_id = :event_id
+                AND rev.reverses_action_id = a.id
                 AND rev.kind = :reverse
                 AND rev.result = :accepted
             ) THEN 'inside'
@@ -268,7 +269,6 @@ module Admissions
       {
         mode: @event.re_entry_mode,
         max_count: @event.re_entry_max_count,
-        cutoff_at: @event.re_entry_cutoff_at&.in_time_zone(@zone)&.iso8601,
         cutoff_time: @event.re_entry_cutoff_time,
         cooldown_minutes: @event.re_entry_cooldown_minutes,
         rollover_hour: @event.re_entry_rollover_hour

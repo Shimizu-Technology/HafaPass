@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { clearAllAdmissionData, clearEventAdmissionData, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
-import { evaluateLocalReEntry, formatReEntryFeedback, serviceDayString } from '../../utils/reEntryRules'
+import { cutoffTimestampMs, evaluateLocalReEntry, formatReEntryFeedback, isCutoffPassed, serviceDayString } from '../../utils/reEntryRules'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 import ReEntrySettings from '../../components/admissions/ReEntrySettings'
@@ -152,6 +152,56 @@ describe('reEntryRules pure evaluation', () => {
       .toMatchObject({ allowed: false, reasonCode: 'cooldown_active' })
   })
 
+  it('matches server rules for events running past 05:00, missing ends_at, and after-event cutoff comparisons', () => {
+    // 22:00–07:00 with cutoff 06:00 -> cutoff lands at Jan 31 06:00 (not Jan 30 06:00)
+    const pastFiveEvent = {
+      timezone: 'Pacific/Guam',
+      starts_at: '2027-01-30T22:00:00+10:00',
+      ends_at: '2027-01-31T07:00:00+10:00',
+      re_entry_mode: 'exit_scan',
+      re_entry_cutoff_time: '06:00',
+    }
+    const outsideSameNight = {
+      state: 'admitted', occupancy_state: 'outside', occupancy_day: '2027-01-30',
+      last_entry_at: '2027-01-30T22:15:00+10:00', last_entry_gate: 'Main Gate', re_entry_count: 0,
+    }
+    expect(cutoffTimestampMs('2027-01-30', pastFiveEvent)).toBe(Date.parse('2027-01-31T06:00:00+10:00'))
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outsideSameNight, localState: null, eventMeta: pastFiveEvent, nowMs: Date.parse('2027-01-30T23:30:00+10:00') }))
+      .toMatchObject({ allowed: true, isReEntry: true, reEntryNumber: 1 })
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outsideSameNight, localState: null, eventMeta: pastFiveEvent, nowMs: Date.parse('2027-01-31T05:50:00+10:00') }))
+      .toMatchObject({ allowed: true, isReEntry: true, reEntryNumber: 1 })
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outsideSameNight, localState: null, eventMeta: pastFiveEvent, nowMs: Date.parse('2027-01-31T06:15:00+10:00') }))
+      .toMatchObject({ allowed: false, reasonCode: 're_entry_cutoff_passed' })
+
+    // 23:30–06:00 with cutoff 05:30
+    const raveEvent = { ...pastFiveEvent, starts_at: '2027-01-30T23:30:00+10:00', ends_at: '2027-01-31T06:00:00+10:00', re_entry_cutoff_time: '05:30' }
+    expect(cutoffTimestampMs('2027-01-30', raveEvent)).toBe(Date.parse('2027-01-31T05:30:00+10:00'))
+
+    // 23:00 start with NO ends_at -> treated as start + 24h; at 05:30 still same service day & inside
+    const noEndEvent = {
+      timezone: 'Pacific/Guam',
+      starts_at: '2027-01-30T23:00:00+10:00',
+      ends_at: null,
+      re_entry_mode: 'exit_scan',
+    }
+    const at0530 = Date.parse('2027-01-31T05:30:00+10:00')
+    expect(serviceDayString(at0530, noEndEvent)).toBe('2027-01-30')
+    const insideNoEnd = { ...outsideSameNight, occupancy_state: 'inside', last_entry_at: '2027-01-30T23:15:00+10:00' }
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: insideNoEnd, localState: null, eventMeta: noEndEvent, nowMs: at0530 }))
+      .toMatchObject({ allowed: false, reasonCode: 'already_inside' })
+    expect(evaluateLocalReEntry({ kind: 'exit', manifestTicket: insideNoEnd, localState: null, eventMeta: noEndEvent, nowMs: at0530 }))
+      .toMatchObject({ allowed: true })
+
+    // 04:00 start with NO ends_at stays on Jan 30 at 05:30
+    const earlyNoEnd = { timezone: 'Pacific/Guam', starts_at: '2027-01-30T04:00:00+10:00', ends_at: null, re_entry_mode: 'exit_scan' }
+    expect(serviceDayString(Date.parse('2027-01-30T05:30:00+10:00'), earlyNoEnd)).toBe('2027-01-30')
+
+    // After-event cutoff parity: 18:00–23:00 cutoff 21:00 -> at 04:30 (in grace window) is past Jan 30 21:00; at Jan 31 14:00 (new service day) is before Jan 31 21:00
+    const eveningEvent = { timezone: 'Pacific/Guam', starts_at: '2027-01-30T18:00:00+10:00', ends_at: '2027-01-30T23:00:00+10:00', re_entry_mode: 'exit_scan', re_entry_cutoff_time: '21:00' }
+    expect(isCutoffPassed(Date.parse('2027-01-31T04:30:00+10:00'), eveningEvent)).toBe(true)
+    expect(isCutoffPassed(Date.parse('2027-01-31T14:00:00+10:00'), eveningEvent)).toBe(false)
+  })
+
   it('formats Already inside with gate time and gate name in Guam time', () => {
     const fb = formatReEntryFeedback('already_inside', {
       prior_entry_at: '2027-01-30T18:42:00+10:00',
@@ -183,6 +233,7 @@ describe('ScannerPage re-entry UX', () => {
     })
     expect(screen.queryByTestId('re-entry-mode-toggle')).not.toBeInTheDocument()
     expect(screen.queryByTestId('scanner-live-headcount')).not.toBeInTheDocument()
+    expect(screen.getByTestId('scanner-pending-count')).not.toHaveClass('tabular-nums')
   })
 
   it('shows big Entry/Exit switch in exit_scan mode, distinct Already inside sound/vibrate, Exit scan, and Re-entry', async () => {

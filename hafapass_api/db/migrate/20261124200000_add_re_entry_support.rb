@@ -4,7 +4,6 @@ class AddReEntrySupport < ActiveRecord::Migration[8.1]
   def up
     add_column :events, :re_entry_mode, :string, default: "off", null: false
     add_column :events, :re_entry_max_count, :integer
-    add_column :events, :re_entry_cutoff_at, :datetime
     add_column :events, :re_entry_cooldown_minutes, :integer
 
     add_check_constraint :events, "re_entry_mode IN ('off', 'exit_scan', 'cooldown')",
@@ -50,6 +49,6 @@ class AddReEntrySupport < ActiveRecord::Migration[8.1]
     remove_check_constraint :events, name: "events_re_entry_cooldown_positive"
     remove_check_constraint :events, name: "events_re_entry_max_count_positive"
     remove_check_constraint :events, name: "events_re_entry_mode_valid"
-    remove_columns :events, :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_at, :re_entry_cooldown_minutes
+    remove_columns :events, :re_entry_mode, :re_entry_max_count, :re_entry_cooldown_minutes
   end
 end

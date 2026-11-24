@@ -44,7 +44,6 @@ function buildSingleEntryDemoEvent(template) {
     venue_name: 'Hagåtña Marina Pavilion (demo)',
     re_entry_mode: 'off',
     re_entry_max_count: null,
-    re_entry_cutoff_at: null,
     re_entry_cutoff_time: null,
     re_entry_cooldown_minutes: null,
   }
@@ -64,7 +63,6 @@ function initReEntryState(state) {
   if (event101) {
     event101.re_entry_mode = 'exit_scan'
     event101.re_entry_max_count = 2
-    event101.re_entry_cutoff_at = null
     event101.re_entry_cutoff_time = '23:30'
     event101.re_entry_cooldown_minutes = null
   }
@@ -72,7 +70,6 @@ function initReEntryState(state) {
   if (event102) {
     event102.re_entry_mode = 'cooldown'
     event102.re_entry_max_count = 3
-    event102.re_entry_cutoff_at = null
     event102.re_entry_cutoff_time = null
     event102.re_entry_cooldown_minutes = 15
   }
@@ -80,7 +77,6 @@ function initReEntryState(state) {
   if (event103) {
     event103.re_entry_mode = 'off'
     event103.re_entry_max_count = null
-    event103.re_entry_cutoff_at = null
     event103.re_entry_cutoff_time = null
     event103.re_entry_cooldown_minutes = null
   }
@@ -226,7 +222,6 @@ function buildReEntryReport(reEntry, event) {
   return {
     mode: event.re_entry_mode || 'off',
     max_count: event.re_entry_max_count ?? null,
-    cutoff_at: event.re_entry_cutoff_at ?? null,
     cutoff_time: event.re_entry_cutoff_time ?? null,
     cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
     rollover_hour: 5,
@@ -281,7 +276,6 @@ async function buildSignedManifest(reEntry, event) {
       timezone: event.timezone || 'Pacific/Guam',
       re_entry_mode: event.re_entry_mode || 'off',
       re_entry_max_count: event.re_entry_max_count ?? null,
-      re_entry_cutoff_at: event.re_entry_cutoff_at ?? null,
       re_entry_cutoff_time: event.re_entry_cutoff_time ?? null,
       re_entry_cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
       re_entry_rollover_hour: 5,
@@ -310,7 +304,6 @@ export async function handle(ctx) {
     if (body.re_entry_mode) event.re_entry_mode = body.re_entry_mode
     if ('re_entry_max_count' in body) event.re_entry_max_count = body.re_entry_max_count ? Number(body.re_entry_max_count) : null
     if ('re_entry_cooldown_minutes' in body) event.re_entry_cooldown_minutes = body.re_entry_cooldown_minutes ? Number(body.re_entry_cooldown_minutes) : null
-    if ('re_entry_cutoff_at' in body) event.re_entry_cutoff_at = body.re_entry_cutoff_at || null
     if ('re_entry_cutoff_time' in body) event.re_entry_cutoff_time = body.re_entry_cutoff_time || null
     reEntry.manifestVersions[event.id] = (reEntry.manifestVersions[event.id] || 1) + 1
     return json({ ...event, demo: true })
@@ -406,7 +399,7 @@ export async function handle(ctx) {
         id: event.id, title: event.title, status: event.status, venue_name: event.venue_name,
         starts_at: event.starts_at, ends_at: event.ends_at, timezone: event.timezone || 'Pacific/Guam',
         re_entry_mode: event.re_entry_mode || 'off', re_entry_max_count: event.re_entry_max_count ?? null,
-        re_entry_cutoff_time: event.re_entry_cutoff_time ?? null, re_entry_cutoff_at: event.re_entry_cutoff_at ?? null,
+        re_entry_cutoff_time: event.re_entry_cutoff_time ?? null,
         re_entry_rollover_hour: event.re_entry_rollover_hour ?? 5, re_entry_cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
       },
       counts: eventCounts(reEntry, event),

@@ -9,7 +9,7 @@ RSpec.describe AddReEntrySupport do
     event = create(:event)
     ticket = create(:ticket, event: event, order: create(:order, event: event), ticket_type: create(:ticket_type, event: event))
 
-    expect(event).to have_attributes(re_entry_mode: "off", re_entry_max_count: nil, re_entry_cutoff_at: nil, re_entry_cooldown_minutes: nil)
+    expect(event).to have_attributes(re_entry_mode: "off", re_entry_max_count: nil, re_entry_cutoff_time: nil, re_entry_cooldown_minutes: nil)
     expect(ticket).to have_attributes(occupancy_state: "outside", occupancy_day: nil, re_entry_count: 0, re_entry_conflict_flagged: false)
 
     expect do

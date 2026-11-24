@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, useNavigate } from 'react-router-dom'
 import { clearAllAdmissionData, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, queueAdmission, queuedActions, saveDevice, saveVerifiedManifest, sha256Hex } from './utils/admissionStore'
+import { serviceDayString } from './utils/reEntryRules'
 import { signedManifest } from './test/manifestFixture'
 
 const state = vi.hoisted(() => ({ status: 'available', loaded: true, owner: 'staff-a', retry: vi.fn(), getToken: vi.fn() }))
@@ -114,8 +115,8 @@ describe('scanner authorization through actual service and auth boundaries', () 
     expect(camera.stops[0]).toHaveBeenCalledOnce()
   })
 
-  it('removes every copy of the attendee name in re-entry exit_scan mode when identity changes or a peer tab withdraws access', async () => {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  it.each(['identity change', 'peer-tab withdrawal'])('removes every copy of the attendee name in re-entry exit_scan mode on %s', async trigger => {
+    const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
     const reEntryTicket = {
       ticket_id: 501,
       state: 'admitted',
@@ -133,17 +134,29 @@ describe('scanner authorization through actual service and auth boundaries', () 
       schema_version: 2,
       event: { id: eventId, title: 'Re-entry outage check', timezone: 'Pacific/Guam', re_entry_mode: 'exit_scan' },
     }))
-    Object.assign(state, { status: 'unavailable', loaded: true, owner: 'staff-a' })
+    Object.assign(state, { status: 'unavailable', loaded: trigger === 'identity change', owner: 'staff-a' })
     const { rerender } = render(application())
     await screen.findByText('Ticket list ready · 1 ticket')
     await userEvent.type(screen.getByLabelText('Ticket QR code'), 'synthetic-private-qr')
     await userEvent.click(screen.getByRole('button', { name: 'Check in ticket' }))
     expect((await screen.findAllByText(/Synthetic private attendee/)).length).toBeGreaterThanOrEqual(1)
 
-    state.owner = null
-    rerender(application())
+    if (trigger === 'identity change') {
+      state.owner = null
+      rerender(application())
+    } else {
+      window.localStorage.setItem('hafapass_scanner_binding_pending', 'peer-withdrawal')
+      await act(async () => {
+        await clearAllAdmissionData()
+        window.dispatchEvent(new StorageEvent('storage', { key: 'hafapass_scanner_binding_pending', newValue: 'peer-withdrawal', storageArea: window.localStorage }))
+      })
+    }
     expect(screen.queryAllByText(/Synthetic private attendee/)).toHaveLength(0)
     expect(screen.queryByTestId('scan-result-overlay')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Ticket QR code')).not.toBeInTheDocument()
+
+    Object.assign(state, { owner: 'staff-a', status: 'available', loaded: true })
+    rerender(application())
+    await screen.findByText('Online application')
   })
 })

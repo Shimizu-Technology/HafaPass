@@ -7,9 +7,21 @@ module Admissions
   class Counts
     # Ruby String#blank?'s Unicode whitespace, independent of PostgreSQL locale.
     BLANK_CHARACTERS = "\u0009\u000a\u000b\u000c\u000d \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000".freeze
+    HEADCOUNT_CACHE_TTL = 12.seconds
 
     def self.call(event:)
       new(event).call
+    end
+
+    def self.headcount_cache_key(event, service_day)
+      generation = Rails.cache.read("admissions:headcount_gen:v1:event:#{event.id}") || 0
+      "admissions:headcount_by_day:v1:event:#{event.id}:g:#{generation}:day:#{service_day}:mode:#{event.re_entry_mode}"
+    end
+
+    def self.expire_headcount_cache!(event)
+      return unless event
+
+      Rails.cache.write("admissions:headcount_gen:v1:event:#{event.id}", SecureRandom.hex(6), expires_in: 1.hour)
     end
 
     def initialize(event)
@@ -17,13 +29,25 @@ module Admissions
     end
 
     def call
-      row = ActiveRecord::Base.connection.select_one(sql).symbolize_keys.transform_values(&:to_i)
-      base = row.merge(remaining: row.fetch(:issued))
-      # Off mode must skip all re-entry headcount aggregation so sync stays identical to main.
-      return base.merge(live_headcount: nil, currently_inside: nil, headcount_by_day: []) unless @event.re_entry_enabled?
+      # Off mode executes the exact same SQL and returns the exact same keys as main.
+      unless @event.re_entry_enabled?
+        row = ActiveRecord::Base.connection.select_one(sql(include_re_entry: false)).symbolize_keys.transform_values(&:to_i)
+        return row.merge(remaining: row.fetch(:issued))
+      end
 
-      by_day = headcount_by_day
-      live_headcount = resolve_live_headcount(by_day, fallback: row.fetch(:currently_inside))
+      current_service_day = @event.occupancy_day_for(Time.current).iso8601
+      row = ActiveRecord::Base.connection.select_one(
+        sql(include_re_entry: true, service_day: current_service_day)
+      ).symbolize_keys.transform_values(&:to_i)
+      base = row.merge(remaining: row.fetch(:issued))
+
+      by_day = cached_headcount_by_day(current_service_day)
+      live_headcount = if multi_night_pass_breakdown?(by_day)
+        resolve_pass_live_headcount(by_day, current_service_day: current_service_day, fallback: row.fetch(:currently_inside))
+      else
+        row.fetch(:currently_inside)
+      end
+
       base.merge(
         live_headcount: live_headcount,
         headcount_by_day: by_day
@@ -32,7 +56,21 @@ module Admissions
 
     private
 
-    def sql
+    def sql(include_re_entry:, service_day: nil)
+      re_entry_columns = if include_re_entry
+        quoted_day = ActiveRecord::Base.connection.quote(service_day)
+        <<~SQL.chomp
+          ,
+          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_state = 'inside' AND t.occupancy_day = #{quoted_day}) AS currently_inside,
+          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_day IS NULL) AS untracked_pre_re_entry_admits,
+          COUNT(*) FILTER (WHERE t.re_entry_conflict_flagged = TRUE) AS conflict_tickets,
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('exit')} AND a.result = #{AdmissionAction.results.fetch('accepted')}) AS exits,
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('admit')} AND a.result = #{AdmissionAction.results.fetch('accepted')} AND a.reason_code = 're_entered') AS re_entries
+        SQL
+      else
+        ""
+      end
+
       <<~SQL
         WITH event_orders AS (
           SELECT DISTINCT order_id FROM tickets WHERE event_id = #{@event.id.to_i}
@@ -62,12 +100,7 @@ module Admissions
               WHERE (rt.ticket_id = t.id OR (t.parent_ticket_id IS NOT NULL AND rt.ticket_id = t.parent_ticket_id))
                 AND rt.released_at IS NULL AND r.status = #{Refund.statuses.fetch('pending')})) AS eligible_unadmitted,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('conflict')}) AS conflicts,
-          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected,
-          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_state = 'inside') AS currently_inside,
-          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_day IS NULL) AS untracked_pre_re_entry_admits,
-          COUNT(*) FILTER (WHERE t.re_entry_conflict_flagged = TRUE) AS conflict_tickets,
-          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('exit')} AND a.result = #{AdmissionAction.results.fetch('accepted')}) AS exits,
-          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('admit')} AND a.result = #{AdmissionAction.results.fetch('accepted')} AND a.reason_code = 're_entered') AS re_entries
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected#{re_entry_columns}
         FROM tickets t
         JOIN ticket_types tt ON tt.id = t.ticket_type_id
         LEFT JOIN eligible_orders eo ON eo.id = t.order_id
@@ -103,15 +136,24 @@ module Admissions
       "LENGTH(translate(#{column}, U&'#{characters}', '')) > 0"
     end
 
-    def resolve_live_headcount(by_day, fallback:)
+    def multi_night_pass_breakdown?(by_day)
+      by_day.any? { |entry| entry[:event_id].present? && entry[:event_id] != @event.id }
+    end
+
+    def resolve_pass_live_headcount(by_day, current_service_day:, fallback:)
       return fallback if by_day.empty?
 
-      current_service_day = @event.occupancy_day_for(Time.current).iso8601
       today_entry = by_day.find { |entry| entry[:day] == current_service_day }
       return today_entry[:headcount] if today_entry
       return 0 if by_day.last[:day] < current_service_day
 
       by_day.last[:headcount]
+    end
+
+    def cached_headcount_by_day(current_service_day)
+      Rails.cache.fetch(self.class.headcount_cache_key(@event, current_service_day), expires_in: HEADCOUNT_CACHE_TTL) do
+        headcount_by_day
+      end
     end
 
     def headcount_by_day

@@ -22,52 +22,91 @@ export function localDayString(value = Date.now(), timeZone = DEFAULT_EVENT_TIME
   }
 }
 
-function localHourMinute(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+function localDateTimeParts(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
   const date = value instanceof Date ? value : new Date(value)
   const tz = timeZone || DEFAULT_EVENT_TIME_ZONE
+  const opts = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }
   let parts
   try {
-    parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(date)
+    parts = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: tz }).formatToParts(date)
   } catch {
-    parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: DEFAULT_EVENT_TIME_ZONE,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(date)
+    parts = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: DEFAULT_EVENT_TIME_ZONE }).formatToParts(date)
   }
-  const hour = Number(parts.find(p => p.type === 'hour')?.value ?? 0) % 24
-  const minute = Number(parts.find(p => p.type === 'minute')?.value ?? 0)
-  return { hour, minute }
+  const get = type => Number(parts.find(p => p.type === type)?.value ?? 0)
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour') % 24,
+    minute: get('minute'),
+  }
+}
+
+function addDaysToIsoDate(dateStr, days) {
+  const [y, m, d] = String(dateStr).split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
+  return `${String(dt.getUTCFullYear()).padStart(4, '0')}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+}
+
+function zonedWallClockToMs(dateStr, hour, minute, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+  const [year, month, day] = String(dateStr).split('-').map(Number)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return Number.NaN
+  const targetUtc = Date.UTC(year, month - 1, day, hour, minute, 0)
+  let candidate = targetUtc
+  for (let pass = 0; pass < 2; pass += 1) {
+    const p = localDateTimeParts(candidate, timeZone)
+    const renderedUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, 0)
+    const diff = renderedUtc - targetUtc
+    if (diff === 0) break
+    candidate -= diff
+  }
+  return candidate
+}
+
+function isSingleSessionEvent(eventMeta) {
+  const startMs = Date.parse(eventMeta?.starts_at || '')
+  if (!Number.isFinite(startMs)) return false
+  const endMs = Date.parse(eventMeta?.ends_at || '')
+  return !Number.isFinite(endMs) || (endMs - startMs) <= 24 * 3_600_000
+}
+
+function singleSessionStartAnchorMs(eventMeta) {
+  const startMs = Date.parse(eventMeta?.starts_at || '')
+  const doorsMs = Date.parse(eventMeta?.doors_open_at || '')
+  if (Number.isFinite(doorsMs) && Number.isFinite(startMs) && doorsMs < startMs) return doorsMs
+  return startMs
 }
 
 export function eventRolloverHour(eventMeta = null) {
   if (Number.isInteger(eventMeta?.re_entry_rollover_hour)) return eventMeta.re_entry_rollover_hour
-  const startMs = Date.parse(eventMeta?.starts_at || '')
-  const endMs = Date.parse(eventMeta?.ends_at || '')
-  if (Number.isFinite(startMs) && Number.isFinite(endMs) && (endMs - startMs) <= 24 * 3_600_000) {
-    const { hour } = localHourMinute(startMs, eventMeta?.timezone)
+  if (isSingleSessionEvent(eventMeta)) {
+    const anchorMs = singleSessionStartAnchorMs(eventMeta)
+    const { hour } = localDateTimeParts(anchorMs, eventMeta?.timezone)
     if (hour < RE_ENTRY_ROLLOVER_HOUR) return hour
   }
   return RE_ENTRY_ROLLOVER_HOUR
 }
 
 // Mirrors Event#occupancy_day_for on the backend:
-// Single-session events (<= 24 h) keep one service day across midnight (e.g. 20:00–02:00);
-// multi-day events roll over at 05:00 local time so late-night scans stay on their night.
+// Single-session events (<= 24 h, or missing ends_at treated as start + 24 h) keep one
+// service day across midnight and past 05:00; multi-day events roll over at 05:00 local time.
 export function serviceDayString(value = Date.now(), eventMeta = null) {
   const tz = eventMeta?.timezone || DEFAULT_EVENT_TIME_ZONE
   const ms = value instanceof Date ? value.getTime() : (typeof value === 'number' ? value : Date.parse(value))
   const effectiveMs = Number.isFinite(ms) ? ms : Date.now()
-  const startMs = Date.parse(eventMeta?.starts_at || '')
-  const endMs = Date.parse(eventMeta?.ends_at || '')
-  if (Number.isFinite(startMs) && Number.isFinite(endMs) && (endMs - startMs) <= 24 * 3_600_000) {
-    if (effectiveMs >= startMs - 6 * 3_600_000 && effectiveMs <= endMs + 6 * 3_600_000) {
+  if (isSingleSessionEvent(eventMeta)) {
+    const startMs = Date.parse(eventMeta.starts_at)
+    const endMs = Date.parse(eventMeta?.ends_at || '')
+    const windowStart = singleSessionStartAnchorMs(eventMeta) - 6 * 3_600_000
+    const windowEnd = Number.isFinite(endMs) ? (endMs + 6 * 3_600_000) : (startMs + 24 * 3_600_000)
+    if (effectiveMs >= windowStart && effectiveMs <= windowEnd) {
       return localDayString(startMs, tz)
     }
   }
@@ -103,19 +142,38 @@ export function formatCutoffTime(hhmm) {
   return `${hour12}:${minute} ${period}`
 }
 
-export function isCutoffPassed(nowMs, eventMeta) {
+// Mirrors Event#re_entry_cutoff_for_day on the backend so client and server agree
+// before, during, and after single-session or multi-day events.
+export function cutoffTimestampMs(dayStr, eventMeta) {
   const cutoffTime = eventMeta?.re_entry_cutoff_time
   const match = CUTOFF_TIME_RE.exec(String(cutoffTime || '').trim())
-  if (match) {
-    const rollover = eventRolloverHour(eventMeta)
-    const cutHour = Number(match[1])
-    const cutMin = Number(match[2])
-    const { hour, minute } = localHourMinute(nowMs, eventMeta?.timezone)
-    const nowServiceMin = (hour < rollover ? hour + 24 : hour) * 60 + minute
-    const cutServiceMin = (cutHour < rollover ? cutHour + 24 : cutHour) * 60 + cutMin
-    return nowServiceMin > cutServiceMin
+  if (!match || !dayStr) return null
+
+  const tz = eventMeta?.timezone || DEFAULT_EVENT_TIME_ZONE
+  const cutHour = Number(match[1])
+  const cutMin = Number(match[2])
+
+  if (isSingleSessionEvent(eventMeta)) {
+    const startMs = Date.parse(eventMeta.starts_at)
+    if (dayStr === localDayString(startMs, tz)) {
+      const anchorMs = singleSessionStartAnchorMs(eventMeta)
+      const anchorDateStr = localDayString(anchorMs, tz)
+      let candidate = zonedWallClockToMs(anchorDateStr, cutHour, cutMin, tz)
+      if (Number.isFinite(candidate) && candidate < anchorMs) {
+        candidate = zonedWallClockToMs(addDaysToIsoDate(anchorDateStr, 1), cutHour, cutMin, tz)
+      }
+      return Number.isFinite(candidate) ? candidate : null
+    }
   }
-  const cutoffMs = Date.parse(eventMeta?.re_entry_cutoff_at || '')
+
+  const targetDateStr = cutHour < RE_ENTRY_ROLLOVER_HOUR ? addDaysToIsoDate(dayStr, 1) : dayStr
+  const cutoffMs = zonedWallClockToMs(targetDateStr, cutHour, cutMin, tz)
+  return Number.isFinite(cutoffMs) ? cutoffMs : null
+}
+
+export function isCutoffPassed(nowMs, eventMeta, dayStr = null) {
+  const day = dayStr || serviceDayString(nowMs, eventMeta)
+  const cutoffMs = cutoffTimestampMs(day, eventMeta)
   return Number.isFinite(cutoffMs) && nowMs > cutoffMs
 }
 
@@ -185,12 +243,12 @@ export function evaluateLocalReEntry({ kind = 'admit', manifestTicket, localStat
       }
     }
     if (effective.enteredToday) {
-      if (isCutoffPassed(nowMs, eventMeta)) {
+      if (isCutoffPassed(nowMs, eventMeta, effective.today)) {
         return {
           allowed: false,
           type: 'error',
           reasonCode: 're_entry_cutoff_passed',
-          details: { cutoff_time: eventMeta?.re_entry_cutoff_time, cutoff_at: eventMeta?.re_entry_cutoff_at, timezone: tz },
+          details: { cutoff_time: eventMeta?.re_entry_cutoff_time, timezone: tz },
         }
       }
       const maxCount = eventMeta?.re_entry_max_count
@@ -236,12 +294,12 @@ export function evaluateLocalReEntry({ kind = 'admit', manifestTicket, localStat
     }
   }
 
-  if (isCutoffPassed(nowMs, eventMeta)) {
+  if (isCutoffPassed(nowMs, eventMeta, effective.today)) {
     return {
       allowed: false,
       type: 'error',
       reasonCode: 're_entry_cutoff_passed',
-      details: { cutoff_time: eventMeta?.re_entry_cutoff_time, cutoff_at: eventMeta?.re_entry_cutoff_at, timezone: tz },
+      details: { cutoff_time: eventMeta?.re_entry_cutoff_time, timezone: tz },
     }
   }
   const maxCount = eventMeta?.re_entry_max_count
@@ -315,6 +373,17 @@ export function formatReEntryFeedback(reasonCode, details = {}, timezone = DEFAU
         headline: 'Re-entry closed',
         message: cutoffTime ? `Re-entry cutoff passed (${cutoffTime})` : 'Re-entry cutoff passed',
         detail: 'Re-entry is closed for today. Ask a scanner lead for exceptions.',
+        overridable: true,
+      }
+    }
+    case 'admit_before_latest_exit': {
+      const exitTime = formatGateTime(details?.last_exit_at, timezone)
+      return {
+        type: 'warning',
+        soundKind: 'already_inside',
+        headline: 'Out-of-order offline scan',
+        message: exitTime ? `Ticket already exited at ${exitTime}` : 'Offline entry predates a recorded exit',
+        detail: 'Flagged for scanner lead review; the guest remains marked outside.',
         overridable: true,
       }
     }

@@ -13,7 +13,7 @@ class Event < ApplicationRecord
   audits_operations :event,
     fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
       category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees
-      transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_at re_entry_cutoff_time
+      transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_time
       re_entry_cooldown_minutes recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
     observe: %w[title slug description short_description cover_image_url venue_name venue_address venue_city
       localized_content]
@@ -319,37 +319,62 @@ class Event < ApplicationRecord
     ActiveSupport::TimeZone[timezone.presence || "Pacific/Guam"] || ActiveSupport::TimeZone["Pacific/Guam"]
   end
 
+  def single_session_re_entry?
+    starts_at.present? && (ends_at.blank? || (ends_at - starts_at) <= 24.hours)
+  end
+
+  def single_session_start_anchor
+    if doors_open_at.present? && starts_at.present? && doors_open_at < starts_at
+      doors_open_at
+    else
+      starts_at
+    end
+  end
+
   def re_entry_rollover_hour
-    if starts_at.present? && ends_at.present? && (ends_at - starts_at) <= 24.hours
-      start_hour = starts_at.in_time_zone(event_time_zone).hour
+    if single_session_re_entry?
+      start_hour = single_session_start_anchor.in_time_zone(event_time_zone).hour
       return start_hour if start_hour < RE_ENTRY_ROLLOVER_HOUR
     end
     RE_ENTRY_ROLLOVER_HOUR
   end
 
   # Business-day rollover tied to the event's service day in its time zone.
-  # Single-session events (<= 24 h) keep one service day across midnight (e.g. 20:00-02:00);
-  # multi-day events roll over at 05:00 local time so late-night scans stay on their night.
+  # Single-session events (<= 24 h, or missing ends_at treated as start + 24 h) keep one
+  # service day across midnight and past 05:00; multi-day events roll over at 05:00 local time.
   def occupancy_day_for(at = Time.current)
     tz = event_time_zone
-    if starts_at.present? && ends_at.present? && (ends_at - starts_at) <= 24.hours
-      if at >= (starts_at - 6.hours) && at <= (ends_at + 6.hours)
-        return starts_at.in_time_zone(tz).to_date
-      end
+    if single_session_re_entry?
+      window_start = single_session_start_anchor - 6.hours
+      window_end = ends_at.present? ? (ends_at + 6.hours) : (starts_at + 24.hours)
+      return starts_at.in_time_zone(tz).to_date if at >= window_start && at <= window_end
     end
     (at - RE_ENTRY_ROLLOVER_HOUR.hours).in_time_zone(tz).to_date
   end
 
   # Per-service-day cutoff timestamp in the event's time zone.
-  # A cutoff earlier than the rollover hour (e.g. 01:00) applies to the early-morning
-  # hours of that service day (day + 1 calendar day). Falls back to legacy re_entry_cutoff_at.
+  # For single-session events on their session day, the cutoff is the first HH:MM at or
+  # after the session start (doors_open_at when earlier than starts_at, else starts_at),
+  # so late-night events running past 05:00 (e.g. 22:00-07:00 with 06:00 cutoff) resolve
+  # cleanly to the next morning. Multi-day and non-session days use the 05:00 rollover rule.
   def re_entry_cutoff_for_day(day)
-    if re_entry_cutoff_time.present? && day.present?
-      hour, minute = re_entry_cutoff_time.split(":").map(&:to_i)
-      target_date = hour < re_entry_rollover_hour ? (day + 1.day) : day
-      return event_time_zone.local(target_date.year, target_date.month, target_date.day, hour, minute, 0)
+    return nil unless re_entry_cutoff_time.present? && day.present?
+
+    tz = event_time_zone
+    hour, minute = re_entry_cutoff_time.split(":").map(&:to_i)
+    if single_session_re_entry? && day == starts_at.in_time_zone(tz).to_date
+      anchor = single_session_start_anchor
+      anchor_date = anchor.in_time_zone(tz).to_date
+      candidate = tz.local(anchor_date.year, anchor_date.month, anchor_date.day, hour, minute, 0)
+      if candidate < anchor
+        next_date = anchor_date + 1.day
+        candidate = tz.local(next_date.year, next_date.month, next_date.day, hour, minute, 0)
+      end
+      return candidate
     end
-    re_entry_cutoff_at
+
+    target_date = hour < RE_ENTRY_ROLLOVER_HOUR ? (day + 1.day) : day
+    tz.local(target_date.year, target_date.month, target_date.day, hour, minute, 0)
   end
 
   def re_entry_cutoff_passed?(at = Time.current, day: nil)

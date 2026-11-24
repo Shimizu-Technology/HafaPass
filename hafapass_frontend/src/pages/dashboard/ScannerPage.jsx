@@ -1892,7 +1892,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
       <div className={`${isExitScanMode ? 'order-4 sm:order-none ' : ''}grid gap-2 sm:col-span-2 sm:row-start-4 sm:mb-4 sm:mt-5 ${liveHeadcount != null ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-4'}`} aria-label="Check-in status">
         <div className={`flex items-center rounded-xl border p-2 sm:block sm:p-3 ${online ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-          <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <CloudOff className="h-4 w-4 shrink-0" />}{online ? 'Online' : 'Offline mode'}</p>
+          <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className={liveHeadcount != null ? 'h-4 w-4 shrink-0' : 'h-4 w-4'} /> : <CloudOff className={liveHeadcount != null ? 'h-4 w-4 shrink-0' : 'h-4 w-4'} />}{online ? 'Online' : 'Offline mode'}</p>
         </div>
         {liveHeadcount != null && (
           <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-2 sm:p-3">
@@ -1907,8 +1907,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
             )}
           </div>
         )}
-        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className="text-lg font-bold tabular-nums sm:text-xl" data-testid="scanner-pending-count">{HEADCOUNT_FORMAT.format(pendingCount)}</p></div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Scans this session</p><p className="text-lg font-bold tabular-nums sm:text-xl">{HEADCOUNT_FORMAT.format(sessionCount)}</p></div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className={`text-lg font-bold sm:text-xl${liveHeadcount != null ? ' tabular-nums' : ''}`} data-testid="scanner-pending-count">{liveHeadcount != null ? HEADCOUNT_FORMAT.format(pendingCount) : pendingCount}</p></div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Scans this session</p><p className={`text-lg font-bold sm:text-xl${liveHeadcount != null ? ' tabular-nums' : ''}`}>{liveHeadcount != null ? HEADCOUNT_FORMAT.format(sessionCount) : sessionCount}</p></div>
         <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className={`btn-secondary flex flex-col items-center justify-center gap-1 !px-2 !py-2 text-xs disabled:opacity-50 sm:flex-row sm:gap-2 sm:!px-6 sm:!py-3 sm:text-base ${liveHeadcount != null ? 'col-span-2 sm:col-span-1' : ''}`}>
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now
         </button>

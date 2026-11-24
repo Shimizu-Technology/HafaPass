@@ -93,10 +93,10 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
         venue_name: @event.venue_name,
         starts_at: @event.starts_at,
         ends_at: @event.ends_at,
+        doors_open_at: @event.doors_open_at,
         timezone: @event.timezone,
         re_entry_mode: @event.re_entry_mode,
         re_entry_max_count: @event.re_entry_max_count,
-        re_entry_cutoff_at: @event.re_entry_cutoff_at,
         re_entry_cutoff_time: @event.re_entry_cutoff_time,
         re_entry_cooldown_minutes: @event.re_entry_cooldown_minutes,
         re_entry_rollover_hour: @event.re_entry_rollover_hour

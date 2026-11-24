@@ -429,6 +429,21 @@ module Admissions
       end
 
       if same_day
+        if ticket.last_exit_at.present? && occurred_at < ticket.last_exit_at
+          offline = input[:source] == "offline"
+          return {
+            result: :conflict,
+            reason_code: "admit_before_latest_exit",
+            flag_conflict: offline,
+            details: {
+              last_exit_at: ticket.last_exit_at.iso8601(6),
+              prior_entry_at: ticket.last_entry_at&.iso8601(6),
+              prior_gate_name: ticket.last_entry_device&.name,
+              offline_conflict: (true if offline)
+            }.compact
+          }
+        end
+
         cutoff_rejection = check_re_entry_cutoff(event, occurred_at, scan_day)
         return cutoff_rejection if cutoff_rejection
 
@@ -506,6 +521,22 @@ module Admissions
             offline_conflict: (true if input[:source] == "offline")
           }.compact
         }
+      end
+
+      if event.re_entry_exit_scan?
+        last_exit = day_actions.select(&:kind_exit?).last
+        if last_exit && occurred_at < last_exit.occurred_at
+          offline = input[:source] == "offline"
+          return {
+            result: :conflict,
+            reason_code: "admit_before_latest_exit",
+            flag_conflict: offline,
+            details: {
+              last_exit_at: last_exit.occurred_at.iso8601(6),
+              offline_conflict: (true if offline)
+            }.compact
+          }
+        end
       end
 
       prior_entries = day_actions.count(&:kind_admit?)

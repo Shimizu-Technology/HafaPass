@@ -114,14 +114,19 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       travel_to(Time.zone.parse("2027-01-30T10:00:00+10:00"))
       device = register_device(user: owner, identifier: "gate-off", name: "Gate 1")
       manifest = fetch_manifest(device)
-      expect(manifest.dig("payload", "event", "re_entry_mode")).to eq("off")
+      # Minor #2: Off-mode manifest stays identical to main (no re-entry event/ticket fields)
+      expect(manifest.dig("payload", "event").keys).to match_array(%w[id title status venue_name starts_at ends_at timezone])
+      manifest_ticket = manifest.dig("payload", "tickets", 0)
+      %w[occupancy_state occupancy_day last_entry_at last_entry_gate last_exit_at re_entry_count re_entry_conflict_flagged].each do |key|
+        expect(manifest_ticket).not_to have_key(key)
+      end
 
       expect(Admissions::ReEntryReport).not_to receive(:call)
 
       first = sync_actions(device, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1)])
       expect(first.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")
-      expect(first.dig("summary", "live_headcount")).to be_nil
-      expect(first.dig("summary", "headcount_by_day")).to eq([])
+      # Minor #1: Off-mode sync summary stays identical to main (exact keys, no extra re-entry subqueries)
+      expect(first.fetch("summary").keys).to match_array(%w[total issued admitted cancelled eligible_unadmitted conflicts rejected remaining])
 
       duplicate = sync_actions(device, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2)])
       expect(duplicate.dig("results", 0)).to include("result" => "conflict", "reason_code" => "already_admitted")
@@ -225,7 +230,7 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
         re_entry_mode: "cooldown",
         re_entry_cooldown_minutes: 15,
         re_entry_max_count: 1,
-        re_entry_cutoff_at: Time.zone.parse("2027-01-30T20:00:00+10:00")
+        re_entry_cutoff_time: "20:00"
       )
     end
 
@@ -628,6 +633,170 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       expect(legacy_ticket.occupancy_day).to be_nil
       counts = Admissions::Counts.call(event: event)
       expect(counts[:untracked_pre_re_entry_admits]).to eq(1)
+    end
+
+    it "anchors single-session cutoffs past 05:00 to the first HH:MM at or after start/doors-open (22:00-07:00 cutoff 06:00 and 23:30-06:00 cutoff 05:30)" do
+      late_event = create(:event,
+        organization: organization, organizer_profile: profile, status: :published,
+        starts_at: Time.zone.parse("2027-01-30T22:00:00+10:00"),
+        ends_at: Time.zone.parse("2027-01-31T07:00:00+10:00"),
+        timezone: "Pacific/Guam",
+        re_entry_mode: "exit_scan",
+        re_entry_cutoff_time: "06:00")
+      tt = create(:ticket_type, event: late_event, price_cents: 2500)
+      ord = create(:order, :completed, event: late_event)
+      tk = create(:ticket, event: late_event, order: ord, ticket_type: tt, attendee_name: "Koa Reyes")
+
+      travel_to(Time.zone.parse("2027-01-30T22:15:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices", params: { identifier: "rave-gate", name: "Main Gate" }, headers: headers, as: :json
+      dev_id = response.parsed_body.fetch("id")
+      get "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/manifest", headers: headers
+      man = response.parsed_body
+      entry = man.dig("payload", "tickets").find { |t| t["ticket_id"] == tk.id }
+      ver = man.dig("payload", "version")
+
+      # Enter 22:15, exit 23:00, re-enter 23:30 -> ALLOWED (cutoff is Jan 31 06:00, NOT Jan 30 06:00!)
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 1, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")
+
+      travel_to(Time.zone.parse("2027-01-30T23:00:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "exit", source: "online", sequence: 2, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+
+      travel_to(Time.zone.parse("2027-01-30T23:30:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 3, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "re_entered")
+
+      # Exit at 05:30, re-enter at 05:45 -> still before 06:00, ALLOWED; exit at 05:55, re-enter at 06:15 -> REJECTED
+      travel_to(Time.zone.parse("2027-01-31T05:30:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "exit", source: "online", sequence: 4, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+
+      travel_to(Time.zone.parse("2027-01-31T05:45:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 5, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "re_entered")
+
+      travel_to(Time.zone.parse("2027-01-31T05:55:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "exit", source: "online", sequence: 6, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+
+      travel_to(Time.zone.parse("2027-01-31T06:15:00+10:00"))
+      post "/api/v1/organizer/events/#{late_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 7, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "rejected", "reason_code" => "re_entry_cutoff_passed")
+
+      # Also verify 23:30-06:00 with cutoff 05:30 anchors to Jan 31 05:30
+      late_event.update!(starts_at: Time.zone.parse("2027-01-30T23:30:00+10:00"), ends_at: Time.zone.parse("2027-01-31T06:00:00+10:00"), re_entry_cutoff_time: "05:30")
+      expect(late_event.re_entry_cutoff_for_day(Date.new(2027, 1, 30))).to eq(Time.zone.parse("2027-01-31T05:30:00+10:00"))
+    end
+
+    it "treats a missing end time as start + 24 h so 23:00 and 04:00 events do not flip day at 05:00" do
+      no_end_event = create(:event,
+        organization: organization, organizer_profile: profile, status: :published,
+        starts_at: Time.zone.parse("2027-01-30T23:00:00+10:00"),
+        ends_at: nil,
+        timezone: "Pacific/Guam",
+        re_entry_mode: "exit_scan")
+      tt = create(:ticket_type, event: no_end_event, price_cents: 2500)
+      ord = create(:order, :completed, event: no_end_event)
+      tk = create(:ticket, event: no_end_event, order: ord, ticket_type: tt, attendee_name: "Nalu Perez")
+
+      travel_to(Time.zone.parse("2027-01-30T23:15:00+10:00"))
+      post "/api/v1/organizer/events/#{no_end_event.id}/scanner_devices", params: { identifier: "no-end-gate", name: "Door A" }, headers: headers, as: :json
+      dev_id = response.parsed_body.fetch("id")
+      get "/api/v1/organizer/events/#{no_end_event.id}/scanner_devices/#{dev_id}/manifest", headers: headers
+      man = response.parsed_body
+      entry = man.dig("payload", "tickets").find { |t| t["ticket_id"] == tk.id }
+      ver = man.dig("payload", "version")
+
+      post "/api/v1/organizer/events/#{no_end_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 1, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "admitted")
+
+      # At 05:30 next morning: STILL same service day, STILL inside, headcount = 1, exit succeeds!
+      travel_to(Time.zone.parse("2027-01-31T05:30:00+10:00"))
+      expect(no_end_event.occupancy_day_for(Time.current)).to eq(Date.new(2027, 1, 30))
+      expect(Admissions::Counts.call(event: no_end_event)[:live_headcount]).to eq(1)
+
+      post "/api/v1/organizer/events/#{no_end_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "admit", source: "online", sequence: 2, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "conflict", "reason_code" => "already_inside")
+
+      post "/api/v1/organizer/events/#{no_end_event.id}/scanner_devices/#{dev_id}/sync", params: {
+        actions: [{ action_uuid: SecureRandom.uuid, kind: "exit", source: "online", sequence: 3, ticket_id: tk.id, credential_hash: entry["credential_hash"], manifest_version: ver, occurred_at: Time.current.iso8601 }]
+      }, headers: headers, as: :json
+      expect(response.parsed_body.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+      expect(response.parsed_body.dig("summary", "live_headcount")).to eq(0)
+
+      # 04:00 start with no end time also stays on its start day at 05:30
+      early_event = create(:event,
+        organization: organization, organizer_profile: profile, status: :published,
+        starts_at: Time.zone.parse("2027-01-30T04:00:00+10:00"),
+        ends_at: nil,
+        timezone: "Pacific/Guam",
+        re_entry_mode: "exit_scan")
+      expect(early_event.occupancy_day_for(Time.zone.parse("2027-01-30T05:30:00+10:00"))).to eq(Date.new(2027, 1, 30))
+    end
+
+    it "flags an offline admit older than last_exit_at as a conflict and keeps authoritative live headcount at 0" do
+      event.update!(re_entry_mode: "exit_scan")
+      travel_to(Time.zone.parse("2027-01-30T18:00:00+10:00"))
+      gate1 = register_device(user: owner, identifier: "gate-online", name: "Gate 1")
+      gate2 = register_device(user: owner, identifier: "gate-offline", name: "Gate 2")
+      manifest = fetch_manifest(gate1)
+
+      # 18:00 online entry at Gate 1
+      sync_actions(gate1, [scan_payload(ticket: ticket, manifest: manifest, sequence: 1, occurred_at: Time.current)])
+      expect(Admissions::Counts.call(event: event)[:live_headcount]).to eq(1)
+
+      # 18:10 online exit at Gate 1
+      travel_to(Time.zone.parse("2027-01-30T18:10:00+10:00"))
+      exit_res = sync_actions(gate1, [scan_payload(ticket: ticket, manifest: manifest, sequence: 2, kind: "exit", occurred_at: Time.current)])
+      expect(exit_res.dig("results", 0)).to include("result" => "accepted", "reason_code" => "exited")
+      expect(exit_res.dig("summary", "live_headcount")).to eq(0)
+
+      # 18:15 Gate 2 reconnects and syncs an offline admit captured at 18:05 (before the 18:10 exit!)
+      travel_to(Time.zone.parse("2027-01-30T18:15:00+10:00"))
+      stale_offline = sync_actions(gate2, [
+        scan_payload(
+          ticket: ticket, manifest: manifest, sequence: 1, kind: "admit", source: "offline",
+          occurred_at: Time.zone.parse("2027-01-30T18:05:00+10:00")
+        )
+      ])
+      expect(stale_offline.dig("results", 0)).to include("result" => "conflict", "reason_code" => "admit_before_latest_exit")
+      expect(stale_offline.dig("summary", "live_headcount")).to eq(0)
+      expect(ticket.reload).to have_attributes(occupancy_state: "outside", re_entry_conflict_flagged: true, re_entry_count: 0)
+    end
+
+    it "caches headcount_by_day briefly on sync while keeping authoritative live_headcount fresh" do
+      event.update!(re_entry_mode: "exit_scan")
+      travel_to(Time.zone.parse("2027-01-30T14:00:00+10:00"))
+      memory_cache = ActiveSupport::Cache::MemoryStore.new
+      allow(Rails).to receive(:cache).and_return(memory_cache)
+
+      expect(Admissions::ReEntryReport).to receive(:call).once.and_call_original
+      first_counts = Admissions::Counts.call(event: event)
+      expect(first_counts[:live_headcount]).to eq(0)
+
+      # Ticket checks in directly -> second call within 12s reuses cached by_day, yet live_headcount updates immediately!
+      ticket.check_in!(occurred_at: Time.current)
+      second_counts = Admissions::Counts.call(event: event)
+      expect(second_counts[:live_headcount]).to eq(1)
     end
   end
 end

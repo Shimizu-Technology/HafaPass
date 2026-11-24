@@ -815,7 +815,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_210100) do
     t.text "organizer_sales_suspension_reason"
     t.string "re_entry_mode", default: "off", null: false
     t.integer "re_entry_max_count"
-    t.datetime "re_entry_cutoff_at"
     t.integer "re_entry_cooldown_minutes"
     t.string "re_entry_cutoff_time"
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"

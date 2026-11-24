@@ -110,6 +110,7 @@ module Admissions
           request: @request
         )
 
+        Admissions::Counts.expire_headcount_cache!(@event)
         Reconciler::Result.new(action: action, ticket: ticket)
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e

@@ -646,7 +646,7 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled,
-            :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_at, :re_entry_cutoff_time, :re_entry_cooldown_minutes,
+            :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_time, :re_entry_cooldown_minutes,
             supported_locales: [],
             localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
             page_customization: {}
@@ -658,7 +658,7 @@ module Api
           # An empty link field keeps the current link instead of clearing it.
           attributes.delete("slug") if attributes.key?("slug") && attributes["slug"].blank?
           timezone = attributes["timezone"].presence || @event&.timezone || "Pacific/Guam"
-          %w[starts_at ends_at doors_open_at re_entry_cutoff_at].each do |key|
+          %w[starts_at ends_at doors_open_at].each do |key|
             attributes[key] = EventTimeParser.call(attributes[key], timezone: timezone) if attributes.key?(key)
           end
           %w[re_entry_max_count re_entry_cooldown_minutes re_entry_cutoff_time].each do |key|
@@ -858,7 +858,6 @@ module Api
             transfers_enabled: event.transfers_available?,
             re_entry_mode: event.re_entry_mode,
             re_entry_max_count: event.re_entry_max_count,
-            re_entry_cutoff_at: event.re_entry_cutoff_at,
             re_entry_cutoff_time: event.re_entry_cutoff_time,
             re_entry_cooldown_minutes: event.re_entry_cooldown_minutes,
             re_entry_rollover_hour: event.re_entry_rollover_hour,
