@@ -28,11 +28,22 @@ function listFiles(directory) {
   ))
 }
 
+// A `null` value removes the variable, matching Netlify production where the
+// demo flag is not set at all.
+function buildEnv(overrides) {
+  const env = { ...process.env }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === null) delete env[key]
+    else env[key] = value
+  }
+  return env
+}
+
 function buildFound(env) {
   const outDir = mkdtempSync(join(tmpdir(), 'hafapass-build-'))
   try {
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', outDir, '--emptyOutDir'], {
-      cwd: process.cwd(), env: { ...process.env, ...env }, stdio: 'pipe',
+      cwd: process.cwd(), env: buildEnv(env), stdio: 'pipe',
     })
     const found = []
     for (const file of listFiles(outDir).filter(name => /\.(js|css|html|json|map|webmanifest)$/.test(name))) {
@@ -51,7 +62,7 @@ it('the string scan is not vacuous: a deploy-preview demo build does contain the
 }, 240_000)
 
 it('ships no demo layer, handler or staff fixture in a production build, and keeps the demo staff identity off', () => {
-  expect(buildFound({ CONTEXT: 'production', VITE_HAFAPASS_DEMO_DATA: '0' })).toEqual([])
+  expect(buildFound({ CONTEXT: 'production', VITE_HAFAPASS_DEMO_DATA: null })).toEqual([])
 }, 240_000)
 
 it('does not install or honor the demo staff identity with the flag off', async () => {
