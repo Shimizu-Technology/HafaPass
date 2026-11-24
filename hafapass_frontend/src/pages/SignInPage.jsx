@@ -2,8 +2,9 @@ import { useTranslation } from 'react-i18next'
 import SEO from '../components/SEO'
 import useAuthReturnPath from '../hooks/useAuthReturnPath'
 import { SignIn } from '@clerk/clerk-react'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 export default function SignInPage() {
   const { t } = useTranslation()

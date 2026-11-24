@@ -4,10 +4,15 @@ const PROBE_TIMEOUT_MS = 7_000
 const RETRY_INTERVAL_MS = 30_000
 
 export function useBackendAvailability(healthUrl) {
-  const [status, setStatus] = useState('checking')
+  const demoMode = import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1'
+  const [status, setStatus] = useState(demoMode ? 'available' : 'checking')
   const requestId = useRef(0)
 
   const check = useCallback(async (showChecking = true) => {
+    if (demoMode) {
+      setStatus('available')
+      return
+    }
     const currentRequest = ++requestId.current
     if (showChecking) setStatus('checking')
     const controller = new AbortController()
@@ -25,18 +30,19 @@ export function useBackendAvailability(healthUrl) {
     } finally {
       window.clearTimeout(timeout)
     }
-  }, [healthUrl])
+  }, [demoMode, healthUrl])
 
   useEffect(() => {
+    if (demoMode) return undefined
     void check()
     return () => { requestId.current += 1 }
-  }, [check])
+  }, [check, demoMode])
 
   useEffect(() => {
-    if (status !== 'unavailable') return undefined
+    if (demoMode || status !== 'unavailable') return undefined
     const interval = window.setInterval(() => void check(false), RETRY_INTERVAL_MS)
     return () => window.clearInterval(interval)
-  }, [check, status])
+  }, [check, demoMode, status])
 
   return { status, retry: () => check() }
 }

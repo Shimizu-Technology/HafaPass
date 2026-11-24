@@ -4,8 +4,9 @@ import { Navigate, useLocation } from 'react-router-dom'
 
 import { signInDestination } from '../utils/authDestination'
 import PageLoading from './PageLoading'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 function AuthGate({ children }) {
   const { isSignedIn, isLoaded } = useAuth()

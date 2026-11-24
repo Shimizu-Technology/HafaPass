@@ -26,11 +26,13 @@ import PaidCheckoutGate from '../components/PaidCheckoutGate'
 import { useSupportContact } from '../utils/supportContact'
 import RegistrationQuestionField from '../components/checkout/RegistrationQuestionField'
 import { answersPayload, questionAnswerError } from '../utils/registrationAnswers'
+import { isClerkEnabled } from '../utils/demoMode'
+import DemoCheckoutNotice from '../demo/DemoCheckoutNotice'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
   return <div className="min-h-screen bg-surface">
-    {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
+    {isClerkEnabled() ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
     <CheckoutSupport />
   </div>
 }
@@ -489,6 +491,7 @@ function CheckoutContent({ buyerId }) {
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
+    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return
     if (pricingConflict?.code === 'sales_closed') return
     if (!selectionMatchesEvent(event, lineItems, slug)) {
       if (getActiveCheckout(slug) || getCheckoutAttempt(slug)) retrySavedCheckout()
@@ -744,10 +747,10 @@ function CheckoutContent({ buyerId }) {
         </div>
 
         {/* Event summary card */}
-        <div className="card p-4 mb-6 flex items-center gap-4">
+        <div className="card p-4 mb-6 flex items-start gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="80" height="80" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
+            <div className="aspect-video w-24 sm:w-28 rounded-xl overflow-hidden flex-shrink-0 bg-brand-800">
+              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="160" height="90" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">
@@ -1035,19 +1038,23 @@ function CheckoutContent({ buyerId }) {
                   {formErrors.terms && <p id="buyer-terms-error" className="text-danger-700 text-sm mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
-              <PaidCheckoutGate active={paidCheckoutAdminOnly}>
-              <button type="submit" disabled={submitting || checkoutExpired || pricingConflict?.code === 'sales_closed'} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
-                {submitting
-                  ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
-                  : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
-              </button>
-              </PaidCheckoutGate>
+              {import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' ? (
+                <DemoCheckoutNotice />
+              ) : (
+                <PaidCheckoutGate active={paidCheckoutAdminOnly}>
+                <button type="submit" disabled={submitting || checkoutExpired || pricingConflict?.code === 'sales_closed'} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
+                  {submitting
+                    ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
+                    : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
+                </button>
+                </PaidCheckoutGate>
+              )}
             </form>
           </div>
         )}
 
         {/* Step 2: Payment */}
-        {step === 'payment' && clientSecret && stripePublishableKey && (
+        {import.meta.env.VITE_HAFAPASS_DEMO_DATA !== '1' && step === 'payment' && clientSecret && stripePublishableKey && (
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <h2 className="text-base font-semibold text-neutral-900">{t('buyer.Checkout.payment')}</h2>

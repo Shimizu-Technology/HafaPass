@@ -28,8 +28,8 @@ removeLegacyPrivateCaches().finally(() => {
   </Sentry.ErrorBoundary> }])
   createRoot(document.getElementById('root')).render(
     <StrictMode>
-      {/* framer-motion loads only with the pages that use it; each of those
-          already reads useReducedMotion, matching the CSS fallback. */}
+      {/* Motion on buyer routes uses CSS transitions and usePrefersReducedMotion,
+          keeping the critical path free of JS motion libraries. */}
       <HelmetProvider>
         <RouterProvider router={router} />
       </HelmetProvider>
