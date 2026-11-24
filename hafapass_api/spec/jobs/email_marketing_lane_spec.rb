@@ -36,7 +36,7 @@ RSpec.describe "Marketing dispatch lane", type: :job do
   end
 
   it "P1: normalizes a checkout subscriber name and logs a failed optional write" do
-    order = create(:order, buyer_name: "x" * 121)
+    order = create(:order, buyer_name: "x" * 121, platform_opt_in_at: Time.current)
     CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6))
     expect(PlatformSubscriber.find_by!(email: order.buyer_email).name.length).to eq(120)
     allow(PlatformSubscription).to receive(:call).and_raise(ActiveRecord::RecordInvalid)
@@ -53,7 +53,7 @@ RSpec.describe "Marketing dispatch lane", type: :job do
   end
 
   it "N3: retains bounded checkout request evidence in the consent ledger" do
-    order = create(:order)
+    order = create(:order, platform_opt_in_at: Time.current)
     CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6), ip: "203.0.113.24", user_agent: "x" * 600)
     consent = EmailConsent.find_by!(email: order.buyer_email, action: "requested")
     expect(consent).to have_attributes(ip: "203.0.113.24", user_agent: "x" * 500, source: "checkout")

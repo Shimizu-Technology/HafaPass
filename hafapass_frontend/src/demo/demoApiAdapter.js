@@ -160,6 +160,7 @@ export function createDemoAdapter() {
       if (method === 'get') return ok(config, { organizers: [...follows.values()] })
       if (method === 'post') {
         const previous = follows.get(body.organization_id)
+        if (body.consent_only === true && !previous) return fail(config, 404, { error: 'Follow no longer exists' })
         follows.set(body.organization_id, { id: body.organization_id, email_opt_in: body.email_opt_in ?? previous?.email_opt_in ?? false })
         return ok(config, { followed: true }, 201)
       }

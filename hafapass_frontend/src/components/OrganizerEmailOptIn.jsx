@@ -17,7 +17,7 @@ export default function OrganizerEmailOptIn({ organizationId }) {
   return <div className="mt-4"><label className="flex gap-3 text-sm"><input type="checkbox" disabled={busy} checked={checked} onChange={async e => {
     const value = e.target.checked
     setBusy(true); setError(false)
-    try { await apiClient.post('/me/organizer_follows', { organization_id: organizationId, email_opt_in: value }); setChecked(value) }
+    try { await apiClient.post('/me/organizer_follows', { organization_id: organizationId, email_opt_in: value, consent_only: true }); setChecked(value) }
     catch { setError(true) }
     finally { setBusy(false) }
   }} />{t('emailBase.followOptIn')}</label>{error && <p role="alert">{t('emailBase.error')}</p>}</div>

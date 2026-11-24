@@ -23,4 +23,6 @@ it('keeps email preview changes local, persists toggles, and fails closed for un
   expect((await api.get('/me/organizer_follows')).data.organizers[0].email_opt_in).toBe(true)
   await api.delete(`/me/organizer_follows/${organization_id}`)
   expect((await api.get('/me/organizer_follows')).data.organizers).toEqual([])
+  await expect(api.post('/me/organizer_follows', { organization_id, email_opt_in: true, consent_only: true })).rejects.toMatchObject({ response: { status: 404 } })
+  expect((await api.get('/me/organizer_follows')).data.organizers).toEqual([])
 })

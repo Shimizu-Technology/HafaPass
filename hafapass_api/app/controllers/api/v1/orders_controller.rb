@@ -19,7 +19,6 @@ class Api::V1::OrdersController < ApplicationController
   ]
 
   def create
-    platform_consent_at = Time.current.iso8601(6) if params[:platform_opt_in] == true
     response.headers["Cache-Control"] = "private, no-store"
     checkout_key = params[:checkout_key].presence
     if checkout_key && (!checkout_key.is_a?(String) || !checkout_key.match?(/\A[0-9a-f]{64}\z/))
@@ -86,6 +85,7 @@ class Api::V1::OrdersController < ApplicationController
       buyer_name: params[:buyer_name],
       buyer_phone: params[:buyer_phone],
       marketing_opt_in: [true, "true", 1, "1"].include?(params[:marketing_opt_in]),
+      platform_opt_in_at: params[:platform_opt_in] == true ? Time.current : nil,
       user: @current_user,
       promo_code_id: params[:promo_code_id],
       promo_code: params[:promo_code],
@@ -105,10 +105,10 @@ class Api::V1::OrdersController < ApplicationController
       locale: request_locale
     )
 
-    if params[:platform_opt_in] == true
+    if result.order.platform_opt_in_at
       begin
         ActiveRecord.after_all_transactions_commit do
-          CheckoutSubscriptionJob.perform_later(result.order.id, consent_at: platform_consent_at, ip: request.remote_ip, user_agent: request.user_agent.to_s.first(500))
+          CheckoutSubscriptionJob.perform_later(result.order.id, consent_at: result.order.platform_opt_in_at.iso8601(6), ip: request.remote_ip, user_agent: request.user_agent.to_s.first(500))
         end
       rescue StandardError => error
         Rails.logger.warn("Platform subscription enqueue skipped: #{error.class}")

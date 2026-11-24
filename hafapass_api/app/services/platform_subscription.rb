@@ -5,10 +5,10 @@ class PlatformSubscription
     email = attributes[:email].to_s.strip.downcase
     return unless email.match?(URI::MailTo::EMAIL_REGEXP) && email.length <= 254
 
-    subscriber = PlatformSubscriber.find_or_create_by!(email: email) do |row|
-      row.assign_attributes(attributes.except(:email).merge(source: attributes[:source].presence || "footer"))
-    end
-    subscriber.with_lock do
+    subscriber = nil
+    EmailPreferences.with_platform_locks(email, create_subscriber: true,
+      subscriber_attributes: attributes.except(:email).merge(source: attributes[:source].presence || "footer")) do |preference, locked_subscriber|
+      subscriber = locked_subscriber
       if consent_at && EmailConsent.where(email: email, scope: %w[platform all], action: %w[unsubscribed admin_unsubscribed])
           .where("created_at >= ?", consent_at).exists?
         return subscriber
@@ -26,6 +26,7 @@ class PlatformSubscription
           metadata: { token: subscriber.confirmation_token })
         ActiveRecord.after_all_transactions_commit { MessageDeliveryJob.perform_later(delivery.id) }
       else
+        EmailPreferences.restore_scope!(preference: preference, subscriber: subscriber)
         subscriber.update!(status: "confirmed", confirmed_at: Time.current)
         EmailConsent.record!(email: email, scope: "platform", action: "confirmed", source: subscriber.source, request: request, ip: ip, user_agent: user_agent)
       end

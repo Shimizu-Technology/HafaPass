@@ -37,6 +37,44 @@ RSpec.describe "Api::V1::Orders", type: :request do
         expect(response).to have_http_status(:created)
       end
 
+      it "G2: never upgrades the original checkout choice through a recovery replay" do
+        keyed = valid_params.merge(checkout_key: SecureRandom.hex(32), platform_opt_in: false)
+        expect(CheckoutSubscriptionJob).not_to receive(:perform_later)
+        post_json "/api/v1/orders", params: keyed
+        expect(response).to have_http_status(:created)
+        order = Order.find(response.parsed_body.fetch("id"))
+        post_json "/api/v1/orders", params: keyed.merge(platform_opt_in: true)
+        expect(response).to have_http_status(:created)
+        expect(order.reload.platform_opt_in_at).to be_nil
+        expect(PlatformSubscription).not_to receive(:call)
+        CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6))
+      end
+
+      %w[true false].each do |double_opt_in|
+        it "G2: preserves withdrawal across checkout replay with double opt-in #{double_opt_in}" do
+          stub_const("ENV", ENV.to_h.merge("EMAIL_DOUBLE_OPT_IN" => double_opt_in))
+          allow(EmailService).to receive(:configured?).and_return(false)
+          keyed = valid_params.merge(checkout_key: SecureRandom.hex(32), platform_opt_in: true)
+          post_json "/api/v1/orders", params: keyed
+          expect(response).to have_http_status(:created)
+          order = Order.find(response.parsed_body.fetch("id"))
+          original_consent = order.platform_opt_in_at
+          expect(original_consent).to be_present
+          CheckoutSubscriptionJob.perform_now(order.id)
+          travel 1.minute do
+            EmailPreferences.unsubscribe_platform!(order.buyer_email)
+            expect(CheckoutSubscriptionJob).to receive(:perform_later).with(order.id, consent_at: original_consent.iso8601(6), ip: anything, user_agent: anything)
+            post_json "/api/v1/orders", params: keyed
+            expect(response).to have_http_status(:created)
+            expect(order.reload.platform_opt_in_at).to eq(original_consent)
+            expect do
+              CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6))
+            end.not_to change(MessageDelivery.where(template: "platform_confirmation"), :count)
+            expect(PlatformSubscriber.find_by!(email: order.buyer_email).status).to eq("unsubscribed")
+          end
+        end
+      end
+
       it "never fails checkout for an optional platform subscription, including an oversized name" do
         allow(CheckoutSubscriptionJob).to receive(:perform_later).and_raise(ActiveRecord::RecordInvalid)
         post_json "/api/v1/orders", params: valid_params.merge(platform_opt_in: true, buyer_name: "x" * 121)

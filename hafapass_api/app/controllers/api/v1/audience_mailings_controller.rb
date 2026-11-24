@@ -46,7 +46,8 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     return head :forbidden if @organization
 
     subscriber = PlatformSubscriber.find(params[:id])
-    subscriber.with_lock do
+    EmailPreferences.with_platform_locks(subscriber.email) do |_preference, locked_subscriber|
+      subscriber = locked_subscriber
       subscriber.update!(status: %w[bounced complained].include?(subscriber.status) ? subscriber.status : "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
       EmailConsent.record!(email: subscriber.email, scope: "platform", action: "admin_unsubscribed", source: "admin")
       AuditLogger.record!(action: "email.subscriber_suppressed", auditable: subscriber)

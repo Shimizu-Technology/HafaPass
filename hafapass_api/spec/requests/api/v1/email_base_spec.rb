@@ -126,7 +126,7 @@ RSpec.describe "Email base", type: :request do
     first = create(:organizer_profile).organization
     second = create(:organizer_profile).organization
     user = create(:user, email: email)
-    [first, second].each { |org| OrganizerFollow.create!(user: user, organization: org, email_opted_in_at: Time.current, email_consent_version: EmailConsent::VERSION) }
+    [first, second].each { |org| OrganizerFollow.create!(user: user, organization: org, email_opted_in_at: Time.current, email_opted_in_address: user.email.downcase, email_consent_version: EmailConsent::VERSION) }
     token = EmailPreferences.token(email)
     patch "/api/v1/email_preferences/#{token}", params: { unsubscribe_all: true }, as: :json
     patch "/api/v1/email_preferences/#{token}", params: { organizers: [{ id: first.id, enabled: true }] }, as: :json

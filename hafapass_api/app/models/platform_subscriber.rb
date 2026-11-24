@@ -22,12 +22,15 @@ class PlatformSubscriber < ApplicationRecord
     return unless identity.is_a?(Array)
 
     subscriber = find_by(id: identity[0])
-    subscriber&.with_lock do
-      return unless subscriber.confirmation_nonce == identity[1]
+    return unless subscriber
+
+    EmailPreferences.with_platform_locks(subscriber.email) do |preference, locked_subscriber|
+      subscriber = locked_subscriber
+      return unless subscriber && subscriber.confirmation_nonce == identity[1]
       return subscriber if subscriber.status == "confirmed"
       return unless subscriber.status == "pending"
 
-      EmailPreference.where(email: subscriber.email).update_all(all_unsubscribed: false)
+      EmailPreferences.restore_scope!(preference: preference, subscriber: subscriber)
       subscriber.update!(status: "confirmed", confirmed_at: Time.current)
       EmailConsent.record!(email: subscriber.email, scope: "platform", action: "confirmed", source: subscriber.source)
     end

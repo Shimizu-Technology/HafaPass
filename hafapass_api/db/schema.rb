@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_150100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1408,6 +1408,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_150100) do
     t.datetime "retention_anonymized_at"
     t.string "checkout_ip_digest"
     t.bigint "sold_by_id"
+    t.datetime "platform_opt_in_at"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
@@ -1502,6 +1503,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_150100) do
     t.bigint "user_id", null: false
     t.datetime "email_opted_in_at"
     t.string "email_consent_version"
+    t.string "email_opted_in_address"
     t.index ["organization_id"], name: "index_organizer_follows_on_organization_id"
     t.index ["user_id", "organization_id"], name: "index_organizer_follows_on_user_id_and_organization_id", unique: true
     t.index ["user_id"], name: "index_organizer_follows_on_user_id"

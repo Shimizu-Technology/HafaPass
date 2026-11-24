@@ -6,7 +6,7 @@ import apiClient from '../api/client'
 import en from '../locales/en.json'
 const state = vi.hoisted(() => ({ identity: { ready: true, accountKey: 'admin', organizationId: null, authContext: null }, t: (key, values = {}) => {
   const text = key.split('.').reduce((value, part) => value?.[part], en)
-  if (['emailBase.confirmSend', 'emailBase.platform', 'emailBase.now', 'emailBase.atTime'].includes(key)) return text.replace(/{{(\w+)}}/g, (_, name) => values[name])
+  if (['emailBase.count', 'emailBase.records', 'emailBase.confirmSend', 'emailBase.platform', 'emailBase.now', 'emailBase.atTime'].includes(key)) return text.replace(/{{(\w+)}}/g, (_, name) => values[name])
   return key
 } }))
 vi.mock('../hooks/useOrganizerContext', () => ({ useOrganizerIdentity: () => state.identity }))
@@ -101,4 +101,17 @@ it('translates history statuses, blocked reasons, and the cancellation control',
     fireEvent.click(screen.getByRole('button', { name: en.emailBase.cancelScheduled }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/1/cancel', { scope: 'platform' }, { organizationId: null }))
   } finally { state.t = previous }
+})
+
+it('announces filter count changes through exactly one audience status region', async () => {
+  apiClient.get.mockImplementation((path, config) => Promise.resolve({ data: path.endsWith('/audience')
+    ? { eligible: config.params.q ? 2 : 1, count: config.params.q ? 2 : 1, subscribers: [] }
+    : { mailings: [] } }))
+  render(<MemoryRouter initialEntries={['/dashboard/email?scope=platform']}><AudienceMailingsPage /></MemoryRouter>)
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1'))
+  const countStatus = screen.getByRole('status')
+  fireEvent.change(screen.getByLabelText('emailBase.search'), { target: { value: 'new' } })
+  await waitFor(() => expect(countStatus).toHaveTextContent('2'))
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+  expect(document.querySelectorAll('[aria-live]')).toHaveLength(0)
 })

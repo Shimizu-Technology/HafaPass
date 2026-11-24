@@ -39,7 +39,8 @@ RSpec.describe "Checkout retries during a sell-out", type: :request do
     expect { checkout(SecureRandom.hex(32), "late@example.invalid", platform_opt_in: true) }.not_to change(Order, :count)
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.fetch("error")).to eq("Only 0 tickets available for Final GA")
-    expect(CheckoutSubscriptionJob).to have_received(:perform_later).twice
+    expect(CheckoutSubscriptionJob).to have_received(:perform_later).with(order.id,
+      consent_at: order.platform_opt_in_at.iso8601(6), ip: anything, user_agent: anything).twice
   end
 
   it "returns the winner's order to its same-key retry and refuses a late buyer for good" do

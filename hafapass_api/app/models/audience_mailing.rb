@@ -36,7 +36,7 @@ class AudienceMailing < ApplicationRecord
     emails = case audience
     when "platform" then PlatformSubscriber.where(status: "confirmed").pluck(:email)
     when "buyers" then Order.joins(:event).where(events: { organization_id: organization_id }).where(status: [:completed, :partially_refunded, :refunded]).pluck(:buyer_email)
-    when "followers" then OrganizerFollow.joins(:user).where(organization: organization).where.not(email_opted_in_at: nil).pluck("users.email")
+    when "followers" then OrganizerFollow.where(organization: organization).where.not(email_opted_in_at: nil).where.not(email_opted_in_address: nil).pluck(:email_opted_in_address)
     when "waitlists" then WaitlistEntry.joins(:event).where(events: { organization_id: organization_id }).where.not(status: :cancelled).pluck(:email)
     else []
     end
@@ -62,7 +62,7 @@ class AudienceMailing < ApplicationRecord
       opted_orders = Order.joins(:event).where(events: { organization_id: organization_id }, status: [:completed, :partially_refunded, :refunded])
         .where("LOWER(buyer_email) IN (?)", emails).select("DISTINCT ON (LOWER(buyer_email)) orders.*")
         .order(Arel.sql("LOWER(buyer_email), orders.created_at DESC, orders.id DESC")).filter_map { |row| row.buyer_email.downcase if row.marketing_opt_in? }
-      followers = OrganizerFollow.joins(:user).where(organization: organization).where.not(email_opted_in_at: nil).pluck(Arel.sql("LOWER(users.email)"))
+      followers = OrganizerFollow.where(organization: organization).where.not(email_opted_in_at: nil).where.not(email_opted_in_address: nil).pluck(:email_opted_in_address)
       emails &= confirmed | opted_orders | followers
     end
     emails - blocked

@@ -73,7 +73,7 @@ function AudienceMailingsSession({ identity }) {
         <label>{t('emailBase.interest')}<input disabled={busy} className="input" value={interest} onChange={e => changed(setInterest, e.target.value)} /></label>
         <label>{t('emailBase.since')}<input type="date" disabled={busy} className="input" value={since} onChange={e => changed(setSince, e.target.value)} /></label>
       </div>}
-      <p>{t('emailBase.count', { count: list?.eligible || 0 })} · {t('emailBase.records', { count: list?.count || 0 })}</p>
+      <p role="status">{t('emailBase.count', { count: list?.eligible || 0 })} · {t('emailBase.records', { count: list?.count || 0 })}</p>
       {list?.counts && <p>{Object.entries(list.counts).map(([key, count]) => `${t(`emailBase.statuses.${key}`)}: ${count}`).join(' · ')}</p>}
       {list?.growth && <details><summary>{t('emailBase.growth')}</summary><table><tbody>{Object.entries(list.growth).map(([day, count]) => <tr key={day}><th className="pr-6">{day}</th><td>{count}</td></tr>)}</tbody></table></details>}
       <button disabled={busy} className="btn-secondary" onClick={() => action(async () => {

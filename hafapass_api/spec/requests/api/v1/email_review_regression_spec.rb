@@ -13,7 +13,7 @@ RSpec.describe "Email review regressions", type: :request do
   it "lists effective organizer eligibility, including preferences withdrawal, in bulk" do
     user = create(:user)
     orgs = 3.times.map { create(:organizer_profile).organization }
-    orgs.each { |org| OrganizerFollow.create!(user: user, organization: org, email_opted_in_at: Time.current) }
+    orgs.each { |org| OrganizerFollow.create!(user: user, organization: org, email_opted_in_at: Time.current, email_opted_in_address: user.email.downcase) }
     MarketingUnsubscribe.create!(email: user.email.downcase, organization: orgs.first, unsubscribed_at: Time.current)
     queries = []
     ActiveSupport::Notifications.subscribed(->(*args) { queries << args.last[:sql] }, "sql.active_record") do
@@ -61,7 +61,7 @@ RSpec.describe "Email review regressions", type: :request do
   it "P3: unfollow stops email and retains preference management" do
     org = create(:organizer_profile).organization
     user = create(:user, email: email)
-    OrganizerFollow.create!(organization: org, user: user, email_opted_in_at: Time.current)
+    OrganizerFollow.create!(organization: org, user: user, email_opted_in_at: Time.current, email_opted_in_address: user.email.downcase)
     EmailConsent.record!(email: email, organization: org, scope: "organizer", action: "confirmed", source: "follow")
     delete "/api/v1/me/organizer_follows/#{org.id}", headers: auth_headers(user)
     expect(response).to have_http_status(:no_content)
