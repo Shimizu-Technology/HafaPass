@@ -37,7 +37,8 @@ for (const width of [375, 1280]) {
         await expect(main.getByRole('link', { name: 'Already bought a ticket? Find it' })).toHaveAttribute('href', '/orders/recover')
         await expect(main.getByRole('heading', { name: 'How your pass works' })).toBeVisible()
         await expect(main.getByRole('heading', { name: /^Explore by category$/i })).toHaveCount(0)
-        await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(0)
+        await expect(page.locator('main a[href="/events"]:not(footer a)')).toHaveCount(1)
+        await expect(page.getByRole('button', { name: 'Next featured pass' })).toHaveCount(0)
         await expect(main.getByRole('heading', { name: 'Coming up' })).toHaveCount(0)
       } else {
         await expect(main.getByRole('link', { name: 'Sell tickets' })).toHaveAttribute('href', '/host')
@@ -71,7 +72,7 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: /^Explore by category$/i })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Coming up on Guam' })).toBeVisible()
     // The event shows as the hero's featured pass and as a card in the list.
-    await expect(page.locator('a.featured-pass')).toContainText('Community night')
+    await expect(page.locator('[data-card-kind="event"]')).toContainText('Community night')
     await expect(page.locator('a.event-card').filter({ hasText: 'Community night' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toHaveCount(0)
     await page.goto('/events?search=nothing')

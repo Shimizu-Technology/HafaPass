@@ -17,7 +17,7 @@ test('flag-off checkout creates a mocked pending order and reaches the payment s
   await page.getByRole('button', { name: /Buy tickets/ }).click()
   await page.getByLabel('Full name').fill('Synthetic Buyer')
   await page.getByLabel('Email address', { exact: true }).fill('buyer@example.invalid')
-  await page.getByRole('checkbox').check()
+  await page.locator('#termsAccepted').check()
   await page.getByRole('button', { name: /Continue to payment/ }).click()
   await expect(page.getByRole('heading', { name: 'Payment', exact: true })).toBeVisible()
   await expect(page.getByTestId('demo-payments-off-notice')).toHaveCount(0)

@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 const demoEnabled = env.VITE_HAFAPASS_DEMO_DATA === '1' || Boolean(env.DEMO_PREVIEW_BASE_URL)
 
 const VIEWPORTS = [
+  { name: '320px', width: 320, height: 740 },
   { name: '375px', width: 375, height: 667 },
   { name: '390px', width: 390, height: 844 },
   { name: '430px', width: 430, height: 932 },
@@ -63,7 +64,7 @@ async function measureHeroHeadline(page) {
   })
 }
 
-test.describe('Mockup E — Smooth Deck Hero + Clean Home Flow', () => {
+test.describe('Home redesign — deck, filters and buyer flow', () => {
   test.skip(!demoEnabled, 'Runs only against a VITE_HAFAPASS_DEMO_DATA=1 build or deploy preview')
 
   for (const vp of VIEWPORTS) {

@@ -144,7 +144,7 @@ export default function HomePage() {
   const upcoming = useMemo(() => [...events].sort((a, b) => {
     const featured = event => Boolean(event.is_featured && new Date(event.starts_at) > new Date())
     return Number(featured(b)) - Number(featured(a)) || new Date(a.starts_at) - new Date(b.starts_at)
-  }).slice(0, 8), [events])
+  }), [events])
 
   const quickFilters = useMemo(() => quickFiltersFor(events, t), [events, t])
   const activeFilter = useMemo(
@@ -152,7 +152,7 @@ export default function HomePage() {
     [quickFilters, activeFilterId],
   )
   const filteredUpcoming = useMemo(
-    () => upcoming.filter(event => matchesQuickFilter(event, activeFilter)),
+    () => upcoming.filter(event => matchesQuickFilter(event, activeFilter)).slice(0, 8),
     [upcoming, activeFilter],
   )
 

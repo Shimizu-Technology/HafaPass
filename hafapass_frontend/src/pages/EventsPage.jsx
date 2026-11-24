@@ -257,12 +257,7 @@ export default function EventsPage() {
                 </div>
               )}
 
-              {(search || activeCategory !== 'all' || dateRange !== 'upcoming' || price !== 'all' || village) && (
-                <button
-                  onClick={clearFilters}
-                  className="min-h-11 rounded px-3 text-brand-800 hover:bg-brand-50 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
-                >{t('buyer.Events.clearFilters')}</button>
-              )}
+
             </div>
           ) : (
             <ResultsContainer className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

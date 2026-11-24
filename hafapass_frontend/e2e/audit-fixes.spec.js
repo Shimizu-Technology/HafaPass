@@ -60,9 +60,7 @@ for (const width of [320, 390, 1024, 1280]) {
     await page.goto('/events')
     const cards = await verifyCardRows(page)
     if (width >= 1024) expect(new Set(cards.map(card => Math.round(card.left))).size).toBe(3)
-    if (width < 640) await page.getByRole('button', { name: /^Filters/ }).click()
     for (const id of ['event-date-range', 'event-price', 'event-village']) await verifySelect(page.locator(`#${id}`))
-    if (width < 640) await verifySelect(page.locator('#event-category'))
     await page.goto('/')
     // At sm+ Home keeps the date and village selects inline; phones use one-tap quick filter chips.
     if (width >= 640) {

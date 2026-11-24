@@ -414,7 +414,7 @@
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 15px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
   color: inherit;
   cursor: pointer;
@@ -726,3 +726,7 @@
   .ticket-stub { border-top: 0; }
   .ticket, svg, canvas, img { break-inside: avoid; }
 }
+
+/* Keep native filter labels readable and focus visible inside scrolling rows. */
+.chip-select { border: 1px solid transparent; border-radius: 9999px; padding-right: 36px; }
+.chip-select:focus-visible { box-shadow: 0 0 0 2px var(--focus-ring, #0d9e96); }
