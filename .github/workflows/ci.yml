@@ -75,6 +75,11 @@ jobs:
       - name: Prepare database
         working-directory: hafapass_api
         run: bundle exec rails db:schema:load
+      - name: Verify fresh database schema
+        working-directory: hafapass_api
+        run: |
+          bundle exec rails db:migrate db:schema:dump
+          git diff --exit-code -- db/schema.rb
       - name: Run RSpec
         working-directory: hafapass_api
         run: python3 ../scripts/ci_rspec.py

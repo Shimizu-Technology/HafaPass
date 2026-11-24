@@ -112,7 +112,7 @@ k6 run load_tests/fd_championship_rush.js
 
 Local numbers compare code revisions; they are not hosted capacity. Run the API with `RAILS_ENV=staging` (production settings, `StageSafety` checks) against a throwaway local database whose name contains `bench` or `load` and `staging` (for example `hafapass_rush_bench_staging`), with simulated payments:
 
-1. `bin/rails db:create db:schema:load`, then `bin/rails runner ../load_tests/local_rush_fixture.rb`. It prints the `EVENT_SLUG`/`TICKET_TYPE_ID` pairs for a 200-ticket single event and a 200-pass two-night bundle. Recreate the database before every run: the PostgreSQL throttle counters and sold inventory persist.
+1. Initialize the empty isolated database from the checkout’s committed schema with `bin/rails db:create db:schema:load`, then run `bin/rails runner ../load_tests/local_rush_fixture.rb`. It prints the `EVENT_SLUG`/`TICKET_TYPE_ID` pairs for a 200-ticket single event and a 200-pass two-night bundle. Recreate the database before every run: the PostgreSQL throttle counters and sold inventory persist.
 2. Start Puma with the topology under test, for example `WEB_CONCURRENCY=2 RAILS_MAX_THREADS=5 DB_POOL=11 HAFAPASS_RUNTIME=embedded PORT=3101 bundle exec puma -C config/puma.rb`. On macOS, cluster mode also needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES PGGSSENCMODE=disable`. Raise `RACK_ATTACK_ORDERS_PER_IP_1M` (650 covers 600 buyers on one address).
 3. Run plain HTTP with `FORWARDED_PROTO=https`, which marks requests the way Render's TLS proxy does (staging forces SSL):
 

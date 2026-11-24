@@ -90,13 +90,20 @@ HåfaPass has run in production with live card payments since 2026-10-21. The Ph
    # Edit .env with your actual credentials
    ```
 
-3. **Start the backend**
+3. **Start the backend with a fresh local database**
    ```bash
    cd hafapass_api
    bundle install
-   rails db:create db:migrate db:seed
+   bundle exec rails db:create db:schema:load db:seed
    rails server  # Runs on localhost:3000
    ```
+
+   Use the committed `hafapass_api/db/schema.rb` to initialize empty databases. Replaying the
+   historical migrations from zero is unsupported because some depend on older application models.
+   For an existing database, use `bundle exec rails db:migrate` to apply pending migrations.
+   When adding a migration, apply it to a database loaded from the previous branch's schema,
+   then commit the updated `db/schema.rb` with the migration. CI checks that loading and
+   re-dumping the committed schema after migration produces no changes.
 
 4. **Start the frontend** (in another terminal)
    ```bash
