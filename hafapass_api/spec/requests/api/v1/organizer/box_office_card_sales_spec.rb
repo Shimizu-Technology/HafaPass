@@ -128,18 +128,36 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(response.parsed_body).to include("order_id" => order.id, "reconciliation_required" => true)
   end
 
-  [false, true].each do |includes_ended_night|
-    it "refunds after #{includes_ended_night ? 'an included night' : 'the event'} ends" do
+  it "completes an on-time pass sale after its first night ends" do
+    ended = create(:event, :completed, organizer_profile: profile)
+    upcoming = create(:event, :published, organizer_profile: profile, starts_at: 1.hour.from_now)
+    ticket_type.update!(is_pass: true, included_events: [ended, upcoming])
+
+    order = create_sale
+    expect do
+      send_event("payment_intent.succeeded", payment_intent(order))
+    end.not_to have_enqueued_job(LateCaptureRefundJob)
+    expect(order.reload).to be_completed
+    parent = order.tickets.find_by!(parent_ticket_id: nil)
+    # Pass issuance keeps children for eligible completed nights as well.
+    expect(order.tickets.where(parent_ticket_id: parent.id).pluck(:event_id)).to contain_exactly(ended.id, upcoming.id)
+  end
+
+  [false, true].each do |pass|
+    it "refunds once after #{pass ? 'every night on the purchased pass' : 'the event'} ends" do
       start = Time.current
-      if includes_ended_night
-        night = create(:event, :published, organizer_profile: profile, starts_at: start, ends_at: start + 10.minutes)
-        other_night = create(:event, :published, organizer_profile: profile)
-        ticket_type.update!(is_pass: true, included_events: [night, other_night])
+      if pass
+        first_night = create(:event, :published, organizer_profile: profile, starts_at: start, ends_at: start + 10.minutes)
+        last_night = create(:event, :published, organizer_profile: profile, starts_at: start + 15.minutes, ends_at: start + 25.minutes)
+        ticket_type.update!(is_pass: true, included_events: [first_night, last_night])
+        future_night = create(:event, :published, organizer_profile: profile)
+        create(:ticket_type, event: event, is_pass: true, included_events: [future_night])
       else
         event.update!(starts_at: start, ends_at: start + 10.minutes, doors_open_at: start - 10.minutes)
       end
       order = create_sale
       travel_to(order.expires_at + 5.seconds) do
+        expect(event.reload.effective_ends_at).to be > Time.current if pass
         ExpireInventoryHoldsJob.perform_now
         expect do
           2.times { send_event("payment_intent.succeeded", payment_intent(order)) }
@@ -148,6 +166,33 @@ RSpec.describe "Online box office card sales", type: :request do
       expect(order.reload).to be_expired
       expect(order.tickets).to be_empty
       expect(ReconciliationException.where(order: order).sole.details).to include("reason" => "admission_ended")
+    end
+  end
+
+  it "throttles explicit Stripe status checks per signed-in user and order" do
+    travel_to(Time.current.beginning_of_minute + 5.seconds) do
+      order = create_sale
+      path_to_order = "#{path}/#{order.id}"
+      6.times do
+        get path_to_order, params: { check_provider: "1" }, headers: headers
+        expect(response).to have_http_status(:ok)
+      end
+      get "#{path}/0#{order.id}.json/", params: { check_provider: "1" }, headers: headers
+      expect(response).to have_http_status(:too_many_requests)
+      expect(response.headers["Retry-After"].to_i).to be_positive
+
+      get path_to_order, headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(StripeService).to have_received(:retrieve_door_checkout_session).with(order.payments.sole).exactly(6).times
+
+      get path_to_order, params: { check_provider: "1" }, headers: auth_headers(profile.user)
+      expect(response).to have_http_status(:ok)
+
+      other_headers = headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+      post path, params: cart.merge(line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }]), headers: other_headers
+      expect(response).to have_http_status(:ok)
+      get "#{path}/#{response.parsed_body.fetch('id')}", params: { check_provider: "1" }, headers: headers
+      expect(response).to have_http_status(:ok)
     end
   end
 

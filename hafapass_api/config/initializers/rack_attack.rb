@@ -71,6 +71,19 @@ class Rack::Attack
 
   # ─── General Throttles ────────────────────────────────────────────────────
 
+  throttle("box-office-card-status/user-order", limit: 6, period: 1.minute) do |req|
+    next unless req.get? || req.head?
+
+    order_id = Rack::Utils.unescape_path(req.path).b.downcase[
+      %r{\A/+api/+v1/+organizer/+events/+[^/]+/+box_office_card_sales/+([^/.]+)(?:\.[^/]+)?/*\z}, 1
+    ].to_i
+    next unless order_id.positive? && req.GET["check_provider"] == "1"
+
+    token = req.get_header("HTTP_AUTHORIZATION").to_s.match(/\ABearer (\S+)\z/i)&.captures&.first
+    subject = ClerkAuthenticator.verify(token)&.dig("sub") if token
+    "#{subject}:#{order_id}" if subject.present?
+  end
+
   # Provider webhooks arrive from a small pool of provider addresses, and a
   # rejected delivery is retried later, so they never share the visitor budget.
   provider_webhook = lambda do |req|

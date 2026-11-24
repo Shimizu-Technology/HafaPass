@@ -313,9 +313,8 @@ module Commerce
 
         holds.map(&:ticket_type).uniq(&:id).any? do |type|
           if type.pass?
-            type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES)
-              .where("events.status = :completed OR COALESCE(events.ends_at, events.starts_at) <= :at",
-                completed: Event.statuses.fetch(:completed), at: at).exists?
+            !type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES + [:completed])
+              .where("COALESCE(events.ends_at, events.starts_at) > ?", at).exists?
           else
             (event.ends_at || event.starts_at) <= at
           end
