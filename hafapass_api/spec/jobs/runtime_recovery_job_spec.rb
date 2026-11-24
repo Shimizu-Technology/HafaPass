@@ -14,6 +14,21 @@ RSpec.describe RuntimeRecoveryJob do
     ActiveJob::Base.queue_adapter = previous_adapter
   end
 
+  %w[cancelled queued].each do |status|
+    it "preserves #{status} when the mailing changes between selection and locking" do
+      mailing = AudienceMailing.create!(created_by: create(:user), audience: "platform",
+        subject: "Events", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago)
+      allow_any_instance_of(AudienceMailing).to receive(:with_lock).and_wrap_original do |method, &block|
+        AudienceMailing.where(id: method.receiver.id).update_all(status: status)
+        method.call(&block)
+      end
+      described_class.perform_now
+      expect(mailing.reload.status).to eq(status)
+      expect(mailing.blocked_reason).to be_nil
+      expect(SolidQueue::Job.where(class_name: "AudienceMailingJob")).to be_empty
+    end
+  end
+
   let(:order) { create(:order, :completed) }
 
   it "recovers a committed outbox row without a queue entry and avoids another entry while one is pending" do

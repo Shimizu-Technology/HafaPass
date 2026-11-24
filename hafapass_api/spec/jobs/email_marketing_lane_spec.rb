@@ -37,11 +37,11 @@ RSpec.describe "Marketing dispatch lane", type: :job do
 
   it "P1: normalizes a checkout subscriber name and logs a failed optional write" do
     order = create(:order, buyer_name: "x" * 121)
-    CheckoutSubscriptionJob.perform_now(order.id)
+    CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6))
     expect(PlatformSubscriber.find_by!(email: order.buyer_email).name.length).to eq(120)
     allow(PlatformSubscription).to receive(:call).and_raise(ActiveRecord::RecordInvalid)
     expect(Rails.logger).to receive(:warn).with(/Platform subscription skipped/)
-    expect { CheckoutSubscriptionJob.perform_now(order.id) }.not_to raise_error
+    expect { CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6)) }.not_to raise_error
   end
   it "N1: schedules a transactional 429 retry without touching bulk backoff" do
     order = create(:order, :completed)
@@ -54,7 +54,7 @@ RSpec.describe "Marketing dispatch lane", type: :job do
 
   it "N3: retains bounded checkout request evidence in the consent ledger" do
     order = create(:order)
-    CheckoutSubscriptionJob.perform_now(order.id, ip: "203.0.113.24", user_agent: "x" * 600)
+    CheckoutSubscriptionJob.perform_now(order.id, consent_at: Time.current.iso8601(6), ip: "203.0.113.24", user_agent: "x" * 600)
     consent = EmailConsent.find_by!(email: order.buyer_email, action: "requested")
     expect(consent).to have_attributes(ip: "203.0.113.24", user_agent: "x" * 500, source: "checkout")
   end

@@ -2,11 +2,11 @@
 
 class Api::V1::Me::OrganizerFollowsController < ApplicationController
   def index
-    follows = current_user.organizer_follows.index_by(&:organization_id)
+    enabled_ids = EmailPreferences.organizer_enabled_ids(current_user.organizer_follows.pluck(:organization_id), current_user.email)
     render json: { organizers: current_user.followed_organizations.includes(:organizer_profile).order(:name).map { |org|
       { id: org.id, name: org.organizer_profile.business_name, slug: org.slug, logo_url: org.organizer_profile.logo_url,
         verified: org.organizer_profile.verification_status_verified?,
-        email_opt_in: follows[org.id]&.email_opted_in_at.present? }
+        email_opt_in: enabled_ids.include?(org.id) }
     } }
   end
 

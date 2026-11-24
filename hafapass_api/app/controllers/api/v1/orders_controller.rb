@@ -19,6 +19,7 @@ class Api::V1::OrdersController < ApplicationController
   ]
 
   def create
+    platform_consent_at = Time.current.iso8601(6) if params[:platform_opt_in] == true
     response.headers["Cache-Control"] = "private, no-store"
     checkout_key = params[:checkout_key].presence
     if checkout_key && (!checkout_key.is_a?(String) || !checkout_key.match?(/\A[0-9a-f]{64}\z/))
@@ -107,7 +108,7 @@ class Api::V1::OrdersController < ApplicationController
     if params[:platform_opt_in] == true
       begin
         ActiveRecord.after_all_transactions_commit do
-          CheckoutSubscriptionJob.perform_later(result.order.id, ip: request.remote_ip, user_agent: request.user_agent.to_s.first(500))
+          CheckoutSubscriptionJob.perform_later(result.order.id, consent_at: platform_consent_at, ip: request.remote_ip, user_agent: request.user_agent.to_s.first(500))
         end
       rescue StandardError => error
         Rails.logger.warn("Platform subscription enqueue skipped: #{error.class}")

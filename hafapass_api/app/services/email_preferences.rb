@@ -32,15 +32,33 @@ class EmailPreferences
   end
 
   def self.organizer_enabled?(organization, email)
-    !EmailPreference.blocked?(email) && !MarketingUnsubscribe.exists?(organization: organization, email: email) &&
-      (MarketingConsent.opted_in?(organization: organization, email: email) ||
-        EmailConsent.where(email: email, organization: organization, scope: "organizer").order(created_at: :desc, id: :desc).first&.action == "confirmed" ||
-        OrganizerFollow.joins(:user).where(organization: organization).where.not(email_opted_in_at: nil)
-          .where("LOWER(users.email) = ?", email).exists?)
+    organizer_enabled_ids([organization.id], email).include?(organization.id)
+  end
+
+  # Share sending eligibility with the account listing without per-organizer queries.
+  def self.organizer_enabled_ids(ids, email)
+    email = email.to_s.strip.downcase
+    return [] if EmailPreference.blocked?(email)
+
+    blocked = MarketingUnsubscribe.where(organization_id: ids, email: email).pluck(:organization_id)
+    orders = Order.joins(:event).where(events: { organization_id: ids }, status: [:completed, :partially_refunded, :refunded])
+      .where("LOWER(orders.buyer_email) = ?", email)
+      .select("DISTINCT ON (events.organization_id) orders.*, events.organization_id AS consent_organization_id")
+      .order(Arel.sql("events.organization_id, orders.created_at DESC, orders.id DESC"))
+    enabled = orders.filter_map { |order| order.consent_organization_id if order.marketing_opt_in? }
+    enabled += EmailConsent.where(email: email, organization_id: ids, scope: "organizer")
+      .select("DISTINCT ON (organization_id) organization_id, action")
+      .order(:organization_id, created_at: :desc, id: :desc).filter_map { |row| row.organization_id if row.action == "confirmed" }
+    enabled += OrganizerFollow.joins(:user).where(organization_id: ids).where.not(email_opted_in_at: nil)
+      .where("LOWER(users.email) = ?", email).pluck(:organization_id)
+    enabled.uniq - blocked
   end
 
   def self.unsubscribe_platform!(email)
-    PlatformSubscriber.find_by(email: email)&.update!(status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
-    EmailConsent.record!(email: email, scope: "platform", action: "unsubscribed", source: "preferences")
+    subscriber = PlatformSubscriber.find_or_create_by!(email: email) { |row| row.source = "preferences" }
+    subscriber.with_lock do
+      subscriber.update!(status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
+      EmailConsent.record!(email: email, scope: "platform", action: "unsubscribed", source: "preferences")
+    end
   end
 end

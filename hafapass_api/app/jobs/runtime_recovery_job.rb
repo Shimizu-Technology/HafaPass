@@ -43,6 +43,8 @@ class RuntimeRecoveryJob < ApplicationJob
       .where(no_pending_job_sql("AudienceMailingJob", "jsonb_build_array(audience_mailings.id)"))
       .order(:id).limit(BATCH_SIZE).each do |mailing|
       mailing.with_lock do
+        next unless %w[scheduled queueing].include?(mailing.status)
+
         if (reason = mailing.block_reason)
           mailing.update!(status: "blocked", blocked_reason: reason)
         else

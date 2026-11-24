@@ -31,7 +31,7 @@ RSpec.describe "Api::V1::Orders", type: :request do
 
     context "with valid params" do
       it "N3: captures IP and bounded user agent before enqueueing checkout consent" do
-        expect(CheckoutSubscriptionJob).to receive(:perform_later).with(kind_of(Integer), ip: "203.0.113.24", user_agent: "x" * 500)
+        expect(CheckoutSubscriptionJob).to receive(:perform_later).with(kind_of(Integer), consent_at: kind_of(String), ip: "203.0.113.24", user_agent: "x" * 500)
         post_json "/api/v1/orders", params: valid_params.merge(platform_opt_in: true),
           headers: { "REMOTE_ADDR" => "203.0.113.24", "HTTP_USER_AGENT" => "x" * 600 }
         expect(response).to have_http_status(:created)

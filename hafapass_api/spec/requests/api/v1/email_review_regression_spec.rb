@@ -10,6 +10,24 @@ RSpec.describe "Email review regressions", type: :request do
     stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST ONLY ADDRESS"))
   end
 
+  it "lists effective organizer eligibility, including preferences withdrawal, in bulk" do
+    user = create(:user)
+    orgs = 3.times.map { create(:organizer_profile).organization }
+    orgs.each { |org| OrganizerFollow.create!(user: user, organization: org, email_opted_in_at: Time.current) }
+    MarketingUnsubscribe.create!(email: user.email.downcase, organization: orgs.first, unsubscribed_at: Time.current)
+    queries = []
+    ActiveSupport::Notifications.subscribed(->(*args) { queries << args.last[:sql] }, "sql.active_record") do
+      get "/api/v1/me/organizer_follows", headers: auth_headers(user)
+    end
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["organizers"].to_h { |row| [row["id"], row["email_opt_in"]] })
+      .to eq(orgs.to_h { |org| [org.id, org != orgs.first] })
+    expect(queries.count { |sql| sql.include?('FROM "marketing_unsubscribes"') }).to eq(1)
+    EmailPreference.create!(email: user.email.downcase, all_unsubscribed: true)
+    get "/api/v1/me/organizer_follows", headers: auth_headers(user)
+    expect(response.parsed_body["organizers"].map { |row| row["email_opt_in"] }).to eq([false, false, false])
+  end
+
   def subscribe
     post "/api/v1/platform_subscriptions", params: { email: email, source: "footer" }, as: :json
     PlatformSubscriber.find_by!(email: email)

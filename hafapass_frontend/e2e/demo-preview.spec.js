@@ -79,16 +79,12 @@ test.describe('preview-only demo-data mode', () => {
   })
 })
 
-for (const width of [390, 1440]) test(`public email preview flows at ${width}px`, async ({ page }) => {
-  const { mkdirSync } = await import('node:fs')
-  const { env } = await import('node:process')
-  const dir = env.EMAIL_EVIDENCE_DIR || '/Users/agent/work/hafapass-email-evidence/merge-231'
-  mkdirSync(dir, { recursive: true })
+for (const width of [390, 1440]) test(`public email preview flows at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const shot = async (name, locator) => {
     await locator.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `${dir}/${name}-${width}.png` })
+    await page.screenshot({ path: testInfo.outputPath(`${name}-${width}.png`) })
   }
   const external = []
   page.on('request', request => { if (/onrender\.com|stripe\.com|clerk\./.test(request.url())) external.push(request.url()) })

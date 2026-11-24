@@ -1555,7 +1555,37 @@
     "send": "Send now",
     "history": "Send history",
     "unsubscribed": "Unsubscribed",
-    "growth": "New subscribers by day"
+    "growth": "New subscribers by day",
+    "testReminder": "Send a TEST to yourself before sending to the audience.",
+    "confirmSend": "Send \"{{subject}}\" to {{count}} recipients in {{audience}} {{timing}}?",
+    "atTime": "at {{time}}",
+    "now": "now",
+    "cancelScheduled": "Cancel scheduled send",
+    "statuses": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "unsubscribed": "Unsubscribed",
+      "bounced": "Bounced",
+      "complained": "Complained",
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "queueing": "Queueing",
+      "queued": "Queued",
+      "cancelled": "Cancelled",
+      "blocked": "Blocked",
+      "sent": "Sent",
+      "delivered": "Delivered",
+      "failed": "Failed",
+      "suppressed": "Suppressed",
+      "delayed": "Delayed",
+      "opened": "Opened",
+      "clicked": "Clicked"
+    },
+    "blockedReasons": {
+      "Missing mailing address or marketing permission": "Missing mailing address or marketing permission",
+      "Invalid schedule": "Invalid schedule",
+      "Schedule expired; create and confirm a new mailing": "Schedule expired; create and confirm a new mailing"
+    }
   },
   "eventActions": {
     "tickets": "Tickets",
