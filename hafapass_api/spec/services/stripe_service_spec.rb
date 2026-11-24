@@ -80,6 +80,36 @@ RSpec.describe StripeService do
     end
     described_class.create_payment_intent(order, idempotency_key: "card-policy")
   end
+  it "creates the same card-only hosted checkout request for the same door payment" do
+    SiteSetting.instance.update!(payment_mode: "test")
+    allow(ENV).to receive(:[]).with("STRIPE_TEST_SECRET_KEY").and_return("rk_test_door_fixture")
+    order = create(:order, source: "box_office", payment_method: "door_card_keyed",
+      buyer_email: "walkin@example.test", checkout_key_digest: Digest::SHA256.hexdigest("door-fixture"))
+    payment = create(:payment, order: order, provider: "stripe", provider_environment: "test",
+      provider_platform_account_id: "acct_testplatform")
+    sessions = double("checkout sessions API")
+    api = double("v1", accounts: accounts_api, checkout: double("checkout", sessions: sessions))
+    allow(Stripe::StripeClient).to receive(:new).with("rk_test_door_fixture")
+      .and_return(instance_double(Stripe::StripeClient, v1: api))
+    lines = [{ price_data: { currency: "usd", unit_amount: payment.amount_cents, product_data: { name: "Admission" } }, quantity: 1 }]
+    expires_at = 35.minutes.from_now
+    requests = []
+    expect(sessions).to receive(:create).twice do |params, options|
+      requests << [params, options]
+      metadata = { hafapass_door_payment: payment.id, hafapass_door_checkout: order.checkout_key_digest }
+      expect(params).to include(line_items: lines, expires_at: expires_at.to_i, mode: "payment",
+        payment_method_types: ["card"], metadata: metadata, payment_intent_data: hash_including(metadata: metadata))
+      expect(params).not_to have_key(:automatic_payment_methods)
+      expect(options).to eq(idempotency_key: "#{payment.idempotency_key}:checkout")
+      OpenStruct.new(id: "cs_test_DoorFixture")
+    end
+
+    2.times do
+      described_class.create_door_checkout_session(payment: payment, line_items: lines, expires_at: expires_at)
+    end
+    expect(requests.first).to eq(requests.last)
+  end
+
   it "refuses legacy live mode when current provider evidence is not approved" do
     settings = instance_double(
       SiteSetting,

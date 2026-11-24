@@ -33,3 +33,23 @@ test('buyer account pages keep the sign-in-is-off notice', async ({ page }) => {
   await page.goto('/my-tickets')
   await expect(page.getByRole('heading', { name: 'Your tickets in this preview' })).toBeVisible()
 })
+
+for (const [mode, control] of [
+  ['Pay on buyer’s phone', { role: 'img', name: 'Stripe payment QR' }],
+  ['Enter card on this device', { role: 'link', name: 'Open Stripe checkout' }],
+]) {
+  test(`demo box office simulates ${mode} without Stripe`, async ({ page }) => {
+    const external = []
+    page.on('request', request => { if (/stripe\.com/.test(request.url())) external.push(request.url()) })
+    await page.goto('/dashboard/events/101/box-office')
+    await page.getByRole('button', { name: /^Add / }).first().click()
+    await page.getByRole('button', { name: mode }).click()
+    await page.getByRole('button', { name: 'Prepare Stripe checkout' }).click()
+    await expect(page.getByRole('heading', { name: 'Waiting for payment…' })).toBeVisible()
+    const checkout = page.getByRole(control.role, { name: control.name })
+    await expect(checkout).toBeVisible()
+    if (control.role === 'link') await expect(checkout).toHaveAttribute('href', /\/door-payment\?result=finished&demo=1$/)
+    await expect(page.getByRole('heading', { name: 'Paid — tickets ready' })).toBeVisible({ timeout: 12_000 })
+    expect(external).toEqual([])
+  })
+}

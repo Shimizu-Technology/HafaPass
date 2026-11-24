@@ -55,8 +55,11 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
   useEffect(() => {
     if (!loaded) return
     heading.current?.focus({ preventScroll: true })
-    heading.current?.scrollIntoView?.({ block: 'nearest' })
   }, [loaded])
+
+  useEffect(() => {
+    if (sale?.status) heading.current?.scrollIntoView?.({ block: 'start' })
+  }, [sale?.status])
 
   useEffect(() => {
     if (initial) return

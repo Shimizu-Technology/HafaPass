@@ -172,6 +172,28 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(ReconciliationException.where(payment: payment, code: "late_payment_success_after_inventory_release").count).to eq(1)
   end
 
+  it "releases a Session that expired before its create response was saved" do
+    order = create_sale
+    payment = order.payments.sole
+    session_id = payment.stripe_checkout_session_id
+    payment.update!(stripe_checkout_session_id: nil, stripe_checkout_url: nil)
+    send_event("checkout.session.expired", { id: session_id, status: "expired",
+      metadata: payment_intent(order).fetch(:metadata) })
+    expect(order.reload).to be_expired
+    expect(order.inventory_holds.current).to be_empty
+    expect(payment.reload.stripe_checkout_session_id).to eq(session_id)
+  end
+
+  it "refunds rather than issues if the event was cancelled before confirmation" do
+    order = create_sale
+    event.update!(status: :cancelled)
+    expect do
+      send_event("payment_intent.succeeded", payment_intent(order))
+    end.to have_enqueued_job(LateCaptureRefundJob).with(order.payments.sole.id)
+    expect(order.tickets).to be_empty
+    expect(order.reload).to be_expired
+  end
+
   it "refunds a capture after the hold timestamp even before the expiry sweep" do
     order = create_sale
     travel_to(order.expires_at + 1.second) do

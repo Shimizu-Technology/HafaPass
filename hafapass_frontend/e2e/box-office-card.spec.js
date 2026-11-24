@@ -17,14 +17,21 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   let sale
   const attempts = []
   const emailed = []
+  const settled = new Map()
   await page.route('**/api/v1/health', route => route.fulfill({ json: { status: 'ok' } }))
   await page.route('**/api/v1/config', route => route.fulfill({ json: { launch_capabilities: {} } }))
   await page.route('**/api/v1/organizer/organizations', route => route.fulfill({ json: [{ id: 1, name: 'Coral Lantern Studio (demo)' }] }))
   await page.route('**/api/v1/organizer/card_present_account', route => route.fulfill({ json: { payment_ready: false } }))
   await page.route(base, route => route.fulfill({ json: { ...event, online_door_card_enabled: enabled } }))
-  await page.route(`${base}/box_office/summary`, route => route.fulfill({ json: {
-    total_orders: 0, total_tickets: 0, total_revenue_cents: 0, by_payment_method: {},
-  } }))
+  await page.route(`${base}/box_office/summary`, route => {
+    const orders = [...settled.values()]
+    return route.fulfill({ json: {
+      total_orders: orders.length,
+      total_tickets: orders.reduce((sum, order) => sum + order.tickets.length, 0),
+      total_revenue_cents: orders.reduce((sum, order) => sum + order.total_cents, 0),
+      by_payment_method: Object.fromEntries(orders.map(order => [order.payment_method, order.total_cents])),
+    } })
+  })
   await page.route(`${base}/box_office_card_sales`, route => {
     const body = route.request().postDataJSON()
     const key = route.request().headers()['idempotency-key']
@@ -52,7 +59,14 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   })
   await page.goto('/dashboard/events/607/box-office')
   await expect(page.getByRole('heading', { name: 'Box office' })).toBeVisible()
-  return { attempts, emailed, update: changes => { sale = { ...sale, ...changes } } }
+  return {
+    attempts,
+    emailed,
+    update(changes) {
+      sale = { ...sale, ...changes }
+      if (sale.status === 'paid') settled.set(sale.id, sale)
+    },
+  }
 }
 
 async function openCheckout(page, mode, email = false) {
@@ -70,7 +84,10 @@ for (const width of [390, 1280]) {
     if (evidence) await mkdir(evidence, { recursive: true })
     const capture = async state => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
-      if (evidence) await page.screenshot({ path: `${evidence}/${state}-${width}.png` })
+      if (evidence) {
+        await page.locator('#door-checkout-status').evaluate(heading => heading.scrollIntoView({ block: 'start' }))
+        await page.screenshot({ path: `${evidence}/${state}-${width}.png` })
+      }
     }
 
     await openCheckout(page, 'Pay on buyer’s phone', true)
@@ -105,6 +122,7 @@ for (const width of [390, 1280]) {
     await expect(page.getByText(demoTier)).toBeVisible()
     await capture('paid')
 
+    await expect(page.getByText('Phone checkout').locator('..')).toContainText('$13.23')
     await page.getByRole('button', { name: 'Start next sale' }).click()
     await openCheckout(page, 'Enter card on this device')
     await expect(waiting).toBeVisible()
@@ -123,6 +141,7 @@ for (const width of [390, 1280]) {
     await expect(waiting).toBeVisible()
     await page.getByRole('button', { name: 'Cancel sale' }).click()
     await expect(page.getByRole('heading', { name: 'Cancelled' })).toBeVisible()
+    await capture('cancelled')
     await expect(page.getByRole('button', { name: 'Start next sale' })).toBeVisible()
   })
 }
