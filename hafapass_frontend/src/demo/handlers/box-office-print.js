@@ -9,7 +9,7 @@ export async function handle({ method, path, body, state, config }) {
 
   const [, eventId, orderId, emailAction] = match
   const event = state.staff.events.find(item => String(item.id) === eventId)
-  if (!event) return notFound()
+  if (!event) return undefined
   const fixtures = state.boxOfficePrint ||= { orders: new Map(), attempts: new Map() }
 
   if (method === 'post' && !orderId && body.payment_method === 'door_cash') {
