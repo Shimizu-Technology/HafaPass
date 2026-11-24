@@ -1,0 +1,41 @@
+# PR 233 review fixes — 2026-11-24
+
+This round starts at `5bf1b133044531837356f2226f07a1b7f324747b` in the existing `fix/email-readiness` worktree. Sources: Opus's report at `/Users/agent/work/hafapass-email-reviews/opus-review-REPORT.md`, the current controllers/jobs/models, and unresolved GitHub review threads. HåfaPass serves Guam ticket buyers, organizers and administrators. Acceptance covers explicit consent, exact filtered recipients, recoverable scheduling, fast transactional delivery during campaigns, privacy handling and simulated transport. No production access, real email, merge or deploy is authorized.
+
+| Finding | Change and permanent coverage |
+| --- | --- |
+| B1 | Dedicated marketing worker in Solid Queue and Sidekiq; provider-boundary serial pacing without recipient re-poll jobs. Orders, tickets, transfers, refunds and requested waitlist offers/notices bypass this lane. `email_marketing_lane_spec` covers a backed-off blast plus immediate order delivery and priority template routing. |
+| B2 | After-commit checkout job, capped name, enqueue/write rescue and class-only logging. `orders_spec` and `email_marketing_lane_spec` cover 121-character names and write/enqueue failures. |
+| S1 | Strict ISO scheduling, 422 before mutation, stale/invalid recovery blocked. Request regressions reject invalid/past dates. |
+| S2 | Saved filter snapshot used by list eligibility, preview and delivery selection; changing filters invalidates frontend draft/preview. Regression compares displayed count to deliveries. |
+| S3 | Locked cancellation, blocked reason, six-hour default schedule grace; blocked content requires a new confirmed draft. API/job and recovery regressions cover cancellation, address loss and blocked batches. |
+| S4 | Exact subject/audience/count confirmation; TEST prerequisite help; successful test required before enabling send. Frontend regression covers failed tests and locked composition. |
+| S5 | Set-based batched eligibility/consent/suppression queries and concurrent lower-recipient index; bulk delivery inserts in the background dispatcher. Query-count regression covers 110 subscribers. |
+| S6 | Grouped history queries; batched consent history and waitlist unsubscribe lookups. |
+| S7 | Only filter snapshot and count on mailing; recipient addresses reside in delivery rows, using existing delivery retention. The legacy recipient JSON is empty on new dispatches and excluded from API serialization. |
+| S8 | Unfollow records unsubscribe; preference center includes consent/unsubscribe/waitlist organizations. Permanent P3 regression. |
+| S9 | Per-wording source versions, named HåfaPass checkout wording and associated checkbox label. Frontend covers unchecked defaults, independent fields and recovery payload. |
+| S10 | Fresh double opt-in permitted after unsubscribe-all; confirmation restores platform permission while organizer opt-outs remain. Permanent P5 regression. |
+| S11 | New visible preference links do not expire; scoped one-click links remain independent. Eight-year regression. |
+| S12 | ENV-configurable carrier-NAT IP budget, durable three-per-address confirmation cap in 30 days, honeypot, normalized path matching. Rate-limit and confirmation-cap regressions. |
+| S13 | Subscription, consent, preference and recipient export; hold-aware profile/identity redaction and legacy snapshot removal on deletion. Privacy regressions. |
+| S14 | Encrypted, URL-safe purpose-scoped preference identities; old signed links accepted for compatibility. Permanent P6 regression. |
+| S15 | Reversible constraint restoration with NOT VALID and recipient-column rollback. Migration regression. |
+
+P1–P7 are permanent tests across `email_review_regression_spec.rb`, `email_marketing_lane_spec.rb` and `orders_spec.rb`. The captured transport request journey exercises signup, confirmation, admin audience, preview, test, send, unsubscribe and exclusion. These simulated results do not prove provider deliverability, real Clerk login or Safari behavior.
+
+Recipient retention: mailing JSON must remain empty; delivery rows are the sole recipient snapshot and retain the existing message-delivery retention/redaction policy. Privacy deletion redacts subscriber profile/preferences and consent identity using the existing legal-hold guard. Consent action/version timestamps remain as deidentified evidence. The broader seven-year retention policy remains the repository's engineering draft pending counsel/CPA review.
+
+Validation completed on this fix round:
+
+- Full serial RSpec: 4,088 examples, zero failures. Final affected retest after the small follow/preference/blocked-dispatch fixes: 122 examples, zero failures.
+- Full Vitest: 214 files passed, one skipped; 2,396 tests passed, three skipped. Final confirmation-dialog assertion retest also passed.
+- CI Chromium suite: 211 passed initially; six signup payload assertions needed the newly added honeypot field. All six then passed. PWA deploy/offline suite: two passed. WebKit/real devices were not run on this headless Mac mini.
+- Captured-mail browser journey: all eight stages passed against local Rails and simulated transport, with a synthetic admin and verified-address fixture. Evidence: `/Users/agent/work/hafapass-email-evidence/review-fixes/` (`result.json`, captured HTML, screenshots). Priority-lane regression sent the simulated order confirmation with 100 blast recipients pending and a backed-off limiter.
+- Production Vite build, frontend lint, RuboCop (1,089 files), Brakeman (no warnings), Bundler Audit and production npm audit (no vulnerabilities) passed. Impeccable advisory returned `[]`.
+- Actual migration 140200 down/up succeeded inside a rolled-back transaction against the isolated demo DB. Every Rails database command followed an explicit database-name assertion.
+- Borrowed PostgreSQL remains running. Task-owned API/Vite/browser processes stopped; task databases dropped. Worktree retained; pre-existing `.codex/` and `EMAIL_AUDIT.md` preserved.
+
+The read-only shared-context check failed because this host lacks `/Users/agent/.config/shimizu-technology/agent-context.json`; synced canonical guidance was read directly. No shared settings changed.
+
+Lead follow-up: final-head CI/review and the eventual merge/release decision. No merge/deploy or real email occurred. External sender-domain/webhook/inbox acceptance and real Clerk/Safari checks remain the existing pre-campaign owner checks.

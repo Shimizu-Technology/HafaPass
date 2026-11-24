@@ -49,6 +49,12 @@ class MessageDelivery < ApplicationRecord
     channel == "email" && PROMOTIONAL_TEMPLATES.include?(template)
   end
 
+  # User-requested waitlist notices/offers keep their commercial consent rules,
+  # but never wait behind bulk campaigns.
+  def bulk_marketing?
+    channel == "email" && %w[audience_mailing audience_test communication_campaign].include?(template)
+  end
+
   def transactional?
     channel == "email" && !promotional?
   end

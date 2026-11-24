@@ -17,7 +17,7 @@ RSpec.describe "Email base", type: :request do
     expect(response).to have_http_status(:accepted)
     expect(subscriber.status).to eq("pending")
     expect(subscriber.mailable?).to be(false)
-    expect(EmailConsent.last).to have_attributes(version: "event-alerts-v1", source: "footer", action: "requested")
+    expect(EmailConsent.last).to have_attributes(version: "event-alerts-footer-v1", source: "footer", action: "requested")
     expect { subscribe }.not_to change(MessageDelivery, :count)
     token = subscriber.confirmation_token
     post "/api/v1/platform_subscriptions/confirm/#{token}"

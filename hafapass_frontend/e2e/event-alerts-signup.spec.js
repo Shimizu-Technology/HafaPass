@@ -10,7 +10,7 @@ for (const width of [375, 768, 1280]) {
       await page.route('**/api/v1/config', route => json(route, {}))
       await page.route('**/api/v1/events*', route => json(route, { events: [] }))
       await page.route('**/api/v1/platform_subscriptions', async route => {
-        expect(route.request().postDataJSON()).toEqual({ email: 'buyer@example.test', source: 'home' })
+        expect(route.request().postDataJSON()).toEqual({ email: 'buyer@example.test', source: 'home', website: '' })
         await new Promise(resolve => setTimeout(resolve, 650))
         return json(route, accepted ? { accepted: true } : { error: 'unavailable' }, accepted ? 200 : 503)
       })

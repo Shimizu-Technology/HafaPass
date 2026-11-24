@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import apiClient from '../api/client'
@@ -30,13 +30,16 @@ function AudienceMailingsSession({ identity }) {
   const [draftId, setDraftId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const generation = useRef(0)
   const boundConfig = { organizationId: identity.organizationId, ...(identity.authContext ? { authContext: identity.authContext } : {}) }
   const params = { scope, audience, q, status, source, interest, since }
   const load = useCallback(async () => {
+    const request = ++generation.current
     try {
       const [a, h] = await Promise.all([apiClient.get('/audience_mailings/audience', { organizationId: identity.organizationId, ...(identity.authContext ? { authContext: identity.authContext } : {}), params: { scope, audience, q, status, source, interest, since } }), apiClient.get('/audience_mailings', { organizationId: identity.organizationId, ...(identity.authContext ? { authContext: identity.authContext } : {}), params: { scope } })])
+      if (request !== generation.current) return
       setList(a.data); setHistory(h.data.mailings)
-    } catch { setNotice(t('emailBase.error')) }
+    } catch { if (request === generation.current) setNotice(t('emailBase.error')) }
   }, [scope, audience, q, status, source, interest, since, t, identity.organizationId, identity.authContext])
   useEffect(() => { load() }, [load])
   async function action(fn) {
@@ -49,13 +52,13 @@ function AudienceMailingsSession({ identity }) {
     <h1 className="text-2xl font-semibold">{t('emailBase.audiences')}</h1>
     {notice && <p role="status">{notice}</p>}
     <section className="space-y-4 rounded-xl border border-neutral-200 p-5">
-      <label>{t('emailBase.audience')}<select className="input" value={audience} onChange={e => changed(setAudience, e.target.value)}>{(scope === 'platform' ? ['platform'] : ['buyers', 'followers', 'waitlists']).map(a => <option key={a} value={a}>{t(`emailBase.${a}`)}</option>)}</select></label>
-      <label>{t('emailBase.search')}<input className="input" value={q} onChange={e => setQ(e.target.value)} /></label>
+      <label>{t('emailBase.audience')}<select disabled={busy} className="input" value={audience} onChange={e => changed(setAudience, e.target.value)}>{(scope === 'platform' ? ['platform'] : ['buyers', 'followers', 'waitlists']).map(a => <option key={a} value={a}>{t(`emailBase.${a}`)}</option>)}</select></label>
+      <label>{t('emailBase.search')}<input disabled={busy} className="input" value={q} onChange={e => changed(setQ, e.target.value)} /></label>
       {scope === 'platform' && <div className="grid gap-3 sm:grid-cols-4">
-        <label>{t('emailBase.status')}<select className="input" value={status} onChange={e => setStatus(e.target.value)}>{['', 'pending', 'confirmed', 'unsubscribed', 'bounced', 'complained'].map(s => <option key={s} value={s}>{s || t('emailBase.all')}</option>)}</select></label>
-        <label>{t('emailBase.source')}<input className="input" value={source} onChange={e => setSource(e.target.value)} /></label>
-        <label>{t('emailBase.interest')}<input className="input" value={interest} onChange={e => setInterest(e.target.value)} /></label>
-        <label>{t('emailBase.since')}<input type="date" className="input" value={since} onChange={e => setSince(e.target.value)} /></label>
+        <label>{t('emailBase.status')}<select disabled={busy} className="input" value={status} onChange={e => changed(setStatus, e.target.value)}>{['', 'pending', 'confirmed', 'unsubscribed', 'bounced', 'complained'].map(s => <option key={s} value={s}>{s || t('emailBase.all')}</option>)}</select></label>
+        <label>{t('emailBase.source')}<input disabled={busy} className="input" value={source} onChange={e => changed(setSource, e.target.value)} /></label>
+        <label>{t('emailBase.interest')}<input disabled={busy} className="input" value={interest} onChange={e => changed(setInterest, e.target.value)} /></label>
+        <label>{t('emailBase.since')}<input type="date" disabled={busy} className="input" value={since} onChange={e => changed(setSince, e.target.value)} /></label>
       </div>}
       <p>{t('emailBase.count', { count: list?.eligible || 0 })} · {t('emailBase.records', { count: list?.count || 0 })}</p>
       {list?.counts && <p>{Object.entries(list.counts).map(([key, count]) => `${key}: ${count}`).join(' · ')}</p>}
@@ -68,21 +71,22 @@ function AudienceMailingsSession({ identity }) {
     </section>
     <section className="space-y-4 rounded-xl border border-neutral-200 p-5">
       <h2 className="text-xl font-semibold">{t('emailBase.compose')}</h2>
-      <label className="block">{t('emailBase.subject')}<input className="input" maxLength={240} value={subject} onChange={e => changed(setSubject, e.target.value)} /></label>
-      <label className="block">{t('emailBase.body')}<textarea className="input min-h-40" maxLength={20000} value={body} onChange={e => changed(setBody, e.target.value)} /></label>
+      <label className="block">{t('emailBase.subject')}<input disabled={busy} className="input" maxLength={240} value={subject} onChange={e => changed(setSubject, e.target.value)} /></label>
+      <label className="block">{t('emailBase.body')}<textarea disabled={busy} className="input min-h-40" maxLength={20000} value={body} onChange={e => changed(setBody, e.target.value)} /></label>
       <button disabled={busy || !subject || !body} className="btn-secondary" onClick={() => action(async () => {
-        const { data } = await apiClient.post('/audience_mailings/preview', { scope, audience, subject, body }, boundConfig); setPreview(data)
+        const { data } = await apiClient.post('/audience_mailings/preview', { ...params, subject, body }, boundConfig); setPreview(data)
       })}>{t('emailBase.preview')}</button>
       {preview && <><p>{t('emailBase.count', { count: preview.eligible })}</p><div className="flex flex-wrap gap-4 overflow-auto">{[600, 375].map(width => <iframe key={width} title={`${t('emailBase.preview')} ${width}`} sandbox="" srcDoc={preview.html} style={{ width, maxWidth: '100%', height: 520 }} className="border" />)}</div>
         <button disabled={busy} className="btn-secondary" onClick={() => action(async () => {
           let id = draftId
-          if (!id) { const { data } = await apiClient.post('/audience_mailings', { scope, audience, subject, body }, boundConfig); id = data.id; setDraftId(id) }
-          await apiClient.post(`/audience_mailings/${id}/test_send`, { scope }, boundConfig); setNotice(t('emailBase.testQueued')); await load()
+          if (!id) { const { data } = await apiClient.post('/audience_mailings', { ...params, subject, body }, boundConfig); id = data.id }
+          await apiClient.post(`/audience_mailings/${id}/test_send`, { scope }, boundConfig); setDraftId(id); setNotice(t('emailBase.testQueued')); await load()
         })}>{t('emailBase.test')}</button>
-        <label className="block">{t('emailBase.schedule')}<input type="datetime-local" className="input" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /></label>
-        <button disabled={busy || !draftId} className="btn-primary" onClick={() => action(async () => { await apiClient.post(`/audience_mailings/${draftId}/send_now`, { scope, scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null }, boundConfig); setDraftId(null); setPreview(null); setNotice(t('emailBase.queued')); await load() })}>{t(scheduledAt ? 'emailBase.scheduleSend' : 'emailBase.send')}</button>
+        <label className="block">{t('emailBase.schedule')}<input type="datetime-local" disabled={busy} className="input" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} /></label>
+        <p>Send a TEST to yourself before sending to the audience.</p>
+        <button disabled={busy || !draftId} className="btn-primary" onClick={() => { if (!window.confirm(`Send "${subject}" to ${preview.eligible} ${audience} recipients${scheduledAt ? " at the scheduled time" : " now"}?`)) return; action(async () => { await apiClient.post(`/audience_mailings/${draftId}/send_now`, { scope, scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null }, boundConfig); setDraftId(null); setPreview(null); setNotice(t('emailBase.queued')); await load() }) }}>{t(scheduledAt ? 'emailBase.scheduleSend' : 'emailBase.send')}</button>
       </>}
     </section>
-    <section><h2 className="text-xl font-semibold">{t('emailBase.history')}</h2>{history.map(row => <article className="border-b py-3" key={row.id}><h3>{row.subject}</h3><p>{row.status} · {Object.entries(row.counts).map(([k,v]) => `${k}: ${v}`).join(' · ')} · {t('emailBase.unsubscribed')}: {row.unsubscribed}</p></article>)}</section>
+    <section><h2 className="text-xl font-semibold">{t('emailBase.history')}</h2>{history.map(row => <article className="border-b py-3" key={row.id}><h3>{row.subject}</h3><p>{row.status} {row.blocked_reason}{row.status === 'scheduled' && <button disabled={busy} className="btn-secondary" onClick={() => action(async () => { await apiClient.post(`/audience_mailings/${row.id}/cancel`, { scope }, boundConfig); await load() })}>Cancel scheduled send</button>} · {Object.entries(row.counts).map(([k,v]) => `${k}: ${v}`).join(' · ')} · {t('emailBase.unsubscribed')}: {row.unsubscribed}</p></article>)}</section>
   </main>
 }

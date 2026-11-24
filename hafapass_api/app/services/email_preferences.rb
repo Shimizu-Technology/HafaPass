@@ -2,13 +2,20 @@
 
 class EmailPreferences
   def self.token(email, scope: "preferences")
-    Rails.application.message_verifier(:email_preferences).generate(
-      [email.to_s.strip.downcase, scope], purpose: scope, expires_in: scope == "preferences" ? 90.days : nil)
+    encryptor.encrypt_and_sign([email.to_s.strip.downcase, scope], purpose: scope)
   end
 
   def self.email(token, scope: "preferences")
-    value = Rails.application.message_verifier(:email_preferences).verified(token, purpose: scope)
+    value = begin
+      encryptor.decrypt_and_verify(token, purpose: scope)
+    rescue ActiveSupport::MessageEncryptor::InvalidMessage
+      Rails.application.message_verifier(:email_preferences).verified(token, purpose: scope)
+    end
     value[0] if value.is_a?(Array) && value[1] == scope && value[0].is_a?(String) && value[0].match?(URI::MailTo::EMAIL_REGEXP)
+  end
+
+  def self.encryptor
+    ActiveSupport::MessageEncryptor.new(Rails.application.key_generator.generate_key("email-preferences", 32), url_safe: true)
   end
 
   def self.url(email)
@@ -18,6 +25,9 @@ class EmailPreferences
   def self.organizations(email)
     ids = Order.joins(:event).where("LOWER(buyer_email) = ?", email).pluck("events.organization_id")
     ids += OrganizerFollow.joins(:user).where("LOWER(users.email) = ?", email).pluck(:organization_id)
+    ids += EmailConsent.where(email: email).where.not(organization_id: nil).pluck(:organization_id)
+    ids += MarketingUnsubscribe.where(email: email).pluck(:organization_id)
+    ids += WaitlistEntry.joins(:event).where("LOWER(waitlist_entries.email) = ?", email).pluck("events.organization_id")
     Organization.where(id: ids.uniq)
   end
 

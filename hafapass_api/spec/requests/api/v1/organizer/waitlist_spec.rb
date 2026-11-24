@@ -18,7 +18,7 @@ RSpec.describe "Api::V1::Organizer::Waitlist", type: :request do
   describe "audience management" do
     it "exports only this event's matching entries, including request provenance and opt-out" do
       entry = create(:waitlist_entry, event: event, email: "export@example.test", name: "=HYPERLINK(1)")
-      create(:waitlist_entry, email: "other@example.test")
+      create(:waitlist_entry, email: "export@other.test")
       MarketingUnsubscribe.create!(organization: event.organization, email: entry.email, unsubscribed_at: Time.current)
       get "/api/v1/organizer/events/#{event.id}/waitlist/export", params: { q: "export@", status: "waiting" }, headers: headers
       expect(response).to have_http_status(:ok)

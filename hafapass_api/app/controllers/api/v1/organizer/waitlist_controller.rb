@@ -15,6 +15,8 @@ module Api
 
           pagy, paginated_entries = paginate(entries)
 
+          @unsubscribed_emails = unsubscribed_emails(paginated_entries)
+
           # Stats
           stats = {
             total_waiting: @event.waitlist_entries.waiting.count,
@@ -42,11 +44,13 @@ module Api
             actor: current_user, organization: current_organization, request: request,
             metadata: { row_count: entries.count })
           rows = Enumerator.new do |out|
-            entries.find_each do |entry|
+            entries.find_in_batches do |batch|
+              unsubscribed = unsubscribed_emails(batch)
+              batch.each do |entry|
               out << [entry.email, entry.name, entry.status, entry.position, entry.quantity,
                 "event_waitlist", entry.requested_at&.iso8601,
-                MarketingUnsubscribe.exists?(organization: @event.organization,
-                  email: entry.email.strip.downcase), entry.ticket_type&.name]
+                unsubscribed.include?(entry.email.strip.downcase), entry.ticket_type&.name]
+              end
             end
           end
           stream_csv(filename: "event-#{@event.id}-waitlist.csv",
@@ -162,6 +166,10 @@ module Api
           render json: { error: "Waitlist entry not found" }, status: :not_found
         end
 
+        def unsubscribed_emails(entries)
+          MarketingUnsubscribe.where(organization: @event.organization, email: entries.map { |entry| entry.email.strip.downcase }).pluck(:email).to_set
+        end
+
         def entry_json(entry)
           json = {
             id: entry.id,
@@ -178,7 +186,7 @@ module Api
             created_at: entry.created_at,
             request_source: "event_waitlist",
             requested_at: entry.requested_at,
-            organizer_unsubscribed: MarketingUnsubscribe.exists?(organization: @event.organization, email: entry.email.strip.downcase),
+            organizer_unsubscribed: (@unsubscribed_emails || unsubscribed_emails([entry])).include?(entry.email.strip.downcase),
             delivery_failure: entry.delivery_failure
           }
           if entry.waiting?

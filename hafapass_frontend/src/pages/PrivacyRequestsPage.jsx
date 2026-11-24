@@ -9,7 +9,7 @@ import { usePlatformIdentity, usePlatformRequests, usePlatformVisit } from '../h
 function RequestForm({ submit, pending, notice, error, guest = false }) {
   const { t } = useTranslation()
   return <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:p-6">
-    <EmailPreferencesLink />
+    {!guest && <EmailPreferencesLink />}
     <h1 className="text-2xl font-semibold text-neutral-900">{t('buyerAccount.privacyRequests.title')}</h1>
     <p className="mt-2 max-w-2xl text-sm text-neutral-700">{t('buyerAccount.privacyRequests.intro')}</p>
     {guest && <p className="mt-3 text-sm text-neutral-700">{t('buyerAccount.privacyRequests.guestScope')}</p>}

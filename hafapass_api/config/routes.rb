@@ -26,6 +26,7 @@ Rails.application.routes.draw do
       resources :audience_mailings, only: [:index, :create] do
         member do
           post :test_send
+          post :cancel
           post :send_now
         end
       end

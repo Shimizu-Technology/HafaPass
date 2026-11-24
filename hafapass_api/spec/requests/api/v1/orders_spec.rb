@@ -30,6 +30,13 @@ RSpec.describe "Api::V1::Orders", type: :request do
     end
 
     context "with valid params" do
+      it "never fails checkout for an optional platform subscription, including an oversized name" do
+        allow(CheckoutSubscriptionJob).to receive(:perform_later).and_raise(ActiveRecord::RecordInvalid)
+        post_json "/api/v1/orders", params: valid_params.merge(platform_opt_in: true, buyer_name: "x" * 121)
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["id"]).to be_present
+      end
+
       it "casts checkout marketing choices and preserves each recovery identity" do
         { true => true, "1" => true, false => false, nil => false, "invalid" => false }.each do |choice, expected|
           key = SecureRandom.hex(32)

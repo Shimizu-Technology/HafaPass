@@ -10,10 +10,10 @@ class PlatformSubscription
     end
     subscriber.with_lock do
       return subscriber if subscriber.status == "confirmed" || %w[bounced complained].include?(subscriber.status)
-      return subscriber if EmailPreference.blocked?(email)
-      return subscriber if subscriber.message_deliveries.where("created_at > ?", 1.hour.ago).exists?
+      return subscriber if subscriber.message_deliveries.where(template: "platform_confirmation").where("created_at > ?", 30.days.ago).count >= Integer(ENV.fetch("PLATFORM_CONFIRMATIONS_PER_30_DAYS", "3"))
+      return subscriber if subscriber.status == "pending" && subscriber.message_deliveries.where("created_at > ?", 1.hour.ago).exists?
 
-      subscriber.update!(status: "pending", confirmation_nonce: SecureRandom.hex(24))
+      subscriber.update!(source: attributes[:source].presence || subscriber.source, status: "pending", confirmation_nonce: SecureRandom.hex(24))
       EmailConsent.record!(email: email, scope: "platform", action: "requested", source: subscriber.source, request: request)
       if PlatformSubscriber.confirmation_required?
         delivery = subscriber.message_deliveries.create!(channel: "email", template: "platform_confirmation", recipient: email,
@@ -23,6 +23,7 @@ class PlatformSubscription
         ActiveRecord.after_all_transactions_commit { MessageDeliveryJob.perform_later(delivery.id) }
       else
         subscriber.update!(status: "confirmed", confirmed_at: Time.current)
+        EmailConsent.record!(email: email, scope: "platform", action: "confirmed", source: subscriber.source, request: request)
       end
     end
     subscriber

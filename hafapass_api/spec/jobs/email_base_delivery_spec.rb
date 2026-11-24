@@ -4,7 +4,7 @@ RSpec.describe "Audience email delivery", type: :job do
   include ActiveSupport::Testing::TimeHelpers
   let(:admin) { create(:user, role: :admin) }
   let(:email) { "alerts@example.test" }
-  let(:mailing) { AudienceMailing.create!(created_by: admin, subject: "Events", body: "On Guam", audience: "platform", status: "scheduled") }
+  let(:mailing) { AudienceMailing.create!(created_by: admin, subject: "Events", body: "On Guam", audience: "platform", status: "scheduled", scheduled_at: Time.current) }
 
   before do
     allow(EmailService).to receive(:configured?).and_return(false)
@@ -57,5 +57,36 @@ RSpec.describe "Audience email delivery", type: :job do
       EmailRateSlot.backoff!
       expect(EmailRateSlot.reserve!).to be > 29
     end
+  end
+end
+
+RSpec.describe "Audience address withdrawal", type: :job do
+  it "suppresses dispatch when the postal address is withdrawn while the actor remains authorized" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST ADDRESS"))
+    allow(EmailService).to receive(:configured?).and_return(false)
+    admin = create(:user, role: :admin)
+    PlatformSubscriber.create!(email: "address@example.test", source: "footer", status: "confirmed")
+    mailing = AudienceMailing.create!(created_by: admin, subject: "Events", body: "Fixture", audience: "platform", status: "scheduled", scheduled_at: Time.current)
+    AudienceMailingJob.perform_now(mailing.id)
+    ENV.delete("HAFAPASS_POSTAL_ADDRESS")
+    expect(EmailService).not_to receive(:send_delivery_payload)
+    MessageDeliveryJob.perform_now(mailing.message_deliveries.first.id)
+    expect(mailing.message_deliveries.first.status).to eq("suppressed")
+    expect(mailing.authorized?).to be(true)
+  end
+end
+
+RSpec.describe "Blocked audience dispatch", type: :job do
+  it "does not send a snapshotted delivery after a blocked mailing regains its address" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST ADDRESS"))
+    allow(EmailService).to receive(:configured?).and_return(false)
+    admin = create(:user, role: :admin)
+    PlatformSubscriber.create!(email: "blocked@example.test", source: "footer", status: "confirmed")
+    mailing = AudienceMailing.create!(created_by: admin, subject: "Events", body: "Fixture", audience: "platform", status: "scheduled", scheduled_at: Time.current)
+    AudienceMailingJob.perform_now(mailing.id)
+    mailing.update!(status: "blocked", blocked_reason: "Address unavailable")
+    expect(EmailService).not_to receive(:send_delivery_payload)
+    MessageDeliveryJob.perform_now(mailing.message_deliveries.first.id)
+    expect(mailing.message_deliveries.first.status).to eq("suppressed")
   end
 end

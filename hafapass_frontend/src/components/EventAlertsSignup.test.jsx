@@ -9,7 +9,7 @@ it('submits explicit footer consent and shows the generic confirmation notice', 
   render(<EventAlertsSignup source="footer" />)
   fireEvent.change(screen.getByLabelText('emailBase.alertsEmail'), { target: { value: 'person@example.test' } })
   fireEvent.click(screen.getByRole('button', { name: 'emailBase.subscribe' }))
-  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/platform_subscriptions', { email: 'person@example.test', source: 'footer' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/platform_subscriptions', { email: 'person@example.test', source: 'footer', website: '' }))
   expect(await screen.findByRole('status')).toHaveTextContent('emailBase.checkInbox')
 })
 it('keeps entered email available after failure', async () => {

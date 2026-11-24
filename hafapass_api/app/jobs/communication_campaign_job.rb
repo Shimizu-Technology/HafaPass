@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CommunicationCampaignJob < ApplicationJob
-  queue_as :emails
+  queue_as :marketing
 
   def perform(campaign_id, scheduled_for = nil)
     campaign = CommunicationCampaign.find(campaign_id)

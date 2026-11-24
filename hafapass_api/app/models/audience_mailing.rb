@@ -8,7 +8,7 @@ class AudienceMailing < ApplicationRecord
   validates :subject, length: { maximum: 240 }, format: { without: /[\r\n]/ }
   validates :body, length: { maximum: 20_000 }
   validates :audience, inclusion: { in: %w[platform buyers followers waitlists] }
-  validates :status, inclusion: { in: %w[draft scheduled queueing queued] }
+  validates :status, inclusion: { in: %w[draft scheduled queueing queued cancelled blocked] }
   validate { errors.add(:audience, "Invalid scope") if organization_id.nil? != (audience == "platform") }
 
   def authorized?
@@ -40,7 +40,38 @@ class AudienceMailing < ApplicationRecord
     when "waitlists" then WaitlistEntry.joins(:event).where(events: { organization_id: organization_id }).where.not(status: :cancelled).pluck(:email)
     else []
     end
-    emails.map { |email| email.to_s.strip.downcase }.uniq.sort.select { |email| eligible?(email) }
+    emails = emails.map { |email| email.to_s.strip.downcase }.uniq.sort
+    if audience == "platform"
+      subscribers = PlatformSubscriber.where(email: emails, status: "confirmed")
+      subscribers = subscribers.where(source: filters["source"]) if filters["source"].present?
+      subscribers = subscribers.where(status: filters["status"]) if filters["status"].present?
+      subscribers = subscribers.where("interests @> ?::jsonb", [filters["interest"]].to_json) if filters["interest"].present?
+      subscribers = subscribers.where("created_at >= ?", Date.iso8601(filters["since"])) if filters["since"].present?
+      emails = subscribers.pluck(:email)
+    end
+    emails.select! { |email| email.downcase.include?(filters["q"].to_s.downcase) }
+    blocked = EmailPreference.where(email: emails, all_unsubscribed: true).pluck(:email)
+    digests = emails.to_h { |email| [PrivacyEmailSuppression.digest(email), email] }
+    blocked += PrivacyEmailSuppression.where(email_digest: digests.keys).pluck(:email_digest).map { |digest| digests.fetch(digest) }
+    hard, complaints = MessageDelivery.recipient_block_history(MessageDelivery.where("LOWER(recipient) IN (?)", emails))
+    blocked += hard.or(complaints).pluck(Arel.sql("LOWER(recipient)"))
+    if organization
+      blocked += MarketingUnsubscribe.where(organization: organization, email: emails).pluck(:email)
+      confirmed = EmailConsent.where(organization: organization, email: emails, scope: "organizer")
+        .select("DISTINCT ON (email) email, action").order(:email, created_at: :desc, id: :desc).filter_map { |row| row.email if row.action == "confirmed" }
+      opted_orders = Order.joins(:event).where(events: { organization_id: organization_id }, status: [:completed, :partially_refunded, :refunded])
+        .where("LOWER(buyer_email) IN (?)", emails).select("DISTINCT ON (LOWER(buyer_email)) orders.*")
+        .order(Arel.sql("LOWER(buyer_email), orders.created_at DESC, orders.id DESC")).filter_map { |row| row.buyer_email.downcase if row.marketing_opt_in? }
+      followers = OrganizerFollow.joins(:user).where(organization: organization).where.not(email_opted_in_at: nil).pluck(Arel.sql("LOWER(users.email)"))
+      emails &= confirmed | opted_orders | followers
+    end
+    emails - blocked
+  end
+
+  def block_reason
+    return "Missing mailing address or marketing permission" unless authorized? && address.present?
+    return "Invalid schedule" if scheduled_at.nil?
+    "Schedule expired; create and confirm a new mailing" if status == "scheduled" && scheduled_at < Integer(ENV.fetch("EMAIL_SCHEDULE_GRACE_HOURS", "6")).hours.ago
   end
 
   def delivery(email, test: false)

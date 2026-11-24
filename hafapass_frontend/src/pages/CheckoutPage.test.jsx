@@ -32,7 +32,7 @@ describe('checkout navigation', () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_fixture')
     useAuth.mockReturnValue({ isLoaded: false, userId: undefined })
     window.localStorage.setItem('hafapass_scanner_user_id', 'previous-buyer')
-    const payload = { event_id: 37, checkout_key: 'a'.repeat(64) }
+    const payload = { event_id: 37, checkout_key: 'a'.repeat(64), platform_opt_in: true, marketing_opt_in: false }
     window.sessionStorage.setItem('hafapass:checkout-attempt:free-event', JSON.stringify({ payload, expiresAt: Date.now() + 300000 }))
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
     apiClient.post.mockImplementation(url => Promise.resolve({ data: url === '/orders'
@@ -300,6 +300,7 @@ describe('checkout navigation', () => {
     await user.type(await screen.findByLabelText("Full name"), 'Guest Buyer')
     await user.type(screen.getByLabelText("Email address"), 'guest@example.invalid')
     expect(screen.getByRole('checkbox', { name: /Send me news and offers from Island Nights Promotions/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Email me HåfaPass/ })).not.toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
     await user.click(screen.getByRole('button', { name: /Place order/ }))
     await waitFor(() => expect(openConfirmation).toBeTypeOf('function'))
@@ -308,7 +309,30 @@ describe('checkout navigation', () => {
     openConfirmation()
     expect(await screen.findByRole('heading', { name: 'Confirmed order 922' })).toBeInTheDocument()
     expect(screen.queryByText('Unexpected event redirect')).not.toBeInTheDocument()
-    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }], expected_total_cents: 0 })
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ event_id: 37, buyer_name: 'Guest Buyer', buyer_email: 'guest@example.invalid', marketing_opt_in: false, platform_opt_in: false, terms_accepted: true, terms_version: 'buyer-v1', line_items: [{ ticket_type_id: 7, quantity: 1 }], expected_total_cents: 0 })
+  })
+
+  it.each([[true, false], [false, true]])('keeps platform consent %s separate from organizer consent %s', async (platform, organizer) => {
+    const event = { id: 37, slug: 'free-event', title: 'Free Event', timezone: 'Pacific/Guam', organizer: { business_name: 'Island Nights Promotions' }, ticket_types: [{ id: 7, name: 'Free admission', price_cents: 0 }] }
+    apiClient.get.mockResolvedValue({ data: { payment_mode: 'simulate', buyer_terms_version: 'buyer-v1', service_fee_percent: '3.0', service_fee_flat_cents: 0 } })
+    apiClient.post.mockResolvedValue({ data: { id: 922, status: 'completed', guest_access_token: 'guest-token' } })
+    render(<MemoryRouter initialEntries={[{ pathname: '/checkout/free-event', state: { event, lineItems: [{ ticket_type_id: 7, quantity: 1 }] } }]}><Routes>
+      <Route path="/checkout/:slug" element={<CheckoutPage />} />
+      <Route path="/orders/:id/confirmation" element={<p>Consent order completed</p>} />
+    </Routes></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Full name'), 'Guest Buyer')
+    await user.type(screen.getByLabelText('Email address'), 'guest@example.invalid')
+    const platformChoice = screen.getByRole('checkbox', { name: /Email me HåfaPass/ })
+    const organizerChoice = screen.getByRole('checkbox', { name: /Send me news and offers from Island Nights Promotions/ })
+    expect(platformChoice).not.toBeChecked()
+    expect(organizerChoice).not.toBeChecked()
+    if (platform) await user.click(platformChoice)
+    if (organizer) await user.click(organizerChoice)
+    await user.click(screen.getByRole('checkbox', { name: /I agree to/ }))
+    await user.click(screen.getByRole('button', { name: /Place order/ }))
+    await screen.findByText('Consent order completed')
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ platform_opt_in: platform, marketing_opt_in: organizer })
   })
 
   it('sends the typed promo code with its record ID for the server to cross-check', async () => {
@@ -604,7 +628,7 @@ describe('checkout navigation', () => {
   })
 
   it('does not let a stale start-new action erase an attempt created after the rejection', async () => {
-    const payload = { event_id: 37, checkout_key: 'a'.repeat(64) }
+    const payload = { event_id: 37, checkout_key: 'a'.repeat(64), platform_opt_in: true, marketing_opt_in: false }
     window.sessionStorage.setItem('hafapass:checkout-attempt:free-event', JSON.stringify({ payload, expiresAt: Date.now() + 300000 }))
     apiClient.get.mockResolvedValue({ data: { payment_mode: 'test' } })
     apiClient.post.mockRejectedValue({ response: { status: 422, data: { checkout_recovery_required: false } } })

@@ -139,3 +139,20 @@ RSpec.describe RuntimeRecoveryJob do
     expect(jobs.count).to eq(1)
   end
 end
+
+RSpec.describe RuntimeRecoveryJob do
+  it "moves fifty blocked mailings aside so a later eligible mailing recovers" do
+    stub_const("ENV", ENV.to_h.merge("HAFAPASS_RUNTIME" => "embedded", "HAFAPASS_POSTAL_ADDRESS" => "TEST ADDRESS"))
+    previous = ActiveJob::Base.queue_adapter
+    actor = create(:user)
+    50.times { AudienceMailing.create!(created_by: actor, audience: "platform", subject: "Blocked", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago) }
+    eligible = AudienceMailing.create!(created_by: create(:user, role: :admin), audience: "platform", subject: "Eligible", body: "Fixture", status: "scheduled", scheduled_at: 1.minute.ago)
+    previous = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :solid_queue
+    2.times { described_class.perform_now }
+    expect(AudienceMailing.where(status: "blocked").count).to eq(50)
+    expect(SolidQueue::Job.where(class_name: "AudienceMailingJob").map { |job| job.arguments["arguments"] }).to include([eligible.id])
+  ensure
+    ActiveJob::Base.queue_adapter = previous
+  end
+end

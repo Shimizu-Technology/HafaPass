@@ -41,14 +41,14 @@ class Api::V1::EmailPreferencesController < ApplicationController
             EmailConsent.record!(email: @email, scope: "platform", action: "confirmed", source: "preferences", request: request)
           end
         end
-        Array(params[:organizers]).each do |choice|
+        params.permit(organizers: [:id, :enabled]).fetch(:organizers, []).each do |choice|
           org = EmailPreferences.organizations(@email).find(choice[:id])
           if choice[:enabled] == true
             preference.update!(all_unsubscribed: false)
             MarketingUnsubscribe.where(organization: org, email: @email).delete_all
             # Existing follower relationships alone are never email consent.
             OrganizerFollow.joins(:user).where(organization: org).where("LOWER(users.email) = ?", @email)
-              .update_all(email_opted_in_at: Time.current, email_consent_version: EmailConsent::VERSION)
+              .update_all(email_opted_in_at: Time.current, email_consent_version: EmailConsent.version_for(scope: "organizer", source: "preferences"))
           else
             MarketingUnsubscribe.find_or_initialize_by(organization: org, email: @email).update!(unsubscribed_at: Time.current)
           end

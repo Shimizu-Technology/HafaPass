@@ -42,7 +42,13 @@ class RuntimeRecoveryJob < ApplicationJob
     AudienceMailing.where(status: %w[scheduled queueing]).where("scheduled_at IS NULL OR scheduled_at <= ?", Time.current)
       .where(no_pending_job_sql("AudienceMailingJob", "jsonb_build_array(audience_mailings.id)"))
       .order(:id).limit(BATCH_SIZE).each do |mailing|
-      enqueue_unless_pending(AudienceMailingJob, mailing.id) if mailing.authorized? && mailing.address.present?
+      mailing.with_lock do
+        if (reason = mailing.block_reason)
+          mailing.update!(status: "blocked", blocked_reason: reason)
+        else
+          enqueue_unless_pending(AudienceMailingJob, mailing.id)
+        end
+      end
     end
     MessageProviderEvent.where(processed_at: nil)
       .joins("INNER JOIN message_deliveries ON message_deliveries.provider = message_provider_events.provider " \

@@ -1204,11 +1204,12 @@
       "pii_columns": [
         "body",
         "recipient_emails",
+        "filters",
         "subject"
       ]
     },
     "email_rate_slots": {
-      "category": "marketing consent",
+      "category": "operational",
       "period": "7_years_after_year_end",
       "trigger": "available_at",
       "action": "keep",
@@ -3313,7 +3314,10 @@
       "cursor": "non-personal",
       "created_at": "non-personal",
       "updated_at": "non-personal",
-      "recipient_emails": "pii"
+      "recipient_emails": "pii",
+      "filters": "pii",
+      "recipient_count": "non-personal",
+      "blocked_reason": "non-personal"
     },
     "email_rate_slots": {
       "id": "non-personal",

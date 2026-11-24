@@ -5,6 +5,10 @@ import apiClient from '../api/client'
 
 export default function EmailPreferencesPage({ confirm = false }) {
   const { token } = useParams()
+  return <EmailPreferencesSession key={`${token}:${confirm}`} token={token} confirm={confirm} />
+}
+
+function EmailPreferencesSession({ token, confirm }) {
   const { t } = useTranslation()
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
@@ -23,7 +27,7 @@ export default function EmailPreferencesPage({ confirm = false }) {
   }
   return <main className="mx-auto max-w-xl px-4 py-12">
     <h1 className="text-2xl font-semibold">{t(confirm ? 'emailBase.confirm' : 'emailBase.preferences')}</h1>
-    <p className="my-4">{t('emailBase.transactional')}</p>
+    {!confirm && <p className="my-4">{t('emailBase.transactional')}</p>}
     {error && <p role="alert">{t('emailBase.error')}</p>}
     {confirm ? data?.confirmed ? <p role="status">{t('emailBase.confirmed')}</p> : <button disabled={busy} onClick={() => save({})} className="btn-primary">{t('emailBase.confirm')}</button> : data && <div className="space-y-5">
       <label className="flex gap-3"><input type="checkbox" disabled={busy} checked={data.platform} onChange={e => save({ platform: e.target.checked })} />{t('emailBase.signup')}</label>

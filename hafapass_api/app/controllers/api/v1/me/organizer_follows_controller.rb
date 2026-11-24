@@ -2,10 +2,11 @@
 
 class Api::V1::Me::OrganizerFollowsController < ApplicationController
   def index
+    follows = current_user.organizer_follows.index_by(&:organization_id)
     render json: { organizers: current_user.followed_organizations.includes(:organizer_profile).order(:name).map { |org|
       { id: org.id, name: org.organizer_profile.business_name, slug: org.slug, logo_url: org.organizer_profile.logo_url,
         verified: org.organizer_profile.verification_status_verified?,
-        email_opt_in: current_user.organizer_follows.find_by(organization: org)&.email_opted_in_at.present? }
+        email_opt_in: follows[org.id]&.email_opted_in_at.present? }
     } }
   end
 
@@ -21,7 +22,7 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
         else
           MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: current_user.email.downcase).update!(unsubscribed_at: Time.current)
         end
-        follow.update!(email_opted_in_at: enabled ? Time.current : nil, email_consent_version: EmailConsent::VERSION)
+        follow.update!(email_opted_in_at: enabled ? Time.current : nil, email_consent_version: EmailConsent.version_for(scope: "organizer", source: "follow"))
         EmailConsent.record!(email: current_user.email, organization: organization, scope: "organizer",
           action: enabled ? "confirmed" : "unsubscribed", source: "follow", request: request)
       end
@@ -30,7 +31,12 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
   end
 
   def destroy
-    current_user.organizer_follows.find_by!(organization_id: params[:organization_id]).destroy!
+    follow = current_user.organizer_follows.find_by!(organization_id: params[:organization_id])
+    follow.with_lock do
+      MarketingUnsubscribe.find_or_initialize_by(organization: follow.organization, email: current_user.email.downcase).update!(unsubscribed_at: Time.current)
+      EmailConsent.record!(email: current_user.email, organization: follow.organization, scope: "organizer", action: "unsubscribed", source: "follow", request: request)
+      follow.destroy!
+    end
     head :no_content
   end
 end

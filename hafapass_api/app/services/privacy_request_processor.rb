@@ -211,6 +211,10 @@ class PrivacyRequestProcessor
   def export
     {
       generated_at: Time.current.iso8601,
+      platform_subscribers: PlatformSubscriber.where(email: buyer_emails).as_json(except: :confirmation_nonce),
+      email_consents: EmailConsent.where(email: buyer_emails).as_json,
+      email_preferences: EmailPreference.where(email: buyer_emails).as_json,
+      audience_recipients: MessageDelivery.where(recipient: buyer_emails).where.not(audience_mailing_id: nil).as_json(except: [:outbound_payload, :outbound_wire_body]),
       account: @request.user&.attributes&.slice("id", "email", "first_name", "last_name", "phone", "created_at"),
       orders: orders.map do |order|
         {
@@ -353,6 +357,18 @@ class PrivacyRequestProcessor
         personal_values = personal_tokens + owned_orders.flat_map { |order| [order.buyer_name, order.refund_reason] }
           .compact.reject { |value| value.length < 3 }
         buyer_emails.each { |email| PrivacyEmailSuppression.suppress!(email) }
+        PlatformSubscriber.where(email: buyer_emails).find_each do |subscriber|
+          DataRetention.update_unheld(PlatformSubscriber.where(id: subscriber.id), email: "deleted+subscriber-#{subscriber.id}@privacy.invalid", name: nil, interests: [], villages: [], status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
+        end
+        EmailConsent.where(email: buyer_emails).find_each do |consent|
+          DataRetention.update_unheld(EmailConsent.where(id: consent.id), email: "deleted+consent-#{consent.id}@privacy.invalid", ip: nil, user_agent: nil)
+        end
+        EmailPreference.where(email: buyer_emails).find_each do |preference|
+          DataRetention.update_unheld(EmailPreference.where(id: preference.id), email: "deleted+preference-#{preference.id}@privacy.invalid", all_unsubscribed: true)
+        end
+        AudienceMailing.where("recipient_emails ?| array[:emails]", emails: buyer_emails).find_each do |mailing|
+          DataRetention.update_unheld(AudienceMailing.where(id: mailing.id), recipient_emails: mailing.recipient_emails - buyer_emails)
+        end
         current_plan.orders.each do |order|
           written = DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
             eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),

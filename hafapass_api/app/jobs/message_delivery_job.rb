@@ -3,7 +3,7 @@
 require "timeout"
 
 class MessageDeliveryJob < ApplicationJob
-  queue_as :emails
+  queue_as { MessageDelivery.find_by(id: arguments.first)&.bulk_marketing? ? :marketing : :emails }
 
   class UnknownProviderResult < StandardError; end
   class ReplayExpired < StandardError; end
@@ -18,13 +18,6 @@ class MessageDeliveryJob < ApplicationJob
       raise ArgumentError, "Email provider deadline must be shorter than the send lease"
     end
     delivery = MessageDelivery.find(delivery_id)
-    if EmailService.configured? && !terminal?(delivery)
-      delay = EmailRateSlot.reserve!
-      if delay.positive?
-        self.class.set(wait: delay.seconds).perform_later(delivery_id)
-        return
-      end
-    end
     lease_token = SecureRandom.uuid
     previously_unknown = nil
     outcome = with_delivery_lock(delivery) do
@@ -205,7 +198,11 @@ class MessageDeliveryJob < ApplicationJob
     # Lease, payload and unknown marker are durable before any network activity.
     # This works with transaction-pooled PostgreSQL, without session affinity.
     response = dispatch_with_campaign_authorization(delivery, previously_unknown) do
-      Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
+      if delivery.bulk_marketing? && delivery.provider == "resend"
+        EmailRateSlot.dispatch! { Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) } }
+      else
+        Timeout.timeout(PROVIDER_TIMEOUT) { EmailService.send_delivery_payload(delivery) }
+      end
     end
     return if response == :authorization_cancelled
     simulated = response.is_a?(Hash) && (response[:simulated] || response["simulated"])
@@ -303,6 +300,8 @@ class MessageDeliveryJob < ApplicationJob
   def current_marketing_address?(delivery)
     if %w[audience_mailing audience_test].include?(delivery.template)
       mailing = delivery.audience_mailing
+      return false if mailing && %w[blocked cancelled].include?(mailing.status)
+
       return mailing&.authorized? && mailing.address.present? && mailing.address == delivery.metadata["mailing_address"] &&
         mailing.sender_name == delivery.metadata["organizer_name"]
     end

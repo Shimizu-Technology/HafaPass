@@ -8,9 +8,13 @@ class EmailConsent < ApplicationRecord
   before_update { throw :abort }
   before_destroy { throw :abort }
 
+  def self.version_for(scope:, source:)
+    "#{scope == 'organizer' ? 'organizer' : 'event-alerts'}-#{source}-v1"
+  end
+
   def self.record!(email:, scope:, action:, source:, organization: nil, request: nil)
     create!(email: email.strip.downcase, scope: scope, action: action, source: source,
-      organization: organization, version: VERSION,
+      organization: organization, version: version_for(scope: scope, source: source),
       ip: request&.remote_ip, user_agent: request&.user_agent.to_s.first(500))
   end
 end

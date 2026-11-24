@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_140300) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -158,6 +158,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_140300) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.jsonb "recipient_emails", default: [], null: false
+    t.jsonb "filters", default: {}, null: false
+    t.integer "recipient_count", default: 0, null: false
+    t.string "blocked_reason"
     t.index ["created_by_id"], name: "index_audience_mailings_on_created_by_id"
     t.index ["organization_id"], name: "index_audience_mailings_on_organization_id"
   end
@@ -1276,6 +1279,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_140300) do
     t.datetime "replay_requested_at"
     t.bigint "audience_mailing_id"
     t.bigint "platform_subscriber_id"
+    t.index "lower((recipient)::text)", name: "index_message_deliveries_lower_recipient"
     t.index ["audience_mailing_id"], name: "index_message_deliveries_on_audience_mailing_id"
     t.index ["communication_campaign_id"], name: "index_message_deliveries_on_communication_campaign_id"
     t.index ["created_at", "id"], name: "idx_waitlist_deliveries_pending_reconciliation", where: "((reconciled_at IS NULL) AND ((template)::text = ANY (ARRAY[('waitlist_notification'::character varying)::text, ('waitlist_offer'::character varying)::text])) AND (status = ANY (ARRAY[2, 3, 6, 7])))"
