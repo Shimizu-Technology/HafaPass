@@ -34,3 +34,15 @@ If a transfer confirmation is ambiguous, look up the existing bank reference
 and HåfaPass payout before changing its status or sending any further money.
 Updates to bank details require a new approval, and an in-progress payout
 blocks edits or destination changes until reconciled.
+
+## Admin → Payouts → Due
+
+The **Due** tab lists every ended event that still needs its transfer, and every held reserve, with due dates in the event's calendar (Guam by default). Business days skip weekends and bank holidays (`PayoutCalendar`). Each row offers the next step:
+
+1. **Hold reserve** posts the standard `reserve_hold`: 10% of the platform-held net proceeds, rounded half up, with the release date (30 days after the event) in its reason and audit. You can enter another amount, or choose **Finalize without reserve**.
+2. **Finalize statement** runs the same finalizer as the organizer screen.
+3. **Request payout** creates the payout from the current version (`POST /api/v1/admin/payouts`). Send the transfer at the bank, then **Record transfer** in the event's payouts with the bank reference.
+4. On the release date, **Release reserve** posts the full held reserve. Before that date it needs a written reason. It is refused while a refund or dispute is open. A chargeback in the window has already reduced the balance, so finalize and send what remains (due 3 business days after release). If chargebacks exceeded the reserve, the row shows the amount the organizer owes.
+
+The organizer sees the same numbers on **Payout statement** (event finances → View payout statement), which can be printed or downloaded as CSV. See [the lifecycle check](./qa/payout-statement/lifecycle.md).
+

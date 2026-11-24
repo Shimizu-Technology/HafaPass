@@ -4,6 +4,8 @@ Bank transfer to the organizer’s approved account is the standard. Send the av
 
 ## Statement lifecycle
 
+Admin → Payouts → **Due** shows which events and reserves need finance and by when; see [Bank-transfer payouts](./BANK_TRANSFER_PAYOUTS.md#admin--payouts--due).
+
 1. Complete or cancel the event. The hourly `CompletePastEventsJob` completes published events 6 hours after their end time (system actor, audited as `event.completed` with source `system`); an organizer manager can complete earlier. Events without an end time are not completed automatically.
 2. Resolve every pending refund and open dispute.
 3. Review the live preview: gross, discounts, buyer refunds, net charged, buyer-paid HafaPass fees, actual processing costs deducted from the organizer, processing covered by HåfaPass, organizer proceeds, reserves, adjustments, payable amount, prior payouts, and negative balance. Each order's processing-fee bearer snapshot decides which processing column it uses; see [Stripe processing fee evidence](./STRIPE_PROCESSING_FEE_OPERATIONS.md#who-bears-the-processing-cost).

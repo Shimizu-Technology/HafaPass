@@ -1,8 +1,9 @@
+import { env } from 'node:process'
 import { expect, test } from '@playwright/test'
 
 // Preview-only click-through: organizer payout statements in every state and
 // the admin Due list. Fictional data, in memory, no network.
-const shots = process.env.PAYOUT_QA_SCREENSHOTS
+const shots = env.PAYOUT_QA_SCREENSHOTS
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   test.describe(`demo payouts at ${viewport.width}px`, () => {
