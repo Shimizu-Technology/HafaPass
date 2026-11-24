@@ -313,6 +313,7 @@ function FinancesSession({ identity }) {
                         <td className="max-w-xs px-6 py-3">
                           <Link to={`/dashboard/events/${row.id}/analytics#settlement`} className="font-semibold text-neutral-950 underline-offset-2 hover:text-brand-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{row.title}</Link>
                           <p className="text-xs capitalize text-neutral-600">{formatEventDate(row.starts_at, row.timezone || undefined)} · {row.status}</p>
+                          <Link to={`/dashboard/events/${row.id}/statement`} className="mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-brand-700 underline-offset-2 hover:underline">Payout statement</Link>
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">{money(row.organizer_proceeds_cents)}</td>
                         <td className="px-3 py-3 text-right tabular-nums">{money(row.paid_cents)}</td>
@@ -341,6 +342,7 @@ function FinancesSession({ identity }) {
                       <p className="mt-2 text-xs text-neutral-600 tabular-nums">Proceeds {money(row.organizer_proceeds_cents)} · Paid {money(row.paid_cents)}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5"><StatementBadge row={row} /><PayoutStateBadge state={row.payout_state} /></div>
                     </Link>
+                    <Link to={`/dashboard/events/${row.id}/statement`} className="mx-5 -mt-2 mb-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand-700">Payout statement</Link>
                   </li>
                 ))}
               </ul>
@@ -366,6 +368,7 @@ function FinancesSession({ identity }) {
                       {payout.provider_payout_id && <> · Ref <span className="break-all font-mono">{payout.provider_payout_id}</span></>}
                     </p>
                     {payout.status === 'failed' && payout.failure_message && <p className="mt-1 text-xs text-red-800">{payout.failure_message}</p>}
+                    <Link to={`/dashboard/events/${payout.event_id}/statement?payout=${payout.id}`} className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-700 underline-offset-2 hover:underline">View statement<span className="sr-only"> for this payout</span></Link>
                   </div>
                   <div className="flex shrink-0 items-center gap-3 sm:justify-end">
                     <PayoutStatusBadge status={payout.status} />

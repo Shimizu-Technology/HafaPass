@@ -39,6 +39,7 @@ const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
+const PayoutStatementPage = lazy(() => import('./pages/dashboard/PayoutStatementPage'))
 const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 const BoxOfficePage = lazy(() => import('./pages/dashboard/BoxOfficePage'))
 const WaitlistPage = lazy(() => import('./pages/dashboard/WaitlistPage'))
@@ -120,6 +121,7 @@ function App() {
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/guest-list" element={<ProtectedRoute><GuestListPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/refunds" element={<ProtectedRoute><RefundsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/statement" element={<ProtectedRoute><PayoutStatementPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/box-office" element={<ProtectedRoute><BoxOfficePage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />

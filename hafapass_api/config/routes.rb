@@ -231,6 +231,8 @@ Rails.application.routes.draw do
             post :payout
             get :orders_export
             get :statement_export
+            get :payout_statement
+            get :payout_statement_export
           end
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
@@ -464,6 +466,11 @@ Rails.application.routes.draw do
           post :check_amount_adjustment, on: :member
           post :release_hold, on: :member
         end
+        # Bank-transfer schedule: what is due, the 10% reserve and its release.
+        get "payout_schedule", to: "payout_schedules#index"
+        post "payout_schedule/:event_id/reserve", to: "payout_schedules#hold_reserve"
+        post "payout_schedule/:event_id/release", to: "payout_schedules#release_reserve"
+        post "payout_schedule/:event_id/finalize", to: "payout_schedules#finalize"
         resources :disputes, only: [:index]
         resources :reconciliation_exceptions, only: [:index, :show] do
           member do

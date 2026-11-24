@@ -9,6 +9,7 @@ import Dialog from '../../components/Dialog'
 import OperationalSearch from '../../components/OperationalSearch'
 import OperationalPagination from '../../components/OperationalPagination'
 import { adminLabel } from './adminLabels'
+import AdminPayoutDueList from './AdminPayoutDueList'
 import {
   compactParams, errorMessage, foldCell, foldRow, foldTable, formatDate, formatDateTime, money, readFilters, statusTone, useAdminList,
 } from './adminOperations'
@@ -572,13 +573,13 @@ function AdjustmentsList({ identity, resourcePath, filters, setFilter, context, 
   </>
 }
 
-const FILTERS = ['view', 'status', 'q', 'kind', 'event_id', 'organization_id', 'page']
+const FILTERS = ['view', 'status', 'q', 'kind', 'event_id', 'organization_id', 'page', 'due']
 
 function AdminPayoutsSession({ identity, resourcePath }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = readFilters(searchParams, FILTERS)
   const [notice, setNotice] = useState('')
-  const view = filters.view === 'adjustments' ? 'adjustments' : 'payouts'
+  const view = ['adjustments', 'due'].includes(filters.view) ? filters.view : 'payouts'
   const setFilter = changes => {
     setNotice('')
     setSearchParams(compactParams({ ...filters, ...changes }), { replace: true })
@@ -589,7 +590,10 @@ function AdminPayoutsSession({ identity, resourcePath }) {
   const context = scoped ? contextList.data?.context : null
   const tabClass = active => `inline-flex min-h-11 items-center border-b-2 px-4 text-sm font-semibold transition-colors ${active ? 'border-brand-700 text-brand-800' : 'border-transparent text-content-muted hover:text-neutral-900'}`
   const contextQuery = compactParams({ event_id: filters.event_id, organization_id: filters.organization_id })
-  const tabLink = target => `?${new URLSearchParams(target === 'adjustments' ? { ...contextQuery, view: 'adjustments' } : contextQuery)}`
+  const tabLink = target => target === 'due' ? '?view=due'
+    : `?${new URLSearchParams(target === 'adjustments' ? { ...contextQuery, view: 'adjustments' } : contextQuery)}`
+  const dueOnly = filters.due === 'now'
+  const dueList = useAdminList(identity, resourcePath, '/admin/payout_schedule', compactParams({ filter: dueOnly ? 'due_now' : '' }), { enabled: view === 'due' })
 
   return (
     <AdminLayout>
@@ -599,10 +603,12 @@ function AdminPayoutsSession({ identity, resourcePath }) {
       </div>}
       <nav aria-label="Payout records" className="mb-5 flex gap-2 border-b border-neutral-200">
         <Link to={tabLink('payouts')} aria-current={view === 'payouts' ? 'page' : undefined} className={tabClass(view === 'payouts')}>Payouts</Link>
+        <Link to={tabLink('due')} aria-current={view === 'due' ? 'page' : undefined} className={tabClass(view === 'due')}>Due</Link>
         <Link to={tabLink('adjustments')} aria-current={view === 'adjustments' ? 'page' : undefined} className={tabClass(view === 'adjustments')}>Balance adjustments</Link>
       </nav>
       {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
-      {view === 'payouts'
+      {view === 'due' && <AdminPayoutDueList list={dueList} dueOnly={dueOnly} setDueOnly={checked => setFilter({ due: checked ? 'now' : '' })} onNotice={setNotice} />}
+      {view === 'due' ? null : view === 'payouts'
         ? <PayoutsList key={`payouts:${contextQuery.event_id || ''}:${contextQuery.organization_id || ''}`} identity={identity} resourcePath={resourcePath} filters={filters} setFilter={setFilter} onNotice={setNotice} />
         : <AdjustmentsList key={`adjustments:${contextQuery.event_id || ''}:${contextQuery.organization_id || ''}`} identity={identity} resourcePath={resourcePath} filters={filters} setFilter={setFilter} context={context} onNotice={setNotice} />}
     </AdminLayout>
