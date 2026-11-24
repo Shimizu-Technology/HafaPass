@@ -3,18 +3,15 @@ module Api
     module Organizer
       class WaitlistController < BaseController
         include Paginatable
+        include SpreadsheetExport
 
         before_action :set_event
         before_action :set_entry, only: [:notify, :retry_unconfirmed, :offer, :destroy]
 
         # GET /api/v1/organizer/events/:event_id/waitlist
         def index
-          entries = @event.waitlist_entries.includes(:ticket_type).order(:position)
-
-          # Filter by status
-          if params[:status].present?
-            entries = entries.where(status: params[:status])
-          end
+          entries = filtered_entries
+          return if performed?
 
           pagy, paginated_entries = paginate(entries)
 
@@ -34,6 +31,27 @@ module Api
             marketing_address_error: WaitlistDelivery::ADDRESS_ERROR,
             meta: pagination_meta(pagy)
           }
+        end
+
+        # Export uses the same event authorization and filters as the list.
+        def export
+          entries = filtered_entries
+          return if performed?
+
+          AuditLogger.record!(action: "waitlist.exported", auditable: @event, event: @event,
+            actor: current_user, organization: current_organization, request: request,
+            metadata: { row_count: entries.count })
+          rows = Enumerator.new do |out|
+            entries.find_each do |entry|
+              out << [entry.email, entry.name, entry.status, entry.position, entry.quantity,
+                "event_waitlist", entry.requested_at&.iso8601,
+                MarketingUnsubscribe.exists?(organization: @event.organization,
+                  email: entry.email.strip.downcase), entry.ticket_type&.name]
+            end
+          end
+          stream_csv(filename: "event-#{@event.id}-waitlist.csv",
+            header: %w[email name status position quantity request_source requested_at organizer_unsubscribed ticket_type],
+            rows: rows)
         end
 
         # POST /api/v1/organizer/events/:event_id/waitlist/:id/notify
@@ -79,8 +97,10 @@ module Api
         # POST /api/v1/organizer/events/:event_id/waitlist/notify_next
         def notify_next
           return address_error unless WaitlistDelivery.address_ready?(@event)
-          count = (params[:count] || 1).to_i
-          count = [count, 50].min # Cap at 50
+          count = Integer(params[:count].to_s.presence || "1", 10, exception: false)
+          unless count && (1..50).cover?(count)
+            return render json: { error: "Count must be between 1 and 50" }, status: :unprocessable_entity
+          end
 
           entries = @event.waitlist_entries
             .waiting
@@ -109,6 +129,22 @@ module Api
         end
 
         private
+
+        def filtered_entries
+          entries = @event.waitlist_entries.includes(:ticket_type).reorder(:position)
+          if params[:status].present?
+            unless WaitlistEntry.statuses.key?(params[:status])
+              render json: { error: "Invalid waitlist status" }, status: :unprocessable_entity
+              return entries.none
+            end
+            entries = entries.where(status: params[:status])
+          end
+          if params[:q].present?
+            query = "%#{WaitlistEntry.sanitize_sql_like(params[:q].to_s.strip)}%"
+            entries = entries.where("email ILIKE :q OR name ILIKE :q", q: query)
+          end
+          entries
+        end
 
         def address_error
           render json: { error: WaitlistDelivery::ADDRESS_ERROR, settings_url: "/dashboard/settings" }, status: :unprocessable_entity
@@ -140,6 +176,9 @@ module Api
             notified_at: entry.notified_at,
             expires_at: entry.expires_at,
             created_at: entry.created_at,
+            request_source: "event_waitlist",
+            requested_at: entry.requested_at,
+            organizer_unsubscribed: MarketingUnsubscribe.exists?(organization: @event.organization, email: entry.email.strip.downcase),
             delivery_failure: entry.delivery_failure
           }
           if entry.waiting?

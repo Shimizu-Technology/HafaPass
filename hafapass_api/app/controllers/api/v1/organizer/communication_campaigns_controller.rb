@@ -97,6 +97,7 @@ class Api::V1::Organizer::CommunicationCampaignsController < Api::V1::Organizer:
   def serialize(campaign)
     result = campaign.as_json(only: [:id, :name, :subject, :body, :segment, :status, :scheduled_at,
       :started_at, :sent_at, :recipient_count, :created_at, :last_error, :scheduled_by_user_id, :sent_by_user_id])
+    result[:delivery_counts] = campaign.message_deliveries.group(:status).count
     return result unless campaign.draft? || campaign.scheduled?
 
     result.merge(audience: CommunicationCampaigns::Sender.new(campaign).audience_counts)

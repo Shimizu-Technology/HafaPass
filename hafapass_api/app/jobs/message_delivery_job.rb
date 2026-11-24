@@ -281,7 +281,7 @@ class MessageDeliveryJob < ApplicationJob
 
     if delivery.template == "waitlist_offer"
       offer = WaitlistOffer.find_by(id: delivery.metadata["waitlist_offer_id"])
-      offer.nil? || !offer.offered? || offer.order_id.present?
+      offer.nil? || !offer.active? || offer.order_id.present?
     else
       entry = WaitlistEntry.find_by(id: delivery.metadata["waitlist_entry_id"])
       return true if entry.nil? || !entry.notified?

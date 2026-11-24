@@ -47,6 +47,15 @@ RSpec.describe "Api::V1::Organizer sales tools", type: :request do
     expect(campaign.message_deliveries.count).to eq(1)
   end
 
+  it "reports delivery outcomes separately from queue completion" do
+    campaign = create(:communication_campaign, event: event, status: :sent, recipient_count: 2)
+    create(:message_delivery, event: event, communication_campaign: campaign, status: :delivered)
+    create(:message_delivery, event: event, communication_campaign: campaign, status: :bounced)
+    get "#{base}/communication_campaigns", headers: headers
+    row = response.parsed_body.fetch("communication_campaigns").find { |item| item["id"] == campaign.id }
+    expect(row.fetch("delivery_counts")).to eq("delivered" => 1, "bounced" => 1)
+  end
+
   it "returns audience counts only for editable campaigns" do
     draft = create(:communication_campaign, event: event, status: :draft)
     sent = create(:communication_campaign, event: event, status: :sent)

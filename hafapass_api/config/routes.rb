@@ -234,6 +234,7 @@ Rails.application.routes.draw do
           end
           # Waitlist management
           resources :waitlist, only: [:index, :destroy], controller: "waitlist" do
+            get :export, on: :collection
             member do
               post :notify
               post :retry_unconfirmed
