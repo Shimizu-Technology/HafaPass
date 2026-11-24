@@ -57,7 +57,7 @@ module Commerce
         raise CheckoutAttempt::Conflict.new("This checkout belongs to a different sale.", recovery_required: false)
       end
 
-      open_session!(order)
+      open_session!(order) if event.reload.online_door_card_enabled?
       order.reload
     rescue ProviderUnknown => e
       e.order_id = order&.id
@@ -87,6 +87,13 @@ module Commerce
       order.reload
     rescue OrderLifecycle::InvalidTransition
       order.reload
+      # The in-flight create may have saved its Session just before we locked
+      # the order. Close that Session before releasing the reservation.
+      if order.pending? && payment.stripe_checkout_session_id.nil? && order.payments.sole.stripe_checkout_session_id.present?
+        return cancel!(order)
+      end
+
+      order
     rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error
       raise ProviderUnknown, "Could not confirm cancellation. Keep this sale open and try again."
     end
@@ -117,6 +124,7 @@ module Commerce
         buyer_name: parameters["buyer_name"].presence || "Walk-in",
         buyer_email: parameters["buyer_email"].to_s.strip.downcase.presence || "walkin-#{SecureRandom.hex(8)}@boxoffice.local",
         buyer_phone: parameters["buyer_phone"], seat_hold_token: parameters["seat_hold_token"],
+        expected_total_cents: parameters["expected_total_cents"],
         registration_answers: parameters["registration_answers"],
         source: "box_office", payment_method: parameters.fetch("payment_method"), payment_provider: "stripe",
         payment_required: true, service_fee: true, checkout_attempt: claim.attempt,
@@ -198,6 +206,9 @@ module Commerce
         end
         payment.update!(stripe_checkout_session_id: session.id,
           stripe_checkout_url: order.pending? && expires_at.future? ? url : nil)
+        if url && (order.expired? || order.cancelled?)
+          ExpireDoorCheckoutSessionJob.perform_later(payment.id)
+        end
       end
     end
 

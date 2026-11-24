@@ -243,7 +243,7 @@ class StripeWebhookProcessor
         Commerce::OrderLifecycle.expire!(order, provider_expired: true)
       end
       Commerce::OrderLifecycle.complete!(order, payment: payment, webhook_event: receipt,
-        provider_amount_cents: amount, provider_currency: currency, event_context_locked: true)
+        provider_amount_cents: amount, provider_currency: currency, late_completion: true, event_context_locked: true)
     end
   end
 

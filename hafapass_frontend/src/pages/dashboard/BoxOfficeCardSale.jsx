@@ -9,7 +9,7 @@ import { formatMoneyCents } from '../../utils/money'
 const buttons = 'btn-secondary min-h-12 justify-center gap-2'
 const activeEmail = ['queued', 'sent', 'delivered', 'delayed']
 
-export default function BoxOfficeCardSale({ path, initial, requestApi, current, retrySetup, onPaid, onNext }) {
+export default function BoxOfficeCardSale({ path, initial, requestApi, current, retrySetup, onPaid, onNext, recovery = false }) {
   const { t } = useTranslation()
   const [sale, setSale] = useState(initial)
   const [error, setError] = useState('')
@@ -89,6 +89,7 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
       {error
         ? <p role="alert" className="text-sm text-red-800">{error}</p>
         : <p role="status">{t('boxOfficeCard.loading')}</p>}
+      {recovery && <button type="button" className={`${buttons} mt-3`} onClick={onNext}>{t('boxOfficeCard.closeRecovery')}</button>}
       {error && <button type="button" className={`${buttons} mt-3`} disabled={busy} onClick={() => update()}>
         {t('boxOfficeCard.refresh')}
       </button>}
@@ -134,7 +135,7 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
             </a>
           </div>
         ))}
-        {sale.can_retry_setup && <button type="button" className={buttons} disabled={busy} onClick={() => update('setup')}>
+        {sale.can_retry_setup && retrySetup && <button type="button" className={buttons} disabled={busy} onClick={() => update('setup')}>
           {t('boxOfficeCard.retrySetup')}
         </button>}
         {sale.expires_at && <p className="text-sm text-neutral-600">{t('boxOfficeCard.expiresAt', { time: formatPlatformDateTime(sale.expires_at) })}</p>}
@@ -147,6 +148,13 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
         ))}
       </>}
 
+      {sale.status === 'paid' && sale.can_email_tickets && (
+        activeEmail.includes(sale.ticket_email_status)
+          ? <p role="status" className="text-sm text-neutral-700">{t('boxOfficeCard.ticketEmailQueued')}</p>
+          : <button type="button" className={buttons} disabled={busy} onClick={() => update('email')}>
+            <Mail aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.emailTickets')}
+          </button>
+      )}
       {sale.status === 'expired' && <p className="text-sm text-neutral-700">{t('boxOfficeCard.expiredHelp')}</p>}
       {ticket && <div className="space-y-2 rounded-xl border border-neutral-200 p-4 text-center">
         <p className="break-words font-semibold [overflow-wrap:anywhere]">{ticket.tier}</p>
@@ -174,9 +182,15 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
           </button>
         </> : (
           <button type="button" className="btn-primary min-h-12 gap-2" onClick={onNext}>
-            <QrCode aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.nextSale')}
+            <QrCode aria-hidden="true" className="h-4 w-4" /> {t(recovery ? 'boxOfficeCard.closeRecovery' : 'boxOfficeCard.nextSale')}
           </button>
         )}
+        {sale.status === 'expired' && <button type="button" className={buttons} disabled={busy} onClick={() => update()}>
+          <RefreshCw aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.refresh')}
+        </button>}
+        {recovery && sale.pending && <button type="button" className={buttons} onClick={onNext}>
+          {t('boxOfficeCard.closeRecovery')}
+        </button>}
       </div>
     </section>
   )

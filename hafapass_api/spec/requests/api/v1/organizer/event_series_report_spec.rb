@@ -134,6 +134,29 @@ RSpec.describe "Api::V1::Organizer::EventSeries Report & Export", type: :request
       expect(tt_row[3]).to eq("\t+VIP Pass")
     end
 
+    it "exports both hosted door channels and reconciles the channel rows to the series totals" do
+      %w[door_card_link door_card_keyed].each do |method|
+        order = create(:order, event: event_night, status: :completed, source: "box_office", payment_method: method,
+          subtotal_cents: 2500, service_fee_cents: 0, discount_cents: 0, total_cents: 2500)
+        item = create(:order_item, order: order, ticket_type: ticket_type, unit_price_cents: 2500,
+          quantity: 1, subtotal_cents: 2500, organizer_proceeds_cents: 2500)
+        create(:ticket, order: order, order_item: item, ticket_type: ticket_type, event: event_night)
+        create(:payment, :succeeded, order: order, amount_cents: 2500, provider_environment: "live")
+      end
+
+      get "/api/v1/organizer/event_series/#{series.id}/report_export", headers: org_headers(owner)
+      expect(response).to have_http_status(:ok)
+      rows = CSV.parse(response.body.force_encoding(Encoding::UTF_8).delete_prefix("\uFEFF"))
+      start = rows.index { |row| row.first == "SECTION 3: CHANNEL BREAKDOWN" }
+      stop = rows.index { |row| row.first == "SECTION 4: PER-EVENT BREAKDOWN" }
+      channels = rows[(start + 2)...stop].reject(&:empty?)
+      expect(channels.map(&:first)).to include("Door (Phone Checkout)", "Door (Staff-Keyed Checkout)")
+      combined = rows.find { |row| row.first == "Combined Series Total" }
+      expect(channels.sum { |row| row[1].to_i }).to eq(3)
+      expect(channels.sum { |row| row[2].to_i }).to eq(combined.fetch(2).to_i)
+      expect(channels.sum { |row| BigDecimal(row[4]) }).to eq(BigDecimal(combined.fetch(7)))
+    end
+
     it "forbids non-finance roles from exporting CSV and returns 404 cross-org" do
       scanner = member_with_role(:scanner)
       get "/api/v1/organizer/event_series/#{series.id}/report_export", headers: org_headers(scanner)

@@ -16,13 +16,16 @@ function view(sale, event) {
   return {
     id: sale.id,
     reference: `DEMO-DOOR-CARD-${sale.id}`,
+    buyer_name: sale.buyerName,
     payment_method: sale.method,
     status,
     pending,
     total_cents: sale.total,
     expires_at: pending ? sale.expiresAt : null,
     checkout_url: pending ? `${window.location.origin}/door-payment?result=finished&demo=1` : null,
-    can_email_link: sale.canEmail,
+    can_email_link: sale.canEmail && sale.method === 'door_card_link',
+    can_email_tickets: sale.canEmail,
+    ticket_email_status: sale.ticketEmailStatus,
     link_email_status: sale.emailStatus,
     tickets: status === 'paid' ? sale.tiers.map((tier, index) => ({
       id: sale.id * 1000 + index,
@@ -39,10 +42,22 @@ export async function handle({ method, path, body, config, state }) {
   if (!event) return undefined
   if (method === 'get' && path === eventPath) {
     event.online_door_card_enabled = true
+    for (const type of event.ticket_types) {
+      const price = type.current_price_cents ?? type.price_cents
+      type.service_fee_cents = price > 0 ? Math.round(price * 0.05) + 60 : 0
+    }
     return undefined // Preserve the staff event response and any other feature fields.
   }
 
-  const demo = state.boxOfficeCard ||= { attempts: new Map(), sales: new Map() }
+  const demo = state.boxOfficeCard ||= {
+    attempts: new Map(),
+    sales: new Map([
+      [789998, { id: 789998, status: 'waiting', method: 'door_card_link', buyerName: 'Buyer · Lantern demo',
+        paidAt: Infinity, expiresAt: new Date(Date.now() + 35 * 60_000).toISOString(), total: 1323, canEmail: true, tiers: ['Admission'] }],
+      [789999, { id: 789999, status: 'paid', method: 'door_card_keyed', buyerName: 'Buyer · Reef demo',
+        total: 1323, canEmail: true, tiers: ['Admission'] }],
+    ]),
+  }
   if (method === 'get' && path === `${eventPath}/box_office/summary`) {
     const summary = boxOfficeSummary(state.staff)
     for (const sale of demo.sales.values()) {
@@ -59,6 +74,14 @@ export async function handle({ method, path, body, config, state }) {
   if (!match) return undefined
   const [, id, emailAction] = match
 
+  if (method === 'get' && !id) {
+    return json({ orders: [...demo.sales.values()].map(sale => view(sale, event))
+      .filter(sale => sale.status === 'waiting' || sale.status === 'paid')
+      .map(({ id, reference, buyer_name, status, payment_method, total_cents }) => ({
+        id, reference, buyer_name, status, payment_method, total_cents,
+      })) })
+  }
+
   if (method === 'post' && !id) {
     if (!methods.includes(body.payment_method)) return unprocessable('Choose a demo payment method.')
     const key = config.headers?.get?.('Idempotency-Key')
@@ -69,7 +92,8 @@ export async function handle({ method, path, body, config, state }) {
       status: 'waiting',
       expiresAt: new Date(Date.now() + 35 * 60_000).toISOString(),
       paidAt: Date.now() + demoSaleDelay,
-      canEmail: body.payment_method === 'door_card_link' && Boolean(body.buyer_email),
+      canEmail: Boolean(body.buyer_email),
+      buyerName: 'Buyer · Checkout demo',
       emailStatus: null,
       tiers: [],
       total: 0,
@@ -79,7 +103,7 @@ export async function handle({ method, path, body, config, state }) {
       if (!type) continue
       const quantity = Math.min(40, Math.max(0, Number(line.quantity) || 0))
       sale.tiers.push(...Array.from({ length: quantity }, () => type.name))
-      sale.total += (type.current_price_cents || type.price_cents || 0) * quantity
+      sale.total += ((type.current_price_cents ?? type.price_cents ?? 0) + (type.service_fee_cents ?? 0)) * quantity
     }
     if (!sale.tiers.length) return unprocessable('Select at least one demo admission.')
     demo.sales.set(sale.id, sale)
@@ -101,7 +125,11 @@ export async function handle({ method, path, body, config, state }) {
     if (stateFor(sale) === 'waiting') sale.status = 'cancelled'
     return json(view(sale, event))
   }
-  if (method === 'post' && emailAction && sale.canEmail && stateFor(sale) === 'waiting') {
+  if (method === 'post' && emailAction && sale.canEmail && stateFor(sale) === 'paid') {
+    sale.ticketEmailStatus = 'queued'
+    return json({ ticket_email_status: sale.ticketEmailStatus }, 202)
+  }
+  if (method === 'post' && emailAction && sale.canEmail && sale.method === 'door_card_link' && stateFor(sale) === 'waiting') {
     sale.emailStatus = 'queued'
     return json({ link_email_status: sale.emailStatus }, 202)
   }

@@ -1,3 +1,6 @@
+import { estimateCheckoutLine } from '../../utils/checkoutEstimate'
+import { formatMoneyCents } from '../../utils/money'
+import OpenDoorCheckouts from './OpenDoorCheckouts'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import EventWorkspace from '../../components/EventWorkspace'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -71,6 +74,7 @@ function BoxOfficePageSession({ id, identity }) {
   const [cardAccount, setCardAccount] = useState(null)
   const [saleError, setSaleError] = useState(null)
   const [onlineSaleInitial, setOnlineSaleInitial] = useState(null)
+  const [recoveredOrderId, setRecoveredOrderId] = useState(null)
   const saleRequestBusy = useRef(false)
   const [seatReservation, setSeatReservation] = useState(null)
   const [seatSelectorKey, setSeatSelectorKey] = useState(0)
@@ -178,10 +182,25 @@ function BoxOfficePageSession({ id, identity }) {
     ? seatReservation.seats.reduce((sum, seat) => sum + seat.price_cents, 0)
     : event?.ticket_types?.reduce((s, tt) => s + (quantities[tt.id] || 0) * (tt.current_price_cents ?? tt.price_cents), 0) || 0
 
+  const lines = Object.entries(quantities)
+    .filter(([, quantity]) => quantity > 0)
+    .map(([ticket_type_id, quantity]) => ({ ticket_type_id: Number(ticket_type_id), quantity }))
+  const feeLines = onlinePayment
+    ? lines.map(line => estimateCheckoutLine(event, line, { seats: seatReservation?.seats }))
+    : []
+  const feeTotal = feeLines.every(line => line?.feeCents != null)
+    ? feeLines.reduce((sum, line) => sum + line.feeCents, 0)
+    : null
+  const onlineQuote = pendingSale
+    ? pendingSale.online_quote
+    : feeTotal === null ? null : { total: totalCents + feeTotal, fee: feeTotal }
+
   const postOnlineCardSale = useCallback(async sale => {
     const { payload, key } = sale
     const { expected_total_cents: _cashQuote, ...checkoutPayload } = payload
-    const response = await requestApi('post', cardSalePath, checkoutPayload, { headers: { 'Idempotency-Key': key } })
+    const response = await requestApi('post', cardSalePath, {
+      ...checkoutPayload, expected_total_cents: sale.online_quote?.total,
+    }, { headers: { 'Idempotency-Key': key } })
     return response.data
   }, [cardSalePath, requestApi])
 
@@ -218,16 +237,13 @@ function BoxOfficePageSession({ id, identity }) {
 
   const handleSale = async () => {
     if (!current() || !authorizedEvent.current || pendingSaleRef.current?.recoveryRequired) return
-    if (saleRequestBusy.current || pendingSaleRef.current?.online_order_id || (!pendingSaleRef.current && totalItems === 0)) return
+    if (saleRequestBusy.current || pendingSaleRef.current?.online_order_id ||
+        (!pendingSaleRef.current && (totalItems === 0 || (onlinePayment && !onlineQuote)))) return
     saleRequestBusy.current = true
     const recoveringSavedSale = Boolean(pendingSaleRef.current)
     setSubmitting(true)
     setLastOrder(null)
     setSaleError(null)
-
-    const line_items = Object.entries(quantities)
-      .filter(([, qty]) => qty > 0)
-      .map(([ttId, qty]) => ({ ticket_type_id: parseInt(ttId), quantity: qty }))
 
     try {
       let sale = pendingSaleRef.current
@@ -235,7 +251,7 @@ function BoxOfficePageSession({ id, identity }) {
         sale = {
           key: `box-office-${crypto.randomUUID()}`,
           payload: {
-            line_items,
+            line_items: lines,
             seat_hold_token: seatReservation?.seatHoldToken,
             payment_method: paymentMethod,
             buyer_name: buyerName || undefined,
@@ -243,6 +259,7 @@ function BoxOfficePageSession({ id, identity }) {
             expected_total_cents: totalCents,
           },
           total_cents: totalCents,
+          ...(onlinePayment && { online_quote: onlineQuote }),
           created_at: new Date().toISOString(),
         }
         // Persist before recording the sale: a lost response or reload keeps the same cash or card identity.
@@ -318,7 +335,11 @@ function BoxOfficePageSession({ id, identity }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Ticket Selection */}
         <div className="lg:col-span-2 min-w-0 space-y-4">
-          {onlineOrderId ? <BoxOfficeCardSale key={onlineOrderId} path={`${cardSalePath}/${onlineOrderId}`}
+          {!onlineOrderId && !recoveredOrderId && <OpenDoorCheckouts path={cardSalePath}
+            requestApi={requestApi} onOpen={setRecoveredOrderId} />}
+          {recoveredOrderId ? <BoxOfficeCardSale key={recoveredOrderId} path={`${cardSalePath}/${recoveredOrderId}`}
+            requestApi={requestApi} current={current} onPaid={fetchSummary} onNext={() => setRecoveredOrderId(null)}
+            recovery /> : onlineOrderId ? <BoxOfficeCardSale key={onlineOrderId} path={`${cardSalePath}/${onlineOrderId}`}
             initial={onlineSaleInitial} requestApi={requestApi} current={current} retrySetup={restoreOnlineSetup}
             onPaid={fetchSummary} onNext={finishOnlineSale} /> : <>
           {pendingSale?.recoveryRequired && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p>A saved sale recovery record could not be safely read. Money actions are paused. Contact support to verify the original outcome before starting or retrying a sale.</p><SupportLink subject="Recover an unreadable box office sale" className="mt-2 inline-flex min-h-11 items-center font-semibold underline">Contact support</SupportLink></div>}
@@ -410,6 +431,7 @@ function BoxOfficePageSession({ id, identity }) {
             <h2 className="text-lg font-semibold text-neutral-900 mb-3">Payment method</h2>
             <div className="grid grid-cols-2 gap-3">
               <button
+                type="button" aria-pressed={paymentMethod === 'door_cash'}
                 disabled={saleLocked} onClick={() => setPaymentMethod('door_cash')}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
                   paymentMethod === 'door_cash'
@@ -420,7 +442,7 @@ function BoxOfficePageSession({ id, identity }) {
                 <Banknote className="w-5 h-5" /> Cash
               </button>
               <button
-                onClick={() => setPaymentMethod('door_card')}
+                type="button" aria-pressed={paymentMethod === 'door_card'} onClick={() => setPaymentMethod('door_card')}
                 disabled={saleLocked || !capabilities.door_card || !cardAccount?.payment_ready}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
                   paymentMethod === 'door_card'
@@ -441,17 +463,19 @@ function BoxOfficePageSession({ id, identity }) {
                 </button>
               ))}
             </div>}
-            {event.online_door_card_enabled && onlinePayment && <p className="mt-2 text-sm text-neutral-700">
-              {t('boxOfficeCard.feeHelp')}
+            {onlinePayment && totalItems > 0 && <p className="mt-3 font-semibold text-neutral-900" aria-live="polite">
+              {onlineQuote ? t('boxOfficeCard.feeQuote', {
+                total: formatMoneyCents(onlineQuote.total), fee: formatMoneyCents(onlineQuote.fee),
+              }) : t('boxOfficeCard.feeUnavailable')}
             </p>}
-            {!event.online_door_card_enabled && !capabilities.door_card && capabilityStatus === 'loading' && (
-              <p role="status" className="mt-2 text-xs text-neutral-600">Checking whether card payments at the door are available…</p>
+            {!capabilities.door_card && capabilityStatus === 'loading' && (
+              <p role="status" className="mt-2 text-xs text-neutral-600">Checking whether the Clover reader is available…</p>
             )}
-            {!event.online_door_card_enabled && !capabilities.door_card && capabilityStatus === 'error' && (
-              <p role="alert" className="mt-2 text-xs text-amber-800">We couldn&apos;t check whether card payments at the door are available.{pendingSale ? '' : ' Use cash, or'} <button type="button" onClick={retryCapabilities} className="font-semibold underline">try again</button>. Never record a card payment manually.</p>
+            {!capabilities.door_card && capabilityStatus === 'error' && (
+              <p role="alert" className="mt-2 text-xs text-amber-800">We couldn&apos;t check whether the Clover reader is available.{pendingSale ? '' : ' Use cash, or'} <button type="button" onClick={retryCapabilities} className="font-semibold underline">try again</button>. Never record a card payment manually.</p>
             )}
-            {!event.online_door_card_enabled && (capabilities.door_card || capabilityStatus === 'ready') && (!capabilities.door_card || !cardAccount?.payment_ready) && (
-              <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Card payments at the door aren't available on HåfaPass yet.${pendingSale ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
+            {(capabilities.door_card || capabilityStatus === 'ready') && (!capabilities.door_card || !cardAccount?.payment_ready) && (
+              <p className="mt-2 text-xs text-amber-700">{!capabilities.door_card ? `Clover reader payments are unavailable.${pendingSale || event.online_door_card_enabled ? '' : ' Use cash.'} Never record a card payment manually.` : 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'}</p>
             )}
           </div>
 
@@ -467,7 +491,7 @@ function BoxOfficePageSession({ id, identity }) {
           {/* Process Sale Button */}
           <button
             onClick={handleSale}
-            disabled={submitting || accessRefreshing || pendingSale?.recoveryRequired || (!pendingSale && (totalItems === 0 || (event.assigned_seating && !seatReservation)))}
+            disabled={submitting || accessRefreshing || pendingSale?.recoveryRequired || (!pendingSale && (totalItems === 0 || (onlinePayment && !onlineQuote) || (event.assigned_seating && !seatReservation)))}
             className="w-full mt-6 py-4 rounded-xl bg-brand-600 text-white font-semibold text-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
           >
             {submitting ? (

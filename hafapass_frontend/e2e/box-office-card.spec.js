@@ -3,7 +3,7 @@ import { env } from 'node:process'
 import { expect, test } from '@playwright/test'
 
 const base = '**/api/v1/organizer/events/607'
-const ticket = { id: 8, name: 'Admission', quantity_available: 50, quantity_sold: 0, price_cents: 1200 }
+const ticket = { id: 8, name: 'Admission', quantity_available: 50, quantity_sold: 0, price_cents: 1200, service_fee_cents: 123 }
 const event = {
   id: 607, organization_id: 1, title: 'Coral Lantern Weekend (demo)', status: 'published',
   starts_at: '2099-11-13T06:00:00Z', timezone: 'Pacific/Guam', venue_name: 'Coral Lantern Pavilion (demo)',
@@ -33,6 +33,12 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
     } })
   })
   await page.route(`${base}/box_office_card_sales`, route => {
+    if (route.request().method() === 'GET') {
+      const orders = [...settled.values(), ...(sale?.pending ? [sale] : [])]
+      return route.fulfill({ json: { orders: orders.map(order => ({
+        ...order, buyer_name: `架空🌺 ${'W'.repeat(96)}`,
+      })) } })
+    }
     const body = route.request().postDataJSON()
     const key = route.request().headers()['idempotency-key']
     if (!attempts.some(attempt => attempt.key === key)) {
@@ -47,6 +53,8 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
     return route.fulfill({ json: sale })
   })
   await page.route(`${base}/box_office_card_sales/*`, route => {
+    const orderId = Number(new URL(route.request().url()).pathname.split('/').at(-1))
+    if (route.request().method() === 'GET' && settled.has(orderId)) return route.fulfill({ json: settled.get(orderId) })
     if (route.request().method() === 'DELETE') {
       sale = { ...sale, status: 'cancelled', pending: false, checkout_url: null }
     }
@@ -54,8 +62,10 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   })
   await page.route(`${base}/box_office_card_sales/*/email`, route => {
     emailed.push(sale.id)
-    sale = { ...sale, link_email_status: 'queued' }
-    return route.fulfill({ json: { link_email_status: 'queued' }, status: 202 })
+    const orderId = Number(new URL(route.request().url()).pathname.split('/').at(-2))
+    const status = settled.has(orderId) ? { ticket_email_status: 'queued' } : { link_email_status: 'queued' }
+    sale = { ...sale, ...status }
+    return route.fulfill({ json: status, status: 202 })
   })
   await page.goto('/dashboard/events/607/box-office')
   await expect(page.getByRole('heading', { name: 'Box office' })).toBeVisible()
@@ -69,10 +79,16 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   }
 }
 
-async function openCheckout(page, mode, email = false) {
+async function openCheckout(page, mode, email = false, beforePrepare = null) {
   await page.getByRole('button', { name: 'Add Admission' }).click()
   if (email) await page.getByRole('textbox', { name: 'Buyer email' }).fill('player@example.test')
-  await page.getByRole('button', { name: mode }).click()
+  const method = page.getByRole('button', { name: mode })
+  await method.click()
+  await expect(method).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Cash', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  const fee = page.getByText('Buyer pays $13.23 including $1.23 service fee.')
+  await expect(fee).toBeVisible()
+  if (beforePrepare) await beforePrepare(fee)
   await page.getByRole('button', { name: 'Prepare Stripe checkout' }).click()
 }
 
@@ -90,7 +106,13 @@ for (const width of [390, 1280]) {
       }
     }
 
-    await openCheckout(page, 'Pay on buyer’s phone', true)
+    await openCheckout(page, 'Pay on buyer’s phone', true, async fee => {
+      await expect(page.getByText(/Clover reader payments are unavailable/)).toBeVisible()
+      if (evidence) {
+        await fee.evaluate(element => element.scrollIntoView({ block: 'center' }))
+        await page.screenshot({ path: `${evidence}/fee-quote-${width}.png`, animations: 'disabled' })
+      }
+    })
     await expect(page.getByText('Do not charge the card again')).toBeVisible()
     await page.reload()
     await page.getByRole('button', { name: /Retry saved sale/ }).click()
@@ -99,7 +121,7 @@ for (const width of [390, 1280]) {
     expect(fixture.attempts).toHaveLength(2)
     expect(fixture.attempts[0]).toEqual(fixture.attempts[1])
     expect(fixture.attempts[0].body).toEqual({ payment_method: 'door_card_link', buyer_email: 'player@example.test',
-      line_items: [{ ticket_type_id: 8, quantity: 1 }] })
+      expected_total_cents: 1323, line_items: [{ ticket_type_id: 8, quantity: 1 }] })
     await page.reload()
     await expect(waiting).toBeVisible()
     await expect(page.getByRole('img', { name: 'Stripe payment QR' })).toBeVisible()
@@ -115,7 +137,7 @@ for (const width of [390, 1280]) {
     await page.getByRole('button', { name: 'Refresh payment status' }).click()
     await expect(page.getByRole('heading', { name: 'Failed' })).toBeVisible()
     await capture('failed')
-    fixture.update({ status: 'paid', pending: false, checkout_url: null, tickets: [
+    fixture.update({ status: 'paid', pending: false, checkout_url: null, can_email_tickets: true, tickets: [
       { id: 90, scan_credential: 'fictional-entrance-credential', event: event.title, tier: demoTier },
     ] })
     await expect(page.getByRole('heading', { name: 'Paid — tickets ready' })).toBeVisible({ timeout: 8000 })
@@ -139,10 +161,28 @@ for (const width of [390, 1280]) {
     await page.getByRole('button', { name: 'Start next sale' }).click()
     await openCheckout(page, 'Pay on buyer’s phone')
     await expect(waiting).toBeVisible()
+    await page.evaluate(() => sessionStorage.clear())
+    await page.reload()
+    await page.getByRole('button', { name: 'Open card checkouts' }).click()
+    await expect(page.getByRole('button', { name: 'Show tickets' })).toBeVisible()
+    const showQr = page.getByRole('button', { name: 'Show payment QR' })
+    await expect(showQr).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    if (evidence) {
+      await page.locator('#open-door-checkouts').evaluate(element => element.scrollIntoView({ block: 'center' }))
+      await page.screenshot({ path: `${evidence}/open-checkouts-${width}.png` })
+    }
+    await showQr.click()
+    await expect(page.getByRole('img', { name: 'Stripe payment QR' })).toBeVisible()
     await page.getByRole('button', { name: 'Cancel sale' }).click()
     await expect(page.getByRole('heading', { name: 'Cancelled' })).toBeVisible()
     await capture('cancelled')
-    await expect(page.getByRole('button', { name: 'Start next sale' })).toBeVisible()
+    await page.getByRole('button', { name: 'Back to box office' }).click()
+    await page.getByRole('button', { name: 'Open card checkouts' }).click()
+    await page.getByRole('button', { name: 'Show tickets' }).click()
+    await expect(page.getByRole('heading', { name: 'Paid — tickets ready' })).toBeVisible()
+    await page.getByRole('button', { name: 'Email tickets' }).click()
+    await expect(page.getByText('Ticket email requested.')).toBeVisible()
   })
 }
 

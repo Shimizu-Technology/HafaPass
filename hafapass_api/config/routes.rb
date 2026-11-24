@@ -236,7 +236,7 @@ Rails.application.routes.draw do
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
           end
-          resources :box_office_card_sales, only: [:create, :show, :destroy] do
+          resources :box_office_card_sales, only: [:index, :create, :show, :destroy] do
             post :email, on: :member
           end
           resource :seating, only: [:show, :create], controller: "event_seating" do

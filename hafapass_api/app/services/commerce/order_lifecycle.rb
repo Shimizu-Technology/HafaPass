@@ -65,7 +65,9 @@ module Commerce
             next
           end
 
-          unless order.pending?
+          reopen_expired = late_completion && webhook_event && order.online_door_card? && order.expired? &&
+            payment && !ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+          unless order.pending? || reopen_expired
             mark_payment_succeeded!(payment)
             # One late capture, one exception and one refund job: a second
             # notice for the same payment (the expiry job's own check, then
@@ -95,8 +97,13 @@ module Commerce
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
-          unusable = holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? }
-          if !holds.empty? && pass_nights_exhausted?(holds)
+          inventory_valid = if reopen_expired
+            catalog_holds.empty? && holds.all? { |hold| hold.expired? && hold.release_reason == "hold_expired" }
+          else
+            (holds + catalog_holds).all?(&:active?)
+          end
+          unusable = holds.empty? || seat_hold_invalid || !inventory_valid
+          if !reopen_expired && !holds.empty? && pass_nights_exhausted?(holds)
             release_locked_order!(order, reason: "pass_all_included_nights_cancelled", expired: false,
               claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             if payment.present?
@@ -112,12 +119,14 @@ module Commerce
             end
             next
           end
-          lapsed = (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
+          lapsed = reopen_expired || (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
           completed_late = lapsed && !unusable && late_completion && payment.present? &&
             late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
           if unusable || (lapsed && !completed_late)
-            release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
-              claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
+            if order.pending?
+              release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
+                claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
+            end
             mark_payment_succeeded!(payment)
             ReconciliationException.create!(
               order: order,
@@ -134,7 +143,11 @@ module Commerce
             if hold.pricing_tier
               hold.pricing_tier.increment!(:quantity_sold, hold.quantity)
             end
-            hold.consume!
+            if reopen_expired
+              hold.update!(status: :consumed, consumed_at: Time.current)
+            else
+              hold.consume!
+            end
           end
 
           catalog_holds.each do |hold|
@@ -149,7 +162,8 @@ module Commerce
           finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
-          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
+          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, expired_at: nil, wallet_type: wallet_type)
+          PublicEventCache.bump_after_commit! if completed_late
           AuditLogger.record!(action: "order.completed", auditable: order,
             organization: order.event.organization, event: order.event, outcome: "succeeded",
             deduplication_key: "order:#{order.id}:completed",
@@ -273,7 +287,8 @@ module Commerce
 
         now = Time.current
         types_free = holds.group_by(&:ticket_type).all? do |ticket_type, type_holds|
-          ticket_type.available_quantity >= type_holds.sum(&:quantity)
+          available = order.online_door_card? ? ticket_type.door_available_quantity : ticket_type.available_quantity
+          available >= type_holds.sum(&:quantity)
         end
         tiers_free = holds.select(&:pricing_tier).group_by(&:pricing_tier).all? do |tier, tier_holds|
           next true unless tier.quantity_based?
@@ -381,6 +396,11 @@ module Commerce
           expired_at: expired ? at : nil,
           expires_at: nil
         )
+        if order.online_door_card?
+          order.payments.where.not(stripe_checkout_session_id: nil).each do |payment|
+            ExpireDoorCheckoutSessionJob.perform_later(payment.id)
+          end
+        end
         AuditLogger.record!(action: "order.#{expired ? 'expired' : 'cancelled'}", auditable: order,
           organization: order.event.organization, event: order.event, outcome: "succeeded",
           deduplication_key: "order:#{order.id}:#{order.status}",

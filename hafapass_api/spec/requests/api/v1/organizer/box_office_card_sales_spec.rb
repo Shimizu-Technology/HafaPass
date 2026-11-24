@@ -50,8 +50,8 @@ RSpec.describe "Online box office card sales", type: :request do
       metadata: { hafapass_door_payment: payment.id.to_s, hafapass_door_checkout: order.checkout_key_digest } }.merge(overrides)
   end
 
-  def send_event(type, object, id: "evt_Door#{SecureRandom.hex(6)}")
-    payload = { id: id, type: type, livemode: false, created: Time.current.to_i, data: { object: object } }.to_json
+  def send_event(type, object, id: "evt_Door#{SecureRandom.hex(6)}", created_at: Time.current)
+    payload = { id: id, type: type, livemode: false, created: created_at.to_i, data: { object: object } }.to_json
     timestamp = Time.current
     signature = Stripe::Webhook::Signature.compute_signature(timestamp, payload, signing_fixture)
     post "/webhooks/stripe", params: payload,
@@ -153,7 +153,8 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(response.parsed_body.fetch("tickets").sole.fetch("scan_credential")).to eq(order.tickets.sole.scan_credential)
   end
 
-  it "shows a retryable decline, releases on provider expiry, and queues one refund for a late capture" do
+  it "shows a retryable decline and queues one late refund after the released capacity sells" do
+    ticket_type.update!(quantity_available: 1)
     order = create_sale
     payment = order.payments.sole
     send_event("payment_intent.payment_failed", payment_intent(order, status: "requires_payment_method"))
@@ -165,11 +166,25 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(order.reload).to be_expired
     expect(order.inventory_holds.current).to be_empty
     expect(payment.reload.stripe_checkout_url).to be_nil
+    post "/api/v1/organizer/events/#{event.id}/box_office", params: cart.merge(payment_method: "door_cash"),
+      headers: headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+    expect(response).to have_http_status(:created)
+    replacement = Order.find(response.parsed_body.fetch("id"))
     expect do
       2.times { send_event("payment_intent.succeeded", payment_intent(order)) }
     end.to have_enqueued_job(LateCaptureRefundJob).with(payment.id).exactly(:once)
     expect(order.tickets).to be_empty
-    expect(ReconciliationException.where(payment: payment, code: "late_payment_success_after_inventory_release").count).to eq(1)
+    expect(replacement.tickets.count).to eq(1)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+    expect(ReconciliationException.where(payment: payment, code: Commerce::LateCaptureRefund::CODES).count).to eq(1)
+    expect(StripeService).to receive(:refund_payment).once.with("pi_Door#{payment.id}",
+      amount_cents: payment.amount_cents, reason: "late_capture_refund",
+      idempotency_key: "late-capture:payment:#{payment.id}", payment: payment)
+      .and_return(OpenStruct.new(id: "re_DoorCapacity", status: "succeeded", amount: payment.amount_cents, currency: "usd",
+        payment_intent: "pi_Door#{payment.id}"))
+    2.times { LateCaptureRefundJob.perform_now(payment.id) }
+    expect(payment.reload).to be_refunded
+    expect(order.refunds.sole).to be_succeeded
   end
 
   it "releases a Session that expired before its create response was saved" do
@@ -194,16 +209,91 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(order.reload).to be_expired
   end
 
-  it "refunds a capture after the hold timestamp even before the expiry sweep" do
-    order = create_sale
-    travel_to(order.expires_at + 1.second) do
-      expect(order.inventory_holds.current).to be_empty
-      expect do
-        send_event("payment_intent.succeeded", payment_intent(order))
-      end.to have_enqueued_job(LateCaptureRefundJob).with(order.payments.sole.id)
+  [false, true].each do |sweep_first|
+    it "issues tickets on delayed confirmation #{sweep_first ? 'after' : 'before'} the expiry sweep if capacity is free" do
+      order = create_sale
+      deadline = order.expires_at
+      travel_to(deadline + 5.seconds) do
+        expect(order.inventory_holds.current).to be_empty
+        if sweep_first
+          expect do
+            ExpireInventoryHoldsJob.perform_now
+          end.to have_enqueued_job(ExpireDoorCheckoutSessionJob).with(order.payments.sole.id)
+          expect(order.reload).to be_expired
+        end
+        expect do
+          2.times { send_event("payment_intent.succeeded", payment_intent(order), created_at: deadline - 2.seconds) }
+        end.not_to have_enqueued_job(LateCaptureRefundJob)
+      end
+      expect(order.reload).to be_completed
+      expect(order.tickets.count).to eq(1)
+      expect(order.inventory_holds.sole).to be_consumed
+      expect(ticket_type.reload.quantity_sold).to eq(1)
     end
-    expect(order.reload).to be_expired
-    expect(order.tickets).to be_empty
+  end
+
+  it "closes Stripe after non-staff local cancellation" do
+    order = create_sale
+    payment = order.payments.sole
+    expect do
+      Commerce::OrderLifecycle.cancel!(order)
+    end.to have_enqueued_job(ExpireDoorCheckoutSessionJob).with(payment.id)
+    expect(StripeService).to receive(:expire_door_checkout_session)
+      .with(payment: payment, session_id: payment.stripe_checkout_session_id)
+      .and_return(session_fixture(payment, order.inventory_holds.sole.expires_at, status: "expired"))
+    ExpireDoorCheckoutSessionJob.perform_now(payment.id)
+  end
+
+  it "keeps a saved reservation accessible without opening Stripe after the switch is disabled" do
+    allow(StripeService).to receive(:create_door_checkout_session).and_raise(Timeout::Error)
+    post path, params: cart, headers: headers
+    expect(response).to have_http_status(:bad_gateway)
+    order_id = response.parsed_body.fetch("order_id")
+    event.update!(online_door_card_enabled: false)
+
+    post path, params: cart, headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("id" => order_id, "checkout_url" => nil, "can_retry_setup" => false)
+    expect(StripeService).to have_received(:create_door_checkout_session).once
+  end
+
+  it "rejects a stale all-in quote before reserving or opening Stripe" do
+    expect(StripeService).not_to receive(:create_door_checkout_session)
+    expect do
+      post path, params: cart.merge(expected_total_cents: 1), headers: headers
+    end.not_to change(Order, :count)
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to include("code" => "price_changed", "reconciliation_required" => false)
+  end
+
+  it "lists the seller's pending and recently paid receipts and lets an assigned manager recover or email them" do
+    paid = create_sale(buyer_email: "buyer@example.test")
+    send_event("payment_intent.succeeded", payment_intent(paid))
+    post path, params: cart, headers: headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+    pending = Order.find(response.parsed_body.fetch("id"))
+    manager = create(:user)
+    create(:organization_membership, organization: organization, user: manager, role: :box_office)
+    assignment = create(:event_staff_assignment, event: event, user: manager, role: :manager)
+    manager_headers = auth_headers(manager).merge("X-Organization-Id" => organization.id.to_s)
+    [headers, manager_headers, auth_headers(profile.user).merge("X-Organization-Id" => organization.id.to_s)].each do |actor_headers|
+      get path, headers: actor_headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("orders").pluck("id", "status")).to eq([[pending.id, "waiting"], [paid.id, "paid"]])
+      expect(response.parsed_body.fetch("orders").first).not_to have_key("checkout_url")
+    end
+    get "#{path}/#{paid.id}", headers: manager_headers
+    expect(response.parsed_body.fetch("tickets").size).to eq(1)
+    post "#{path}/#{paid.id}/email", headers: manager_headers
+    expect(response).to have_http_status(:accepted)
+    expect(response.parsed_body).to include("ticket_email_status" => "queued")
+
+    assignment.update!(role: :box_office)
+    get path, headers: manager_headers
+    expect(response.parsed_body.fetch("orders")).to be_empty
+    get "#{path}/#{paid.id}", headers: manager_headers
+    expect(response).to have_http_status(:not_found)
+    delete "#{path}/#{pending.id}", headers: manager_headers
+    expect(response).to have_http_status(:not_found)
   end
 
   it "records a mismatch without issuing tickets or overwriting the payment intent identity" do
