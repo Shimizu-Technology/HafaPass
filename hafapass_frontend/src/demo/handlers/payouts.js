@@ -157,9 +157,9 @@ export async function handle({ method, path, params, state, body }) {
     }
     if (step[2] === 'finalize') {
       store.nextSettlement += 1
-      Object.assign(row, { settlement: { id: store.nextSettlement, version: 1, available_to_payout_cents: row.owed_cents },
+      Object.assign(row, { settlement: { id: store.nextSettlement, version: 1, available_to_payout_cents: row.owed_cents, requestable_cents: row.owed_cents },
         next_step: 'send_transfer', next_step_label: 'Request the payout and send the bank transfer', actions: ['send_transfer'] })
-      return created({ id: store.nextSettlement, version: 1, available_to_payout_cents: row.owed_cents })
+      return created({ id: store.nextSettlement, version: 1, available_to_payout_cents: row.owed_cents, reserve_skipped: Boolean(body?.skip_reserve) })
     }
     if (row.reserve_held_cents <= 0) return unprocessable('No reserve is held for this event')
     const remaining = row.after_release_cents

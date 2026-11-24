@@ -5,6 +5,7 @@ import apiClient from '../../api/client'
 import Dialog from '../../components/Dialog'
 import { errorMessage, foldCell, foldRow, foldTable, money } from './adminOperations'
 import { formatDay } from '../../utils/payoutStatement'
+import { payoutInstruction } from './payoutInstruction'
 
 // Admin → Payouts → Due. Which events need their bank transfer (2–3 business
 // days after the event, Guam time) and which reserves are due for release
@@ -74,9 +75,45 @@ function ReserveDialog({ row, beginRequest, onClose, onSaved }) {
   </Dialog>
 }
 
+function SkipReserveDialog({ row, beginRequest, onClose, onSaved }) {
+  const titleId = useId()
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async event => {
+    event.preventDefault()
+    if (reason.trim().length < 10) { setError('Explain why there is no reserve, in at least 10 characters.'); return }
+    const request = beginRequest()
+    if (!request) return
+    setBusy(true); setError('')
+    try {
+      const response = await apiClient.post(`/admin/payout_schedule/${row.event.id}/finalize`, { skip_reserve: true, skip_reason: reason.trim() }, request.config)
+      if (request.current()) onSaved(`Statement version ${response.data.version} finalized for ${row.event.title} without a reserve. Your reason is in the audit log.`)
+    } catch (failure) {
+      if (request.current() && !request.handleError(failure)) setError(errorMessage(failure, 'The statement was not finalized. Check your connection and try again.'))
+    } finally { request.release(); setBusy(false) }
+  }
+  return <Dialog labelledBy={titleId} busy={busy} onClose={onClose} className="max-w-lg">
+    <form noValidate onSubmit={submit}>
+      <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Finalize without a reserve?</h2>
+      <p className="mt-1 text-sm text-content-muted [overflow-wrap:anywhere]">{row.event.title} · {row.organization.name}</p>
+      <p className="mt-3 text-sm text-neutral-700">The standard terms hold {money(row.suggested_reserve_cents, row.currency)} for 30 days. Without it, a later chargeback can leave the organizer owing money.</p>
+      <label className="mt-4 block text-sm font-medium text-neutral-900">Why no reserve
+        <textarea rows={3} value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} className="input mt-1" />
+      </label>
+      {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <button type="button" onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button>
+        <button type="submit" disabled={busy} className="btn-primary">{busy ? 'Finalizing…' : 'Finalize without reserve'}</button>
+      </div>
+    </form>
+  </Dialog>
+}
+
 function ReleaseDialog({ row, beginRequest, onClose, onSaved }) {
   const titleId = useId()
-  const early = row.due_state === 'upcoming'
+  // The reserve's own release date decides, not the row's overall due state.
+  const early = row.reserve_release_due === false
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -128,9 +165,13 @@ function RowActions({ row, busy, run, setDialog }) {
     buttons.push(<Link key="record" to={`?event_id=${row.event.id}`} className="btn-primary !px-4 !py-2 text-sm">Record transfer</Link>)
   }
   if (actions.includes('hold_reserve')) buttons.push(<button key="hold" type="button" disabled={busy} onClick={() => setDialog({ kind: 'reserve', row })} className={`${row.next_step === 'hold_reserve' ? 'btn-primary' : 'btn-secondary'} !px-4 !py-2 text-sm`}>Hold {money(row.suggested_reserve_cents, row.currency)} reserve</button>)
-  if (actions.includes('finalize_statement')) buttons.push(<button key="finalize" type="button" disabled={busy} onClick={() => run(row, 'finalize')} className={`${row.next_step === 'finalize_statement' ? 'btn-primary' : 'btn-secondary'} !px-4 !py-2 text-sm`}>{row.next_step === 'hold_reserve' ? 'Finalize without reserve' : 'Finalize statement'}</button>)
-  if (actions.includes('send_transfer') && row.settlement) buttons.push(<button key="send" type="button" disabled={busy || !row.payout_account_ready} onClick={() => run(row, 'payout')} className="btn-primary !px-4 !py-2 text-sm">Request payout {money(row.settlement.available_to_payout_cents, row.currency)}</button>)
-  if (actions.includes('release_reserve')) buttons.push(<button key="release" type="button" disabled={busy} onClick={() => setDialog({ kind: 'release', row })} className={`${row.next_step === 'release_reserve' ? 'btn-primary' : 'btn-ghost'} !px-4 !py-2 text-sm`}>{row.due_state === 'upcoming' ? 'Release early' : 'Release reserve'}</button>)
+  if (actions.includes('finalize_statement')) {
+    buttons.push(row.next_step === 'hold_reserve'
+      ? <button key="skip" type="button" disabled={busy} onClick={() => setDialog({ kind: 'skip', row })} className="btn-secondary !px-4 !py-2 text-sm">Finalize without reserve</button>
+      : <button key="finalize" type="button" disabled={busy} onClick={() => run(row, 'finalize')} className={`${row.next_step === 'finalize_statement' ? 'btn-primary' : 'btn-secondary'} !px-4 !py-2 text-sm`}>Finalize statement</button>)
+  }
+  if (actions.includes('send_transfer') && row.settlement) buttons.push(<button key="send" type="button" disabled={busy || !row.payout_account_ready} onClick={() => run(row, 'payout')} className="btn-primary !px-4 !py-2 text-sm">Request payout {money(row.settlement.requestable_cents ?? row.settlement.available_to_payout_cents, row.currency)}</button>)
+  if (actions.includes('release_reserve')) buttons.push(<button key="release" type="button" disabled={busy} onClick={() => setDialog({ kind: 'release', row })} className={`${row.next_step === 'release_reserve' ? 'btn-primary' : 'btn-ghost'} !px-4 !py-2 text-sm`}>{row.reserve_release_due === false ? 'Release early' : 'Release reserve'}</button>)
   return <div className="flex flex-wrap gap-2 md:justify-end">
     {buttons}
     {actions.includes('send_transfer') && !row.payout_account_ready && <p className="w-full text-xs text-red-700">No approved payout method on file.</p>}
@@ -186,8 +227,8 @@ export default function AdminPayoutDueList({ list, dueOnly, setDueOnly, onNotice
         const response = await apiClient.post(`/admin/payout_schedule/${row.event.id}/finalize`, {}, request.config)
         if (request.current()) onNotice(`Statement version ${response.data.version} finalized for ${row.event.title}.`)
       } else {
-        await apiClient.post('/admin/payouts', { settlement_id: row.settlement.id }, { ...request.config, headers: { 'Idempotency-Key': window.crypto.randomUUID() } })
-        if (request.current()) onNotice(`Payout of ${money(row.settlement.available_to_payout_cents, row.currency)} requested for ${row.event.title}. Send the bank transfer, then choose Record transfer.`)
+        const response = await apiClient.post('/admin/payouts', { settlement_id: row.settlement.id }, { ...request.config, headers: { 'Idempotency-Key': window.crypto.randomUUID() } })
+        if (request.current()) onNotice(payoutInstruction(response.data, row))
       }
       if (request.current()) list.reload()
     } catch (failure) {
@@ -215,6 +256,7 @@ export default function AdminPayoutDueList({ list, dueOnly, setDueOnly, onNotice
     <DueTable title="Reserves" description="Reserves held after the first transfer. Release each one 30 days after its event." rows={data?.reserves || []}
       empty="No reserves are held." busy={busy} run={run} setDialog={setDialog} />
     {dialog?.kind === 'reserve' && <ReserveDialog row={dialog.row} beginRequest={list.beginRequest} onClose={() => setDialog(null)} onSaved={saved} />}
+    {dialog?.kind === 'skip' && <SkipReserveDialog row={dialog.row} beginRequest={list.beginRequest} onClose={() => setDialog(null)} onSaved={saved} />}
     {dialog?.kind === 'release' && <ReleaseDialog row={dialog.row} beginRequest={list.beginRequest} onClose={() => setDialog(null)} onSaved={saved} />}
   </div>
 }

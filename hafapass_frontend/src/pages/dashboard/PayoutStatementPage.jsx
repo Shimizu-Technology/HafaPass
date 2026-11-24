@@ -163,7 +163,8 @@ function PayoutStatementSession({ eventId, path, identity }) {
               <Line key={transfer.id} label={transferLabel(transfer)} note={transferNote(transfer, money)}
                 value={transfer.counted_cents === 0 ? money(0) : signedMoney(transfer.counted_cents, currency)} />
             ))}
-            <Line label={totals.balance_remaining_cents < 0 ? 'You owe' : 'Balance remaining'} value={signedMoney(totals.balance_remaining_cents, currency)} strong testId="balance-remaining" />
+            {(data.closing?.lines || []).map(line => <Line key={line.label} label={line.label} note={line.note} value={signedMoney(line.amount_cents, currency)} />)}
+            <Line label={data.closing?.total_label || (totals.still_to_come_cents < 0 ? 'You owe' : 'Still to come')} value={signedMoney(data.closing?.total_cents ?? totals.still_to_come_cents, currency)} strong testId="balance-remaining" />
           </dl>
         </div>
       </section>

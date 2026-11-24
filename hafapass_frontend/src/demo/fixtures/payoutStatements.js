@@ -3,7 +3,7 @@
 
 export const salesOpen = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "published",
@@ -13,7 +13,7 @@ export const salesOpen = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -103,8 +103,14 @@ export const salesOpen = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 894508
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer."
@@ -115,7 +121,7 @@ export const salesOpen = {
 
 export const waitingForPayout = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -125,7 +131,7 @@ export const waitingForPayout = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -215,8 +221,14 @@ export const waitingForPayout = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 894508
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer.",
@@ -228,7 +240,7 @@ export const waitingForPayout = {
 
 export const reserveHeld = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -238,7 +250,7 @@ export const reserveHeld = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -334,15 +346,32 @@ export const reserveHeld = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [
+      {
+        "label": "Balance after transfers, not counting the reserve",
+        "amount_cents": 0,
+        "note": null
+      },
+      {
+        "label": "Reserve still held",
+        "amount_cents": 89451,
+        "note": "Comes back to you on Mar 1, 2027, less any later refunds or chargebacks."
+      }
+    ],
+    "total_label": "Still to come",
+    "total_cents": 89451
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer."
   ],
   "transfers": [
     {
-      "id": 64,
+      "id": 1,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -362,7 +391,7 @@ export const reserveHeld = {
 
 export const payoutReceipt = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -372,7 +401,7 @@ export const payoutReceipt = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -468,15 +497,32 @@ export const payoutReceipt = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [
+      {
+        "label": "Balance after transfers, not counting the reserve",
+        "amount_cents": 0,
+        "note": null
+      },
+      {
+        "label": "Reserve still held",
+        "amount_cents": 89451,
+        "note": "Comes back to you on Mar 1, 2027, less any later refunds or chargebacks."
+      }
+    ],
+    "total_label": "Still to come",
+    "total_cents": 89451
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer."
   ],
   "transfers": [
     {
-      "id": 64,
+      "id": 1,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -492,7 +538,7 @@ export const payoutReceipt = {
     }
   ],
   "payout": {
-    "id": 64,
+    "id": 1,
     "status": "paid",
     "status_label": "Sent",
     "method": "bank_transfer",
@@ -517,7 +563,7 @@ export const payoutReceipt = {
 
 export const reserveReleased = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -527,7 +573,7 @@ export const reserveReleased = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -569,12 +615,12 @@ export const reserveReleased = {
         },
         {
           "label": "Refunds",
-          "amount_cents": -3400,
-          "note": "Your share of refunds. Buyers got back $36.00 in total, including fees returned to them."
+          "amount_cents": -5100,
+          "note": "Your share of refunds. Buyers got back $54.00 in total, including fees returned to them."
         }
       ],
       "total_label": "Your ticket proceeds",
-      "total_cents": 930100
+      "total_cents": 928400
     },
     {
       "key": "deductions",
@@ -597,7 +643,7 @@ export const reserveReleased = {
         }
       ],
       "total_label": "Net proceeds",
-      "total_cents": 889308
+      "total_cents": 887608
     },
     {
       "key": "reserve",
@@ -615,33 +661,191 @@ export const reserveReleased = {
         }
       ],
       "total_label": "Total to be sent to you",
-      "total_cents": 889308
+      "total_cents": 887608
     }
   ],
   "totals": {
     "gross_cents": 933500,
-    "ticket_proceeds_cents": 930100,
-    "net_proceeds_cents": 889308,
+    "ticket_proceeds_cents": 928400,
+    "net_proceeds_cents": 887608,
     "reserve_held_cents": 0,
     "reserve_released_cents": 89451,
-    "available_cents": 889308,
+    "available_cents": 887608,
     "transferred_cents": 805057,
     "in_progress_cents": 0,
-    "balance_remaining_cents": 84251,
-    "still_to_come_cents": 84251,
-    "buyer_paid_fees_cents": 60000,
+    "balance_remaining_cents": 82551,
+    "still_to_come_cents": 82551,
+    "buyer_paid_fees_cents": 59900,
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 82551
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
-    "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
+    "Buyers paid $599.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer."
   ],
   "transfers": [
     {
-      "id": 64,
+      "id": 1,
+      "status": "paid",
+      "status_label": "Sent",
+      "method": "bank_transfer",
+      "amount_cents": 805057,
+      "withheld_cents": 0,
+      "sent_cents": 805057,
+      "requested_on": "2027-02-01",
+      "sent_on": "2027-02-01",
+      "bank_last4": "4321",
+      "reference": "TRF-20270201-07",
+      "statement_version": 1,
+      "counted_cents": -805057
+    }
+  ],
+  "payout": null
+}
+
+export const coveredRefund = {
+  "event": {
+    "id": 1,
+    "title": "Island Open Exhibition",
+    "slug": "island-open-exhibition",
+    "status": "completed",
+    "starts_at": "2027-01-29T23:00:00.000Z",
+    "ends_at": "2027-01-30T08:00:00.000Z",
+    "timezone": "Pacific/Guam",
+    "multi_day": false
+  },
+  "organization": {
+    "id": 1,
+    "name": "Fictional Grappling League"
+  },
+  "currency": "USD",
+  "generated_at": "2027-02-09T23:00:00.000Z",
+  "status": "reserve_held",
+  "status_label": "Paid — reserve held until Mar 1, 2027",
+  "schedule": {
+    "ended": true,
+    "ended_on": "2027-01-30",
+    "transfer_expected_by": "2027-02-03",
+    "reserve_release_on": "2027-03-01",
+    "reserve_released": false
+  },
+  "sales_by_ticket": [
+    {
+      "name": "Adult spectator",
+      "quantity": 415,
+      "gross_cents": 705500,
+      "discount_cents": 0,
+      "proceeds_cents": 705500
+    },
+    {
+      "name": "Child spectator",
+      "quantity": 190,
+      "gross_cents": 228000,
+      "discount_cents": 0,
+      "proceeds_cents": 228000
+    }
+  ],
+  "sections": [
+    {
+      "key": "proceeds",
+      "title": "Ticket sales",
+      "lines": [
+        {
+          "label": "Ticket sales",
+          "amount_cents": 933500,
+          "note": "Face value of every ticket and add-on sold, before discounts."
+        },
+        {
+          "label": "Refunds",
+          "amount_cents": -5100,
+          "note": "Your share of refunds. Buyers got back $54.00 in total, including fees returned to them."
+        }
+      ],
+      "total_label": "Your ticket proceeds",
+      "total_cents": 928400
+    },
+    {
+      "key": "deductions",
+      "title": "Costs and adjustments",
+      "lines": [
+        {
+          "label": "Card processing",
+          "amount_cents": -30492,
+          "note": "Stripe's card processing cost on orders where it comes out of your proceeds."
+        },
+        {
+          "label": "Door cash you collected",
+          "amount_cents": -5100,
+          "note": "You already have this cash, so it is not part of the bank transfer."
+        }
+      ],
+      "total_label": "Net proceeds",
+      "total_cents": 892808
+    },
+    {
+      "key": "reserve",
+      "title": "Chargeback reserve",
+      "lines": [
+        {
+          "label": "Reserve held",
+          "amount_cents": -89451,
+          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+        }
+      ],
+      "total_label": "Total to be sent to you",
+      "total_cents": 803357
+    }
+  ],
+  "totals": {
+    "gross_cents": 933500,
+    "ticket_proceeds_cents": 928400,
+    "net_proceeds_cents": 892808,
+    "reserve_held_cents": 89451,
+    "reserve_released_cents": 0,
+    "available_cents": 803357,
+    "transferred_cents": 805057,
+    "in_progress_cents": 0,
+    "balance_remaining_cents": -1700,
+    "still_to_come_cents": 87751,
+    "buyer_paid_fees_cents": 59900,
+    "processing_covered_by_hafapass_cents": 0,
+    "door_cash_cents": 5100
+  },
+  "closing": {
+    "lines": [
+      {
+        "label": "Balance after transfers, not counting the reserve",
+        "amount_cents": -1700,
+        "note": null
+      },
+      {
+        "label": "Reserve still held",
+        "amount_cents": 89451,
+        "note": "Comes back to you on Mar 1, 2027, less any later refunds or chargebacks."
+      }
+    ],
+    "total_label": "Still to come",
+    "total_cents": 87751
+  },
+  "reconciles": true,
+  "difference_cents": 0,
+  "contradictions": [],
+  "notes": [
+    "Buyers paid $599.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
+    "Door cash ($51.00) stays with you and is not included in any bank transfer.",
+    "Refunds or chargebacks after your payout ($17.00) come out of your $894.51 reserve. You will get the remaining $877.51 when it is released."
+  ],
+  "transfers": [
+    {
+      "id": 1,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -661,7 +865,7 @@ export const reserveReleased = {
 
 export const finalPaid = {
   "event": {
-    "id": 112,
+    "id": 1,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -671,7 +875,7 @@ export const finalPaid = {
     "multi_day": false
   },
   "organization": {
-    "id": 94,
+    "id": 1,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -713,12 +917,12 @@ export const finalPaid = {
         },
         {
           "label": "Refunds",
-          "amount_cents": -3400,
-          "note": "Your share of refunds. Buyers got back $36.00 in total, including fees returned to them."
+          "amount_cents": -5100,
+          "note": "Your share of refunds. Buyers got back $54.00 in total, including fees returned to them."
         }
       ],
       "total_label": "Your ticket proceeds",
-      "total_cents": 930100
+      "total_cents": 928400
     },
     {
       "key": "deductions",
@@ -741,7 +945,7 @@ export const finalPaid = {
         }
       ],
       "total_label": "Net proceeds",
-      "total_cents": 889308
+      "total_cents": 887608
     },
     {
       "key": "reserve",
@@ -759,33 +963,39 @@ export const finalPaid = {
         }
       ],
       "total_label": "Total to be sent to you",
-      "total_cents": 889308
+      "total_cents": 887608
     }
   ],
   "totals": {
     "gross_cents": 933500,
-    "ticket_proceeds_cents": 930100,
-    "net_proceeds_cents": 889308,
+    "ticket_proceeds_cents": 928400,
+    "net_proceeds_cents": 887608,
     "reserve_held_cents": 0,
     "reserve_released_cents": 89451,
-    "available_cents": 889308,
-    "transferred_cents": 889308,
+    "available_cents": 887608,
+    "transferred_cents": 887608,
     "in_progress_cents": 0,
     "balance_remaining_cents": 0,
     "still_to_come_cents": 0,
-    "buyer_paid_fees_cents": 60000,
+    "buyer_paid_fees_cents": 59900,
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 5100
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 0
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
-    "Buyers paid $600.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
+    "Buyers paid $599.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Door cash ($51.00) stays with you and is not included in any bank transfer."
   ],
   "transfers": [
     {
-      "id": 64,
+      "id": 1,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -800,19 +1010,19 @@ export const finalPaid = {
       "counted_cents": -805057
     },
     {
-      "id": 65,
+      "id": 2,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
-      "amount_cents": 84251,
+      "amount_cents": 82551,
       "withheld_cents": 0,
-      "sent_cents": 84251,
+      "sent_cents": 82551,
       "requested_on": "2027-03-01",
       "sent_on": "2027-03-01",
       "bank_last4": "4321",
       "reference": "TRF-20270301-02",
       "statement_version": 2,
-      "counted_cents": -84251
+      "counted_cents": -82551
     }
   ],
   "payout": null
@@ -820,7 +1030,7 @@ export const finalPaid = {
 
 export const finalNegative = {
   "event": {
-    "id": 114,
+    "id": 3,
     "title": "Fictional Night Market Showcase",
     "slug": "fictional-night-market-showcase",
     "status": "completed",
@@ -830,7 +1040,7 @@ export const finalNegative = {
     "multi_day": false
   },
   "organization": {
-    "id": 96,
+    "id": 3,
     "name": "Example Community Arts Council"
   },
   "currency": "USD",
@@ -919,15 +1129,21 @@ export const finalNegative = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 0
   },
+  "closing": {
+    "lines": [],
+    "total_label": "You owe",
+    "total_cents": -6216
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "Buyers paid $6.00 in HåfaPass fees on top of ticket prices. That was never part of your proceeds.",
     "Chargebacks or refunds after your payout mean you owe $62.16. HåfaPass takes it from your next payout."
   ],
   "transfers": [
     {
-      "id": 66,
+      "id": 3,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -947,7 +1163,7 @@ export const finalNegative = {
 
 export const zeroSales = {
   "event": {
-    "id": 115,
+    "id": 4,
     "title": "Fictional Empty Hall Rehearsal",
     "slug": "fictional-empty-hall-rehearsal",
     "status": "completed",
@@ -957,7 +1173,7 @@ export const zeroSales = {
     "multi_day": false
   },
   "organization": {
-    "id": 97,
+    "id": 4,
     "name": "Example Org"
   },
   "currency": "USD",
@@ -1016,8 +1232,14 @@ export const zeroSales = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 0
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 0
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [],
   "transfers": [],
   "payout": null
@@ -1025,7 +1247,7 @@ export const zeroSales = {
 
 export const hugeAmounts = {
   "event": {
-    "id": 116,
+    "id": 5,
     "title": "Fictional Pacific Grand Championship Finals — Absolute Division, Masters, Juniors and Kids Brackets, Day 1 of 3 (Spectator Admission)",
     "slug": "fictional-pacific-grand-championship-finals-absolute-division-masters-jun",
     "status": "completed",
@@ -1035,7 +1257,7 @@ export const hugeAmounts = {
     "multi_day": false
   },
   "organization": {
-    "id": 98,
+    "id": 5,
     "name": "Fictional Inter-Island Brazilian Jiu-Jitsu and Grappling Federation of the Western Pacific Region 🥋"
   },
   "currency": "USD",
@@ -1108,8 +1330,14 @@ export const hugeAmounts = {
     "processing_covered_by_hafapass_cents": 0,
     "door_cash_cents": 0
   },
+  "closing": {
+    "lines": [],
+    "total_label": "Still to come",
+    "total_cents": 97100000
+  },
   "reconciles": true,
   "difference_cents": 0,
+  "contradictions": [],
   "notes": [
     "HåfaPass sends the bank transfer within 2–3 business days after the event (by Feb 3, 2027)."
   ],
@@ -1133,7 +1361,7 @@ export const dueFirst = {
   "transfers": [
     {
       "event": {
-        "id": 112,
+        "id": 1,
         "title": "Island Open Exhibition",
         "slug": "island-open-exhibition",
         "status": "completed",
@@ -1141,7 +1369,7 @@ export const dueFirst = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 94,
+        "id": 1,
         "name": "Fictional Grappling League"
       },
       "next_step": "hold_reserve",
@@ -1166,6 +1394,9 @@ export const dueFirst = {
       "in_flight_cents": 0,
       "owed_cents": 894508,
       "after_release_cents": 894508,
+      "reserve_release_due": false,
+      "reserve_released_on": null,
+      "reserve_skipped": false,
       "payout_account_ready": true,
       "settlement": null,
       "in_flight_payout": null,
@@ -1191,7 +1422,7 @@ export const dueRelease = {
   "transfers": [
     {
       "event": {
-        "id": 113,
+        "id": 2,
         "title": "Fictional Beach Volleyball Cup — Women's Open Division Finals and Awards Night",
         "slug": "fictional-beach-volleyball-cup-women-s-open-division-finals-and-awards-ni",
         "status": "completed",
@@ -1199,7 +1430,7 @@ export const dueRelease = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 95,
+        "id": 2,
         "name": "Example Sports Association of the Northern Pacific Islands"
       },
       "next_step": "hold_reserve",
@@ -1224,6 +1455,9 @@ export const dueRelease = {
       "in_flight_cents": 0,
       "owed_cents": 65700,
       "after_release_cents": 65700,
+      "reserve_release_due": true,
+      "reserve_released_on": null,
+      "reserve_skipped": false,
       "payout_account_ready": true,
       "settlement": null,
       "in_flight_payout": null,
@@ -1233,7 +1467,7 @@ export const dueRelease = {
   "reserves": [
     {
       "event": {
-        "id": 112,
+        "id": 1,
         "title": "Island Open Exhibition",
         "slug": "island-open-exhibition",
         "status": "completed",
@@ -1241,7 +1475,7 @@ export const dueRelease = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 94,
+        "id": 1,
         "name": "Fictional Grappling League"
       },
       "next_step": "release_reserve",
@@ -1257,14 +1491,17 @@ export const dueRelease = {
       "due_on": "2027-03-01",
       "due_state": "due",
       "overdue_business_days": 0,
-      "net_proceeds_cents": 889308,
+      "net_proceeds_cents": 887608,
       "suggested_reserve_cents": null,
       "reserve_held_cents": 89451,
       "reserve_released_cents": 0,
       "paid_cents": 805057,
       "in_flight_cents": 0,
-      "owed_cents": -5200,
-      "after_release_cents": 84251,
+      "owed_cents": -6900,
+      "after_release_cents": 82551,
+      "reserve_release_due": true,
+      "reserve_released_on": null,
+      "reserve_skipped": false,
       "payout_account_ready": true,
       "settlement": null,
       "in_flight_payout": null,

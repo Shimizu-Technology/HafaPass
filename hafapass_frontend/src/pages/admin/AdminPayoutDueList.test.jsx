@@ -50,12 +50,12 @@ describe('Admin payouts Due view', () => {
     const ready = { ...firstRow, next_step: 'send_transfer', next_step_label: 'Request the payout and send the bank transfer', actions: ['send_transfer'],
       settlement: { id: 77, version: 1, available_to_payout_cents: 805057 } }
     respond({ ...dueFirst, transfers: [ready] })
-    apiClient.post.mockResolvedValue({ data: { id: 5 } })
+    apiClient.post.mockResolvedValue({ data: { id: 5, status: 'processing', amount_cents: 805057, withheld_cents: 0, disbursement_cents: 805057 } })
     renderAt('/admin/payouts?view=due')
     await user.click(await screen.findByRole('button', { name: 'Request payout $8,050.57' }))
     expect(apiClient.post).toHaveBeenCalledWith('/admin/payouts', { settlement_id: 77 },
       expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) } }))
-    expect(await screen.findByText(/Send the bank transfer, then choose Record transfer/)).toBeInTheDocument()
+    expect(await screen.findByText(/Send \$8,050\.57 to .* Then choose Record transfer/)).toBeInTheDocument()
   })
 
   it('shows a reserve due for release with the chargeback that reduces it', async () => {
@@ -66,26 +66,70 @@ describe('Admin payouts Due view', () => {
     const row = await screen.findByTestId(`due-row-${releaseRow.event.id}`)
     expect(row).toHaveTextContent('Due by Mar 1, 2027')
     expect(row).toHaveTextContent('Reserve $894.51')
-    expect(row).toHaveTextContent('To send after release $842.51')
+    expect(row).toHaveTextContent('To send after release $825.51')
     expect(row).not.toHaveTextContent('Owes')
     expect(screen.getByText(/1 overdue/)).toBeInTheDocument()
     await user.click(within(row).getByRole('button', { name: 'Release reserve' }))
     const dialog = within(screen.getByRole('dialog'))
-    expect(dialog.getByText('Chargebacks and changes since the payout').closest('div')).toHaveTextContent('-$52.00')
-    expect(dialog.getByText('Left to send after release').closest('div')).toHaveTextContent('$842.51')
+    expect(dialog.getByText('Chargebacks and changes since the payout').closest('div')).toHaveTextContent('-$69.00')
+    expect(dialog.getByText('Left to send after release').closest('div')).toHaveTextContent('$825.51')
     await user.click(dialog.getByRole('button', { name: 'Release reserve' }))
     expect(apiClient.post).toHaveBeenCalledWith(`/admin/payout_schedule/${releaseRow.event.id}/release`, {}, expect.anything())
   })
 
   it('requires a reason before releasing a reserve early', async () => {
     const user = userEvent.setup()
-    respond({ ...dueRelease, reserves: [{ ...releaseRow, due_state: 'upcoming', next_step: 'wait_for_reserve' }] })
+    respond({ ...dueRelease, reserves: [{ ...releaseRow, due_state: 'upcoming', next_step: 'wait_for_reserve', reserve_release_due: false }] })
     renderAt('/admin/payouts?view=due')
     await user.click(await screen.findByRole('button', { name: 'Release early' }))
     const dialog = within(screen.getByRole('dialog'))
     await user.click(dialog.getByRole('button', { name: 'Release reserve' }))
     expect(dialog.getByRole('alert')).toHaveTextContent('at least 10 characters')
     expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
+  // Review finding 1: the bank instruction comes from the payout the API created.
+  it.each([
+    [{ id: 51, status: 'processing', amount_cents: 80000, withheld_cents: 19200, disbursement_cents: 60800, currency: 'usd' },
+      'Send $608.00 to Fictional Grappling League’s approved bank account for Island Open Exhibition ($800.00 gross, $192.00 withheld for taxes). Then choose Record transfer with the bank reference.'],
+    [{ id: 52, status: 'processing', amount_cents: 80000, withheld_cents: 0, disbursement_cents: 80000, currency: 'usd' },
+      'Send $800.00 to Fictional Grappling League’s approved bank account for Island Open Exhibition. Then choose Record transfer with the bank reference.'],
+    [{ id: 53, status: 'processing', amount_cents: 5000, withheld_cents: 5000, disbursement_cents: 0, currency: 'usd' },
+      'Payout #53 ($50.00) is withholding only: $50.00 withheld for taxes and nothing goes to the bank. Record it in Payouts with the withholding-only reference.'],
+  ])('tells finance to send what the payout response says, not the statement amount (%#)', async (payout, notice) => {
+    const user = userEvent.setup()
+    const ready = { ...firstRow, next_step: 'send_transfer', actions: ['send_transfer'],
+      settlement: { id: 77, version: 1, available_to_payout_cents: 805057, requestable_cents: 80000 } }
+    respond({ ...dueFirst, transfers: [ready] })
+    apiClient.post.mockResolvedValue({ data: payout })
+    renderAt('/admin/payouts?view=due')
+    await user.click(await screen.findByRole('button', { name: 'Request payout $800.00' }))
+    expect(await screen.findByText(notice.replace('’', "'"))).toBeInTheDocument()
+    expect(screen.queryByText(/\$8,050\.57/)).not.toBeInTheDocument()
+  })
+
+  it('finalizes without a reserve only with a reason, sent as an explicit skip', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { id: 9, version: 2, reserve_skipped: true } })
+    renderAt('/admin/payouts?view=due')
+    await user.click(await screen.findByRole('button', { name: 'Finalize without reserve' }))
+    const dialog = within(screen.getByRole('dialog'))
+    await user.click(dialog.getByRole('button', { name: 'Finalize without reserve' }))
+    expect(dialog.getByRole('alert')).toHaveTextContent('at least 10 characters')
+    expect(apiClient.post).not.toHaveBeenCalled()
+    await user.type(dialog.getByLabelText('Why no reserve'), 'Trusted organizer, approved by Leon')
+    await user.click(dialog.getByRole('button', { name: 'Finalize without reserve' }))
+    expect(apiClient.post).toHaveBeenCalledWith(`/admin/payout_schedule/${firstRow.event.id}/finalize`,
+      { skip_reserve: true, skip_reason: 'Trusted organizer, approved by Leon' }, expect.anything())
+    expect(await screen.findByText(/finalized for Island Open Exhibition without a reserve/)).toBeInTheDocument()
+  })
+
+  it('asks for an early-release reason from the reserve date, even when the row itself is due', async () => {
+    const user = userEvent.setup()
+    respond({ ...dueRelease, reserves: [{ ...releaseRow, due_state: 'due', reserve_release_due: false }] })
+    renderAt('/admin/payouts?view=due')
+    await user.click(await screen.findByRole('button', { name: 'Release early' }))
+    expect(within(screen.getByRole('dialog')).getByRole('heading')).toHaveTextContent('Release the reserve early?')
   })
 
   it('filters to items due now', async () => {

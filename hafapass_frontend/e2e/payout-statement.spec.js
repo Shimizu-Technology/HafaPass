@@ -2,7 +2,7 @@ import { env } from 'node:process'
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import {
-  dueFirst, dueRelease, finalNegative, finalPaid, hugeAmounts, reserveHeld, salesOpen, zeroSales,
+  coveredRefund, dueFirst, dueRelease, finalNegative, finalPaid, hugeAmounts, reserveHeld, salesOpen, zeroSales,
 } from '../src/demo/fixtures/payoutStatements.js'
 
 // Organizer payout statement and admin Due view against API responses
@@ -39,7 +39,8 @@ for (const width of [390, 1280]) {
       await expect(page.getByText('Bank transfer to account ending 4321')).toBeVisible()
       await expect(page.getByText(/Ref TRF-20270201-07/)).toBeVisible()
       await expect(page.getByText('You already have this cash, so it is not part of the bank transfer.')).toBeVisible()
-      await expect(page.getByTestId('balance-remaining')).toContainText('$0.00')
+      await expect(page.getByTestId('balance-remaining')).toContainText('Still to come$894.51')
+      await expect(page.getByText('Reserve still held')).toBeVisible()
       await checkLayout(page, width)
       await snap(page, `statement-reserve-held-${width}`)
     })
@@ -47,6 +48,13 @@ for (const width of [390, 1280]) {
     test('final, negative balance, zero sales, sales open and worst-case names and amounts', async ({ page }) => {
       await statementAt(page, finalNegative)
       await expect(page.getByText('This event is closed. You owe $62.16, which comes out of your next payout.')).toBeVisible()
+      await page.unroute('**/api/v1/organizer/events/12/finance/payout_statement**')
+      await statementAt(page, coveredRefund)
+      await expect(page.getByText(/you owe/i)).toHaveCount(0)
+      await checkLayout(page, width)
+      if (width === 390) await snap(page, 'statement-covered-refund-390')
+      await page.unroute('**/api/v1/organizer/events/12/finance/payout_statement**')
+      await statementAt(page, finalNegative)
       await checkLayout(page, width)
       if (width === 390) await snap(page, 'statement-final-negative-390')
       await page.unroute('**/api/v1/organizer/events/12/finance/payout_statement**')

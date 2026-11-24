@@ -6,7 +6,7 @@ import apiClient, { setAuthTokenGetter } from '../../api/client'
 import { saveBlob } from '../../utils/download'
 import { statusSummary } from '../../utils/payoutStatement'
 import PayoutStatementPage from './PayoutStatementPage'
-import { finalNegative, payoutReceipt, reserveHeld, salesOpen, waitingForPayout } from '../../demo/fixtures/payoutStatements'
+import { coveredRefund, finalNegative, payoutReceipt, reserveHeld, salesOpen, waitingForPayout } from '../../demo/fixtures/payoutStatements'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
@@ -37,8 +37,9 @@ describe('PayoutStatementPage', () => {
     expect(within(lines).getByText('You already have this cash, so it is not part of the bank transfer.')).toBeInTheDocument()
     expect(within(lines).getByText('Reserve held').closest('div')).toHaveTextContent('−$894.51')
     expect(within(lines).getByText('Bank transfer to account ending 4321').closest('div')).toHaveTextContent('Ref TRF-20270201-07')
-    expect(screen.getByTestId('balance-remaining')).toHaveTextContent('$0.00')
-    expect(screen.getByText('Still to come').closest('div')).toHaveTextContent('$894.51Includes the $894.51 reserve, due Mar 1, 2027')
+    expect(screen.getByText('Balance after transfers, not counting the reserve').closest('div')).toHaveTextContent('$0.00')
+    expect(screen.getByTestId('balance-remaining')).toHaveTextContent('Still to come$894.51')
+    expect(screen.getAllByText('Still to come')[0].closest('div')).toHaveTextContent('$894.51Includes the $894.51 reserve, due Mar 1, 2027')
     const sales = screen.getByRole('region', { name: 'Sales by ticket' })
     expect(within(sales).getByText('Adult spectator').closest('tr')).toHaveTextContent('415$7,055.00')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -73,6 +74,18 @@ describe('PayoutStatementPage', () => {
     expect(screen.getByText('This event is closed. You owe $62.16, which comes out of your next payout.')).toBeInTheDocument()
     expect(screen.getByTestId('balance-remaining')).toHaveTextContent('You owe−$62.16')
     expect(screen.getByText('Chargebacks').closest('div')).toHaveTextContent('−$72.00')
+  })
+
+  // Review finding 5: a refund after the payout that the reserve covers is not a debt.
+  it('does not say the organizer owes money the held reserve covers', async () => {
+    respondWith(coveredRefund)
+    mount()
+    await screen.findByTestId('statement-status')
+    expect(screen.queryByText(/you owe/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Reserve still held').closest('div')).toHaveTextContent('$894.51')
+    expect(screen.getByText('Balance after transfers, not counting the reserve').closest('div')).toHaveTextContent('−$17.00')
+    expect(screen.getByTestId('balance-remaining')).toHaveTextContent('Still to come$877.51')
+    expect(screen.getByText(/Later refunds or chargebacks come out of it, so \$877\.51 will be sent to you/)).toBeInTheDocument()
   })
 
   it('describes sales-open and waiting states', () => {

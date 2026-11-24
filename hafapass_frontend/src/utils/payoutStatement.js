@@ -28,14 +28,19 @@ export function statusSummary(data) {
       if (transfers.some(transfer => ['pending', 'processing', 'held'].includes(transfer.status))) {
         return `A transfer of ${money(totals.in_progress_cents)} is on its way to your bank account.`
       }
-      if (schedule.reserve_released) return `Your reserve was released. HåfaPass is sending the remaining ${money(totals.balance_remaining_cents)}.`
+      if (schedule.reserve_released) return `Your reserve was released. HåfaPass is sending the remaining ${money(totals.still_to_come_cents)}.`
       return schedule.transfer_expected_by
         ? `The event has ended. HåfaPass sends your bank transfer within 2–3 business days, by ${formatDay(schedule.transfer_expected_by)}.`
         : 'The event has ended. HåfaPass sends your bank transfer within 2–3 business days.'
-    case 'reserve_held':
-      return `${lastSent ? `We sent ${money(totals.transferred_cents)} to your bank account. ` : ''}${money(totals.reserve_held_cents)} is held until ${formatDay(schedule.reserve_release_on)} in case of chargebacks, then sent to you.`
+    case 'reserve_held': {
+      const sent = lastSent ? `We sent ${money(totals.transferred_cents)} to your bank account. ` : ''
+      const held = `${money(totals.reserve_held_cents)} is held until ${formatDay(schedule.reserve_release_on)} in case of chargebacks`
+      if (totals.still_to_come_cents < 0) return `${sent}${held}, but later refunds or chargebacks are bigger than it: you owe ${money(-totals.still_to_come_cents)}.`
+      if (totals.still_to_come_cents < totals.reserve_held_cents) return `${sent}${held}. Later refunds or chargebacks come out of it, so ${money(totals.still_to_come_cents)} will be sent to you.`
+      return `${sent}${held}, then sent to you.`
+    }
     default:
-      if (totals.balance_remaining_cents < 0) return `This event is closed. You owe ${money(-totals.balance_remaining_cents)}, which comes out of your next payout.`
+      if (totals.still_to_come_cents < 0) return `This event is closed. You owe ${money(-totals.still_to_come_cents)}, which comes out of your next payout.`
       return totals.transferred_cents > 0 ? `Everything for this event has been paid: ${money(totals.transferred_cents)} in total.` : 'This event is closed. Nothing is owed.'
   }
 }
