@@ -13,7 +13,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 const webhooks = {
   checked_at: '2027-01-05T10:00:00Z', last_receipt_at: '2027-01-05T09:58:00Z', last_processed_at: '2027-01-05T09:58:00Z',
   receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0,
-  recent_payment_attempts: 3, silent: false, failing: false, signature_failing: false, rejected_in_window: 0, mode: 'live',
+  recent_payment_attempts: 3, silent: false, failing: false, unverified_failing: false, rejected_in_window: 0, mode: 'live',
   thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
 }
 const body = (overrides = {}) => ({
@@ -50,9 +50,9 @@ describe('monitoring page', () => {
   })
 
   it('says plainly when the signing secret is being rejected', async () => {
-    apiClient.get.mockResolvedValue({ data: body({ signature_failing: true, rejected_in_window: 7 }) })
+    apiClient.get.mockResolvedValue({ data: body({ unverified_failing: true, rejected_in_window: 7 }) })
     renderPage()
-    expect(await screen.findByText(/signature does not verify/)).toBeVisible()
+    expect(await screen.findByText(/bad signature/)).toBeVisible()
     expect(screen.getByText('Stripe webhooks (live mode)')).toBeVisible()
   })
 
@@ -74,7 +74,7 @@ describe('monitoring page', () => {
     renderPage()
     await userEvent.selectOptions(await screen.findByLabelText('Alert to test'), 'stripe_webhooks_silent')
     await userEvent.click(screen.getByRole('button', { name: 'Send test alert' }))
-    expect(await screen.findByText('Queued for delivery to Sentry. Check your phone in a minute or two.')).toBeVisible()
+    expect(await screen.findByText('Sentry accepted the test alert. Check your phone in a minute or two.')).toBeVisible()
     expect(apiClient.post).toHaveBeenCalledTimes(1)
     expect(apiClient.post).toHaveBeenCalledWith('/admin/monitoring/test_alert', { kind: 'stripe_webhooks_silent' }, expect.anything())
   })

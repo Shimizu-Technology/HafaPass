@@ -45,7 +45,7 @@ class RenderTest(unittest.TestCase):
         self.assertIn("failed background jobs: 2", text)
 
     def test_signature_failures_are_called_out(self):
-        bad = {**SUMMARY, "health": {**SUMMARY["health"], "stripe_webhooks": {**SUMMARY["health"]["stripe_webhooks"], "signature_failing": True}}}
+        bad = {**SUMMARY, "health": {**SUMMARY["health"], "stripe_webhooks": {**SUMMARY["health"]["stripe_webhooks"], "unverified_failing": True}}}
         self.assertIn("signature verification fails", script.render(bad))
 
 

@@ -89,10 +89,10 @@ def attention(summary):
         problems.append("Stripe webhooks look silent while payments are being made")
     if hooks.get("failing"):
         problems.append(f"Stripe webhooks are failing ({hooks.get('failed_in_window', 0)} recent)")
-    if hooks.get("signature_failing"):
+    if hooks.get("unverified_failing"):
         problems.append("Stripe is being rejected: signature verification fails (check the webhook signing secret)")
     for name, count in (health.get("operational_signals") or {}).items():
-        if count and name not in ("stripe_webhook_failures", "stripe_webhooks_silent", "stripe_webhook_signature_failures"):
+        if count and name not in ("stripe_webhook_failures", "stripe_webhooks_silent", "stripe_unverified_deliveries"):
             problems.append(f"{name.replace('_', ' ')}: {count}")
     queue = health.get("job_queue", {})
     if queue.get("available") and queue.get("oldest_ready_age_seconds", 0) > 300:

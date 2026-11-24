@@ -47,25 +47,27 @@ class WebhooksController < ActionController::API
       nil
     elsif signature.present? && any_webhook_secret?
       # Signed, but no secret is configured for this event's mode.
-      reject_signature!("secret_missing", "Webhook secret not configured for this Stripe mode")
+      reject_signature!("secret_missing", "Webhook secret not configured for this Stripe mode", signature)
       nil
     elsif Rails.env.development? || Rails.env.test?
       Rails.logger.warn({ event: "unsigned_stripe_webhook", environment: Rails.env }.to_json)
       Stripe::Event.construct_from(JSON.parse(payload, symbolize_names: true))
     elsif any_webhook_secret?
-      reject_signature!("signature_missing", "Stripe signature missing")
+      reject_signature!("signature_missing", "Stripe signature missing", signature)
       nil
     else
-      reject_signature!("secret_missing", "Webhook secret not configured")
+      reject_signature!("secret_missing", "Webhook secret not configured", signature)
       nil
     end
   end
 
   # A rejection stores no receipt, so count it (no payload, no headers) to make
-  # a wrong or missing signing secret visible to the webhook alerts. A signature
-  # header that isn't Stripe-shaped is noise, not a wrong secret.
+  # a wrong or missing signing secret visible to the webhook alerts. On every
+  # branch, a signature header that isn't Stripe-shaped (or is absent) is
+  # internet noise, not a wrong secret. The counts are in memory and flushed in
+  # one write per interval (Operations::WebhookRejections).
   def reject_signature!(reason, message, signature = nil)
-    reason = "signature_missing" if reason == "invalid_signature" && !signature.to_s.match?(/\At=\d+,/)
+    reason = "signature_missing" unless Operations::WebhookRejections.stripe_shaped?(signature)
     Operations::WebhookRejections.record!(provider: "stripe", reason: reason)
     render json: { error: message }, status: :bad_request
   end

@@ -11,15 +11,22 @@
 #
 # The Stripe webhook signals (Operations::StripeWebhookHealth) are incidents
 # with a lifecycle instead:
-#   - opening or standing: one alert, repeated every INCIDENT_REPEAT_INTERVAL
-#     (more evidence during the same incident is not a new alert, and a signal
-#     that re-opens inside that interval does not page again);
-#   - clearing: if something worked after the incident opened (a webhook was
-#     processed) it sends "recovered"; if the evidence only aged out of its
-#     window it sends "quiet" with the rows that still need a person. Both are
-#     info level with their own fingerprints, so neither reopens the alert's
-#     issue nor matches a level:error rule.
-# One signal that raises an error never stops the others.
+#   - opening: one alert. A new incident that opens after the previous one was
+#     closed (a "recovered" or "quiet" notice went out) pages again, because
+#     the person was told it was over; only a REOPEN_GUARD of a few minutes
+#     since the last page defers it (a storm guard), and a deferred incident
+#     still pages as soon as the guard passes if it stands;
+#   - standing: the same incident repeats every INCIDENT_REPEAT_INTERVAL; more
+#     evidence during it is not a new alert;
+#   - clearing: "recovered" only if the thing that opened the incident was put
+#     right (see StripeWebhookHealth#affirmative_recovery?); otherwise "quiet",
+#     with the rows that still need a person. An incident that cleared before it
+#     could be paged still gets a "quiet" message saying so. All info level with
+#     their own fingerprints, so none reopens the alert's issue nor matches a
+#     level:error rule.
+# Rejected deliveries that coincide with no missing-delivery evidence are only
+# noted at info level (see handle_note). One signal that raises an error never
+# stops the others.
 class OperationalAlertJob < ApplicationJob
   queue_as :low
 
@@ -29,12 +36,16 @@ class OperationalAlertJob < ApplicationJob
   REPEAT_INTERVAL = 6.hours
   INCIDENT_SIGNALS = Operations::StripeWebhookHealth::SIGNALS
   INCIDENT_REPEAT_INTERVAL = 1.hour
+  REOPEN_GUARD = 10.minutes
+  NOTE_INTERVAL = 6.hours
+  NOTE_SIGNAL = Operations::StripeWebhookHealth::NOTE_SIGNAL
 
   def perform
     now = Time.current
     health = Operations::StripeWebhookHealth.new(now: now)
     signals = self.class.signals(now: now, health: health)
-    states = RuntimeAlertState.where(signal: signals.keys).index_by(&:signal)
+    states = RuntimeAlertState.where(signal: signals.keys + [NOTE_SIGNAL]).index_by(&:signal)
+    guarded(NOTE_SIGNAL) { handle_note(health.signal(NOTE_SIGNAL), states[NOTE_SIGNAL] || RuntimeAlertState.new(signal: NOTE_SIGNAL), now, health) }
     signals.each do |signal, count|
       state = states[signal] || RuntimeAlertState.new(signal: signal)
       if INCIDENT_SIGNALS.include?(signal)
@@ -47,6 +58,12 @@ class OperationalAlertJob < ApplicationJob
     rescue StandardError => e
       report_failure(signal, e)
     end
+  end
+
+  def guarded(signal)
+    yield
+  rescue StandardError => e
+    report_failure(signal, e)
   end
 
   # Counts by signal. A signal whose query fails is reported to Sentry and left
@@ -91,22 +108,45 @@ class OperationalAlertJob < ApplicationJob
   def handle_incident(signal, count, state, now, health)
     if count.positive?
       state.incident_opened_at ||= now
-      return unless state.last_alerted_at.nil? || state.last_alerted_at <= now - INCIDENT_REPEAT_INTERVAL
+      return unless incident_page_due?(state, now)
 
       alert(signal, count, health.details(signal))
       state.last_alerted_at = now
     elsif state.last_count.positive? || state.incident_opened_at
       opened_at = state.incident_opened_at || state.last_alerted_at || state.updated_at
       paged = state.last_alerted_at.present? && state.last_alerted_at >= opened_at
-      if paged
-        if health.affirmative_recovery?(signal, since: opened_at)
-          recover(signal)
-        else
-          quiet(signal, health.unresolved_count(signal))
-        end
+      unresolved = health.unresolved_count(signal, since: opened_at)
+      if paged && health.affirmative_recovery?(signal, since: opened_at)
+        recover(signal)
+      else
+        quiet(signal, unresolved, paged: paged)
       end
       state.incident_opened_at = nil
     end
+  end
+
+  # Not yet paged for this incident: page unless the last page (for an earlier
+  # incident) was within the storm guard. Already paged: repeat hourly.
+  def incident_page_due?(state, now)
+    return true if state.last_alerted_at.nil?
+    return state.last_alerted_at <= now - INCIDENT_REPEAT_INTERVAL if state.last_alerted_at >= state.incident_opened_at
+
+    state.last_alerted_at <= now - REOPEN_GUARD
+  end
+
+  # Rejected deliveries with no evidence real deliveries are missing: an
+  # info-level note at most every NOTE_INTERVAL, never a page.
+  def handle_note(count, state, now, health)
+    if count.positive? && (state.last_alerted_at.nil? || state.last_alerted_at <= now - NOTE_INTERVAL)
+      signal = "stripe_unverified_deliveries"
+      Rails.logger.info({ event: "operational_note", signal: signal, count: count }.to_json)
+      Sentry.capture_message("Operational note: unverified rejected Stripe deliveries, no sign real deliveries are missing", level: :info,
+        fingerprint: ["operational-note", signal], tags: { operational_signal: signal, operational_state: "note" },
+        extra: { count: count }.merge(health.details(NOTE_SIGNAL)))
+      state.last_alerted_at = now
+    end
+    state.last_count = count
+    state.save! if state.new_record? ? count.positive? : state.changed?
   end
 
   def alert(signal, count, extra = {})
@@ -123,14 +163,16 @@ class OperationalAlertJob < ApplicationJob
       tags: { operational_signal: signal, operational_state: "recovered" })
   end
 
-  # The evidence left its window but nothing proved the path works again.
-  def quiet(signal, unresolved)
-    Rails.logger.info({ event: "operational_alert_quiet", signal: signal, unresolved: unresolved }.to_json)
+  # The evidence left its window but nothing proved the path works again (or
+  # it cleared before it could be paged).
+  def quiet(signal, unresolved, paged: true)
+    Rails.logger.info({ event: "operational_alert_quiet", signal: signal, unresolved: unresolved, paged: paged }.to_json)
+    note = paged ? "No new evidence in the alert window, but the cause was not confirmed fixed." :
+      "New evidence appeared and cleared before it could be paged (a page for an earlier incident was too recent)."
     Sentry.capture_message("Operational alert quiet, not confirmed recovered: #{signal}", level: :info,
       fingerprint: ["operational-alert-quiet", signal],
       tags: { operational_signal: signal, operational_state: "quiet" },
-      extra: { unresolved_rows: unresolved,
-               note: "No new evidence in the alert window, but no webhook has been processed since it opened." })
+      extra: { unresolved_rows: unresolved, paged: paged, note: note })
   end
 
   def report_failure(signal, error)

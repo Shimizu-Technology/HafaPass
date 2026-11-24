@@ -9,7 +9,7 @@ const monitoring = (overrides = {}, title = 'Copa de Marianas') => ({
   stripe_webhooks: {
     checked_at: '2027-01-05T10:00:00Z', last_receipt_at: '2027-01-05T09:58:00Z', last_processed_at: '2027-01-05T09:58:00Z',
     receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0,
-    recent_payment_attempts: 3, silent: false, failing: false, signature_failing: false, rejected_in_window: 0, mode: 'live',
+    recent_payment_attempts: 3, silent: false, failing: false, unverified_failing: false, rejected_in_window: 0, mode: 'live',
     thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
     ...overrides,
   },
@@ -39,7 +39,7 @@ for (const [name, viewport] of [['390', { width: 390, height: 844 }], ['1280', {
 
     await page.getByLabel('Alert to test').selectOption('stripe_webhooks_silent')
     await page.getByRole('button', { name: 'Send test alert' }).click()
-    await expect(page.getByText(/Queued for delivery to Sentry/)).toBeVisible()
+    await expect(page.getByText(/Sentry accepted the test alert/)).toBeVisible()
     expect(sent).toEqual({ kind: 'stripe_webhooks_silent' })
 
     const results = await new AxeBuilder({ page }).analyze()
