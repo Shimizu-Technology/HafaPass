@@ -56,28 +56,27 @@ class EmailPreferences
   # Consent lock order (including creation): preference, then subscriber, then
   # follow rows, then organization/waitlist locks, then unsubscribe and consent rows.
   # For multiple addresses, nest each preference/subscriber pair in sorted order.
-  def self.with_platform_locks(email, create_subscriber: false, subscriber_attributes: {})
+  # Lock-only callers must not manufacture new personal-data rows.
+  def self.with_platform_locks(email, create_preference: true, create_subscriber: false, subscriber_attributes: {})
     email = email.to_s.strip.downcase
-    preference = EmailPreference.find_or_create_by!(email: email)
-    preference.with_lock do
+    EmailPreference.transaction do
+      preference = create_preference ? EmailPreference.find_or_create_by!(email: email) : EmailPreference.find_by(email: email)
+      preference&.lock!
       subscriber = PlatformSubscriber.find_by(email: email)
-      if subscriber.nil? && create_subscriber
+      if subscriber.nil? && create_subscriber && create_preference
         subscriber = PlatformSubscriber.create!(subscriber_attributes.merge(email: email))
       end
-      if subscriber
-        subscriber.with_lock { yield preference, subscriber }
-      else
-        yield preference, nil
-      end
+      subscriber&.lock!
+      yield preference, subscriber
     end
   end
 
-  def self.with_platform_locks_for(emails, &block)
+  def self.with_platform_locks_for(emails, create_preference: true, &block)
     addresses = emails.compact.map { |email| email.to_s.strip.downcase }.reject(&:blank?).uniq.sort
     return yield if addresses.empty?
 
-    with_platform_locks(addresses.first) do
-      with_platform_locks_for(addresses.drop(1), &block)
+    with_platform_locks(addresses.first, create_preference: create_preference) do
+      with_platform_locks_for(addresses.drop(1), create_preference: create_preference, &block)
     end
   end
 
@@ -117,10 +116,11 @@ class EmailPreferences
   end
 
   def self.unsubscribe_organizer!(organization:, email:, source:)
-    with_platform_locks(email) do |preference, _subscriber|
-      lock_follows!(preference.email).where(organization: organization).update_all(email_opted_in_at: nil)
-      MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: preference.email).update!(unsubscribed_at: Time.current)
-      EmailConsent.record!(email: preference.email, organization: organization, scope: "organizer", action: "unsubscribed", source: source)
+    email = email.to_s.strip.downcase
+    with_platform_locks(email, create_preference: false) do
+      lock_follows!(email).where(organization: organization).update_all(email_opted_in_at: nil)
+      MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: email).update!(unsubscribed_at: Time.current)
+      EmailConsent.record!(email: email, organization: organization, scope: "organizer", action: "unsubscribed", source: source)
     end
   end
 

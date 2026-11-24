@@ -365,7 +365,7 @@ class DataRetention
     scopes << ["user", record.initiated_by_user_id.to_s] if record.respond_to?(:initiated_by_user_id) && record.initiated_by_user_id
     scopes << ["user", record.created_by_id.to_s] if record.respond_to?(:created_by_id) && record.created_by_id
     scopes << ["user", record.owner_id.to_s] if record.respond_to?(:owner_id) && record.owner_id
-    %i[email buyer_email requester_email recipient recipient_email holder_email].each do |field|
+    %i[email buyer_email requester_email recipient recipient_email holder_email email_opted_in_address].each do |field|
       scopes << ["buyer_email", record.public_send(field).to_s.downcase] if
         record.respond_to?(field) && record.public_send(field).present?
     end

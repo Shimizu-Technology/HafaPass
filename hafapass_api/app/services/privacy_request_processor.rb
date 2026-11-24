@@ -345,7 +345,7 @@ class PrivacyRequestProcessor
         # that no longer match the account's current contact address.
         consent_emails = buyer_emails + [user&.email]
         consent_emails += OrganizerFollow.where(user_id: user.id).pluck(:email_opted_in_address) if user
-        EmailPreferences.with_platform_locks_for(consent_emails) do
+        EmailPreferences.with_platform_locks_for(consent_emails, create_preference: false) do
           follows = OrganizerFollow.where(email_opted_in_address: buyer_emails)
           follows = follows.or(OrganizerFollow.where(user_id: user.id)) if user
           follows.order(:id).lock.load
@@ -365,14 +365,14 @@ class PrivacyRequestProcessor
           personal_values = personal_tokens + owned_orders.flat_map { |order| [order.buyer_name, order.refund_reason] }
             .compact.reject { |value| value.length < 3 }
           buyer_emails.each { |email| PrivacyEmailSuppression.suppress!(email) }
+          EmailPreference.where(email: buyer_emails).find_each do |preference|
+            DataRetention.update_unheld(EmailPreference.where(id: preference.id), email: "deleted+preference-#{preference.id}@privacy.invalid", all_unsubscribed: true)
+          end
           PlatformSubscriber.where(email: buyer_emails).find_each do |subscriber|
             DataRetention.update_unheld(PlatformSubscriber.where(id: subscriber.id), email: "deleted+subscriber-#{subscriber.id}@privacy.invalid", name: nil, interests: [], villages: [], status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
           end
           EmailConsent.where(email: buyer_emails).find_each do |consent|
             DataRetention.update_unheld(EmailConsent.where(id: consent.id), email: "deleted+consent-#{consent.id}@privacy.invalid", ip: nil, user_agent: nil)
-          end
-          EmailPreference.where(email: buyer_emails).find_each do |preference|
-            DataRetention.update_unheld(EmailPreference.where(id: preference.id), email: "deleted+preference-#{preference.id}@privacy.invalid", all_unsubscribed: true)
           end
           AudienceMailing.where("recipient_emails ?| array[:emails]", emails: buyer_emails).find_each do |mailing|
             DataRetention.update_unheld(AudienceMailing.where(id: mailing.id), recipient_emails: mailing.recipient_emails - buyer_emails)

@@ -97,4 +97,29 @@ RSpec.describe "Consent recovery and stale writes", type: :request do
     expect(EmailConsent.count).to eq(count)
     expect(follow.reload.email_opted_in_at).to be_nil
   end
+  it "C2: withdraws both the saved and current addresses, including current-address order consent" do
+    original = email
+    toggle(true)
+    post "/api/v1/users/sync", params: { email: "order-opt-in@example.test" }, headers: auth_headers(user), as: :json
+    expect(response).to have_http_status(:ok)
+    user.reload
+    create(:order, :completed, event: create(:event, organizer_profile: organization.organizer_profile), buyer_email: user.email, marketing_opt_in: true)
+    expect(EmailPreferences.organizer_enabled?(organization, user.email)).to be(true)
+    headers = auth_headers(user)
+    get "/api/v1/me/organizer_follows", headers: headers
+    observed = response.parsed_body.fetch("organizers").sole.fetch("consent_marker")
+    post "/api/v1/me/organizer_follows", params: { organization_id: organization.id, email_opt_in: false, consent_only: true, consent_marker: observed }, headers: headers, as: :json
+    expect(response).to have_http_status(:created)
+    [original, user.email].each do |address|
+      expect(MarketingUnsubscribe.exists?(organization: organization, email: address)).to be(true)
+      expect(EmailConsent.where(email: address, organization: organization).order(:id).last.action).to eq("unsubscribed")
+    end
+    get "/api/v1/me/organizer_follows", headers: headers
+    expect(response.parsed_body.fetch("organizers").sole.fetch("email_opt_in")).to be(false)
+    %w[followers buyers].each do |audience|
+      mailing = AudienceMailing.new(organization: organization, created_by: organization.organizer_profile.user, audience: audience)
+      expect(mailing.audience_emails).to be_empty
+      [original, user.email].each { |address| expect(mailing.eligible?(address)).to be(false) }
+    end
+  end
 end

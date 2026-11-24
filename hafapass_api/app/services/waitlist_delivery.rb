@@ -17,7 +17,7 @@ class WaitlistDelivery
 
   def self.reconcile_failure!(delivery)
     return unless %w[waitlist_notification waitlist_offer].include?(delivery.template)
-    EmailPreferences.with_platform_locks(delivery.recipient) do
+    EmailPreferences.with_platform_locks(delivery.recipient, create_preference: false) do
       reconcile_failure_with_consent_lock!(delivery)
     end
   end

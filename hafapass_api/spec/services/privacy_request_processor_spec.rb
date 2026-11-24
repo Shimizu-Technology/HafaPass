@@ -36,12 +36,63 @@ RSpec.describe PrivacyRequestProcessor do
   it "R3: scrubs the saved address on verified email-only erasure without removing another account's follow" do
     follow = OrganizerFollow.create!(user: user, organization: order.event.organization,
       email_opted_in_address: user.email, email_opted_in_at: Time.current)
+    other_user = create(:user, email: "different-contact@example.test")
+    other_follow = OrganizerFollow.create!(user: other_user, organization: order.event.organization,
+      email_opted_in_address: user.email, email_opted_in_at: Time.current)
     guest_order = create(:order, user: nil, buyer_email: user.email)
     deletion = PrivacyRequest.create!(kind: "deletion", requester_email: user.email, order: guest_order,
       status: "verified", verified_at: Time.current, verified_by: admin, guest_challenge_passed_at: Time.current)
     described_class.new(deletion).execute!(actor: admin)
     expect(follow.reload).to have_attributes(email_opted_in_address: nil, email_opted_in_at: nil)
     expect(user.reload.email).to be_present
+    expect(other_follow.reload).to have_attributes(email_opted_in_address: nil, email_opted_in_at: nil)
+    expect(other_user.reload.email).to eq("different-contact@example.test")
+  end
+
+  it "L1: does not create plaintext preferences for unverified current or saved follow addresses during erasure" do
+    verified = user.email
+    order
+    user.update!(email: "other-current@example.test")
+    follow = OrganizerFollow.create!(user: user, organization: order.event.organization,
+      email_opted_in_address: "old-follow@example.test", email_opted_in_at: Time.current)
+    deletion = PrivacyRequest.create!(kind: "deletion", user: user, requester_email: verified,
+      verified_emails: [verified], status: "verified", verified_at: Time.current, verified_by: admin)
+    expect(EmailPreference.where(email: [user.email, follow.email_opted_in_address])).not_to exist
+    expect { described_class.new(deletion).execute!(actor: admin) }.not_to change(EmailPreference, :count)
+    expect(EmailPreference.where(email: ["other-current@example.test", "old-follow@example.test"])).not_to exist
+    expect(OrganizerFollow.exists?(follow.id)).to be(false)
+  end
+
+  it "C1: preserves held address A's follow consent while scrubbing unheld address B in the same deletion" do
+    held_email = "held-follow@example.test"
+    held_follow = OrganizerFollow.create!(user: user, organization: order.event.organization,
+      email_opted_in_address: held_email, email_opted_in_at: Time.current)
+    other = OrganizerFollow.create!(user: user, organization: create(:organizer_profile).organization,
+      email_opted_in_address: user.email, email_opted_in_at: Time.current)
+    LegalHold.place!(scope_type: "buyer_email", scope_value: held_email, reason: "Preserve consent", actor: admin)
+    expect(DataRetention.held?(held_follow)).to be(true)
+    expect(RetentionGuard.protected?(held_follow)).to be(true)
+    guest = create(:order, user: nil, buyer_email: user.email)
+    deletion = PrivacyRequest.create!(kind: "deletion", order: guest, requester_email: user.email,
+      verified_emails: [user.email, held_email], status: "verified", verified_at: Time.current,
+      verified_by: admin, guest_challenge_passed_at: Time.current)
+    before = held_follow.attributes
+    described_class.new(deletion).execute!(actor: admin)
+    expect(held_follow.reload.attributes).to eq(before)
+    expect(other.reload).to have_attributes(email_opted_in_address: nil, email_opted_in_at: nil)
+  end
+
+  it "C4: writes existing preferences before subscribers during erasure" do
+    EmailPreference.create!(email: user.email)
+    PlatformSubscriber.create!(email: user.email, source: "footer")
+    writes = []
+    callback = ->(*args) { writes << args.last[:sql] if args.last[:sql].match?(/UPDATE "(?:email_preferences|platform_subscribers)"/) }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      described_class.new(privacy_request).execute!(actor: admin)
+    end
+    expect(writes.size).to eq(2)
+    expect(writes.first).to include('UPDATE "email_preferences"')
+    expect(writes.last).to include('UPDATE "platform_subscribers"')
   end
 
   it "shows kept and deleted records with reasons" do

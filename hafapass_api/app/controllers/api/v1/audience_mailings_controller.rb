@@ -46,7 +46,9 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     return head :forbidden if @organization
 
     subscriber = PlatformSubscriber.find(params[:id])
-    EmailPreferences.with_platform_locks(subscriber.email) do |_preference, locked_subscriber|
+    EmailPreferences.with_platform_locks(subscriber.email, create_preference: false) do |_preference, locked_subscriber|
+      return render json: { error: "Subscriber changed; reload" }, status: :conflict unless locked_subscriber
+
       subscriber = locked_subscriber
       subscriber.update!(status: %w[bounced complained].include?(subscriber.status) ? subscriber.status : "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
       EmailConsent.record!(email: subscriber.email, scope: "platform", action: "admin_unsubscribed", source: "admin")

@@ -39,12 +39,17 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
         if enabled
           EmailPreferences.restore_scope!(preference: preference, subscriber: subscriber, organization: organization)
         else
-          MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: email).update!(unsubscribed_at: Time.current)
+          [current_user.email, follow.email_opted_in_address].compact.map { |address| address.strip.downcase }.uniq.each do |address|
+            MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: address).update!(unsubscribed_at: Time.current)
+          end
         end
         follow.update!(email_opted_in_at: enabled ? Time.current : nil, email_opted_in_address: enabled ? email : follow.email_opted_in_address,
           email_consent_version: EmailConsent.version_for(scope: "organizer", source: "follow"))
-        EmailConsent.record!(email: email, organization: organization, scope: "organizer",
-          action: enabled ? "confirmed" : "unsubscribed", source: "follow", request: request)
+        addresses = enabled ? [email] : [current_user.email, follow.email_opted_in_address].compact.map { |address| address.strip.downcase }.uniq
+        addresses.each do |address|
+          EmailConsent.record!(email: address, organization: organization, scope: "organizer",
+            action: enabled ? "confirmed" : "unsubscribed", source: "follow", request: request)
+        end
       end
     end
     render json: { id: follow.id, organization_id: organization.id }, status: :created
@@ -53,7 +58,7 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
   def destroy
     follow = current_user.organizer_follows.find_by!(organization_id: params[:organization_id])
     email = (follow.email_opted_in_address.presence || current_user.email).strip.downcase
-    EmailPreferences.with_platform_locks(email) do
+    EmailPreferences.with_platform_locks(email, create_preference: false) do
       follow.lock!
       MarketingUnsubscribe.find_or_initialize_by(organization: follow.organization, email: email).update!(unsubscribed_at: Time.current)
       EmailConsent.record!(email: email, organization: follow.organization, scope: "organizer", action: "unsubscribed", source: "follow", request: request)

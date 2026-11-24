@@ -157,4 +157,19 @@ RSpec.describe "Email base", type: :request do
     post "/api/v1/audience_mailings/#{mailing.id}/send_now", headers: auth_headers(profile.user).merge("X-Organization-Id" => profile.organization.id.to_s), as: :json
     expect(response).to have_http_status(:not_found)
   end
+  it "C3: returns 409 without suppression writes if erasure rewrote the subscriber before locking" do
+    subscriber = PlatformSubscriber.create!(email: email, source: "footer", status: "confirmed")
+    allow(EmailPreferences).to receive(:with_platform_locks).and_wrap_original do |method, address, **options, &block|
+      subscriber.update!(email: "deleted+subscriber@example.test")
+      method.call(address, **options, &block)
+    end
+    expect do
+      post "/api/v1/audience_mailings/suppress/#{subscriber.id}", params: { scope: "platform" }, headers: auth_headers(admin)
+    end.not_to change(EmailConsent, :count)
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body["error"]).to eq("Subscriber changed; reload")
+    expect(subscriber.reload.status).to eq("confirmed")
+    expect(AuditLog.where(action: "email.subscriber_suppressed")).not_to exist
+    expect(EmailPreference.where(email: email)).not_to exist
+  end
 end
