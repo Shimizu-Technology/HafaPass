@@ -276,8 +276,8 @@ class PayoutStatement
   end
 
   def reserve_hold_note
-    net = schedule.net_before_reserve_cents
-    percent = net.positive? ? " (about #{((reserve_holds_cents * 100.0) / net).round}% of net proceeds)" : ""
+    net = schedule.custodial_net_cents
+    percent = net.positive? ? " (about #{((reserve_holds_cents * 100.0) / net).round}% of the net proceeds HåfaPass holds for you)" : ""
     release = schedule.reserve_release_on
     "Held back for #{PayoutSchedule::RESERVE_DAYS} days in case of chargebacks#{percent}." +
       (release ? " Release date: #{release.strftime("%b %-d, %Y")}." : "")
@@ -446,6 +446,11 @@ class PayoutStatement
     notes << "Buyers paid #{money(buyer_paid_fees_cents)} in HåfaPass fees on top of ticket prices. That was never part of your proceeds." if buyer_paid_fees_cents.positive?
     if door_cash_cents.positive?
       notes << "Door cash (#{money(door_cash_cents)}) stays with you and is not included in any bank transfer."
+    end
+    direct = schedule.organizer_direct_card_cents
+    if direct.positive? && (reserve_holds_cents.positive? || schedule.suggested_reserve_cents.positive?)
+      notes << "Card sales on your own terminal (#{money(direct)}) are paid to you by your card processor, " \
+        "so no chargeback reserve is held on them."
     end
     if status == "waiting_for_payout" && schedule.transfer_due_on && !schedule.first_transfer_sent?
       notes << "HåfaPass sends the bank transfer within 2–3 business days after the event (by #{schedule.transfer_due_on.strftime("%b %-d, %Y")})."

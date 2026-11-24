@@ -55,7 +55,7 @@ function ReserveDialog({ row, beginRequest, onClose, onSaved }) {
       <h2 id={titleId} className="text-lg font-semibold text-neutral-900">Hold the chargeback reserve</h2>
       <p className="mt-1 text-sm text-content-muted [overflow-wrap:anywhere]">{row.event.title} · {row.organization.name}</p>
       <dl className="mt-4 space-y-1 rounded-lg bg-neutral-50 p-3 text-sm ring-1 ring-neutral-200">
-        <div className="flex justify-between gap-4"><dt>Net proceeds held by HåfaPass</dt><dd className="font-medium tabular-nums">{money(row.net_proceeds_cents, row.currency)}</dd></div>
+        <div className="flex justify-between gap-4"><dt>Net proceeds held by HåfaPass</dt><dd className="font-medium tabular-nums">{money(row.custodial_net_cents ?? row.net_proceeds_cents, row.currency)}</dd></div>
         <div className="flex justify-between gap-4"><dt>Standard 10% reserve</dt><dd className="font-medium tabular-nums">{money(row.suggested_reserve_cents, row.currency)}</dd></div>
         <div className="flex justify-between gap-4"><dt>Release date</dt><dd className="font-medium">{formatDay(row.reserve_release_on)}</dd></div>
       </dl>

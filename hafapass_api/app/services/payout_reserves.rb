@@ -53,19 +53,21 @@ class PayoutReserves
         raise ReserveError, "#{blocker} before holding the reserve"
       end
 
-      net = schedule.net_before_reserve_cents
+      net = schedule.custodial_net_cents
       suggested = schedule.suggested_reserve_cents
       amount = requested_amount(suggested)
       raise ReserveError, "There are no platform-held proceeds to reserve" unless net.positive?
       raise ReserveError, "Reserve must be a positive amount" unless amount.positive?
-      raise ReserveError, "Reserve cannot be more than the event's net proceeds" if amount > net
+      raise ReserveError, "Reserve cannot be more than the event's net proceeds held by HåfaPass" if amount > net
 
       release_on = schedule.standard_release_on
-      reason = "Chargeback reserve: #{percent_label(amount, net)} of #{money(net)} net proceeds, " \
+      reason = "Chargeback reserve: #{percent_label(amount, net)} of #{money(net)} net proceeds held by HåfaPass, " \
         "held until #{release_on.iso8601}"
       reason += ". #{note}" if note
       post!(kind: "reserve_hold", amount_cents: -amount, reason: reason, reserve_release_on: release_on,
-        metadata: { reserve_rate_bps: PayoutSchedule::RESERVE_RATE_BPS, net_before_reserve_cents: net,
+        metadata: { reserve_rate_bps: PayoutSchedule::RESERVE_RATE_BPS, custodial_net_cents: net,
+          net_before_reserve_cents: schedule.net_before_reserve_cents,
+          organizer_direct_card_cents: schedule.organizer_direct_card_cents,
           suggested_reserve_cents: suggested, reserve_cents: amount, release_on: release_on.iso8601,
           amount_overridden: amount != suggested })
     end
@@ -116,12 +118,12 @@ class PayoutReserves
       raise ReserveError, "This event already has a payout requested or sent" if schedule.payout_committed?
 
       suggested = schedule.suggested_reserve_cents
-      net = schedule.net_before_reserve_cents
+      net = schedule.custodial_net_cents
       finalized = Settlements::Finalizer.call(event: event, actor: actor, request: request)
       AuditLogger.record!(action: PayoutSchedule::SKIP_ACTION, auditable: event, actor: actor,
         organization: event.organization, event: event,
         metadata: { reason: skip_reason, settlement_id: finalized.id, settlement_version: finalized.version,
-          suggested_reserve_cents: suggested, net_before_reserve_cents: net },
+          suggested_reserve_cents: suggested, custodial_net_cents: net },
         request: request)
       finalized
     end

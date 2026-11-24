@@ -121,6 +121,9 @@ class AdminPayoutDueList
       due_state: schedule.due_state,
       overdue_business_days: schedule.overdue_business_days,
       net_proceeds_cents: schedule.net_before_reserve_cents,
+      # The reserve base: net proceeds HåfaPass holds (no door cash, no
+      # organizer-direct card sales).
+      custodial_net_cents: schedule.custodial_net_cents,
       suggested_reserve_cents: schedule.reserve_hold_posted? ? nil : schedule.suggested_reserve_cents,
       reserve_held_cents: schedule.reserve_held_cents,
       reserve_released_cents: schedule.reserve_released_cents,

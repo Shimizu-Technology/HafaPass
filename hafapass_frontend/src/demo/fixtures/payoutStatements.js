@@ -3,7 +3,7 @@
 
 export const salesOpen = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "published",
@@ -13,7 +13,7 @@ export const salesOpen = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -121,7 +121,7 @@ export const salesOpen = {
 
 export const waitingForPayout = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -131,7 +131,7 @@ export const waitingForPayout = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -240,7 +240,7 @@ export const waitingForPayout = {
 
 export const reserveHeld = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -250,7 +250,7 @@ export const reserveHeld = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -324,7 +324,7 @@ export const reserveHeld = {
         {
           "label": "Reserve held",
           "amount_cents": -89451,
-          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 10% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         }
       ],
       "total_label": "Total to be sent to you",
@@ -371,7 +371,7 @@ export const reserveHeld = {
   ],
   "transfers": [
     {
-      "id": 1,
+      "id": 36,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -391,7 +391,7 @@ export const reserveHeld = {
 
 export const payoutReceipt = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -401,7 +401,7 @@ export const payoutReceipt = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -475,7 +475,7 @@ export const payoutReceipt = {
         {
           "label": "Reserve held",
           "amount_cents": -89451,
-          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 10% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         }
       ],
       "total_label": "Total to be sent to you",
@@ -522,7 +522,7 @@ export const payoutReceipt = {
   ],
   "transfers": [
     {
-      "id": 1,
+      "id": 36,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -538,7 +538,7 @@ export const payoutReceipt = {
     }
   ],
   "payout": {
-    "id": 1,
+    "id": 36,
     "status": "paid",
     "status_label": "Sent",
     "method": "bank_transfer",
@@ -563,7 +563,7 @@ export const payoutReceipt = {
 
 export const reserveReleased = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -573,7 +573,7 @@ export const reserveReleased = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -652,7 +652,7 @@ export const reserveReleased = {
         {
           "label": "Reserve held",
           "amount_cents": -89451,
-          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 10% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         },
         {
           "label": "Reserve released",
@@ -693,7 +693,7 @@ export const reserveReleased = {
   ],
   "transfers": [
     {
-      "id": 1,
+      "id": 36,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -713,7 +713,7 @@ export const reserveReleased = {
 
 export const coveredRefund = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -723,7 +723,7 @@ export const coveredRefund = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -797,7 +797,7 @@ export const coveredRefund = {
         {
           "label": "Reserve held",
           "amount_cents": -89451,
-          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 10% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         }
       ],
       "total_label": "Total to be sent to you",
@@ -845,7 +845,7 @@ export const coveredRefund = {
   ],
   "transfers": [
     {
-      "id": 1,
+      "id": 36,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -865,7 +865,7 @@ export const coveredRefund = {
 
 export const finalPaid = {
   "event": {
-    "id": 1,
+    "id": 40,
     "title": "Island Open Exhibition",
     "slug": "island-open-exhibition",
     "status": "completed",
@@ -875,7 +875,7 @@ export const finalPaid = {
     "multi_day": false
   },
   "organization": {
-    "id": 1,
+    "id": 45,
     "name": "Fictional Grappling League"
   },
   "currency": "USD",
@@ -954,7 +954,7 @@ export const finalPaid = {
         {
           "label": "Reserve held",
           "amount_cents": -89451,
-          "note": "Held back for 30 days in case of chargebacks (about 10% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 10% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         },
         {
           "label": "Reserve released",
@@ -995,7 +995,7 @@ export const finalPaid = {
   ],
   "transfers": [
     {
-      "id": 1,
+      "id": 36,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -1010,7 +1010,7 @@ export const finalPaid = {
       "counted_cents": -805057
     },
     {
-      "id": 2,
+      "id": 37,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -1030,7 +1030,7 @@ export const finalPaid = {
 
 export const finalNegative = {
   "event": {
-    "id": 3,
+    "id": 42,
     "title": "Fictional Night Market Showcase",
     "slug": "fictional-night-market-showcase",
     "status": "completed",
@@ -1040,7 +1040,7 @@ export const finalNegative = {
     "multi_day": false
   },
   "organization": {
-    "id": 3,
+    "id": 47,
     "name": "Example Community Arts Council"
   },
   "currency": "USD",
@@ -1102,7 +1102,7 @@ export const finalNegative = {
         {
           "label": "Reserve held",
           "amount_cents": -984,
-          "note": "Held back for 30 days in case of chargebacks (about 37% of net proceeds). Release date: Mar 1, 2027."
+          "note": "Held back for 30 days in case of chargebacks (about 37% of the net proceeds HåfaPass holds for you). Release date: Mar 1, 2027."
         },
         {
           "label": "Reserve released",
@@ -1143,7 +1143,7 @@ export const finalNegative = {
   ],
   "transfers": [
     {
-      "id": 3,
+      "id": 38,
       "status": "paid",
       "status_label": "Sent",
       "method": "bank_transfer",
@@ -1163,7 +1163,7 @@ export const finalNegative = {
 
 export const zeroSales = {
   "event": {
-    "id": 4,
+    "id": 43,
     "title": "Fictional Empty Hall Rehearsal",
     "slug": "fictional-empty-hall-rehearsal",
     "status": "completed",
@@ -1173,7 +1173,7 @@ export const zeroSales = {
     "multi_day": false
   },
   "organization": {
-    "id": 4,
+    "id": 48,
     "name": "Example Org"
   },
   "currency": "USD",
@@ -1247,7 +1247,7 @@ export const zeroSales = {
 
 export const hugeAmounts = {
   "event": {
-    "id": 5,
+    "id": 44,
     "title": "Fictional Pacific Grand Championship Finals — Absolute Division, Masters, Juniors and Kids Brackets, Day 1 of 3 (Spectator Admission)",
     "slug": "fictional-pacific-grand-championship-finals-absolute-division-masters-jun",
     "status": "completed",
@@ -1257,7 +1257,7 @@ export const hugeAmounts = {
     "multi_day": false
   },
   "organization": {
-    "id": 5,
+    "id": 49,
     "name": "Fictional Inter-Island Brazilian Jiu-Jitsu and Grappling Federation of the Western Pacific Region 🥋"
   },
   "currency": "USD",
@@ -1361,7 +1361,7 @@ export const dueFirst = {
   "transfers": [
     {
       "event": {
-        "id": 1,
+        "id": 40,
         "title": "Island Open Exhibition",
         "slug": "island-open-exhibition",
         "status": "completed",
@@ -1369,7 +1369,7 @@ export const dueFirst = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 1,
+        "id": 45,
         "name": "Fictional Grappling League"
       },
       "next_step": "hold_reserve",
@@ -1387,6 +1387,7 @@ export const dueFirst = {
       "due_state": "due",
       "overdue_business_days": 0,
       "net_proceeds_cents": 894508,
+      "custodial_net_cents": 894508,
       "suggested_reserve_cents": 89451,
       "reserve_held_cents": 0,
       "reserve_released_cents": 0,
@@ -1422,7 +1423,7 @@ export const dueRelease = {
   "transfers": [
     {
       "event": {
-        "id": 2,
+        "id": 41,
         "title": "Fictional Beach Volleyball Cup — Women's Open Division Finals and Awards Night",
         "slug": "fictional-beach-volleyball-cup-women-s-open-division-finals-and-awards-ni",
         "status": "completed",
@@ -1430,7 +1431,7 @@ export const dueRelease = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 2,
+        "id": 46,
         "name": "Example Sports Association of the Northern Pacific Islands"
       },
       "next_step": "hold_reserve",
@@ -1448,6 +1449,7 @@ export const dueRelease = {
       "due_state": "overdue",
       "overdue_business_days": 21,
       "net_proceeds_cents": 65700,
+      "custodial_net_cents": 65700,
       "suggested_reserve_cents": 6570,
       "reserve_held_cents": 0,
       "reserve_released_cents": 0,
@@ -1467,7 +1469,7 @@ export const dueRelease = {
   "reserves": [
     {
       "event": {
-        "id": 1,
+        "id": 40,
         "title": "Island Open Exhibition",
         "slug": "island-open-exhibition",
         "status": "completed",
@@ -1475,7 +1477,7 @@ export const dueRelease = {
         "timezone": "Pacific/Guam"
       },
       "organization": {
-        "id": 1,
+        "id": 45,
         "name": "Fictional Grappling League"
       },
       "next_step": "release_reserve",
@@ -1492,6 +1494,7 @@ export const dueRelease = {
       "due_state": "due",
       "overdue_business_days": 0,
       "net_proceeds_cents": 887608,
+      "custodial_net_cents": 887608,
       "suggested_reserve_cents": null,
       "reserve_held_cents": 89451,
       "reserve_released_cents": 0,

@@ -23,7 +23,7 @@ RSpec.describe PayoutReserves do
     record_card_sale!(event, ticket_type: ticket_type, quantity: 7, processing_fee_cents: 395)
     hold = described_class.hold!(event: event, actor: admin)
     expect(hold).to have_attributes(kind: "reserve_hold", amount_cents: -1151, event: event, status: "posted")
-    expect(hold.reason).to eq("Chargeback reserve: 10% of $115.05 net proceeds, held until 2027-03-01")
+    expect(hold.reason).to eq("Chargeback reserve: 10% of $115.05 net proceeds held by HåfaPass, held until 2027-03-01")
     audit = AuditLog.find_by!(auditable: hold, action: "balance_adjustment.posted")
     expect(audit.metadata).to include("reserve_rate_bps" => 1000, "net_before_reserve_cents" => 11_505,
       "suggested_reserve_cents" => 1151, "release_on" => "2027-03-01", "source" => "payout_schedule")
@@ -40,7 +40,7 @@ RSpec.describe PayoutReserves do
     other = create(:event, :completed, organization: organization, organizer_profile: profile)
     record_card_sale!(other, ticket_type: create(:ticket_type, event: other, price_cents: 1000), processing_fee_cents: 30)
     expect { described_class.hold!(event: other, actor: admin, amount_cents: 971) }
-      .to raise_error(described_class::ReserveError, "Reserve cannot be more than the event's net proceeds")
+      .to raise_error(described_class::ReserveError, "Reserve cannot be more than the event's net proceeds held by HåfaPass")
     expect { described_class.hold!(event: other, actor: admin, amount_cents: "1.5") }
       .to raise_error(described_class::ReserveError, "Reserve must be whole cents")
   end
@@ -91,6 +91,46 @@ RSpec.describe PayoutReserves do
       expect { described_class.release!(event: event, actor: admin) }
         .to raise_error(described_class::ReserveError, "No reserve is held for this event")
     end
+  end
+
+  # Policy point from the #241 agreement cross-check: about 10% of the net
+  # proceeds HåfaPass holds. Door cash and organizer-direct card sales (Clover
+  # on the organizer's own merchant account) are not held, so not reserved.
+  it "bases the reserve on custodial proceeds only: $100 Stripe + $40 Clover + $20 door cash holds $10" do
+    stripe_type = create(:ticket_type, event: event, name: "Online", price_cents: 10_000)
+    record_card_sale!(event, ticket_type: stripe_type, quantity: 1, buyer_fee_cents: 0, processing_fee_cents: 320,
+      bearer: "platform")
+    clover_type = create(:ticket_type, event: event, name: "Door card", price_cents: 4000)
+    clover = create(:order, event: event, source: "box_office", payment_method: "door_card", subtotal_cents: 4000,
+      service_fee_cents: 0, total_cents: 4000)
+    create(:order_item, order: clover, ticket_type: clover_type, unit_price_cents: 4000, fee_cents: 0,
+      organizer_proceeds_cents: 4000)
+    create(:payment, :succeeded, order: clover, provider: "boh_clover", amount_cents: 4000, provider_environment: "live")
+    cash_type = create(:ticket_type, event: event, name: "Door cash", price_cents: 2000)
+    cash = create(:order, event: event, source: "box_office", payment_method: "door_cash", subtotal_cents: 2000,
+      service_fee_cents: 0, total_cents: 2000)
+    create(:order_item, order: cash, ticket_type: cash_type, unit_price_cents: 2000, fee_cents: 0,
+      organizer_proceeds_cents: 2000)
+
+    schedule = PayoutSchedule.for(event)
+    expect(schedule.net_before_reserve_cents).to eq(14_000)
+    expect(schedule.organizer_direct_card_cents).to eq(4000)
+    expect(schedule.custodial_net_cents).to eq(10_000)
+    expect(schedule.suggested_reserve_cents).to eq(1000)
+    hold = described_class.hold!(event: event, actor: admin)
+    expect(hold.amount_cents).to eq(-1000)
+    expect(hold.reason).to start_with("Chargeback reserve: 10% of $100.00 net proceeds held by HåfaPass")
+    expect(AuditLog.find_by!(auditable: hold).metadata).to include("custodial_net_cents" => 10_000,
+      "organizer_direct_card_cents" => 4000, "net_before_reserve_cents" => 14_000)
+    expect { described_class.hold!(event: create(:event, :completed, organization: organization, organizer_profile: profile), actor: admin) }
+      .to raise_error(described_class::ReserveError, "There are no platform-held proceeds to reserve")
+
+    statement = PayoutStatement.call(event: event)
+    reserve_line = statement[:sections].last[:lines].find { |line| line[:label] == "Reserve held" }
+    expect(reserve_line[:note]).to include("about 10% of the net proceeds HåfaPass holds for you")
+    expect(statement[:notes]).to include("Card sales on your own terminal ($40.00) are paid to you by your card processor, " \
+      "so no chargeback reserve is held on them.")
+    expect(statement[:notes]).to include("Door cash ($20.00) stays with you and is not included in any bank transfer.")
   end
 
   it "keeps a tax identifier out of an early-release reason" do

@@ -21,6 +21,7 @@ class PayoutSchedule
   # a reserve can no longer be carved out of it (Payout::MONEY_RESERVED_STATUSES).
   COMMITTED_STATUSES = Payout::MONEY_RESERVED_STATUSES.map(&:to_s).freeze
   SKIP_ACTION = "payout_reserve.skipped"
+  ORGANIZER_DIRECT_CARD_METHODS = %w[door_card].freeze
 
   def self.for(event, at: Time.current, result: nil)
     new(event, at: at, result: result)
@@ -129,8 +130,40 @@ class PayoutSchedule
     self.class.balance_before_payout_cents(attributes)
   end
 
+  # Card sales taken on the organizer's own terminal (Clover, order payment
+  # method door_card): the organizer's processor settles them to the
+  # organizer, so HåfaPass never holds that money. Read from the calculator's
+  # own sale and refund items. Door cash is already outside net proceeds.
+  def organizer_direct_card_cents
+    @organizer_direct_card_cents ||= begin
+      meta = ->(item) { item[:metadata].to_h.with_indifferent_access }
+      sales = result.items.select { |item| item[:kind] == "sale_proceeds" }
+      refunds = result.items.select { |item| item[:kind] == "refund" }
+      order_ids = sales.filter_map { |item| meta.call(item)[:order_id] }.uniq
+      direct = Set.new(Order.where(id: order_ids, payment_method: ORGANIZER_DIRECT_CARD_METHODS).pluck(:id) +
+        Payment.where(order_id: order_ids, provider: CardPresentAccount::PROVIDERS).pluck(:order_id))
+      if direct.empty?
+        0
+      else
+        refund_orders = Refund.where(id: refunds.filter_map { |item| meta.call(item)[:refund_id] }).pluck(:id, :order_id).to_h
+        sold = sales.select { |item| direct.include?(meta.call(item)[:order_id]) }.sum { |item| item[:amount_cents] }
+        returned = refunds.select { |item| direct.include?(refund_orders[meta.call(item)[:refund_id]]) }
+          .sum { |item| -item[:amount_cents] }
+        sold - returned
+      end
+    end
+  end
+
+  # The base for the chargeback reserve: net proceeds HåfaPass actually holds
+  # (agent-collected online card sales after organizer-borne processing,
+  # disputes and adjustments). Door cash and organizer-direct card sales are
+  # excluded; a reserve is never carved out of money the organizer already has.
+  def custodial_net_cents
+    net_before_reserve_cents - organizer_direct_card_cents
+  end
+
   def suggested_reserve_cents
-    self.class.suggested_reserve_cents(net_before_reserve_cents)
+    self.class.suggested_reserve_cents(custodial_net_cents)
   end
 
   def reserve_held_cents
