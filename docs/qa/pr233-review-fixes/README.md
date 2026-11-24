@@ -39,3 +39,26 @@ Validation completed on this fix round:
 The read-only shared-context check failed because this host lacks `/Users/agent/.config/shimizu-technology/agent-context.json`; synced canonical guidance was read directly. No shared settings changed.
 
 Lead follow-up: final-head CI/review and the eventual merge/release decision. No merge/deploy or real email occurred. External sender-domain/webhook/inbox acceptance and real Clerk/Safari checks remain the existing pre-campaign owner checks.
+
+## Round 2 fixes (starts at 57d9a6f2)
+
+Acceptance: same-organizer door locks remain responsive during marketing pacing and HTTP; priority mail never waits on the bulk backoff; organizer verification stays at five/hour; checkout consent preserves request evidence; unsafe rollback refuses before schema changes. Agent-executed affected-flow QA uses isolated local databases and captured/simulated transport only.
+
+- B3: future slots are reserved and committed before waiting, before the delivery lease or organizer locks. Authorization commits before HTTP; the existing frozen request/key, lease ownership check and sent-state persistence remain intact. A permission change during HTTP cannot recall an accepted message.
+- N1: priority 429s use delayed job retries and never call the marketing backoff. Threaded probes also acquire the slot backoff promptly while marketing waits or performs HTTP.
+- N2: organizer verification is independently fixed at five/hour, with a six-request throttle regression.
+- N3: checkout captures IP and at most 500 user-agent characters and passes them through the background job into the append-only consent ledger. Request and job regressions cover both boundaries.
+- N4: migration down refuses before DDL if any delivery lacks a legacy subject; see `docs/EMAIL_COMPLIANCE.md` for reconciliation requirements. Regressions cover safe restoration and refusal with an actual platform-only delivery.
+- N5: self-tests use `emails`, checkout subscription capture uses `default`, and its confirmation uses `emails`. Commercial consent/suppression rules remain in effect.
+
+Captured-mail Chromium journey: eight stages passed, using a synthetic admin and verified-address fixture, on the Round 2 implementation. Evidence: `/Users/agent/work/hafapass-email-evidence/round2-fixes/` (`result.json`, captured HTML and screenshots). No real Clerk authentication, external delivery, mobile Safari or real-device checks are claimed. No frontend files changed.
+
+Validation on implementation commit `0d6705ade5e6cd41da2f2f05459ede66eecbbacc`:
+
+- Full serial RSpec: **4,098 examples, zero failures**, 4 minutes 12.3 seconds. Final probe timings from that run: organizer lock **1.11 ms during slot wait**, **0.48 ms during HTTP** (required <200 ms); slot backoff **1.33 ms / 0.62 ms** respectively. Both barriers assert no open transaction, and replay sends no second request.
+- RuboCop: **1,090 files, no offenses**. Brakeman: **zero errors, zero security warnings**.
+- Actual migration refusal with populated email-base-only rows and an empty-delivery down/up cycle passed in a rolled-back transaction on the task demo DB.
+- Captured-mail Chromium journey: **8/8 stages passed**. Frontend lint/Vitest not rerun because no frontend files changed.
+- Task-owned API/Vite/browser processes stopped; lifecycle status has no active owned resources. Dropped `hafapass_round2fix233_test` and `hafapass_round2fix233_demo`; borrowed protected PostgreSQL remains available. Worktree and pre-existing untracked files retained. No merge, deploy or real email.
+
+PR mapping: B3 and N1–N5 are implemented in `0d6705ad`; this QA record is a separate documentation commit. Lead owns final-head CI/review and the merge decision.
