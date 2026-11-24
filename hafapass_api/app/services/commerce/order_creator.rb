@@ -353,21 +353,25 @@ module Commerce
     end
 
     # Public buyer checkout only, before any lock. When a requested ticket
-    # type that is on sale has nothing left in the committed data, refuse with
-    # the message the locked selection gives ("Only 0 tickets available for
-    # ..."), so buyers arriving after a sell-out do not queue for the event lock.
-    # Refusing never oversells, and the locked check taken at the same instant
-    # would refuse too.
+    # type has nothing left in the committed data, refuse with the message the
+    # locked selection gives ("Only 0 tickets available for ..."), so buyers
+    # arriving after a sell-out do not queue for the event lock. Refusing never
+    # oversells, and the locked check taken at the same instant would refuse too.
     #
-    # Skipped whenever the locked path could still sell or must answer
-    # differently: a waitlist offer or seat hold brings its own reserved
-    # inventory, a checkout key that already has an order is a recovery that
-    # returns that order, and an unpublished, paused or held event reports its
-    # own sales state. Staff sales (box office, guest list) keep the full path.
+    # It only answers when the locked path would give this same answer. It
+    # falls through whenever the locked path could still sell or reports
+    # something else first: a waitlist offer or seat hold brings its own
+    # reserved inventory; a checkout key that already has an order is a
+    # recovery that returns that order; an unknown ticket type, a launch-scope
+    # refusal, a closed event (ended, unpublished, paused, held, unverified
+    # organizer, every pass night cancelled: SalesClosed or the pass-night
+    # message) and, in ticket type order, a type that is off sale or a pass
+    # with no eligible nights each keep their own error. Staff sales (box
+    # office, guest list) keep the full path.
     def reject_exhausted_ticket_types!
       return unless @enforce_buyer_limits
       return if waitlist_offer_token.present? || seat_hold_token.present?
-      return unless event.published? && !event.sales_suspended? && event.policy_hold_at.nil?
+      return unless event.published?
       return unless line_items.is_a?(Array) && line_items.any?
 
       ids = begin
@@ -376,14 +380,38 @@ module Commerce
         return # The full path reports invalid line items in its usual order.
       end
       at = Time.current
-      exhausted = event.ticket_types.where(id: ids).order(:id).find do |ticket_type|
-        ticket_type.on_sale?(at: at) && ticket_type.available_quantity.zero?
+      # One committed snapshot (the shape sales_open_under_lock? loads) answers
+      # the event, ticket type and pass-night checks in memory.
+      snapshot = Event.where(id: event.id)
+        .preload(:organizer_profile, ticket_types: { ticket_type_included_events: :included_event }).first
+      return unless snapshot
+
+      by_id = snapshot.ticket_types.index_by(&:id)
+      ticket_types = ids.sort.map { |id| by_id[id] }
+      return if ticket_types.any?(&:nil?)
+
+      exhausted = ticket_types.each do |ticket_type|
+        return unless ticket_type.on_sale?(at: at)
+        if ticket_type.pass? && ticket_type.ticket_type_included_events.none? { |link| link.included_event&.eligible_pass_night? }
+          return
+        end
+        break ticket_type if ticket_type_exhausted?(ticket_type)
       end
-      return unless exhausted
+      return unless exhausted.is_a?(TicketType)
+      return unless snapshot.sales_open?(at: at)
       return if @checkout_attempt&.order_id
       return if @checkout_key_digest && Order.exists?(checkout_key_digest: @checkout_key_digest)
+      begin
+        validate_launch_scope!
+      rescue CheckoutError
+        return
+      end
 
       raise CheckoutError, "Only 0 tickets available for #{exhausted.name}"
+    end
+
+    def ticket_type_exhausted?(ticket_type)
+      ticket_type.quantity_sold >= ticket_type.quantity_available || ticket_type.available_quantity.zero?
     end
 
     # Both sales checks in a checkout run while this transaction holds the

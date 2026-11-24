@@ -109,7 +109,14 @@ RSpec.describe "Public event cache inventory freshness", type: :request do
     expect(ticket_type.reload.available_quantity).to eq(1)
   end
 
-  it "turns the cache off with HAFAPASS_PUBLIC_EVENT_CACHE=off" do
+  def bump_statements
+    statements = []
+    callback = ->(*, payload) { statements << payload[:name] if payload[:name] == "PublicEventCache Bump" }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+    statements.size
+  end
+
+  it "turns the cache off, and its generation writes, with HAFAPASS_PUBLIC_EVENT_CACHE=off" do
     show_ticket_type
     original = ENV["HAFAPASS_PUBLIC_EVENT_CACHE"]
     ENV["HAFAPASS_PUBLIC_EVENT_CACHE"] = "off"
@@ -117,7 +124,60 @@ RSpec.describe "Public event cache inventory freshness", type: :request do
 
     get "/api/v1/events/#{event.slug}"
     expect(response.parsed_body.fetch("title")).to eq("Copa Final Updated")
+
+    writes = bump_statements do
+      expect do
+        ticket_type.update!(quantity_available: 3)
+        3.times { |index| buy!(index) }
+        PublicEventCache.bump_after_commit!
+      end.not_to(change { PublicEventCache.generation })
+    end
+    expect(writes).to eq(0)
   ensure
     original.nil? ? ENV.delete("HAFAPASS_PUBLIC_EVENT_CACHE") : ENV["HAFAPASS_PUBLIC_EVENT_CACHE"] = original
+  end
+
+  it "bumps once for a transaction that returns many tickets" do
+    ticket_type.update!(quantity_available: 5)
+    tickets = 5.times.map { |index| buy!(index).order.tickets.first }
+    expect(show_ticket_type).to include("sold_out" => true)
+
+    writes = bump_statements do
+      expect do
+        Ticket.transaction do
+          tickets.each do |ticket|
+            ticket.lock!
+            ticket.cancel_unused_and_release_inventory!(reason: "spec")
+          end
+        end
+      end.to change { PublicEventCache.generation }.by(1)
+    end
+    expect(writes).to eq(1)
+    expect(show_ticket_type).to include("quantity_remaining" => 5, "sold_out" => false)
+  end
+
+  it "keeps bumping after a rolled-back transaction or savepoint" do
+    expect do
+      ApplicationRecord.transaction do
+        ticket_type.update!(quantity_available: 4)
+        raise ActiveRecord::Rollback
+      end
+    end.not_to(change { PublicEventCache.generation })
+    expect { ticket_type.update!(quantity_available: 5) }.to change { PublicEventCache.generation }.by(1)
+
+    other = create(:ticket_type, :free, event: event, name: "Other", quantity_available: 2)
+    writes = bump_statements do
+      expect do
+        ApplicationRecord.transaction do
+          ApplicationRecord.transaction(requires_new: true) do
+            ticket_type.update!(quantity_available: 6)
+            raise ActiveRecord::Rollback
+          end
+          other.update!(quantity_available: 3)
+          ticket_type.reload.update!(quantity_available: 7)
+        end
+      end.to change { PublicEventCache.generation }.by(1)
+    end
+    expect(writes).to eq(1)
   end
 end

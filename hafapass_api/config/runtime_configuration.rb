@@ -31,8 +31,10 @@ module RuntimeConfiguration
   end
 
   # Puma processes serving requests. 1 (the default) keeps Puma's single mode,
-  # as on the 512 MB plan. 2 or more runs cluster mode, so checkouts waiting on
-  # one event's inventory lock can occupy at most one process's threads.
+  # as on the 512 MB plan. 2 or more runs cluster mode: more request threads in
+  # total and, on a 2-CPU plan, one GVL per process. It does not confine
+  # checkouts waiting on an event's inventory lock to one process; Puma's
+  # shared socket sends them to every worker.
   def web_processes
     positive_integer("WEB_CONCURRENCY", 1)
   end

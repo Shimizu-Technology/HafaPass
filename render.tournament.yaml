@@ -15,8 +15,8 @@
 #      Guam CGNAT-safe `RACK_ATTACK_*` env vars.
 #      `hafapass_api/config/puma.rb` reads `WEB_CONCURRENCY` (default 1, single
 #      mode); 2 or more runs Puma cluster mode. Confirm Neon pool headroom
-#      (`(2 + 1) * 15 + 10 = 55` connection ceiling across web master, web
-#      workers and the separate worker). The single-service alternative keeps
+#      (`2 * 15 + 10 = 40` connection ceiling across the two web workers and
+#      the separate worker; the master closes its connections before forking). The single-service alternative keeps
 #      `HAFAPASS_RUNTIME=embedded` with `WEB_CONCURRENCY=2`, `RAILS_MAX_THREADS=5`,
 #      `DB_POOL=11` and no worker service; see
 #      docs/SINGLE_SERVICE_RUNTIME.md, "Puma processes and event-week settings".

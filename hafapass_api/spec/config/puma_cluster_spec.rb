@@ -31,6 +31,7 @@ RSpec.describe "Puma process configuration" do
 
     expect(options[:workers]).to eq(0)
     expect(options[:preload_app]).to be_falsey
+    expect(options[:solid_queue_mode]).to eq(:async)
     expect([options[:min_threads], options[:max_threads]]).to eq([3, 3])
   end
 
@@ -39,8 +40,22 @@ RSpec.describe "Puma process configuration" do
 
     expect(options[:workers]).to eq(3)
     expect(options[:preload_app]).to be(true)
-    expect(options[:solid_queue_mode]).to eq(:async)
     expect([options[:min_threads], options[:max_threads]]).to eq([5, 5])
+    # The master closes its preload connections and runs no job threads: the
+    # supervisor starts in worker 0, so a respawned worker forks cleanly.
+    expect(options.all_of(:before_fork)).not_to be_empty
+    expect(options.all_of(:before_worker_boot)).not_to be_empty
+    expect(options.all_of(:before_worker_shutdown)).not_to be_empty
+    expect(options[:solid_queue_mode]).to be_nil
+  end
+
+  it "registers no queue hooks in cluster mode without the embedded runtime" do
+    options = puma_options("WEB_CONCURRENCY" => "2", "RAILS_MAX_THREADS" => "5", "HAFAPASS_RUNTIME" => "solid_queue", "DB_POOL" => "11")
+
+    expect(options[:workers]).to eq(2)
+    expect(options.all_of(:before_fork)).not_to be_empty
+    expect(options.all_of(:before_worker_boot)).to be_empty
+    expect(options[:solid_queue_mode]).to be_nil
   end
 
   it "rejects a process count that is not a positive integer" do
@@ -101,7 +116,30 @@ RSpec.describe "Embedded Solid Queue under clustered Puma", :non_transactional d
     end
   end
 
-  it "starts exactly one supervisor, in the Puma master, with two request workers" do
+  def wait_for(seconds, log)
+    Timeout.timeout(seconds) do
+      loop do
+        result = yield
+        return result if result
+
+        raise "Puma exited early:\n#{File.read(log.path)}" if Process.waitpid(@puma_pid, Process::WNOHANG)
+
+        sleep 0.5
+      end
+    end
+  end
+
+  # Every request must be answered: a worker forked holding a dead thread's
+  # mutex would hang on its first database query. Readiness queries the
+  # database (503 is expected here: no release revision is configured).
+  def expect_database_requests_answered(port)
+    8.times do
+      code = Net::HTTP.start("127.0.0.1", port, read_timeout: 10) { |http| http.get("/api/v1/readiness").code }
+      expect(%w[200 503]).to include(code)
+    end
+  end
+
+  it "starts exactly one supervisor, in request worker 0 and never the master, and survives worker respawns" do
     port = free_port
     env = {
       "RAILS_ENV" => "test", "DATABASE_URL" => ENV["DATABASE_URL"], "HAFAPASS_RUNTIME" => "embedded",
@@ -110,35 +148,53 @@ RSpec.describe "Embedded Solid Queue under clustered Puma", :non_transactional d
       "OBJC_DISABLE_INITIALIZE_FORK_SAFETY" => "YES", "PGGSSENCMODE" => "disable"
     }
     log = Tempfile.new("puma-cluster")
-    pid = Process.spawn(env, "bundle", "exec", "puma", "-C", "config/puma.rb", chdir: Rails.root.to_s,
+    pid = @puma_pid = Process.spawn(env, "bundle", "exec", "puma", "-C", "config/puma.rb", chdir: Rails.root.to_s,
       out: log.path, err: log.path, pgroup: true)
 
-    processes = nil
-    Timeout.timeout(90) do
-      loop do
-        kinds = SolidQueue::Process.distinct.pluck(:kind)
-        break if (%w[Dispatcher Scheduler Supervisor(async) Worker] - kinds).empty? && child_pids(pid).size == 2
-
-        raise "Puma exited early:\n#{File.read(log.path)}" if Process.waitpid(pid, Process::WNOHANG)
-
-        sleep 0.5
-      end
+    wait_for(90, log) do
+      kinds = SolidQueue::Process.distinct.pluck(:kind)
+      (%w[Dispatcher Scheduler Supervisor(async) Worker] - kinds).empty? && child_pids(pid).size == 2
     end
     # A supervisor started per worker would register within the same boot.
     sleep 3
     processes = SolidQueue::Process.order(:id).to_a
 
     supervisor = processes.find { |process| process.kind == "Supervisor(async)" }
+    workers = child_pids(pid)
     expect(processes.size).to eq(4)
-    expect(processes.map(&:pid).uniq).to eq([pid])
+    expect(processes.map(&:pid).uniq).to eq([supervisor.pid])
+    expect(workers).to include(supervisor.pid)
+    expect(processes.map(&:pid)).not_to include(pid)
     expect(processes.reject { |process| process == supervisor }.map(&:supervisor_id)).to all(eq(supervisor.id))
     expect(processes.map { |process| process.metadata["runtime_instance"] }.uniq.size).to eq(1)
-    workers = child_pids(pid)
     expect(workers.size).to eq(2)
-    expect(workers).not_to include(*processes.map(&:pid))
     3.times do
       expect(Net::HTTP.get_response(URI("http://127.0.0.1:#{port}/up")).code).to eq("200")
     end
+    expect_database_requests_answered(port)
+
+    # A request worker without the supervisor dies: Puma forks its
+    # replacement from the master, the queue keeps its one supervisor.
+    plain_worker = (workers - [supervisor.pid]).first
+    Process.kill("KILL", plain_worker)
+    wait_for(60, log) { (child_pids(pid) - [plain_worker]).size == 2 }
+    expect_database_requests_answered(port)
+    sleep 2
+    expect(SolidQueue::Process.order(:id).to_a).to eq(processes)
+
+    # Worker 0 dies with the supervisor: its replacement starts a new one,
+    # with the same runtime instance, and still never in the master.
+    Process.kill("KILL", supervisor.pid)
+    replacement = wait_for(60, log) do
+      SolidQueue::Process.where(kind: "Supervisor(async)").where.not(pid: supervisor.pid).first
+    end
+    expect(child_pids(pid)).to include(replacement.pid)
+    expect(replacement.pid).not_to eq(pid)
+    expect(replacement.metadata["runtime_instance"]).to eq(supervisor.metadata["runtime_instance"])
+    wait_for(30, log) do
+      SolidQueue::Process.where(pid: replacement.pid).distinct.pluck(:kind).sort == %w[Dispatcher Scheduler Supervisor(async) Worker]
+    end
+    expect_database_requests_answered(port)
   ensure
     if pid
       begin

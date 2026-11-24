@@ -27,14 +27,23 @@
 # threads. This includes Active Record's `pool` parameter in `database.yml`.
 require_relative "runtime_configuration"
 # WEB_CONCURRENCY (default 1) sets the number of Puma processes. One process is
-# Puma's single mode, which the 512 MB plan uses. Larger plans may run two or
-# more, so requests waiting on one event's inventory lock cannot take every
-# request thread. docs/SINGLE_SERVICE_RUNTIME.md lists the settings per plan.
+# Puma's single mode, which the 512 MB plan uses. Two or more run cluster mode:
+# each process has its own GVL, so on a 2-CPU plan requests run in parallel,
+# and the service gets WEB_CONCURRENCY x RAILS_MAX_THREADS request threads.
+# Extra processes do not isolate lock waiters: the shared socket hands
+# checkouts to every worker, so a rush can still fill every thread.
+# docs/SINGLE_SERVICE_RUNTIME.md lists the settings per plan.
 if RuntimeConfiguration.clustered?
   workers RuntimeConfiguration.web_processes
-  # Load the app once in the master: workers fork copy-on-write, and the
-  # embedded Solid Queue supervisor below runs in the master.
+  # Load the app once in the master; workers fork copy-on-write.
   preload_app!
+  # The master serves no requests. Close the connections it opened while
+  # preloading so no worker inherits a live socket; each worker's pools were
+  # already discarded at fork (Active Record's fork tracker) and reconnect on
+  # first use.
+  before_fork do
+    ActiveRecord::Base.connection_handler.clear_all_connections!(:all) if defined?(ActiveRecord::Base)
+  end
 else
   workers 0
 end
@@ -48,19 +57,43 @@ port ENV.fetch("PORT", 3000)
 plugin :tmp_restart
 
 if RuntimeConfiguration.embedded?
-  # Released Solid Queue 1.7.0 supervises its actors inside this Puma process.
+  # Released Solid Queue 1.7.0 supervises its actors inside this Puma instance.
   # Async supervisor mode does not change queue persistence to an async adapter.
+  # Exactly one supervisor per Puma instance in either mode.
   #
-  # Exactly one supervisor per Puma instance: plugins start in the Puma master,
-  # and the plugin's after_booted hook starts the async supervisor there once,
-  # never in the forked request workers. With one process, the master is the
-  # only process.
-  plugin :solid_queue
-  solid_queue_mode :async
   # Readiness matches queue heartbeats to RuntimeConfiguration.instance_id.
-  # Fix it in the master before workers fork, so every worker inherits the id
-  # the supervisor records.
+  # Fix it before any fork, so every worker inherits the id the supervisor
+  # records.
   RuntimeConfiguration.instance_id
+
+  if RuntimeConfiguration.clustered?
+    # Cluster mode: the supervisor runs in request worker 0, never in the
+    # master. Puma forks a replacement worker from the master whenever one
+    # dies, and fork copies only the calling thread: a master running Solid
+    # Queue threads could hand the new worker a mutex (connection pool,
+    # logger, libpq) held forever by a thread that no longer exists. The
+    # master stays free of job threads, so every respawn forks cleanly. If
+    # worker 0 dies, its replacement starts a new supervisor; the old one's
+    # rows stop counting for readiness after 90 seconds and are pruned with
+    # their claimed jobs, as after any crash.
+    embedded_supervisor = nil
+    before_worker_boot do |index|
+      next unless index.zero?
+
+      embedded_supervisor = SolidQueue::Supervisor.start(mode: :async, standalone: false)
+    end
+    before_worker_shutdown do |index|
+      next unless index.zero?
+
+      embedded_supervisor&.stop
+      embedded_supervisor = nil
+    end
+  else
+    # Single mode: the plugin's after_booted hook starts the async supervisor
+    # in the only process. Nothing forks after boot.
+    plugin :solid_queue
+    solid_queue_mode :async
+  end
 end
 
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.

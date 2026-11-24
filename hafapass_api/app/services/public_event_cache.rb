@@ -18,6 +18,7 @@
 # cache: it always re-reads inventory under its locks.
 module PublicEventCache
   GENERATION_NAME = "public_events"
+  PENDING_BUMP_KEY = :hafapass_public_event_cache_bump_pending
 
   module_function
 
@@ -42,11 +43,37 @@ module PublicEventCache
     key_version.last
   end
 
+  # Queues one bump for the enclosing transaction; later calls while that
+  # transaction is still open are no-ops, so cancelling or refunding N tickets
+  # in one transaction writes the generation row once, not N times.
+  #
+  # The flag holds the transaction the callback was registered on. Rails moves
+  # a savepoint's callbacks to its parent when the savepoint commits, and runs
+  # after_rollback when it rolls back; a flag whose transaction has closed is
+  # ignored, so a dropped connection can never suppress later bumps. Outside a
+  # transaction it bumps immediately.
   def bump_after_commit!
-    ActiveRecord.after_all_transactions_commit { bump! }
+    return unless enabled?
+
+    transaction = ApplicationRecord.with_connection(&:current_transaction)
+    return bump! unless transaction.open? && transaction.joinable?
+
+    state = ActiveSupport::IsolatedExecutionState
+    pending = state[PENDING_BUMP_KEY]
+    return if pending&.open? && pending.connection.equal?(transaction.connection)
+
+    state[PENDING_BUMP_KEY] = transaction
+    clear = -> { state[PENDING_BUMP_KEY] = nil if state[PENDING_BUMP_KEY].equal?(transaction) }
+    transaction.after_rollback(&clear)
+    transaction.after_commit do
+      clear.call
+      bump!
+    end
   end
 
   def bump!
+    return unless enabled?
+
     ApplicationRecord.with_connection do |connection|
       connection.exec_update(<<~SQL.squish, "PublicEventCache Bump")
         INSERT INTO public_cache_generations (name, value, created_at, updated_at)
