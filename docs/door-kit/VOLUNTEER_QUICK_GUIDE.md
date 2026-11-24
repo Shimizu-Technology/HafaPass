@@ -1,20 +1,20 @@
 # Copa de Marianas 2027 — Volunteer Door Kit
 
 **Saturday, January 30, 2027 · UOG Calvo Field House (Mangilao)**  
-~650+ competitors (registered through ASJJF) · **Spectator tickets:** Child **$12** · Adult **$17** · **Under 5 free** *(confirm exact age cutoff with the organizer before doors open)*
+**Spectator tickets:** Child **$12** · Adult **$17** · **Under 5 free** *(Child / Under 5 age: ask the Door lead, don't guess.)*
 
-> **Notice:** **Screens from the Nov 24 builds (PRs #236, #240, #242) — refresh before printing.**  
-> **Demo data · all names fictional.** Prices, counts, emails, and attendee names shown in screenshots are fictional preview data from *Isla Demo Open 2027 (demo)*.
+> **Notice:** **Screens from the Nov 24 builds — refresh before printing.** *(See [Screenshot Sources](#screenshot-sources-and-deeper-runbooks) for which build each screen comes from.)*  
+> **Demo data · all names fictional.** Screenshots come from fictional preview events (*Isla Demo Open 2027 (demo)*, *Tumon Bay Acoustic Sessions (demo)*, and *FD Alumni Basketball (demo)*). Prices, counts, emails, and attendee names shown on screen are not real.
 
 ## Jump to your role
 
-- [Emergency & Escalation Contacts](#escalation-contacts)
-- [10-Minute Pre-Doors Checklist](#10-minute-pre-doors-checklist)
+- [Escalation Contacts](#escalation-contacts)
+- [Pre-Doors Checklist](#pre-doors-checklist)
 - [Role 1: Door Scanner (Phone Guide)](#role-1-door-scanner)
-- [Re-entry / Stamp Rule — Choose One Before Event Day](#re-entry-or-hand-stamp-rule-choose-one-before-event-day)
+- [Re-entry or Hand-Stamp Rule — Choose One Before Event Day](#re-entry-or-hand-stamp-rule-choose-one-before-event-day)
 - [Role 2: Box Office (Cash & Card Sales)](#role-2-box-office)
-- [Offline Ticket List (Manifest) Refresh](#offline-manifest-refresh)
-- [Backup Attendee CSV & Paper Fallback](#backup-attendee-csv-and-paper-fallback)
+- [Refreshing the Saved Ticket List](#refreshing-the-saved-ticket-list)
+- [Backup Attendee List & Paper Fallback](#backup-attendee-list-and-paper-fallback)
 - [End-of-Night Checklist](#end-of-night-checklist)
 - [Print-Friendly One-Sheet Role Cards](#print-friendly-role-cards)
 - [Screenshot Sources & Deeper Runbooks](#screenshot-sources-and-deeper-runbooks)
@@ -27,372 +27,393 @@ Fill in before doors open. Keep attendee details off public chats.
 
 | Role | Name & Phone | When to call |
 | --- | --- | --- |
-| **Door lead** | `[Door lead name / phone]` | Duplicate scans, re-entry overrides, refunds/transfers, cash questions, paper fallback |
+| **Door lead** | `[Door lead name / phone]` | Duplicate scans, re-entry overrides, age questions, refunds/transfers, cash questions, paper fallback |
 | **Backup lead** | `[Backup door lead / phone]` | When the Door lead is busy at another gate |
-| **HåfaPass on-call** | `[HåfaPass on-call]` | App outage, sync stuck, expired signing key, Stripe card confirmation stuck |
+| **HåfaPass on-call** | `[HåfaPass on-call]` | App outage, sync stuck, expired ticket list, card payment stuck waiting for confirmation |
 | **Venue contact** | `[Venue contact]` | UOG Calvo Field House doors, power, Wi-Fi, crowd flow, parking |
 | **Medical / Security** | `[Medical]` | Any injury, fainting, heat, or safety incident (call 911 first for emergencies) |
 
 ---
 
-## 10-Minute Pre-Doors Checklist
+## Pre-Doors Checklist
 
-Do this together **10–15 minutes before doors open**:
+*Takes about 10 minutes. Finish **15–30 minutes before doors open**.*
 
-- [ ] **Phone ready:** Charged to 100%, battery pack or cable plugged in, brightness high, volume up (so you hear scan beeps).
-- [ ] **Screen stays awake:** Set iPhone **Auto-Lock** or Android **Screen timeout** to **Never** for your shift.
-- [ ] **Your own login:** Sign into HåfaPass in Safari (iPhone) or Chrome (Android) with **your own** staff invitation. Never share one phone login between volunteers.
-- [ ] **Scanner check:** Open **Scanner**, pick the Copa event, confirm **Online**, **Waiting to sync: 0**, and **Ticket list ready · N tickets** with a future Guam expiry time. Tap **Sync now** once.
-- [ ] **Test scan:** Tap **Start camera**, allow camera permission, scan one test QR, and test typing a code under **Enter a ticket QR code**.
-- [ ] **Re-entry rule agreed:** Everyone at the door knows whether Copa is using **Exit scan** or **Hand stamp (Re-entry Off)** today.
-- [ ] **Box office check:** Confirm starting cash float, small bills for change, and whether **Stripe card sales** (`Pay on buyer’s phone` / `Enter card on this device`) are enabled. Check printer paper/battery if printing tickets.
-- [ ] **Backup list at Manager Desk:** Confirm the timestamped **Backup Attendee CSV** and printed **Door List PDF** plus numbered exception log are at the Manager Desk (kept private).
+- [ ] **Charge your phone:** 100% charged with a battery pack or cable ready.
+- [ ] **Turn up screen and sound:** High brightness and volume up so you hear scan beeps.
+- [ ] **Keep the screen awake:** Set iPhone **Auto-Lock** or Android **Screen timeout** to **Never** for your shift.
+- [ ] **Sign in on your own phone:** Open your staff invite link in Safari (iPhone) or Chrome (Android). Never share one login between volunteers.
+- [ ] **Check your scanner:** Open **Scanner** (the screen title says **Check-in**), choose **Copa de Marianas**, and check that you see **Online**, **Waiting to sync: 0**, and **Ticket list ready · N tickets** with a future Guam expiry time.
+- [ ] **Download the latest list:** Tap **Sync now** once while online (15–30 minutes before doors open).
+- [ ] **Run one test scan:** Tap **Start camera**, allow camera permission, scan one test QR, and try typing a code under **Enter a ticket QR code**.
+- [ ] **Confirm today's re-entry rule:** Make sure everyone knows whether today is **Option A (Exit scan)** or **Option B (Hand stamp)**.
+- [ ] **Check the box office:** Count the starting cash float with the Door lead, check small bills, confirm whether pay-by-card options are turned on, and check printer paper/battery if printing tickets.
+- [ ] **Check the Manager Desk backup:** Confirm the backup attendee CSV (on the organizer's laptop) and printed door list plus numbered exception log are ready and kept private.
 
 ---
 
 ## Role 1: Door Scanner
 
-### Step 1: Open, sign in, and pick your gate
+### Step 1: Open Check-in and start the camera
 
-1. Open your staff invite link and sign into HåfaPass in Safari or Chrome.
-2. Open **Scanner** (`/dashboard/scanner`).
-3. Pick **Copa de Marianas** under **Event to scan**.
-4. Wait until you see **Online**, **Waiting to sync: 0**, and **Ticket list ready · N tickets**.
-5. Tap **Start camera** and allow camera access. Keep **Sound** turned on.
+1. Sign into HåfaPass in Safari or Chrome using **your own** staff invite.
+2. Open **Scanner** from the menu. *(The page title says **Check-in**.)*
+3. Under **Event to scan**, pick **Copa de Marianas**.
+4. Confirm you see **Online**, **Waiting to sync: 0**, and **Ticket list ready · N tickets**.
+5. Tap **Start camera** and allow camera access.
+6. Leave **Sound** turned on.
 
-![Scanner ready screen in single-entry mode showing Online, Waiting to sync 0, Sync now, Ticket list ready, Start camera, and Sound. Demo data, all names fictional.](img/01-scanner-ready-390.png)  
-*Ready to scan (Off / single-entry mode, PR #237 / #242). Demo data · all names fictional.*
+![Check-in screen in single-entry mode showing Online, Waiting to sync 0, Sync now, Ticket list ready, Start camera, and Sound. Demo data, all names fictional.](img/01-scanner-ready-390.png)  
+*Ready to scan on the Check-in screen (single-entry mode). Demo data · all names fictional.*
 
-### Step 2: Scan and read the result screen
+### Step 2: Scan a ticket and read the color
 
-Point the camera at the guest's QR code (phone screen, screenshot, or printed ticket). The whole screen flashes with the answer:
+Point the camera at the guest's QR code (phone screen, screenshot, or printed ticket). The whole screen flashes with the result:
 
-| Screen color | What it means | What you do |
+| Color | What it means | What you do |
 | --- | --- | --- |
-| **Green — Admitted** | Valid ticket. Clears by itself in ~1 second. | Welcome **one person** in. If using hand stamps, stamp them now. |
-| **Amber — Check ticket** | Already scanned, already inside, or waiting on cool-down. Stays until tapped. | **Do not wave them in.** Tap to dismiss, read the reason under the camera, and send them to the **Door lead**. |
-| **Red — Do not admit** | Wrong event or day, QR not found, cancelled, refunded, or limit reached. Stays until tapped. | **Do not admit.** Tap to dismiss, read the reason, try **Find an attendee**, or send to the **Door lead**. |
-| **Blue — Exited** | Guest scanned out in Exit-scan mode. Clears in ~1 second. | Let them step out; they can scan back in later. |
+| **Green — Admitted** | Valid ticket. Clears in about 1 second. | Welcome **one person** in. Stamp their wrist/hand now *(Option B only)*. |
+| **Blue — Exited** | Guest scanned out *(Option A only)*. Clears in about 1 second. | Let them step out. They can scan back in later. |
+| **Amber — Check ticket** | Already scanned, already inside, or waiting to re-enter. Stays until tapped. | **Do not wave them in.** Tap to dismiss, read the reason under the camera, and send them to the **Door lead**. |
+| **Red — Do not admit** | Wrong event/day, QR not found, cancelled, refunded, or re-entry limit reached. Stays until tapped. | **Do not admit.** Tap to dismiss, read the reason, try **Find an attendee**, or send them to the **Door lead**. |
 
 #### Green: Admitted
 
 ![Green full-screen Admitted overlay showing ticket tier and fictional attendee name Linnea Ostrova. Demo data, all names fictional.](img/02-scanner-admitted-390.png)  
-*Valid admission (PR #237 / #242). Demo data · all names fictional.*
+*Valid admission. Demo data · all names fictional.*
 
 #### Amber: Already used (single-entry mode)
 
 ![Amber full-screen Check ticket overlay with Tap to continue prompt. Demo data, all names fictional.](img/03-scanner-already-used-390.png)  
-*Already admitted in Off / single-entry mode (PR #237 / #242). Tap to dismiss and read the ticket details below the camera. Demo data · all names fictional.*
+*Already scanned in single-entry mode. Tap to dismiss, read the reason under the camera, and send the guest to the Door lead. Demo data · all names fictional.*
 
 #### Red: Wrong event / day, not found, or cancelled
 
 ![Red full-screen Do not admit overlay with Tap to continue prompt. Demo data, all names fictional.](img/04-scanner-invalid-not-found-390.png)  
-*Not in this event's ticket list, wrong day/event, or revoked ticket (PR #237 / #242). Tap to dismiss and check with **Find an attendee** or the Door lead. Demo data · all names fictional.*
+*QR not in this event's ticket list, wrong day/event, or cancelled/refunded. Tap to dismiss and try **Find an attendee** or ask the Door lead. Demo data · all names fictional.*
 
-#### Offline mode (bad gym signal)
+#### Offline mode (weak gym signal)
 
-If Wi-Fi or cell signal drops, keep scanning — the phone checks the signed local list and saves each scan in **Waiting to sync**.
+If Wi-Fi or cell service drops, keep scanning. Your phone checks the saved ticket list and holds each scan in **Waiting to sync** until signal returns.
 
-![Scanner screen in Offline mode showing Waiting to sync 1 and amber notices to keep scans on this device and sync when connected. Demo data, all names fictional.](img/05-scanner-offline-390.png)  
-*Offline mode after scanning while disconnected (PR #237 / #242). Do **not** sign out or clear browser data; tap **Sync now** once signal returns. Demo data · all names fictional.*
+![Check-in screen in Offline mode showing Waiting to sync 1 and amber notices to keep scans on this device and sync when connected. Demo data, all names fictional.](img/05-scanner-offline-390.png)  
+*Offline mode with 1 scan saved on the phone. Do **not** sign out or clear browser data; tap **Sync now** once Online returns. Demo data · all names fictional.*
 
 #### Guest has no working QR? Use Find an attendee
 
 1. Tap **Find attendee** (or scroll down to **Find an attendee**).
-2. Type the guest's name or ticket number (`HP-T...`) and tap **Search**. *(Email addresses stay hidden for privacy.)*
-3. Confirm the name and ticket type, then tap **Admit**.
+2. Type the guest's name or ticket number (`HP-T...`).
+3. Tap **Search**. *(Email addresses stay hidden for privacy.)*
+4. Match the name and ticket type, then tap **Admit**.
 
 ![Find an attendee lookup showing search for Avery returning Avery Lindqvist HP-T9500 Adult Spectator with Admit button and Door totals below. Demo data, all names fictional.](img/11-scanner-lookup-390.png)  
-*Online manual attendee lookup (PR #237 / #242). Demo data · all names fictional.*
+*Online attendee search by name or ticket number. Demo data · all names fictional.*
 
 ---
 
-### Step 3: Re-entry scanning (only if Copa turns Re-entry ON)
+### Step 3: Re-entry scanning (only if Option A — Exit scan — is turned on)
 
-*(Screens from PR #242 `feat/re-entry`.)*
+#### Using the ENTRY / EXIT switch
 
-#### A. Exit scan mode (`ENTRY / EXIT` switch)
+When Exit scan is on, you see big **ENTRY** and **EXIT** buttons plus the live **Inside now** count:
 
-When the organizer sets Re-entry to **Exit scan (in & out)**, a large **ENTRY / EXIT** toggle and live **Inside now** headcount appear on your scanner:
+1. **Incoming lanes:** Keep green **ENTRY** selected.
+2. **Exit lane:** Tap blue **EXIT** before scanning guests who are stepping out.
 
-1. **Incoming lanes:** Keep the switch on green **ENTRY**.
-2. **Outgoing lane:** Tap blue **EXIT** before scanning guests who are stepping out.
+![Check-in screen in Exit scan mode showing big green ENTRY and EXIT buttons above Start camera and Inside now 394 counter below. Demo data, all names fictional.](img/06-scanner-reentry-switch-390.png)  
+*Exit-scan mode with **ENTRY / EXIT** switch and live **Inside now** count. Demo data · all names fictional.*
 
-![Scanner in Exit scan mode showing big green ENTRY and EXIT buttons above Start camera and Inside now 394 counter below. Demo data, all names fictional.](img/06-scanner-reentry-switch-390.png)  
-*Exit-scan mode with **ENTRY / EXIT** switch and live **Inside now** count (PR #242). Demo data · all names fictional.*
-
-- **Already inside (passback stop):** If someone tries to scan in on a ticket that is already inside, the screen flashes amber **Already inside** with the exact time and gate of the first scan. Have them scan out at Exit first, or send them to the **Door lead**.
+- **Already inside (blocks shared screenshots):** If someone scans a ticket at **ENTRY** that is still marked inside, the phone flashes amber **Already inside** with the time and gate of the earlier scan. Have them scan out at the Exit lane first, or send them to the **Door lead**.
 
 ![Amber Already inside overlay reading Already inside scanned in at 10:40 PM at Gate 1 for fictional guest Bram Okafor. Demo data, all names fictional.](img/07-scanner-reentry-already-inside-390.png)  
-*Anti-passback alert when scanning an already-inside ticket at ENTRY (PR #242). Demo data · all names fictional.*
+*Warning when an already-inside ticket is scanned at ENTRY. Demo data · all names fictional.*
 
-- **Scanning a guest out:** Switch to **EXIT** and scan their QR. A blue **Exited** flash confirms they are checked out and lowers the **Inside now** count by 1. *(Scanning a ticket that isn't inside shows **Not inside**.)*
+- **Scanning a guest out:** Switch to **EXIT** and scan their QR. A blue **Exited** flash confirms they are checked out and lowers **Inside now** by 1. *(Scanning a ticket that isn't inside shows **Not inside**.)*
 
 ![Blue full-screen Exited overlay showing Youth Spectator Ages 5 to 17 and fictional guest Bram Okafor. Demo data, all names fictional.](img/08-scanner-reentry-exit-390.png)  
-*Confirmed exit scan (PR #242). Demo data · all names fictional.*
+*Confirmed exit scan. Demo data · all names fictional.*
 
-#### B. Cool-down mode (no exit staff)
-
-If the organizer uses **Cool-down (no exit staff)** instead, there is no Exit switch. Re-scanning a ticket inside the wait window shows amber **Wait to re-enter** with the exact minutes left:
+- **If the organizer uses Cool-down instead of Exit scan:** There is no Exit switch. Re-scanning too soon shows amber **Wait to re-enter** with the minutes left.
 
 ![Amber Wait to re-enter overlay reading Scanned 2 min ago wait 13 min for fictional guest Greer Halvorsen. Demo data, all names fictional.](img/09-scanner-reentry-cooldown-390.png)  
-*Cool-down wait warning (PR #242). Demo data · all names fictional.*
+*Wait warning when Cool-down mode is active. Demo data · all names fictional.*
 
-#### C. Re-entry limit reached & Scanner Lead Override
+#### Re-entry limit reached & Door lead override
 
-If a ticket hits its max re-entry cap (or cutoff time), the screen shows red **Re-entry limit reached**. Regular scanners send the guest to the **Door lead**.
+**Override rule (one rule for every gate):** **Only the Door lead (signed in with a lead role) can override. Volunteers never override.**
 
-A **Scanner lead** (or Owner / Manager / Box office) while **online** can tap **Lead override** in the result panel:
+- If you see **Re-entry limit reached**, **Already inside**, or **Re-entry closed**, send the guest to the **Door lead**.
+- **Never override on a guest's word alone.** The Door lead checks the ticket/guest first, then types what they actually verified in the **Reason for override** box (saved permanently in the event log).
+- Overrides require an **Online** connection.
 
-1. Tap **Lead override**.
-2. Pick **Admit (re-entry)** or **Clear inside status**.
-3. Type a short reason (required — saved to the permanent audit log).
-4. Tap **Confirm override & Admit** (or **Confirm override & Clear**).
+1. Tap to dismiss the red or amber overlay.
+2. Under the camera, tap **Lead override**.
+3. Pick **Admit (re-entry)** or **Clear inside status**.
+4. Type what you checked in **Reason for override** (required).
+5. Tap **Confirm override & Admit** (or **Confirm override & Clear**).
 
 ![Red Re-entry limit reached panel for fictional guest Calla Yorke with expanded Scanner lead override audited form showing Admit re-entry, Clear inside status, and required reason field. Demo data, all names fictional.](img/10-scanner-reentry-cap-override-390.png)  
-*Re-entry cap reached with expanded audited **Scanner lead override** form (PR #242). Demo data · all names fictional.*
+*Re-entry limit reached with the Door lead override form open. Note: the grey placeholder inside the box ("e.g., Verified wristband…") is only a sample format — record what you actually checked, and do not quote it to guests. Demo data · all names fictional.*
+
+*(Organizer note: In HåfaPass, the **Lead override** button appears only when online, re-entry is on, and the signed-in account has Owner, Manager, Box office, or event-assigned Scanner lead permissions.)*
 
 ---
 
 ## Re-entry or Hand-Stamp Rule — CHOOSE ONE BEFORE EVENT DAY
 
-> ### **DECISION REQUIRED BEFORE JAN 30: CHOOSE OPTION A OR OPTION B**
-> *Leon and the Copa organizer pick **one** policy before doors open and brief every gate volunteer. Do not mix both.*
+> ### **Choose one before event day — do not mix**
+> The organizer chooses **Option A** or **Option B** before doors open and briefs every gate volunteer.
 >
-> | | **Option A — Exit scan in HåfaPass** *(PR #242)* | **Option B — Hand stamp + Re-entry Off** *(standard)* |
-> | --- | --- | --- |
-> | **Organizer setting** | **Edit event → Re-entry policy → Exit scan (in & out)** *(optional: max re-entries & daily cutoff time)* | **Edit event → Re-entry policy → Off (single entry)** |
-> | **Staff needed** | Staffed **Entry** lane(s) + staffed **Exit** scanner at exit door | Staffed **Entry** lane(s) + volunteer checking stamps at marked **Re-entry** lane |
-> | **First entry** | Scan QR on **ENTRY** → green **Admitted** → guest enters (no ink stamp needed) | Scan QR → green **Admitted** → volunteer stamps wrist/hand |
-> | **Leaving** | Guest scans QR on **EXIT** → blue **Exited** | Guest walks out with their stamp (no scan) |
-> | **Coming back** | Guest scans QR on **ENTRY** → green **Re-entered** | Volunteer checks the approved event stamp at the re-entry lane *(do **not** re-scan QR — it stays checked in)* |
-> | **Passback protection** | Built-in (**Already inside** blocks shared screenshots) | Visual stamp inspection only |
-> | **Live headcount** | Automatic **Inside now** count (`in − out`) on scanner & reports | Clicker/manual tally if needed |
+> #### **Option A — Exit scan in HåfaPass**
+> - **Event setting:** Re-entry policy set to **Exit scan (in & out)**.
+> - **Staff needed:** Entry scanner(s) + a staffed Exit scanner at the exit door.
+> - **First arrival:** Scan QR on **ENTRY** → green **Admitted**. No ink stamp needed.
+> - **Leaving:** Guest scans QR on **EXIT** → blue **Exited**.
+> - **Coming back:** Guest scans QR on **ENTRY** → green **Re-entered**.
+> - **Stops shared screenshots:** Scanning a ticket that is still inside triggers **Already inside**.
+> - **Live count:** **Inside now** updates automatically.
 >
-> *No exit staff available, but still want digital re-entry without stamps?* **Option C — Cool-down (no exit staff)** blocks rapid passbacks for a set wait window (e.g., 15 minutes) with entry-only scanning.  
-> **Warning:** Never switch Re-entry from **Exit scan** to **Off** mid-event — anyone currently outside would be blocked from returning.
+> #### **Option B — Hand stamp + Re-entry Off**
+> - **Event setting:** Re-entry policy left on **Off (single entry)**.
+> - **Staff needed:** Entry scanner(s) + a volunteer checking stamps at a marked re-entry lane.
+> - **First arrival:** Scan QR → green **Admitted** → stamp the guest's wrist/hand.
+> - **Leaving:** Guest walks out with their stamp (no scan).
+> - **Coming back:** Volunteer checks the approved event stamp at the re-entry lane. **Do not re-scan the QR** — it stays checked in.
+> - **Stops shared screenshots:** Visual stamp check only.
+> - **Live count:** Use a hand clicker if you need an inside count.
+
+**Organizer note (only if there are no exit staff):** If you cannot staff an exit door and do not want hand stamps, you can set Re-entry policy to **Cool-down (no exit staff)** (entry-only scanning with a wait timer, e.g., 15 minutes, between scans). **Never switch Re-entry from Exit scan to Off during the event** — guests who already stepped out would be blocked from returning.
 
 ---
 
 ## Role 2: Box Office
 
-Open **Dashboard → Copa de Marianas → Box office** (`/dashboard/events/:id/box-office`).
+Open **Dashboard → Copa de Marianas → Box office**.
 
 ### Step 1: Pick ticket tiers (Adult, Child, and Under 5 Free)
 
-Copa spectator tiers:
+Copa spectator prices:
 - **Adult Spectator:** **$17**
 - **Child / Youth Spectator:** **$12**
-- **Child Under 5:** **$0.00 (Free)** — **always tap `+` to issue a free Under-5 QR ticket** when a child under 5 enters with an adult so arena capacity and door counts stay accurate.
+- **Child Under 5:** **$0.00 (Free)** — **always tap `+` to issue a free Under-5 QR ticket** so arena capacity and door counts stay accurate.
+- **Child / Under 5 age: ask the Door lead, don't guess.**
 
 *(Demo screenshots below show fictional preview prices `$15 / $10 / $0`.)*
 
-1. Tap **`+`** / **`−`** beside each ticket type to match the buyer's group.
-2. Optional: enter **Buyer name** and **Buyer email** (helpful if emailing tickets or a payment link).
+1. Tap **`+`** or **`−`** beside each ticket type to match the buyer's group.
+2. Optional: type **Buyer name** and **Buyer email** (helpful if you plan to email tickets or a payment link).
 
 ![Box office ticket picker on phone showing Adult Spectator 1, Youth Spectator 1, and Child Under 5 $0.00 1 selected. Demo data, all names fictional.](img/12-box-office-tiers-390.png)  
-*Selecting Adult, Child/Youth, and free `$0.00` Child Under 5 tickets (PR #237 / #236). Demo data · all names fictional.*
+*Selecting Adult, Child/Youth, and free `$0.00` Child Under 5 tickets. Demo data · all names fictional.*
+
+### Payment methods at Copa
+
+> **Card at Door is OFF — use Cash or the two pay-by-card options below.**  
+> The greyed-out **Card at Door** button is for a separate card reader that is not active for Copa. Do not try to use it, and **never** record a card payment by hand or as Cash.
 
 ---
 
-### Step 2A: Cash sale (Show QR / Print / Email tickets)
+### Step 2A: Cash sale (Show QR, Print, or Email)
 
-*(Screens from PR #236 `feat/box-office-print-tickets`.)*
-
-1. **Collect and count the cash first** — never tap Process sale until cash is in your hand.
+1. **Collect and count the cash first.** Never tap Process sale before cash is in your hand.
 2. Make sure **Cash** is selected under **Payment method**.
 3. Tap **Process sale · $XX.XX (N tickets)**.
-4. When the green **Sale complete!** card appears, deliver the tickets using one of three buttons:
-   - **Show QR:** Opens a full-screen QR for each ticket (`Ticket 1 of N`) so the buyer can take a photo on their phone. Tap **Next ticket** for multi-ticket orders.
-   - **Print tickets:** Opens the browser print sheet with **one QR admission per page** (each multi-night pass night prints on its own page).
-   - **Email tickets:** Enter (or confirm) the buyer's email and tap **Send tickets**.
+4. On the green **Sale complete!** card, give the buyer their tickets using one of three buttons:
+   - **Show QR:** Opens a full-screen QR for each ticket (`Ticket 1 of N`) so the buyer can take a photo. Tap **Next ticket** for multi-ticket orders.
+   - **Print tickets:** Prints **one QR ticket per page** from the browser.
+   - **Email tickets:** Type or confirm the buyer's email and tap **Send tickets**.
 
 > **Reloaded the page by mistake?** Reloading Box office in the **same browser tab** restores the last completed cash sale so you can still show, print, or email those tickets.
 
 ![Green Sale complete card showing order reference, $25.00 total, and Show QR, Print tickets, and Email tickets buttons. Demo data, all names fictional.](img/13-box-office-cash-complete-390.png)  
-*Completed cash sale with **Show QR**, **Print tickets**, and **Email tickets** (PR #236). Demo data · all names fictional.*
+*Completed cash sale with **Show QR**, **Print tickets**, and **Email tickets**. Demo data · all names fictional.*
 
 ![Full-screen Show QR dialog displaying Ticket 1 of 3, event date, UOG Calvo Field House, Adult Spectator, large QR code, order reference, and Previous/Next ticket buttons. Demo data, all names fictional.](img/14-box-office-show-qr-390.png)  
-***Show QR** full-screen view for buyers to photograph at the table (PR #236). Demo data · all names fictional.*
+***Show QR** full-screen view for buyers to photograph at the table. Demo data · all names fictional.*
 
 ![Green Sale complete card showing Ticket email queued for player@example.invalid. Demo data, all names fictional.](img/15-box-office-email-tickets-390.png)  
-***Email tickets** confirmation after queueing delivery (PR #236). Demo data · all names fictional.*
+***Email tickets** confirmation after queueing delivery. Demo data · all names fictional.*
 
 ---
 
-### Step 2B: Card sale with Stripe (Phone QR or Staff-Keyed)
+### Step 2B: Pay by card (only when enabled for Copa)
 
-*(Screens from PR #240 `feat/box-office-card-links`. Available only when online door card sales are enabled for the event. Never record a card payment as Cash.)*
-
-1. Select the tickets and check the all-in total shown under **Payment method** (includes applicable online service fee).
-2. Choose one of the two Stripe card options:
-   - **Pay on buyer’s phone** *(preferred — faster, lower fraud risk, buyer uses Apple Pay / Google Pay / card on their own phone)*.
-   - **Enter card on this device** *(use when the buyer doesn't have a phone or signal; staff types card details on Stripe's hosted form)*.
+1. Select the tickets and check the total shown under **Payment method** (it includes the online service fee).
+2. Choose how the buyer will pay:
+   - **Pay on buyer’s phone** *(default for card sales — buyer scans a QR and pays on their own phone).*
+   - **Enter card on this device** *(**Door lead only / last resort** when the buyer cannot pay on their own phone. Never write down a card number or repeat it aloud.)*
 3. Tap **Prepare Stripe checkout**. This holds the tickets for **35 minutes**.
 
 ![Box office Payment method section showing Cash, disabled Card at Door, selected Pay on buyer's phone, Enter card on this device, all-in service fee quote, and Prepare Stripe checkout button. Demo data, all names fictional.](img/16-box-office-card-methods-390.png)  
-*Choosing **Pay on buyer’s phone** or **Enter card on this device** with the all-in fee quote (PR #240). Demo data · all names fictional.*
+*Choosing **Pay on buyer’s phone** or **Enter card on this device** (greyed-out **Card at Door** is off). Demo data · all names fictional.*
 
-#### Option 1: Pay on buyer’s phone (QR)
+#### Pay on buyer’s phone (QR)
 
-1. Turn your phone/tablet toward the buyer so they can scan **Scan to pay** with their phone camera.
-2. If you entered their email, you can also tap **Email payment link**.
-3. Wait for the status to update automatically (or tap **Check payment status**).
-4. If the buyer changes their mind before paying, tap **Cancel sale** so the held tickets return to inventory right away.
+1. Show the **Scan to pay** QR to the buyer so they can scan it with their phone camera.
+2. If you typed their email, you can tap **Email payment link**.
+3. Wait for the status to update (or tap **Check payment status**).
+4. If the buyer decides not to buy before paying, tap **Cancel sale** so the tickets go back on sale right away.
 
 ![Waiting for payment card for Pay on buyer's phone showing Scan to pay QR code, reservation expiry time, Email payment link, Check payment status, and Cancel sale buttons. Demo data, all names fictional.](img/17-box-office-card-phone-qr-390.png)  
-***Pay on buyer’s phone** waiting screen with Stripe QR (PR #240). Demo data · all names fictional.*
+***Pay on buyer’s phone** waiting screen with payment QR. Demo data · all names fictional.*
 
-#### Option 2: Enter card on this device (Staff-keyed)
+#### Enter card on this device (Door lead only / last resort)
 
-1. Tap **Open Stripe checkout** to open Stripe's hosted card form.
-2. Enter the card details and submit on Stripe.
-3. Return to the HåfaPass box-office tab and wait until the screen says **Paid — tickets ready** before handing over tickets.
+1. Tap **Open Stripe checkout** to open Stripe's payment page.
+2. Enter the card details quietly — **never write down the card number or read it aloud**.
+3. Return to the HåfaPass tab and wait for **Paid — tickets ready** before handing over tickets.
 
 ![Waiting for payment card for Enter card on this device showing Open Stripe checkout button, reservation expiry, Check payment status, and Cancel sale. Demo data, all names fictional.](img/18-box-office-card-keyed-390.png)  
-***Enter card on this device** waiting screen (PR #240). Demo data · all names fictional.*
+***Enter card on this device** waiting screen (Door lead only / last resort). Demo data · all names fictional.*
 
-#### Recovering a closed tab or pending checkout: "Open card checkouts"
+#### Lost tab or buyer stepped aside? Use "Open card checkouts"
 
-If the browser closed, someone switched tabs, or a buyer walked aside to finish paying:
-
-1. Tap **Open card checkouts** at the top of Box office.
-2. Find the buyer's pending (`Waiting for payment…`) or recently paid (`Paid — tickets ready`) order.
-3. Tap **Show payment QR**, **Open checkout**, or **Show tickets** to reopen that exact sale. **Never ring up a duplicate sale while an open checkout is pending.**
+1. Tap **Open card checkouts** near the top of Box office.
+2. Find the buyer's pending (`Waiting for payment…`) or paid (`Paid — tickets ready`) order.
+3. Tap **Show payment QR**, **Open checkout**, or **Show tickets** to reopen that exact sale.
+4. **Never ring up a second sale while an open checkout is pending.**
 
 ![Open card checkouts recovery list showing a Waiting for payment order with Show payment QR and a Paid tickets ready order with Show tickets. Demo data, all names fictional.](img/19-box-office-open-checkouts-390.png)  
-***Open card checkouts** recovery list (PR #240). Demo data · all names fictional.*
+***Open card checkouts** recovery list. Demo data · all names fictional.*
 
 #### If you see "Paid — waiting for confirmation"
 
-Sometimes Stripe confirms the card charge a few seconds before HåfaPass finishes issuing the tickets.
+Stripe received the payment, and HåfaPass is finishing the tickets.
 
-- **STOP — do NOT charge the card again and do NOT ring it up as cash.**
-- Wait a few seconds and tap **Check payment status** until it changes to **Paid — tickets ready**.
-- Only hand over tickets once **Paid — tickets ready** shows the ticket QR(s). If it stays stuck for more than 2 minutes, call the **Door lead** or **HåfaPass on-call** with the order reference (`HP-...`).
+1. **Tell the buyer:** *"Your payment went through; your tickets will appear in a moment."*
+2. **STOP — do NOT charge the card again and do NOT ring it up as Cash.**
+3. Wait a few seconds and tap **Check payment status** until it says **Paid — tickets ready**.
+4. Only hand over tickets once **Paid — tickets ready** shows the QR code(s).
+5. If it stays stuck for about 2 minutes *(suggested threshold — confirm with HåfaPass on-call)*, call the **Door lead** or **HåfaPass on-call** with the order reference (`HP-...`).
 
 ![Paid waiting for confirmation card reading Stripe received the payment. Wait for confirmation before handing over tickets. Do not charge again. with Check payment status button. Demo data, all names fictional.](img/20-box-office-card-confirming-390.png)  
-***Paid — waiting for confirmation** hold state (PR #240). Never double-charge. Demo data · all names fictional.*
+***Paid — waiting for confirmation** screen. Never double-charge. Demo data · all names fictional.*
 
 #### Paid — tickets ready
 
-Once confirmed, show the buyer's ticket QR (use **Previous ticket / Next ticket** for multiple tickets), tap **Email tickets** if an email was entered, then tap **Start next sale** (or **Back to box office**).
+1. Show the buyer's ticket QR (use **Previous ticket** / **Next ticket** for multiple tickets).
+2. Tap **Email tickets** if an email was entered.
+3. Tap **Start next sale** (or **Back to box office**).
 
 ![Paid tickets ready screen showing Email tickets button, ticket QR code, Ticket 1 of 1, and Back to box office button. Demo data, all names fictional.](img/21-box-office-card-paid-390.png)  
-***Paid — tickets ready** with scannable door QR (PR #240). Demo data · all names fictional.*
+***Paid — tickets ready** with scannable ticket QR. Demo data · all names fictional.*
 
-#### Checking your running totals (Door sales summary)
+#### Checking your totals (Door sales summary)
 
-Scroll to **Door sales summary** at the bottom of Box office to see live totals split by **Cash**, **Card**, **Phone checkout**, and **Staff-keyed checkout** — you will match these numbers at end of night.
+Scroll to **Door sales summary** at the bottom of Box office to see running totals for **Cash**, **Card** *(reader — should be `$0.00` unless the Door lead says otherwise)*, **Phone checkout**, and **Staff-keyed checkout**.
 
 ![Door sales summary card listing Total orders, Total tickets, Cash, Card, Phone checkout, Staff-keyed checkout, and Total revenue. Demo data, all names fictional.](img/22-box-office-summary-390.png)  
-***Door sales summary** breakdown by payment channel (PR #237 / #240). Demo data · all names fictional.*
+***Door sales summary** by payment method. Demo data · all names fictional.*
 
 ---
 
-## Offline Manifest Refresh
+## Refreshing the Saved Ticket List
 
-Each scanner phone stores a signed, verified ticket list (manifest) in browser storage so gates keep moving if UOG Field House Wi-Fi or cell service drops.
+Each scanner phone saves a signed copy of the ticket list *(also called the offline manifest)* in its browser so your lane keeps working if gym Wi-Fi or cell signal drops.
 
 ### When to refresh
 
-1. **15–30 minutes before doors open** (mandatory on every phone).
-2. **At division breaks** (e.g., before Adult & Masters divisions at ~12:00 PM and before Finals).
-3. **After a burst of walk-up sales, comps, or refunds** so newly issued or cancelled tickets reach every gate.
-4. **Right after reconnecting** from an offline period.
+1. **15–30 minutes before doors open** (every scanner phone).
+2. **At division breaks** (for example, before afternoon divisions and before finals).
+3. **After a burst of walk-up sales, comps, or refunds** so new and cancelled tickets reach every lane.
+4. **Right after coming back online** after an outage.
 
 ### How to refresh
 
-1. Check the top-left badge says **Online**.
-2. Tap **Sync now**. This uploads any queued offline scans and downloads the latest signed ticket list.
+1. Check that the top-left badge says **Online**.
+2. Tap **Sync now**. This uploads any saved offline scans and downloads the newest ticket list.
 
-### How to tell the manifest is current
+### How to tell your ticket list is current
 
-Look at two places on the **Scanner** screen:
-- **Ticket list ready · N tickets** card right above the camera, with **`Access expires [date/time] · Pacific/Guam`** in the future.
-- **Waiting to sync: 0**.
-- Need the version number? Scroll down and expand **Device details** to see **`Saved ticket list · version N · M tickets`**.
+- **Ticket list ready · N tickets** shows above the camera, with **`Access expires [date/time] · Pacific/Guam`** in the future.
+- **Waiting to sync** is **0**.
+- To check the exact version number, scroll down and tap **Device details** → look for **`Saved ticket list · version N · M tickets`**.
 
-### What to do when offline
+### What to do if the network drops (Offline mode)
 
-- **Keep the scanner open and keep scanning** as long as the ticket list is valid and unexpired.
-- Watch **Waiting to sync** rise — offline admissions are provisional until synced.
-- **Do not** sign out, switch accounts, clear browser history/site data, or tap **Reset trusted device** while **Waiting to sync** is above `0`.
-- **Route confusing duplicates to the Door lead** — other offline phones cannot see scans queued on your phone yet.
-- As soon as **Online** returns, tap **Sync now** and wait for **Waiting to sync** to hit **0**.
-- If the manifest expires or authorization fails while offline, **pause that lane**, keep the browser tab intact so saved scans are preserved, and switch to the **Backup Attendee CSV** at the Manager Desk.
+1. **Keep the scanner open and keep scanning** while the saved ticket list is unexpired.
+2. Watch **Waiting to sync** go up — those scans are saved on your phone until it syncs.
+3. **Do not** sign out, switch accounts, clear browser history/site data, or tap **Reset trusted device** while **Waiting to sync** is above `0`.
+4. **Send confusing duplicates to the Door lead** — other offline phones cannot see your queued scans yet.
+5. As soon as **Online** comes back, tap **Sync now** and wait for **Waiting to sync** to reach **0**.
+6. If the saved ticket list expires while offline, pause that lane, leave the browser tab open so saved scans are not lost, and switch to the **Backup Attendee List** at the Manager Desk.
 
 ---
 
-## Backup Attendee CSV and Paper Fallback
+## Backup Attendee List and Paper Fallback
 
 ### Organizer: Export before doors open
 
-Do this **15–30 minutes before doors open** (and optionally refresh at the midday break) from a laptop or phone:
+Do this **15–30 minutes before doors open** (and again at midday break if needed).
 
-1. Open **Dashboard → Copa de Marianas** (`/dashboard/events/:id`).
-2. In the left sidebar under **Attendees**, click **Attendee list** (`/dashboard/events/:id/attendees`).
-3. Click **Export this list**:
-   - Keep **Name**, **Order #**, **Ticket type**, **Status**, and **Check-in time** checked.
-   - *Privacy tip:* Uncheck **Email** and **Phone** on copies handed to door lanes, or keep the full CSV strictly at the Manager Desk.
-   - Click **Download CSV** and save an offline copy on the Manager Desk laptop/tablet (and print if desired).
-4. Click **Print door list** on the same page (or tap the **download icon** in Scanner → **Door totals**) to download the printable PDF door list.
-5. Keep a blank **numbered paper exception log** (columns: `#`, `Time`, `Gate`, `Name`, `Order #`, `Tier`, `Reason`, `Staff initials`) next to the backup list.
+**Data safety rules (required):**
+- Export on the **organizer's laptop** — **not** on a personal volunteer phone.
+- **No photos, no screenshots, and no sharing the attendee list in group chats.**
+- **Delete the CSV file from every device after the event** once final counts are checked.
+
+**Exact steps on the organizer's laptop:**
+1. Open **Dashboard → Copa de Marianas**.
+2. In the left sidebar under **Attendees**, click **Attendee list**.
+3. Click **Export this list**.
+4. Keep **Name**, **Order #**, **Ticket type**, **Status**, and **Check-in time** checked. *(Uncheck **Email** and **Phone** before handing any printout to a lane, or keep the full list strictly at the Manager Desk.)*
+5. Click **Download CSV** and save it on the Manager Desk laptop.
+6. Also click **Print door list** on the same screen (or tap the download icon in **Door totals** on Check-in) for a printable PDF door list.
+7. Keep a blank **numbered paper exception log** (`#`, `Time`, `Gate`, `Name`, `Order #`, `Tier`, `Reason`, `Initials`) at the Manager Desk.
 
 ![Organizer Event Overview desktop screen highlighting the left sidebar navigation to Attendee list, Door Scanner, Box office, and Reports, plus live Inside now 394 headcount. Demo data, all names fictional.](img/23-organizer-overview-1280.png)  
-*Organizer event workspace showing **Attendee list**, **Door Scanner**, **Box office**, and live **Inside now** (PR #237 / #242). Demo data · all names fictional.*
+*Organizer Event Overview showing **Attendee list**, **Door Scanner**, **Box office**, and live **Inside now**. Demo data · all names fictional.*
 
-#### Organizer setup & post-event reports (1280 px)
+#### Organizer setup & attendance report (desktop)
 
-- **Choose Re-entry policy before doors open:** **Edit event → Settings → Re-entry policy** (`/dashboard/events/:id/edit`).
-- **Live & final attendance CSV:** **Reports → Attendance & Door Pace → Download CSV** (`/dashboard/events/:id/reports?tab=attendance`).
+- **Set Re-entry policy before doors open:** **Edit event → Settings → Re-entry policy**.
+- **Download live or final attendance CSV:** **Reports → Attendance & Door Pace → Download CSV**.
 
 ![Organizer Edit event desktop screen showing Re-entry policy options Off single entry, Exit scan in and out, and Cool-down no exit staff. Demo data, all names fictional.](img/24-organizer-reentry-settings-1280.png)  
-*Organizer **Re-entry policy** setup (PR #242). Choose before doors open. Demo data · all names fictional.*
+*Organizer **Re-entry policy** settings. Choose before doors open. Demo data · all names fictional.*
 
 ![Organizer Reports Attendance and Door Pace desktop screen showing Download CSV, Expected 520, Checked in 418, and Re-entry and Headcount metrics with Entries, Exits, Re-entries, Overrides, and Peak headcount. Demo data, all names fictional.](img/25-organizer-attendance-report-1280.png)  
-*Organizer **Attendance & Door Pace** and **Re-entry & Headcount** report with **Download CSV** (PR #242). Demo data · all names fictional.*
+*Organizer **Attendance & Door Pace** and **Re-entry & Headcount** report with **Download CSV**. Demo data · all names fictional.*
 
-### Volunteers: How to use the backup CSV if the scanner fails
+### Volunteers: Using the backup list if scanners fail
 
-Only switch to the backup list when the **Door lead** calls it:
+Use the backup list only when the **Door lead** calls it:
 
-1. **Search the CSV** (or printed alphabetical list) by the guest's **Name** or **Order #** (`HP-...`).
-2. **Check Status:**
-   - `Valid` / `Paid` → OK to admit.
-   - `Checked in` → **Stop and ask the Door lead** (already entered, or check approved stamp policy).
-   - `Cancelled`, `Refunded`, or `Transferred` → **Do not admit**; send to the Door lead.
-3. **Mark the entry manually:** Highlight or cross off the row and write the **time, gate, and your initials**. If the guest isn't on the export (e.g., bought right after export) and shows a valid receipt, log them on the **numbered paper exception log** under the Door lead's approval.
-4. **Reconcile afterwards:** Once scanners are back online, the Door lead checks in every manually admitted ticket through **Scanner → Find an attendee** (so final check-in counts match) and reviews any conflicts. Never discard paper logs until reconciliation is finished.
-5. **Privacy cleanup:** Return all printed lists and CSV copies to the Door lead at close so attendee data is destroyed/archived under the organizer's retention policy.
+1. Search the list by **Name** or **Order #** (`HP-...`).
+2. Check the **Status** column:
+   - **`Valid`** *(or **`Paid`** if exported in Orders view)* → OK to admit.
+   - **`Checked in`**, **`Cancelled`**, **`Refunded`**, **`Partially refunded`**, or **`Transferred`** → **Do not admit**; send the guest to the **Door lead**.
+3. Cross off or highlight the row and write the **time, gate, and your initials**.
+4. If a guest bought right after export and shows a valid receipt, write them on the **numbered paper exception log** with the Door lead's OK.
+5. **Check off paper entries online later:** Once scanners are back online, the Door lead checks in each manually admitted ticket through **Find an attendee** so final counts match. Keep all paper logs until that is done.
+6. **Return and delete:** Hand all printed lists back to the Door lead at close, and delete the backup CSV from every laptop/device after final counts are checked.
 
 ---
 
 ## End-of-Night Checklist
 
-Complete **before** any volunteer signs out or leaves:
+Finish **before** volunteers sign out or leave:
 
-- [ ] **Sync every scanner to zero:** On every door phone, confirm **Online**, tap **Sync now**, and verify **Waiting to sync: 0**. Do **not** clear browser data or sign out until `0` is confirmed.
-- [ ] **Review conflicts & overrides:** Door lead checks **Flagged offline conflicts** and **Recent admissions** on Scanner, plus **Reports → Attendance & Door Pace** (Entries, Exits, Re-entries, Overrides, Peak headcount).
-- [ ] **Check open card checkouts:** On every box-office device, open **Open card checkouts** and confirm no sales are left hanging in `Waiting for payment…` or `Paid — waiting for confirmation`.
-- [ ] **Count cash drawer (two people):** Count physical cash minus starting float.
-- [ ] **Match Box Office totals by channel:** Open **Box office → Door sales summary** and record:
-  - **Cash:** `$________` *(must match net counted cash; note any variance)*
-  - **Card (Clover reader, if used):** `$________`
-  - **Phone checkout (Stripe QR):** `$________`
-  - **Staff-keyed checkout (Stripe):** `$________`
-  - **Total door revenue:** `$________`
-- [ ] **Reconcile paper fallback:** Back-enter any paper-list admissions and hand the numbered exception log and printed attendee lists to the Door lead.
-- [ ] **Sign out & charge:** Once the Door lead confirms sync and counts are done, sign out of shared tablets (if any), revoke temporary scanner devices if not reused, and plug all phones/printers/battery packs in to charge.
+- [ ] **Sync every scanner to zero:** On every door phone, confirm **Online**, tap **Sync now**, and check **Waiting to sync: 0**. Do **not** clear browser data or sign out until it says `0`.
+- [ ] **Review conflicts and overrides:** Door lead checks **Flagged offline conflicts** and **Recent admissions** on Check-in, plus **Reports → Attendance & Door Pace**.
+- [ ] **Check open card checkouts:** On every box-office device, tap **Open card checkouts** and confirm nothing is stuck in `Waiting for payment…` or `Paid — waiting for confirmation`.
+- [ ] **Count cash with two people:** Count physical cash minus the starting float.
+- [ ] **Match Box Office totals by method:** Open **Box office → Door sales summary** and write down:
+  - **Cash:** `$________` *(must match net counted cash; note any difference)*
+  - **Card (reader):** `$________` *(should be **$0** unless the Door lead says otherwise)*
+  - **Phone checkout:** `$________`
+  - **Staff-keyed checkout:** `$________`
+  - **Total revenue:** `$________`
+- [ ] **Finish paper entries & destroy/delete lists:** Check off any paper admissions online, collect all printed attendee lists and the exception log, and delete backup CSV files from every device.
+- [ ] **Sign out and charge:** After the Door lead gives the all-clear, sign out of shared devices and plug all phones, printers, and battery packs in to charge.
 
 ---
 
 ## Print-Friendly Role Cards
 
-Print **one double-sided sheet per lane** (put in a clipboard or lanyard sleeve):
+Print **one double-sided Letter sheet per lane** (open the `.html` card in Chrome or Safari and print double-sided on Letter paper — verified at exactly 2 pages each):
 
-- [Scanner Volunteer — 1-Page Printable Card (Front & Back)](PRINT_SCANNER_CARD.md)
-- [Box Office Volunteer — 1-Page Printable Card (Front & Back)](PRINT_BOX_OFFICE_CARD.md)
+- **Door Scanner Card:** [Print-ready HTML (2 pages Letter)](PRINT_SCANNER_CARD.html) · [Markdown version](PRINT_SCANNER_CARD.md)
+- **Box Office Card:** [Print-ready HTML (2 pages Letter)](PRINT_BOX_OFFICE_CARD.html) · [Markdown version](PRINT_BOX_OFFICE_CARD.md)
 
 ---
 
@@ -402,16 +423,16 @@ Print **one double-sided sheet per lane** (put in a clipboard or lanyard sleeve)
 
 | Image(s) | Screen | Source PR / Branch |
 | --- | --- | --- |
-| `01`–`05`, `11` | Scanner ready (Off mode), Admitted, Check ticket, Do not admit, Offline mode, Find an attendee | PR #237 (`feat/demo-staff-foundation`) + PR #242 (`feat/re-entry`) |
-| `06`–`10` | Re-entry ENTRY/EXIT switch, Already inside, Exited, Cool-down wait, Cap reached + Lead override | PR #242 (`feat/re-entry`) |
+| `01`–`05`, `11` | Check-in ready (single-entry), Admitted, Check ticket, Do not admit, Offline mode, Find an attendee | PR #237 (`feat/demo-staff-foundation`) + PR #242 (`feat/re-entry`) |
+| `06`–`10` | Exit-scan ENTRY/EXIT switch, Already inside, Exited, Cool-down wait, Cap reached + Lead override | PR #242 (`feat/re-entry`) |
 | `12`–`15` | Box office tiers (Adult/Youth/Under-5 free), Cash complete, Show QR, Email tickets | PR #236 (`feat/box-office-print-tickets`, on `main`) + PR #237 |
-| `16`–`22` | Stripe card methods, Phone QR, Staff-keyed, Open card checkouts, Paid — waiting for confirmation, Paid — tickets ready, Door sales summary | PR #240 (`feat/box-office-card-links`) |
-| `23`–`25` | Organizer Event Overview (sidebar + Inside now), Re-entry policy settings, Attendance & Re-entry report | PR #237 + PR #242 (`feat/re-entry`) |
+| `16`–`22` | Payment methods + fee quote, Pay on buyer’s phone QR, Enter card on this device, Open card checkouts, Paid — waiting for confirmation, Paid — tickets ready, Door sales summary | PR #240 (`feat/box-office-card-links`) |
+| `23`–`25` | Organizer Event Overview (sidebar + Inside now), Re-entry policy settings, Attendance & Door Pace report | PR #237 + PR #242 (`feat/re-entry`) |
 
 ### Deeper Runbooks
 
-- [Event-Day Operations](../EVENT_DAY_OPERATIONS.md) — Scanner safety invariants, 3-device offline drill, offline journal recovery, and outage matrix
+- [Event-Day Operations](../EVENT_DAY_OPERATIONS.md) — Scanner safety rules, 3-device offline drill, offline journal recovery, and outage playbook
 - [Copa de Marianas 2027 Readiness](../COPA_2027_READINESS.md) — Launch gates, release/rollback, and organizer action items
 - [Organizer Onboarding](../ORGANIZER_ONBOARDING.md) — Event setup, spectator tiers, retail cash outlets, and payout schedule
 - [Role Matrix](../ROLE_MATRIX.md) — Exact permissions for Owner, Manager, Box office, Scanner lead, and Door scanner
-- [FD Alumni Tournament 2027 Operations Runbook](../FD_TOURNEY_2027_OPERATIONS_RUNBOOK.md) — Timed 3-phone physical rehearsal script and printable Go/No-Go scorecard
+- [FD Alumni Tournament 2027 Operations Runbook](../FD_TOURNEY_2027_OPERATIONS_RUNBOOK.md) — Timed 3-phone physical rehearsal script and Go/No-Go scorecard
