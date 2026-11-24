@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient from '../../api/client'
 import AdminPayoutsPage from './AdminPayoutsPage'
-import { dueFirst, dueRelease } from '../../test/fixtures/payoutStatementFixtures'
+import { dueFirst, dueRelease } from '../../demo/fixtures/payoutStatements'
 
 vi.mock('../../api/client', async importOriginal => ({ ...await importOriginal(), default: { get: vi.fn(), patch: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</div> }))

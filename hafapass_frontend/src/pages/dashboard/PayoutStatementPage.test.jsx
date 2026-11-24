@@ -6,7 +6,7 @@ import apiClient, { setAuthTokenGetter } from '../../api/client'
 import { saveBlob } from '../../utils/download'
 import { statusSummary } from '../../utils/payoutStatement'
 import PayoutStatementPage from './PayoutStatementPage'
-import { finalNegative, payoutReceipt, reserveHeld, salesOpen, waitingForPayout } from '../../test/fixtures/payoutStatementFixtures'
+import { finalNegative, payoutReceipt, reserveHeld, salesOpen, waitingForPayout } from '../../demo/fixtures/payoutStatements'
 
 vi.mock('../../api/client', async original => ({ ...(await original()), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
