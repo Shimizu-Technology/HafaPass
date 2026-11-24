@@ -98,7 +98,8 @@ test.describe('Mockup E — Smooth Deck Hero + Clean Home Flow', () => {
       await expect(deck).toHaveAttribute('data-card-count', '4')
       await expect(deck.locator('[data-front="true"]')).toHaveAttribute('data-card-kind', 'brand')
       await expect(deck.getByTestId('hero-brand-card')).toContainText('Your pass to what’s on across Guam')
-      await expect(deck.getByTestId('hero-brand-card')).toContainText('Guam · Digital pass')
+      await expect(deck.getByTestId('brand-art-pill')).toBeVisible()
+      await expect(deck.getByTestId('brand-art-title-block')).toBeVisible()
       await expect(deck.getByTestId('hero-brand-card')).toContainText('Arrives by email in seconds')
       await expect(deck.getByTestId('hero-brand-card')).not.toContainText('All dates in Guam time.')
       await expect(deck.getByTestId('hero-brand-card')).not.toContainText('No account needed')
@@ -485,6 +486,118 @@ test.describe('Mockup E — Smooth Deck Hero + Clean Home Flow', () => {
     await expect(story).toHaveAttribute('data-mode', 'still')
     await expect(story).toHaveAttribute('data-step', 'done')
     await expectNoHorizontalOverflow(page)
+
+    await context.close()
+  })
+
+  // Brand-ticket cover variants (?brand=1|2|3): geometry, parity with event posters, and reduced motion.
+  // In the Copa event poster SVG (1600x900 viewBox), the visual title block (cap top of line 1 at y≈263
+  // through the accent rule at y=612) has its vertical center at y=437.5/900 (48.6% of art height),
+  // matching the optical center of the 16:9 poster art.
+  const EVENT_POSTER_TITLE_CENTER_RATIO = 437.5 / 900
+
+  for (const variant of [1, 2, 3]) {
+    for (const vp of VIEWPORTS) {
+      test(`brand cover ?brand=${variant} matches event card height, centers title block, and has zero overlap/clip at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height })
+        await page.goto(`/?brand=${variant}`, { waitUntil: 'networkidle' })
+
+        const deck = page.getByTestId('hero-fanned-deck')
+        await expect(deck).toHaveAttribute('data-card-count', '4')
+        await expect(deck).toHaveAttribute('data-active-index', '0')
+
+        const brandCard = deck.getByTestId('hero-brand-card')
+        await expect(brandCard).toHaveAttribute('data-brand-variant', String(variant))
+
+        // 1. Switcher stays out of the way of the deck and has >=44px tap targets.
+        const switcher = page.getByTestId('brand-variant-switcher')
+        await expect(switcher).toBeVisible()
+        const switcherBox = await switcher.boundingBox()
+        const deckBox = await deck.boundingBox()
+        expect(switcherBox.y + switcherBox.height).toBeLessThanOrEqual(deckBox.y + 1)
+        const switcherButtons = switcher.getByRole('button')
+        await expect(switcherButtons).toHaveCount(3)
+        for (let i = 0; i < 3; i += 1) {
+          const btnBox = await switcherButtons.nth(i).boundingBox()
+          expect(btnBox.height).toBeGreaterThanOrEqual(44)
+          expect(btnBox.width).toBeGreaterThanOrEqual(44)
+        }
+
+        // 2. Brand card height equals all event cards' height exactly.
+        const offsetHeights = await deck.locator('.hero-deck-card').evaluateAll(els => els.map(el => el.offsetHeight))
+        expect(offsetHeights).toHaveLength(4)
+        expect(new Set(offsetHeights).size).toBe(1)
+
+        // 3. No horizontal overflow on page or inside card.
+        await expectNoHorizontalOverflow(page)
+
+        // 4. Pill, title block, and art frame: no clipping, no overlap, vertically centered matching event cover.
+        const geometry = await page.evaluate(eventCenterRatio => {
+          const frame = document.querySelector('[data-testid="brand-art-frame"]')
+          const pill = document.querySelector('[data-testid="brand-art-pill"]')
+          const title = document.querySelector('[data-testid="brand-art-title-block"]')
+          const eventCardImg = document.querySelector('.hero-deck-card[data-card-kind="event"] img')
+          const frameRect = frame.getBoundingClientRect()
+          const pillRect = pill.getBoundingClientRect()
+          const titleRect = title.getBoundingClientRect()
+
+          // Measure event cover art height (unscaled aspect-video matches frameRect.height).
+          const eventArtHeight = eventCardImg ? frameRect.height : frameRect.height
+          const brandTitleCenterFromArtTop = (titleRect.top + titleRect.height / 2) - frameRect.top
+          const eventTitleCenterFromArtTop = eventArtHeight * eventCenterRatio
+          const artMidpointFromArtTop = frameRect.height / 2
+
+          return {
+            frameWidth: frameRect.width,
+            frameHeight: frameRect.height,
+            pillInsideFrame: pillRect.top >= frameRect.top && pillRect.left >= frameRect.left && pillRect.right <= frameRect.right && pillRect.bottom <= frameRect.bottom,
+            titleInsideFrame: titleRect.top >= frameRect.top && titleRect.left >= frameRect.left && titleRect.right <= frameRect.right && titleRect.bottom <= frameRect.bottom,
+            pillClearsTitle: pillRect.bottom + 6 <= titleRect.top,
+            titleScrollOverflowX: title.scrollWidth - title.clientWidth,
+            brandTitleCenterFromArtTop,
+            eventTitleCenterFromArtTop,
+            diffFromEventTitleCenter: Math.abs(brandTitleCenterFromArtTop - eventTitleCenterFromArtTop),
+            diffFromArtMidpoint: Math.abs(brandTitleCenterFromArtTop - artMidpointFromArtTop),
+          }
+        }, EVENT_POSTER_TITLE_CENTER_RATIO)
+
+        expect(geometry.pillInsideFrame).toBe(true)
+        expect(geometry.titleInsideFrame).toBe(true)
+        expect(geometry.pillClearsTitle).toBe(true)
+        expect(geometry.titleScrollOverflowX).toBeLessThanOrEqual(1)
+        // Title block center aligns within 5px of both the event poster's title block center and art midpoint.
+        expect(geometry.diffFromEventTitleCenter).toBeLessThanOrEqual(5)
+        expect(geometry.diffFromArtMidpoint).toBeLessThanOrEqual(4)
+      })
+    }
+  }
+
+  test('brand cover switcher updates ?brand= query param, resets to card 0, and stays static under reduced motion', async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    await page.goto('/?brand=1', { waitUntil: 'networkidle' })
+
+    const deck = page.getByTestId('hero-fanned-deck')
+    await expect(deck.getByTestId('hero-brand-card')).toHaveAttribute('data-brand-variant', '1')
+
+    // Move to event card 1, then switch to Variant 2 via demo switcher -> snaps back to card 0.
+    await deck.getByRole('button', { name: 'Next featured pass' }).click()
+    await expect(deck).toHaveAttribute('data-active-index', '1')
+
+    const switcher = page.getByTestId('brand-variant-switcher')
+    await switcher.getByRole('button', { name: /Brand cover 2/i }).click()
+    await expect(page).toHaveURL(/\?brand=2$/)
+    await expect(deck).toHaveAttribute('data-active-index', '0')
+    await expect(deck.getByTestId('hero-brand-card')).toHaveAttribute('data-brand-variant', '2')
+
+    // Under reduced motion, Variant 2's ambient glow has animation-name: none.
+    const glowAnim = await page.locator('.brand-cover-glow').evaluate(el => getComputedStyle(el).animationName)
+    expect(glowAnim).toBe('none')
+
+    // Switch to Variant 3 via demo switcher.
+    await switcher.getByRole('button', { name: /Brand cover 3/i }).click()
+    await expect(page).toHaveURL(/\?brand=3$/)
+    await expect(deck.getByTestId('hero-brand-card')).toHaveAttribute('data-brand-variant', '3')
 
     await context.close()
   })

@@ -1,17 +1,20 @@
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Search, Ticket as TicketIcon } from 'lucide-react'
 import apiClient from '../api/client'
 import Footer from '../components/Footer'
 import SEO from '../components/SEO'
 import Ticket from '../components/Ticket'
 import HomeHero from '../components/HomeHero'
+import BrandVariantSwitcher from '../components/BrandVariantSwitcher'
 import EventCard from '../components/EventCard'
 import InstallAppHelp from '../components/InstallAppHelp'
 import PerforatedStubStory from '../components/PerforatedStubStory'
 import ChipRow, { EventTrack } from '../components/ui/ChipRow'
 import useContentLanguage from '../hooks/useContentLanguage'
+import { DEFAULT_BRAND_VARIANT, parseBrandVariant } from '../utils/brandVariants'
+import { isDemoDataEnabled } from '../utils/demoMode'
 import { GUAM_VILLAGES, EVENT_DATES } from '../utils/eventFilters'
 import { DEFAULT_EVENT_TIME_ZONE } from '../utils/eventTime'
 
@@ -114,6 +117,14 @@ export default function HomePage() {
   const { t } = useTranslation()
   const contentLanguage = useContentLanguage()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const demoMode = isDemoDataEnabled()
+  const brandVariant = demoMode ? parseBrandVariant(searchParams.get('brand')) : DEFAULT_BRAND_VARIANT
+  const selectBrandVariant = variantId => {
+    const next = new URLSearchParams(searchParams)
+    next.set('brand', String(variantId))
+    setSearchParams(next, { replace: true })
+  }
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
   const [date, setDate] = useState('upcoming')
@@ -217,6 +228,8 @@ export default function HomePage() {
         events={discovery ? upcoming : []}
         loading={loading}
         searchCard={discovery && lgUp ? searchForm : null}
+        brandVariant={brandVariant}
+        brandSwitcher={demoMode ? <BrandVariantSwitcher activeVariant={brandVariant} onSelect={selectBrandVariant} /> : null}
       />
 
       <div className="relative -mt-6 min-h-[24rem] rounded-t-[2rem] bg-surface pb-12 pt-7 sm:-mt-8 sm:rounded-t-[2.5rem] sm:pt-10">

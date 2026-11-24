@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HeroFannedDeck from './HeroFannedDeck'
+import BrandVariantSwitcher from './BrandVariantSwitcher'
+import { DEFAULT_BRAND_VARIANT, parseBrandVariant } from '../utils/brandVariants'
 
 const reduceMotion = reduce => vi.stubGlobal('matchMedia', vi.fn(query => ({
   matches: reduce && query === '(prefers-reduced-motion: reduce)',
@@ -224,5 +226,69 @@ describe('HeroFannedDeck', () => {
     expect(reducedDeck).toHaveAttribute('data-paused', 'true')
     act(() => { vi.advanceTimersByTime(18000) })
     expect(reducedDeck).toHaveAttribute('data-active-index', '0')
+  })
+
+  it.each([
+    [1, 'HåfaPass · Guam', 'Your pass to', 'what’s on', 'Concerts · Sports · Food · Community'],
+    [2, 'Guam · Digital pass', 'HåfaPass', 'Guam’s pass for live events & local nights', 'Island-wide'],
+    [3, 'HåfaPass · Guam', 'What’s on', 'across Guam', 'Music · Sports · Markets · Community'],
+  ])('renders brand cover variant %i with centered title block, matching ticket body, and Browse events CTA', (variant, pill, line1, line2, detail) => {
+    reduceMotion(true)
+    render(
+      <MemoryRouter>
+        <HeroFannedDeck events={sampleEvents} brandVariant={variant} />
+      </MemoryRouter>,
+    )
+    const brandCard = screen.getByTestId('hero-brand-card')
+    expect(brandCard).toHaveAttribute('data-brand-variant', String(variant))
+    expect(screen.getByTestId('brand-art-frame')).toHaveAttribute('data-brand-variant', String(variant))
+    expect(screen.getByTestId('brand-art-pill')).toHaveTextContent(pill)
+    const titleBlock = screen.getByTestId('brand-art-title-block')
+    expect(titleBlock).toHaveTextContent(line1)
+    expect(titleBlock).toHaveTextContent(line2)
+    expect(brandCard).toHaveTextContent(detail)
+    expect(brandCard).toHaveTextContent('Your pass to what’s on across Guam')
+    expect(brandCard).toHaveTextContent('Instant mobile QR tickets')
+    expect(brandCard).toHaveTextContent('GU · ADMIT ONE')
+    expect(within(brandCard).getByText(/Browse events/i)).toBeInTheDocument()
+  })
+
+  it('snaps back to the brand ticket when brandVariant changes', async () => {
+    reduceMotion(true)
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <MemoryRouter>
+        <HeroFannedDeck events={sampleEvents} brandVariant={1} />
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Next featured pass' }))
+    expect(screen.getByTestId('hero-fanned-deck')).toHaveAttribute('data-active-index', '1')
+
+    rerender(
+      <MemoryRouter>
+        <HeroFannedDeck events={sampleEvents} brandVariant={2} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByTestId('hero-fanned-deck')).toHaveAttribute('data-active-index', '0')
+    expect(screen.getByTestId('hero-brand-card')).toHaveAttribute('data-brand-variant', '2')
+  })
+
+  it('parses ?brand= query params safely and drives the demo BrandVariantSwitcher', async () => {
+    expect(parseBrandVariant(null)).toBe(DEFAULT_BRAND_VARIANT)
+    expect(parseBrandVariant('invalid')).toBe(DEFAULT_BRAND_VARIANT)
+    expect(parseBrandVariant('99')).toBe(DEFAULT_BRAND_VARIANT)
+    expect(parseBrandVariant('1')).toBe(1)
+    expect(parseBrandVariant('2')).toBe(2)
+    expect(parseBrandVariant('3')).toBe(3)
+
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    render(<BrandVariantSwitcher activeVariant={2} onSelect={onSelect} />)
+    const nav = screen.getByTestId('brand-variant-switcher')
+    const buttons = within(nav).getAllByRole('button')
+    expect(buttons).toHaveLength(3)
+    expect(buttons[1]).toHaveAttribute('aria-current', 'true')
+    await user.click(buttons[2])
+    expect(onSelect).toHaveBeenCalledWith(3)
   })
 })

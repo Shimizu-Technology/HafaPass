@@ -47,15 +47,24 @@ function RiseHeadline({ text, className }) {
  * (always leading with the branded HåfaPass default pass, followed by up to
  * 3 featured upcoming events).
  */
-export default function HomeHero({ events = [], loading = false, searchCard = null }) {
+export default function HomeHero({
+  events = [],
+  loading = false,
+  searchCard = null,
+  brandVariant,
+  brandSwitcher = null,
+}) {
   const { t } = useTranslation()
 
   return (
     <section
       data-header-band="dark"
       data-testid="home-hero-section"
-      className="overflow-x-clip bg-brand-950 pb-12 pt-6 text-white sm:pb-20 sm:pt-12 lg:pb-24 lg:pt-16"
+      className={`overflow-x-clip bg-brand-950 pb-12 text-white sm:pb-20 lg:pb-24 ${
+        brandSwitcher ? 'pt-3 sm:pt-5 lg:pt-6' : 'pt-6 sm:pt-12 lg:pt-16'
+      }`}
     >
+      {brandSwitcher}
       <div className="mx-auto grid max-w-6xl items-start gap-7 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-14 lg:px-8">
         <div className="min-w-0 lg:pt-4">
           <RiseHeadline
@@ -68,7 +77,7 @@ export default function HomeHero({ events = [], loading = false, searchCard = nu
           {searchCard && <div className="mt-6">{searchCard}</div>}
         </div>
         <div className="min-w-0">
-          <HeroFannedDeck events={events} loading={loading} />
+          <HeroFannedDeck events={events} loading={loading} brandVariant={brandVariant} />
         </div>
       </div>
     </section>

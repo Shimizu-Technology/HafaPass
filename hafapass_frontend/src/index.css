@@ -593,7 +593,22 @@
 @media (hover: hover) and (pointer: fine) {
   .hero-deck-nav:hover { background-color: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.34); }
 }
+
+/* Preview-only brand cover switcher and subtle ambient glow for Variant 2. */
+.brand-switcher {
+  background-color: rgb(6 48 47 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.24), 0 1px 4px rgb(0 0 0 / 0.18);
+}
+@keyframes brand-glow-breathe {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .brand-cover-glow { animation: brand-glow-breathe 8s ease-in-out infinite; }
+}
 @media (prefers-reduced-motion: reduce) {
+  .brand-cover-glow { animation: none !important; opacity: 1; }
   .hero-deck-card,
   .hero-deck-back-veil,
   .hero-deck-link,

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, Calendar, ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
-import HafaPassMark from './HafaPassMark'
+import BrandTicketCover from './BrandTicketCover'
 import { TicketTop, TicketStub } from './Ticket'
 import usePrefersReducedMotion from '../hooks/usePrefersReducedMotion'
 import useTranslatedContent from '../hooks/useTranslatedContent'
+import { DEFAULT_BRAND_VARIANT } from '../utils/brandVariants'
 import { approvedImageUrl, focalPosition } from '../utils/eventPageDesign'
 import { formatEventDate, formatEventTime } from '../utils/eventTime'
 import { formatTicketPrice, priceSummary, remainingTickets } from '../utils/ticketPricing'
@@ -46,44 +47,17 @@ function stackOpacity(depth) {
   return 0
 }
 
-function BrandDefaultTicketFace() {
+function BrandDefaultTicketFace({ variant = DEFAULT_BRAND_VARIANT }) {
   const { t } = useTranslation()
 
   return (
-    <div className="ticket featured-ticket flex h-full flex-col text-content" data-testid="hero-brand-card">
+    <div
+      className="ticket featured-ticket flex h-full flex-col text-content"
+      data-testid="hero-brand-card"
+      data-brand-variant={variant}
+    >
       <TicketTop>
-        <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-[#032827] via-[#074d4b] to-[#0d8b84]">
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 1600 900"
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            preserveAspectRatio="xMidYMid slice"
-          >
-            <g opacity="0.16" stroke="#53f5df" strokeWidth="2.5" fill="none">
-              <circle cx="1260" cy="450" r="320" />
-              <circle cx="1260" cy="450" r="220" />
-              <circle cx="1260" cy="450" r="120" />
-              <line x1="940" y1="450" x2="1580" y2="450" />
-              <line x1="1260" y1="130" x2="1260" y2="770" />
-            </g>
-            <path d="M0 730 Q420 650 860 720 T1600 680 L1600 900 L0 900 Z" fill="#021c1b" opacity="0.45" />
-          </svg>
-          <div className="relative flex h-full flex-col justify-between p-5 text-white sm:p-6">
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center rounded-full border border-brand-300/35 bg-brand-950/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-brand-200">
-                Guam · Digital pass
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-700/95 ring-1 ring-white/20">
-                <HafaPassMark className="h-6 w-6 text-white" />
-              </span>
-              <span className="font-display text-3xl font-bold tracking-tight text-white sm:text-[2.125rem]">
-                Håfa<span className="text-brand-300">Pass</span>
-              </span>
-            </div>
-          </div>
-        </div>
+        <BrandTicketCover variant={variant} />
         <div className="px-5 pb-4 pt-4 sm:px-6">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-brand-800">
             HåfaPass Guam
@@ -111,7 +85,10 @@ function BrandDefaultTicketFace() {
           </div>
           <div className="mt-auto flex items-center justify-between gap-3 pt-1">
             <div className="min-h-[2.75rem] flex flex-col justify-center">
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-neutral-600">
+              <p className="font-display text-base font-bold leading-tight text-neutral-950 sm:text-lg">
+                Island-wide
+              </p>
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-content-muted">
                 GU · ADMIT ONE
               </p>
             </div>
@@ -231,9 +208,10 @@ function EventDeckTicketFace({ event, isFront, showFace }) {
  * momentum, and 6s auto-advance paused on touch, hover, focus, hidden tab, or
  * offscreen. Reduced motion disables auto-advance and swaps cards instantly.
  */
-export default function HeroFannedDeck({ events = [], loading = false }) {
+export default function HeroFannedDeck({ events = [], loading = false, brandVariant = DEFAULT_BRAND_VARIANT }) {
   const location = useLocation()
   const reducedMotion = usePrefersReducedMotion()
+  const prevBrandVariantRef = useRef(brandVariant)
 
   const cards = useMemo(() => {
     const featured = Array.isArray(events) ? events.slice(0, 3) : []
@@ -339,6 +317,16 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
     if (touchResumeTimerRef.current) window.clearTimeout(touchResumeTimerRef.current)
     if (snapBackTimerRef.current) window.clearTimeout(snapBackTimerRef.current)
   }, [clearExitAnimation])
+
+  // When switching demo brand-cover variants, bring the brand ticket (card 0)
+  // back to the front so the selected cover is immediately visible.
+  useEffect(() => {
+    if (prevBrandVariantRef.current === brandVariant) return
+    prevBrandVariantRef.current = brandVariant
+    clearExitAnimation()
+    setExiting(null)
+    setActiveIndex(0)
+  }, [brandVariant, clearExitAnimation])
 
   // Distinguish keyboard navigation into the deck from pointer taps/clicks.
   useEffect(() => {
@@ -808,7 +796,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                 }}
               >
                 {card.kind === 'brand' ? (
-                  <BrandDefaultTicketFace />
+                  <BrandDefaultTicketFace variant={brandVariant} />
                 ) : (
                   <EventDeckTicketFace event={card.event} isFront={isFront} showFace={isFront || isExiting || dragging} />
                 )}
