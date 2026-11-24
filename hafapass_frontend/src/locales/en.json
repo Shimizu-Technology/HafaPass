@@ -1463,6 +1463,35 @@
       "promptFailed": "Use your browser’s menu to add HåfaPass to your home screen."
     }
   },
+  "boxOfficeReceipt": {
+    "saleComplete": "Sale complete!",
+    "orderUpdated": "Order updated",
+    "loading": "Loading tickets…",
+    "loadError": "Could not load the order. Retry to get its tickets.",
+    "retry": "Retry loading tickets",
+    "noTickets": "There are no tickets available to show or print.",
+    "showQr": "Show QR",
+    "qrShown": "QR opened.",
+    "print": "Print tickets",
+    "printOpened": "Print view opened. Check the printer before handing over tickets.",
+    "email": "Email tickets",
+    "buyerEmail": "Confirm buyer email",
+    "queue": "Send tickets",
+    "queueing": "Queueing email…",
+    "delivery": {
+      "queued": "Ticket email queued for {{email}}.",
+      "sent": "Ticket email sent to {{email}}.",
+      "delivered": "Ticket email delivered to {{email}}.",
+      "delayed": "Delivery to {{email}} is delayed."
+    },
+    "emailError": "Could not queue the ticket email. Try again.",
+    "emailUnavailable": "This address cannot receive ticket emails. Show the QR or print the tickets instead.",
+    "close": "Close",
+    "previous": "Previous ticket",
+    "next": "Next ticket",
+    "ticketPosition": "Ticket {{number}} of {{total}}",
+    "ticketReference": "Order {{reference}} · HP-T{{id}}"
+  },
   "pageTitles": {
     "dashboard": "Dashboard",
     "createEvent": "Create event",

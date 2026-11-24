@@ -235,6 +235,8 @@ Rails.application.routes.draw do
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
+            get "orders/:order_id", to: "box_office_receipts#show", as: :order
+            post "orders/:order_id/email", to: "box_office_receipts#email", as: :order_email
           end
           resources :box_office_card_sales, only: [:index, :create, :show, :destroy] do
             post :email, on: :member
