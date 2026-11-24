@@ -32,8 +32,11 @@ it('walks audience → write → preview → test → confirm → send, sending 
   const frame = await screen.findByTitle('Email preview, Desktop')
   expect(frame).toHaveAttribute('srcdoc', '<p>Exact rendered email</p>')
   expect(frame).toHaveAttribute('sandbox', '')
+  expect(screen.getByTestId('email-preview-frame')).toHaveAttribute('data-width', '600')
   fireEvent.click(screen.getByRole('button', { name: 'Phone' }))
   expect(screen.getByTitle('Email preview, Phone')).toHaveStyle({ width: '375px' })
+  expect(screen.getByTestId('email-preview-frame')).toHaveAttribute('data-width', '375')
+  expect(screen.getByText('Full size: 375 px wide')).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'Next: choose when to send' }))
   expect(screen.getByRole('button', { name: 'Review and send' })).toBeDisabled()
@@ -42,20 +45,20 @@ it('walks audience → write → preview → test → confirm → send, sending 
 
   fireEvent.click(await screen.findByRole('button', { name: 'Send test to me' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/test_send', { scope: 'platform' }, { organizationId: null }))
-  expect(await screen.findByText(/Test sent to me@example.test/)).toBeInTheDocument()
-  expect(screen.getByText('Sent to you')).toBeInTheDocument()
+  expect(await screen.findByText(/Test queued for me@example.test/)).toBeInTheDocument()
+  expect(screen.getByText('Queued for you')).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'Next: choose when to send' }))
   fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
   const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByRole('heading')).toHaveTextContent('Send to 1 person now?')
+  expect(within(dialog).getByRole('heading')).toHaveTextContent('Send to about 1 person now?')
   expect(within(dialog).getByText('Events')).toBeInTheDocument()
-  expect(within(dialog).getByText('Event alerts subscribers · 1 person')).toBeInTheDocument()
+  expect(within(dialog).getByText('About 1 person (final count when it sends)')).toBeInTheDocument()
   expect(document.activeElement).toHaveTextContent('Go back')
   fireEvent.click(within(dialog).getByRole('button', { name: 'Send now' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: null }, { organizationId: null }))
   expect(await screen.findByText('Your email is on its way')).toBeInTheDocument()
-  expect(screen.getByText('We’re sending it to 1 person. Track delivery in History.')).toBeInTheDocument()
+  expect(screen.getByText('We’re sending it to about 1 person. The final count is set when it sends. Track delivery in History.')).toBeInTheDocument()
 })
 
 it('ignores superseded search results', async () => {
@@ -217,4 +220,73 @@ it('confirms before unsubscribing a platform subscriber and shows consent histor
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Unsubscribe' }))
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/suppress/5', {}, { organizationId: null, params: { scope: 'platform' } }))
   expect(await screen.findByText('alerts@example.test is unsubscribed.')).toBeInTheDocument()
+})
+
+// Review round 1 regressions (PR #244).
+const pad = value => String(value).padStart(2, '0')
+const localInput = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}` }
+
+async function reachSendStep(sendNowReply) {
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : { mailings: [] } }))
+  apiClient.post.mockImplementation((path, body) => Promise.resolve({ data: path.endsWith('/preview') ? { html: '<p>x</p>', eligible: 1 }
+    : path.endsWith('/test_send') ? { queued: true, recipient: 'me@example.test' } : path.endsWith('/send_now') ? sendNowReply(body) : { id: 17 } }))
+  renderPage()
+  await screen.findByText('1 person will get this email')
+  await writeAndPreview()
+  fireEvent.click(await screen.findByRole('button', { name: 'Send test to me' }))
+  await screen.findByText(/Test queued for/)
+  fireEvent.click(screen.getByRole('button', { name: 'Next: choose when to send' }))
+  fireEvent.click(screen.getByRole('radio', { name: /Schedule for later/ }))
+}
+
+it('#3: asks before sending when the scheduled time passes while the confirm dialog is open', async () => {
+  const realNow = Date.now()
+  await reachSendStep(body => ({ id: 17, status: 'scheduled', scheduled_at: body.scheduled_at || new Date().toISOString() }))
+  fireEvent.change(screen.getByLabelText(/Date and time/), { target: { value: localInput(realNow + 10 * 60_000) } })
+  fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
+  expect(within(screen.getByRole('dialog')).getByRole('heading')).toHaveTextContent('Schedule for about 1 person?')
+
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(realNow + 20 * 60_000)
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
+  expect(await screen.findByText('That time has already passed')).toBeInTheDocument()
+  expect(apiClient.post).not.toHaveBeenCalledWith('/audience_mailings/17/send_now', expect.anything(), expect.anything())
+
+  fireEvent.click(screen.getByRole('button', { name: 'Send now instead' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: null }, { organizationId: null }))
+  expect(await screen.findByText('Your email is on its way')).toBeInTheDocument()
+  clock.mockRestore()
+})
+
+it('#3: reports a schedule from the server reply, not from what was picked', async () => {
+  const realNow = Date.now()
+  const at = localInput(realNow + 2 * 3_600_000)
+  await reachSendStep(body => ({ id: 17, status: 'scheduled', scheduled_at: body.scheduled_at }))
+  fireEvent.change(screen.getByLabelText(/Date and time/), { target: { value: at } })
+  fireEvent.click(screen.getByRole('button', { name: 'Review and send' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Schedule' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/17/send_now', { scope: 'platform', scheduled_at: new Date(at).toISOString() }, { organizationId: null }))
+  expect(await screen.findByText('Your email is scheduled')).toBeInTheDocument()
+})
+
+it('#4 #5: shows delivery outcomes and keeps Cancel while the server still says scheduled', async () => {
+  const past = new Date(Date.now() - 120_000).toISOString()
+  apiClient.get.mockImplementation(path => Promise.resolve({ data: path.endsWith('/audience') ? audienceData() : { mailings: [
+    { id: 1, subject: 'Starting soon', status: 'scheduled', scheduled_at: past, created_at: '2026-11-20T00:00:00Z', counts: {}, unsubscribed: 0, audience: 'platform', recipient_count: 0 },
+    { id: 2, subject: 'All suppressed', status: 'queued', recipient_count: 50, scheduled_at: '2026-11-19T00:00:00Z', created_at: '2026-11-19T00:00:00Z', counts: { suppressed: 48, failed: 2 }, unsubscribed: 0, audience: 'platform' },
+    { id: 3, subject: 'Mostly sent', status: 'queued', recipient_count: 290, scheduled_at: '2026-11-18T00:00:00Z', created_at: '2026-11-18T00:00:00Z', counts: { delivered: 280, suppressed: 10 }, unsubscribed: 0, audience: 'platform' },
+  ] } }))
+  apiClient.post.mockRejectedValue({ response: { status: 409, data: {} } })
+  renderPage(`${PLATFORM}&view=history`)
+  expect(await screen.findByText('Not delivered')).toBeInTheDocument()
+  expect(screen.getByText('Not delivered: 48 skipped (unsubscribed or blocked by send time), 2 failed.')).toBeInTheDocument()
+  expect(screen.getByText('Partly sent')).toBeInTheDocument()
+  expect(screen.getByText('290 recipients · 280 delivered · 10 not sent')).toBeInTheDocument()
+  expect(screen.queryByText('Sent')).not.toBeInTheDocument()
+
+  expect(screen.getByText('Starting')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Open details for Starting soon' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel scheduled send' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel it' }))
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/audience_mailings/1/cancel', { scope: 'platform' }, { organizationId: null }))
+  expect(await screen.findByText('It had already started sending, so it couldn’t be cancelled. History shows where it stands now.')).toBeInTheDocument()
 })

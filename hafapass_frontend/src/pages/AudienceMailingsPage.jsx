@@ -9,7 +9,7 @@ import AudienceStep from '../components/email/AudienceStep'
 import { ConfirmSendDialog, PreviewStep, SendDone, SendStep, WriteStep } from '../components/email/ComposeSteps'
 import MailingHistory from '../components/email/MailingHistory'
 import MailingSummary, { StepNav } from '../components/email/MailingSummary'
-import { STEP_KEYS, audienceBreakdown, describeFilters, errorKey } from '../components/email/emailFlowModel'
+import { STEP_KEYS, audienceBreakdown, describeFilters, errorKey, scheduleLapsed } from '../components/email/emailFlowModel'
 import { useCachedSelectedOrganization } from '../utils/organizerOrganizations'
 
 const EMPTY_FILTERS = { q: '', status: '', source: '', interest: '', since: '' }
@@ -58,6 +58,7 @@ function AudienceMailingsSession({ identity }) {
   const [timing, setTiming] = useState('now')
   const [scheduledAt, setScheduledAt] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [lapsed, setLapsed] = useState(false)
   const [sendResult, setSendResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -163,16 +164,24 @@ function AudienceMailingsSession({ identity }) {
     } finally { setBusy(false) }
   }
 
-  async function confirmSend() {
+  // `sendNow` is the explicit "Send now instead" answer after a scheduled time lapsed.
+  async function confirmSend({ sendNow = false } = {}) {
     const id = draftId
     const count = preview?.eligible ?? audienceBreakdown(list, scope)?.eligible ?? 0
-    const ok = await run(async () => {
-      await apiClient.post(`/audience_mailings/${id}/send_now`, { scope, scheduled_at: timing === 'later' && scheduledAt ? new Date(scheduledAt).toISOString() : null }, boundConfig)
-      return true
+    const later = timing === 'later' && !sendNow
+    // The time can pass while the dialog is open; the server would then send at once.
+    if (later && scheduleLapsed(scheduledAt)) { setLapsed(true); return }
+    const requestedAt = later ? new Date(scheduledAt).toISOString() : null
+    const data = await run(async () => {
+      const response = await apiClient.post(`/audience_mailings/${id}/send_now`, { scope, scheduled_at: requestedAt }, boundConfig)
+      return response?.data || {}
     })
-    setConfirming(false)
-    if (ok) {
-      setSendResult({ timing, scheduledAt, count })
+    setConfirming(false); setLapsed(false)
+    if (data) {
+      const at = Date.parse(data.scheduled_at || requestedAt || '')
+      const startedNow = Number.isNaN(at) ? !later : at <= Date.now() + 5_000
+      if (sendNow) setTiming('now')
+      setSendResult({ startedNow, scheduledAt: data.scheduled_at || requestedAt, count })
       setDraftId(null); setTestedDraftId(null); setTestState('idle')
     } else {
       loadHistory()
@@ -204,7 +213,14 @@ function AudienceMailingsSession({ identity }) {
 
   async function cancelScheduled(row) {
     const ok = await run(async () => {
-      await apiClient.post(`/audience_mailings/${row.id}/cancel`, { scope }, boundConfig)
+      try {
+        await apiClient.post(`/audience_mailings/${row.id}/cancel`, { scope }, boundConfig)
+      } catch (error) {
+        // The server's lock decides: 409 means sending already started.
+        if (error?.response?.status !== 409) throw error
+        setNotice({ tone: 'error', text: t('emailFlow.history.cancelTooLate') })
+        return 'tooLate'
+      }
       setNotice({ tone: 'success', text: t('emailFlow.history.cancelled') })
       return true
     })
@@ -308,7 +324,8 @@ function AudienceMailingsSession({ identity }) {
       )}
 
       {confirming && <ConfirmSendDialog count={eligible || 0} audienceLabel={audienceLabel(audience)} subject={subject} sender={sender}
-        timing={timing} scheduledAt={scheduledAt} busy={busy} onCancel={() => setConfirming(false)} onConfirm={confirmSend} />}
+        timing={timing} scheduledAt={scheduledAt} lapsed={lapsed} busy={busy} onCancel={() => { setConfirming(false); setLapsed(false) }}
+        onConfirm={() => confirmSend()} onSendNowInstead={() => confirmSend({ sendNow: true })} />}
     </WorkspacePage>
   )
 }

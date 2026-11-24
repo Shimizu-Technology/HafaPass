@@ -7,7 +7,7 @@ export function StepNav({ step, reachable, onStep }) {
   const name = t(`emailFlow.steps.${STEP_KEYS[step]}`)
   return (
     <nav aria-label={t('emailFlow.steps.label')}>
-      <p className="text-sm font-medium text-neutral-600 sm:sr-only">{t('emailFlow.steps.progress', { current: step + 1, total: STEP_KEYS.length, name })}</p>
+      <p className="sr-only">{t('emailFlow.steps.progress', { current: step + 1, total: STEP_KEYS.length, name })}</p>
       <ol className="mt-2 grid grid-cols-4 gap-1.5 sm:mt-0 sm:gap-2">
         {STEP_KEYS.map((key, index) => {
           const current = index === step
@@ -17,13 +17,14 @@ export function StepNav({ step, reachable, onStep }) {
           return (
             <li key={key} className="min-w-0">
               <button type="button" disabled={!canGo} aria-current={current ? 'step' : undefined} onClick={() => onStep(index)}
-                className="group flex w-full min-w-0 flex-col items-stretch gap-1.5 rounded-lg text-left disabled:cursor-default">
+                className="group flex min-h-11 w-full min-w-0 flex-col items-stretch gap-1.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-default">
                 <span aria-hidden="true" className={`h-1.5 rounded-full transition-colors ${current || done ? 'bg-brand-600' : 'bg-neutral-200'}`} />
-                <span className={`hidden min-h-8 items-center gap-1.5 text-sm sm:flex ${current ? 'font-semibold text-neutral-950' : done ? 'text-brand-800 group-enabled:group-hover:underline' : 'text-neutral-500'}`}>
-                  <span aria-hidden="true" className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${current ? 'bg-brand-600 text-white' : done ? 'bg-brand-100 text-brand-800' : 'bg-neutral-100 text-neutral-600'}`}>
-                    {done ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                <span aria-hidden="true" className={`flex min-h-6 items-center gap-1 text-xs sm:min-h-8 sm:gap-1.5 sm:text-sm ${current ? 'font-semibold text-neutral-950' : done ? 'text-brand-800 group-enabled:group-hover:underline' : 'text-neutral-500'}`}>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold sm:h-6 sm:w-6 sm:text-xs ${current ? 'bg-brand-600 text-white' : done ? 'bg-brand-100 text-brand-800' : 'bg-neutral-100 text-neutral-600'}`}>
+                    {done ? <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : index + 1}
                   </span>
-                  <span className="min-w-0 truncate">{label}</span>
+                  <span className="min-w-0 truncate sm:hidden">{t(`emailFlow.steps.short.${key}`)}</span>
+                  <span className="hidden min-w-0 truncate sm:inline">{label}</span>
                 </span>
                 <span className="sr-only">{`${index + 1}. ${label}${done ? ` (${t('emailFlow.steps.done')})` : ''}`}</span>
               </button>

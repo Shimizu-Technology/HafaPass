@@ -1584,7 +1584,13 @@
       "back": "Back",
       "nextWrite": "Next: write the email",
       "nextPreview": "Next: preview",
-      "nextSend": "Next: choose when to send"
+      "nextSend": "Next: choose when to send",
+      "short": {
+        "audience": "Audience",
+        "write": "Write",
+        "preview": "Preview",
+        "send": "Send"
+      }
     },
     "audiences": {
       "heading": "Who should get this email?",
@@ -1643,7 +1649,7 @@
       "noConsent_buyers": "They didn’t agree to email at checkout, unsubscribed, or their address can’t receive email.",
       "noConsent_followers": "They turned email off, unsubscribed, or their address can’t receive email.",
       "noConsent_waitlists": "They haven’t agreed to email as a buyer or follower, unsubscribed, or their address can’t receive email.",
-      "recheck": "We check everyone again right before sending, so the final number can be a little lower.",
+      "recheck": "We check everyone again when it sends, so the final number can go up or down.",
       "summary_one": "{{n}} person",
       "summary_other": "{{n}} people"
     },
@@ -1712,12 +1718,14 @@
       "testBody": "We send a copy marked [TEST] to the email on your account. Tests don’t count toward your results.",
       "testButton": "Send test to me",
       "testSending": "Sending test…",
-      "testSent": "Test sent to {{email}}. Check your inbox, and your spam folder if it isn’t there in a minute.",
-      "testSentNoEmail": "Test sent to the email on your account.",
       "testAgain": "Send another test",
       "testFailed": "We couldn’t send the test. Check your access and try again.",
       "editsNeedTest": "If you change the email after testing, send a new test.",
-      "yourOrganization": "Your organization"
+      "yourOrganization": "Your organization",
+      "testQueued": "Test queued for {{email}}. It usually arrives within a minute; check your spam folder if it doesn’t.",
+      "testQueuedNoEmail": "Test queued for the email on your account.",
+      "size": "Full size: {{width}} px wide",
+      "sizeScaled": "{{width}} px wide, shrunk to {{percent}}% to fit your screen"
     },
     "send": {
       "heading": "When should it go out?",
@@ -1727,15 +1735,15 @@
       "laterHint": "You can cancel any time before it starts.",
       "when": "Date and time ({{zone}})",
       "whenNoZone": "Date and time",
-      "futureOnly": "Pick a time in the future.",
+      "futureOnly": "Pick a time at least a minute from now.",
       "needsTest": "Send a test to yourself first (step 3).",
       "needsPeople": "No one on this list can get email yet (step 1).",
       "needsAddress": "A mailing address is required before anything can be sent.",
       "review": "Review and send",
-      "confirmNowTitle_one": "Send to {{n}} person now?",
-      "confirmNowTitle_other": "Send to {{n}} people now?",
-      "confirmLaterTitle_one": "Schedule for {{n}} person?",
-      "confirmLaterTitle_other": "Schedule for {{n}} people?",
+      "confirmNowTitle_one": "Send to about {{n}} person now?",
+      "confirmNowTitle_other": "Send to about {{n}} people now?",
+      "confirmLaterTitle_one": "Schedule for about {{n}} person?",
+      "confirmLaterTitle_other": "Schedule for about {{n}} people?",
       "confirmNowWarning": "Once sending starts, it can’t be stopped.",
       "confirmLaterWarning": "You can cancel it from History any time before it starts.",
       "confirmNow": "Send now",
@@ -1744,12 +1752,18 @@
       "rightAway": "Right away",
       "sending": "Sending…",
       "doneNowTitle": "Your email is on its way",
-      "doneNowBody_one": "We’re sending it to {{n}} person. Track delivery in History.",
-      "doneNowBody_other": "We’re sending it to {{n}} people. Large lists take a while. Track delivery in History.",
+      "doneNowBody_one": "We’re sending it to about {{n}} person. The final count is set when it sends. Track delivery in History.",
+      "doneNowBody_other": "We’re sending it to about {{n}} people. The final count is set when it sends, and large lists take a while. Track delivery in History.",
       "doneLaterTitle": "Your email is scheduled",
-      "doneLaterBody": "It goes out {{time}}. You can cancel it from History until then.",
+      "doneLaterBody": "It goes out {{time}} to everyone who can get email at that moment. You can cancel it from History until then.",
       "viewHistory": "View history",
-      "another": "Write another email"
+      "another": "Write another email",
+      "estimate_one": "About {{n}} person (final count when it sends)",
+      "estimate_other": "About {{n}} people (final count when it sends)",
+      "lapsedTitle": "That time has already passed",
+      "lapsedBody": "You picked {{time}}. Send it now instead, or pick a new time.",
+      "pickNewTime": "Pick a new time",
+      "sendNowInstead": "Send now instead"
     },
     "summary": {
       "heading": "Summary",
@@ -1759,7 +1773,7 @@
       "test": "Test",
       "notWritten": "Not written yet",
       "testNotSent": "Not sent yet",
-      "testSent": "Sent to you",
+      "testSent": "Queued for you",
       "filtered": "Filtered: {{filters}}"
     },
     "history": {
@@ -1790,7 +1804,9 @@
         "sending": "Sending",
         "sent": "Sent",
         "cancelled": "Cancelled",
-        "notSent": "Not sent"
+        "notSent": "Not sent",
+        "partial": "Partly sent",
+        "notDelivered": "Not delivered"
       },
       "stats": {
         "recipients": "Recipients",
@@ -1817,7 +1833,21 @@
         "schedule": "It wasn’t sent because its scheduled time was invalid.",
         "expired": "It wasn’t sent because it started more than 6 hours late. Write it again to send it.",
         "other": "It wasn’t sent: {{reason}}"
-      }
+      },
+      "notSent": "{{n}} not sent",
+      "outcome": {
+        "nobody": "Not delivered: no one on the list could get email when it sent.",
+        "none": "Not delivered: {{reasons}}.",
+        "partial": "Some weren’t sent: {{reasons}}.",
+        "skipped_one": "{{n}} skipped (unsubscribed or blocked by send time)",
+        "skipped_other": "{{n}} skipped (unsubscribed or blocked by send time)",
+        "failed_one": "{{n}} failed",
+        "failed_other": "{{n}} failed",
+        "bounced_one": "{{n}} bounced",
+        "bounced_other": "{{n}} bounced"
+      },
+      "cancelTooLate": "It had already started sending, so it couldn’t be cancelled. History shows where it stands now.",
+      "startingNote": "Its start time has passed and it should begin any moment. You can still try to cancel it."
     },
     "errors": {
       "generic": "Something went wrong. Check your connection and access, then try again.",

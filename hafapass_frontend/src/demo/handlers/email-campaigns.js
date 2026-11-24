@@ -93,7 +93,11 @@ function platformHistory(scenario) {
     mailing(501, { subject: 'This weekend: Island Cup spectator day (demo)', status: 'queued', created_at: iso(NOW - 6 * DAY), scheduled_at: iso(NOW - 6 * DAY + 600_000), recipient_count: 298,
       body: 'Spectator tickets for the Island Cup (demo) are on sale now.\n\nChild $12 · Adult $17 · Under 5 free.\n\nSee you at the field house!',
       counts: { delivered: 281, sent: 6, bounced: 4, complained: 1, suppressed: 6 }, unsubscribed: 3 }),
-    mailing(502, { subject: 'December events are here (demo)', status: 'scheduled', created_at: iso(NOW - DAY), scheduled_at: iso(NOW + 3 * DAY), recipient_count: 0, counts: {} }),
+    mailing(502, { subject: 'December events are here (demo)', status: 'scheduled', created_at: iso(NOW - DAY), scheduled_at: iso(Math.max(NOW, Date.now()) + 3 * DAY), recipient_count: 0, counts: {} }),
+    // Past its start time but the server still says `scheduled`, so it can still be cancelled.
+    mailing(506, { subject: 'Gates open early on Saturday (demo)', status: 'scheduled', created_at: iso(Date.now() - 3_600_000), scheduled_at: iso(Date.now() - 120_000), recipient_count: 0, counts: {} }),
+    // Every delivery was suppressed at send time: nothing reached anyone.
+    mailing(507, { subject: 'Rain delay update (demo)', status: 'queued', created_at: iso(NOW - 3 * DAY), scheduled_at: iso(NOW - 3 * DAY), recipient_count: 50, counts: { suppressed: 48, failed: 2 } }),
     mailing(503, { subject: 'Draft: New Year market (demo)', status: 'draft', created_at: iso(NOW - 2 * 3_600_000), scheduled_at: null, body: 'Save the date for the New Year night market (demo).' }),
     mailing(504, { subject: 'Holiday concert on sale (demo)', status: 'blocked', blocked_reason: 'Missing mailing address or marketing permission', created_at: iso(NOW - 12 * DAY), scheduled_at: iso(NOW - 12 * DAY) }),
     mailing(505, { subject: 'October recap (demo)', status: 'cancelled', created_at: iso(NOW - 30 * DAY), scheduled_at: iso(NOW - 28 * DAY) }),
@@ -120,7 +124,7 @@ function organizerHistory(scenario) {
   return [
     mailing(601, { ...org, audience: 'buyers', subject: 'Thanks for coming to the season opener (demo)', created_at: iso(NOW - 9 * DAY), scheduled_at: iso(NOW - 9 * DAY), recipient_count: 204,
       counts: { delivered: 199, bounced: 2, sent: 3 }, unsubscribed: 4 }),
-    mailing(602, { ...org, audience: 'followers', subject: 'Finals tickets go on sale Monday (demo)', status: 'scheduled', created_at: iso(NOW - DAY), scheduled_at: iso(NOW + 4 * DAY) }),
+    mailing(602, { ...org, audience: 'followers', subject: 'Finals tickets go on sale Monday (demo)', status: 'scheduled', created_at: iso(NOW - DAY), scheduled_at: iso(Math.max(NOW, Date.now()) + 4 * DAY) }),
   ]
 }
 
@@ -245,8 +249,9 @@ export async function handle({ method, path, body, params, state }) {
     const when = body.scheduled_at ? Date.parse(body.scheduled_at) : Date.now()
     if (Number.isNaN(when) || when < Date.now() - 60_000) return unprocessable('Invalid schedule')
     const audience = audienceResponse(data, scope, new URLSearchParams({ audience: row.audience, ...row.filters }))
+    // Like the API: a time that is now or past starts at once; the reply carries the real time.
     Object.assign(row, { scheduled_at: new Date(when).toISOString() })
-    if (when > Date.now() + 60_000) row.status = 'scheduled'
+    if (when > Date.now()) row.status = 'scheduled'
     else Object.assign(row, { status: 'queued', recipient_count: audience.eligible, counts: { sent: audience.eligible } })
     return json(row)
   }

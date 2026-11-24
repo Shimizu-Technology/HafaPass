@@ -1,8 +1,8 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CalendarClock, CheckCircle2, Loader2, Monitor, Send, Smartphone } from 'lucide-react'
 import Dialog from '../Dialog'
-import { BODY_MAX, SUBJECT_MAX, countValues, formatCount, formatDateTime, localZoneName } from './emailFlowModel'
+import { BODY_MAX, SUBJECT_MAX, countValues, formatCount, formatDateTime, localZoneName, scheduleLapsed } from './emailFlowModel'
 
 // Platform mail comes from HåfaPass itself; organizer mail is "Name via HåfaPass".
 const fromText = (t, sender) => (sender === 'HåfaPass' ? sender : t('emailFlow.preview.fromValue', { sender }))
@@ -41,12 +41,35 @@ export function WriteStep({ subject, body, onSubject, onBody, busy, showErrors }
   )
 }
 
+// Real email widths: desktop clients render about 600px, phones about 375px.
+const FRAME = { desktop: { width: 600, height: 576 }, phone: { width: 375, height: 667 } }
+
+// Width available to the preview frame, so a frame wider than the screen can be scaled to fit.
+function useAvailableWidth(ref) {
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return undefined
+    const update = () => setWidth(node.clientWidth)
+    update()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [ref])
+  return width
+}
+
 export function PreviewStep({ preview, previewState, previewError, onRetry, subject, sender, testState, testRecipient, onTest, busy, canTest }) {
   const { t } = useTranslation()
   const ids = useId()
   const [view, setView] = useState('desktop')
-  const views = [['desktop', Monitor, 600], ['phone', Smartphone, 375]]
-  const width = view === 'desktop' ? 600 : 375
+  const views = [['desktop', Monitor], ['phone', Smartphone]]
+  const frameBox = useRef(null)
+  const available = useAvailableWidth(frameBox)
+  const { width, height } = FRAME[view]
+  // Render at the real width and shrink to fit; never stretch above 100%.
+  const scale = available > 0 ? Math.min(1, available / width) : 1
   return (
     <section aria-labelledby={`${ids}-heading`} className="space-y-5">
       <h2 id={`${ids}-heading`} className="text-xl font-semibold text-neutral-950">{t('emailFlow.preview.heading')}</h2>
@@ -65,17 +88,26 @@ export function PreviewStep({ preview, previewState, previewError, onRetry, subj
             ))}
           </div>
         </div>
-        <div className="flex min-h-[24rem] justify-center overflow-x-auto bg-neutral-100 p-3 sm:p-6">
-          {previewState === 'loading' && <p role="status" className="flex items-center gap-2 self-center text-sm text-neutral-600"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />{t('emailFlow.preview.loading')}</p>}
-          {previewState === 'error' && (
-            <div role="alert" className="max-w-md self-center rounded-xl border border-red-200 bg-white p-4 text-sm text-red-800">
-              <p className="flex items-start gap-2"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{previewError}</p>
-              <button type="button" className="btn-secondary mt-3 !px-4 !py-2 text-sm" onClick={onRetry}>{t('emailFlow.preview.retry')}</button>
-            </div>
-          )}
+        <div className="bg-neutral-100 p-3 sm:p-6">
+          <div ref={frameBox} className="flex min-h-[24rem] w-full justify-center">
+            {previewState === 'loading' && <p role="status" className="flex items-center gap-2 self-center text-sm text-neutral-600"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />{t('emailFlow.preview.loading')}</p>}
+            {previewState === 'error' && (
+              <div role="alert" className="max-w-md self-center rounded-xl border border-red-200 bg-white p-4 text-sm text-red-800">
+                <p className="flex items-start gap-2"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{previewError}</p>
+                <button type="button" className="btn-secondary mt-3 !px-4 !py-2 text-sm" onClick={onRetry}>{t('emailFlow.preview.retry')}</button>
+              </div>
+            )}
+            {previewState === 'ready' && preview && (
+              <div data-testid="email-preview-frame" data-width={width} style={{ width: width * scale, height: height * scale }} className="shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+                <iframe key={view} title={t('emailFlow.preview.frameTitle', { view: t(`emailFlow.preview.${view}`) })} sandbox="" srcDoc={preview.html}
+                  style={{ width, height, transform: scale < 1 ? `scale(${scale})` : undefined, transformOrigin: 'top left' }} className="block border-0" />
+              </div>
+            )}
+          </div>
           {previewState === 'ready' && preview && (
-            <iframe key={view} title={t('emailFlow.preview.frameTitle', { view: t(`emailFlow.preview.${view}`) })} sandbox="" srcDoc={preview.html}
-              style={{ width, maxWidth: '100%' }} className="h-[36rem] shrink-0 rounded-lg border border-neutral-200 bg-white shadow-sm" />
+            <p className="mt-2 text-center text-xs text-neutral-500 tabular-nums">
+              {t(scale < 1 ? 'emailFlow.preview.sizeScaled' : 'emailFlow.preview.size', { width, percent: Math.round(scale * 100) })}
+            </p>
           )}
         </div>
       </div>
@@ -90,7 +122,7 @@ export function PreviewStep({ preview, previewState, previewError, onRetry, subj
           </button>
         </div>
         <div aria-live="polite" className="mt-3 text-sm">
-          {testState === 'sent' && <p className="flex items-start gap-2 break-words text-emerald-800 [overflow-wrap:anywhere]"><CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{testRecipient ? t('emailFlow.preview.testSent', { email: testRecipient }) : t('emailFlow.preview.testSentNoEmail')}</p>}
+          {testState === 'sent' && <p className="flex items-start gap-2 break-words text-emerald-800 [overflow-wrap:anywhere]"><CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{testRecipient ? t('emailFlow.preview.testQueued', { email: testRecipient }) : t('emailFlow.preview.testQueuedNoEmail')}</p>}
           {testState === 'failed' && <p className="flex items-start gap-2 text-red-700"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{t('emailFlow.preview.testFailed')}</p>}
         </div>
         <p className="mt-2 text-xs text-neutral-500">{t('emailFlow.preview.editsNeedTest')}</p>
@@ -103,7 +135,7 @@ export function SendStep({ timing, onTiming, scheduledAt, onScheduledAt, blocker
   const { t } = useTranslation()
   const ids = useId()
   const zone = localZoneName()
-  const scheduleInvalid = timing === 'later' && (!scheduledAt || Number.isNaN(Date.parse(scheduledAt)) || Date.parse(scheduledAt) <= Date.now())
+  const scheduleInvalid = timing === 'later' && (!scheduledAt || scheduleLapsed(scheduledAt))
   return (
     <section aria-labelledby={`${ids}-heading`} className="space-y-5">
       <h2 id={`${ids}-heading`} className="text-xl font-semibold text-neutral-950">{t('emailFlow.send.heading')}</h2>
@@ -139,17 +171,34 @@ export function SendStep({ timing, onTiming, scheduledAt, onScheduledAt, blocker
   )
 }
 
-export function ConfirmSendDialog({ count, audienceLabel, subject, sender, timing, scheduledAt, busy, onCancel, onConfirm }) {
+export function ConfirmSendDialog({ count, audienceLabel, subject, sender, timing, scheduledAt, lapsed, busy, onCancel, onConfirm, onSendNowInstead }) {
   const { t } = useTranslation()
   const ids = useId()
   const cancelRef = useRef(null)
   const later = timing === 'later'
+  if (lapsed) {
+    // The picked time passed while this dialog was open: ask, never silently send now.
+    return (
+      <Dialog labelledBy={`${ids}-title`} onClose={onCancel} busy={busy} className="max-w-lg" initialFocusRef={cancelRef}>
+        <h2 id={`${ids}-title`} className="text-xl font-semibold text-neutral-950">{t('emailFlow.send.lapsedTitle')}</h2>
+        <p className="mt-2 text-sm text-neutral-700">{t('emailFlow.send.lapsedBody', { time: formatDateTime(scheduledAt) })}</p>
+        <p className="mt-2 text-sm text-neutral-700 tabular-nums">{t('emailFlow.send.estimate', countValues(count))}</p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>{t('emailFlow.send.pickNewTime')}</button>
+          <button type="button" className="btn-primary gap-2" disabled={busy} onClick={onSendNowInstead}>
+            {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
+            {busy ? t('emailFlow.send.sending') : t('emailFlow.send.sendNowInstead')}
+          </button>
+        </div>
+      </Dialog>
+    )
+  }
   return (
     <Dialog labelledBy={`${ids}-title`} onClose={onCancel} busy={busy} className="max-w-lg" initialFocusRef={cancelRef}>
       <h2 id={`${ids}-title`} className="text-xl font-semibold text-neutral-950 tabular-nums">{t(later ? 'emailFlow.send.confirmLaterTitle' : 'emailFlow.send.confirmNowTitle', countValues(count))}</h2>
       <dl className="mt-4 divide-y divide-neutral-100 rounded-xl border border-neutral-200 text-sm">
         {[
-          ['to', `${audienceLabel} · ${t('emailFlow.count.summary', countValues(count))}`],
+          ['to', <>{audienceLabel}<span className="block font-normal text-neutral-600 tabular-nums">{t('emailFlow.send.estimate', countValues(count))}</span></>],
           ['subject', subject],
           ['when', later ? formatDateTime(scheduledAt) : t('emailFlow.send.rightAway')],
           ['from', fromText(t, sender)],
@@ -174,7 +223,8 @@ export function ConfirmSendDialog({ count, audienceLabel, subject, sender, timin
 
 export function SendDone({ result, onHistory, onAnother }) {
   const { t } = useTranslation()
-  const later = result.timing === 'later'
+  // Decided by the server's answer, not by what was picked: a lapsed time sends right away.
+  const later = !result.startedNow
   return (
     <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-950" aria-labelledby="email-send-done">
       <CheckCircle2 aria-hidden="true" className="h-8 w-8 text-emerald-700" />

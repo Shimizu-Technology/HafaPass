@@ -4,6 +4,8 @@ require "csv"
 
 # Organization context is resolved server-side. An admin must explicitly choose platform scope.
 class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
+  ORGANIZER_AUDIENCES = %w[buyers followers waitlists].freeze
+
   skip_before_action :require_current_organization
   before_action :authorize_scope
   rescue_from ActiveRecord::RecordNotFound do
@@ -15,6 +17,8 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
 
   def audience
     return render json: { error: "Invalid date" }, status: :unprocessable_entity unless valid_filters?
+    # Checked before any count or export: an organizer may only look at their own lists.
+    return render json: { error: "Invalid audience" }, status: :unprocessable_entity unless valid_audience?
 
     if @organization.nil?
       scope = PlatformSubscriber.order(created_at: :desc)
@@ -143,6 +147,10 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     true
   rescue ArgumentError, TypeError
     false
+  end
+
+  def valid_audience?
+    @organization.nil? || params[:audience].blank? || ORGANIZER_AUDIENCES.include?(params[:audience])
   end
 
   def authorize_scope

@@ -18,6 +18,11 @@ it('serves the whole platform flow from fictional data and keeps changes in memo
   const sent = (await call('post', `/audience_mailings/${draft.id}/send_now`, { body: { scope: 'platform', scheduled_at: null }, state })).data
   expect(sent).toMatchObject({ status: 'queued', recipient_count: 312 })
   expect((await call('post', `/audience_mailings/${draft.id}/send_now`, { body: { scope: 'platform' }, state })).status).toBe(409)
+
+  const later = (await call('post', '/audience_mailings', { body: { scope: 'platform', subject: 'Later', body: 'Body' }, state })).data
+  const when = new Date(Date.now() + 3_600_000).toISOString()
+  expect((await call('post', `/audience_mailings/${later.id}/send_now`, { body: { scope: 'platform', scheduled_at: when }, state })).data)
+    .toMatchObject({ status: 'scheduled', scheduled_at: when })
   expect(await call('get', '/organizer/events', { state })).toBeUndefined()
 })
 
@@ -26,7 +31,10 @@ it('loads worst-case, empty and organizer data', async () => {
   const state = {}
   const history = (await call('get', '/audience_mailings', { params: { scope: 'platform' }, state })).data.mailings
   expect(history).toHaveLength(100)
-  expect(history[0]).toMatchObject({ status: 'queueing', recipient_count: 48000 })
+  expect(history.find(row => row.id === 500)).toMatchObject({ status: 'queueing', recipient_count: 48000 })
+  expect(history.find(row => row.id === 506)).toMatchObject({ status: 'scheduled' })
+  expect(Date.parse(history.find(row => row.id === 506).scheduled_at)).toBeLessThan(Date.now())
+  expect(history.find(row => row.id === 507)).toMatchObject({ status: 'queued', counts: { suppressed: 48, failed: 2 } })
   expect((await call('get', '/audience_mailings/audience', { params: { scope: 'platform' }, state })).data.eligible).toBe(48000)
   expect((await call('get', '/audience_mailings/audience', { params: { audience: 'waitlists' }, state })).data).toMatchObject({ eligible: 0, considered: 37 })
 

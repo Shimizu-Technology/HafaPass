@@ -1825,11 +1825,35 @@
       },
       "progress": {
         "context": "Sending progress for a large email: {{done}} of {{total}} messages have been passed to the email delivery service."
+      },
+      "outcome": {
+        "skipped_one": {
+          "context": "Emails HåfaPass did not send because, at send time, the person had unsubscribed, opted out of all marketing, or their address was blocked after earlier bounces or spam reports."
+        },
+        "none": {
+          "context": "{{reasons}} is a comma-separated list such as '50 skipped (…), 2 failed'."
+        }
+      },
+      "states": {
+        "partial": {
+          "context": "Status badge: the email went out, but some recipients were skipped or failed."
+        }
       }
     },
     "errors": {
       "addressMissingPlatform": {
         "context": "Shown to the HåfaPass platform admin. HAFAPASS_POSTAL_ADDRESS is a server setting name; do not translate it."
+      }
+    },
+    "send": {
+      "estimate_one": {
+        "context": "The number of people is an estimate: HåfaPass re-checks consent and unsubscribes when the email actually sends, so the final count can be higher or lower."
+      },
+      "estimate_other": {
+        "context": "Plural of estimate_one."
+      },
+      "lapsedTitle": {
+        "context": "The date and time the sender picked for a scheduled email is now in the past (it passed while they were reviewing)."
       }
     }
   }

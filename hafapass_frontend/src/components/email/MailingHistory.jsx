@@ -2,7 +2,7 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, ChevronRight, Inbox, Loader2, Search } from 'lucide-react'
 import Dialog from '../Dialog'
-import { STATE_TONES, countValues, deliveryTotals, describeFilters, formatCount, formatDateTime, mailingState } from './emailFlowModel'
+import { STATE_TONES, canCancel, countValues, deliveryTotals, describeFilters, formatCount, formatDateTime, mailingState } from './emailFlowModel'
 
 const PAGE = 20
 const BLOCKED = {
@@ -22,9 +22,22 @@ function blockedText(t, reason) {
   return key ? t(`emailFlow.history.blocked.${key}`) : t('emailFlow.history.blocked.other', { reason })
 }
 
+// Why nothing (or not everything) reached people, from the delivery outcomes.
+function outcomeText(t, state, totals) {
+  if (state === 'notDelivered' && totals.recipients === 0) return t('emailFlow.history.outcome.nobody')
+  const parts = [
+    totals.skipped > 0 && t('emailFlow.history.outcome.skipped', countValues(totals.skipped)),
+    totals.failed > 0 && t('emailFlow.history.outcome.failed', countValues(totals.failed)),
+    totals.bounced > 0 && t('emailFlow.history.outcome.bounced', countValues(totals.bounced)),
+  ].filter(Boolean).join(', ')
+  if (state === 'notDelivered') return t('emailFlow.history.outcome.none', { reasons: parts })
+  if (state === 'partial') return t('emailFlow.history.outcome.partial', { reasons: parts })
+  return null
+}
+
 function whenText(t, row, state) {
   if (state === 'scheduled' || state === 'starting') return t('emailFlow.history.scheduledFor', { time: formatDateTime(row.scheduled_at) })
-  if (['sent', 'sending'].includes(state) && row.scheduled_at) return t('emailFlow.history.sentAt', { time: formatDateTime(row.scheduled_at) })
+  if (['sent', 'sending', 'partial', 'notDelivered'].includes(state) && row.scheduled_at) return t('emailFlow.history.sentAt', { time: formatDateTime(row.scheduled_at) })
   return t('emailFlow.history.created', { time: formatDateTime(row.created_at) })
 }
 
@@ -36,8 +49,10 @@ function HistoryRow({ row, audienceLabel, onOpen }) {
     t('emailFlow.history.recipients', countValues(totals.recipients)),
     t('emailFlow.history.delivered', { n: formatCount(totals.delivered) }),
     totals.bounced > 0 && t('emailFlow.history.bounced', { n: formatCount(totals.bounced) }),
+    totals.notSent > 0 && t('emailFlow.history.notSent', { n: formatCount(totals.notSent) }),
     totals.unsubscribed > 0 && t('emailFlow.history.unsubscribed', { n: formatCount(totals.unsubscribed) }),
   ].filter(Boolean) : []
+  const outcome = outcomeText(t, state, totals)
   return (
     <li>
       <button type="button" onClick={() => onOpen(row)} aria-label={t('emailFlow.history.open', { subject: row.subject })}
@@ -52,10 +67,14 @@ function HistoryRow({ row, audienceLabel, onOpen }) {
           {state === 'sending' && totals.recipients > 0 && (
             <span className="mt-2 block">
               <span className="block h-1.5 overflow-hidden rounded-full bg-neutral-200"><span className="block h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, (totals.processed / totals.recipients) * 100)}%` }} /></span>
-              <span className="mt-1 block text-xs text-neutral-600 tabular-nums">{t('emailFlow.history.progress', { done: formatCount(totals.processed), total: formatCount(totals.recipients) })}</span>
+              <span className="mt-1 block text-xs text-neutral-600 tabular-nums">
+                {t('emailFlow.history.progress', { done: formatCount(totals.handedOff), total: formatCount(totals.recipients) })}
+                {totals.notSent > 0 && ` · ${t('emailFlow.history.notSent', { n: formatCount(totals.notSent) })}`}
+              </span>
             </span>
           )}
           {state === 'notSent' && <span className="mt-1 block text-sm text-red-800">{blockedText(t, row.blocked_reason)}</span>}
+          {outcome && <span className={`mt-1 block text-sm ${state === 'notDelivered' ? 'text-red-800' : 'text-amber-900'}`}>{outcome}</span>}
           {stats.length > 0 && state !== 'sending' && <span className="mt-1 block text-sm text-neutral-700 tabular-nums">{stats.join(' · ')}</span>}
         </span>
         <ChevronRight aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-neutral-400" />
@@ -71,6 +90,7 @@ function MailingDetail({ row, audienceLabel, busy, onClose, onCancel, onContinue
   const closeRef = useRef(null)
   const state = mailingState(row)
   const totals = deliveryTotals(row)
+  const outcome = outcomeText(t, state, totals)
   const stats = [['recipients', totals.recipients], ['delivered', totals.delivered], ['waiting', totals.waiting], ['bounced', totals.bounced], ['spam', totals.spam], ['notSent', totals.notSent], ['unsubscribed', totals.unsubscribed]]
   const filterText = describeFilters(t, row.filters, row.audience === 'platform' ? 'platform' : 'organizer')
   return (
@@ -78,9 +98,11 @@ function MailingDetail({ row, audienceLabel, busy, onClose, onCancel, onContinue
       <div className="flex flex-wrap items-center gap-2"><StateBadge state={state} /><span className="text-sm text-neutral-600">{whenText(t, row, state)}</span></div>
       <h2 id={`${ids}-title`} className="mt-2 break-words text-xl font-semibold text-neutral-950 [overflow-wrap:anywhere]">{row.subject}</h2>
       {state === 'notSent' && <p className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{blockedText(t, row.blocked_reason)}</p>}
+      {outcome && <p className={`mt-3 flex items-start gap-2 rounded-xl border p-3 text-sm ${state === 'notDelivered' ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-950'}`}><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{outcome}</p>}
       <dl className="mt-4 text-sm">
         <div className="flex gap-2"><dt className="text-neutral-500">{t('emailFlow.history.audience')}</dt><dd className="min-w-0 break-words font-medium text-neutral-900">{audienceLabel(row.audience)}{filterText && ` · ${filterText}`}</dd></div>
       </dl>
+      {state === 'starting' && canCancel(row) && <p className="mt-3 text-sm text-neutral-700">{t('emailFlow.history.startingNote')}</p>}
       {totals.recipients > 0 && <>
         <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {stats.map(([key, value]) => (
@@ -108,7 +130,7 @@ function MailingDetail({ row, audienceLabel, busy, onClose, onCancel, onContinue
       ) : (
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button ref={closeRef} type="button" className="btn-secondary" disabled={busy} onClick={onClose}>{t('emailFlow.history.close')}</button>
-          {state === 'scheduled' && <button type="button" className="btn-secondary text-red-700" disabled={busy} onClick={() => setConfirmingCancel(true)}>{t('emailFlow.history.cancel')}</button>}
+          {canCancel(row) && <button type="button" className="btn-secondary text-red-700" disabled={busy} onClick={() => setConfirmingCancel(true)}>{t('emailFlow.history.cancel')}</button>}
           {state === 'draft' && <button type="button" className="btn-primary" disabled={busy} onClick={() => onContinue(row)}>{t('emailFlow.history.continueDraft')}</button>}
         </div>
       )}

@@ -52,6 +52,54 @@ RSpec.describe "Audience mailing display fields", type: :request do
     expect(response.parsed_body).to include("eligible" => 1, "considered" => 1)
   end
 
+  describe "audience scope (organizers never see platform list counts)" do
+    let(:profile) { create(:organizer_profile) }
+    let(:org) { profile.organization }
+    let(:headers) { auth_headers(profile.user).merge("X-Organization-Id" => org.id.to_s) }
+
+    before do
+      subscriber("on-platform@example.test", "confirmed")
+      subscriber("also-platform@example.test", "confirmed")
+    end
+
+    it "rejects the platform audience and unknown audiences for organizers before counting anyone" do
+      [{ audience: "platform" }, { audience: "platform", q: "on-platform@example.test" }, { audience: "everyone" }].each do |params|
+        get "/api/v1/audience_mailings/audience", params: params, headers: headers
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body.keys).to eq(["error"])
+      end
+    end
+
+    it "does not export the platform audience to organizers" do
+      expect {
+        get "/api/v1/audience_mailings/audience", params: { audience: "platform", format: "csv" }, headers: headers
+      }.not_to change(AuditLog, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).not_to include("on-platform@example.test")
+    end
+
+    it "counts only the organizer's own list when searching for a platform-only address" do
+      get "/api/v1/audience_mailings/audience", params: { audience: "buyers", q: "on-platform@example.test" }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("eligible" => 0, "count" => 0, "considered" => 0, "subscribers" => [])
+    end
+
+    it "never counts platform subscribers for an organizer mailing, even if built directly" do
+      mailing = AudienceMailing.new(organization: org, created_by: profile.user, subject: "S", body: "B", audience: "platform")
+
+      expect(mailing.candidate_count).to eq(0)
+    end
+
+    it "still lets an admin search the platform list" do
+      get "/api/v1/audience_mailings/audience", params: { scope: "platform", q: "on-platform" }, headers: auth_headers(admin)
+
+      expect(response.parsed_body).to include("eligible" => 1, "considered" => 1)
+    end
+  end
+
   it "returns the address a self-test went to" do
     stub_const("ENV", ENV.to_h.merge("HAFAPASS_POSTAL_ADDRESS" => "TEST FIXTURE ADDRESS — not for delivery"))
     allow(ClerkIdentity).to receive(:email_matches?).and_return(true)

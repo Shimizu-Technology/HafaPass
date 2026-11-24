@@ -35,7 +35,8 @@ export function audienceBreakdown(list, scope) {
     for (const [key, count] of [['pending', pending], ['unsubscribed', unsubscribed], ['bounced', bounced], ['blocked', blocked]]) {
       if (count > 0) reasons.push({ key, count })
     }
-  } else if (excluded > 0) {
+  } else if (excluded > 0 && scope !== 'platform') {
+    // Platform reasons need `status_breakdown`; an older API omits it, so show no reasons then.
     reasons.push({ key: 'noConsent', count: excluded })
   }
   return { eligible, considered, excluded, reasons }
@@ -49,31 +50,55 @@ export function zeroReason({ list, scope, filterCount }) {
   return 'allLeftOut'
 }
 
+// Delivery outcomes, from MessageDelivery statuses. Only `delivered` means the
+// provider confirmed delivery; `sent`/`delayed` were handed off with no result
+// yet; `failed`, `suppressed` and `cancelled` never left HåfaPass.
 export function deliveryTotals(row) {
   const counts = row?.counts || {}
   const n = key => Number(counts[key]) || 0
   const tracked = Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0)
-  const recipients = Math.max(Number(row?.recipient_count) || 0, tracked)
-  const delivered = n('delivered') + n('opened') + n('clicked')
-  const waiting = n('queued') + n('sent') + n('delayed')
-  const bounced = n('bounced')
+  // The job records who it actually selected when sending starts; before that there is no count.
+  const started = ['queueing', 'queued'].includes(row?.status)
+  const recipients = started ? Number(row?.recipient_count) || tracked : tracked
+  const queued = n('queued')
+  const accepted = n('sent') + n('delayed')
+  const delivered = n('delivered')
   const spam = n('complained')
-  const notSent = n('failed') + n('suppressed') + n('cancelled')
-  return { recipients, delivered, waiting, bounced, spam, notSent, unsubscribed: Number(row?.unsubscribed) || 0, processed: Math.max(0, recipients - n('queued')) }
+  const bounced = n('bounced')
+  const failed = n('failed')
+  const skipped = n('suppressed') + n('cancelled')
+  const handedOff = accepted + delivered + spam + bounced
+  const notSent = failed + skipped
+  return {
+    recipients, queued, accepted, delivered, spam, bounced, failed, skipped, handedOff, notSent,
+    reached: accepted + delivered + spam,
+    waiting: queued + accepted,
+    processed: handedOff + notSent,
+    unsubscribed: Number(row?.unsubscribed) || 0,
+  }
 }
 
-// The state a person cares about, derived from the mailing and its deliveries.
+// The state a person cares about, derived from the mailing and its delivery outcomes.
 export function mailingState(row, now = Date.now()) {
   switch (row?.status) {
     case 'draft': return 'draft'
     case 'cancelled': return 'cancelled'
     case 'blocked': return 'notSent'
     case 'queueing': return 'sending'
-    case 'queued': return (Number(row.counts?.queued) || 0) > 0 ? 'sending' : 'sent'
+    case 'queued': {
+      const totals = deliveryTotals(row)
+      if (totals.recipients === 0) return 'notDelivered'
+      if (totals.queued > 0) return 'sending'
+      if (totals.reached === 0) return 'notDelivered'
+      return totals.notSent > 0 ? 'partial' : 'sent'
+    }
     case 'scheduled': return row.scheduled_at && Date.parse(row.scheduled_at) > now ? 'scheduled' : 'starting'
     default: return 'sent'
   }
 }
+
+// Only the server's status decides whether a send can still be cancelled; its lock settles races.
+export const canCancel = row => row?.status === 'scheduled'
 
 export const STATE_TONES = {
   draft: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
@@ -81,9 +106,15 @@ export const STATE_TONES = {
   starting: 'bg-sky-50 text-sky-800 ring-sky-200',
   sending: 'bg-amber-50 text-amber-900 ring-amber-200',
   sent: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+  partial: 'bg-amber-50 text-amber-900 ring-amber-200',
+  notDelivered: 'bg-red-50 text-red-800 ring-red-200',
   cancelled: 'bg-neutral-100 text-neutral-600 ring-neutral-200',
   notSent: 'bg-red-50 text-red-800 ring-red-200',
 }
+
+// A lapsed schedule: the picked time is past or too close to send as "later".
+export const SCHEDULE_MARGIN_MS = 60_000
+export const scheduleLapsed = (scheduledAt, now = Date.now()) => !(Date.parse(scheduledAt) > now + SCHEDULE_MARGIN_MS)
 
 const dateTime = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 const shortDate = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' })

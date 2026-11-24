@@ -35,6 +35,8 @@ class AudienceMailing < ApplicationRecord
   # Display only: people in the chosen organizer list who match the search,
   # before consent and suppression checks. Never used to select recipients.
   def candidate_count
+    return 0 if organization_id.nil? != (audience == "platform")
+
     base_emails.count { |email| email.downcase.include?(filters["q"].to_s.downcase) }
   end
 
