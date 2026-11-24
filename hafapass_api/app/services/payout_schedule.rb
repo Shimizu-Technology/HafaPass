@@ -17,6 +17,10 @@ class PayoutSchedule
   RESERVE_DAYS = 30
   RESERVE_KINDS = %w[reserve_hold reserve_release].freeze
   IN_FLIGHT_STATUSES = %w[pending processing held].freeze
+  # Any of these means the event's money is already committed to a payout, so
+  # a reserve can no longer be carved out of it (Payout::MONEY_RESERVED_STATUSES).
+  COMMITTED_STATUSES = Payout::MONEY_RESERVED_STATUSES.map(&:to_s).freeze
+  SKIP_ACTION = "payout_reserve.skipped"
 
   def self.for(event, at: Time.current, result: nil)
     new(event, at: at, result: result)
@@ -85,18 +89,36 @@ class PayoutSchedule
     end_date && PayoutCalendar.add_business_days(end_date, TRANSFER_DUE_BUSINESS_DAYS)
   end
 
-  def reserve_release_on
+  # The standard release date for a new hold: 30 days after the event ends.
+  def standard_release_on
     end_date && end_date + RESERVE_DAYS
+  end
+
+  # The release date agreed when the reserve was held, stored on the hold and
+  # immutable; editing the event later cannot move it. Older hand-entered holds
+  # without a date fall back to the standard date.
+  def reserve_release_on
+    stored = active_holds.filter_map(&:reserve_release_on).max
+    stored || standard_release_on
   end
 
   def reserve_release_due?
     reserve_release_on.present? && today >= reserve_release_on
   end
 
-  # When the transfer of a released reserve is due: the same 3 business days,
-  # counted from the release date.
+  # The day the reserve was actually released, in the event's calendar.
+  def reserve_released_on
+    release = reserve_adjustments.select do |adjustment|
+      adjustment.kind == "reserve_release" && adjustment.status_posted? && adjustment.reversal_of_id.nil?
+    end.max_by(&:effective_at)
+    release && PayoutCalendar.local_date(release.effective_at, event)
+  end
+
+  # The remainder after a release is due 3 business days after the day it was
+  # actually released; the release day itself is not day one.
   def remainder_due_on
-    reserve_release_on && PayoutCalendar.add_business_days(reserve_release_on - 1, TRANSFER_DUE_BUSINESS_DAYS)
+    released = reserve_released_on
+    released && PayoutCalendar.add_business_days(released, TRANSFER_DUE_BUSINESS_DAYS)
   end
 
   def net_before_reserve_cents
@@ -119,10 +141,22 @@ class PayoutSchedule
     @reserve_adjustments ||= event.balance_adjustments.effective.where(kind: RESERVE_KINDS).order(:id).to_a
   end
 
-  # A reserve hold that is still posted (not reversed). After the 30-day
+  # Reserve holds that are still posted (not reversed). After the 30-day
   # release the hold stays posted and the release offsets it.
+  def active_holds
+    reserve_adjustments.select { |adjustment| adjustment.kind == "reserve_hold" && adjustment.status_posted? && adjustment.reversal_of_id.nil? }
+  end
+
   def reserve_hold_posted?
-    reserve_adjustments.any? { |adjustment| adjustment.kind == "reserve_hold" && adjustment.status_posted? }
+    active_holds.any?
+  end
+
+  # An administrator chose to finalize without the standard reserve
+  # (PayoutReserves.skip!). The audit record is the durable decision.
+  def reserve_skipped?
+    return @reserve_skipped if defined?(@reserve_skipped)
+
+    @reserve_skipped = AuditLog.where(auditable_type: "Event", auditable_id: event.id, action: SKIP_ACTION).exists?
   end
 
   def reserve_released_cents
@@ -180,6 +214,22 @@ class PayoutSchedule
     payouts.any?(&:status_paid?)
   end
 
+  # A payout is pending, processing, held or paid for this event.
+  def payout_committed?
+    payouts.any? { |payout| COMMITTED_STATUSES.include?(payout.status) }
+  end
+
+  # What the organizer can still expect, counting the reserve that comes back
+  # on its release date. Negative: they owe it even after the reserve.
+  def still_to_come_cents
+    owed_cents + reserve_held_cents
+  end
+
+  def reserve_suggested?
+    !payout_committed? && !reserve_hold_posted? && !reserve_skipped? && suggested_reserve_cents.positive? &&
+      event.completed?
+  end
+
   # One step at a time, in the order finance does them. Each step names the
   # action that moves the event forward.
   def next_step
@@ -187,9 +237,7 @@ class PayoutSchedule
     return "complete_event" unless event.completed? || event.cancelled? || event.archived?
     return "record_transfer" if in_flight_payout
     return "resolve_money" if money_blocker && (owed_cents.positive? || reserve_held_cents.positive?)
-    if !first_transfer_sent? && !reserve_hold_posted? && suggested_reserve_cents.positive? && !event.cancelled?
-      return "hold_reserve"
-    end
+    return "hold_reserve" if reserve_suggested?
     if owed_cents.positive?
       return payable_settlement && payable_settlement.available_to_payout_cents.positive? ? "send_transfer" : "finalize_statement"
     end
@@ -210,7 +258,7 @@ class PayoutSchedule
     actions << "record_transfer" if in_flight_payout
     return actions if money_blocker
 
-    actions << "hold_reserve" if !reserve_hold_posted? && suggested_reserve_cents.positive? && !first_transfer_sent? &&
+    actions << "hold_reserve" if !reserve_hold_posted? && !payout_committed? && suggested_reserve_cents.positive? &&
       event.completed?
     actions << "finalize_statement" if !payable_settlement && owed_cents.positive?
     actions << "send_transfer" if !in_flight_payout && payable_settlement&.available_to_payout_cents.to_i.positive? &&

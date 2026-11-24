@@ -104,8 +104,54 @@ RSpec.describe PayoutStatement do
     expect(statement[:totals]).to include(net_proceeds_cents: 2850, reserve_held_cents: 1005,
       transferred_cents: 9045, balance_remaining_cents: -7200)
     expect(statement[:status]).to eq("reserve_held")
-    expect(statement[:notes].last).to include("you owe $72.00")
+    # The $10.05 reserve absorbs part of the $72.00 in chargebacks.
+    expect(statement[:totals][:still_to_come_cents]).to eq(-7200 + 1005)
+    expect(statement[:notes].last).to include("you owe $61.95, even after your $10.05 reserve.")
     expect_statement_to_reconcile(statement, event)
+  end
+
+  # Finding 5 of the PR #239 review: a refund after the payout that the reserve
+  # covers is not a debt. "You owe" is decided with the reserve included.
+  it "does not say the organizer owes money the held reserve still covers" do
+    approved_bank_account!(organization, actor: profile.user, admin: admin)
+    allow(PayoutGateway).to receive(:submit) { |payout| PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing) }
+    big = create(:ticket_type, event: event, name: "Adult", price_cents: 9900)
+    order, item, capture = record_card_sale!(event, ticket_type: big, quantity: 1, processing_fee_cents: 300, bearer: "platform")
+    PayoutReserves.hold!(event: event, actor: admin)
+    settlement = Settlements::Finalizer.call(event: event, actor: admin)
+    payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "covered-refund")
+    expect(payout.amount_cents).to eq(8910)
+    payout.update_columns(status: Payout.statuses[:paid], provider_payout_id: "TRF-COVERED", paid_at: Time.current)
+    record_card_refund!(order, item, capture, proceeds_cents: 500)
+
+    statement = build_statement
+    expect(statement[:totals]).to include(balance_remaining_cents: -500, reserve_held_cents: 990, still_to_come_cents: 490)
+    expect(statement[:closing]).to eq(
+      lines: [
+        { label: "Balance after transfers, not counting the reserve", amount_cents: -500, note: nil },
+        { label: "Reserve still held", amount_cents: 990, note: "Comes back to you on Mar 1, 2027, less any later refunds or chargebacks." }
+      ],
+      total_label: "Still to come", total_cents: 490
+    )
+    expect(statement[:notes].join(" ")).not_to include("you owe")
+    expect(statement[:notes]).to include("Refunds or chargebacks after your payout ($5.00) come out of your $9.90 reserve. " \
+      "You will get the remaining $4.90 when it is released.")
+    expect(statement[:contradictions]).to eq([])
+    expect_statement_to_reconcile(statement, event)
+
+    # Bigger than the reserve: now it is a debt, said once, with the reserve counted.
+    record_lost_chargeback!(order, capture, amount_cents: 2000)
+    owing = build_statement
+    expect(owing[:closing]).to include(total_label: "You owe", total_cents: 490 - 2000)
+    expect(owing[:notes].last).to include("you owe $15.10, even after your $9.90 reserve")
+    expect_statement_to_reconcile(owing, event)
+  end
+
+  it "flags a statement whose words contradict its numbers" do
+    record_card_sale!(event, ticket_type: adult, quantity: 1, processing_fee_cents: 0)
+    statement = described_class.new(event: event)
+    allow(statement).to receive(:notes).and_return(["Chargebacks or refunds after your payout mean you owe $1.00."])
+    expect(statement.call).to include(reconciles: false, contradictions: ["owe_note_mismatch"])
   end
 
   it "keeps exact cents on a $1,000,000.00 event" do

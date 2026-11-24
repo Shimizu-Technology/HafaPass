@@ -60,14 +60,24 @@ class AdminPayoutDueList
 
   attr_reader :at, :filter
 
+  def organization_available(organization)
+    (@organization_available ||= {})[organization.id] ||= OrganizationPayoutBalance.available_cents(organization)
+  end
+
+  # Recent ended events, plus every older event that still has money activity
+  # and has not been archived (archiving requires its money to be closed), so
+  # an unpaid event never ages out of the list. Fully settled older events are
+  # computed and then dropped as "done".
   def candidate_events
-    recent = Event.where(status: %i[published completed cancelled])
-      .where("COALESCE(events.ends_at, events.starts_at) >= ?", at - LOOKBACK_DAYS.days)
-      .where("events.starts_at <= ?", at)
+    started = Event.where(status: %i[published completed cancelled]).where("events.starts_at <= ?", at)
+    recent = started.where("COALESCE(events.ends_at, events.starts_at) >= ?", at - LOOKBACK_DAYS.days)
+    with_sales = started.where(id: Order.excluding_test_payments
+      .where(status: OrganizationFinanceSummary::SETTLED_ORDER_STATUSES).select(:event_id))
     reserved = BalanceAdjustment.effective.where(kind: PayoutSchedule::RESERVE_KINDS).where.not(event_id: nil).select(:event_id)
     in_flight = Payout.where(status: PayoutSchedule::IN_FLIGHT_STATUSES).select(:event_id)
-    Event.where(id: recent.select(:id)).or(Event.where(id: reserved)).or(Event.where(id: in_flight))
-      .where.not(status: :draft).includes(:organization).order(:id)
+    Event.where(id: recent.select(:id)).or(Event.where(id: with_sales.select(:id)))
+      .or(Event.where(id: reserved)).or(Event.where(id: in_flight))
+      .where.not(status: %i[draft archived]).includes(:organization).order(:id)
   end
 
   def row(schedule)
@@ -103,10 +113,17 @@ class AdminPayoutDueList
       in_flight_cents: schedule.in_flight_cents,
       owed_cents: schedule.owed_cents,
       # What is left to send once the reserve is released (negative: owed).
-      after_release_cents: schedule.owed_cents + schedule.reserve_held_cents,
+      after_release_cents: schedule.still_to_come_cents,
+      reserve_release_due: schedule.reserve_release_due?,
+      reserve_released_on: schedule.reserve_released_on,
+      reserve_skipped: schedule.reserve_skipped?,
       payout_account_ready: event.organization.payout_account.present?,
       settlement: settlement && { id: settlement.id, version: settlement.version,
-                                  available_to_payout_cents: settlement.available_to_payout_cents },
+                                  available_to_payout_cents: settlement.available_to_payout_cents,
+                                  # What PayoutCreator would accept now: also capped
+                                  # by the organization-wide payout balance.
+                                  requestable_cents: [settlement.available_to_payout_cents,
+                                    organization_available(event.organization)].min },
       in_flight_payout: payout && { id: payout.id, status: payout.status, amount_cents: payout.amount_cents,
                                     disbursement_cents: payout.disbursement_cents },
       currency: event.organization.currency

@@ -27,12 +27,23 @@ class Api::V1::Admin::PayoutSchedulesController < Api::V1::Admin::BaseController
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  # skip_reserve=true finalizes without the standard reserve; it needs a
+  # skip_reason and writes payout_reserve.skipped (who, why, which version),
+  # even when an identical statement was already finalized.
   def finalize
+    skip = ActiveModel::Type::Boolean.new.cast(params[:skip_reserve])
+    if skip && params[:skip_reason].to_s.strip.length < PayoutReserves::MIN_EARLY_REASON_LENGTH
+      return render json: { error: "Explain why this event is paid without a reserve (at least 10 characters)" },
+        status: :unprocessable_entity
+    end
+
     settlement = Settlements::Finalizer.call(event: @event, actor: current_user, request: request)
+    PayoutReserves.skip!(event: @event, actor: current_user, skip_reason: params[:skip_reason], settlement: settlement,
+      request: request) if skip
     render json: { id: settlement.id, version: settlement.version, payable_cents: settlement.payable_cents,
-      reserve_cents: settlement.reserve_cents, available_to_payout_cents: settlement.available_to_payout_cents },
-      status: :created
-  rescue Settlements::Finalizer::FinalizationError => e
+      reserve_cents: settlement.reserve_cents, available_to_payout_cents: settlement.available_to_payout_cents,
+      reserve_skipped: skip }, status: :created
+  rescue Settlements::Finalizer::FinalizationError, PayoutReserves::ReserveError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end
 

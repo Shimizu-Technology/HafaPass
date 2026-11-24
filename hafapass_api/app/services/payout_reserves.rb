@@ -5,9 +5,14 @@
 # calculator, statements, payout balance and every existing payout guard see
 # them exactly as they see a hand-entered reserve. Neither moves money.
 #
-# Locks follow docs/LOCKING.md: organization (FOR UPDATE, matching
-# BalanceAdjustmentsController, PayoutCreator and Settlements::Finalizer),
-# then the event row. Both are rechecked after the locks are held.
+# Locks follow docs/LOCKING.md ("Payout reserve hold, release and skip"):
+# organization FOR NO KEY UPDATE, then the event FOR NO KEY UPDATE, like refund
+# finalization. NO KEY UPDATE still conflicts with PayoutCreator's and the
+# finalizer's organization FOR UPDATE and with another reserve request, so a
+# hold cannot slip between a payout's checks and its insert. Unlike FOR UPDATE
+# it allows the organization FK KEY SHARE that an order completion holding the
+# event takes for its audit insert, so the two cannot deadlock.
+# Everything is rechecked after the locks are held.
 class PayoutReserves
   class ReserveError < StandardError; end
 
@@ -21,7 +26,14 @@ class PayoutReserves
     new(**).release!
   end
 
-  def initialize(event:, actor:, amount_cents: nil, note: nil, early_release_reason: nil, request: nil)
+  def self.skip!(**)
+    new(**).skip!
+  end
+
+  def initialize(event:, actor:, amount_cents: nil, note: nil, early_release_reason: nil, skip_reason: nil,
+    settlement: nil, request: nil)
+    @skip_reason = skip_reason.to_s.strip.presence
+    @settlement = settlement
     @event = event
     @actor = actor
     @amount_cents = amount_cents
@@ -35,7 +47,9 @@ class PayoutReserves
     with_locks do |schedule|
       raise ReserveError, "Complete the event before holding its reserve" unless event.completed?
       raise ReserveError, "A reserve is already held for this event" if schedule.reserve_hold_posted?
-      raise ReserveError, "This event's first transfer was already sent" if schedule.first_transfer_sent?
+      if schedule.payout_committed?
+        raise ReserveError, "This event already has a payout requested or sent; hold the reserve before requesting the payout"
+      end
       if (blocker = schedule.money_blocker)
         raise ReserveError, "#{blocker} before holding the reserve"
       end
@@ -47,11 +61,11 @@ class PayoutReserves
       raise ReserveError, "Reserve must be a positive amount" unless amount.positive?
       raise ReserveError, "Reserve cannot be more than the event's net proceeds" if amount > net
 
-      release_on = schedule.reserve_release_on
+      release_on = schedule.standard_release_on
       reason = "Chargeback reserve: #{percent_label(amount, net)} of #{money(net)} net proceeds, " \
         "held until #{release_on.iso8601}"
       reason += ". #{note}" if note
-      post!(kind: "reserve_hold", amount_cents: -amount, reason: reason,
+      post!(kind: "reserve_hold", amount_cents: -amount, reason: reason, reserve_release_on: release_on,
         metadata: { reserve_rate_bps: PayoutSchedule::RESERVE_RATE_BPS, net_before_reserve_cents: net,
           suggested_reserve_cents: suggested, reserve_cents: amount, release_on: release_on.iso8601,
           amount_overridden: amount != suggested })
@@ -84,9 +98,32 @@ class PayoutReserves
     end
   end
 
+  # Records an administrator's decision to pay this event without the
+  # standard reserve, with who and why, against the statement version they
+  # finalized (new or identical). Called after Settlements::Finalizer so an
+  # identical, already-finalized statement still records the decision.
+  def skip!
+    authorize!
+    if skip_reason.to_s.length < MIN_EARLY_REASON_LENGTH
+      raise ReserveError, "Explain why this event is paid without a reserve (at least #{MIN_EARLY_REASON_LENGTH} characters)"
+    end
+    raise ReserveError, BackupWithholding::TIN_WARNING unless BackupWithholding.safe_text?(skip_reason)
+
+    with_locks do |schedule|
+      raise ReserveError, "A reserve is already held for this event" if schedule.reserve_hold_posted?
+      raise ReserveError, "This event already has a payout requested or sent" if schedule.payout_committed?
+
+      AuditLogger.record!(action: PayoutSchedule::SKIP_ACTION, auditable: event, actor: actor,
+        organization: event.organization, event: event,
+        metadata: { reason: skip_reason, settlement_id: settlement&.id, settlement_version: settlement&.version,
+          suggested_reserve_cents: schedule.suggested_reserve_cents, net_before_reserve_cents: schedule.net_before_reserve_cents },
+        request: request)
+    end
+  end
+
   private
 
-  attr_reader :event, :actor, :amount_cents, :note, :early_release_reason, :request
+  attr_reader :event, :actor, :amount_cents, :note, :early_release_reason, :skip_reason, :settlement, :request
 
   def authorize!
     raise ReserveError, "Administrator access is required" unless actor&.persisted? && actor.admin?
@@ -95,8 +132,8 @@ class PayoutReserves
 
   def with_locks
     BalanceAdjustment.transaction do
-      event.organization.lock!
-      event.lock!
+      event.organization.lock!("FOR NO KEY UPDATE")
+      event.lock!("FOR NO KEY UPDATE")
       yield PayoutSchedule.for(event)
     end
   end
@@ -108,11 +145,11 @@ class PayoutReserves
     amount_cents.to_i
   end
 
-  def post!(kind:, amount_cents:, reason:, metadata:)
+  def post!(kind:, amount_cents:, reason:, metadata:, reserve_release_on: nil)
     organization = event.organization
     adjustment = organization.balance_adjustments.create!(event: event, created_by_user: actor, kind: kind,
       amount_cents: amount_cents, currency: organization.currency, status: :posted, reason: reason,
-      effective_at: Time.current)
+      effective_at: Time.current, reserve_release_on: reserve_release_on)
     AuditLogger.record!(action: "balance_adjustment.posted", auditable: adjustment, actor: actor,
       organization: organization, event: event,
       after_data: adjustment.attributes.slice("id", "event_id", "kind", "amount_cents", "currency", "status", "reason"),

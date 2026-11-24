@@ -62,7 +62,7 @@ RSpec.describe PayoutReserves do
     create(:payout, organization: organization, event: event, connected_account: account, status: :paid,
       provider_payout_id: "TRF-EARLIER")
     expect { described_class.hold!(event: event, actor: admin) }
-      .to raise_error(described_class::ReserveError, "This event's first transfer was already sent")
+      .to raise_error(described_class::ReserveError, /already has a payout requested or sent/)
     expect(BalanceAdjustment.count).to eq(0)
   end
 
@@ -122,6 +122,57 @@ RSpec.describe PayoutReserves, "concurrency", :non_transactional do
     clean_test_data
   end
   after { clean_test_data }
+
+  # Finding 2 of the PR #239 review: an order completion holds the event row
+  # and then needs the organization FK KEY SHARE for its audit insert. A hold
+  # that took the organization FOR UPDATE and then waited for the event made
+  # PostgreSQL abort one side with a deadlock.
+  it "does not deadlock with an order completion that holds the event and then writes its audit" do
+    admin = create(:user, :admin)
+    profile = create(:organizer_profile, :verified)
+    organization = profile.organization
+    event = create(:event, :completed, organization: organization, organizer_profile: profile)
+    record_card_sale!(event, ticket_type: create(:ticket_type, event: event, price_cents: 2000), quantity: 5,
+      processing_fee_cents: 100)
+    event_held = Queue.new
+    hold_pid = Queue.new
+    results = Queue.new
+    completion = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        Event.transaction do
+          connection.execute("SET LOCAL lock_timeout = '8s'")
+          Event.lock("FOR NO KEY UPDATE").find(event.id)
+          event_held << true
+          pid = hold_pid.pop
+          Timeout.timeout(8) do
+            sleep 0.02 until connection.select_value("SELECT cardinality(pg_blocking_pids(#{pid.to_i}))").to_i.positive?
+          end
+          # What an AuditLog (or any organization FK) insert takes.
+          connection.execute("SELECT 1 FROM organizations WHERE id = #{organization.id.to_i} FOR KEY SHARE")
+        end
+        results << :completion_committed
+      rescue StandardError => error
+        results << error
+      end
+    end
+    reserve = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        hold_pid << connection.select_value("SELECT pg_backend_pid()")
+        event_held.pop
+        connection.execute("SET lock_timeout = '8s'")
+        results << described_class.hold!(event: Event.find(event.id), actor: User.find(admin.id))
+      ensure
+        connection.execute("SET lock_timeout = DEFAULT")
+      end
+    rescue StandardError => error
+      results << error
+    end
+    Timeout.timeout(20) { [completion, reserve].each(&:join) }
+    outcomes = Array.new(2) { results.pop }
+    expect(outcomes.grep(StandardError)).to eq([])
+    expect(outcomes).to include(:completion_committed)
+    expect(outcomes.grep(BalanceAdjustment).sole.amount_cents).to eq(-990)
+  end
 
   it "posts exactly one reserve when two administrators hold it at once" do
     admin = create(:user, :admin)

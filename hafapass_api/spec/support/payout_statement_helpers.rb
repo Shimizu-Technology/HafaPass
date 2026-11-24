@@ -86,6 +86,9 @@ module PayoutStatementHelpers
       .to eq(sections.last.fetch(:total_cents) - totals.fetch(:transferred_cents) - totals.fetch(:in_progress_cents))
     expect(totals.fetch(:transferred_cents)).to eq(event.payouts.status_paid.sum(:amount_cents))
     expect(totals.fetch(:still_to_come_cents)).to eq(totals.fetch(:balance_remaining_cents) + totals.fetch(:reserve_held_cents))
+    expect(statement.fetch(:closing).fetch(:total_cents)).to eq(totals.fetch(:still_to_come_cents))
+    expect(statement.fetch(:notes).any? { |note| note.include?("you owe") }).to eq(totals.fetch(:still_to_come_cents).negative?)
+    expect(statement.fetch(:contradictions)).to eq([])
     expect(statement.fetch(:reconciles)).to be(true)
     expect(statement.fetch(:difference_cents)).to eq(0)
   end

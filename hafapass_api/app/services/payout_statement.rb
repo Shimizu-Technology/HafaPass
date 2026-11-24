@@ -42,8 +42,10 @@ class PayoutStatement
       sales_by_ticket: sales_by_ticket,
       sections: sections,
       totals: totals,
-      reconciles: difference_cents.zero?,
+      closing: closing,
+      reconciles: difference_cents.zero? && contradictions.empty?,
       difference_cents: difference_cents,
+      contradictions: contradictions,
       notes: notes,
       transfers: transfers,
       payout: payout && payout_json(payout).merge(version: version_json(payout.settlement))
@@ -69,7 +71,8 @@ class PayoutStatement
     data[:transfers].each do |transfer|
       rows << ["Transfers", transfer_label(transfer), transfer[:counted_cents], transfer[:status_label]]
     end
-    rows << ["Balance", "Balance remaining", data[:totals][:balance_remaining_cents], nil]
+    data[:closing][:lines].each { |line| rows << ["Balance", line[:label], line[:amount_cents], line[:note]] }
+    rows << ["Balance", data[:closing][:total_label], data[:closing][:total_cents], nil]
     data[:notes].each { |note| rows << ["Notes", note, nil, nil] }
     rows
   end
@@ -383,6 +386,43 @@ class PayoutStatement
     }
   end
 
+  # After the transfers: when a reserve is still held, show the balance
+  # without it and the reserve itself, so "you owe" is only ever said about
+  # money the reserve does not cover.
+  def closing
+    @closing ||= begin
+      lines = []
+      if totals[:reserve_held_cents].positive?
+        lines << line("Balance after transfers, not counting the reserve", totals[:balance_remaining_cents])
+        lines << line("Reserve still held", totals[:reserve_held_cents], reserve_still_held_note)
+      end
+      still = totals[:still_to_come_cents]
+      { lines: lines, total_label: still.negative? ? "You owe" : "Still to come", total_cents: still }
+    end
+  end
+
+  def reserve_still_held_note
+    release = schedule.reserve_release_on
+    "Comes back to you#{release ? " on #{release.strftime("%b %-d, %Y")}" : ""}, less any later refunds or chargebacks."
+  end
+
+  # Statements that add up can still say contradictory things. Each entry
+  # names one; any entry makes reconciles false and the page warns.
+  def contradictions
+    @contradictions ||= begin
+      found = []
+      closing_sum = reserve_section[:total_cents] + transfers.sum { |transfer| transfer[:counted_cents] } +
+        totals[:reserve_held_cents]
+      found << "closing_total" unless closing_sum == closing[:total_cents] && closing[:total_cents] == totals[:still_to_come_cents]
+      found << "final_with_money_pending" if status == "final" && (totals[:reserve_held_cents].positive? ||
+        totals[:in_progress_cents].positive? || totals[:still_to_come_cents].positive?)
+      found << "reserve_status_without_reserve" if status == "reserve_held" && !totals[:reserve_held_cents].positive?
+      owes = notes.any? { |note| note.include?("you owe") }
+      found << "owe_note_mismatch" if owes != totals[:still_to_come_cents].negative?
+      found
+    end
+  end
+
   # The settlement's own totals, compared with the statement's lines: the
   # statement's last section total must equal the calculator's balance, and
   # its first section must equal organizer proceeds.
@@ -400,6 +440,8 @@ class PayoutStatement
   end
 
   def notes
+    return @notes if @notes
+
     notes = []
     notes << "Buyers paid #{money(buyer_paid_fees_cents)} in HåfaPass fees on top of ticket prices. That was never part of your proceeds." if buyer_paid_fees_cents.positive?
     if door_cash_cents.positive?
@@ -408,11 +450,17 @@ class PayoutStatement
     if status == "waiting_for_payout" && schedule.transfer_due_on && !schedule.first_transfer_sent?
       notes << "HåfaPass sends the bank transfer within 2–3 business days after the event (by #{schedule.transfer_due_on.strftime("%b %-d, %Y")})."
     end
-    if totals[:balance_remaining_cents].negative?
-      notes << "Chargebacks or refunds after your payout mean you owe #{money(-totals[:balance_remaining_cents])}. " \
+    still = totals[:still_to_come_cents]
+    held = totals[:reserve_held_cents]
+    if still.negative?
+      covered = held.positive? ? ", even after your #{money(held)} reserve" : ""
+      notes << "Chargebacks or refunds after your payout mean you owe #{money(-still)}#{covered}. " \
         "HåfaPass takes it from your next payout."
+    elsif totals[:balance_remaining_cents].negative? && held.positive?
+      notes << "Refunds or chargebacks after your payout (#{money(-totals[:balance_remaining_cents])}) come out of your " \
+        "#{money(held)} reserve. You will get the remaining #{money(still)} when it is released."
     end
-    notes
+    @notes = notes
   end
 
   def money(cents)

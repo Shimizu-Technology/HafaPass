@@ -182,7 +182,7 @@ RSpec.describe "Admin payout schedule lifecycle", type: :request do
       expect(response).to have_http_status(:created), response.body
       row = due_row
       # Net $340 + $12 − $10.50 = $341.50; reserve $34.15; chargeback $13.00.
-      expect(row).to include("next_step" => "finalize_statement", "owed_cents" => 3415 - 1300, "due_on" => "2027-03-04")
+      expect(row).to include("next_step" => "finalize_statement", "owed_cents" => 3415 - 1300, "due_on" => "2027-03-05")
       post "/api/v1/admin/payout_schedule/#{event.id}/finalize", headers: admin_headers
       expect(response).to have_http_status(:created), response.body
       second = request_and_record_transfer!(due_row, reference: "TRF-B")
@@ -201,7 +201,7 @@ RSpec.describe "Admin payout schedule lifecycle", type: :request do
       csv = CSV.parse(response.body.delete_prefix("﻿"))
       expect(csv.first).to eq(%w[section line amount note])
       expect(csv).to include(["Chargeback reserve", "Reserve released", "34.15", a_string_including("Chargebacks")])
-      expect(csv).to include(["Balance", "Balance remaining", "0.00", ""])
+      expect(csv).to include(["Balance", "Still to come", "0.00", ""])
       expect(AuditLog.where(action: "finance.exported").last.metadata).to include("export" => "payout_statement")
     end
   end
