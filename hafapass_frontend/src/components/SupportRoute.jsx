@@ -38,6 +38,7 @@ function SupportGate({ children }) {
 
 export default function SupportRoute({ children, clerkConfigured = Boolean(clerkPubKey) }) {
   const location = useLocation()
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return children
   if (!clerkConfigured) return <Navigate to={signInDestination(location)} replace />
   return <SupportGate>{children}</SupportGate>
 }
