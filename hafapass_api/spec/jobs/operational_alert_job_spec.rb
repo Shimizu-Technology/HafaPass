@@ -152,9 +152,14 @@ RSpec.describe OperationalAlertJob do
   end
 
   describe "Stripe webhook signals" do
-    def failed_receipt(at: 1.minute.ago)
-      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_#{SecureRandom.hex(6)}",
+    def failed_receipt(at: 1.minute.ago, livemode: false)
+      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_#{SecureRandom.hex(6)}", payload: { "livemode" => livemode },
         event_type: "payment_intent.succeeded", status: :failed, created_at: at, updated_at: at)
+    end
+
+    def processed_receipt(at: Time.current)
+      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_#{SecureRandom.hex(6)}", payload: { "livemode" => false },
+        event_type: "charge.updated", status: :processed, processed_at: at, created_at: at)
     end
 
     def run_after(duration)
@@ -171,63 +176,119 @@ RSpec.describe OperationalAlertJob do
       described_class.perform_now
       expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", level: :error,
         fingerprint: ["operational-alert", "stripe_webhook_failures"], tags: { operational_signal: "stripe_webhook_failures" },
-        extra: { count: 3, window_minutes: 15, threshold: 3, stuck_processing: 0 })
+        extra: { count: 3, mode: "test", window_minutes: 15, threshold: 3, stuck_processing: 0 })
     end
 
-    it "alerts when webhooks go silent while payments are being made, and never during a quiet night" do
+    it "alerts when a paid payment never got its webhook, and never during a quiet night" do
       described_class.perform_now
       expect(Sentry).not_to have_received(:capture_message)
 
-      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
+      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago, provider_environment: "test")
       described_class.perform_now
       expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhooks_silent", level: :error,
         fingerprint: ["operational-alert", "stripe_webhooks_silent"], tags: { operational_signal: "stripe_webhooks_silent" },
         extra: hash_including(count: 1, paid_without_webhook: 1, silence_minutes: 30)).once
     end
 
-    it "dedupes: a standing incident repeats hourly, and extra evidence does not re-alert" do
-      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
+    it "alerts on a wrong signing secret even though no receipt is stored" do
+      3.times { Operations::WebhookRejections.record!(provider: "stripe", reason: "invalid_signature") }
       described_class.perform_now
-      create(:payment, status: :succeeded, succeeded_at: 44.minutes.ago)
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_signature_failures", level: :error,
+        fingerprint: ["operational-alert", "stripe_webhook_signature_failures"],
+        tags: { operational_signal: "stripe_webhook_signature_failures" },
+        extra: hash_including(count: 3, rejected_in_window: 3)).once
+    end
+
+    it "dedupes: a standing incident repeats hourly, and extra evidence does not re-alert" do
+      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago, provider_environment: "test")
+      described_class.perform_now
+      create(:payment, status: :succeeded, succeeded_at: 44.minutes.ago, provider_environment: "test")
       run_after(5.minutes)
       run_after(54.minutes)
-      expect(Sentry).to have_received(:capture_message).with(/stripe_webhooks_silent/, anything).once
+      expect(Sentry).to have_received(:capture_message).with(/Operational alert: stripe_webhooks_silent/, anything).once
 
       run_after(1.minute)
-      expect(Sentry).to have_received(:capture_message).with(/stripe_webhooks_silent/, anything).twice
+      expect(Sentry).to have_received(:capture_message).with(/Operational alert: stripe_webhooks_silent/, anything).twice
     end
 
-    it "sends one info-level recovery notice when the incident clears, then stays quiet" do
-      create(:payment, status: :succeeded, succeeded_at: 45.minutes.ago)
-      described_class.perform_now
-
-      WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_resumed", event_type: "charge.updated",
-        status: :processed, processed_at: Time.current)
-      run_after(5.minutes)
-      expect(Sentry).to have_received(:capture_message).with("Operational alert recovered: stripe_webhooks_silent", level: :info,
-        fingerprint: ["operational-alert-recovered", "stripe_webhooks_silent"],
-        tags: { operational_signal: "stripe_webhooks_silent", operational_state: "recovered" }).once
-
-      run_after(5.minutes)
-      expect(Sentry).to have_received(:capture_message).with(/recovered/, anything).once
-    end
-
-    it "alerts again at once if the incident returns after recovering" do
+    it "says recovered only when a webhook was processed after the incident opened" do
       3.times { failed_receipt }
       described_class.perform_now
-      WebhookEvent.failed.update_all(status: WebhookEvent.statuses[:processed])
+      WebhookEvent.failed.update_all(status: WebhookEvent.statuses[:processed], processed_at: Time.current + 1.minute)
       run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).with("Operational alert recovered: stripe_webhook_failures", level: :info,
+        fingerprint: ["operational-alert-recovered", "stripe_webhook_failures"],
+        tags: { operational_signal: "stripe_webhook_failures", operational_state: "recovered" }).once
+      expect(RuntimeAlertState.find("stripe_webhook_failures").incident_opened_at).to be_nil
+
+      run_after(5.minutes)
+      expect(Sentry).to have_received(:capture_message).with(/\AOperational alert recovered/, anything).once
+    end
+
+    it "says quiet, not recovered, when failures merely age out of the window, and counts the rows left" do
+      3.times { failed_receipt }
+      described_class.perform_now
+      run_after(20.minutes)
+      expect(Sentry).not_to have_received(:capture_message).with(/\AOperational alert recovered/, anything)
+      expect(Sentry).to have_received(:capture_message).with("Operational alert quiet, not confirmed recovered: stripe_webhook_failures",
+        level: :info, fingerprint: ["operational-alert-quiet", "stripe_webhook_failures"],
+        tags: { operational_signal: "stripe_webhook_failures", operational_state: "quiet" },
+        extra: hash_including(unresolved_rows: 3)).once
+    end
+
+    it "does not page again when the same signal re-opens inside the hourly interval, and no notice for an unpaged incident" do
+      3.times { failed_receipt }
+      described_class.perform_now
+      run_after(20.minutes)                       # ages out -> quiet notice
       3.times { failed_receipt(at: Time.current) }
-      run_after(5.minutes)
+      run_after(5.minutes)                        # re-opens: suppressed
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", anything).once
+
+      run_after(20.minutes)                       # clears again: it was never paged, so no second notice
+      expect(Sentry).to have_received(:capture_message).with(/quiet/, anything).once
+
+      travel(16.minutes)                          # an hour since the last page
+      3.times { failed_receipt(at: Time.current) }
+      described_class.perform_now
       expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", anything).twice
     end
 
-    it "sends no recovery notice for the older signals" do
+    it "keeps a still-failing incident open and pages hourly while it stands" do
+      3.times { failed_receipt(at: Time.current) }
+      described_class.perform_now
+      5.times do
+        travel(14.minutes)
+        3.times { failed_receipt(at: Time.current) }
+        described_class.perform_now
+      end
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_webhook_failures", anything).twice
+    end
+
+    it "sends no notice for the older signals when they clear" do
       create(:reconciliation_exception, status: :open)
       described_class.perform_now
       ReconciliationException.update_all(status: ReconciliationException.statuses[:resolved])
       run_after(5.minutes)
-      expect(Sentry).not_to have_received(:capture_message).with(/recovered/, anything)
+      expect(Sentry).not_to have_received(:capture_message).with(/recovered|quiet/, anything)
+    end
+
+    it "keeps live and test apart: test-mode failures never page in production" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      3.times { failed_receipt(livemode: false) }
+      described_class.perform_now
+      expect(Sentry).not_to have_received(:capture_message).with(/stripe_webhook_failures/, anything)
+    end
+
+    it "isolates signals: one that raises is reported and the others still run" do
+      create(:reconciliation_exception, status: :open)
+      allow(WebhookEvent).to receive(:failed).and_raise(ActiveRecord::StatementInvalid, "boom")
+      allow(Sentry).to receive(:capture_exception)
+
+      described_class.perform_now
+
+      expect(Sentry).to have_received(:capture_exception).with(an_instance_of(ActiveRecord::StatementInvalid),
+        tags: hash_including(operational_signal: "failed_payment_webhooks", operational_state: "check_failed")).at_least(:once)
+      expect_alert("open_reconciliation_exceptions", 1)
     end
   end
 end

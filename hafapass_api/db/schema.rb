@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2195,6 +2195,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.integer "last_count", default: 0, null: false
     t.datetime "last_alerted_at"
     t.datetime "updated_at", null: false
+    t.datetime "incident_opened_at"
   end
 
   create_table "runtime_executions", id: false, force: :cascade do |t|
@@ -2690,9 +2691,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.text "door_instructions"
     t.boolean "scanner_show_buyer", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
-    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
+    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying::text, 'name_only'::character varying::text, 'name_and_email'::character varying::text])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
-    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying, 'verify'::character varying]::text[])", name: "ticket_types_door_check_mode_valid"
+    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying::text, 'verify'::character varying::text])", name: "ticket_types_door_check_mode_valid"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"
@@ -2939,6 +2940,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.index ["status", "created_at"], name: "index_webhook_events_on_status_and_created_at"
     t.check_constraint "attempts >= 0", name: "webhook_events_attempts_nonnegative"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
+  end
+
+  create_table "webhook_rejection_counts", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "reason", null: false
+    t.datetime "bucket_started_at", null: false
+    t.integer "count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["bucket_started_at"], name: "index_webhook_rejection_counts_on_bucket_started_at"
+    t.index ["provider", "reason", "bucket_started_at"], name: "index_webhook_rejection_counts_on_bucket", unique: true
+    t.check_constraint "count >= 0", name: "webhook_rejection_counts_nonnegative"
   end
 
   add_foreign_key "accessible_seat_releases", "event_seats", on_delete: :restrict

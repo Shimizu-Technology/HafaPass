@@ -32,7 +32,13 @@ RSpec.describe "Stripe webhooks", type: :request do
 
     expect(response).to have_http_status(:internal_server_error)
     expect(Sentry).to have_received(:capture_exception).with(error,
-      tags: { integration: "stripe_webhook", operation: "webhook_processing" })
+      tags: { integration: "stripe_webhook", operation: "webhook_processing", area: "webhook" })
+  end
+
+  it "tags the request's Sentry scope with the webhook area before anything can fail" do
+    allow(Sentry).to receive(:set_tags).and_call_original
+    post_stripe_event("payment_intent.succeeded", { id: "pi_scope" })
+    expect(Sentry).to have_received(:set_tags).with(area: "webhook")
   end
 
   def create_pending_checkout(intent_id: "pi_checkout", quantity: 1)
@@ -188,6 +194,55 @@ RSpec.describe "Stripe webhooks", type: :request do
     end.not_to change(WebhookEvent, :count)
 
     expect(response).to have_http_status(:bad_request)
+  end
+
+  describe "rejected deliveries are counted without storing a payload" do
+    def counts = WebhookRejectionCount.pluck(:reason, :count).to_h
+
+    before do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return("whsec_test")
+    end
+
+    it "counts a Stripe-shaped signature that fails verification as invalid_signature" do
+      2.times do
+        post "/webhooks/stripe", params: { id: "evt_wrong_secret" }.to_json,
+          headers: { "Content-Type" => "application/json", "Stripe-Signature" => "t=1700000000,v1=deadbeef" }
+        expect(response).to have_http_status(:bad_request)
+      end
+      expect(counts).to eq("invalid_signature" => 2)
+      expect(WebhookRejectionCount.pluck(:bucket_started_at).uniq.size).to eq(1)
+    end
+
+    it "counts garbage and missing signatures as noise, not as a wrong secret" do
+      post "/webhooks/stripe", params: "{}", headers: { "Content-Type" => "application/json", "Stripe-Signature" => "garbage" }
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      post "/webhooks/stripe", params: "{}", headers: { "Content-Type" => "application/json" }
+      expect(counts).to eq("signature_missing" => 2)
+      expect(Operations::WebhookRejections.count(provider: "stripe", since: 1.hour.ago)).to eq(0)
+    end
+
+    it "counts a missing signing secret" do
+      allow(ENV).to receive(:[]).with("STRIPE_WEBHOOK_SECRET").and_return(nil)
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+      post "/webhooks/stripe", params: "{}", headers: { "Content-Type" => "application/json" }
+      expect(counts).to eq("secret_missing" => 1)
+    end
+
+    it "still answers 400 when counting itself fails" do
+      allow(WebhookRejectionCount).to receive(:upsert).and_raise(ActiveRecord::StatementInvalid, "down")
+      post "/webhooks/stripe", params: { id: "evt_x" }.to_json,
+        headers: { "Content-Type" => "application/json", "Stripe-Signature" => "t=1,v1=bad" }
+      expect(response).to have_http_status(:bad_request)
+      expect(response.parsed_body).to eq("error" => "Invalid signature")
+    end
+
+    it "stores no receipt, payload or header with the count" do
+      post "/webhooks/stripe", params: { id: "evt_secret_looking", card: "4242" }.to_json,
+        headers: { "Content-Type" => "application/json", "Stripe-Signature" => "t=1,v1=bad" }
+      expect(WebhookEvent.count).to eq(0)
+      expect(WebhookRejectionCount.first.attributes.values.join).not_to match(/evt_|4242|v1=bad/)
+    end
   end
 
   describe "test and live signing secrets" do
