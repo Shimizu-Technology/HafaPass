@@ -9,7 +9,7 @@ function build(now) {
   return {
     stripe_webhooks: {
       checked_at: iso(0), mode: 'live', rejected_in_window: 0, unverified_failing: false, last_receipt_at: iso(4), last_processed_at: iso(4), receipts_last_hour: 18,
-      failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0, recent_payment_attempts: 6,
+      failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0, unresolved_paid_without_webhook: 0, recent_payment_attempts: 6,
       silent: false, failing: false,
       thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
     },

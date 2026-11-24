@@ -45,7 +45,7 @@ class OperationalAlertJob < ApplicationJob
     health = Operations::StripeWebhookHealth.new(now: now)
     signals = self.class.signals(now: now, health: health)
     states = RuntimeAlertState.where(signal: signals.keys + [NOTE_SIGNAL]).index_by(&:signal)
-    guarded(NOTE_SIGNAL) { handle_note(health.signal(NOTE_SIGNAL), states[NOTE_SIGNAL] || RuntimeAlertState.new(signal: NOTE_SIGNAL), now, health) }
+    @recovered = []
     signals.each do |signal, count|
       state = states[signal] || RuntimeAlertState.new(signal: signal)
       if INCIDENT_SIGNALS.include?(signal)
@@ -58,6 +58,7 @@ class OperationalAlertJob < ApplicationJob
     rescue StandardError => e
       report_failure(signal, e)
     end
+    guarded(NOTE_SIGNAL) { handle_note(health.signal(NOTE_SIGNAL), states[NOTE_SIGNAL] || RuntimeAlertState.new(signal: NOTE_SIGNAL), now, health) }
   end
 
   def guarded(signal)
@@ -137,6 +138,10 @@ class OperationalAlertJob < ApplicationJob
   # Rejected deliveries with no evidence real deliveries are missing: an
   # info-level note at most every NOTE_INTERVAL, never a page.
   def handle_note(count, state, now, health)
+    # "No sign real deliveries are missing" would contradict a recovery sent in
+    # this same run, so the note waits for a later run.
+    return if @recovered.include?("stripe_unverified_deliveries")
+
     if count.positive? && (state.last_alerted_at.nil? || state.last_alerted_at <= now - NOTE_INTERVAL)
       signal = "stripe_unverified_deliveries"
       Rails.logger.info({ event: "operational_note", signal: signal, count: count }.to_json)
@@ -157,6 +162,7 @@ class OperationalAlertJob < ApplicationJob
 
   # A webhook was processed after the incident opened: the path works again.
   def recover(signal)
+    @recovered << signal
     Rails.logger.info({ event: "operational_alert_recovered", signal: signal }.to_json)
     Sentry.capture_message("Operational alert recovered: #{signal}", level: :info,
       fingerprint: ["operational-alert-recovered", signal],

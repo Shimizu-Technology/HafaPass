@@ -90,7 +90,11 @@ def attention(summary):
     if hooks.get("failing"):
         problems.append(f"Stripe webhooks are failing ({hooks.get('failed_in_window', 0)} recent)")
     if hooks.get("unverified_failing"):
-        problems.append("Stripe is being rejected: signature verification fails (check the webhook signing secret)")
+        problems.append("Unverified Stripe deliveries are being rejected while real ones look missing "
+                        "(check the webhook signing secret and Stripe's failed deliveries)")
+    if hooks.get("unresolved_paid_without_webhook") and not hooks.get("silent"):
+        problems.append(f"{hooks['unresolved_paid_without_webhook']} paid payment(s) from the last 7 days still have no "
+                        "success webhook (aged out of the alert window; not all clear)")
     for name, count in (health.get("operational_signals") or {}).items():
         if count and name not in ("stripe_webhook_failures", "stripe_webhooks_silent", "stripe_unverified_deliveries"):
             problems.append(f"{name.replace('_', ' ')}: {count}")
@@ -138,7 +142,8 @@ def render(summary):
     lines += ["## Health",
               f"- Readiness: {health['readiness']}",
               f"- Stripe webhooks: last received {hooks.get('last_receipt_at') or 'never'}, "
-              f"{hooks.get('receipts_last_hour', 0)} in the last hour, {hooks.get('failed_total', 0)} failed receipts standing",
+              f"{hooks.get('receipts_last_hour', 0)} in the last hour, {hooks.get('failed_total', 0)} failed receipts standing, "
+              f"{hooks.get('unresolved_paid_without_webhook', 0)} paid still unconfirmed (7 days)",
               (f"- Job queue: {queue['ready']} waiting, {queue['claimed']} running, {queue['failed']} failed" if queue.get("available")
                else "- Job queue: not available"),
               "- Errors: see the Sentry app; this summary only counts operational signals "

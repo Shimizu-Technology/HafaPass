@@ -30,6 +30,7 @@ function Stat({ label, value, tone }) {
 
 function WebhookHealth({ health }) {
   const bad = health.silent || health.failing || health.unverified_failing
+  const unresolved = health.unresolved_paid_without_webhook ?? 0
   return <section aria-labelledby="webhook-health-heading" className="mb-6">
     <h2 id="webhook-health-heading" className="text-lg font-semibold text-neutral-900">Stripe webhooks{health.mode ? ` (${health.mode} mode)` : ''}</h2>
     <p role="status" className={`mt-2 rounded-lg border p-3 text-sm ${bad ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
@@ -38,12 +39,16 @@ function WebhookHealth({ health }) {
           : health.failing ? 'Webhook processing is failing. Compare Stripe\'s failed deliveries with the receipts here.'
           : 'Webhooks are arriving and being processed. Quiet periods with no buyers are expected and not an alert.'}
     </p>
+    {unresolved > 0 && <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+      {unresolved} paid payment{unresolved === 1 ? '' : 's'} from the last 7 days still {unresolved === 1 ? 'has' : 'have'} no success webhook. {bad ? '' : 'The alert window has passed, so this is not all clear. '}Compare with Stripe's deliveries and Reconciliation.
+    </p>}
     <dl className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
       <Stat label="Last received" value={health.last_receipt_at ? formatDateTime(health.last_receipt_at) : 'Never'} />
       <Stat label="Last processed" value={health.last_processed_at ? formatDateTime(health.last_processed_at) : 'Never'} />
       <Stat label="Received, last hour" value={health.receipts_last_hour} />
       <Stat label={`Failed, last ${health.thresholds.failure_window_minutes} min`} value={health.failed_in_window + health.stuck_processing} tone={health.failing ? 'bad' : undefined} />
       <Stat label="Paid, no webhook yet" value={health.paid_without_webhook} tone={health.silent ? 'bad' : undefined} />
+      <Stat label="Still unconfirmed, 7 days" value={unresolved} tone={unresolved > 0 ? 'bad' : undefined} />
       <Stat label={`Payments started, last ${health.thresholds.silence_minutes} min`} value={health.recent_payment_attempts} />
       <Stat label="Failed receipts standing" value={health.failed_total} />
       <Stat label={`Unverified rejected, last ${health.thresholds.failure_window_minutes} min`} value={health.rejected_in_window ?? 0} tone={health.unverified_failing ? 'bad' : undefined} />

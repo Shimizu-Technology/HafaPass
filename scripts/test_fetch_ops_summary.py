@@ -44,9 +44,17 @@ class RenderTest(unittest.TestCase):
         self.assertIn("Stripe webhooks look silent", text)
         self.assertIn("failed background jobs: 2", text)
 
+    def test_aged_out_unconfirmed_payments_are_not_all_clear(self):
+        stuck = {**SUMMARY, "health": {**SUMMARY["health"], "stripe_webhooks": {**SUMMARY["health"]["stripe_webhooks"],
+                 "unresolved_paid_without_webhook": 2}}}
+        text = script.render(stuck)
+        self.assertIn("## Needs attention", text)
+        self.assertIn("2 paid payment(s) from the last 7 days still have no success webhook", text)
+        self.assertIn("2 paid still unconfirmed (7 days)", text)
+
     def test_signature_failures_are_called_out(self):
         bad = {**SUMMARY, "health": {**SUMMARY["health"], "stripe_webhooks": {**SUMMARY["health"]["stripe_webhooks"], "unverified_failing": True}}}
-        self.assertIn("signature verification fails", script.render(bad))
+        self.assertIn("Unverified Stripe deliveries are being rejected", script.render(bad))
 
 
 class MainTest(unittest.TestCase):

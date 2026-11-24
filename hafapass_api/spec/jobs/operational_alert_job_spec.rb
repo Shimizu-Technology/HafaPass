@@ -200,6 +200,20 @@ RSpec.describe OperationalAlertJob do
         extra: hash_including(count: 3, rejected_in_window: 3, note: /Unverified rejected deliveries/)).once
     end
 
+    it "does not send the 'no sign deliveries are missing' note in the same run it sends recovered" do
+      3.times { Operations::WebhookRejections.record!(provider: "stripe", reason: "invalid_signature") }
+      create(:payment, provider_environment: "test", created_at: 5.minutes.ago)
+      described_class.perform_now                    # real deliveries look missing: pages
+      expect(Sentry).to have_received(:capture_message).with("Operational alert: stripe_unverified_deliveries", anything).once
+
+      travel(1.minute)
+      processed_receipt                              # a verified delivery arrives; the rejections are still in the window
+      described_class.perform_now
+
+      expect(Sentry).to have_received(:capture_message).with("Operational alert recovered: stripe_unverified_deliveries", anything).once
+      expect(Sentry).not_to have_received(:capture_message).with(/\AOperational note:/, anything)
+    end
+
     it "records only an info note, never a page, for rejections with no sign deliveries are missing, and repeats it at most every 6 hours" do
       3.times { Operations::WebhookRejections.record!(provider: "stripe", reason: "invalid_signature") }
       described_class.perform_now

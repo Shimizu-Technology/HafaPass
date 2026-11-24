@@ -13,7 +13,7 @@ module MonitoringArea
     when "api/v1/orders", "api/v1/order_recovery" then "checkout"
     when "webhooks" then "webhook"
     when "api/v1/organizer/scanner_devices", "api/v1/organizer/admissions" then "scanner"
-    when "api/v1/organizer/box_office" then "box_office"
+    when "api/v1/organizer/box_office", "api/v1/organizer/box_office_receipts" then "box_office"
     end
   end
 end

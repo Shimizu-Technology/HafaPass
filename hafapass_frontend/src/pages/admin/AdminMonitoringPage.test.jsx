@@ -12,7 +12,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 
 const webhooks = {
   checked_at: '2027-01-05T10:00:00Z', last_receipt_at: '2027-01-05T09:58:00Z', last_processed_at: '2027-01-05T09:58:00Z',
-  receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0,
+  receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0, unresolved_paid_without_webhook: 0,
   recent_payment_attempts: 3, silent: false, failing: false, unverified_failing: false, rejected_in_window: 0, mode: 'live',
   thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
 }
@@ -47,6 +47,13 @@ describe('monitoring page', () => {
     renderPage()
     expect(await screen.findByText(/Webhooks look silent while payments are being made/)).toBeVisible()
     expect(screen.getByText(/SENTRY_DSN/)).toBeVisible()
+  })
+
+  it('does not show all clear when an aged-out paid payment still lacks its webhook', async () => {
+    apiClient.get.mockResolvedValue({ data: body({ unresolved_paid_without_webhook: 2 }) })
+    renderPage()
+    expect(await screen.findByText(/2 paid payments from the last 7 days still have no success webhook/)).toBeVisible()
+    expect(screen.getByText(/not all clear/)).toBeVisible()
   })
 
   it('says plainly when the signing secret is being rejected', async () => {

@@ -8,7 +8,7 @@ const shots = process.env.QA_SCREENSHOT_DIR
 const monitoring = (overrides = {}, title = 'Copa de Marianas') => ({
   stripe_webhooks: {
     checked_at: '2027-01-05T10:00:00Z', last_receipt_at: '2027-01-05T09:58:00Z', last_processed_at: '2027-01-05T09:58:00Z',
-    receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0,
+    receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0, unresolved_paid_without_webhook: 0,
     recent_payment_attempts: 3, silent: false, failing: false, unverified_failing: false, rejected_in_window: 0, mode: 'live',
     thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
     ...overrides,

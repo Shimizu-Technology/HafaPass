@@ -10,6 +10,7 @@ RSpec.describe MonitoringArea do
     expect(described_class.for_controller("api/v1/organizer/scanner_devices")).to eq("scanner")
     expect(described_class.for_controller("api/v1/organizer/admissions")).to eq("scanner")
     expect(described_class.for_controller("api/v1/organizer/box_office")).to eq("box_office")
+    expect(described_class.for_controller("api/v1/organizer/box_office_receipts")).to eq("box_office")
     expect(described_class.for_controller("api/v1/events")).to be_nil
   end
 end
