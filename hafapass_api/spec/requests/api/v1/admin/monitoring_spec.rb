@@ -21,6 +21,7 @@ RSpec.describe "Api::V1::Admin::Monitoring", type: :request do
       get "/api/v1/admin/monitoring", headers: auth_headers(admin)
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include("stripe_webhooks", "summary", "sentry", "test_alert_kinds")
+      expect(response.parsed_body["sentry"]).to include("configured", "sending_enabled")
       expect(response.parsed_body["test_alert_kinds"]).to include("stripe_webhooks_silent", "checkout", "sentry_connectivity")
     end
 
@@ -54,6 +55,22 @@ RSpec.describe "Api::V1::Admin::Monitoring", type: :request do
       expect(Sentry).to have_received(:capture_message).with(anything, hash_including(
         tags: hash_including(area: "webhook", integration: "stripe_webhook", operation: "webhook_processing", monitoring_test: "true")))
       expect(Sentry).to have_received(:capture_message).with(anything, hash_including(tags: hash_including(area: "scanner")))
+    end
+
+    it "fails, does not audit and frees the cooldown when Sentry queues nothing (e.g. environment not enabled)" do
+      allow(Sentry).to receive(:capture_message).and_return(nil)
+      with_dsn { post "/api/v1/admin/monitoring/test_alert", params: { kind: "checkout" }, headers: auth_headers(admin) }
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.parsed_body).to include("sent" => false)
+      expect(response.parsed_body["error"]).to include("SENTRY_ENABLED_ENVIRONMENTS")
+      expect(AuditLog.where(action: "monitoring.test_alert_sent")).to be_empty
+
+      allow(Sentry).to receive(:capture_message).and_return(instance_double(Sentry::Event, event_id: "later"))
+      with_dsn { post "/api/v1/admin/monitoring/test_alert", params: { kind: "checkout" }, headers: auth_headers(admin) }
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("sent" => true, "queued" => true)
+      expect(response.parsed_body["message"]).to start_with("Queued for delivery to Sentry")
+      expect(AuditLog.find_by!(action: "monitoring.test_alert_sent").metadata).to include("kind" => "checkout", "sentry_event_id" => "later")
     end
 
     it "does not change the app's real alert state" do
@@ -98,5 +115,5 @@ RSpec.describe "Api::V1::Admin::Monitoring", type: :request do
     RuntimeAlertState.where(signal: described_class_cooldown).update_all(last_alerted_at: 1.minute.ago)
   end
 
-  def described_class_cooldown = Api::V1::Admin::MonitoringController::COOLDOWN_SIGNAL
+  def described_class_cooldown = MonitoringTestAlert::COOLDOWN_SIGNAL
 end

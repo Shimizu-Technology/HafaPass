@@ -13,7 +13,7 @@ vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</di
 const webhooks = {
   checked_at: '2027-01-05T10:00:00Z', last_receipt_at: '2027-01-05T09:58:00Z', last_processed_at: '2027-01-05T09:58:00Z',
   receipts_last_hour: 12, failed_in_window: 0, stuck_processing: 0, failed_total: 0, paid_without_webhook: 0,
-  recent_payment_attempts: 3, silent: false, failing: false,
+  recent_payment_attempts: 3, silent: false, failing: false, signature_failing: false, rejected_in_window: 0, mode: 'live',
   thresholds: { failure_window_minutes: 15, failure_threshold: 3, silence_minutes: 30, silence_lookback_minutes: 360, silence_min_attempts: 10 },
 }
 const body = (overrides = {}) => ({
@@ -24,7 +24,7 @@ const body = (overrides = {}) => ({
     on_sale: [{ event_id: 1, title: 'Copa de Marianas Gran Campeonato Internacional Extremadamente Largo '.repeat(2), max_capacity: 900, capacity_remaining: 212 }],
     health: { readiness: 'ready', job_queue: { available: true, ready: 0 } },
   },
-  sentry: { configured: true, environment: 'production' },
+  sentry: { configured: true, sending_enabled: true, environment: 'production' },
   test_alert_kinds: ['stripe_webhooks_silent', 'checkout', 'sentry_connectivity'],
 })
 const renderPage = () => render(<MemoryRouter initialEntries={['/admin/monitoring']}><AdminMonitoringPage /></MemoryRouter>)
@@ -43,10 +43,30 @@ describe('monitoring page', () => {
   })
 
   it('shows silence and failures prominently and warns when Sentry is not configured', async () => {
-    apiClient.get.mockResolvedValue({ data: { ...body({ silent: true, failing: true, paid_without_webhook: 2, failed_in_window: 3 }), sentry: { configured: false } } })
+    apiClient.get.mockResolvedValue({ data: { ...body({ silent: true, failing: true, paid_without_webhook: 2, failed_in_window: 3 }), sentry: { configured: false, sending_enabled: false } } })
     renderPage()
     expect(await screen.findByText(/Webhooks look silent while payments are being made/)).toBeVisible()
     expect(screen.getByText(/SENTRY_DSN/)).toBeVisible()
+  })
+
+  it('says plainly when the signing secret is being rejected', async () => {
+    apiClient.get.mockResolvedValue({ data: body({ signature_failing: true, rejected_in_window: 7 }) })
+    renderPage()
+    expect(await screen.findByText(/signature does not verify/)).toBeVisible()
+    expect(screen.getByText('Stripe webhooks (live mode)')).toBeVisible()
+  })
+
+  it('warns when Sentry has a DSN but is switched off for this environment', async () => {
+    apiClient.get.mockResolvedValue({ data: { ...body(), sentry: { configured: true, sending_enabled: false, environment: 'staging' } } })
+    renderPage()
+    expect(await screen.findByText(/switched off for this environment \(staging\)/)).toBeVisible()
+  })
+
+  it('shows a clear failure when Sentry queues nothing', async () => {
+    apiClient.post.mockRejectedValue({ response: { status: 502, data: { sent: false, error: 'Sentry did not accept the test alert, so nothing was sent.' } } })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Send test alert' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sentry did not accept the test alert')
   })
 
   it('sends a labelled test alert once and reports success', async () => {
@@ -54,7 +74,7 @@ describe('monitoring page', () => {
     renderPage()
     await userEvent.selectOptions(await screen.findByLabelText('Alert to test'), 'stripe_webhooks_silent')
     await userEvent.click(screen.getByRole('button', { name: 'Send test alert' }))
-    expect(await screen.findByText(/Test alert sent/)).toBeVisible()
+    expect(await screen.findByText('Queued for delivery to Sentry. Check your phone in a minute or two.')).toBeVisible()
     expect(apiClient.post).toHaveBeenCalledTimes(1)
     expect(apiClient.post).toHaveBeenCalledWith('/admin/monitoring/test_alert', { kind: 'stripe_webhooks_silent' }, expect.anything())
   })

@@ -9,6 +9,7 @@ const endpoint = '/admin/monitoring'
 const KIND_LABELS = {
   stripe_webhooks_silent: 'Stripe webhooks silent',
   stripe_webhook_failures: 'Stripe webhook failures',
+  stripe_webhook_signature_failures: 'Stripe signing secret rejected',
   failed_payment_webhooks: 'Failed payment updates',
   open_reconciliation_exceptions: 'Open reconciliation exceptions',
   failed_background_jobs: 'Failed background jobs',
@@ -28,12 +29,13 @@ function Stat({ label, value, tone }) {
 }
 
 function WebhookHealth({ health }) {
-  const bad = health.silent || health.failing
+  const bad = health.silent || health.failing || health.signature_failing
   return <section aria-labelledby="webhook-health-heading" className="mb-6">
-    <h2 id="webhook-health-heading" className="text-lg font-semibold text-neutral-900">Stripe webhooks</h2>
+    <h2 id="webhook-health-heading" className="text-lg font-semibold text-neutral-900">Stripe webhooks{health.mode ? ` (${health.mode} mode)` : ''}</h2>
     <p role="status" className={`mt-2 rounded-lg border p-3 text-sm ${bad ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
-      {health.silent ? 'Webhooks look silent while payments are being made. Open the first-three-actions list in the incident runbook.'
-        : health.failing ? 'Webhook processing is failing. Compare Stripe\'s failed deliveries with the receipts here.'
+      {health.signature_failing ? 'Stripe deliveries are being rejected because their signature does not verify. The signing secret on the server probably does not match the Stripe webhook destination.'
+        : health.silent ? 'Webhooks look silent while payments are being made. Open the first-three-actions list in the incident runbook.'
+          : health.failing ? 'Webhook processing is failing. Compare Stripe\'s failed deliveries with the receipts here.'
           : 'Webhooks are arriving and being processed. Quiet periods with no buyers are expected and not an alert.'}
     </p>
     <dl className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -44,6 +46,7 @@ function WebhookHealth({ health }) {
       <Stat label="Paid, no webhook yet" value={health.paid_without_webhook} tone={health.silent ? 'bad' : undefined} />
       <Stat label={`Payments started, last ${health.thresholds.silence_minutes} min`} value={health.recent_payment_attempts} />
       <Stat label="Failed receipts standing" value={health.failed_total} />
+      <Stat label={`Rejected signatures, last ${health.thresholds.failure_window_minutes} min`} value={health.rejected_in_window ?? 0} tone={health.signature_failing ? 'bad' : undefined} />
     </dl>
   </section>
 }
@@ -85,7 +88,7 @@ function TestAlert({ identity, kinds }) {
     busyRef.current = true; setBusy(true); setResult(null)
     try {
       await apiClient.post(`${endpoint}/test_alert`, { kind }, request.config)
-      if (request.current()) setResult({ ok: true, text: 'Test alert sent. Check your phone within a minute or two.' })
+      if (request.current()) setResult({ ok: true, text: 'Queued for delivery to Sentry. Check your phone in a minute or two.' })
     } catch (failure) {
       if (request.handleError(failure)) return
       if (request.current()) setResult({ ok: false, text: errorMessage(failure, 'The test alert could not be sent.') })
@@ -125,6 +128,7 @@ function MonitoringSession({ identity, resourcePath }) {
     </div>}
     {data && <>
       {!data.sentry.configured && <p role="alert" className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Sentry is not configured on this server (SENTRY_DSN), so no alert can reach your phone.</p>}
+      {data.sentry.configured && data.sentry.sending_enabled === false && <p role="alert" className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Sentry has a DSN here but is switched off for this environment ({data.sentry.environment}). Add it to SENTRY_ENABLED_ENVIRONMENTS, or no alert will be sent.</p>}
       <WebhookHealth health={data.stripe_webhooks} />
       <SummaryPanel summary={data.summary} />
       <TestAlert identity={identity} kinds={data.test_alert_kinds} />
