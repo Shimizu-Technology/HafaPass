@@ -46,7 +46,7 @@ export default function BrandTicketCover() {
           data-testid="brand-art-pill"
           className="inline-flex items-center rounded-full bg-gradient-to-r from-[#c9362e] to-[#e35d52] px-2.5 py-[4px] text-[10px] font-bold uppercase leading-none tracking-[0.14em] text-white shadow-soft sm:px-3 sm:py-[5px] sm:text-[10.5px]"
         >
-          HåfaPass · Guam
+          {t('pass.home.brandArtBadge')}
         </span>
       </div>
 

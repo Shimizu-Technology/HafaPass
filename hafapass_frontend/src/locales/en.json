@@ -1418,7 +1418,12 @@
       "deckLabel": "HåfaPass featured events deck",
       "choosePass": "Choose featured pass",
       "previousPass": "Previous featured pass",
-      "nextPass": "Next featured pass"
+      "nextPass": "Next featured pass",
+      "brandPassLabel": "HåfaPass Guam pass",
+      "featuredEventLabel": "Featured event",
+      "showPass": "Show {{label}} ({{index}} of {{count}})",
+      "passPosition": "{{index}} of {{count}}: {{label}}",
+      "brandArtBadge": "HåfaPass · Guam"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",

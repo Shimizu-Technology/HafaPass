@@ -214,7 +214,7 @@ export default function HomePage() {
       <SEO />
       {/* 1. Hero: headline, subline, desktop search at lg+, and Deck (HåfaPass default pass + featured events). */}
       <HomeHero
-        events={discovery ? upcoming : []}
+        events={discovery ? upcoming.filter(event => new Date(event.starts_at) > new Date()) : []}
         loading={loading}
         searchCard={discovery && lgUp ? searchForm : null}
       />

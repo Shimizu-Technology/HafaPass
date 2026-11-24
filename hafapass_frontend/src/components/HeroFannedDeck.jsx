@@ -215,15 +215,15 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
   const cards = useMemo(() => {
     const featured = Array.isArray(events) ? events.slice(0, 3) : []
     return [
-      { kind: 'brand', id: 'hafapass-default', label: 'HåfaPass Guam pass' },
+      { kind: 'brand', id: 'hafapass-default', label: t('pass.home.brandPassLabel') },
       ...featured.map(event => ({
         kind: 'event',
         id: `event-${event.id ?? event.slug}`,
-        label: event.title || 'Featured event',
+        label: event.title || t('pass.home.featuredEventLabel'),
         event,
       })),
     ]
-  }, [events])
+  }, [events, t])
 
   const count = cards.length
   const showStack = loading || count > 1
@@ -850,7 +850,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
                       type="button"
                       role="tab"
                       aria-selected={active}
-                      aria-label={`Show ${card.label} (${index + 1} of ${count})`}
+                      aria-label={t('pass.home.showPass', { label: card.label, index: index + 1, count })}
                       onClick={clickEvent => handleControlClick(clickEvent, () => goTo(index))}
                       className="hero-deck-dot-btn inline-flex h-11 w-11 items-center justify-center rounded-full"
                     >
@@ -865,7 +865,7 @@ export default function HeroFannedDeck({ events = [], loading = false }) {
               </div>
               <div className="flex items-center gap-1">
                 <span className="sr-only" aria-live="polite" data-testid="hero-deck-live">
-                  {safeIndex + 1} of {count}: {cards[safeIndex]?.label}
+                  {t('pass.home.passPosition', { index: safeIndex + 1, count, label: cards[safeIndex]?.label })}
                 </span>
                 <button
                   type="button"

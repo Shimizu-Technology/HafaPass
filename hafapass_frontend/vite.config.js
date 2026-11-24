@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
@@ -39,6 +40,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   const precache = offlinePrecache()
   return {
+    // Demo builds replace the provider at the module boundary so Stripe's eager
+    // script loader never runs. Flag-off retains the original provider/imports.
+    resolve: { alias: env.VITE_HAFAPASS_DEMO_DATA === '1' ? [{
+      find: /(?:\.\/|\.\.\/components\/)StripeProvider$/,
+      replacement: fileURLToPath(new URL('./src/demo/DisabledStripeProvider.jsx', import.meta.url)),
+    }] : [] },
     define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
     plugins: [
       react(),
