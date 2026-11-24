@@ -1486,6 +1486,7 @@
     "signUp": "Create account"
   },
   "emailBase": {
+    "alertsEmail": "Email for event alerts",
     "signup": "Get event alerts on Guam",
     "consent": "Subscribe to HåfaPass event alerts. Unsubscribe or change preferences anytime.",
     "email": "Email address",

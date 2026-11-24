@@ -80,3 +80,6 @@ test-results-pwa/
 
 # Private release and pilot evidence (may contain approvals and provider references)
 .release-evidence/
+
+# Local captured-mail and browser evidence stays outside the repository
+/evidence/

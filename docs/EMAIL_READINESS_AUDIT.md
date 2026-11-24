@@ -22,7 +22,7 @@ Acceptance: explicit platform and follower consent; confirmed platform subscript
 
 ## Evidence and verification
 
-See `evidence/README.md` for the eight-step local acceptance ledger, environment, initial failure/retest and device limits. Evidence is captured simulation, not inbox delivery. Fixture databases are task-only and must be dropped after checks; shared PostgreSQL remains running. No task runtime resources are intentionally handed off.
+See `/Users/agent/work/hafapass-email-evidence/README.md` (local only) for the eight-step local acceptance ledger, environment, initial failure/retest and device limits. Evidence is captured simulation, not inbox delivery. Fixture databases are task-only and must be dropped after checks; shared PostgreSQL remains running. No task runtime resources are intentionally handed off.
 
 Test results are recorded below after the final runs. Initial broad runs found transport tests needing the shared limiter stubbed outside dedicated throughput examples, classification/audit/retention inventories needing updates, and checkout selectors matching the new consent checkbox. A later overlapping focused run collided with a full-suite truncation; the serial rerun is the acceptance result. These failures were retained in `/tmp/email-base-*.log`.
 
@@ -43,6 +43,18 @@ Implementation `eb7c23ddec9ce437a74982da4728e761215f3e52`; follow-up commit adds
 - Full Vitest: **214 files passed, 1 skipped; 2,391 tests passed, 3 skipped** (`/tmp/email-base-vitest-last.log`).
 - Frontend lint and production build passed (`/tmp/email-base-lint-final.log`, `/tmp/email-base-build-final.log`).
 - RuboCop: **1,083 files, no offenses** (`/tmp/email-base-rubocop-final.log`). Brakeman: **no warnings** (`/tmp/email-base-brakeman-final.log`). Ruby and production npm dependency audits: **no vulnerabilities** (`/tmp/email-base-audit-final.log`, `/tmp/email-base-npm-audit.log`). Advisory Impeccable returned `[]`.
-- Browser acceptance/evidence: the eight required local captured-mail stages passed with the fixture and device limits in `evidence/README.md`. No real email or external provider verification.
+- Browser acceptance/evidence: the eight required local captured-mail stages passed with the fixture and device limits in `/Users/agent/work/hafapass-email-evidence/README.md` (local only). No real email or external provider verification.
 
 Required CI and cross-family review remain lead-owned. No merge or deployment was performed. Shared-guidance setup remains missing its agent-context configuration; no shared settings changed.
+
+## Browser CI repair (November 24, 2026)
+
+Scope: repair PR #233 from `a5ebb8a27513437bdd9c4f6513c704589925f694`. HåfaPass buyers must reach guest-order recovery and event discovery; organizers must complete box-office sales and reach cancellation/refund controls by keyboard. Event-alert signup must remain distinguishable from recovery and retain its layout through pending, error and confirmation states. Sources: README, Layout/Navbar/HomePage, the three failing browser suites, and run 45325918115 logs/screenshots/error contexts. Tests use synthetic API fixtures and captured/simulated email only.
+
+All six reported failures reproduced before edits. The footer signup reused recovery's “Email address” label; it now uses “Email for event alerts”. Home rendered signup before pending inventory content, so inventory arrival pushed visible form content down (CLS 0.17857 at 375 px and 0.33008 at 768 px). Signup now follows inventory/planning content, reserves its band while pending, and stays invisible/inert until loading settles. Confirmation and error messages reserve their wrapped height; the hidden form retains its dimensions after acceptance.
+
+The desktop cancellation control remained keyboard reachable, but the new intentional Email audiences navigation link put it beyond the helper's fixed 100-Tab budget. The original run stopped on “Retry pricing tiers”, immediately before cancellation review. Only this obsolete test assumption changed: the helper now bounds traversal by control count and allows native date/time controls' internal keyboard stops. Cancellation, refund, axe and focus-trap assertions remain intact. Recovery and inventory layout assertions are unchanged.
+
+Evidence moved to `/Users/agent/work/hafapass-email-evidence/`; `evidence/` is deleted from git and ignored. CI downloads and command logs are siblings of the worktree, outside git. No added logs, scratch files or captured email HTML remain in the PR. Existing untracked `.codex/` and `EMAIL_AUDIT.md` were preserved and excluded.
+
+Repair verification: full CI development Playwright suite **211 passed**, plus **6 passed** new signup confirmation/error stability cases at 375/768/1280 px; production service-worker deploy/offline suite **2 passed**. Full Vitest **2,391 passed, 3 skipped**; final signup unit retest **2 passed**. Final lint, production build, repository hygiene and diff whitespace checks passed. Advisory Impeccable returned `[]`. No backend code changed in this repair; RSpec was not rerun (prior full backend result above). Chromium ran on the Mac mini; native/mobile Safari and real provider delivery were not tested. Logs: `/Users/agent/work/hafapass-email-{reproduce,retest-final,playwright-full,signup-browser,pwa,vitest,lint-final,build-final}.log`. Shared-context read-only check still fails because this host lacks `~/.config/shimizu-technology/agent-context.json`; synced skills were read directly. No merge, deployment or real email send performed.

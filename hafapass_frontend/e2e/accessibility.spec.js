@@ -62,9 +62,13 @@ async function scan(page, journey) {
 
 async function tabTo(page, locator) {
   await expect(locator).toHaveCount(1)
-  for (let tabs = 0; tabs <= 100; tabs += 1) {
+  // Workspace navigation can grow. Allow a complete tab cycle rather than
+  // assuming the cancellation control stays within the first 100 stops.
+  // Native date/time inputs expose multiple keyboard stops per DOM control.
+  const maxTabs = await page.locator('a, button, input, select, textarea, summary, [tabindex], [contenteditable]').count() * 3 + 1
+  for (let tabs = 0; tabs <= maxTabs; tabs += 1) {
     if (await locator.evaluate(element => element === document.activeElement)) return
-    if (tabs < 100) await page.keyboard.press('Tab')
+    if (tabs < maxTabs) await page.keyboard.press('Tab')
   }
   throw new Error('Keyboard focus did not reach the expected control')
 }
