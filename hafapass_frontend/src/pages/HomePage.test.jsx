@@ -164,7 +164,7 @@ describe('discovery first — Mockup E flow', () => {
     apiClient.get.mockResolvedValue({ data: { events: [event] } })
     mount()
     await screen.findByRole('list', { name: 'Coming up on Guam' })
-    const heading = screen.getByRole('heading', { level: 1, name: 'Your night out on Guam starts here.' })
+    const heading = screen.getByRole('heading', { level: 1, name: /Your night out on\s+Guam starts here\./ })
     expect(heading.querySelectorAll('.hero-rise-word')).toHaveLength(0)
     const deck = screen.getByTestId('hero-fanned-deck')
     expect(deck).toHaveAttribute('data-card-count', '2')
