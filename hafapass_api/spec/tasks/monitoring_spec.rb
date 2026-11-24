@@ -15,7 +15,7 @@ RSpec.describe "hafapass:monitoring:test_alert" do
 
   it "queues a labelled test event and uses the same cooldown as the admin button" do
     allow(Sentry).to receive(:capture_message).and_return(instance_double(Sentry::Event, event_id: "evt1"))
-    expect { task.execute(Rake::TaskArguments.new([:kind], ["checkout"])) }.to output(/Queued test alert checkout/).to_stdout
+    expect { task.execute(Rake::TaskArguments.new([:kind], ["checkout"])) }.to output(/Sentry accepted test alert checkout/).to_stdout
     expect(Sentry).to have_received(:capture_message).with(/\[TEST\]/, hash_including(tags: hash_including(monitoring_test: "true")))
 
     expect { task.execute(Rake::TaskArguments.new([:kind], ["checkout"])) }.to raise_error(SystemExit).and output(/wait and retry/).to_stderr

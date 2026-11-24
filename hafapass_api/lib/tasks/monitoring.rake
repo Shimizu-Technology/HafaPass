@@ -15,10 +15,9 @@ namespace :hafapass do
       event_id = MonitoringTestAlert.send!(kind: kind)
       if event_id.blank?
         MonitoringTestAlert.release_slot!
-        abort "Sentry did not accept the test alert, so nothing was sent. Check SENTRY_DSN and SENTRY_ENABLED_ENVIRONMENTS."
+        abort "Sentry did not accept the test alert, so nothing was sent. Check SENTRY_DSN, SENTRY_ENABLED_ENVIRONMENTS, connectivity and rate limits."
       end
-      Sentry.flush if Sentry.respond_to?(:flush)
-      puts "Queued test alert #{kind} for Sentry (event #{event_id})"
+      puts "Sentry accepted test alert #{kind} (event #{event_id})"
     end
 
     desc "Print the Stripe webhook health snapshot as JSON"

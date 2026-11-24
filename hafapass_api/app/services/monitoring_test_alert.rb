@@ -7,7 +7,7 @@
 # so it never joins a real issue, and nothing in the app's alert state changes.
 class MonitoringTestAlert
   SIGNAL_KINDS = %w[exhausted_message_deliveries failed_payment_webhooks open_reconciliation_exceptions
-    failed_background_jobs stripe_webhook_failures stripe_webhook_signature_failures stripe_webhooks_silent].freeze
+    failed_background_jobs stripe_webhook_failures stripe_unverified_deliveries stripe_webhooks_silent].freeze
   AREA_KINDS = MonitoringArea::AREAS.freeze
   KINDS = (SIGNAL_KINDS + AREA_KINDS + ["sentry_connectivity"]).freeze
   COOLDOWN = 30.seconds
@@ -33,10 +33,14 @@ class MonitoringTestAlert
     RuntimeAlertState.where(signal: COOLDOWN_SIGNAL).update_all(last_alerted_at: nil)
   end
 
-  # Returns the Sentry event id, or nil when the SDK did not queue the event
-  # (no DSN, environment not in SENTRY_ENABLED_ENVIRONMENTS, sampled out or
-  # dropped by before_send). A non-nil id means "queued for delivery", not
-  # "received": the SDK sends in the background.
+  # Returns the Sentry event id once Sentry accepted the event, or nil.
+  #
+  # Sent synchronously (hint background: false), not through the SDK's
+  # background queue. sentry-ruby returns an event object even when that queue
+  # is full and silently drops the event, so a queued send can't prove
+  # anything. Here the HTTP request to Sentry happens before this returns: a
+  # network error, a non-2xx response, an unconfigured environment, a rate-limited
+  # project or an event dropped before sending all return nil.
   def self.send!(kind:, actor: nil)
     raise ArgumentError, "Unknown test alert kind" unless KINDS.include?(kind)
 
@@ -46,9 +50,14 @@ class MonitoringTestAlert
     tags.merge!(integration: "stripe_webhook", operation: "webhook_processing") if kind == "webhook"
 
     Rails.logger.warn({ event: "monitoring_test_alert", kind: kind, actor_user_id: actor&.id }.to_json)
+    transport = Sentry.get_current_client&.transport
+    return nil if transport&.is_rate_limited?("error")
+
     event = Sentry.capture_message("[TEST] HafaPass monitoring test alert: #{kind}", level: :error,
-      fingerprint: ["monitoring-test-alert", kind], tags: tags,
+      fingerprint: ["monitoring-test-alert", kind], tags: tags, hint: { background: false },
       extra: { note: "Sent on purpose by an admin to test alert routing. Nothing is wrong.", sent_at: Time.current.iso8601 })
-    event&.event_id
+    return nil if event.nil? || transport&.is_rate_limited?("error")
+
+    event.event_id
   end
 end

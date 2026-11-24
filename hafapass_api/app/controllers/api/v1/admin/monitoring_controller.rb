@@ -39,14 +39,14 @@ class Api::V1::Admin::MonitoringController < Api::V1::Admin::BaseController
     if event_id.blank?
       MonitoringTestAlert.release_slot!
       return render json: { sent: false, error: "Sentry did not accept the test alert, so nothing was sent. " \
-        "Check that SENTRY_DSN is set and this environment is listed in SENTRY_ENABLED_ENVIRONMENTS." },
+        "Check that SENTRY_DSN is set, this environment is listed in SENTRY_ENABLED_ENVIRONMENTS, Sentry is reachable and the project is not rate limited." },
         status: :bad_gateway
     end
 
     AuditLogger.record!(action: "monitoring.test_alert_sent", auditable: @current_user, actor: @current_user,
       metadata: { kind: kind, sentry_event_id: event_id })
-    render json: { sent: true, queued: true, kind: kind, sentry_event_id: event_id,
-      message: "Queued for delivery to Sentry. Check your phone in a minute or two; see docs/MONITORING_SETUP.md." }
+    render json: { sent: true, accepted: true, kind: kind, sentry_event_id: event_id,
+      message: "Sentry accepted the test alert. Check your phone in a minute or two; see docs/MONITORING_SETUP.md." }
   end
 
   private

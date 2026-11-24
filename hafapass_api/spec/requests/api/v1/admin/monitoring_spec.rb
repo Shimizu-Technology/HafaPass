@@ -42,7 +42,7 @@ RSpec.describe "Api::V1::Admin::Monitoring", type: :request do
       expect(Sentry).to have_received(:capture_message).with("[TEST] HafaPass monitoring test alert: stripe_webhooks_silent",
         level: :error, fingerprint: ["monitoring-test-alert", "stripe_webhooks_silent"],
         tags: { monitoring_test: "true", test_alert_kind: "stripe_webhooks_silent", operational_signal: "stripe_webhooks_silent" },
-        extra: hash_including(:note)).once
+        hint: { background: false }, extra: hash_including(:note)).once
       expect(AuditLog.find_by!(action: "monitoring.test_alert_sent")).to have_attributes(actor_user_id: admin.id)
     end
 
@@ -68,8 +68,8 @@ RSpec.describe "Api::V1::Admin::Monitoring", type: :request do
       allow(Sentry).to receive(:capture_message).and_return(instance_double(Sentry::Event, event_id: "later"))
       with_dsn { post "/api/v1/admin/monitoring/test_alert", params: { kind: "checkout" }, headers: auth_headers(admin) }
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body).to include("sent" => true, "queued" => true)
-      expect(response.parsed_body["message"]).to start_with("Queued for delivery to Sentry")
+      expect(response.parsed_body).to include("sent" => true, "accepted" => true)
+      expect(response.parsed_body["message"]).to start_with("Sentry accepted the test alert")
       expect(AuditLog.find_by!(action: "monitoring.test_alert_sent").metadata).to include("kind" => "checkout", "sentry_event_id" => "later")
     end
 
