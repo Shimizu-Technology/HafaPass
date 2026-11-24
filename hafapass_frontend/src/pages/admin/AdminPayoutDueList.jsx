@@ -170,11 +170,13 @@ function RowActions({ row, busy, run, setDialog }) {
       ? <button key="skip" type="button" disabled={busy} onClick={() => setDialog({ kind: 'skip', row })} className="btn-secondary !px-4 !py-2 text-sm">Finalize without reserve</button>
       : <button key="finalize" type="button" disabled={busy} onClick={() => run(row, 'finalize')} className={`${row.next_step === 'finalize_statement' ? 'btn-primary' : 'btn-secondary'} !px-4 !py-2 text-sm`}>Finalize statement</button>)
   }
-  if (actions.includes('send_transfer') && row.settlement) buttons.push(<button key="send" type="button" disabled={busy || !row.payout_account_ready} onClick={() => run(row, 'payout')} className="btn-primary !px-4 !py-2 text-sm">Request payout {money(row.settlement.requestable_cents ?? row.settlement.available_to_payout_cents, row.currency)}</button>)
+  const requestable = row.settlement ? row.settlement.requestable_cents ?? row.settlement.available_to_payout_cents : 0
+  if (actions.includes('send_transfer') && row.settlement) buttons.push(<button key="send" type="button" disabled={busy || !row.payout_account_ready || requestable <= 0} onClick={() => run(row, 'payout')} className="btn-primary !px-4 !py-2 text-sm">Request payout {money(requestable, row.currency)}</button>)
   if (actions.includes('release_reserve')) buttons.push(<button key="release" type="button" disabled={busy} onClick={() => setDialog({ kind: 'release', row })} className={`${row.next_step === 'release_reserve' ? 'btn-primary' : 'btn-ghost'} !px-4 !py-2 text-sm`}>{row.reserve_release_due === false ? 'Release early' : 'Release reserve'}</button>)
   return <div className="flex flex-wrap gap-2 md:justify-end">
     {buttons}
     {actions.includes('send_transfer') && !row.payout_account_ready && <p className="w-full text-xs text-red-700">No approved payout method on file.</p>}
+    {actions.includes('send_transfer') && row.settlement && requestable <= 0 && <p className="w-full text-xs text-red-700">Nothing can be paid right now: this organization's payout balance is $0. Another event may owe money, or a refund or dispute is open.</p>}
   </div>
 }
 

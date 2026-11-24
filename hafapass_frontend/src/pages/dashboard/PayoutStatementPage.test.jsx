@@ -86,6 +86,17 @@ describe('PayoutStatementPage', () => {
     expect(screen.getByText('Balance after transfers, not counting the reserve').closest('div')).toHaveTextContent('−$17.00')
     expect(screen.getByTestId('balance-remaining')).toHaveTextContent('Still to come$877.51')
     expect(screen.getByText(/Later refunds or chargebacks come out of it, so \$877\.51 will be sent to you/)).toBeInTheDocument()
+    // Round 2: the headline card must not claim the $877.51 "includes" the whole $894.51 reserve.
+    expect(screen.queryByText(/Includes the \$894\.51 reserve/)).not.toBeInTheDocument()
+    expect(screen.getByText('What is left of the $894.51 reserve after later refunds or chargebacks ($17.00), due Mar 1, 2027')).toBeInTheDocument()
+  })
+
+  it('names a wording contradiction without claiming the statement is off by $0.00', async () => {
+    respondWith({ ...reserveHeld, reconciles: false, difference_cents: 0, contradictions: ['owe_note_mismatch'] })
+    mount()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Some wording on this statement does not match its numbers. Please contact HåfaPass before relying on it.')
+    expect(alert).not.toHaveTextContent('$0.00')
   })
 
   it('describes sales-open and waiting states', () => {

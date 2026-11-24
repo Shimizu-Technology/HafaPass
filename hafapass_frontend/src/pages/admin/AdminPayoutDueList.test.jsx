@@ -108,6 +108,15 @@ describe('Admin payouts Due view', () => {
     expect(screen.queryByText(/\$8,050\.57/)).not.toBeInTheDocument()
   })
 
+  it('does not offer a $0 payout when the organization balance is used up', async () => {
+    const ready = { ...firstRow, next_step: 'send_transfer', actions: ['send_transfer'],
+      settlement: { id: 77, version: 1, available_to_payout_cents: 805057, requestable_cents: 0 } }
+    respond({ ...dueFirst, transfers: [ready] })
+    renderAt('/admin/payouts?view=due')
+    expect(await screen.findByRole('button', { name: 'Request payout $0.00' })).toBeDisabled()
+    expect(screen.getByText(/Nothing can be paid right now: this organization's payout balance is \$0/)).toBeInTheDocument()
+  })
+
   it('finalizes without a reserve only with a reason, sent as an explicit skip', async () => {
     const user = userEvent.setup()
     apiClient.post.mockResolvedValue({ data: { id: 9, version: 2, reserve_skipped: true } })
