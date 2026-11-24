@@ -39,12 +39,15 @@ The `site_settings.tax_reporting_thresholds` column is deprecated and unused. An
 
 ## Monthly Guam BPT detail for the CPA
 
-In **Admin → Tax reports**, choose the calendar year and Guam calendar month, then select **Export monthly BPT detail CSV**. The audited download contains USD totals by organization ID and event ID, without names, contact details or tax identifiers.
+In **Admin → Tax reports**, choose the calendar year and Guam calendar month:
+
+- **Export monthly CPA CSV** (`cpa_monthly_export`, audited as `monthly_cpa_custodial_bpt`): complete monthly reconciliation workpaper separating **custodial liability held for organizers** (opening liability, proceeds collected, refunds, chargebacks, organizer-borne processing, adjustments, organizer payouts made, closing liability, plus reserve held/released/ending reserve and backup withholding memo) from **HåfaPass fee revenue & Guam BPT estimate** (gross fees, fee refunds, net fees, informational Stripe processing costs, BPT base, statutory rate estimate, and estimated BPT), with W-9 nonprofit-exempt rows flagged, a `total` row, and zero PII. Reconciles to `Settlements::Calculator`. See [How to Read the Monthly CPA Custodial & BPT CSV Export](CPA_MONTHLY_EXPORT_GUIDE.md).
+- **Export monthly BPT detail CSV** (`bpt_events_export`, audited as `monthly_bpt_by_event`): compact per-event fee/face-value/disbursement CSV retained from PR #223.
 
 - Gross service fees include the buyer-paid and organizer-absorbed portions recorded on captured sales. Use the Guam order completion month. Ticket face value is after discounts and before refunds, excludes non-ticket items, and is listed separately as proceeds collected for organizers.
 - Fee refunds include the buyer-paid and organizer-absorbed portions from successful refund allocations in the Guam refund month. Net fees are gross fees minus those refunds and can be negative. Actual Stripe processing costs are attributed to the original sale month and shown for reconciliation only. They do not reduce net service fees.
-- Organizer payouts are confirmed payouts in the Guam paid month, net of withholding and including any audited check amount adjustment. Reserve releases appear when paid. Pending, failed, and reversed payouts are excluded. Reconcile any later reversals and late-arriving processing evidence against the bank and provider statements.
-- The CSV uses live USD Stripe captures and older Stripe captures with no test or simulation evidence. Organizer-retained door cash and organizer-direct Clover sales are excluded. The CPA confirms the treatment and filing amounts.
+- Organizer payouts are confirmed payouts in the Guam paid month. Pending, failed, and reversed payouts are excluded. Reconcile any later reversals and late-arriving processing evidence against the bank and provider statements.
+- Both CSVs use live USD Stripe captures and older Stripe captures with no test or simulation evidence. Organizer-retained door cash and organizer-direct Clover sales are excluded. The CPA confirms the treatment and filing amounts.
 
 ## CPA decisions to record
 

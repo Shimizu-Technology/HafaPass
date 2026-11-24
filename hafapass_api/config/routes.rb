@@ -307,6 +307,8 @@ Rails.application.routes.draw do
           get :organizers_export
           get :receipts_export
           get :bpt_events_export
+          get :cpa_monthly
+          get :cpa_monthly_export
           post :preparation_export
         end
         get "tin_matching", to: "tin_matching#index"

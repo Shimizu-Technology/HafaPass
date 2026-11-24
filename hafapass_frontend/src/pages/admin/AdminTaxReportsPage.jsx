@@ -12,6 +12,142 @@ const monthLabels = Array.from({ length: 12 }, (_, index) =>
 )
 const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
 
+function SummaryRow({ label, value, emphasis = false, hint = null }) {
+  return <div className={`flex items-baseline justify-between gap-3 py-1.5 ${emphasis ? 'border-t border-neutral-200 pt-2.5 font-semibold text-neutral-950' : 'text-neutral-800'}`}>
+    <dt className="min-w-0 [overflow-wrap:anywhere]">
+      <span>{label}</span>
+      {hint && <span className="block text-xs font-normal text-content-muted">{hint}</span>}
+    </dt>
+    <dd className="shrink-0 tabular-nums font-medium">{value}</dd>
+  </div>
+}
+
+function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, month, busy, onExport }) {
+  const totals = cpaMonthly?.totals
+  const rows = Array.isArray(cpaMonthly?.rows) ? cpaMonthly.rows : []
+  const periodLabel = `${monthLabels[Math.max(Number(month) - 1, 0)] || month} ${year}`
+  const refundsAndDisputes = (totals?.proceeds_refunded_cents || 0) + (totals?.chargebacks_cents || 0)
+
+  return <section aria-labelledby="cpa-monthly-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h2 id="cpa-monthly-heading" className="text-lg font-semibold text-neutral-900">Monthly CPA custodial &amp; BPT report · {periodLabel}</h2>
+        <p className="mt-1 text-sm text-neutral-700">Separates organizer ticket proceeds held in custody (a liability) from HåfaPass service-fee revenue, with Guam BPT estimates and W-9 nonprofit flags. Identifies organizations and events by ID only (no PII).</p>
+      </div>
+    </div>
+
+    <div className="mt-4 flex flex-wrap items-end gap-3">
+      <label className="block min-w-44 text-sm font-medium text-neutral-900">Guam calendar month
+        <select className="input mt-1 min-h-11" value={month} disabled={busy} onChange={onExport.onMonthChange}>
+          {monthLabels.map((label, index) => <option key={label} value={String(index + 1).padStart(2, '0')}>{label}</option>)}
+        </select>
+      </label>
+      <button type="button" disabled={busy} className="btn-primary min-h-11" onClick={() => onExport.download('cpa_monthly_export')}>Export monthly CPA CSV</button>
+      <button type="button" disabled={busy} className="btn-secondary min-h-11" onClick={() => onExport.download('bpt_events_export')}>Export monthly BPT detail CSV</button>
+    </div>
+
+    {cpaError && <p role="alert" className="mt-4 text-sm text-red-800">{cpaError} <button type="button" className="min-h-11 underline" onClick={onRetry}>Retry monthly CPA report</button></p>}
+    {cpaLoading && !totals && !cpaError && <p role="status" className="mt-4 text-sm text-content-muted">Loading monthly CPA summary…</p>}
+
+    {totals && <>
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">Balance sheet · not HåfaPass revenue</p>
+          <h3 className="mt-1 text-base font-semibold text-neutral-900">Custodial liability (organizer proceeds)</h3>
+          <dl className="mt-3 text-sm">
+            <SummaryRow label="Opening custodial liability" value={money(totals.opening_custodial_liability_cents)} />
+            <SummaryRow label="Proceeds collected" value={money(totals.proceeds_collected_cents)} />
+            <SummaryRow label="Refunds & chargebacks" value={money(-refundsAndDisputes)} hint={`Refunds ${money(totals.proceeds_refunded_cents)} · Chargebacks ${money(totals.chargebacks_cents)}`} />
+            {totals.organizer_processing_deducted_cents !== 0 && <SummaryRow label="Organizer-borne processing" value={money(-totals.organizer_processing_deducted_cents)} />}
+            {totals.other_adjustments_cents !== 0 && <SummaryRow label="Other balance adjustments" value={money(totals.other_adjustments_cents)} />}
+            <SummaryRow label="Organizer payouts made" value={money(-totals.organizer_payouts_made_cents)} hint={totals.backup_withholding_memo_cents > 0 ? `Includes ${money(totals.backup_withholding_memo_cents)} backup withholding memo` : null} />
+            <SummaryRow label="Closing custodial liability" value={money(totals.closing_custodial_liability_cents)} emphasis />
+          </dl>
+          <div className="mt-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700">
+            <p className="font-medium text-neutral-900">Chargeback reserve sub-ledger (part of closing liability)</p>
+            <p className="mt-1 tabular-nums">Held in month: {money(totals.reserve_held_cents)} · Released: {money(totals.reserve_released_cents)} · Ending reserve: <strong>{money(totals.ending_reserve_balance_cents)}</strong></p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">Income statement · Shimizu Technology LLC</p>
+          <h3 className="mt-1 text-base font-semibold text-neutral-900">HåfaPass fee revenue &amp; Guam BPT estimate</h3>
+          <dl className="mt-3 text-sm">
+            <SummaryRow label="Fee revenue (gross)" value={money(totals.fee_revenue_gross_cents)} />
+            <SummaryRow label="Fee refunds" value={money(-totals.fee_refunds_cents)} />
+            <SummaryRow label="Fee revenue (net)" value={money(totals.fee_revenue_net_cents)} emphasis />
+            <SummaryRow label="Stripe processing costs (informational)" value={money(totals.stripe_processing_costs_cents)} hint="Does not reduce Guam BPT gross receipts" />
+            <SummaryRow label="Estimated BPT base (net fees)" value={money(totals.bpt_base_fee_revenue_estimate_cents)} />
+            <SummaryRow
+              label={`Estimated Guam BPT (${cpaMonthly.bpt_rate_pct}% estimate)`}
+              value={money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}
+              hint="Estimate only — confirm rate & any § 26203.2 relief with CPA"
+              emphasis
+            />
+          </dl>
+          <p className="mt-3 text-xs text-content-muted">{cpaMonthly.bpt_rate_note}</p>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-neutral-900">Event breakdown (IDs only · no PII)</h3>
+          {totals.nonprofit_event_count > 0 && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{totals.nonprofit_event_count} nonprofit-flagged row{totals.nonprofit_event_count === 1 ? '' : 's'} (verify DRT)</span>}
+        </div>
+        {rows.length === 0 ? <p className="mt-2 text-sm text-content-muted">No live custodial or fee activity for {periodLabel}. Exporting CSV still provides the zeroed totals row for monthly filing records.</p>
+          : <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly CPA event breakdown table">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Monthly custodial liability and HåfaPass fee revenue by organization ID and event ID for {periodLabel} in USD</caption>
+              <thead>
+                <tr className="border-b border-neutral-200 text-xs text-neutral-600">
+                  {['Org / Event ID', 'Nonprofit flag', 'Opening liab.', 'Collected', 'Refunds', 'Chargebacks', 'Payouts', 'Closing liab.', 'Ending reserve', 'Net fees', 'Est. BPT'].map(label => (
+                    <th key={label} scope="col" className="whitespace-nowrap px-2 py-2 font-semibold">{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => <tr key={`${row.organization_id}:${row.event_id ?? `org-${idx}`}`} className="border-t border-neutral-200">
+                  <th scope="row" className="whitespace-nowrap px-2 py-2 font-medium text-neutral-900">
+                    Org #{row.organization_id} · {row.event_id ? `Event #${row.event_id}` : 'Org adj.'}
+                  </th>
+                  <td className="whitespace-nowrap px-2 py-2">
+                    {row.nonprofit_exempt_flag
+                      ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Nonprofit (W-9)</span>
+                      : <span className="text-xs text-content-muted">Standard</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.opening_custodial_liability_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.proceeds_collected_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.proceeds_refunded_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.chargebacks_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.organizer_payouts_made_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 font-medium tabular-nums">{money(row.closing_custodial_liability_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.ending_reserve_balance_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.fee_revenue_net_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
+                </tr>)}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-neutral-300 bg-neutral-50 font-semibold text-neutral-950">
+                  <th scope="row" className="whitespace-nowrap px-2 py-2">Totals</th>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs font-normal text-neutral-700">{totals.nonprofit_exemption_note}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.opening_custodial_liability_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.proceeds_collected_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.proceeds_refunded_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.chargebacks_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.organizer_payouts_made_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.closing_custodial_liability_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.ending_reserve_balance_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.fee_revenue_net_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>}
+      </div>
+    </>}
+  </section>
+}
+
 function TaxReportsSession({ identity }) {
   const { beginRequest } = usePlatformRequests(identity, '/admin/tax-reports')
   const today = guamCalendar.formatToParts(new Date())
@@ -20,8 +156,13 @@ function TaxReportsSession({ identity }) {
   const [month, setMonth] = useState(() => today.find(part => part.type === 'month').value)
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
+  const [cpaMonthly, setCpaMonthly] = useState(null)
+  const [cpaLoading, setCpaLoading] = useState(false)
+  const [cpaError, setCpaError] = useState(null)
   const [busy, setBusy] = useState(false)
   const generation = useRef(0)
+  const cpaGeneration = useRef(0)
+
   const load = useCallback(async () => {
     const request = beginRequest()
     if (!request) return
@@ -34,7 +175,33 @@ function TaxReportsSession({ identity }) {
       if (request.current() && epoch === generation.current && !request.handleError(e)) setError('Could not load tax reports. Please retry.')
     } finally { request.release() }
   }, [beginRequest, year])
+
+  const loadCpaMonthly = useCallback(async () => {
+    const request = beginRequest()
+    if (!request) return
+    const epoch = ++cpaGeneration.current
+    setCpaLoading(true); setCpaError(null)
+    try {
+      const response = await apiClient.get('/admin/tax_reports/cpa_monthly', { ...request.config, params: { year, month } })
+      if (request.current() && epoch === cpaGeneration.current) {
+        setCpaMonthly(response.data?.totals ? response.data : null)
+      }
+    } catch (e) {
+      if (request.current() && epoch === cpaGeneration.current && !request.handleError(e)) {
+        setCpaMonthly(null)
+        setCpaError('Could not load monthly CPA summary. Please retry.')
+      }
+    } finally {
+      if (request.current() && epoch === cpaGeneration.current) setCpaLoading(false)
+      request.release()
+    }
+  }, [beginRequest, year, month])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (report?.year) loadCpaMonthly()
+  }, [report?.year, loadCpaMonthly])
+
   const action = async kind => {
     let purpose
     if (kind === 'preparation_export') {
@@ -48,31 +215,53 @@ function TaxReportsSession({ identity }) {
     setBusy(true); setError(null)
     try {
       const isSensitive = kind === 'preparation_export'
-      const isBpt = kind === 'bpt_events_export'
+      const isMonthly = kind === 'bpt_events_export' || kind === 'cpa_monthly_export'
       const path = `/admin/tax_reports/${kind}`
       const response = isSensitive
-        ? await apiClient.post(path, { year: report.year, include_full_tins: true, purpose }, { ...request.config, ...(isSensitive ? { responseType: 'blob' } : {}) })
-        : await apiClient.get(path, { ...request.config, params: { year: report.year, ...(isBpt ? { month } : {}) }, responseType: 'blob' })
+        ? await apiClient.post(path, { year: report.year, include_full_tins: true, purpose }, { ...request.config, responseType: 'blob' })
+        : await apiClient.get(path, { ...request.config, params: { year: report.year, ...(isMonthly ? { month } : {}) }, responseType: 'blob' })
       if (!request.current() || epoch !== generation.current) return
-      const filename = isBpt
-        ? `hafapass-bpt-events-${report.year}-${month}.csv`
-        : `hafapass-${kind}-${report.year}${isSensitive ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv`
+      const filename = kind === 'cpa_monthly_export'
+        ? `hafapass-cpa-monthly-${report.year}-${month}.csv`
+        : kind === 'bpt_events_export'
+          ? `hafapass-bpt-events-${report.year}-${month}.csv`
+          : `hafapass-${kind}-${report.year}${isSensitive ? '-SENSITIVE-FULL-TINS' : '-masked'}.csv`
       saveBlob(response.data, filename)
     } catch (e) {
       if (request.current() && epoch === generation.current && !request.handleError(e)) setError('The action failed. Please retry.')
     } finally { if (request.current()) setBusy(false); request.release() }
   }
+
   return <AdminLayout>
     <div className="space-y-6">
       <p className="text-sm text-neutral-700">Live-mode USD payments only. Calendar periods use Guam time. Cash retained by organizers and test payments are excluded. Reports help preparation; your accountant determines reporting and filing duties.</p>
-      <label className="block max-w-xs text-sm font-medium">Calendar year<select value={year} disabled={busy} onChange={e => setYear(e.target.value)} className="input mt-1">{Array.from({ length: 12 }, (_, i) => Number(currentYear) + 1 - i).map(value => <option key={value}>{value}</option>)}</select></label>
+      <label className="block max-w-xs text-sm font-medium">Calendar year<select value={year} disabled={busy} onChange={e => setYear(e.target.value)} className="input mt-1 min-h-11">{Array.from({ length: 12 }, (_, i) => Number(currentYear) + 1 - i).map(value => <option key={value}>{value}</option>)}</select></label>
       {error && <p role="alert" className="text-red-800">{error} <button type="button" className="min-h-11 underline" onClick={load}>Retry reports</button></p>}
       {!report && !error && <p role="status">Loading tax reports…</p>}
       {report && <>
+        <CpaMonthlyPanel
+          cpaMonthly={cpaMonthly}
+          cpaLoading={cpaLoading}
+          cpaError={cpaError}
+          onRetry={loadCpaMonthly}
+          year={report.year}
+          month={month}
+          busy={busy}
+          onExport={{ onMonthChange: e => setMonth(e.target.value), download: action }}
+        />
+
+        <section aria-labelledby="bpt-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
+          <h2 id="bpt-heading" className="text-lg font-semibold">Monthly HåfaPass gross receipts (Guam BPT)</h2>
+          <p className="mt-2 text-sm text-neutral-700">{report.note}</p>
+          <p className="mt-2 text-sm text-neutral-700">Actual card costs are shown separately against the collection month and may update when provider evidence arrives. They are not deducted from gross receipts.</p>
+          <button type="button" disabled={busy} className="btn-secondary my-4 min-h-11" onClick={() => action('receipts_export')}>Export gross receipts CSV</button>
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly gross receipts table"><table className="w-full text-left text-sm"><caption className="sr-only">Monthly service fees and card costs for {report.year} in USD</caption><thead><tr>{['Month', 'Fees collected', 'Fees refunded', 'Gross receipts', 'Card costs'].map(label => <th key={label} scope="col" className="whitespace-nowrap p-2">{label}</th>)}</tr></thead><tbody>{report.months.map(row => <tr key={row.month} className="border-t border-neutral-200"><th scope="row" className="p-2">{String(row.month).padStart(2, '0')}</th>{['fees_collected_cents', 'fees_refunded_cents', 'gross_receipts_cents', 'card_processing_costs_cents'].map(key => <td key={key} className="whitespace-nowrap p-2 tabular-nums">{money(row[key])}</td>)}</tr>)}</tbody></table></div>
+        </section>
+
         <section aria-labelledby="annual-tax-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
           <h2 id="annual-tax-heading" className="text-lg font-semibold">Annual organizer payouts · {report.year}</h2>
           <p className="mt-2 text-sm text-neutral-700">Gross amounts are after discounts. Refund and fee components are shown separately. Each payout uses its W-9 at payout time; legacy payouts are flagged without a TIN. Activity is allocated among an organizer’s payout identities by paid amount. Adjustments bridge timing, reserves, processing costs and unpaid balances.</p>
-          <div className="my-4 flex flex-wrap gap-3"><button disabled={busy} className="btn-secondary" onClick={() => action('organizers_export')}>Export masked CSV</button><button disabled={busy} className="btn-secondary" onClick={() => action('preparation_export')}>Export full TINs for 1099 preparation (audited)</button></div>
+          <div className="my-4 flex flex-wrap gap-3"><button type="button" disabled={busy} className="btn-secondary min-h-11" onClick={() => action('organizers_export')}>Export masked CSV</button><button type="button" disabled={busy} className="btn-secondary min-h-11" onClick={() => action('preparation_export')}>Export full TINs for 1099 preparation (audited)</button></div>
           <p className="mb-4 text-xs text-content-muted">Full-TIN files contain sensitive tax data. Store them securely and import TIN columns as text to preserve leading zeroes. TINs remain masked on screen.</p>
           {report.organizers.length === 0 && <p>No live financial activity for this year.</p>}
           <div className="space-y-4">{report.organizers.map((row, index) => <article key={`${row.organization_id}:${row.tax_snapshot_payout_id || index}`} className="rounded-xl border border-neutral-200 p-4">
@@ -88,28 +277,9 @@ function TaxReportsSession({ identity }) {
                 ['Unallocated refunds', money(row.unallocated_refunds_cents)],
                 ['Fee refunds', money(row.fee_refunds_cents)], ['HåfaPass fees collected', money(row.fees_collected_cents)],
                 ['Reconciliation adjustments', money(row.reconciliation_adjustments_cents)], ['Net paid out', money(row.net_paid_cents)],
-              ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="font-medium">{value}</dd></div>)}
+              ].map(([label, value]) => <div key={label} className="[overflow-wrap:anywhere]"><dt className="text-content-muted">{label}</dt><dd className="font-medium tabular-nums">{value}</dd></div>)}
             </dl>
           </article>)}</div>
-        </section>
-        <section aria-labelledby="bpt-heading" className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-6">
-          <h2 id="bpt-heading" className="text-lg font-semibold">Monthly HåfaPass gross receipts (Guam BPT)</h2>
-          <p className="mt-2 text-sm text-neutral-700">{report.note}</p>
-          <p className="mt-2 text-sm text-neutral-700">Actual card costs are shown separately against the collection month and may update when provider evidence arrives. They are not deducted from gross receipts.</p>
-          <button disabled={busy} className="btn-secondary my-4" onClick={() => action('receipts_export')}>Export gross receipts CSV</button>
-          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly gross receipts table"><table className="w-full text-left text-sm"><caption className="sr-only">Monthly service fees and card costs for {report.year} in USD</caption><thead><tr>{['Month', 'Fees collected', 'Fees refunded', 'Gross receipts', 'Card costs'].map(label => <th key={label} scope="col" className="whitespace-nowrap p-2">{label}</th>)}</tr></thead><tbody>{report.months.map(row => <tr key={row.month} className="border-t border-neutral-200"><th scope="row" className="p-2">{String(row.month).padStart(2, '0')}</th>{['fees_collected_cents', 'fees_refunded_cents', 'gross_receipts_cents', 'card_processing_costs_cents'].map(key => <td key={key} className="whitespace-nowrap p-2">{money(row[key])}</td>)}</tr>)}</tbody></table></div>
-          <div className="mt-5 border-t border-neutral-200 pt-4">
-            <h3 className="font-semibold">Monthly BPT detail by event</h3>
-            <p className="mt-1 text-sm text-neutral-700">The CPA export includes service fees, fee refunds, ticket face value and paid organizer payouts. It identifies events and organizations by ID. Stripe processing costs are informational and do not reduce net service fees.</p>
-            <div className="mt-3 flex flex-wrap items-end gap-3">
-              <label className="block text-sm font-medium">Guam calendar month
-                <select className="input mt-1" value={month} disabled={busy} onChange={e => setMonth(e.target.value)}>
-                  {monthLabels.map((label, index) => <option key={label} value={String(index + 1).padStart(2, '0')}>{label}</option>)}
-                </select>
-              </label>
-              <button disabled={busy} className="btn-secondary" onClick={() => action('bpt_events_export')}>Export monthly BPT detail CSV</button>
-            </div>
-          </div>
         </section>
       </>}
     </div>

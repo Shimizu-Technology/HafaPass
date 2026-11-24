@@ -29,15 +29,28 @@ RSpec.describe PolicyRegistry do
   it "keeps the Copa draft out of the served policies and both approval digests" do
     catalog = described_class.send(:registry)
     draft = catalog.fetch("draft")
-    expect(draft).to include("status" => "draft", "effective_date" => nil)
+    expect(draft).to include(
+      "status" => "draft",
+      "effective_date" => nil,
+      "review_banner" => "DRAFT for review — not legal or tax advice — not in effect"
+    )
     expect(draft.fetch("version")).not_to eq(described_class.version)
+    draft_organizer = draft.dig("replacement_sections", "organizer-agreement")
+    expect(draft_organizer.map { |section| section.fetch("heading") }).to include(
+      "Our role as your limited agent", "Payouts", "Tax information", "Chargebacks and negative balances", "Buyer information"
+    )
+    draft_text = draft_organizer.map { |section| section.fetch("body") }.join("\n")
+    expect(draft_text).to include(
+      "no claim of right", "not {{operator_name}} revenue", "10%", "30 days",
+      "buyer list for your event belongs to you", "Specific Event Exemption Application"
+    )
     expect(described_class).to have_attributes(version: "2026-10-24", effective_date: "2026-10-24", status: "approved")
     served = [described_class.public_documents, described_class.review_summary,
-      described_class.buyer_terms, described_class.organizer_agreement]
+      described_class.buyer_terms, described_class.organizer_agreement, described_class.registry_digest]
 
     allow(described_class).to receive(:registry).and_return(catalog.except("draft"))
     expect([described_class.public_documents, described_class.review_summary,
-      described_class.buyer_terms, described_class.organizer_agreement]).to eq(served)
+      described_class.buyer_terms, described_class.organizer_agreement, described_class.registry_digest]).to eq(served)
   end
 
   it "keeps every digest and the register approval when only cosmetic settings change" do

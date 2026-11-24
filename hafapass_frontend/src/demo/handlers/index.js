@@ -2,8 +2,10 @@
 // buyer routes; the first one that returns something other than `undefined`
 // answers the request. To add a feature, create `./<feature>.js` exporting
 // `handle(ctx)` and add ONE import + ONE list entry below (see ../README.md).
+import * as cpaExport from './cpa-export'
 import * as baseline from './baseline'
 
 export const DEMO_HANDLERS = [
+  cpaExport,
   baseline,
 ]
