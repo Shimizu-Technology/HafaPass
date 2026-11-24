@@ -97,6 +97,15 @@ PAID_VUS=40 \
 k6 run load_tests/fd_championship_rush.js
 ```
 
+### Arrival profile: `PROFILE=burst` (default) or `ramp`
+
+`SCENARIO` chooses what each buyer does; `PROFILE` chooses how buyers arrive.
+
+- `burst` (default, the behaviour above): every VU starts at once and runs one pass.
+- `ramp`: new buyers arrive per second (k6 `ramping-arrival-rate`), climbing to `RAMP_PEAK_RATE` (default 100 per second) over `RAMP_UP` (30s), holding for `RAMP_HOLD` (30s) and falling over `RAMP_DOWN` (10s). `RAMP_PREALLOCATED_VUS` (100) and `RAMP_MAX_VUS` (600) bound the VU pool. With `SCENARIO=both` the paid ramp starts 5 s after the free one.
+
+Extra guards: `HAFAPASS_RUSH_TARGET=<host>` must equal the `BASE_URL` host when set (`scripts/rush_test/run_k6.sh` always sets it), and `HAFAPASS_PRODUCTION_HOSTS=a.example,b.example` adds hosts to refuse. The denylist now also covers `*.shimizu-technology.com` and `hafapass.netlify.app`. Offline self-check: `node scripts/rush_test/check_k6_script.mjs`. The hosted Saturday run is in [docs/SATURDAY_2026-11-28_RUNBOOK.md](../docs/SATURDAY_2026-11-28_RUNBOOK.md).
+
 ### Pass/Fail Thresholds
 
 - `http_req_failed`: `0%` (`422` on `POST /api/v1/orders` is inspected by body; only genuine inventory-exhaustion responses are accepted)

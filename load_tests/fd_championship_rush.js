@@ -6,7 +6,16 @@ const ACKNOWLEDGEMENT = 'I_ACKNOWLEDGE_THIS_CREATES_TEST_ORDERS_IN_AN_ISOLATED_E
 const PRODUCTION_HOST_PATTERNS = [
   /(^|\.)hafapass\.com$/i,
   /^hafapass-api\.onrender\.com$/i,
+  // Production site and any API custom domain live under this zone.
+  /(^|\.)shimizu-technology\.com$/i,
+  /^hafapass\.netlify\.app$/i,
 ]
+// Extra hosts to refuse, comma separated (for example a new production API domain).
+const EXTRA_PRODUCTION_HOSTS = String(__ENV.HAFAPASS_PRODUCTION_HOSTS || '')
+  .split(',').map(item => item.trim().toLowerCase()).filter(Boolean)
+// Optional second confirmation: when set, it must equal the exact BASE_URL host.
+// scripts/rush_test/run_k6.sh always sets it.
+const rushTarget = (__ENV.HAFAPASS_RUSH_TARGET || '').trim().toLowerCase()
 
 const scenarioMode = (__ENV.SCENARIO || 'free_saturation').trim().toLowerCase()
 const baseUrl = (__ENV.BASE_URL || '').replace(/\/$/, '')
@@ -19,6 +28,17 @@ const freeTicketTypeId = Number(__ENV.TICKET_TYPE_ID || 0)
 const freeVus = Number(__ENV.FREE_VUS || 150)
 const freeIterations = Number(__ENV.FREE_ITERATIONS || 1)
 const freeMaxDuration = __ENV.FREE_MAX_DURATION || '3m'
+
+// PROFILE shapes the arrival pattern (SCENARIO still chooses what each buyer does):
+//   burst (default) - every VU starts at once, one pass each: the sales-open stampede.
+//   ramp            - buyers arrive at a rate that climbs to a peak, holds, then falls off.
+const profile = (__ENV.PROFILE || 'burst').trim().toLowerCase()
+const rampPeakRate = Number(__ENV.RAMP_PEAK_RATE || 100) // new buyers per second at the peak
+const rampUp = __ENV.RAMP_UP || '30s'
+const rampHold = __ENV.RAMP_HOLD || '30s'
+const rampDown = __ENV.RAMP_DOWN || '10s'
+const rampMaxVus = Number(__ENV.RAMP_MAX_VUS || 600)
+const rampPreallocatedVus = Number(__ENV.RAMP_PREALLOCATED_VUS || 100)
 
 const paidEventSlug = (__ENV.PAID_EVENT_SLUG || freeEventSlug).trim()
 const paidTicketTypeId = Number(__ENV.PAID_TICKET_TYPE_ID || 0)
@@ -62,28 +82,53 @@ const UNEXPECTED_422_CODES = new Set([
 ])
 
 const validScenarios = ['free_saturation', 'paid_holds', 'both']
+const validProfiles = ['burst', 'ramp']
 const runFree = scenarioMode === 'free_saturation' || scenarioMode === 'both'
 const runPaid = scenarioMode === 'paid_holds' || scenarioMode === 'both'
 
-const scenarios = {}
-if (runFree) {
-  scenarios.free_saturation = {
-    executor: 'per-vu-iterations',
-    exec: 'freeSaturation',
-    vus: freeVus,
-    iterations: freeIterations,
-    maxDuration: freeMaxDuration,
+// Burst = N VUs, one iteration each, all released together.
+// Ramp = open model: new buyers arrive per second (each runs the funnel once),
+// ramping up to RAMP_PEAK_RATE, holding, then ramping down.
+function rampScenario(exec, startTime) {
+  return {
+    executor: 'ramping-arrival-rate',
+    exec,
+    startRate: 1,
+    timeUnit: '1s',
+    preAllocatedVUs: rampPreallocatedVus,
+    maxVUs: rampMaxVus,
+    stages: [
+      { target: rampPeakRate, duration: rampUp },
+      { target: rampPeakRate, duration: rampHold },
+      { target: 0, duration: rampDown },
+    ],
+    startTime,
   }
 }
+
+const scenarios = {}
+if (runFree) {
+  scenarios.free_saturation = profile === 'ramp'
+    ? rampScenario('freeSaturation', '0s')
+    : {
+        executor: 'per-vu-iterations',
+        exec: 'freeSaturation',
+        vus: freeVus,
+        iterations: freeIterations,
+        maxDuration: freeMaxDuration,
+      }
+}
 if (runPaid) {
-  scenarios.paid_holds = {
-    executor: 'per-vu-iterations',
-    exec: 'paidHolds',
-    vus: paidVus,
-    iterations: paidIterations,
-    maxDuration: paidMaxDuration,
-    startTime: runFree ? '5s' : '0s',
-  }
+  scenarios.paid_holds = profile === 'ramp'
+    ? rampScenario('paidHolds', runFree ? '5s' : '0s')
+    : {
+        executor: 'per-vu-iterations',
+        exec: 'paidHolds',
+        vus: paidVus,
+        iterations: paidIterations,
+        maxDuration: paidMaxDuration,
+        startTime: runFree ? '5s' : '0s',
+      }
 }
 
 const thresholds = {
@@ -185,12 +230,18 @@ export function setup() {
   if (!validScenarios.includes(scenarioMode)) {
     fail(`SCENARIO must be one of ${validScenarios.join(', ')} (got "${scenarioMode}").`)
   }
+  if (!validProfiles.includes(profile)) {
+    fail(`PROFILE must be one of ${validProfiles.join(', ')} (got "${profile}").`)
+  }
   if (!baseUrl) fail('BASE_URL is required and must point to an isolated staging API.')
 
   const host = extractHost(baseUrl)
   if (!host) fail(`BASE_URL "${baseUrl}" is not a valid http(s) URL.`)
-  if (PRODUCTION_HOST_PATTERNS.some(pattern => pattern.test(host))) {
+  if (PRODUCTION_HOST_PATTERNS.some(pattern => pattern.test(host)) || EXTRA_PRODUCTION_HOSTS.includes(host)) {
     fail(`Refusing to run load test against production host "${host}". Use an isolated staging URL.`)
+  }
+  if (rushTarget && rushTarget !== host) {
+    fail(`HAFAPASS_RUSH_TARGET "${rushTarget}" does not match the BASE_URL host "${host}".`)
   }
 
   if (forwardedProto && forwardedProto !== 'https') fail('FORWARDED_PROTO may only be "https".')
@@ -406,6 +457,7 @@ function metricLatency(data, name) {
 export function handleSummary(data) {
   const summary = {
     scenario: scenarioMode,
+    profile,
     shared_nat: sharedNat,
     distributed_ip_headers: !sharedNat && distributedIpHeaders,
     counts: {

@@ -103,6 +103,8 @@ jobs:
           working-directory: hafapass_api
       - name: CI helper regression tests
         run: python3 -m unittest discover -s scripts -p test_ci_helpers.py
+      - name: Rush test helper tests
+        run: python3 -m unittest discover -s scripts -p test_rush_test_helpers.py
       - name: RuboCop
         working-directory: hafapass_api
         run: bundle exec rubocop --format github
