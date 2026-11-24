@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Loads the committed schema into a NEW, EMPTY database for the rush copy (no migration replay;
 # see docs/SATURDAY_2026-11-28_RUNBOOK.md and PR #235). Run from your laptop in a clone at the
-# commit you will deploy, with the copy's DIRECT Neon URL:
+# commit you will deploy (Ruby from .ruby-version and `bundle install` in hafapass_api done),
+# with the DIRECT Neon URL of the copy:
 #
 #   RUSH_COPY_DIRECT_URL='postgres://...' scripts/rush_test/init_empty_db.sh
 #
 # Refuses unless: the database name contains both "rush" and "staging", the host is a Neon host
 # (or localhost), the host is not a production host, and the database has no tables. Other
-# StageSafety values are throwaway ones from local_stage_env.sh; nothing is sent anywhere.
+# StageSafety values are throwaway ones from local_stage_env.sh; the only network use is the connection to that database.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 url="${RUSH_COPY_DIRECT_URL:?set RUSH_COPY_DIRECT_URL to the direct database URL of the rush copy}"
@@ -24,7 +25,11 @@ source "$here/local_stage_env.sh" "hafapass_rush_init_staging" >/dev/null
 export DATABASE_URL="$url" STAGING_DATABASE_URL="$url" DATABASE_MIGRATION_URL="$url"
 run() {
   local out rc=0
-  out="$(mise exec -- bundle exec rails "$@" 2>&1)" || rc=$?
+  if command -v mise >/dev/null 2>&1; then
+    out="$(mise exec -- bundle exec rails "$@" 2>&1)" || rc=$?
+  else
+    out="$(bundle exec rails "$@" 2>&1)" || rc=$?
+  fi
   printf '%s\n' "$out" | grep -v 'Stripe' || true
   return "$rc"
 }

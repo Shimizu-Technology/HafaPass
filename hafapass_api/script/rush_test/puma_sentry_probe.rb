@@ -15,7 +15,19 @@
 #   rush_sentry_probe phase=boot worker=0 pid=123 sentry_initialized=true sending_allowed=true environment=rush-copy event_id=ab12...
 # A missing event_id (or sending_allowed=false) means that worker would NOT report errors.
 # Each message is tagged probe=rush-sentry-fork, worker_index and pid; filter Sentry on the tag.
-# It sends nothing but those labelled messages and changes no data.
+# It sends nothing but those labelled messages and changes no data. It refuses to boot outside an
+# isolated staging copy (see the guard below).
+# Staging-only: refuse to boot unless the same isolated-copy guard as the other rush scripts passes
+# (RAILS_ENV=staging, HAFAPASS_RUSH_TARGET equal to PUBLIC_API_URL's host, a *rush*staging* database,
+# no live Stripe keys, no production host). On Render set HAFAPASS_RUSH_TARGET as a temporary
+# environment variable for this boot and remove it afterwards.
+require File.expand_path("script/rush_test/guard", Dir.pwd)
+begin
+  RushTest::Guard.check_environment!(env: ENV, rails_env: ENV["RAILS_ENV"])
+rescue RushTest::Refused => e
+  abort("puma_sentry_probe: #{e.message}")
+end
+
 # Evaluate the real file inside this DSL (Puma's own `load` defers it, which would skip it).
 real_config = File.expand_path("config/puma.rb", Dir.pwd)
 instance_eval(File.read(real_config), real_config)

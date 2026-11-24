@@ -82,6 +82,13 @@ class CollectResults(unittest.TestCase):
         consistency = {"checks": [{"name": "oversell", "value": 1, "pass": False}], "tables": {}}
         self.assertEqual(collect_results.overall(collect_results.evaluate(self.summary, consistency)), "FAIL")
 
+    def test_sell_out_time_reports_created_span_when_nothing_completed(self):
+        consistency = {"checks": [], "tables": {"event_timing": [
+            {"event_id": 9, "orders_total": 200, "orders_completed": 0, "first_order_to_last_completion_seconds": None, "first_to_last_order_created_seconds": "7.4"}]}}
+        rows = collect_results.evaluate(None, consistency)
+        self.assertIn("no completed orders; 7.4 s first to last order created", rows[0]["value"])
+        self.assertEqual(rows[0]["status"], "INFO")
+
     def test_no_data(self):
         self.assertEqual(collect_results.overall(collect_results.evaluate()), "NO DATA")
 

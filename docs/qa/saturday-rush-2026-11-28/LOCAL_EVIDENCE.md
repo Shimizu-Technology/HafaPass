@@ -44,3 +44,15 @@ Each run used a fresh fixture from `seed_fixture.rb` (free and paid event, capac
 | `python3 -m unittest scripts/test_rush_test_helpers.py` | 13 tests pass |
 | `init_empty_db.sh` on an empty local database | loads the schema; refuses a second run, a name without `rush`/`staging`, and a non-Neon host |
 | `scripts/rush_test/consistency.sql` through `psql` | all 8 query blocks run without error |
+
+## Fix round 1 (review of head ac921987)
+
+| Change | Check |
+| --- | --- |
+| `init_empty_db.sh` falls back to `bundle exec` when `mise` is absent | Ran it with `mise` removed from `PATH` (`command -v mise` empty, plain Ruby 3.3.14): loaded the schema into an empty local database |
+| `puma_sentry_probe.rb` runs the shared guard first | With `RAILS_ENV=production` and no target it exits with all three reasons; with the local staging environment it boots two workers and each logs its boot and late probe line (Sentry off there: no DSN, so `sending_allowed=false`, as expected) |
+| First-to-last `created_at` sell-out span for pending holds | `consistency_check.rb` and `consistency.sql` run against a freshly seeded local database; `collect_results.py` has a unit test for the no-completed-orders case |
+| Ramp sizing against the per-IP throttles | Arithmetic only, from `rack_attack.rb` (not run: no load runs this round) |
+| Part 1 prerequisites | Each requirement was read in the cited file and line; nothing was run against production |
+
+Checks this round: `ruby -c` on all `hafapass_api/script/rush_test/*.rb`, `bash -n` on the shell scripts, `node --check` on `check_k6_script.mjs` and `fd_championship_rush.js`, `python3 -m unittest scripts/test_rush_test_helpers.py` (14 tests), `rspec spec/scripts/rush_test_guard_spec.rb` (15 examples), RuboCop on the changed Ruby. No Vite build, browser run or load run.

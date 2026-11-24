@@ -61,14 +61,17 @@ conn.transaction do
   over_capacity = events.select { |row| row["max_capacity"] && row["tickets_not_cancelled"].to_i + row["active_hold_qty"].to_i > row["max_capacity"].to_i }
   add.call("event capacity: tickets + live holds <= max_capacity (events over)", over_capacity.size, over_capacity.empty?)
 
-  # Sell-out time: first order created until the last ticket issued (server clock, seconds).
+  # Sell-out time: first order created until the last order completed (server clock, seconds). Pending paid
+  # holds (PAYMENT_MODE=test) never complete, so the first-to-last order created_at span is reported too.
   timing = rows.call(<<~SQL)
     SELECT e.id AS event_id, e.title,
            COUNT(o.id)::int AS orders_total,
            COUNT(o.id) FILTER (WHERE o.status = 1)::int AS orders_completed,
            MIN(o.created_at) AS first_order_at,
            MAX(o.completed_at) AS last_completed_at,
-           ROUND(EXTRACT(EPOCH FROM (MAX(o.completed_at) - MIN(o.created_at)))::numeric, 1) AS first_order_to_last_completion_seconds
+           ROUND(EXTRACT(EPOCH FROM (MAX(o.completed_at) - MIN(o.created_at)))::numeric, 1) AS first_order_to_last_completion_seconds,
+           MAX(o.created_at) AS last_order_created_at,
+           ROUND(EXTRACT(EPOCH FROM (MAX(o.created_at) - MIN(o.created_at)))::numeric, 1) AS first_to_last_order_created_seconds
     FROM events e LEFT JOIN orders o ON o.event_id = e.id
     WHERE #{scope} GROUP BY e.id, e.title ORDER BY e.id
   SQL
@@ -134,10 +137,11 @@ report[:tables][:ticket_types].each do |row|
   puts format("  event %-4s type %-4s %-10s sold %5s / %-5s live holds %-4s tickets %s", row["event_id"], row["ticket_type_id"],
     row["name"], row["quantity_sold"], row["quantity_available"], row["active_hold_qty"], row["tickets_not_cancelled"])
 end
-puts "\nSell-out timing (first order created -> last order completed):"
+puts "\nSell-out timing (server clock; completion is n/a while paid orders are still pending holds):"
 report[:tables][:event_timing].each do |row|
-  puts format("  event %-4s orders %-5s completed %-5s %s s", row["event_id"], row["orders_total"], row["orders_completed"],
-    row["first_order_to_last_completion_seconds"] || "n/a")
+  puts format("  event %-4s orders %-5s completed %-5s first order -> last completion %s s; first -> last order created %s s",
+    row["event_id"], row["orders_total"], row["orders_completed"],
+    row["first_order_to_last_completion_seconds"] || "n/a", row["first_to_last_order_created_seconds"] || "n/a")
 end
 puts "\nOverall: #{report[:pass] ? 'PASS' : 'FAIL'}"
 puts "JSON: " + JSON.generate(report)

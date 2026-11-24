@@ -42,7 +42,7 @@ Estimated sell-out of 200 from the pooled p50 (script prints it): ______ to ____
 
 | Measure | Result | Target | Pass / fail | Source |
 | --- | --- | --- | --- | --- |
-| Sell-out time (first order created to last order completed, per event) | | informational; compare with section 2 | | consistency check, `event_timing` |
+| Sell-out time per event: first order created to last order **completed**, and first to last order **created** (use the second for `PAYMENT_MODE=test`, where paid orders stay pending holds) | / | informational; compare with section 2 | | consistency check, `event_timing` |
 | Orders accepted (201) / clean sold-out (422) | / | accepted = capacity | | k6 summary |
 | Order p50 / p95 / p99 (ms), free or paid hold | / / | p95 ≤ 1,500 | | k6 summary |
 | Listing p50 / p95 / p99 (ms) | / / | p95 ≤ 300 | | k6 summary (free runs only) |

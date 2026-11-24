@@ -71,9 +71,13 @@ def evaluate(k6=None, consistency=None, sampler=None, rtt=None):
             rows.append(row(check["name"], check["value"], "pass", verdict(check["pass"])))
         for timing in consistency.get("tables", {}).get("event_timing", []):
             seconds = timing.get("first_order_to_last_completion_seconds")
+            created = timing.get("first_to_last_order_created_seconds")
             if timing.get("orders_total"):
-                rows.append(row(f"Sell-out time, event {timing['event_id']} ({timing['orders_completed']} completed)",
-                                f"{seconds} s" if seconds is not None else "n/a", "info (compare with the RTT estimate)", "INFO"))
+                value = f"{seconds} s to last completion" if seconds is not None else "no completed orders"
+                if created is not None:
+                    value += f"; {created} s first to last order created"
+                rows.append(row(f"Sell-out time, event {timing['event_id']} ({timing['orders_completed']} of {timing['orders_total']} completed)",
+                                value, "info (compare with the RTT estimate)", "INFO"))
     if sampler:
         rows.append(row("Peak database sessions (pg_stat_activity)", sampler.get("peak_total_connections"), "below Neon max_connections", "INFO"))
         rows.append(row("Peak active queries", sampler.get("peak_active"), "info", "INFO"))

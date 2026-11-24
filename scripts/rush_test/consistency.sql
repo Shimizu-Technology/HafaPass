@@ -20,11 +20,14 @@ SELECT e.id, e.title, e.max_capacity,
                  WHERE h.event_id = e.id AND h.status = 0 AND h.expires_at > now()), 0) AS live_hold_qty
 FROM events e WHERE e.title LIKE '[LOAD TEST]%' ORDER BY e.id;
 
--- 3. Orders by status, and sell-out timing (first order to last completion, server clock).
+-- 3. Sell-out timing (server clock). Completion is empty while paid orders are still pending holds
+--    (PAYMENT_MODE=test); use seconds_first_to_last_order_created then.
 SELECT e.id AS event_id, COUNT(o.id) AS orders_total,
        COUNT(o.id) FILTER (WHERE o.status = 1) AS orders_completed,
        MIN(o.created_at) AS first_order_at, MAX(o.completed_at) AS last_completed_at,
-       ROUND(EXTRACT(EPOCH FROM (MAX(o.completed_at) - MIN(o.created_at)))::numeric, 1) AS seconds_first_order_to_last_completion
+       ROUND(EXTRACT(EPOCH FROM (MAX(o.completed_at) - MIN(o.created_at)))::numeric, 1) AS seconds_first_order_to_last_completion,
+       MAX(o.created_at) AS last_order_created_at,
+       ROUND(EXTRACT(EPOCH FROM (MAX(o.created_at) - MIN(o.created_at)))::numeric, 1) AS seconds_first_to_last_order_created
 FROM events e LEFT JOIN orders o ON o.event_id = e.id
 WHERE e.title LIKE '[LOAD TEST]%' GROUP BY e.id ORDER BY e.id;
 

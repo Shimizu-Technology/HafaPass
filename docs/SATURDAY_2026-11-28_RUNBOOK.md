@@ -15,7 +15,7 @@ Companion files: [results sheet](qa/saturday-rush-2026-11-28/RESULTS_TEMPLATE.md
 
 | # | Decision | Recommendation |
 | --- | --- | --- |
-| D1 | Live test path: Gate H proof candidate (formal) or an ordinary $2 event | Proof candidate. It stays out of marketplace, sitemap and search, and only an admin can buy. See gaps G1 and G2 |
+| D1 | Live test path: **A** ordinary $2 event, or **B** Gate H proof candidate | **A.** B is enforced in code behind Gate E, F and G approvals (500-ticket manifest, three physical devices, accessibility and load evidence). See Part 1, gaps G1 and G2 |
 | D2 | Leave production in live mode after the test, or switch back to test | Decide before you start; the switch is global and door staff must refresh scanners after it |
 | D3 | Which organizer and which bank/entity the $2 test belongs to | Shimizu Technology's own organizer; Gate H needs it named |
 | D4 | Rush copy: new Neon project at production's compute size (may cost money) or the free plan at a smaller size | Match production's compute, or the numbers say nothing about January |
@@ -27,19 +27,31 @@ Companion files: [results sheet](qa/saturday-rush-2026-11-28/RESULTS_TEMPLATE.md
 
 ## Accounts and settings you need (names only, never send the values)
 
-- Production: Render dashboard (hafapass-api), Netlify (hafapass site), Stripe dashboard in live mode, an HåfaPass admin sign-in, Sentry, the restricted evidence folder, a card that can be charged $3.10 and refunded.
+- Production: Render dashboard (hafapass-api), Netlify (hafapass site), Stripe dashboard in live mode, an HåfaPass admin sign-in, Sentry, the restricted evidence folder, a card that can be charged $3.10 and refunded, a verified Shimizu organizer that is payout-ready.
 - Rush copy: Render (a new web service), Neon (a new project), a Clerk development instance or formatted dummy keys, Sentry DSN (same project, separate environment), Stripe **test** keys and a test webhook endpoint (only for `PAYMENT_MODE=test`).
-- Your laptop: k6 (`brew install k6`), `git`, `curl`, `python3`, Node 20 or newer (only for the offline self-check).
+- Your laptop: k6 (`brew install k6`), `git`, `curl`, `python3`, Node 20 or newer (only for the offline self-check), and **Ruby from `hafapass_api/.ruby-version` with Bundler and the gems installed** (`cd hafapass_api && bundle install`) for `init_empty_db.sh`, which runs `rails db:schema:load`. `mise` is optional: the script uses it when present and plain `bundle exec` otherwise. The Neon direct URL needs network access from your laptop to Neon; nothing else in `init_empty_db.sh` touches the network.
 
 ---
 
 # Part 1: 11:30 AM $2 live-money test on production
 
-Follows [Gate H](GATE_H_LIVE_MONEY_PROOF.md). Gate H is marked optional since Oct 21 ([Production cutover](PRODUCTION_CUTOVER.md)); this run is still the first real charge, so treat it as the proof.
+**What the buyer pays.** A $2.00 ticket plus the default buyer fee (5% plus $1.00) is $1.10, so the order total is **$3.10 (310 cents)**. Gate H's ceiling is 500 cents (`LiveMoneyProofAuthorization::MAX_AMOUNT_CENTS`), so it fits. The largest base price that fits is $3.80.
 
-**What the buyer pays.** A $2.00 ticket plus the default buyer fee (5% plus $1.00) is $1.10, so the order total is **$3.10 (310 cents)**. That is under Gate H's 500-cent ceiling. The largest base price that fits is $3.80.
+## Which path: read this first (D1)
 
-**What this morning covers.** Gate H steps 1 and 2 (authorize, charge, confirm communications), then a partial refund and a final refund. Settlement, payout and the bank receipt need the event to be complete (6 hours after its end) and a bank transfer in 2–3 business days, so they cannot finish on Saturday morning. Plan them as a second session (gap G3).
+The backend treats the two ways to run this test very differently. Checked against the code:
+
+| | **Path A: ordinary $2 event** | **Path B: Gate H proof candidate** |
+| --- | --- | --- |
+| Gate E, F, G approvals | **Not enforced.** `Event#publish_checklist` has no gate item and says the reviews "never block publishing or sales" (`event.rb:748-750`); `OrderCreator` checks organizer verified, payout-ready, payments on (`order_creator.rb:451`) | **Enforced in code.** `LiveMoneyProofAuthorizations::Manager.request!` raises "A current Gate G rehearsal approval is required" (`manager.rb:23`), and `LiveMoneyProofAuthorization#current_bindings?` re-checks it on approval and at checkout (`live_money_proof_authorization.rb:51-61`) |
+| Gate G needs | n/a | An active Gate F approval, which needs an active Gate E approval (`event_day_rehearsal.rb:4-6`, `pilot_validation.rb:4-6`), all bound to the event's digest **and the deployed commit** (`PilotReadiness.application_revision`). Gate G's own validations demand a signed manifest of at least 500 generated tickets, at least three physical devices and drills (`event_day_rehearsal_review.rb:110-123, 223`); Gate F demands accessibility, device and load evidence ([Gate F](GATE_F_VALIDATION_EVIDENCE.md)) |
+| Visible to the public | Yes, while published and on sale | No: hidden from marketplace, sitemap, search; only an admin can buy (`events_controller.rb:96`, `order_creator.rb:456-467`) |
+| Counts in revenue and settlements | Yes unless fully refunded | Same (live order) |
+| Feasible by 11:30 AM Saturday | **Yes** | **Only if the E, F and G evidence bundles already exist.** Any deploy after approval, or any edit to the event, voids them |
+
+**Recommendation.** Run **Path A** on Saturday: it proves the live charge, webhook, receipt, ledger, partial and final refund, which is what the morning needs. Treat the formal Gate H record (Path B) as a separate piece of work: Gate H is marked optional since Oct 21 ([Production cutover](PRODUCTION_CUTOVER.md)), and Path B's prerequisites are weeks of rehearsal evidence, not a morning's setup (gaps G1, G2). If Leon wants Path B on Saturday regardless, every prerequisite is listed in [Path B](#path-b-gate-h-proof-candidate-only-if-gates-e-g-are-approved).
+
+**What this morning covers.** Charge, confirmation, receipt, partial refund and final refund. Settlement, payout and the bank receipt need the event to be complete (6 hours after its end, so a 12:30–1:00 PM event completes about 7:00 PM) and a bank transfer in 2–3 business days; plan them as a second session (gap G3).
 
 ## Pre-checks (10:45 AM)
 
@@ -49,26 +61,26 @@ Follows [Gate H](GATE_H_LIVE_MONEY_PROOF.md). Gate H is marked optional since Oc
 | API ready | `curl -s -o /dev/null -w '%{http_code}\n' https://hafapass-api.onrender.com/api/v1/readiness` | `200` |
 | Frontend release | `curl -s https://hafapass.shimizu-technology.com/release.json`; Netlify → Deploys | `revision` matches the published deploy; the deploy list shows **Auto publishing locked** until you decide otherwise |
 | Environment | `curl -s https://hafapass-api.onrender.com/api/v1/config` | `"environment":"production"`; note `payment_mode` |
-| Admin gates | Admin dashboard: no red banner. Admin → Provider readiness: Stripe live, policy register and production email (Resend) approved | All green. Without production email approval the buyer receipt fails |
+| Admin gates | Admin dashboard: no red banner. Admin → Provider readiness: Stripe live, policy register and production email (Resend) approved | All green. Without production email approval the buyer receipt fails; without the policy register approved checkout is refused |
 | Stripe | Live mode toggle on. Developers → Webhooks: endpoint `https://hafapass-api.onrender.com/webhooks/stripe` enabled | Endpoint present and recent deliveries healthy |
 | Sentry | Production project open on your phone | No open incident |
-| Organizer | The test organizer is active and payout-ready (connected account, certified tax information, approved readiness) | Paid sales need all three (`Organization#payout_ready?`) |
+| Organizer | The test organizer is **verified** (Admin dashboard → Organizers waiting for verification → Verify) and payout-ready (connected account, certified tax information, approved readiness) | In production an unverified organizer's event does not sell; paid sales need `Organization#payout_ready?` |
 | Evidence | Restricted folder open; stopwatch running | Never put card data, bank numbers or buyer PII in Git |
 
-Write down both revisions (API and frontend) and the time. They go on the results sheet.
+Write down both revisions (API and frontend) and the time. They go on the results sheet. **Do not deploy anything between now and the end of the test.**
 
-## Steps
+## Path A: ordinary $2 event (recommended)
 
-Menu names follow Gate H and the cutover guide. If a label on screen differs, trust the screen and note it.
+Menu names follow the cutover guide and the screens' code. If a label on screen differs, trust the screen and note it.
 
 | # | Do | Verify | Capture |
 | --- | --- | --- | --- |
 | 1 | Admin → Settings → Payment mode: switch to **live** if it is not (D2) | Banner shows live; audit entry has your name and the platform account | Screenshot, time |
-| 2 | Create the event: title starts `[LIVE MONEY TEST]`, capacity 1, one general-admission ticket at $2.00, no tiers, add-ons, promo or seating. Mark it a live-money proof candidate (Admin → Events) | Event digest changes if you edit the flag later, so finish all edits first | Event ID |
-| 3 | Admin → Events → Gate H: enter the finance operator's exact sign-in email, ceiling 310–500 cents, expiry under two hours. A second administrator (or you) approves | Authorization shows candidate, amount, buyer and expiry | Authorization ID |
-| 4 | Open the private proof checkout from the Gate H dialog. Check the event, quantity, total ($3.10), live banner and receipt email. Pay once. **Do not retry** if the result is ambiguous | Order completes; ticket PDF and QR present | Order ID, order reference |
+| 2 | As the Shimizu organizer, create the event: title `Live payment check - staff only`, starts today 12:30 PM and ends 1:00 PM Guam, one general-admission ticket type at $2.00, **Tickets available 1**, Tickets per order 1, Tickets per buyer 1, and a ticket sales window that ends about 30 minutes after you publish. Publish it | Publish checklist all green. The event is **public until you pause it** (step 5), so keep the window short | Event ID |
+| 3 | Open the event page on the public site in a private window, sign in as an admin (a test-mode purchase is admin-only, a live one is open), buy the ticket. Check the event, quantity, total ($3.10), live banner and receipt email. Pay once. **Do not retry** if the result is ambiguous | Order completes; ticket PDF and QR present | Order ID, order reference |
+| 4 | Admin → Events → **Pause sales** for the event, right after the payment | Event shows sales paused; no one else can buy | Screenshot |
 | 5 | Order and ticket: Admin → Orders → open the order | Status completed, 1 ticket issued, total 310 | Screenshot |
-| 6 | Email receipt: open the mailbox; Admin → Operations message deliveries | Confirmation delivered to the operator address; delivery row `sent`/`delivered` | Screenshot, delivery ID |
+| 6 | Email receipt: open the mailbox; Admin → Operations message deliveries | Confirmation delivered to the buyer address; delivery row `sent`/`delivered` | Screenshot, delivery ID |
 | 7 | Stripe dashboard (live) → Payments | One charge of $3.10, succeeded; fee and net shown; copy the `pi_` and `ch_` IDs | Redacted IDs |
 | 8 | Stripe → Developers → Webhooks → the endpoint → Events | `payment_intent.succeeded` (and `charge.succeeded`) delivered with 200 | Event IDs |
 | 9 | Ledger rows (Render shell on **hafapass-api**, read-only): `bundle exec rails runner 'puts({orders: Order.count, itemized_orders: Order.joins(:order_items).distinct.count, open_reconciliation: ReconciliationException.open.count}.to_json)'` and `bundle exec rails runner 'puts Commerce::LedgerTotals.call(Order.where(status: [:completed, :partially_refunded, :refunded])).to_json'` | Gross, fees and proceeds agree with the order; `open_reconciliation` is 0 | Command output |
@@ -78,29 +90,45 @@ Menu names follow Gate H and the cutover guide. If a label on screen differs, tr
 | 13 | **Final refund**: refund everything left | Order `refunded`; second buyer notice; Stripe refunds sum to $3.10 | Refund ID |
 | 14 | Stop for the day unless the event is complete | Statement, payout, bank receipt and the negative-balance settlement follow Gate H steps 3–5 after the event ends | Schedule in the evidence folder |
 
-Note on step 13: Gate H wants the final refund **after** the payout, to prove the post-payout liability. Refunding fully on Saturday morning proves refunds but not that liability. If you want the full Gate H chronology, do step 11 now, stop, and run step 13 after the payout (gap G3).
+Note on step 13: Gate H wants the final refund **after** the payout, to prove the post-payout liability. Refunding fully on Saturday morning proves refunds but not that liability. For the full chronology, do step 11 now, stop, and run step 13 after the payout (gap G3).
+
+## Path B: Gate H proof candidate (only if Gates E–G are approved)
+
+Every requirement below is enforced by the backend, so a missing one fails at the step named. Steps follow the order the code needs.
+
+1. **Event fields** (`Event#live_money_proof_candidate_configured?`, `event.rb:791-800`). The event must have: title starting `[LIVE MONEY TEST]`; **Event capacity 1**; exactly **one** ticket type; price 1–500 cents and price plus buyer fee at most 500 cents (a $2.00 ticket: 200 + 110 = 310); **Tickets available 1**; **Tickets per order 1**; **Tickets per buyer 1**; no pricing tiers, no add-ons or catalog items, no promo codes, no seating. All three limit fields are on the ticket type form (Tickets available, Tickets per order, Tickets per buyer). The publish checklist item "Live-money proof event is hidden, single-ticket, and capped at $5" blocks publishing until this holds.
+2. **Flag it while still a draft.** Admin → Events → **Launch reviews** → **Mark as hidden proof candidate**. The flag can only change while the event is a draft and has no orders (`event.rb:885-892`). Then **publish** the event: authorization requests are refused unless it is published (`manager.rb:118`, and again in `current_bindings?`).
+3. **Gate E.** Launch reviews → **Prepare pilot readiness**: restricted evidence reference and SHA-256, six named roles, twelve controls ([Gate E](GATE_E_PILOT_READINESS_EVIDENCE.md)). One admin may submit and approve.
+4. **Gate F.** Launch reviews → **Prepare Gate F evidence**: device, accessibility, journey and load evidence bundle ([Gate F](GATE_F_VALIDATION_EVIDENCE.md)). Needs the active Gate E approval.
+5. **Gate G.** Launch reviews → **Prepare Gate G rehearsal**: manifest of at least 500 generated tickets, three physical devices, drills ([Gate G](GATE_G_EVENT_DAY_REHEARSAL_EVIDENCE.md)). Needs the active Gate F approval and the same event digest.
+6. **Freeze.** Each approval is bound to the event's material configuration and to the deployed commit. Editing the event, or any API deploy, after approval makes it inactive and the next step fails. Check readiness, then do not touch the event or deploy.
+7. **Gate H authorization.** Launch reviews → **Prepare live-payment validation** → request: the finance operator's exact sign-in email, a ceiling of 310–500 cents, an expiry within two hours. An administrator (you may approve your own) approves. Requires a payout-ready connected account and live Stripe provider readiness (`manager.rb:18-20`).
+8. **Charge** from the private proof checkout in the same dialog, then continue with Path A steps 5–14. Skip the Pause step; the event is already hidden.
+
+If any of steps 3–5 cannot be completed with real evidence, do not approximate: use Path A.
 
 ## Evidence to keep (restricted folder)
 
-Screenshots of steps 1–13; order, payment, refund and authorization IDs; Stripe `pi_`, `ch_`, `re_` IDs and webhook event IDs; both revisions; the ledger command output; the buyer receipt and refund emails (redact names); the time of each step in UTC. Include SHA-256 digests of any bank or settlement document later.
+Screenshots of every step; order, payment, refund (and authorization, for Path B) IDs; Stripe `pi_`, `ch_`, `re_` IDs and webhook event IDs; both revisions; the ledger command output; the buyer receipt and refund emails (redact names); the time of each step in UTC. Include SHA-256 digests of any bank or settlement document later.
 
 ## Rollback and cleanup
 
-- Money: a failed or uncertain run needs finance review and a **new** authorization. Never reuse one.
+- Money: a failed or uncertain run needs finance review. For Path B it also needs a **new** authorization; never reuse one.
 - Refund anything that was charged. Confirm Stripe shows the refund `succeeded` and the order `refunded`.
-- Leave the `[LIVE MONEY TEST]` event in place (it is hidden from the public). Archive it only after its money is closed ([Settlement and payout operations](SETTLEMENT_AND_PAYOUT_OPERATIONS.md)); the archive guard will refuse earlier.
-- Revoke the Gate H authorization if it is unused and not yet expired.
+- Path A: after the refund, leave the event paused. Archive it only after its money is closed ([Settlement and payout operations](SETTLEMENT_AND_PAYOUT_OPERATIONS.md)); the archive guard will refuse earlier. Path B: the event is hidden; same archive rule.
+- Path B only: revoke the Gate H authorization if it is unused and not yet expired.
 - If you switched to live in step 1 and decided to go back (D2), switch to test and tell door staff to refresh the scanner.
 - Do not delete database rows. Do not unlock Netlify publishing unless that was the plan.
 - Never rotate or edit Stripe or encryption keys during the test.
 
 ## Gaps found in the existing docs
 
-- **G1.** Gate H says normal paid events "fail closed" without Gate H, while the Oct 21 cutover guide says Gates E–J no longer block sales. The text of Gate H also says the candidate "must complete Gates E, F, and G". Decide which applies, and record it on the sheet.
-- **G2.** Gate H describes the proof candidate path as private to admins. The cutover guide says production admins may buy test-mode tickets. The two paths differ in what gets recorded. This runbook follows Gate H.
+- **G1.** [Gate H](GATE_H_LIVE_MONEY_PROOF.md) says normal paid events "fail closed" without Gate H and that a candidate must complete Gates E, F and G first. The code agrees only for the candidate: ordinary events are never blocked by the gates (comment at `event.rb:748-750`; `LivePilot` "required" is a status flag, and a bounded pilot run is optional, `live_pilot.rb:102`). The Oct 21 cutover guide matches the code; Gate H's "normal paid events fail closed" sentence is stale.
+- **G2.** The same doc's "Optional record" banner suggests the proof is optional, yet the proof-candidate path (the only way to get the hidden, admin-only checkout) hard-requires Gates E–G. The optional banner does not apply to Path B.
 - **G3.** Gate H's chronology (charge, partial refund, settlement, payout, final refund, negative balance) cannot finish on one Saturday morning. The bank step alone is 2–3 business days.
 - **G4.** Gate H does not say which ledger commands to run. Step 9 uses the ones from [Commerce ledger operations](COMMERCE_LEDGER_OPERATIONS.md).
 - **G5.** The $3.10 total is not stated anywhere. Gate H gives 205 cents for a 100-cent ticket; the same rule gives 310 cents for $2.00.
+- **G15.** The Gate H doc does not list the extra proof-candidate field limits (Tickets available 1, per order 1, per buyer 1) or that the event must be published before an authorization can be requested.
 
 ---
 
@@ -232,7 +260,8 @@ Set up the copy on Friday or early Saturday so this window is only measurement.
 | --- | --- |
 | Before | Preflight (below), then **Sentry after fork** (below), then Neon RTT |
 | Run 1 | `paid_holds` **burst** (simulate) |
-| Run 2 | `paid_holds` **ramp** (simulate) |
+| Run 2a | `paid_holds` **ramp**, sized to stay under the production throttles (simulate): `RAMP_PEAK_RATE=8 RAMP_UP=30s RAMP_HOLD=60s RAMP_DOWN=10s`, `PAID_CAPACITY=700` |
+| Run 2b | `paid_holds` **ramp**, stress shape (simulate): raise the throttles on the copy only, then the defaults (below) |
 | Run 3 | `free_saturation` burst (the original Copa-style shape; listing and event page numbers) |
 | Run 4 | `paid_holds` burst with `PAYMENT_MODE=test` (Stripe PaymentIntent; optional, D6) |
 | After each | Consistency check, collect results. Wait 6 minutes before the next run (gap G7) |
@@ -257,11 +286,11 @@ Reports `SELECT 1` p50/p95/p99 and new-connection time for the pooled and direct
 
 ### 3. Sentry after fork (before load)
 
-Needs the copy to run the probe config once. In Render, change the service's Docker command to `bundle exec puma -C script/rush_test/puma_sentry_probe.rb` and redeploy (isolated copy only). The log shows, per worker, a boot line and another 20 seconds later:
+Needs the copy to run the probe config once. In Render, change the service's Docker command to `bundle exec puma -C script/rush_test/puma_sentry_probe.rb` and add the temporary environment variable `HAFAPASS_RUSH_TARGET=<host>`, then redeploy (isolated copy only). The probe config runs the same guard as the other scripts and refuses to boot unless the environment is staging, the target matches `PUBLIC_API_URL`, and the database is named `*rush*staging*`. The log shows, per worker, a boot line and another 20 seconds later:
 ```
 rush_sentry_probe phase=boot worker=0 pid=... sentry_initialized=true sending_allowed=true environment=rush-copy event_id=...
 ```
-Pass: both workers show `sending_allowed=true`, a real `event_id`, and **four** events appear in Sentry (filter `probe:rush-sentry-fork`, environment `rush-copy`), two per worker. Then put the original command back (`bundle exec puma -C config/puma.rb`) and redeploy. A missing `event_id` or `sending_allowed=false` means that worker does not report errors (see G6).
+Pass: both workers show `sending_allowed=true`, a real `event_id`, and **four** events appear in Sentry (filter `probe:rush-sentry-fork`, environment `rush-copy`), two per worker. Then put the original command back (`bundle exec puma -C config/puma.rb`), remove `HAFAPASS_RUSH_TARGET` and redeploy. A missing `event_id` or `sending_allowed=false` means that worker does not report errors (see G6).
 
 **Verified locally** with a local fake Sentry endpoint (`scripts/rush_test/fake_sentry_sink.py`): a real two-worker Puma cluster (production settings, `RAILS_ENV=staging`) delivered events from **both** workers after fork, at boot and again 20 seconds later; with only `SENTRY_ENVIRONMENT` set, neither worker sent anything. Production's own workers are covered by the same initializer. I did not trace why the SDK survives the fork; the observation is what counts, so repeat it on Render (the SDK there has the same version).
 
@@ -280,9 +309,15 @@ Scenarios and profiles:
 | Run | `SCENARIO` | `PROFILE` | Sizing |
 | --- | --- | --- | --- |
 | Burst, paid | `paid_holds` | `burst` | `PAID_VUS` (all start at once, one order each). Use 200 for capacity 200, 600 for Copa scale |
-| Ramp, paid | `paid_holds` | `ramp` | `RAMP_PEAK_RATE` buyers per second (default 100), `RAMP_UP=30s`, `RAMP_HOLD=30s`, `RAMP_DOWN=10s`, `RAMP_MAX_VUS=600` |
+| Ramp, paid | `paid_holds` | `ramp` | `RAMP_PEAK_RATE` buyers per second (default 100), `RAMP_UP=30s`, `RAMP_HOLD=30s`, `RAMP_DOWN=10s`, `RAMP_MAX_VUS=600`. **Read the throttle note below before using the defaults** |
 | Free burst | `free_saturation` | `burst` | `FREE_VUS` (default 150) |
 | Both | `both` | either | Free runs first, paid starts 5 s later |
+
+**Ramp and the per-IP throttles (one machine is one IP).** Two throttles apply to every request from one address (`config/initializers/rack_attack.rb`): `orders/ip`, every `POST /api/v1/orders`, limit `RACK_ATTACK_ORDERS_PER_IP_1M` (500 with the tournament values) per minute, about 8 orders per second; and `req/ip`, every API request, limit `RACK_ATTACK_REQ_PER_IP_5M` (3,000) per 5 minutes. The default ramp (peak 100 buyers per second, 70 seconds) sends about 5,000 orders, about 4,500 of them in its first minute, and 15,000 requests when it is the free funnel (listing, event page, order). From one IP it will mostly measure the throttle: expect thousands of `429`.
+
+- **Run 2a, production throttles:** `RAMP_PEAK_RATE=8 RAMP_UP=30s RAMP_HOLD=60s RAMP_DOWN=10s`. That is about 640 buyers, 480 orders in the busiest minute (under 500) and at most 1,920 requests for the free funnel (about 640 for `paid_holds`), under 3,000 per 5 minutes. Seed with `PAID_CAPACITY=700` so the run does not sell out. A `429` here is a finding about the production limits.
+- **Run 2b, stress shape:** on the copy only, set `RACK_ATTACK_ORDERS_PER_IP_1M=6000` and `RACK_ATTACK_REQ_PER_IP_5M=30000`, redeploy (an env change restarts the service), run the default ramp with `PAID_CAPACITY=1500`, then set them back. Never change them on production.
+- Wait 6 minutes between runs from one address; the counters are shared.
 
 `PROFILE` is new in this PR; the default (`burst`) is the old behaviour. Start the observers a few seconds before k6, in other Render shells of the copy:
 
@@ -314,7 +349,7 @@ Local numbers are not hosted capacity. See `docs/qa/saturday-rush-2026-11-28/LOC
 ## Gaps and risks found
 
 - **G6.** `SENTRY_ENVIRONMENT` alone disables Sentry (default allow-list is `production,staging`). Set `SENTRY_ENABLED_ENVIRONMENTS` too. Verified locally.
-- **G7.** Per-IP throttle counters live in PostgreSQL for 1 and 5 minutes. Back-to-back runs from one address share them; the local ramp saw 132 `429` for this reason. Wait 6 minutes between runs, or raise `RACK_ATTACK_REQ_PER_IP_5M` on the copy. It also raises a production question: 650 buyers behind one gym NAT, each making several API calls, can exceed `RACK_ATTACK_REQ_PER_IP_5M=3000`. Treat any `429` in the shared-NAT run as a finding, not noise.
+- **G7.** Per-IP throttle counters live in PostgreSQL for 1 and 5 minutes. Back-to-back runs from one address share them; the local ramp saw 132 `429` for this reason. Wait 6 minutes between runs, or raise `RACK_ATTACK_REQ_PER_IP_5M` on the copy. It also raises a production question: 650 buyers behind one gym NAT, each making several API calls, can exceed `RACK_ATTACK_REQ_PER_IP_5M=3000`. Treat any `429` in the shared-NAT run as a finding, not noise. The same arithmetic applies to a single-minute burst: 650 buyers from one NAT is more than `RACK_ATTACK_ORDERS_PER_IP_1M=500` orders in a minute.
 - **G8.** In `simulate` mode a paid order completes immediately and never creates a Stripe PaymentIntent (verified locally: `paid_hold_success` 60, 60 tickets, 0 `payment_resume`). Only `PAYMENT_MODE=test` measures the Stripe call that holds a Puma thread (#232). Stripe's test mode has lower request limits than live; expect rate-limit errors at high rates and read [Stripe's rate-limit page](https://docs.stripe.com/rate-limits) first. Those errors are a test-mode limit, not production's.
 - **G9.** Distinct client IPs cannot be simulated from one machine through Render's proxy: it appends the real address, and the app uses the last untrusted `X-Forwarded-For` entry, so `DISTRIBUTED_IP_HEADERS=true` has no effect on Render. PR #232 asked for both shapes. Run k6 at the same time from two or three networks (laptop on home Wi-Fi, the Mac mini, a phone hotspot), each with its own `RUN_LABEL`, and split the VUs.
 - **G10.** `load_tests/local_rush_fixture.rb` only seeds a local database and has no paid event. `script/rush_test/seed_fixture.rb` replaces it on the copy, including a payout-ready organizer so paid checkout works. It must live in `hafapass_api/` because Render's Docker context contains only that directory.
