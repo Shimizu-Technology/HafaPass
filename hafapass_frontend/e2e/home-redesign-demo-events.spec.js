@@ -36,7 +36,7 @@ for (const [state, slug, label] of states) test(`preview event ${state} is actio
   } else if (state === 'prelaunch') {
     await expect(page.locator('#tickets')).toContainText('Opens Feb 15')
     await page.locator('#tickets').getByRole('button', { name: 'Notify me', exact: true }).click()
-    await expect(page.getByText('Saved. Your preference is up to date.', { exact: true })).toBeVisible()
+    await expect(page.getByText('Saved for this demo visit.', { exact: false })).toBeVisible()
     await expect(page).toHaveURL(new RegExp(`/events/${slug}$`))
   }
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
