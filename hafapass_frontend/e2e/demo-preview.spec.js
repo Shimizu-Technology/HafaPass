@@ -85,6 +85,7 @@ for (const width of [390, 1440]) test(`public email preview flows at ${width}px`
   const dir = env.EMAIL_EVIDENCE_DIR || '/Users/agent/work/hafapass-email-evidence/merge-231'
   mkdirSync(dir, { recursive: true })
   await page.setViewportSize({ width, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   const shot = async (name, locator) => {
     await locator.scrollIntoViewIfNeeded()
     await page.screenshot({ path: `${dir}/${name}-${width}.png` })
@@ -108,7 +109,7 @@ for (const width of [390, 1440]) test(`public email preview flows at ${width}px`
   await page.goto('/email-confirm/demo-email-preferences')
   await page.getByRole('button', { name: 'Confirm event alerts', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Your event alerts are confirmed.' })).toBeVisible()
-  await shot('confirm', page.locator('main'))
+  await shot('confirm', page.locator('main').last())
   await page.goto('/email-preferences/demo-email-preferences')
   const platform = page.getByRole('checkbox', { name: 'Get event alerts on Guam' })
   await expect(platform).toBeChecked()
@@ -117,7 +118,7 @@ for (const width of [390, 1440]) test(`public email preview flows at ${width}px`
   await platform.check()
   await page.getByRole('button', { name: 'Unsubscribe from all marketing' }).click()
   for (const checkbox of await page.getByRole('checkbox').all()) await expect(checkbox).not.toBeChecked()
-  await shot('preferences', page.locator('main'))
+  await shot('preferences', page.locator('main').last())
   await page.goto('/events/copa-de-marianas-2027')
   await page.getByRole('button', { name: 'Follow', exact: true }).click()
   const optIn = page.getByRole('checkbox', { name: 'Email me about this organizer’s events' })
