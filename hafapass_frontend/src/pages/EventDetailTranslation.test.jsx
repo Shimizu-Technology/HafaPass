@@ -11,7 +11,6 @@ import { configureEnabledLanguages, setActiveLanguage } from '../utils/locale'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ isLoaded: true, userId: null }) }))
-vi.mock('framer-motion', async original => ({ ...(await original()), useReducedMotion: () => true }))
 vi.mock('../components/SEO', () => ({ default: () => null }))
 vi.mock('../components/ui/ScrollReveal', () => ({ FadeUp: ({ children }) => children }))
 vi.mock('../utils/marketplaceAttribution', () => ({ captureQueryAttribution: vi.fn(), trackFunnel: vi.fn() }))

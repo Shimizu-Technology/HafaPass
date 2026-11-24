@@ -15,11 +15,11 @@ describe('ticket selection with changing availability', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Increase quantity for VIP table admission' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Standard entry' }))
-    expect(screen.getByRole('button', { name: /Buy tickets/ })).toHaveTextContent('$17.50')
+    expect(screen.getByRole('button', { name: /Checkout/ })).toHaveTextContent('$17.50')
     rerender(<TicketTypesSection ticketTypes={[{ ...a, on_sale: false }, b]} onCheckout={checkout} />)
     expect(screen.queryByRole('button', { name: 'Increase quantity for VIP table admission' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Buy tickets/ })).toHaveTextContent('$5.00')
-    await user.click(screen.getByRole('button', { name: /Buy tickets/ }))
+    expect(screen.getByRole('button', { name: /Checkout/ })).toHaveTextContent('$5.00')
+    await user.click(screen.getByRole('button', { name: /Checkout/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
   })
   it('clamps selected inventory after availability falls, and removes the action when all tickets sell out', async () => {
@@ -30,10 +30,10 @@ describe('ticket selection with changing availability', () => {
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
     rerender(<TicketTypesSection ticketTypes={[{ ...ticket, quantity_remaining: 1 }]} onCheckout={checkout} />)
-    await user.click(screen.getByRole('button', { name: /Buy tickets/ }))
+    await user.click(screen.getByRole('button', { name: /Checkout/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 1, quantity: 1 }])
     rerender(<TicketTypesSection ticketTypes={[{ ...ticket, quantity_remaining: 0 }]} onCheckout={checkout} />)
-    expect(screen.queryByRole('button', { name: /Buy tickets/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Checkout/ })).not.toBeInTheDocument()
   })
   it('shows ticket prices in neutral text rather than an alert color', () => {
     render(<TicketTypesSection ticketTypes={[
@@ -58,7 +58,7 @@ describe('ticket selection with changing availability', () => {
     await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for General' }))
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Child' }))
-    expect(screen.getByRole('button', { name: /Buy tickets/ })).toHaveTextContent('$43.98')
+    expect(screen.getByRole('button', { name: /Checkout/ })).toHaveTextContent('$43.98')
     expect(screen.queryByTestId('buy-total-fee')).not.toBeInTheDocument()
   })
   it('shows the ticket price alone, with no fee line, when the organizer absorbs the fee', () => {
@@ -84,11 +84,11 @@ describe('ticket selection with changing availability', () => {
     render(<TicketTypesSection ticketTypes={[paid, free]} onCheckout={checkout} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Kids' }))
-    await user.click(screen.getByRole('button', { name: /Buy tickets/ }))
+    await user.click(screen.getByRole('button', { name: /Reserve/ }))
     expect(checkout).toHaveBeenCalledWith([{ ticket_type_id: 2, quantity: 1 }])
     await user.click(screen.getByRole('button', { name: 'Increase quantity for Entry' }))
     expect(screen.getByRole('status')).toHaveTextContent("Paid ticket sales open soon")
-    expect(screen.queryByRole('button', { name: /Buy tickets/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Checkout/ })).not.toBeInTheDocument()
     config.adminOnly = false
   })
 })
@@ -149,5 +149,5 @@ it('gives every quantity stepper a 48px target and says a free ticket needs no p
     expect(screen.getByRole('button', { name: `Increase quantity for ${name}` })).toHaveClass('min-h-12', 'min-w-12')
     expect(screen.getByRole('button', { name: `Decrease quantity for ${name}` })).toHaveClass('min-h-12', 'min-w-12')
   }
-  expect(screen.getAllByText('Free — no payment needed.')).toHaveLength(1)
+  expect(screen.queryByText('Free — no payment needed.')).not.toBeInTheDocument()
 })

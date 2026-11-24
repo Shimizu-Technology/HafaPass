@@ -57,6 +57,9 @@ export function normalizePageCustomization(value) {
 }
 
 export function approvedImageUrl(value, host) {
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' && host === 'demo-local' && typeof value === 'string' && value.startsWith('data:image/svg+xml;base64,')) {
+    return true
+  }
   if (!host || typeof value !== 'string') return false
   try {
     const url = new URL(value)
@@ -79,7 +82,8 @@ export function accentStyle(value) {
   if (!/^#[\da-fA-F]{6}$/.test(value || '')) return undefined
   const values = rgb(value)
   const light = luminance(values)
-  const onAccent = 1.05 / (light + 0.05) >= 4.5 ? '#ffffff' : '#000000'
+  if (1.05 / (light + 0.05) < 4.5) return { '--event-accent': '#0b6563', '--event-on-accent': '#ffffff', '--event-link': '#0b6563' }
+  const onAccent = '#ffffff'
   let link = values
   // A 4.5:1 link against the white page is guaranteed, even for pastel presets.
   for (let i = 0; i < 32 && 1.05 / (luminance(link) + 0.05) < 4.5; i++) link = link.map((v) => v * 0.9)

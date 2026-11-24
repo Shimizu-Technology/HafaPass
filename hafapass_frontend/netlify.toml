@@ -6,6 +6,11 @@
   publish = "dist"
   command = "npm run build"
 
+# Preview-only demo-data mode for PR review.
+# Production and branch-deploy contexts must never set this flag.
+[context.deploy-preview.environment]
+  VITE_HAFAPASS_DEMO_DATA = "1"
+
 [[headers]]
   for = "/*"
   [headers.values]

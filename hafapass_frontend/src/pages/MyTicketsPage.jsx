@@ -17,6 +17,7 @@ import useLaunchCapabilities from '../hooks/useLaunchCapabilities'
 import InstallAppHelp from '../components/InstallAppHelp'
 import TicketSwitcher from '../components/TicketSwitcher'
 import { isPassParent, pinnableTonight } from '../utils/tonightTickets'
+import { isClerkEnabled } from '../utils/demoMode'
 
 // Tonight's tickets sit above everything else, one at a time with a switcher
 // for a group, so a buyer at the door never scrolls past the right QR.
@@ -53,7 +54,7 @@ function ClerkMyTicketsPage() {
 }
 
 export default function MyTicketsPage() {
-  return import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <ClerkMyTicketsPage /> : <MyTicketsContent />
+  return isClerkEnabled() ? <ClerkMyTicketsPage /> : <MyTicketsContent />
 }
 
 function MyTicketsContent({ refreshSession, signOut }) {

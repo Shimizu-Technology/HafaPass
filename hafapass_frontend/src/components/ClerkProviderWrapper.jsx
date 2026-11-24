@@ -9,8 +9,9 @@ import { clearAllAdmissionData } from '../utils/admissionStore'
 import { clearUploadRecovery } from '../utils/uploadRecovery'
 import { bindOrderAccessOwner } from '../utils/orderAccess'
 import { captureScannerBindingContext, completeScannerBinding, currentScannerOwner, hasPendingScannerBinding, scannerBindingContextCurrent, scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding, withdrawScannerBinding } from '../utils/scannerAccountBinding'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 function AuthTokenSync({ children, loadingFallback, loadingFallbackOwner }) {
   useSyncExternalStore(subscribeScannerBinding, scannerBindingRevision)

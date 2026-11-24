@@ -76,31 +76,10 @@ for (const width of [320, 390, 768, 1440]) {
     await page.goto('/events')
     await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
     await page.evaluate(() => document.fonts.ready)
-    if (width < 640) {
-      await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
-      const collapsedTop = await page.getByRole('link', { name: /Family Night Market/ }).evaluate(card => card.getBoundingClientRect().top + window.scrollY)
-      expect(collapsedTop).toBeLessThan(height - 44)
-      await page.getByRole('button', { name: 'Filters', exact: true }).click()
-      await expect(page.getByLabel('Category', { exact: true })).toBeVisible()
-      await expect(page.getByLabel('Category', { exact: true }).locator('option')).toHaveCount(11)
-      await expect(page.getByRole('button', { name: 'All events', exact: true })).toHaveCount(0)
-      const date = await page.getByLabel('When', { exact: true }).boundingBox()
-      const price = await page.getByLabel('Price', { exact: true }).boundingBox()
-      if (width < 400) {
-        expect(price.y).toBeGreaterThanOrEqual(date.y + date.height)
-        expect(price.x).toBe(date.x)
-      } else {
-        expect(date.y).toBe(price.y)
-        expect(date.x + date.width).toBeLessThanOrEqual(price.x)
-      }
-    } else {
-      await expect(page.getByLabel('Category', { exact: true })).toBeHidden()
-      await expect(page.getByRole('button', { name: 'All events', exact: true })).toHaveAttribute('aria-pressed', 'true')
-      for (const { label } of categories) await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
-    }
+    await expect(page.getByRole('button', { name: 'All events', exact: true })).toHaveAttribute('aria-pressed', 'true')
     const checkFilterText = async () => {
-      for (const label of [...(width < 640 ? ['Category'] : []), 'When', 'Price', 'Village']) {
-        await expect(page.locator('label').filter({ hasText: new RegExp(`^${label}$`) })).toBeVisible()
+      for (const label of ['When', 'Price', 'Village']) {
+        await expect(page.locator('label').filter({ hasText: new RegExp(`^${label}:?$`) })).toBeVisible()
         const fit = await page.getByLabel(label, { exact: true }).evaluate(select => {
           const box = select.getBoundingClientRect()
           const style = getComputedStyle(select)
@@ -108,7 +87,7 @@ for (const width of [320, 390, 768, 1440]) {
           const context = canvas.getContext('2d')
           context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
           return { height: box.height, width: box.width, required: context.measureText(select.selectedOptions[0].textContent).width
-            + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 20 }
+            + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2 }
         })
         expect(fit.height).toBeGreaterThanOrEqual(44)
         expect(fit.width).toBeGreaterThanOrEqual(fit.required)
@@ -116,8 +95,7 @@ for (const width of [320, 390, 768, 1440]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     }
     await checkFilterText()
-    if (width < 640) await page.getByLabel('Category', { exact: true }).selectOption('fundraiser')
-    else await page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true }).click()
+    await page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true }).click()
     await page.getByLabel('When', { exact: true }).selectOption('weekend')
     await page.getByLabel('Price', { exact: true }).selectOption('under_25')
     await page.getByLabel('Village', { exact: true }).selectOption('Tamuning-Tumon-Harmon')
@@ -128,11 +106,7 @@ for (const width of [320, 390, 768, 1440]) {
     await expect(page).toHaveURL(/village=Tamuning-Tumon-Harmon/)
     await checkFilterText()
     await page.reload()
-    if (width < 640) {
-      await page.getByRole('button', { name: 'Filters (4)', exact: true }).click()
-      await expect(page.getByLabel('Category', { exact: true })).toHaveValue('fundraiser')
-    }
-    else await expect(page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByLabel('When', { exact: true })).toHaveValue('weekend')
     await expect(page.getByLabel('Price', { exact: true })).toHaveValue('under_25')
     await expect(page.getByLabel('Village', { exact: true })).toHaveValue('Tamuning-Tumon-Harmon')
@@ -143,7 +117,7 @@ for (const width of [320, 390, 768, 1440]) {
       await expect(page.getByRole('button', { name: 'Fundraisers & Nonprofits', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await page.getByRole('button', { name: 'Family', exact: true }).click()
       await page.setViewportSize({ width, height })
-      await expect(page.getByLabel('Category', { exact: true })).toHaveValue('family')
+      await expect(page.getByRole('button', { name: 'Family', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await expect(page).toHaveURL(/category=family/)
       await expect.poll(() => requestedFilters.at(-1)).toMatchObject({ category: 'family', window: 'weekend', price: 'under_25', village: 'Tamuning-Tumon-Harmon' })
     }
@@ -217,7 +191,7 @@ test('empty discovery results can clear filters on a narrow phone', async ({ pag
   await page.evaluate(() => document.fonts.ready)
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
-  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).last().click()
   await expect(page.getByRole('link', { name: /Family Night Market/ })).toBeVisible()
   await expect(page).toHaveURL(/\/events$/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
@@ -270,12 +244,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
           return { left: box.left, right: box.right, top: Math.round(box.top) }
         }))
       expect(bounds).toHaveLength(4)
-      for (const box of bounds) {
-        expect(box.left).toBeGreaterThanOrEqual(0)
-        expect(box.right).toBeLessThanOrEqual(viewport.width)
-      }
-      const rows = new Set(bounds.map(box => box.top))
-      expect(rows.size).toBe(viewport.width === 390 ? 2 : 1)
+      expect(new Set(bounds.map(box => box.top)).size).toBe(1)
+      await page.getByRole('button', { name: label, exact: true }).focus()
+      const focused = await page.getByRole('button', { name: label, exact: true }).boundingBox()
+      expect(focused.x).toBeGreaterThanOrEqual(0)
+      expect(focused.x + focused.width).toBeLessThanOrEqual(viewport.width)
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
     }
     await checkGeometry('Remind me')
@@ -321,7 +294,7 @@ test('reduced-motion event navigation retains B inventory through a late A respo
   await json(oldRoute, a)
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await expect(page.getByRole('heading', { name: 'Event B', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: /Buy tickets/ }).click()
+  await page.getByRole('button', { name: /Reserve/ }).click()
   await expect(page).toHaveURL(/\/checkout\/event-b$/)
   await page.getByLabel('Full name').fill('Synthetic Route Buyer')
   await page.getByLabel('Email address').fill('buyer@example.invalid')

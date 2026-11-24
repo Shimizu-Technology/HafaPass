@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/react'
 import { scrubTelemetry } from './utils/telemetryPrivacy'
 
 export function initializeMonitoring() {
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return
   const dsn = import.meta.env.VITE_SENTRY_DSN
   if (!dsn) return
 

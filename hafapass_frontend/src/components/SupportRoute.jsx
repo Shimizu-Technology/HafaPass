@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next'
 import PageLoading from './PageLoading'
 import apiClient from '../api/client'
 import { signInDestination } from '../utils/authDestination'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 function SupportGate({ children }) {
   const { isSignedIn, isLoaded, userId } = useAuth()

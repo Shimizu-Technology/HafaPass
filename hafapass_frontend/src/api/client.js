@@ -14,6 +14,17 @@ const apiClient = axios.create({
   },
 })
 
+// Preview-only demo-data mode. Guarded by the literal Vite env check so Rollup
+// eliminates the dynamic import and all demo fixtures when the flag is off.
+if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') {
+  let demoAdapterPromise = null
+  apiClient.defaults.adapter = async (config) => {
+    demoAdapterPromise ||= import('../demo/demoApiAdapter').then(module => module.createDemoAdapter())
+    const adapter = await demoAdapterPromise
+    return adapter(config)
+  }
+}
+
 let authContext = null
 let authGeneration = 0
 const authSubscribers = new Set()

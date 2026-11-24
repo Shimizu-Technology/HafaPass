@@ -26,7 +26,7 @@ it('routes the footer contact to the configured receiving mailbox', () => {
 
 it('offers ticket recovery and support instead of unrelated social homepages', () => {
   render(<MemoryRouter><Footer /></MemoryRouter>)
-  expect(screen.getByRole('link', { name: "Find your tickets" })).toHaveAttribute('href', '/orders/recover')
+  expect(screen.getByRole('link', { name: "Find my tickets" })).toHaveAttribute('href', '/orders/recover')
   expect(screen.getByRole('link', { name: "Contact support" }).getAttribute('href')).toMatch(/^(?:mailto:|\/orders\/recover$)/)
   for (const name of ['Instagram', 'Facebook', 'X']) {
     expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()

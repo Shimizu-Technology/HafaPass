@@ -14,7 +14,7 @@ test('public browsing starts before health resolves and preserves the shell and 
   await page.goto('/')
   // The event card in the list (the hero's featured pass names it too).
   await expect(page.locator('a.event-card').filter({ hasText: 'Service recovery event' })).toBeVisible()
-  await expect(page.locator('a.featured-pass')).toContainText('Service recovery event')
+  await expect(page.locator('[data-card-kind="event"]')).toContainText('Service recovery event')
   await page.evaluate(() => { window.originalShell = document.querySelector('.app-shell') })
   const search = page.getByRole('searchbox', { name: 'Event or venue' })
   await search.fill('Friday night')

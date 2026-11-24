@@ -40,7 +40,7 @@ test('buyer completes an organizer-absorbed checkout with an add-on, registratio
 
   await page.goto('/events/island-festival')
   await page.getByRole('button', { name: 'Increase quantity' }).click()
-  await page.getByRole('button', { name: /Buy tickets/ }).click()
+  await page.getByRole('button', { name: /Checkout/ }).click()
   await page.getByLabel('Full name').fill('Guam Buyer')
   await page.getByLabel('Email address').fill('buyer@example.com')
   await page.locator('input[aria-label="Festival shirt quantity"]:visible').fill('1')

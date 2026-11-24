@@ -50,7 +50,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await page.goto('/')
     await expect(page.getByRole('status').filter({ hasText: 'Loading upcoming events' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'The first events are on their way.' })).toHaveCount(0)
-    await expect(page.locator('a.btn-secondary').filter({ hasText: 'Browse events' })).toHaveAttribute('href', '/events')
+    await expect(page.getByTestId('hero-fanned-deck').getByRole('link')).toHaveAttribute('href', '/events')
     const footer = page.locator('footer')
     if (width < 768) {
       const policies = footer.locator('summary').filter({ hasText: 'Other policies' })
@@ -62,7 +62,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
       await expect(footer.locator(`a[href="/policies/${policy}"]:visible`)).toBeVisible()
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-    const host = page.getByRole('link', { name: 'Sell tickets', exact: true })
+    const host = page.getByRole('link', { name: 'Start hosting', exact: true })
     await host.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { level: 1, name: 'Host your event with HåfaPass' })).toBeVisible()
@@ -90,7 +90,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     const pick = page.getByRole('button', { name: '$59', exact: true })
     await pick.focus()
     await expect(pick).toBeFocused()
-    await expect(pick).not.toHaveCSS('box-shadow', 'none')
+    await expect(pick).toHaveCSS('outline-style', 'solid')
     await page.keyboard.press('Enter')
     await expect(pick).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByLabel('Ticket price', { exact: true })).toHaveValue('59')
@@ -98,7 +98,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(page.getByRole('region', { name: 'You absorb the fee', exact: true })).toContainText('$55.05')
     await expect(page.getByRole('link', { name: 'Talk to us about your event' })).toHaveAttribute('href', /^mailto:public-pages-qa@example.test/)
     const door = page.getByRole('region', { name: 'Run the door', exact: true })
-    const alumniButton = door.getByRole('button', { name: 'Free Alumni Ticket', exact: true })
+    const alumniButton = door.getByRole('button', { name: 'Free alumni', exact: true })
     if (width >= 640) {
       const [frontBox, backBox] = await Promise.all([
         door.locator('.host-preview-front').boundingBox(),
@@ -117,9 +117,9 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
     await expect(alumniButton).toHaveAttribute('aria-pressed', 'true')
     await expect(door).toContainText('Verify before admitting')
     await expect(door).toContainText('Calla Yorke')
-    await door.getByRole('button', { name: 'Confirm & Admit', exact: true }).click()
+    await door.getByRole('button', { name: 'Admit', exact: true }).click()
     await expect(door).toContainText('Admitted')
-    await door.getByRole('button', { name: 'Adult Ticket', exact: true }).click()
+    await door.getByRole('button', { name: 'Adult', exact: true }).click()
     await expect(door).toContainText('Avery Lindqvist')
     const faq = page.locator('summary').filter({ hasText: 'Does my door staff need an app?' })
     await faq.focus()
@@ -160,7 +160,7 @@ for (const [width, height] of [[375, 812], [768, 1024], [1280, 800]]) {
         const card = page.locator('a.event-card').filter({ hasText: 'QA music night' })
         await expect(card.locator('img')).toHaveCount(0)
         await expect(card.locator('[class*="aspect-"]')).toHaveCount(0)
-        const pass = page.locator('a.featured-pass')
+        const pass = page.locator('[data-card-kind="event"]')
         await expect(pass).toContainText('QA music night')
         await expect(pass.locator('img')).toHaveCount(0)
         await expect(card.getByLabel('Sunday, Oct 11, 2099')).toContainText('11')

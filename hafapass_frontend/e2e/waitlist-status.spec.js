@@ -31,6 +31,7 @@ for (const width of [375, 1280]) {
         return route.fulfill({ json: { entries: [{ id: stale ? 1 : 2, position: stale ? 2 : 7, status: 'offered' }] } })
       })
       await page.goto(`/events/${slug}`)
+      await page.getByText('Already on the waitlist? Check your spot', { exact: true }).click()
       await page.getByPlaceholder('Enter your email').fill(email)
       await page.getByRole('button', { name: 'Check', exact: true }).click()
       await expect(page.getByText('#7', { exact: true })).toBeVisible()
