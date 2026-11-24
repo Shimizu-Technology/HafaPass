@@ -23,8 +23,10 @@ function SummaryRow({ label, value, emphasis = false, hint = null }) {
 }
 
 function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, month, busy, onExport }) {
-  const totals = cpaMonthly?.totals
-  const rows = Array.isArray(cpaMonthly?.rows) ? cpaMonthly.rows : []
+  const expectedPeriod = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+  const periodMatches = cpaMonthly?.period === expectedPeriod && Boolean(cpaMonthly?.totals)
+  const totals = periodMatches ? cpaMonthly.totals : null
+  const rows = periodMatches && Array.isArray(cpaMonthly?.rows) ? cpaMonthly.rows : []
   const periodLabel = `${monthLabels[Math.max(Number(month) - 1, 0)] || month} ${year}`
   const refundsAndDisputes = (totals?.proceeds_refunded_cents || 0) + (totals?.chargebacks_cents || 0)
 
@@ -32,7 +34,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <h2 id="cpa-monthly-heading" className="text-lg font-semibold text-neutral-900">Monthly CPA custodial &amp; BPT report · {periodLabel}</h2>
-        <p className="mt-1 text-sm text-neutral-700">Separates organizer ticket proceeds held in custody (a liability) from HåfaPass service-fee revenue, with Guam BPT estimates and W-9 nonprofit flags. Identifies organizations and events by ID only (no PII).</p>
+        <p className="mt-1 text-sm text-neutral-700">Period-stable monthly workpaper separating organizer proceeds held in custody (a liability) from HåfaPass service-fee revenue, with Guam BPT estimates and W-9 nonprofit flags (DRT verification is external). Identifies organizations and events by ID only (no PII).</p>
       </div>
     </div>
 
@@ -47,9 +49,13 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
     </div>
 
     {cpaError && <p role="alert" className="mt-4 text-sm text-red-800">{cpaError} <button type="button" className="min-h-11 underline" onClick={onRetry}>Retry monthly CPA report</button></p>}
-    {cpaLoading && !totals && !cpaError && <p role="status" className="mt-4 text-sm text-content-muted">Loading monthly CPA summary…</p>}
+    {!cpaError && (!periodMatches || cpaLoading) && <p role="status" className="mt-4 text-sm text-content-muted">Loading monthly CPA summary for {periodLabel}…</p>}
 
     {totals && <>
+      {totals.reconciliation_exception_flag && <p role="status" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        Reconciliation exception: {money(totals.unallocated_refunds_exception_cents)} in unallocated legacy refunds requires manual review between organizer proceeds and fee refunds.
+      </p>}
+
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">Balance sheet · not HåfaPass revenue</p>
@@ -61,7 +67,11 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
             {totals.organizer_processing_deducted_cents !== 0 && <SummaryRow label="Organizer-borne processing" value={money(-totals.organizer_processing_deducted_cents)} />}
             {totals.other_adjustments_cents !== 0 && <SummaryRow label="Other balance adjustments" value={money(totals.other_adjustments_cents)} />}
             <SummaryRow label="Organizer payouts made" value={money(-totals.organizer_payouts_made_cents)} hint={totals.backup_withholding_memo_cents > 0 ? `Includes ${money(totals.backup_withholding_memo_cents)} backup withholding memo` : null} />
-            <SummaryRow label="Closing custodial liability" value={money(totals.closing_custodial_liability_cents)} emphasis />
+            {totals.payout_reversals_cents !== 0 && <SummaryRow label="Payout reversals (restored to custody)" value={money(totals.payout_reversals_cents)} />}
+            <SummaryRow label="Closing custodial payables (owed to organizers)" value={money(totals.closing_custodial_payables_cents)} hint="Offset within same organization only; never nets unrelated organizers" emphasis />
+            <SummaryRow label="Organizer deficits / receivables (owed to HåfaPass)" value={money(totals.closing_organizer_deficits_cents)} />
+            <SummaryRow label="Net custodial roll-forward (payables − deficits)" value={money(totals.closing_custodial_liability_cents)} />
+            {totals.non_custodial_settlement_bridge_cents !== 0 && <SummaryRow label="Non-custodial settlement bridge (e.g. Clover)" value={money(totals.non_custodial_settlement_bridge_cents)} hint="In settlement statements, excluded from HåfaPass custody" />}
           </dl>
           <div className="mt-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700">
             <p className="font-medium text-neutral-900">Chargeback reserve sub-ledger (part of closing liability)</p>
@@ -76,12 +86,12 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
             <SummaryRow label="Fee revenue (gross)" value={money(totals.fee_revenue_gross_cents)} />
             <SummaryRow label="Fee refunds" value={money(-totals.fee_refunds_cents)} />
             <SummaryRow label="Fee revenue (net)" value={money(totals.fee_revenue_net_cents)} emphasis />
-            <SummaryRow label="Stripe processing costs (informational)" value={money(totals.stripe_processing_costs_cents)} hint="Does not reduce Guam BPT gross receipts" />
+            <SummaryRow label="Stripe processing costs (informational)" value={money(totals.stripe_processing_costs_cents)} hint="Recorded when evidence is verified; does not reduce Guam BPT gross receipts" />
             <SummaryRow label="Estimated BPT base (net fees)" value={money(totals.bpt_base_fee_revenue_estimate_cents)} />
             <SummaryRow
               label={`Estimated Guam BPT (${cpaMonthly.bpt_rate_pct}% estimate)`}
               value={money(totals.estimated_bpt_on_fee_revenue_estimate_cents)}
-              hint="Estimate only — confirm rate & any § 26203.2 relief with CPA"
+              hint="Working position estimate — confirm rate & any § 26203.2 relief with CPA"
               emphasis
             />
           </dl>
@@ -92,7 +102,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
       <div className="mt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-neutral-900">Event breakdown (IDs only · no PII)</h3>
-          {totals.nonprofit_event_count > 0 && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{totals.nonprofit_event_count} nonprofit-flagged row{totals.nonprofit_event_count === 1 ? '' : 's'} (verify DRT)</span>}
+          {totals.w9_nonprofit_row_count > 0 && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">{totals.w9_nonprofit_row_count} W-9 nonprofit row{totals.w9_nonprofit_row_count === 1 ? '' : 's'} · DRT not tracked</span>}
         </div>
         {rows.length === 0 ? <p className="mt-2 text-sm text-content-muted">No live custodial or fee activity for {periodLabel}. Exporting CSV still provides the zeroed totals row for monthly filing records.</p>
           : <div className="mt-2 overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly CPA event breakdown table">
@@ -100,7 +110,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
               <caption className="sr-only">Monthly custodial liability and HåfaPass fee revenue by organization ID and event ID for {periodLabel} in USD</caption>
               <thead>
                 <tr className="border-b border-neutral-200 text-xs text-neutral-600">
-                  {['Org / Event ID', 'Nonprofit flag', 'Opening liab.', 'Collected', 'Refunds', 'Chargebacks', 'Payouts', 'Closing liab.', 'Ending reserve', 'Net fees', 'Est. BPT'].map(label => (
+                  {['Org / Event ID', 'W-9 / DRT status', 'Opening liab.', 'Collected', 'Refunds', 'Chargebacks', 'Payouts', 'Reversals', 'Closing net', 'Ending reserve', 'Net fees', 'Est. BPT'].map(label => (
                     <th key={label} scope="col" className="whitespace-nowrap px-2 py-2 font-semibold">{label}</th>
                   ))}
                 </tr>
@@ -111,15 +121,16 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
                     Org #{row.organization_id} · {row.event_id ? `Event #${row.event_id}` : 'Org adj.'}
                   </th>
                   <td className="whitespace-nowrap px-2 py-2">
-                    {row.nonprofit_exempt_flag
-                      ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Nonprofit (W-9)</span>
-                      : <span className="text-xs text-content-muted">Standard</span>}
+                    {row.w9_nonprofit_classification
+                      ? <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">W-9 nonprofit · DRT unverified</span>
+                      : <span className="text-xs text-content-muted">Standard · DRT not tracked</span>}
                   </td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.opening_custodial_liability_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.proceeds_collected_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.proceeds_refunded_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.chargebacks_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.organizer_payouts_made_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.payout_reversals_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 font-medium tabular-nums">{money(row.closing_custodial_liability_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.ending_reserve_balance_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(row.fee_revenue_net_cents)}</td>
@@ -135,6 +146,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.proceeds_refunded_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.chargebacks_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.organizer_payouts_made_cents)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.payout_reversals_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.closing_custodial_liability_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.ending_reserve_balance_cents)}</td>
                   <td className="whitespace-nowrap px-2 py-2 tabular-nums">{money(totals.fee_revenue_net_cents)}</td>
@@ -167,7 +179,7 @@ function TaxReportsSession({ identity }) {
     const request = beginRequest()
     if (!request) return
     const epoch = ++generation.current
-    setReport(null); setError(null)
+    setReport(null); setError(null); setCpaMonthly(null); setCpaError(null)
     try {
       const response = await apiClient.get('/admin/tax_reports', { ...request.config, params: { year } })
       if (request.current() && epoch === generation.current) setReport(response.data)
@@ -180,11 +192,13 @@ function TaxReportsSession({ identity }) {
     const request = beginRequest()
     if (!request) return
     const epoch = ++cpaGeneration.current
-    setCpaLoading(true); setCpaError(null)
+    const targetPeriod = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+    setCpaMonthly(null); setCpaLoading(true); setCpaError(null)
     try {
       const response = await apiClient.get('/admin/tax_reports/cpa_monthly', { ...request.config, params: { year, month } })
       if (request.current() && epoch === cpaGeneration.current) {
-        setCpaMonthly(response.data?.totals ? response.data : null)
+        const data = response.data
+        setCpaMonthly(data?.totals && data.period === targetPeriod ? data : null)
       }
     } catch (e) {
       if (request.current() && epoch === cpaGeneration.current && !request.handleError(e)) {
@@ -199,8 +213,8 @@ function TaxReportsSession({ identity }) {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    if (report?.year) loadCpaMonthly()
-  }, [report?.year, loadCpaMonthly])
+    if (report?.year && String(report.year) === String(year)) loadCpaMonthly()
+  }, [report?.year, year, loadCpaMonthly])
 
   const action = async kind => {
     let purpose

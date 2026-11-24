@@ -7,12 +7,15 @@ import { DEMO_ORG_ID, DEMO_ORGANIZATION } from '../staff/fixtures'
 export const DEMO_CPA_EXPORT_SENTINEL = 'HAFAPASS_DEMO_CPA_EXPORT_SENTINEL'
 
 const CSV_HEADER = [
-  'row_type', 'month', 'organization_id', 'event_id', 'nonprofit_exempt_flag', 'nonprofit_exemption_note',
-  'opening_custodial_liability', 'proceeds_collected', 'proceeds_refunded', 'chargebacks',
-  'organizer_processing_deducted', 'other_adjustments', 'organizer_payouts_made', 'closing_custodial_liability',
-  'reserve_held', 'reserve_released', 'ending_reserve_balance', 'backup_withholding_memo',
-  'fee_revenue_gross', 'fee_refunds', 'fee_revenue_net', 'stripe_processing_costs_informational',
-  'bpt_base_fee_revenue_estimate', 'estimated_bpt_rate_pct', 'estimated_bpt_on_fee_revenue_estimate', 'currency',
+  'row_type', 'month', 'organization_id', 'event_id', 'w9_nonprofit_classification', 'drt_exemption_verified',
+  'nonprofit_exemption_note', 'opening_custodial_liability', 'proceeds_collected', 'proceeds_refunded', 'chargebacks',
+  'organizer_processing_deducted', 'other_adjustments', 'organizer_payouts_made', 'payout_reversals',
+  'closing_custodial_liability', 'closing_custodial_payables', 'closing_organizer_deficits',
+  'reserve_held', 'reserve_released', 'ending_reserve_balance',
+  'unallocated_refunds_exception', 'reconciliation_exception_flag', 'non_custodial_settlement_bridge',
+  'backup_withholding_memo', 'fee_revenue_gross', 'fee_refunds', 'fee_revenue_net',
+  'stripe_processing_costs_informational', 'bpt_base_fee_revenue_estimate', 'estimated_bpt_rate_pct',
+  'estimated_bpt_on_fee_revenue_estimate', 'currency',
 ]
 
 const BPT_HEADER = [
@@ -40,14 +43,18 @@ function buildDemoCpaMonthly(year, month) {
   const rateBps = bptRateBps(year, month)
   const ratePct = (rateBps / 100).toFixed(2)
   const period = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+  const rateNote = (year > 2025 || (year === 2025 && month >= 10))
+    ? `${ratePct}% statutory § 26202(c) service-business BPT estimate (P.L. 38-136; excludes § 26203.2 small-business relief — confirm with CPA)`
+    : `${ratePct}% pre-P.L. 38-136 historical BPT estimate (prior 11 GCA § 26202; confirm applicable rate with CPA)`
 
   // Month 2 (February) intentionally demonstrates a zero-activity month.
   const rows = month === 2 ? [] : [
     {
       organization_id: DEMO_ORG_ID,
       event_id: 101,
-      nonprofit_exempt_flag: true,
-      nonprofit_exemption_note: 'W-9 nonprofit; verify DRT exemption',
+      w9_nonprofit_classification: true,
+      drt_exemption_verified: 'not_tracked',
+      nonprofit_exemption_note: 'W-9 nonprofit; DRT exemption not tracked — verify externally',
       opening_custodial_liability_cents: 125000,
       proceeds_collected_cents: 1204000,
       proceeds_refunded_cents: 24000,
@@ -55,10 +62,16 @@ function buildDemoCpaMonthly(year, month) {
       organizer_processing_deducted_cents: 0,
       other_adjustments_cents: 0,
       organizer_payouts_made_cents: 1080000,
+      payout_reversals_cents: 0,
       closing_custodial_liability_cents: 223300,
+      closing_custodial_payables_cents: 223300,
+      closing_organizer_deficits_cents: 0,
       reserve_held_cents: 120400,
       reserve_released_cents: 125000,
       ending_reserve_balance_cents: 120400,
+      unallocated_refunds_exception_cents: 0,
+      reconciliation_exception_flag: false,
+      non_custodial_settlement_bridge_cents: 0,
       backup_withholding_memo_cents: 0,
       fee_revenue_gross_cents: 142300,
       fee_refunds_cents: 2600,
@@ -71,7 +84,8 @@ function buildDemoCpaMonthly(year, month) {
     {
       organization_id: 9002,
       event_id: 102,
-      nonprofit_exempt_flag: false,
+      w9_nonprofit_classification: false,
+      drt_exemption_verified: 'not_tracked',
       nonprofit_exemption_note: '',
       opening_custodial_liability_cents: 0,
       proceeds_collected_cents: 508000,
@@ -80,10 +94,16 @@ function buildDemoCpaMonthly(year, month) {
       organizer_processing_deducted_cents: 0,
       other_adjustments_cents: 0,
       organizer_payouts_made_cents: 446400,
+      payout_reversals_cents: 0,
       closing_custodial_liability_cents: 49600,
+      closing_custodial_payables_cents: 49600,
+      closing_organizer_deficits_cents: 0,
       reserve_held_cents: 49600,
       reserve_released_cents: 0,
       ending_reserve_balance_cents: 49600,
+      unallocated_refunds_exception_cents: 0,
+      reconciliation_exception_flag: false,
+      non_custodial_settlement_bridge_cents: 0,
       backup_withholding_memo_cents: 0,
       fee_revenue_gross_cents: 61000,
       fee_refunds_cents: 1500,
@@ -96,8 +116,14 @@ function buildDemoCpaMonthly(year, month) {
   ]
 
   const sum = key => rows.reduce((total, row) => total + (row[key] || 0), 0)
-  const nonprofitCount = rows.filter(row => row.nonprofit_exempt_flag).length
+  const nonprofitCount = rows.filter(row => row.w9_nonprofit_classification).length
   const totalBptBase = sum('bpt_base_fee_revenue_estimate_cents')
+  const orgClosing = rows.reduce((map, row) => {
+    map.set(row.organization_id, (map.get(row.organization_id) || 0) + row.closing_custodial_liability_cents)
+    return map
+  }, new Map())
+  const closingPayables = [...orgClosing.values()].reduce((acc, v) => acc + Math.max(v, 0), 0)
+  const closingDeficits = [...orgClosing.values()].reduce((acc, v) => acc + Math.max(-v, 0), 0)
 
   return {
     year,
@@ -107,16 +133,17 @@ function buildDemoCpaMonthly(year, month) {
     currency: 'usd',
     bpt_rate_bps: rateBps,
     bpt_rate_pct: ratePct,
-    bpt_rate_note: `${ratePct}% statutory general BPT estimate (11 GCA § 26202; excludes § 26203.2 small-business relief — confirm with CPA)`,
+    bpt_rate_note: rateNote,
     note: 'Preparation aid only — not a filed return. Demo preview data; all figures and entities are fictional.',
     demo_marker: DEMO_CPA_EXPORT_SENTINEL,
     rows,
     totals: {
       organization_id: null,
       event_id: null,
-      nonprofit_exempt_flag: null,
-      nonprofit_event_count: nonprofitCount,
-      nonprofit_exemption_note: `${nonprofitCount} nonprofit-flagged row(s)`,
+      w9_nonprofit_classification: null,
+      drt_exemption_verified: 'not_tracked',
+      w9_nonprofit_row_count: nonprofitCount,
+      nonprofit_exemption_note: `${nonprofitCount} W-9 nonprofit row(s); DRT exemption not tracked`,
       opening_custodial_liability_cents: sum('opening_custodial_liability_cents'),
       proceeds_collected_cents: sum('proceeds_collected_cents'),
       proceeds_refunded_cents: sum('proceeds_refunded_cents'),
@@ -124,10 +151,17 @@ function buildDemoCpaMonthly(year, month) {
       organizer_processing_deducted_cents: sum('organizer_processing_deducted_cents'),
       other_adjustments_cents: sum('other_adjustments_cents'),
       organizer_payouts_made_cents: sum('organizer_payouts_made_cents'),
+      payout_reversals_cents: sum('payout_reversals_cents'),
       closing_custodial_liability_cents: sum('closing_custodial_liability_cents'),
+      closing_custodial_payables_cents: closingPayables,
+      closing_organizer_deficits_cents: closingDeficits,
       reserve_held_cents: sum('reserve_held_cents'),
       reserve_released_cents: sum('reserve_released_cents'),
       ending_reserve_balance_cents: sum('ending_reserve_balance_cents'),
+      unallocated_refunds_exception_cents: sum('unallocated_refunds_exception_cents'),
+      reconciliation_exception_count: 0,
+      reconciliation_exception_flag: false,
+      non_custodial_settlement_bridge_cents: sum('non_custodial_settlement_bridge_cents'),
       backup_withholding_memo_cents: sum('backup_withholding_memo_cents'),
       fee_revenue_gross_cents: sum('fee_revenue_gross_cents'),
       fee_refunds_cents: sum('fee_refunds_cents'),
@@ -215,7 +249,8 @@ function buildCpaCsv(data) {
     data.period,
     row.organization_id ?? '',
     row.event_id ?? '',
-    row.nonprofit_exempt_flag === true ? 'yes' : row.nonprofit_exempt_flag === false ? 'no' : '',
+    row.w9_nonprofit_classification === true ? 'yes' : row.w9_nonprofit_classification === false ? 'no' : '',
+    row.drt_exemption_verified || 'not_tracked',
     row.nonprofit_exemption_note || '',
     fmt(row.opening_custodial_liability_cents),
     fmt(row.proceeds_collected_cents),
@@ -224,10 +259,16 @@ function buildCpaCsv(data) {
     fmt(row.organizer_processing_deducted_cents),
     fmt(row.other_adjustments_cents),
     fmt(row.organizer_payouts_made_cents),
+    fmt(row.payout_reversals_cents),
     fmt(row.closing_custodial_liability_cents),
+    fmt(row.closing_custodial_payables_cents),
+    fmt(row.closing_organizer_deficits_cents),
     fmt(row.reserve_held_cents),
     fmt(row.reserve_released_cents),
     fmt(row.ending_reserve_balance_cents),
+    fmt(row.unallocated_refunds_exception_cents),
+    row.reconciliation_exception_flag ? 'yes' : 'no',
+    fmt(row.non_custodial_settlement_bridge_cents),
     fmt(row.backup_withholding_memo_cents),
     fmt(row.fee_revenue_gross_cents),
     fmt(row.fee_refunds_cents),

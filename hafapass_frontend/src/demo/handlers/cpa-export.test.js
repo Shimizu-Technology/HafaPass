@@ -15,7 +15,8 @@ describe('cpa-export demo handler', () => {
     })
     expect(res.status).toBe(200)
     expect(res.data.rows.length).toBe(2)
-    expect(res.data.rows.some(row => row.nonprofit_exempt_flag)).toBe(true)
+    expect(res.data.rows.some(row => row.w9_nonprofit_classification)).toBe(true)
+    expect(res.data.rows.every(row => row.drt_exemption_verified === 'not_tracked')).toBe(true)
     for (const row of [...res.data.rows, res.data.totals]) {
       const expectedClosing = row.opening_custodial_liability_cents +
         row.proceeds_collected_cents -
@@ -23,9 +24,12 @@ describe('cpa-export demo handler', () => {
         row.chargebacks_cents -
         row.organizer_processing_deducted_cents +
         row.other_adjustments_cents -
-        row.organizer_payouts_made_cents
+        row.organizer_payouts_made_cents +
+        row.payout_reversals_cents
       expect(row.closing_custodial_liability_cents).toBe(expectedClosing)
     }
+    expect(res.data.totals.closing_custodial_payables_cents - res.data.totals.closing_organizer_deficits_cents)
+      .toBe(res.data.totals.closing_custodial_liability_cents)
   })
 
   it('serves a zero-activity month for February and exports a CSV blob with totals row', async () => {

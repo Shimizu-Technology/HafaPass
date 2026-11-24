@@ -9,7 +9,11 @@ import AdminTaxReportsPage from './AdminTaxReportsPage'
 vi.mock('../../api/client', async original => ({ ...await original(), default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('../../utils/download', () => ({ saveBlob: vi.fn() }))
 vi.mock('./AdminLayout', () => ({ default: ({ children }) => <div>{children}</div> }))
-const year = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Guam', year: 'numeric' }).format(new Date()))
+
+const guamParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
+const year = Number(guamParts.find(part => part.type === 'year').value)
+const currentMonth = guamParts.find(part => part.type === 'month').value
+
 const report = {
   year,
   note: "HåfaPass's gross receipts are its service fees; ticket proceeds belong to organizers (agent model). Confirm with your accountant.",
@@ -23,51 +27,65 @@ const report = {
   }],
   months: [{ month: 1, fees_collected_cents: 225, fees_refunded_cents: 100, gross_receipts_cents: 125, card_processing_costs_cents: 80 }],
 }
-const cpaMonthly = {
-  year,
-  month: 10,
-  period: `${year}-10`,
-  timezone: 'Pacific/Guam',
-  currency: 'usd',
-  bpt_rate_bps: 400,
-  bpt_rate_pct: '4.00',
-  bpt_rate_note: '4.00% statutory general BPT estimate (11 GCA § 26202; excludes § 26203.2 small-business relief — confirm with CPA)',
-  note: 'Preparation aid only.',
-  rows: [{
-    organization_id: 7, event_id: 42, nonprofit_exempt_flag: true, nonprofit_exemption_note: 'W-9 nonprofit; verify DRT exemption',
-    opening_custodial_liability_cents: 10000, proceeds_collected_cents: 50000, proceeds_refunded_cents: 2000,
-    chargebacks_cents: 1000, organizer_processing_deducted_cents: 0, other_adjustments_cents: 0,
-    organizer_payouts_made_cents: 45000, closing_custodial_liability_cents: 12000,
-    reserve_held_cents: 5000, reserve_released_cents: 0, ending_reserve_balance_cents: 5000,
-    backup_withholding_memo_cents: 0, fee_revenue_gross_cents: 3500, fee_refunds_cents: 250,
-    fee_revenue_net_cents: 3250, stripe_processing_costs_cents: 1650,
-    bpt_base_fee_revenue_estimate_cents: 3250, estimated_bpt_rate_pct: '4.00',
-    estimated_bpt_on_fee_revenue_estimate_cents: 130,
-  }],
-  totals: {
-    nonprofit_event_count: 1, nonprofit_exemption_note: '1 nonprofit-flagged row(s)',
-    opening_custodial_liability_cents: 10000, proceeds_collected_cents: 50000, proceeds_refunded_cents: 2000,
-    chargebacks_cents: 1000, organizer_processing_deducted_cents: 0, other_adjustments_cents: 0,
-    organizer_payouts_made_cents: 45000, closing_custodial_liability_cents: 12000,
-    reserve_held_cents: 5000, reserve_released_cents: 0, ending_reserve_balance_cents: 5000,
-    backup_withholding_memo_cents: 0, fee_revenue_gross_cents: 3500, fee_refunds_cents: 250,
-    fee_revenue_net_cents: 3250, stripe_processing_costs_cents: 1650,
-    bpt_base_fee_revenue_estimate_cents: 3250, estimated_bpt_rate_pct: '4.00',
-    estimated_bpt_on_fee_revenue_estimate_cents: 130,
-  },
+
+const makeCpaMonthly = (y, m, overrides = {}) => {
+  const padded = String(m).padStart(2, '0')
+  return {
+    year: Number(y),
+    month: Number(m),
+    period: `${y}-${padded}`,
+    timezone: 'Pacific/Guam',
+    currency: 'usd',
+    bpt_rate_bps: 400,
+    bpt_rate_pct: '4.00',
+    bpt_rate_note: '4.00% statutory § 26202(c) service-business BPT estimate (P.L. 38-136; excludes § 26203.2 small-business relief — confirm with CPA)',
+    note: 'Preparation aid only.',
+    rows: [{
+      organization_id: 7, event_id: 42, w9_nonprofit_classification: true, drt_exemption_verified: 'not_tracked',
+      nonprofit_exemption_note: 'W-9 nonprofit; DRT exemption not tracked — verify externally',
+      opening_custodial_liability_cents: 10000, proceeds_collected_cents: 50000, proceeds_refunded_cents: 2000,
+      chargebacks_cents: 1000, organizer_processing_deducted_cents: 0, other_adjustments_cents: 0,
+      organizer_payouts_made_cents: 45000, payout_reversals_cents: 0,
+      closing_custodial_liability_cents: 12000, closing_custodial_payables_cents: 12000, closing_organizer_deficits_cents: 0,
+      reserve_held_cents: 5000, reserve_released_cents: 0, ending_reserve_balance_cents: 5000,
+      unallocated_refunds_exception_cents: 0, reconciliation_exception_flag: false, non_custodial_settlement_bridge_cents: 0,
+      backup_withholding_memo_cents: 0, fee_revenue_gross_cents: 3500, fee_refunds_cents: 250,
+      fee_revenue_net_cents: 3250, stripe_processing_costs_cents: 1650,
+      bpt_base_fee_revenue_estimate_cents: 3250, estimated_bpt_rate_pct: '4.00',
+      estimated_bpt_on_fee_revenue_estimate_cents: 130,
+    }],
+    totals: {
+      w9_nonprofit_row_count: 1, drt_exemption_verified: 'not_tracked',
+      nonprofit_exemption_note: '1 W-9 nonprofit row(s); DRT exemption not tracked',
+      opening_custodial_liability_cents: 10000, proceeds_collected_cents: 50000, proceeds_refunded_cents: 2000,
+      chargebacks_cents: 1000, organizer_processing_deducted_cents: 0, other_adjustments_cents: 0,
+      organizer_payouts_made_cents: 45000, payout_reversals_cents: 0,
+      closing_custodial_liability_cents: 12000, closing_custodial_payables_cents: 12000, closing_organizer_deficits_cents: 0,
+      reserve_held_cents: 5000, reserve_released_cents: 0, ending_reserve_balance_cents: 5000,
+      unallocated_refunds_exception_cents: 0, reconciliation_exception_flag: false, non_custodial_settlement_bridge_cents: 0,
+      backup_withholding_memo_cents: 0, fee_revenue_gross_cents: 3500, fee_refunds_cents: 250,
+      fee_revenue_net_cents: 3250, stripe_processing_costs_cents: 1650,
+      bpt_base_fee_revenue_estimate_cents: 3250, estimated_bpt_rate_pct: '4.00',
+      estimated_bpt_on_fee_revenue_estimate_cents: 130,
+    },
+    ...overrides,
+  }
 }
+
 const show = () => render(<MemoryRouter initialEntries={['/admin/tax-reports']}><AdminTaxReportsPage /></MemoryRouter>)
 
 describe('AdminTaxReportsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiClient.get.mockImplementation(url => {
-      if (url === '/admin/tax_reports/cpa_monthly') return Promise.resolve({ data: cpaMonthly })
-      return Promise.resolve({ data: report })
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports/cpa_monthly') {
+        return Promise.resolve({ data: makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth) })
+      }
+      return Promise.resolve({ data: { ...report, year: Number(cfg?.params?.year || year) } })
     })
   })
 
-  it('shows masked identities, custodial vs fee revenue summary, nonprofit flag, and accountant note', async () => {
+  it('shows masked identities, custodial vs fee revenue summary, W-9 nonprofit / DRT-unverified status, and accountant note', async () => {
     show()
     expect(await screen.findByText('***-**-5678')).toBeInTheDocument()
     expect(screen.getByText(/Live-mode USD payments only/)).toBeInTheDocument()
@@ -75,12 +93,64 @@ describe('AdminTaxReportsPage', () => {
     expect(screen.getByText('$1.25')).toBeInTheDocument()
     expect(await screen.findByText('Custodial liability (organizer proceeds)')).toBeInTheDocument()
     expect(screen.getByText('HåfaPass fee revenue & Guam BPT estimate')).toBeInTheDocument()
-    expect(screen.getByText('Nonprofit (W-9)')).toBeInTheDocument()
+    expect(screen.getByText('W-9 nonprofit · DRT unverified')).toBeInTheDocument()
     expect(screen.getAllByText('$120.00').length).toBeGreaterThan(0)
     expect(screen.getAllByText('$1.30').length).toBeGreaterThan(0)
     expect(screen.queryByText('012345678')).not.toBeInTheDocument()
     await userEvent.selectOptions(screen.getByLabelText('Calendar year'), String(year - 1))
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/tax_reports', expect.objectContaining({ params: { year: String(year - 1) } })))
+  })
+
+  // Regression test for Material Finding #7: never render one month's figures
+  // under another month's heading while a slow request is pending or arrives late.
+  it('hides stale month figures while loading and ignores out-of-order responses', async () => {
+    let resolveMarch
+    let resolveApril
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports') return Promise.resolve({ data: report })
+      if (url === '/admin/tax_reports/cpa_monthly') {
+        const m = String(cfg?.params?.month)
+        if (m === '03') return new Promise(resolve => { resolveMarch = resolve })
+        if (m === '04') return new Promise(resolve => { resolveApril = resolve })
+        return Promise.resolve({ data: makeCpaMonthly(year, m) })
+      }
+      return Promise.resolve({ data: report })
+    })
+
+    show()
+    expect(await screen.findByText('Custodial liability (organizer proceeds)')).toBeInTheDocument()
+    expect(screen.getAllByText('$120.00').length).toBeGreaterThan(0)
+
+    const monthSelect = screen.getByLabelText('Guam calendar month')
+    await userEvent.selectOptions(monthSelect, '03')
+
+    // While March is pending, previous month's $120.00 figures MUST NOT appear under March heading
+    expect(screen.getByRole('heading', { name: new RegExp(`March ${year}`) })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(`Loading monthly CPA summary for March ${year}`)
+    expect(screen.queryByText('Custodial liability (organizer proceeds)')).not.toBeInTheDocument()
+
+    // Switch immediately to April before March resolves
+    await userEvent.selectOptions(monthSelect, '04')
+    expect(screen.getByRole('heading', { name: new RegExp(`April ${year}`) })).toBeInTheDocument()
+
+    // April resolves first with $444.00
+    const aprilData = makeCpaMonthly(year, '04')
+    aprilData.totals.closing_custodial_payables_cents = 44400
+    aprilData.totals.closing_custodial_liability_cents = 44400
+    aprilData.rows[0].closing_custodial_liability_cents = 44400
+    resolveApril({ data: aprilData })
+    expect(await screen.findAllByText('$444.00')).not.toHaveLength(0)
+
+    // Stale March response arrives late with $333.00 — MUST be ignored
+    const marchData = makeCpaMonthly(year, '03')
+    marchData.totals.closing_custodial_payables_cents = 33300
+    marchData.totals.closing_custodial_liability_cents = 33300
+    marchData.rows[0].closing_custodial_liability_cents = 33300
+    resolveMarch({ data: marchData })
+    await waitFor(() => {
+      expect(screen.getAllByText('$444.00').length).toBeGreaterThan(0)
+      expect(screen.queryByText('$333.00')).not.toBeInTheDocument()
+    })
   })
 
   it('keeps full TINs off the admin page', async () => {
@@ -94,8 +164,8 @@ describe('AdminTaxReportsPage', () => {
     const blob = new Blob(['fixture'], { type: 'text/csv' })
     show()
     await screen.findByText('***-**-5678')
-    apiClient.get.mockImplementation(url => {
-      if (url === '/admin/tax_reports/cpa_monthly') return Promise.resolve({ data: cpaMonthly })
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports/cpa_monthly') return Promise.resolve({ data: makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth) })
       return Promise.resolve({ data: blob })
     })
     apiClient.post.mockResolvedValue({ data: blob })
@@ -114,7 +184,7 @@ describe('AdminTaxReportsPage', () => {
     const blob = new Blob(['row_type,month'], { type: 'text/csv' })
     apiClient.get.mockImplementation((url, cfg) => {
       if (url === '/admin/tax_reports') return Promise.resolve({ data: { ...report, year: Number(cfg?.params?.year || year) } })
-      if (url === '/admin/tax_reports/cpa_monthly') return Promise.resolve({ data: cpaMonthly })
+      if (url === '/admin/tax_reports/cpa_monthly') return Promise.resolve({ data: makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth) })
       return Promise.resolve({ data: blob })
     })
     show()
@@ -140,24 +210,21 @@ describe('AdminTaxReportsPage', () => {
     apiClient.get.mockRejectedValueOnce(new Error('offline'))
     show()
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load tax reports')
-    apiClient.get.mockImplementation(url => {
+    apiClient.get.mockImplementation((url, cfg) => {
       if (url === '/admin/tax_reports/cpa_monthly') {
-        return Promise.resolve({
-          data: {
-            ...cpaMonthly,
-            rows: [],
-            totals: {
-              ...cpaMonthly.totals,
-              nonprofit_event_count: 0, nonprofit_exemption_note: '0 nonprofit-flagged row(s)',
-              opening_custodial_liability_cents: 0, proceeds_collected_cents: 0, proceeds_refunded_cents: 0,
-              chargebacks_cents: 0, organizer_payouts_made_cents: 0, closing_custodial_liability_cents: 0,
-              reserve_held_cents: 0, reserve_released_cents: 0, ending_reserve_balance_cents: 0,
-              fee_revenue_gross_cents: 0, fee_refunds_cents: 0, fee_revenue_net_cents: 0,
-              stripe_processing_costs_cents: 0, bpt_base_fee_revenue_estimate_cents: 0,
-              estimated_bpt_on_fee_revenue_estimate_cents: 0,
-            },
-          },
-        })
+        const zero = makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth, { rows: [] })
+        zero.totals = {
+          ...zero.totals,
+          w9_nonprofit_row_count: 0, nonprofit_exemption_note: '0 W-9 nonprofit row(s); DRT exemption not tracked',
+          opening_custodial_liability_cents: 0, proceeds_collected_cents: 0, proceeds_refunded_cents: 0,
+          chargebacks_cents: 0, organizer_payouts_made_cents: 0, payout_reversals_cents: 0,
+          closing_custodial_liability_cents: 0, closing_custodial_payables_cents: 0, closing_organizer_deficits_cents: 0,
+          reserve_held_cents: 0, reserve_released_cents: 0, ending_reserve_balance_cents: 0,
+          fee_revenue_gross_cents: 0, fee_refunds_cents: 0, fee_revenue_net_cents: 0,
+          stripe_processing_costs_cents: 0, bpt_base_fee_revenue_estimate_cents: 0,
+          estimated_bpt_on_fee_revenue_estimate_cents: 0,
+        }
+        return Promise.resolve({ data: zero })
       }
       return Promise.resolve({ data: { ...report, organizers: [] } })
     })
