@@ -26,6 +26,9 @@ RSpec.describe "Deletion path inventory" do
     "jobs/translate_record_job.rb" => [
       [/merged\.delete\(/, 1, "exempt: removes an in-memory translation key"]
     ],
+    "services/email_preferences.rb" => [
+      [/MarketingUnsubscribe.*\.delete_all/, 1, "exempt: explicit scope consent replaces current suppression under preference lock; append-only withdrawal evidence remains"]
+    ],
     "services/data_retention.rb" => [
       [/child\.delete\b/, 1, "guarded under child lock by RetentionGuard"],
       [/order\.delete\b/, 1, "guarded under order lock by RetentionGuard"]

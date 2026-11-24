@@ -1525,6 +1525,7 @@
     "preferences": "Email preferences",
     "transactional": "These choices control marketing. Order receipts, tickets, refunds, and waitlist offers you requested are unaffected. Invalid or bounced addresses may still be blocked.",
     "unsubscribeAll": "Unsubscribe from all marketing",
+    "preferencesChanged": "Your email preferences changed. We refreshed them; choose again if needed.",
     "followOptIn": "Email me about this organizer’s events",
     "checkout": "Email me HåfaPass event alerts for Guam (separate from the organizer). Unsubscribe anytime.",
     "audiences": "Email audiences",

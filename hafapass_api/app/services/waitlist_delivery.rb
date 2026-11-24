@@ -17,6 +17,12 @@ class WaitlistDelivery
 
   def self.reconcile_failure!(delivery)
     return unless %w[waitlist_notification waitlist_offer].include?(delivery.template)
+    EmailPreferences.with_platform_locks(delivery.recipient) do
+      reconcile_failure_with_consent_lock!(delivery)
+    end
+  end
+
+  def self.reconcile_failure_with_consent_lock!(delivery)
     WaitlistLocks.for_delivery(delivery) do
       next if delivery.reconciled_at? || !%w[suppressed failed bounced complained].include?(delivery.status)
 
@@ -101,9 +107,7 @@ class WaitlistDelivery
     organization = delivery.event&.organization
     return unless organization
 
-    unsubscribe = MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: delivery.recipient)
-    unsubscribe.unsubscribed_at ||= Time.current
-    unsubscribe.save!
+    EmailPreferences.unsubscribe_organizer!(organization: organization, email: delivery.recipient, source: "complaint")
     entry = if delivery.template == "waitlist_offer"
       WaitlistOffer.find_by(id: delivery.metadata["waitlist_offer_id"])&.waitlist_entry
     else

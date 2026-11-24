@@ -220,8 +220,8 @@ class PrivacyRequestProcessor
         {
           order: export_fields(order, "id", "reference", "buyer_email", "buyer_name", "buyer_phone",
             "created_at", "completed_at", "status", "subtotal_cents", "service_fee_cents", "total_cents",
-            "refund_amount_cents", "marketing_opt_in").tap do |attributes|
-              attributes.except!("buyer_email", "buyer_name", "buyer_phone", "marketing_opt_in") unless buyer_owned?(order)
+            "refund_amount_cents", "marketing_opt_in", "platform_opt_in_at").tap do |attributes|
+              attributes.except!("buyer_email", "buyer_name", "buyer_phone", "marketing_opt_in", "platform_opt_in_at") unless buyer_owned?(order)
               attributes["refund_reason"] = order.refund_reason if order.refund_reason.present? && buyer_owned?(order)
             end,
           tickets: order.tickets.filter_map do |ticket|
@@ -369,6 +369,8 @@ class PrivacyRequestProcessor
         AudienceMailing.where("recipient_emails ?| array[:emails]", emails: buyer_emails).find_each do |mailing|
           DataRetention.update_unheld(AudienceMailing.where(id: mailing.id), recipient_emails: mailing.recipient_emails - buyer_emails)
         end
+        DataRetention.update_unheld(OrganizerFollow.where(email_opted_in_address: buyer_emails),
+          email_opted_in_address: nil, email_opted_in_at: nil, updated_at: Time.current)
         current_plan.orders.each do |order|
           written = DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
             eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),

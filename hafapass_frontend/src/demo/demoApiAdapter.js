@@ -128,6 +128,7 @@ function filterEvents(params) {
 export function createDemoAdapter() {
   const preferences = buildDemoEmailPreferences()
   const follows = new Map()
+  let consentSequence = 0
 
   return async function demoAdapter(config) {
     const method = String(config.method || 'get').toLowerCase()
@@ -148,10 +149,13 @@ export function createDemoAdapter() {
         for (const update of body.organizers || []) {
           const org = preferences.organizers.find(org => org.id === update.id)
           if (org && typeof update.enabled === 'boolean') org.enabled = update.enabled
+          const follow = follows.get(update.id)
+          if (follow && typeof update.enabled === 'boolean') { follow.email_opt_in = update.enabled; follow.consent_marker = ++consentSequence }
         }
         if (body.unsubscribe_all === true) {
           preferences.platform = false
           preferences.organizers.forEach(org => { org.enabled = false })
+          follows.forEach(follow => { follow.email_opt_in = false; follow.consent_marker = ++consentSequence })
         }
       }
       return ok(config, structuredClone(preferences))
@@ -161,7 +165,8 @@ export function createDemoAdapter() {
       if (method === 'post') {
         const previous = follows.get(body.organization_id)
         if (body.consent_only === true && !previous) return fail(config, 404, { error: 'Follow no longer exists' })
-        follows.set(body.organization_id, { id: body.organization_id, email_opt_in: body.email_opt_in ?? previous?.email_opt_in ?? false })
+        if (body.consent_only === true && body.consent_marker !== previous.consent_marker) return fail(config, 409, { error: 'Email preferences changed' })
+        follows.set(body.organization_id, { id: body.organization_id, email_opt_in: body.email_opt_in ?? previous?.email_opt_in ?? false, consent_marker: ++consentSequence })
         return ok(config, { followed: true }, 201)
       }
     }

@@ -42,7 +42,7 @@ RSpec.describe "Address-bound email consent", type: :request do
     expect(OrganizerFollow.find_by!(user: user, organization: organization).email_opted_in_address).to eq(original)
     patch "/api/v1/email_preferences/#{EmailPreferences.token(original)}", params: { organizers: [{ id: organization.id, enabled: false }] }, as: :json
     expect(response).to have_http_status(:ok)
-    expect(OrganizerFollow.find_by!(user: user, organization: organization).email_opted_in_address).to be_nil
+    expect(OrganizerFollow.find_by!(user: user, organization: organization).email_opted_in_at).to be_nil
     expect(mailing.eligible?(original)).to be(false)
   end
 
@@ -105,9 +105,9 @@ RSpec.describe "Address-bound email consent", type: :request do
 
   it "C6: updates existing follow consent without creating a relationship" do
     follow
-    post "/api/v1/me/organizer_follows", params: { organization_id: organization.id, email_opt_in: false, consent_only: true }, headers: auth_headers(user), as: :json
+    post "/api/v1/me/organizer_follows", params: { organization_id: organization.id, email_opt_in: false, consent_only: true, consent_marker: EmailPreferences.consent_markers([organization.id], email).fetch(organization.id) }, headers: auth_headers(user), as: :json
     expect(response).to have_http_status(:created)
-    expect(OrganizerFollow.find_by!(user: user, organization: organization).email_opted_in_address).to be_nil
+    expect(OrganizerFollow.find_by!(user: user, organization: organization).email_opted_in_at).to be_nil
     expect(mailing.eligible?(email)).to be(false)
   end
 end

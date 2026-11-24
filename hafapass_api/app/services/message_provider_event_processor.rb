@@ -72,7 +72,7 @@ class MessageProviderEventProcessor
   end
 
   def process_receipt!(receipt, delivery)
-    MessageProviderEvent.transaction do
+    EmailPreferences.with_platform_locks(delivery.recipient) do
       receipt.lock!
       validate_receipt_identity!(receipt, provider: delivery.provider, message_id: delivery.provider_id)
       return receipt if receipt.processed_at.present?

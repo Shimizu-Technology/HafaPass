@@ -25,10 +25,7 @@ class Api::V1::MarketingUnsubscribesController < ApplicationController
     organization, email = verified_identity
     return unless organization
 
-    organization.with_lock do
-      record = MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: email)
-      record.update!(unsubscribed_at: Time.current)
-    end
+    EmailPreferences.unsubscribe_organizer!(organization: organization, email: email, source: "email_link")
     render json: { organization: organization.name, scope: "organizer", unsubscribed: true }
   end
 

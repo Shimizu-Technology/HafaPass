@@ -17,6 +17,7 @@ class Api::V1::EmailPreferencesController < ApplicationController
   def update
     EmailPreferences.with_platform_locks(@email, create_subscriber: params.key?(:platform) || params[:unsubscribe_all] == true,
       subscriber_attributes: { source: "preferences", status: "unsubscribed" }) do |preference, subscriber|
+      EmailPreferences.lock_follows!(@email)
       if params[:unsubscribe_all] == true
         preference.update!(all_unsubscribed: true)
         EmailPreferences.organizations(@email).find_each do |org|
@@ -55,7 +56,7 @@ class Api::V1::EmailPreferencesController < ApplicationController
   private
 
   def clear_follow_consent(follows)
-    follows.update_all(email_opted_in_at: nil, email_opted_in_address: nil)
+    follows.update_all(email_opted_in_at: nil)
   end
 
   def verify_token

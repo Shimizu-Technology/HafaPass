@@ -30,10 +30,7 @@ class WaitlistUnsubscribe
     return unless all
 
     organization = entry.event.organization
-    organization.with_lock do
-      MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: entry.email)
-        .update!(unsubscribed_at: Time.current)
-    end
+    EmailPreferences.unsubscribe_organizer!(organization: organization, email: entry.email, source: "waitlist")
     WaitlistEntry.joins(:event).where(events: { organization_id: organization.id })
       .where("LOWER(waitlist_entries.email) = ?", entry.email.downcase).where(status: [:waiting, :notified, :offered]).find_each { |other| stop!(other) }
   end

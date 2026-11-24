@@ -19,6 +19,31 @@ RSpec.describe PrivacyRequestProcessor do
     allow(MessageDeliveryJob).to receive(:perform_now)
   end
 
+  it "R3: exports the saved follow address and erases follow PII plus retained order consent time" do
+    follow = OrganizerFollow.create!(user: user, organization: order.event.organization,
+      email_opted_in_address: user.email, email_opted_in_at: Time.current)
+    order.update!(platform_opt_in_at: Time.current)
+    access = PrivacyRequest.create!(kind: "access", user: user, requester_email: user.email,
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    data = described_class.new(access).export
+    expect(data[:organizer_follows].sole).to include("email_opted_in_address" => user.email)
+    expect(data[:orders].first[:order]["platform_opt_in_at"]).to be_present
+    described_class.new(privacy_request).execute!(actor: admin)
+    expect(OrganizerFollow.exists?(follow.id)).to be(false)
+    expect(order.reload.platform_opt_in_at).to be_nil
+  end
+
+  it "R3: scrubs the saved address on verified email-only erasure without removing another account's follow" do
+    follow = OrganizerFollow.create!(user: user, organization: order.event.organization,
+      email_opted_in_address: user.email, email_opted_in_at: Time.current)
+    guest_order = create(:order, user: nil, buyer_email: user.email)
+    deletion = PrivacyRequest.create!(kind: "deletion", requester_email: user.email, order: guest_order,
+      status: "verified", verified_at: Time.current, verified_by: admin, guest_challenge_passed_at: Time.current)
+    described_class.new(deletion).execute!(actor: admin)
+    expect(follow.reload).to have_attributes(email_opted_in_address: nil, email_opted_in_at: nil)
+    expect(user.reload.email).to be_present
+  end
+
   it "shows kept and deleted records with reasons" do
     preview = described_class.new(privacy_request).preview
     expect(preview[:retained]).to include(include(table: "orders", count: 1,

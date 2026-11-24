@@ -53,7 +53,8 @@ class EmailPreferences
     enabled.uniq - blocked
   end
 
-  # All platform consent writes take these locks in this order, including creation.
+  # Consent lock order (including creation): preference, then subscriber, then
+  # follow rows, then unsubscribe and consent rows. Acquire this before domain locks.
   def self.with_platform_locks(email, create_subscriber: false, subscriber_attributes: {})
     email = email.to_s.strip.downcase
     preference = EmailPreference.find_or_create_by!(email: email)
@@ -73,6 +74,7 @@ class EmailPreferences
   # Caller holds the preference and (when present) subscriber locks.
   # Materialize global withdrawal into each other scope before lifting it.
   def self.restore_scope!(preference:, subscriber:, organization: nil)
+    lock_follows!(preference.email)
     if preference.all_unsubscribed?
       organizations(preference.email).find_each do |org|
         next if org == organization
@@ -82,7 +84,29 @@ class EmailPreferences
       unsubscribe_locked_platform!(preference.email, subscriber) if organization && subscriber
       preference.update!(all_unsubscribed: false)
     end
+    # Explicit consent replaces the current suppression index, not the append-only
+    # EmailConsent withdrawal evidence. This is not a retention purge.
     MarketingUnsubscribe.where(organization: organization, email: preference.email).delete_all if organization
+  end
+
+  def self.lock_follows!(email)
+    OrganizerFollow.where(email_opted_in_address: email).order(:id).lock.load
+  end
+
+  # Include global withdrawals as well as this organizer's address-specific decisions.
+  def self.consent_markers(ids, email)
+    email = email.to_s.strip.downcase
+    organizer = EmailConsent.where(email: email, scope: "organizer", organization_id: ids).group(:organization_id).maximum(:id)
+    global = EmailConsent.where(email: email, scope: "all").maximum(:id) || 0
+    ids.to_h { |id| [id, [organizer[id] || 0, global].max] }
+  end
+
+  def self.unsubscribe_organizer!(organization:, email:, source:)
+    with_platform_locks(email) do |preference, _subscriber|
+      lock_follows!(preference.email).where(organization: organization).update_all(email_opted_in_at: nil)
+      MarketingUnsubscribe.find_or_initialize_by(organization: organization, email: preference.email).update!(unsubscribed_at: Time.current)
+      EmailConsent.record!(email: preference.email, organization: organization, scope: "organizer", action: "unsubscribed", source: source)
+    end
   end
 
   def self.unsubscribe_platform!(email)
