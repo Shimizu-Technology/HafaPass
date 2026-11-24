@@ -17,7 +17,7 @@ import {
   applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission, queueExit,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess, verifyLegacyJournalOwner,
 } from '../../utils/admissionStore'
-import { evaluateLocalReEntry, formatGateTime, formatReEntryFeedback } from '../../utils/reEntryRules'
+import { evaluateLocalReEntry, formatGateTime, formatReEntryFeedback, serviceDayString } from '../../utils/reEntryRules'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
 import useScreenWakeLock from '../../hooks/useScreenWakeLock'
 import useCameraRecovery from '../../hooks/useCameraRecovery'
@@ -333,8 +333,8 @@ function ScanResultOverlay({ id, type, ticket, headline: customHeadline, subtext
         className={`h-full w-full focus:outline-none ${layout}`}>
         <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
         <span id={headlineId} className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
-        {subtext && <span className="max-w-lg text-xl font-bold sm:text-2xl">{subtext}</span>}
-        {ticket?.attendee_name && <span className="max-w-lg text-lg font-semibold opacity-90">{ticket.attendee_name}</span>}
+        {customHeadline && subtext && <span className="max-w-lg text-xl font-bold sm:text-2xl">{subtext}</span>}
+        {customHeadline && ticket?.attendee_name && <span className="max-w-lg text-lg font-semibold opacity-90">{ticket.attendee_name}</span>}
         <span aria-hidden="true" className="text-lg font-semibold">Tap to continue</span>
       </button>
     </div>
@@ -376,7 +376,7 @@ function ResultPanel({ result, className = '', panelRef, canOverride = false, on
               ticket={result.ticket}
               busy={overrideBusy}
               onSubmit={onOverride}
-              defaultAction={result.soundKind === 'already_inside' ? 'clear' : 'admit'}
+              defaultAction="admit"
             />
           )}
           {result.latency != null && <details className="mt-3 text-xs">
@@ -421,7 +421,6 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [manifest, setManifest] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
-  const [pendingDelta, setPendingDelta] = useState(0)
   const [scanDirection, setScanDirection] = useState('admit')
   const [overrideBusy, setOverrideBusy] = useState(false)
   const [online, setOnline] = useState(navigator.onLine && !offlineOnly)
@@ -528,14 +527,11 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const refreshPending = useCallback(async (selectedEventId, selectedDevice) => {
     if (!selectedEventId || !selectedDevice) {
       setPendingCount(0)
-      setPendingDelta(0)
       return
     }
     const items = await queuedActions(selectedEventId, selectedDevice.id)
     if (eventIdRef.current === String(selectedEventId)) {
       setPendingCount(items.length)
-      const delta = items.reduce((sum, item) => sum + (item.kind === 'admit' ? 1 : item.kind === 'exit' ? -1 : 0), 0)
-      setPendingDelta(delta)
     }
   }, [])
 
@@ -580,7 +576,6 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setSearchQuery('')
     setSearchResults([])
     setPendingCount(0)
-    setPendingDelta(0)
     setScanDirection('admit')
     setError(null)
     setSetupBusy(true)
@@ -1416,6 +1411,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         source,
         clientStatus: source === 'online' ? 'online_exit' : 'locally_exited',
         eventTimezone: tz,
+        eventMeta: scanManifest.payload.event,
         reEntryCount: Number(ticket.re_entry_count || 0),
       })
       if (!current()) return
@@ -1455,6 +1451,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       clientStatus,
       reEntryMode,
       eventTimezone: tz,
+      eventMeta: scanManifest.payload.event,
       isReEntry,
       reEntryNumber,
       ...(confirmed ? { confirmed: true } : {}),
@@ -1808,13 +1805,17 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const selectedEvent = events.find(event => String(event.id) === eventId) || (String(resolvedEvent?.id) === eventId ? resolvedEvent : null)
   const ready = Boolean(eventId && device && manifest && Number(manifest.payload?.event?.id) === Number(eventId))
   const reEntryMode = manifest?.payload?.event?.re_entry_mode || dashboard?.event?.re_entry_mode || selectedEvent?.re_entry_mode || 'off'
+  const reEntryEnabled = reEntryMode !== 'off'
   const isExitScanMode = reEntryMode === 'exit_scan'
+  const isCooldownMode = reEntryMode === 'cooldown'
   const effectiveDirection = isExitScanMode ? scanDirection : 'admit'
-  const canOverride = dashboard?.permissions?.can_override === true
-  const baseHeadcount = dashboard?.counts?.live_headcount ?? dashboard?.counts?.currently_inside ?? null
-  const liveHeadcount = baseHeadcount != null ? Math.max(0, Number(baseHeadcount) + (online ? 0 : pendingDelta)) : (pendingDelta > 0 ? pendingDelta : null)
-  const headcountByDay = dashboard?.counts?.headcount_by_day || []
-  const flaggedConflicts = dashboard?.flagged_conflicts || []
+  const canOverride = reEntryEnabled && dashboard?.permissions?.can_override === true
+  const baseHeadcount = reEntryEnabled ? (dashboard?.counts?.live_headcount ?? dashboard?.counts?.currently_inside ?? null) : null
+  const untrackedPreReEntry = reEntryEnabled ? Number(dashboard?.counts?.untracked_pre_re_entry_admits || 0) : 0
+  const liveHeadcount = baseHeadcount != null ? Math.max(0, Number(baseHeadcount)) : null
+  const headcountByDay = reEntryEnabled ? (dashboard?.counts?.headcount_by_day || []) : []
+  const currentServiceDay = serviceDayString(Date.now(), manifest?.payload?.event || dashboard?.event || selectedEvent)
+  const flaggedConflicts = reEntryEnabled ? (dashboard?.flagged_conflicts || []) : []
   useEffect(() => {
     if (!isExitScanMode && scanDirection !== 'admit') setScanDirection('admit')
   }, [isExitScanMode, scanDirection])
@@ -1871,14 +1872,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   // notices and tool links, 7-10 the camera and side column).
   return (
     <div className={`mx-auto flex w-full min-w-0 ${WORKSPACE_WIDTHS.standard} flex-col gap-3 px-4 py-4 sm:grid sm:px-6 lg:px-8 sm:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] sm:gap-x-4 sm:gap-y-0 sm:py-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,.65fr)] lg:grid-rows-[repeat(8,auto)_1fr_auto] lg:gap-x-6`}>
-      <div className="sm:col-start-1 sm:row-start-1 sm:min-w-0 sm:max-w-2xl sm:self-end">
+      <div className={`${isExitScanMode ? 'order-1 sm:order-none ' : ''}sm:col-start-1 sm:row-start-1 sm:min-w-0 sm:max-w-2xl sm:self-end`}>
         <div className="flex items-center justify-between gap-3 sm:flex-col-reverse sm:items-start sm:gap-0">
           <h1 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl">Check-in</h1>
           <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
         </div>
         {selectedEvent && <p className="mt-2 hidden break-words text-base font-semibold text-neutral-900 sm:block">{selectedEvent.title}</p>}
       </div>
-      <div className="sm:col-start-2 sm:row-start-2">
+      <div className={`${isExitScanMode ? 'order-2 sm:order-none ' : ''}sm:col-start-2 sm:row-start-2`}>
         {!offlineOnly && eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
         {!offlineOnly && eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
         <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
@@ -1889,16 +1890,21 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </select>
       </div>
 
-      <div className={`grid gap-2 sm:col-span-2 sm:row-start-4 sm:mb-4 sm:mt-5 ${liveHeadcount != null ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-4'}`} aria-label="Check-in status">
+      <div className={`${isExitScanMode ? 'order-4 sm:order-none ' : ''}grid gap-2 sm:col-span-2 sm:row-start-4 sm:mb-4 sm:mt-5 ${liveHeadcount != null ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-4'}`} aria-label="Check-in status">
         <div className={`flex items-center rounded-xl border p-2 sm:block sm:p-3 ${online ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
           <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <CloudOff className="h-4 w-4 shrink-0" />}{online ? 'Online' : 'Offline mode'}</p>
         </div>
         {liveHeadcount != null && (
           <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-2 sm:p-3">
             <p className="flex items-center gap-1 text-xs leading-tight font-medium text-brand-950 sm:text-sm">
-              <Users aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> Inside now
+              <Users aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> {isCooldownMode ? 'Entered' : 'Inside now'}
             </p>
             <p className="text-lg font-bold tabular-nums text-brand-950 sm:text-xl" data-testid="scanner-live-headcount">{HEADCOUNT_FORMAT.format(liveHeadcount)}</p>
+            {(!online || pendingCount > 0 || untrackedPreReEntry > 0) && (
+              <p className="text-[11px] leading-tight text-brand-900">
+                {untrackedPreReEntry > 0 ? `+${HEADCOUNT_FORMAT.format(untrackedPreReEntry)} earlier check-ins` : 'At last sync'}
+              </p>
+            )}
           </div>
         )}
         <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className="text-lg font-bold tabular-nums sm:text-xl" data-testid="scanner-pending-count">{HEADCOUNT_FORMAT.format(pendingCount)}</p></div>
@@ -1908,19 +1914,25 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block">
+      <div className={`${isExitScanMode ? 'order-5 sm:order-none ' : ''}flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block`}>
         {headcountByDay.length > 1 && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs sm:mb-4" aria-label="Live headcount by day">
             <span className="font-semibold text-neutral-700">By day:</span>
-            {headcountByDay.map(day => (
-              <span key={`${day.event_id || 'e'}-${day.day}`} className="rounded-full bg-neutral-100 px-2.5 py-1 font-semibold tabular-nums text-neutral-900">
-                {day.event_title || day.label || day.day}: {HEADCOUNT_FORMAT.format(day.headcount)} inside
-              </span>
-            ))}
+            {headcountByDay.map(day => {
+              const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+              const countText = isPastDay || isCooldownMode
+                ? `${HEADCOUNT_FORMAT.format(day.entries ?? day.headcount ?? 0)} entered`
+                : `${HEADCOUNT_FORMAT.format(day.headcount ?? 0)} inside`
+              return (
+                <span key={`${day.event_id || 'e'}-${day.day}`} className="rounded-full bg-neutral-100 px-2.5 py-1 font-semibold tabular-nums text-neutral-900">
+                  {day.event_title || day.label || day.day}: {countText}
+                </span>
+              )
+            })}
           </div>
         )}
         {pendingCount > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.</p>}
-        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">{ready ? 'Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.' : 'Connect to prepare this device before scanning. Offline check-in needs saved event access and a verified ticket list.'}</p>}
+        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">{ready ? (isExitScanMode ? 'Offline scans stay on this device. Offline exit scans keep tickets marked inside at other gates until this phone reconnects and syncs.' : 'Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.') : 'Connect to prepare this device before scanning. Offline check-in needs saved event access and a verified ticket list.'}</p>}
         {ready && <section aria-label="Ticket list readiness" className="rounded-xl border border-neutral-200 bg-white p-3 sm:mb-5 sm:p-4">
           <p className="font-semibold text-neutral-950">Ticket list ready · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>
           <p className="mt-1 text-sm text-neutral-700">{expiryLabel ? `Access expires ${expiryLabel} · ${eventTimezone}` : 'Reconnect to verify the access expiry.'}</p>
@@ -1939,7 +1951,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         {setupBusy && <div role="status" className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm sm:mb-5"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
       </div>
 
-      <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-7 sm:mb-5 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-span-3">
+      <div className={`${isExitScanMode ? 'order-3 sm:order-none ' : ''}flex flex-col gap-3 sm:col-span-2 sm:row-start-7 sm:mb-5 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-span-3`}>
         {isExitScanMode && (
           <div
             data-testid="re-entry-mode-toggle"
@@ -2013,7 +2025,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       </div>
 
       {dashboard && (
-        <section className="rounded-2xl border border-neutral-200 bg-white p-3 sm:col-span-2 sm:row-start-10 sm:mb-5 sm:self-start sm:p-5 lg:col-span-1 lg:col-start-2 lg:row-start-8">
+        <section className={`${isExitScanMode ? 'order-8 sm:order-none ' : ''}rounded-2xl border border-neutral-200 bg-white p-3 sm:col-span-2 sm:row-start-10 sm:mb-5 sm:self-start sm:p-5 lg:col-span-1 lg:col-start-2 lg:row-start-8`}>
           <div className="mb-1 flex items-center justify-between sm:mb-4"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
           <p className="mb-3 text-xs text-neutral-600">Server totals at the last sync. Issued includes tickets blocked from entry. These totals do not measure saleable stock or people inside; offline scans are pending.</p>
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -2025,13 +2037,13 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       )}
 
 
-      <nav aria-label="Check-in tools" className="flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800 sm:col-span-2 sm:row-start-6 sm:mb-4">
+      <nav aria-label="Check-in tools" className={`${isExitScanMode ? 'order-6 sm:order-none ' : ''}flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800 sm:col-span-2 sm:row-start-6 sm:mb-4`}>
         <a href="#scanner-camera" className="inline-flex min-h-11 items-center underline underline-offset-4">Use camera</a>
         <a href="#manual-ticket-entry" className="inline-flex min-h-11 items-center underline underline-offset-4">Enter QR code</a>
         <a href="#attendee-lookup" className="inline-flex min-h-11 items-center underline underline-offset-4">Find attendee</a>
       </nav>
 
-      <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-8 sm:mb-6 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-start-10 lg:mb-0">
+      <div className={`${isExitScanMode ? 'order-7 sm:order-none ' : ''}flex flex-col gap-3 sm:col-span-2 sm:row-start-8 sm:mb-6 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-start-10 lg:mb-0`}>
         <section id="manual-ticket-entry" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
           <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
           <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">Paste the QR code or link from the ticket. Some tickets ask you to check details before admitting. For a ticket number such as HP-T123, use attendee lookup below.</p>
@@ -2067,17 +2079,17 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </section>
       </div>
 
-      <div className="sm:col-start-1 sm:row-span-2 sm:row-start-2 sm:max-w-2xl sm:self-start">
+      <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}sm:col-start-1 sm:row-span-2 sm:row-start-2 sm:max-w-2xl sm:self-start`}>
         <p className="text-sm text-neutral-700 sm:mt-2">Scan a ticket, check the result, then welcome the guest.</p>
         <p className="mt-2 text-sm text-neutral-600">Prepare this device online before the event.</p>
       </div>
-      {!offlineOnly && <div className="sm:col-start-2 sm:row-start-1">
+      {!offlineOnly && <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}sm:col-start-2 sm:row-start-1`}>
         <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue or event ID." query={listing.q} onSearch={listing.search} busy={eventListLoading} />
         {!eventListLoading && listing.q && events.length === 0 && <p role="status" className="mb-2 text-sm">No matching events. Try another search. Your selected event stays ready.</p>}
       </div>}
-      {!offlineOnly && <div className="empty:hidden sm:col-start-2 sm:row-start-3"><OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" /></div>}
+      {!offlineOnly && <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}empty:hidden sm:col-start-2 sm:row-start-3`}><OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" /></div>}
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7">
+      <section className={`${isExitScanMode ? 'order-10 sm:order-none ' : ''}rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7`}>
         <div className="flex items-start gap-3"><Smartphone aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-brand-800" /><div className="min-w-0 break-words">
           <h2 className="font-semibold text-neutral-950">{device?.name || (ready ? 'Device ready' : 'Device not ready')}</h2>
           <p className="mt-2 text-sm text-neutral-700">{ready ? 'This device is ready to scan. Sync saved scans while connected.' : 'Connect and choose an assigned event to prepare this device for scanning.'}</p>
@@ -2100,7 +2112,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
 
       {canOverride && flaggedConflicts.length > 0 && (
-        <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 sm:col-span-2 lg:col-span-1 lg:col-start-2">
+        <section className={`${isExitScanMode ? 'order-11 sm:order-none ' : ''}rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 sm:col-span-2 lg:col-span-1 lg:col-start-2`}>
           <h2 className="mb-2 font-semibold text-amber-950">Flagged offline conflicts ({flaggedConflicts.length})</h2>
           <p className="mb-3 text-xs text-amber-900">Two gates admitted these tickets while offline. Review and clear or override with a reason.</p>
           <div className="space-y-3">
@@ -2118,7 +2130,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </section>
       )}
       {dashboard?.permissions?.can_reverse && (
-        <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-11 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-9 lg:row-span-2">
+        <section className={`${isExitScanMode ? 'order-12 sm:order-none ' : ''}rounded-2xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-11 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-9 lg:row-span-2`}>
           <h2 className="mb-3 font-semibold">Recent admissions</h2>
           <div className="space-y-2">
             {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {

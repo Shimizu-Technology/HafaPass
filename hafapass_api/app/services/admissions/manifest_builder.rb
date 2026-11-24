@@ -139,7 +139,9 @@ module Admissions
         re_entry_mode: event.re_entry_mode,
         re_entry_max_count: event.re_entry_max_count,
         re_entry_cutoff_at: event.re_entry_cutoff_at&.iso8601(6),
-        re_entry_cooldown_minutes: event.re_entry_cooldown_minutes
+        re_entry_cutoff_time: event.re_entry_cutoff_time,
+        re_entry_cooldown_minutes: event.re_entry_cooldown_minutes,
+        re_entry_rollover_hour: event.re_entry_rollover_hour
       }
     end
 

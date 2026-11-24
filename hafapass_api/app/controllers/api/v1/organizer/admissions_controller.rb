@@ -22,7 +22,13 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
   end
 
   def override
-    device = @event.scanner_devices.find_by(id: params[:scanner_device_id]) if params[:scanner_device_id].present?
+    device = nil
+    if params[:scanner_device_id].present?
+      device = @event.scanner_devices.find_by(id: params[:scanner_device_id], user_id: current_user.id)
+      unless device
+        return render json: { error: "Scanner device not found for this staff member" }, status: :unprocessable_entity
+      end
+    end
     result = Admissions::LeadOverride.call(
       event: @event,
       actor: current_user,
@@ -91,7 +97,9 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
         re_entry_mode: @event.re_entry_mode,
         re_entry_max_count: @event.re_entry_max_count,
         re_entry_cutoff_at: @event.re_entry_cutoff_at,
-        re_entry_cooldown_minutes: @event.re_entry_cooldown_minutes
+        re_entry_cutoff_time: @event.re_entry_cutoff_time,
+        re_entry_cooldown_minutes: @event.re_entry_cooldown_minutes,
+        re_entry_rollover_hour: @event.re_entry_rollover_hour
       },
       counts: Admissions::Counts.call(event: @event),
       devices: @event.scanner_devices.includes(:user).order(last_seen_at: :desc).map { |device| device_summary(device) },
@@ -104,8 +112,8 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
           organization: current_organization, permission: :manage_attendees, event: @event),
         can_reverse: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
           permission: :manage_attendees, event: @event),
-        can_override: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
-          permission: :override_re_entry, event: @event)
+        can_override: @event.re_entry_enabled? && OrganizationAuthorization.allowed?(user: current_user,
+          organization: current_organization, permission: :override_re_entry, event: @event)
       }
     }
   end
@@ -159,7 +167,7 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
       details: action.metadata.slice(
         "prior_entry_at", "prior_gate_name", "elapsed_minutes", "remaining_minutes",
         "cooldown_minutes", "retry_after_at", "re_entry", "re_entry_number",
-        "re_entry_count", "re_entry_max_count", "cutoff_at", "offline_conflict",
+        "re_entry_count", "re_entry_max_count", "cutoff_at", "cutoff_time", "offline_conflict",
         "winner_by_occurred_at", "override_action"
       )
     }

@@ -21,6 +21,7 @@ This table describes role permissions for active memberships. Event lifecycle, v
 | Guest list, waitlist & resend tickets | Yes | Yes | No | No | Assigned events | No |
 | Door sales | Yes | Yes | No | No | Assigned events | No |
 | Scan tickets | Yes | Yes | No | No | Assigned events | Assigned events |
+| Override re-entry blocks | Yes | Yes | No | No | Assigned events | No |
 | Undo a check-in | Yes | Yes | No | No | Assigned events | No |
 | Issue refunds | Yes | No | Yes | No | No | No |
 | Finance reports & sales exports | Yes | Yes | Yes | No | Attendee exports only · assigned events | No |
@@ -34,6 +35,17 @@ This table describes role permissions for active memberships. Event lifecycle, v
 | Transfer ownership | Yes | No | No | No | No | No |
 | View activity log (all / events / money) | All activity | Event activity, without payment amounts | Money | No | No | No |
 
+## Event-assignment roles
+
+Event assignments scope door staff and event-only managers to specific events (`event_staff_assignments.role`).
+
+| Assignment role | Scan tickets | Override re-entry blocks | Undo a check-in | Door sales | Edit & manage event |
+|---|---|---|---|---|---|
+| Event manager (`event_manager`) | Assigned events | Assigned events | Assigned events | Assigned events | Assigned events |
+| Box office (`box_office`) | Assigned events | Assigned events | Assigned events | Assigned events | No |
+| Door scanner (`scanner`) | Assigned events | No | No | No | No |
+| Scanner lead (`scanner_lead`) | Assigned events | Assigned events | No | No | No |
+
 ## Access notes
 
 - Managers can't cancel events or move money.
@@ -44,6 +56,7 @@ This table describes role permissions for active memberships. Event lifecycle, v
 - **Edit event page content only:** Marketers can change page content, but cannot publish events or change their schedule.
 - **Copy/repeat events:** Event assignments do not allow creating, copying or repeating events.
 - **See attendee names & emails:** Finance sees buyer contact in refunds and finance exports. Scanners see admission names, not email addresses.
+- **Override re-entry blocks:** Event-scoped Scanner lead assignments also grant Override re-entry blocks alongside Scan tickets for assigned events. Overrides require a written reason and are audited.
 - **Finance reports & sales exports:** Box office can export attendee sales data for assigned events, without financial amounts.
 - **Promo codes, promoters & buyer emails:** Buyer emails means sending campaigns; it does not grant the attendee contact list.
 - **Assign staff to events:** Event managers can assign door staff on their events. Organization-wide invitations and role changes require the Owner.

@@ -273,6 +273,19 @@
       }
     },
     {
+      "key": "override_re_entry",
+      "label": "Override re-entry blocks",
+      "note": "Event-scoped Scanner lead assignments also grant Override re-entry blocks alongside Scan tickets for assigned events. Overrides require a written reason and are audited.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "No"
+      }
+    },
+    {
       "key": "reverse",
       "label": "Undo a check-in",
       "values": {

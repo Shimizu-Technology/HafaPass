@@ -439,7 +439,7 @@ module Api
           end
 
           analytics = EventSalesAnalytics.call(@event)
-          admission_counts = Admissions::Counts.call(event: @event)
+          admission_counts = @event.re_entry_enabled? ? Admissions::Counts.call(event: @event) : {}
           render json: {
             total_tickets_sold: total_tickets_sold,
             total_revenue_cents: total_revenue_cents,
@@ -449,7 +449,8 @@ module Api
             currently_inside: admission_counts[:currently_inside],
             exits_count: admission_counts[:exits],
             re_entries_count: admission_counts[:re_entries],
-            headcount_by_day: admission_counts[:headcount_by_day],
+            untracked_pre_re_entry_admits: admission_counts[:untracked_pre_re_entry_admits] || 0,
+            headcount_by_day: admission_counts[:headcount_by_day] || [],
             tickets_by_type: tickets_by_type,
             pass_tickets: pass_tickets,
             recent_orders: recent_orders,
@@ -645,7 +646,7 @@ module Api
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
             :fee_policy, :buyer_fee_percent, :transfers_enabled,
-            :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_at, :re_entry_cooldown_minutes,
+            :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_at, :re_entry_cutoff_time, :re_entry_cooldown_minutes,
             supported_locales: [],
             localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
             page_customization: {}
@@ -660,8 +661,11 @@ module Api
           %w[starts_at ends_at doors_open_at re_entry_cutoff_at].each do |key|
             attributes[key] = EventTimeParser.call(attributes[key], timezone: timezone) if attributes.key?(key)
           end
-          %w[re_entry_max_count re_entry_cooldown_minutes].each do |key|
+          %w[re_entry_max_count re_entry_cooldown_minutes re_entry_cutoff_time].each do |key|
             attributes[key] = nil if attributes.key?(key) && attributes[key].blank?
+          end
+          if attributes.key?("re_entry_cutoff_time") && attributes["re_entry_cutoff_time"].present?
+            attributes["re_entry_cutoff_time"] = attributes["re_entry_cutoff_time"].to_s.strip
           end
           attributes
         rescue EventTimeParser::ParseError => e
@@ -719,7 +723,7 @@ module Api
             "venue_id", "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
             "fee_policy", "buyer_fee_percent", "transfers_enabled",
-            "re_entry_mode", "re_entry_max_count", "re_entry_cooldown_minutes",
+            "re_entry_mode", "re_entry_max_count", "re_entry_cutoff_time", "re_entry_cooldown_minutes",
             "show_attendees"
           ).merge(
             "organizer_profile_id" => source.organizer_profile_id,
@@ -855,7 +859,9 @@ module Api
             re_entry_mode: event.re_entry_mode,
             re_entry_max_count: event.re_entry_max_count,
             re_entry_cutoff_at: event.re_entry_cutoff_at,
+            re_entry_cutoff_time: event.re_entry_cutoff_time,
             re_entry_cooldown_minutes: event.re_entry_cooldown_minutes,
+            re_entry_rollover_hour: event.re_entry_rollover_hour,
             assigned_seating: event.assigned_seating?,
             policy_hold: event.policy_hold_summary,
             sales_status: event.sales_status(context: (@sales_context ||= Event.sales_context)),

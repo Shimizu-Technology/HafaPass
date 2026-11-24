@@ -1787,6 +1787,7 @@
       "re_entry_mode": "non-personal",
       "re_entry_max_count": "non-personal",
       "re_entry_cutoff_at": "system",
+      "re_entry_cutoff_time": "non-personal",
       "re_entry_cooldown_minutes": "non-personal"
     },
     "fee_change_notices": {

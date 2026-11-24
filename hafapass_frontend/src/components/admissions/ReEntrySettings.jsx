@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { AlertTriangle } from 'lucide-react'
 
 const RE_ENTRY_MODES = [
   {
@@ -18,10 +19,19 @@ const RE_ENTRY_MODES = [
   },
 ]
 
-export default function ReEntrySettings({ form, updateField, formErrors = {}, disabled = false, timezone = 'Pacific/Guam' }) {
+export default function ReEntrySettings({
+  form,
+  updateField,
+  formErrors = {},
+  disabled = false,
+  timezone = 'Pacific/Guam',
+  savedMode = 'off',
+  isLiveEvent = false,
+}) {
   const groupId = useId()
   const mode = form.re_entry_mode || 'off'
   const showRules = mode === 'exit_scan' || mode === 'cooldown'
+  const switchingOffMidEvent = isLiveEvent && savedMode !== 'off' && mode === 'off'
 
   const handleModeChange = nextMode => {
     updateField('re_entry_mode', nextMode)
@@ -63,6 +73,15 @@ export default function ReEntrySettings({ form, updateField, formErrors = {}, di
           </label>
         ))}
       </fieldset>
+
+      {switchingOffMidEvent && (
+        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+          <p>
+            <strong>Warning: switching re-entry to Off while this event is live</strong> will strand guests who already stepped out — their tickets will be blocked from scanning back in.
+          </p>
+        </div>
+      )}
 
       {showRules && (
         <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
@@ -113,7 +132,7 @@ export default function ReEntrySettings({ form, updateField, formErrors = {}, di
               disabled={disabled}
             />
             <p id="re_entry_max_count-help" className="mt-1 text-xs text-neutral-600">
-              Leave blank for unlimited. For example, 2 allows first entry plus 2 re-entries.
+              Leave blank for unlimited. For example, 2 allows first entry plus 2 re-entries per day.
             </p>
             {formErrors.re_entry_max_count && (
               <p id="re_entry_max_count-error" className="mt-1 text-sm text-red-600">{formErrors.re_entry_max_count}</p>
@@ -121,21 +140,25 @@ export default function ReEntrySettings({ form, updateField, formErrors = {}, di
           </div>
 
           <div>
-            <label htmlFor="re_entry_cutoff_at" className="mb-1 block text-sm font-medium text-neutral-800">
-              Re-entry cutoff time (optional)
+            <label htmlFor="re_entry_cutoff_time" className="mb-1 block text-sm font-medium text-neutral-800">
+              Daily re-entry cutoff time (optional)
             </label>
             <input
-              id="re_entry_cutoff_at"
-              type="datetime-local"
-              value={form.re_entry_cutoff_at}
-              onChange={event => updateField('re_entry_cutoff_at', event.target.value)}
-              aria-describedby="re_entry_cutoff_at-help"
-              className="input"
+              id="re_entry_cutoff_time"
+              type="time"
+              value={form.re_entry_cutoff_time}
+              onChange={event => updateField('re_entry_cutoff_time', event.target.value)}
+              aria-invalid={Boolean(formErrors.re_entry_cutoff_time)}
+              aria-describedby={`re_entry_cutoff_time-help${formErrors.re_entry_cutoff_time ? ' re_entry_cutoff_time-error' : ''}`}
+              className={`input ${formErrors.re_entry_cutoff_time ? 'input-error' : ''}`}
               disabled={disabled}
             />
-            <p id="re_entry_cutoff_at-help" className="mt-1 text-xs text-neutral-600">
-              Guam time ({timezone}). After this time, guests who left cannot re-enter; first-time arrivals can still enter.
+            <p id="re_entry_cutoff_time-help" className="mt-1 text-xs text-neutral-600">
+              Event time zone ({timezone}). Applies each day of the event; guests who left cannot re-enter after this time, while first-time arrivals can still enter.
             </p>
+            {formErrors.re_entry_cutoff_time && (
+              <p id="re_entry_cutoff_time-error" className="mt-1 text-sm text-red-600">{formErrors.re_entry_cutoff_time}</p>
+            )}
           </div>
         </div>
       )}

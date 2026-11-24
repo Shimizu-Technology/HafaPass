@@ -49,7 +49,7 @@ const eventForm = e => ({
   transfers_enabled: e.transfers_enabled === true,
   re_entry_mode: e.re_entry_mode || 'off',
   re_entry_max_count: e.re_entry_max_count != null ? String(e.re_entry_max_count) : '',
-  re_entry_cutoff_at: toEventLocalInput(e.re_entry_cutoff_at, e.timezone),
+  re_entry_cutoff_time: e.re_entry_cutoff_time || '',
   re_entry_cooldown_minutes: e.re_entry_cooldown_minutes != null ? String(e.re_entry_cooldown_minutes) : '',
 })
 
@@ -135,7 +135,7 @@ function EditEventSession({ id, identity }) {
     transfers_enabled: false,
     re_entry_mode: 'off',
     re_entry_max_count: '',
-    re_entry_cutoff_at: '',
+    re_entry_cutoff_time: '',
     re_entry_cooldown_minutes: '',
   })
 
@@ -301,6 +301,9 @@ function EditEventSession({ id, identity }) {
           errors.re_entry_max_count = 'Max re-entries must be a whole number between 1 and 1000'
         }
       }
+      if (form.re_entry_cutoff_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(form.re_entry_cutoff_time.trim())) {
+        errors.re_entry_cutoff_time = 'Enter a valid 24-hour cutoff time (HH:MM)'
+      }
       if (buyerVisibleChange && !changeReason.trim()) {
         errors.change_reason = scheduleChanged ? 'Explain the schedule change for ticket holders' : 'Explain the venue change for ticket holders'
       }
@@ -343,8 +346,7 @@ function EditEventSession({ id, identity }) {
         re_entry_max_count: form.re_entry_max_count ? Number(form.re_entry_max_count) : null,
         re_entry_cooldown_minutes: form.re_entry_mode === 'cooldown' && form.re_entry_cooldown_minutes
           ? Number(form.re_entry_cooldown_minutes) : null,
-        ...(event && form.re_entry_cutoff_at !== toEventLocalInput(event.re_entry_cutoff_at, event.timezone)
-          ? { re_entry_cutoff_at: form.re_entry_cutoff_at || null } : {}),
+        re_entry_cutoff_time: form.re_entry_cutoff_time ? form.re_entry_cutoff_time.trim() : null,
       }
       if (!canManage) {
         const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url', 'page_customization']
@@ -832,6 +834,8 @@ function EditEventSession({ id, identity }) {
               formErrors={formErrors}
               disabled={submitting}
               timezone={event?.timezone || 'Pacific/Guam'}
+              savedMode={event?.re_entry_mode || 'off'}
+              isLiveEvent={['published', 'postponed'].includes(event?.status)}
             />
           </div>
         </section>

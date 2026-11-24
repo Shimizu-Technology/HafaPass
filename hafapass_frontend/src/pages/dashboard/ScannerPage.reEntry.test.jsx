@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../../api/client'
 import { clearAllAdmissionData, clearEventAdmissionData, saveDevice, saveVerifiedManifest, sha256Hex } from '../../utils/admissionStore'
-import { evaluateLocalReEntry, formatReEntryFeedback } from '../../utils/reEntryRules'
+import { evaluateLocalReEntry, formatReEntryFeedback, serviceDayString } from '../../utils/reEntryRules'
 import { signedManifest } from '../../test/manifestFixture'
 import ScannerPage from './ScannerPage'
 import ReEntrySettings from '../../components/admissions/ReEntrySettings'
@@ -71,7 +71,7 @@ describe('reEntryRules pure evaluation', () => {
       timezone: 'Pacific/Guam',
       re_entry_mode: 'exit_scan',
       re_entry_max_count: 1,
-      re_entry_cutoff_at: '2027-01-30T18:00:00+10:00',
+      re_entry_cutoff_time: '18:00',
     }
 
     // Already inside on Day 1 -> blocked with anti-passback
@@ -91,10 +91,18 @@ describe('reEntryRules pure evaluation', () => {
     expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: capHitTicket, localState: null, eventMeta: exitEvent, nowMs: day1Ms }))
       .toMatchObject({ allowed: false, reasonCode: 're_entry_limit_reached' })
 
-    // Outside after cutoff -> blocked by cutoff
-    const afterCutoffMs = Date.parse('2027-01-30T19:00:00+10:00')
+    // Outside after daily cutoff on Day 1 -> blocked by cutoff
+    const afterCutoffDay1Ms = Date.parse('2027-01-30T19:00:00+10:00')
     const outsideBeforeCap = { ...insideDay1, occupancy_state: 'outside', re_entry_count: 0 }
-    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outsideBeforeCap, localState: null, eventMeta: exitEvent, nowMs: afterCutoffMs }))
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outsideBeforeCap, localState: null, eventMeta: exitEvent, nowMs: afterCutoffDay1Ms }))
+      .toMatchObject({ allowed: false, reasonCode: 're_entry_cutoff_passed', details: { cutoff_time: '18:00' } })
+
+    // Outside on Day 2 BEFORE 18:00 -> allowed (cutoff applies per service day, not a one-time datetime!)
+    const day2Outside = { ...insideDay1, occupancy_state: 'outside', occupancy_day: '2027-01-31', re_entry_count: 0 }
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: day2Outside, localState: null, eventMeta: exitEvent, nowMs: Date.parse('2027-01-31T17:30:00+10:00') }))
+      .toMatchObject({ allowed: true, isReEntry: true, reEntryNumber: 1 })
+    // Outside on Day 2 AFTER 18:00 -> blocked
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: day2Outside, localState: null, eventMeta: exitEvent, nowMs: Date.parse('2027-01-31T18:15:00+10:00') }))
       .toMatchObject({ allowed: false, reasonCode: 're_entry_cutoff_passed' })
 
     // Cooldown mode: 2 min later blocked, 16 min later allowed
@@ -104,6 +112,44 @@ describe('reEntryRules pure evaluation', () => {
       .toMatchObject({ allowed: false, reasonCode: 'cooldown_active', details: { elapsed_minutes: 2, remaining_minutes: 13 } })
     expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: insideDay1, localState: null, eventMeta: cooldownEvent, nowMs: scannedAt + 16 * 60_000 }))
       .toMatchObject({ allowed: true, isReEntry: true, reEntryNumber: 1 })
+  })
+
+  it('keeps overnight events (20:00–02:00) on the same service day past midnight without resetting passback, exit, cooldown, or 01:00 cutoff', () => {
+    const overnightEvent = {
+      timezone: 'Pacific/Guam',
+      starts_at: '2027-01-30T20:00:00+10:00',
+      ends_at: '2027-01-31T02:00:00+10:00',
+      re_entry_mode: 'exit_scan',
+      re_entry_cutoff_time: '01:00',
+    }
+    const at2355 = Date.parse('2027-01-30T23:55:00+10:00')
+    const at0005 = Date.parse('2027-01-31T00:05:00+10:00')
+    const at0115 = Date.parse('2027-01-31T01:15:00+10:00')
+
+    expect(serviceDayString(at2355, overnightEvent)).toBe('2027-01-30')
+    expect(serviceDayString(at0005, overnightEvent)).toBe('2027-01-30')
+
+    const inside = {
+      state: 'admitted', occupancy_state: 'inside', occupancy_day: '2027-01-30',
+      last_entry_at: '2027-01-30T23:55:00+10:00', last_entry_gate: 'Main Gate', re_entry_count: 0,
+    }
+    // 00:05 is still the same service day -> anti-passback holds and exit scan succeeds!
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: inside, localState: null, eventMeta: overnightEvent, nowMs: at0005 }))
+      .toMatchObject({ allowed: false, reasonCode: 'already_inside' })
+    expect(evaluateLocalReEntry({ kind: 'exit', manifestTicket: inside, localState: null, eventMeta: overnightEvent, nowMs: at0005 }))
+      .toMatchObject({ allowed: true })
+
+    // Re-entering at 00:10 is before 01:00 cutoff; at 01:15 is after 01:00 cutoff
+    const outside = { ...inside, occupancy_state: 'outside' }
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outside, localState: null, eventMeta: overnightEvent, nowMs: Date.parse('2027-01-31T00:10:00+10:00') }))
+      .toMatchObject({ allowed: true, isReEntry: true, reEntryNumber: 1 })
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: outside, localState: null, eventMeta: overnightEvent, nowMs: at0115 }))
+      .toMatchObject({ allowed: false, reasonCode: 're_entry_cutoff_passed' })
+
+    // Cooldown across midnight: 23:55 entry + 15 min cooldown still blocks at 00:05
+    const overnightCooldown = { ...overnightEvent, re_entry_mode: 'cooldown', re_entry_cooldown_minutes: 15, re_entry_cutoff_time: null }
+    expect(evaluateLocalReEntry({ kind: 'admit', manifestTicket: inside, localState: null, eventMeta: overnightCooldown, nowMs: at0005 }))
+      .toMatchObject({ allowed: false, reasonCode: 'cooldown_active' })
   })
 
   it('formats Already inside with gate time and gate name in Guam time', () => {
@@ -130,17 +176,18 @@ describe('ScannerPage re-entry UX', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStorage.clear() })
 
-  it('hides the Entry/Exit toggle when mode is Off (no extra taps)', async () => {
+  it('hides the Entry/Exit toggle and Inside now tile when mode is Off (no extra taps or headcount noise)', async () => {
     await prepareOfflineReEntry({
       eventOverrides: { re_entry_mode: 'off' },
       tickets: [{ ticket_id: 1, state: 'valid', attendee_name: 'Avery Lindqvist', ticket_type: 'General', credential_hash: await sha256Hex('off-1') }],
     })
     expect(screen.queryByTestId('re-entry-mode-toggle')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('scanner-live-headcount')).not.toBeInTheDocument()
   })
 
   it('shows big Entry/Exit switch in exit_scan mode, distinct Already inside sound/vibrate, Exit scan, and Re-entry', async () => {
     const tones = installAudio()
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
     await prepareOfflineReEntry({
       eventOverrides: { re_entry_mode: 'exit_scan', re_entry_max_count: 2 },
       tickets: [
@@ -243,7 +290,7 @@ describe('ScannerPage re-entry UX', () => {
 
     render(<ScannerPage />)
     expect(await screen.findByTestId('scanner-live-headcount')).toHaveTextContent('9,999')
-    expect(screen.getByText(/Jan 30, 2027: 4,200 inside/)).toBeInTheDocument()
+    expect(screen.getByText(/Jan 30, 2027: 4,200 entered/)).toBeInTheDocument()
     expect(screen.getByText(/Flagged offline conflicts \(1\)/)).toBeInTheDocument()
 
     const user = userEvent.setup()
@@ -257,24 +304,87 @@ describe('ScannerPage re-entry UX', () => {
       expect.objectContaining({ ticket_id: 201, override_action: 'clear', reason: 'Verified wristband at North Gate' }),
     )
   })
+
+  it('labels cooldown mode as Entered instead of Inside now and defaults already-inside lead override to Admit (re-entry)', async () => {
+    const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
+    const manifest = await signedManifest(eventId, [{
+      ticket_id: 301, state: 'admitted', occupancy_state: 'inside', occupancy_day: today,
+      last_entry_at: new Date(Date.now() - 2 * 60_000).toISOString(), last_entry_gate: 'Gate 1', re_entry_count: 0,
+      attendee_name: 'Nadia Benavente', ticket_type: 'Spectator', credential_hash: await sha256Hex('qr-301'),
+    }], {
+      schema_version: 2,
+      event: { id: eventId, title: 'Copa Cooldown', timezone: 'Pacific/Guam', re_entry_mode: 'cooldown', re_entry_cooldown_minutes: 15 },
+    })
+    apiClient.get.mockImplementation(url => {
+      if (url === '/organizer/events') return Promise.resolve({ data: { events: [{ id: eventId, status: 'published', title: 'Copa Cooldown', re_entry_mode: 'cooldown' }] } })
+      if (url.endsWith('/manifest')) return Promise.resolve({ data: manifest })
+      return Promise.resolve({
+        data: {
+          event: { id: eventId, title: 'Copa Cooldown', timezone: 'Pacific/Guam', re_entry_mode: 'cooldown', re_entry_cooldown_minutes: 15 },
+          counts: { admitted: 42, remaining: 58, conflicts: 0, rejected: 0, live_headcount: 42, headcount_by_day: [{ day: today, label: 'Today', headcount: 42 }] },
+          flagged_conflicts: [],
+          permissions: { can_override: true, can_reverse: false },
+          recent_actions: [],
+        },
+      })
+    })
+    apiClient.post.mockImplementation(url => {
+      if (url.endsWith('/scan')) {
+        return Promise.resolve({
+          data: {
+            status: 'rejected',
+            reason_code: 'already_inside',
+            details: { prior_entry_at: new Date(Date.now() - 2 * 60_000).toISOString(), prior_gate_name: 'Gate 1' },
+            ticket: { ticket_id: 301, code: 'HP-T301', attendee_name: 'Nadia Benavente', ticket_type: 'Spectator' },
+          },
+        })
+      }
+      return Promise.resolve({ data: device })
+    })
+
+    render(<ScannerPage />)
+    const tile = await screen.findByTestId('scanner-live-headcount')
+    expect(tile).toHaveTextContent('Entered')
+    expect(tile).not.toHaveTextContent('Inside now')
+
+    const user = userEvent.setup()
+    await enterCode(user, 'qr-301', 'Check in ticket')
+    const overlay = await screen.findByTestId('scan-result-overlay')
+    await waitFor(() => expect(overlay).toHaveAttribute('data-armed', 'true'))
+    await user.click(screen.getByRole('button', { name: /Lead override/i }))
+    expect(screen.getByRole('radio', { name: /Admit \(re-entry\)/ })).toBeChecked()
+  })
 })
 
 describe('ReEntrySettings & AttendanceReport re-entry views', () => {
-  it('renders plain-language re-entry options and shows cooldown/cap/cutoff inputs when enabled', async () => {
+  it('renders plain-language re-entry options, event timezone cutoff help, and live mid-event Off warning', async () => {
     const user = userEvent.setup()
-    let form = { re_entry_mode: 'off', re_entry_max_count: '', re_entry_cutoff_at: '', re_entry_cooldown_minutes: '' }
+    let form = { re_entry_mode: 'off', re_entry_max_count: '', re_entry_cutoff_time: '', re_entry_cooldown_minutes: '' }
     const updateField = vi.fn((k, v) => { form = { ...form, [k]: v } })
-    const { rerender } = render(<ReEntrySettings form={form} updateField={updateField} />)
+    const { rerender } = render(
+      <ReEntrySettings form={form} updateField={updateField} timezone="America/New_York" savedMode="exit_scan" isLiveEvent />,
+    )
     expect(screen.queryByLabelText(/Max re-entries/)).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/switching re-entry to Off while this event is live/i)
 
     await user.click(screen.getByLabelText(/Cool-down/))
     expect(updateField).toHaveBeenCalledWith('re_entry_mode', 'cooldown')
     expect(updateField).toHaveBeenCalledWith('re_entry_cooldown_minutes', '15')
 
-    rerender(<ReEntrySettings form={{ ...form, re_entry_mode: 'cooldown', re_entry_cooldown_minutes: '15' }} updateField={updateField} />)
+    rerender(
+      <ReEntrySettings
+        form={{ ...form, re_entry_mode: 'cooldown', re_entry_cooldown_minutes: '15' }}
+        updateField={updateField}
+        timezone="America/New_York"
+        savedMode="exit_scan"
+        isLiveEvent
+      />,
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Cool-down minutes/)).toHaveValue(15)
     expect(screen.getByLabelText(/Max re-entries per ticket/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Re-entry cutoff time/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Daily re-entry cutoff time/)).toHaveAttribute('type', 'time')
+    expect(screen.getByText(/Event time zone \(America\/New_York\)/)).toBeInTheDocument()
   })
 
   it('renders entries, exits, re-entries, peak headcount with time, and per-day table in AttendanceReport', () => {

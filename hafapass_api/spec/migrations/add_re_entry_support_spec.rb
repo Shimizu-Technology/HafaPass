@@ -17,6 +17,10 @@ RSpec.describe AddReEntrySupport do
     end.to raise_error(ActiveRecord::StatementInvalid, /events_re_entry_mode_valid/)
 
     expect do
+      Event.transaction(requires_new: true) { event.update_columns(re_entry_cutoff_time: "25:00") }
+    end.to raise_error(ActiveRecord::StatementInvalid, /events_re_entry_cutoff_time_valid/)
+
+    expect do
       Ticket.transaction(requires_new: true) { ticket.update_columns(occupancy_state: "invalid") }
     end.to raise_error(ActiveRecord::StatementInvalid, /tickets_occupancy_state_valid/)
 

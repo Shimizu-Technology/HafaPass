@@ -1,5 +1,8 @@
 import { DEFAULT_EVENT_TIME_ZONE } from './eventTime'
 
+export const RE_ENTRY_ROLLOVER_HOUR = 5
+const CUTOFF_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+
 export function localDayString(value = Date.now(), timeZone = DEFAULT_EVENT_TIME_ZONE) {
   const date = value instanceof Date ? value : new Date(value)
   try {
@@ -17,6 +20,58 @@ export function localDayString(value = Date.now(), timeZone = DEFAULT_EVENT_TIME
       day: '2-digit',
     }).format(date)
   }
+}
+
+function localHourMinute(value, timeZone = DEFAULT_EVENT_TIME_ZONE) {
+  const date = value instanceof Date ? value : new Date(value)
+  const tz = timeZone || DEFAULT_EVENT_TIME_ZONE
+  let parts
+  try {
+    parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+  } catch {
+    parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: DEFAULT_EVENT_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+  }
+  const hour = Number(parts.find(p => p.type === 'hour')?.value ?? 0) % 24
+  const minute = Number(parts.find(p => p.type === 'minute')?.value ?? 0)
+  return { hour, minute }
+}
+
+export function eventRolloverHour(eventMeta = null) {
+  if (Number.isInteger(eventMeta?.re_entry_rollover_hour)) return eventMeta.re_entry_rollover_hour
+  const startMs = Date.parse(eventMeta?.starts_at || '')
+  const endMs = Date.parse(eventMeta?.ends_at || '')
+  if (Number.isFinite(startMs) && Number.isFinite(endMs) && (endMs - startMs) <= 24 * 3_600_000) {
+    const { hour } = localHourMinute(startMs, eventMeta?.timezone)
+    if (hour < RE_ENTRY_ROLLOVER_HOUR) return hour
+  }
+  return RE_ENTRY_ROLLOVER_HOUR
+}
+
+// Mirrors Event#occupancy_day_for on the backend:
+// Single-session events (<= 24 h) keep one service day across midnight (e.g. 20:00–02:00);
+// multi-day events roll over at 05:00 local time so late-night scans stay on their night.
+export function serviceDayString(value = Date.now(), eventMeta = null) {
+  const tz = eventMeta?.timezone || DEFAULT_EVENT_TIME_ZONE
+  const ms = value instanceof Date ? value.getTime() : (typeof value === 'number' ? value : Date.parse(value))
+  const effectiveMs = Number.isFinite(ms) ? ms : Date.now()
+  const startMs = Date.parse(eventMeta?.starts_at || '')
+  const endMs = Date.parse(eventMeta?.ends_at || '')
+  if (Number.isFinite(startMs) && Number.isFinite(endMs) && (endMs - startMs) <= 24 * 3_600_000) {
+    if (effectiveMs >= startMs - 6 * 3_600_000 && effectiveMs <= endMs + 6 * 3_600_000) {
+      return localDayString(startMs, tz)
+    }
+  }
+  return localDayString(effectiveMs - RE_ENTRY_ROLLOVER_HOUR * 3_600_000, tz)
 }
 
 export function formatGateTime(isoOrMs, timeZone = DEFAULT_EVENT_TIME_ZONE) {
@@ -38,9 +93,34 @@ export function formatGateTime(isoOrMs, timeZone = DEFAULT_EVENT_TIME_ZONE) {
   }
 }
 
+export function formatCutoffTime(hhmm) {
+  const match = CUTOFF_TIME_RE.exec(String(hhmm || '').trim())
+  if (!match) return null
+  const hour24 = Number(match[1])
+  const minute = match[2]
+  const period = hour24 >= 12 ? 'PM' : 'AM'
+  const hour12 = hour24 % 12 || 12
+  return `${hour12}:${minute} ${period}`
+}
+
+export function isCutoffPassed(nowMs, eventMeta) {
+  const cutoffTime = eventMeta?.re_entry_cutoff_time
+  const match = CUTOFF_TIME_RE.exec(String(cutoffTime || '').trim())
+  if (match) {
+    const rollover = eventRolloverHour(eventMeta)
+    const cutHour = Number(match[1])
+    const cutMin = Number(match[2])
+    const { hour, minute } = localHourMinute(nowMs, eventMeta?.timezone)
+    const nowServiceMin = (hour < rollover ? hour + 24 : hour) * 60 + minute
+    const cutServiceMin = (cutHour < rollover ? cutHour + 24 : cutHour) * 60 + cutMin
+    return nowServiceMin > cutServiceMin
+  }
+  const cutoffMs = Date.parse(eventMeta?.re_entry_cutoff_at || '')
+  return Number.isFinite(cutoffMs) && nowMs > cutoffMs
+}
+
 export function effectiveLocalTicketState(manifestTicket, localState, eventMeta, nowMs = Date.now()) {
-  const tz = eventMeta?.timezone || DEFAULT_EVENT_TIME_ZONE
-  const today = localDayString(nowMs, tz)
+  const today = serviceDayString(nowMs, eventMeta)
 
   const manifestTs = Math.max(
     Date.parse(manifestTicket?.last_entry_at || '') || 0,
@@ -50,8 +130,8 @@ export function effectiveLocalTicketState(manifestTicket, localState, eventMeta,
   const useLocal = Boolean(localState && localTs >= manifestTs && localState.occupancy_state)
 
   const occupancyDay = useLocal
-    ? (localState.occupancy_day || (localTs ? localDayString(localTs, tz) : null))
-    : (manifestTicket?.occupancy_day || (manifestTs ? localDayString(manifestTs, tz) : null))
+    ? (localState.occupancy_day || (localTs ? serviceDayString(localTs, eventMeta) : null))
+    : (manifestTicket?.occupancy_day || (manifestTs ? serviceDayString(manifestTs, eventMeta) : null))
 
   const sameDay = Boolean(occupancyDay && occupancyDay === today)
   const rawState = useLocal ? localState.occupancy_state : (manifestTicket?.occupancy_state || (manifestTicket?.state === 'admitted' ? 'inside' : 'outside'))
@@ -105,9 +185,13 @@ export function evaluateLocalReEntry({ kind = 'admit', manifestTicket, localStat
       }
     }
     if (effective.enteredToday) {
-      const cutoffMs = Date.parse(eventMeta?.re_entry_cutoff_at || '')
-      if (Number.isFinite(cutoffMs) && nowMs > cutoffMs) {
-        return { allowed: false, type: 'error', reasonCode: 're_entry_cutoff_passed', details: { cutoff_at: eventMeta.re_entry_cutoff_at } }
+      if (isCutoffPassed(nowMs, eventMeta)) {
+        return {
+          allowed: false,
+          type: 'error',
+          reasonCode: 're_entry_cutoff_passed',
+          details: { cutoff_time: eventMeta?.re_entry_cutoff_time, cutoff_at: eventMeta?.re_entry_cutoff_at, timezone: tz },
+        }
       }
       const maxCount = eventMeta?.re_entry_max_count
       if (maxCount != null && effective.reEntryCount >= Number(maxCount)) {
@@ -152,9 +236,13 @@ export function evaluateLocalReEntry({ kind = 'admit', manifestTicket, localStat
     }
   }
 
-  const cutoffMs = Date.parse(eventMeta?.re_entry_cutoff_at || '')
-  if (Number.isFinite(cutoffMs) && nowMs > cutoffMs) {
-    return { allowed: false, type: 'error', reasonCode: 're_entry_cutoff_passed', details: { cutoff_at: eventMeta.re_entry_cutoff_at, timezone: tz } }
+  if (isCutoffPassed(nowMs, eventMeta)) {
+    return {
+      allowed: false,
+      type: 'error',
+      reasonCode: 're_entry_cutoff_passed',
+      details: { cutoff_time: eventMeta?.re_entry_cutoff_time, cutoff_at: eventMeta?.re_entry_cutoff_at, timezone: tz },
+    }
   }
   const maxCount = eventMeta?.re_entry_max_count
   if (maxCount != null && effective.reEntryCount >= Number(maxCount)) {
@@ -220,13 +308,13 @@ export function formatReEntryFeedback(reasonCode, details = {}, timezone = DEFAU
         overridable: true,
       }
     case 're_entry_cutoff_passed': {
-      const cutoffTime = formatGateTime(details?.cutoff_at, timezone)
+      const cutoffTime = formatCutoffTime(details?.cutoff_time) || formatGateTime(details?.cutoff_at, timezone)
       return {
         type: 'error',
         soundKind: 'refuse',
         headline: 'Re-entry closed',
         message: cutoffTime ? `Re-entry cutoff passed (${cutoffTime})` : 'Re-entry cutoff passed',
-        detail: 'Re-entry is closed for this event. Ask a scanner lead for exceptions.',
+        detail: 'Re-entry is closed for today. Ask a scanner lead for exceptions.',
         overridable: true,
       }
     }

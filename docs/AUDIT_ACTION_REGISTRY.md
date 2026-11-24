@@ -403,13 +403,13 @@ entries are described above and defined in the registry's audience variants.
 | `tax_information.second_b_notice_validated` | yes | tax | A | yes | no | — | — | Validated a second tax B notice. |
 | `tax_information.withholding_flag_changed` | yes | tax | O | yes | no | `backup_withholding_required`, `tin_matching_status` | `event_title` | Updated tax withholding status. |
 | `tax_report.exported` | yes | tax | A | no | no | — | — | Exported platform tax reports. |
-| `ticket.admission_reconciled` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `event_title` | Reconciled a ticket admission. |
+| `ticket.admission_reconciled` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Reconciled a ticket admission. |
 | `ticket.cancelled` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Cancelled ticket. |
-| `ticket.check_in_reversed` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `event_title` | Reversed a ticket check-in. |
-| `ticket.checked_in` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `event_title` | Checked in a ticket. |
+| `ticket.check_in_reversed` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Reversed a ticket check-in. |
+| `ticket.checked_in` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Checked in a ticket. |
 | `ticket.display_credential_revoked` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Revoked a ticket display credential. |
-| `ticket.re_entry_exited` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `event_title` | Recorded a ticket exit scan. |
-| `ticket.re_entry_overridden` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `event_title` | Overrode a ticket re-entry status. |
+| `ticket.re_entry_exited` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Recorded a ticket exit scan. |
+| `ticket.re_entry_overridden` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `override_justification`, `event_title` | Overrode a ticket re-entry status. |
 | `ticket.scan_credential_rotated` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Rotated a ticket scan code. |
 | `ticket_transfer.accepted` | yes | tickets | O/M | yes | yes | `ticket_id`, `status`, `expires_at`, `accepted_at`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Accepted ticket transfer. |
 | `ticket_transfer.cancelled` | yes | tickets | O/M | yes | yes | `ticket_id`, `status`, `expires_at`, `accepted_at`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Cancelled ticket transfer. |

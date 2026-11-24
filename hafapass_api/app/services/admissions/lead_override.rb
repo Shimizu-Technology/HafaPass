@@ -41,6 +41,8 @@ module Admissions
           .find_by(id: @ticket_id)
         raise OverrideError, "Ticket not found for this event" unless ticket
 
+        raise OverrideError, "Re-entry is off for this event" unless @event.re_entry_enabled?
+
         ticket.order.lock!
         ticket.lock!
         validate_authority!
@@ -99,7 +101,12 @@ module Admissions
           organization: @event.organization,
           event: @event,
           after_data: { result: action.result, reason_code: action.reason_code, ticket_id: ticket.id },
-          metadata: { event_id: @event.id, override_action: @override_action, reason: @reason },
+          metadata: {
+            event_id: @event.id,
+            override_action: @override_action,
+            override_justification: @reason,
+            reason: @reason
+          },
           request: @request
         )
 
@@ -122,6 +129,9 @@ module Admissions
       raise OverrideError, "action_uuid is too long" if @action_uuid.length > 128
       if @device && @device.event_id != @event.id
         raise OverrideError, "Scanner device does not belong to this event"
+      end
+      if @device && @device.user_id != @actor.id
+        raise OverrideError, "Scanner device does not belong to the acting staff member"
       end
     end
 

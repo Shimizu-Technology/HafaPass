@@ -49,7 +49,7 @@ export default function ReEntryLeadOverride({ ticket, busy = false, onSubmit, de
       </div>
       <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Override action">
         {[
-          ['admit', 'Admit guest'],
+          ['admit', 'Admit (re-entry)'],
           ['clear', 'Clear inside status'],
         ].map(([value, label]) => (
           <label

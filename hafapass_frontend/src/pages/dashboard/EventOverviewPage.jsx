@@ -12,6 +12,7 @@ import useLaunchCapabilities from '../../hooks/useLaunchCapabilities'
 import { eventToolLinks } from '../../utils/eventWorkspaceNavigation'
 import { canViewOrganizationActivity, loadOrganizerOrganizations } from '../../utils/organizerOrganizations'
 import { organizerChecklist } from '../../utils/organizerChecklist'
+import { serviceDayString } from '../../utils/reEntryRules'
 import VerificationNotice from '../../components/VerificationNotice'
 import { useTranslation } from 'react-i18next'
 
@@ -214,8 +215,12 @@ function EventOverviewSession({ id, identity }) {
   const soldPercent = capacity > 0 ? Math.min(100, Math.round((sold / capacity) * 100)) : 0
   const checkIn = stats ? { admitted: stats.tickets_checked_in, total: stats.total_tickets_sold }
     : admissions ? { admitted: admissions.admitted, total: admissions.admitted + admissions.remaining } : null
-  const liveHeadcount = stats?.live_headcount ?? admissions?.live_headcount ?? null
-  const headcountByDay = stats?.headcount_by_day || admissions?.headcount_by_day || []
+  const reEntryEnabled = Boolean(event.re_entry_mode && event.re_entry_mode !== 'off')
+  const isCooldownMode = event.re_entry_mode === 'cooldown'
+  const liveHeadcount = reEntryEnabled ? (stats?.live_headcount ?? admissions?.live_headcount ?? null) : null
+  const untrackedPreReEntry = reEntryEnabled ? Number(stats?.untracked_pre_re_entry_admits ?? admissions?.untracked_pre_re_entry_admits ?? 0) : 0
+  const headcountByDay = reEntryEnabled ? (stats?.headcount_by_day || admissions?.headcount_by_day || []) : []
+  const currentServiceDay = serviceDayString(Date.now(), event)
   const numberFormat = new Intl.NumberFormat('en-US')
   const reEntryLabel = event.re_entry_mode === 'exit_scan'
     ? 'Exit scan (in & out)'
@@ -273,21 +278,28 @@ function EventOverviewSession({ id, identity }) {
             <p className="mt-1 text-xl font-bold tabular-nums text-neutral-950">{numberFormat.format(checkIn.admitted)}<span className="text-sm font-medium text-neutral-600"> / {numberFormat.format(checkIn.total)}</span></p>
           </div>}
           {liveHeadcount != null && <div className="rounded-xl bg-neutral-50 p-3" data-testid="overview-live-headcount">
-            <p className="text-xs text-neutral-600">Inside now</p>
+            <p className="text-xs text-neutral-600">{isCooldownMode ? 'Entered today' : 'Inside now'}</p>
             <p className="mt-1 text-xl font-bold tabular-nums text-neutral-950">{numberFormat.format(liveHeadcount)}</p>
             {reEntryLabel && <p className="mt-0.5 text-xs text-neutral-600">Re-entry: {reEntryLabel}</p>}
+            {untrackedPreReEntry > 0 && <p className="mt-0.5 text-xs text-neutral-600">+{numberFormat.format(untrackedPreReEntry)} earlier check-ins</p>}
           </div>}
         </div>
         {headcountByDay.length > 1 && (
           <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3" aria-label="Headcount by day">
-            <p className="text-xs font-semibold text-neutral-700">Live headcount by day</p>
+            <p className="text-xs font-semibold text-neutral-700">{isCooldownMode ? 'Admissions by day' : 'Live headcount by day'}</p>
             <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {headcountByDay.map(day => (
-                <li key={`${day.event_id || 'e'}-${day.day}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm">
-                  <span className="min-w-0 truncate font-medium text-neutral-900">{day.event_title || day.label || day.day}</span>
-                  <span className="shrink-0 font-bold tabular-nums text-neutral-950">{numberFormat.format(day.headcount)} inside</span>
-                </li>
-              ))}
+              {headcountByDay.map(day => {
+                const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+                const label = isPastDay || isCooldownMode
+                  ? `${numberFormat.format(day.entries ?? day.headcount ?? 0)} entered`
+                  : `${numberFormat.format(day.headcount ?? 0)} inside`
+                return (
+                  <li key={`${day.event_id || 'e'}-${day.day}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                    <span className="min-w-0 truncate font-medium text-neutral-900">{day.event_title || day.label || day.day}</span>
+                    <span className="shrink-0 font-bold tabular-nums text-neutral-950">{label}</span>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}

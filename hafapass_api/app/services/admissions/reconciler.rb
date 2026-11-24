@@ -402,13 +402,13 @@ module Admissions
       effective_re_entries = ticket.effective_re_entry_count(day: scan_day)
 
       if event.re_entry_exit_scan?
-        evaluate_exit_scan_entry(ticket, event, input, occurred_at, same_day, effective_state, effective_re_entries)
+        evaluate_exit_scan_entry(ticket, event, input, occurred_at, scan_day, same_day, effective_state, effective_re_entries)
       else
-        evaluate_cooldown_entry(ticket, event, input, occurred_at, same_day, effective_re_entries)
+        evaluate_cooldown_entry(ticket, event, input, occurred_at, scan_day, same_day, effective_re_entries)
       end
     end
 
-    def evaluate_exit_scan_entry(ticket, event, input, occurred_at, same_day, effective_state, effective_re_entries)
+    def evaluate_exit_scan_entry(ticket, event, input, occurred_at, scan_day, same_day, effective_state, effective_re_entries)
       if effective_state == "inside"
         offline = input[:source] == "offline"
         earlier = offline && ticket.last_entry_at.present? && occurred_at < ticket.last_entry_at
@@ -429,7 +429,7 @@ module Admissions
       end
 
       if same_day
-        cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+        cutoff_rejection = check_re_entry_cutoff(event, occurred_at, scan_day)
         return cutoff_rejection if cutoff_rejection
 
         cap_rejection = check_re_entry_cap(event, effective_re_entries)
@@ -445,7 +445,7 @@ module Admissions
       { result: :accepted, reason_code: "admitted", details: { re_entry: false, re_entry_number: 0, gate_name: device.name } }
     end
 
-    def evaluate_cooldown_entry(ticket, event, input, occurred_at, same_day, effective_re_entries)
+    def evaluate_cooldown_entry(ticket, event, input, occurred_at, scan_day, same_day, effective_re_entries)
       unless same_day
         return { result: :accepted, reason_code: "admitted", details: { re_entry: false, re_entry_number: 0, gate_name: device.name } }
       end
@@ -479,7 +479,7 @@ module Admissions
         }
       end
 
-      cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+      cutoff_rejection = check_re_entry_cutoff(event, occurred_at, scan_day)
       return cutoff_rejection if cutoff_rejection
 
       cap_rejection = check_re_entry_cap(event, effective_re_entries)
@@ -510,7 +510,7 @@ module Admissions
 
       prior_entries = day_actions.count(&:kind_admit?)
       if prior_entries.positive?
-        cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+        cutoff_rejection = check_re_entry_cutoff(event, occurred_at, scan_day)
         return cutoff_rejection if cutoff_rejection
 
         cap_rejection = check_re_entry_cap(event, prior_entries - 1)
@@ -532,13 +532,17 @@ module Admissions
       { result: :accepted, reason_code: "exited", details: { gate_name: device.name } }
     end
 
-    def check_re_entry_cutoff(event, occurred_at)
-      return nil unless event.re_entry_cutoff_at.present? && occurred_at > event.re_entry_cutoff_at
+    def check_re_entry_cutoff(event, occurred_at, scan_day)
+      cutoff = event.re_entry_cutoff_for_day(scan_day)
+      return nil unless cutoff.present? && occurred_at > cutoff
 
       {
         result: :rejected,
         reason_code: "re_entry_cutoff_passed",
-        details: { cutoff_at: event.re_entry_cutoff_at.iso8601(6) }
+        details: {
+          cutoff_at: cutoff.iso8601(6),
+          cutoff_time: event.re_entry_cutoff_time
+        }.compact
       }
     end
 

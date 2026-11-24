@@ -113,4 +113,36 @@ describe('scanner authorization through actual service and auth boundaries', () 
     expect(screen.queryByLabelText('Ticket QR code')).not.toBeInTheDocument()
     expect(camera.stops[0]).toHaveBeenCalledOnce()
   })
+
+  it('removes every copy of the attendee name in re-entry exit_scan mode when identity changes or a peer tab withdraws access', async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Guam', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    const reEntryTicket = {
+      ticket_id: 501,
+      state: 'admitted',
+      occupancy_state: 'inside',
+      occupancy_day: today,
+      last_entry_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      last_entry_gate: 'Gate 1',
+      re_entry_count: 0,
+      attendee_name: 'Synthetic private attendee',
+      ticket_type: 'Test entry',
+      credential_hash: await sha256Hex('synthetic-private-qr'),
+    }
+    await saveVerifiedManifest(await signedManifest(eventId, [reEntryTicket], {
+      schema_version: 2,
+      event: { id: eventId, title: 'Re-entry outage check', timezone: 'Pacific/Guam', re_entry_mode: 'exit_scan' },
+    }))
+    Object.assign(state, { status: 'unavailable', loaded: true, owner: 'staff-a' })
+    const { rerender } = render(application())
+    await screen.findByText('Ticket list ready · 1 ticket')
+    await userEvent.type(screen.getByLabelText('Ticket QR code'), 'synthetic-private-qr')
+    await userEvent.click(screen.getByRole('button', { name: 'Check in ticket' }))
+    expect((await screen.findAllByText(/Synthetic private attendee/)).length).toBeGreaterThanOrEqual(1)
+
+    state.owner = null
+    rerender(application())
+    expect(screen.queryAllByText(/Synthetic private attendee/)).toHaveLength(0)
+    expect(screen.queryByTestId('scan-result-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Ticket QR code')).not.toBeInTheDocument()
+  })
 })

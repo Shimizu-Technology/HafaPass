@@ -23,7 +23,7 @@ describe('RoleComparison', () => {
       'What they can do', 'Owner', 'Manager', 'Finance', 'Marketer', 'Box office', 'Door scanner',
     ])
     const rows = within(table).getAllByRole('row').slice(1)
-    expect(rows).toHaveLength(23)
+    expect(rows).toHaveLength(24)
     roleMatrix.rows.forEach((row, index) => {
       expect(within(rows[index]).getByRole('rowheader')).toHaveTextContent(row.label)
       expect(within(rows[index]).getAllByRole('cell').map(cell => cell.textContent)).toEqual(roleMatrix.roles.map(role => row.values[role.key]))
@@ -35,7 +35,7 @@ describe('RoleComparison', () => {
     render(<RoleComparison initialRole="finance" onClose={vi.fn()} />)
     const mobile = screen.getByLabelText('Role permissions')
     expect(within(mobile).getByRole('combobox', { name: 'Role' })).toHaveValue('finance')
-    expect(within(mobile).getAllByRole('listitem')).toHaveLength(23)
+    expect(within(mobile).getAllByRole('listitem')).toHaveLength(24)
     const can = within(mobile).getByRole('heading', { name: 'Can', exact: true }).closest('section')
     expect(within(can).getByText('Issue refunds')).toBeInTheDocument()
     expect(within(can).queryByText('Ticket types & prices')).not.toBeInTheDocument()

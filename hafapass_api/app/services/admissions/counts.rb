@@ -18,14 +18,13 @@ module Admissions
 
     def call
       row = ActiveRecord::Base.connection.select_one(sql).symbolize_keys.transform_values(&:to_i)
+      base = row.merge(remaining: row.fetch(:issued))
+      # Off mode must skip all re-entry headcount aggregation so sync stays identical to main.
+      return base.merge(live_headcount: nil, currently_inside: nil, headcount_by_day: []) unless @event.re_entry_enabled?
+
       by_day = headcount_by_day
-      live_headcount = if @event.re_entry_enabled?
-        resolve_live_headcount(by_day, fallback: row.fetch(:currently_inside))
-      else
-        row.fetch(:currently_inside)
-      end
-      row.merge(
-        remaining: row.fetch(:issued),
+      live_headcount = resolve_live_headcount(by_day, fallback: row.fetch(:currently_inside))
+      base.merge(
         live_headcount: live_headcount,
         headcount_by_day: by_day
       )
@@ -65,6 +64,7 @@ module Admissions
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('conflict')}) AS conflicts,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected,
           COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_state = 'inside') AS currently_inside,
+          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_day IS NULL) AS untracked_pre_re_entry_admits,
           COUNT(*) FILTER (WHERE t.re_entry_conflict_flagged = TRUE) AS conflict_tickets,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('exit')} AND a.result = #{AdmissionAction.results.fetch('accepted')}) AS exits,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('admit')} AND a.result = #{AdmissionAction.results.fetch('accepted')} AND a.reason_code = 're_entered') AS re_entries
@@ -106,10 +106,10 @@ module Admissions
     def resolve_live_headcount(by_day, fallback:)
       return fallback if by_day.empty?
 
-      today_day = @event.occupancy_day_for(Time.current).iso8601
-      today_entry = by_day.find { |entry| entry[:day] == today_day }
+      current_service_day = @event.occupancy_day_for(Time.current).iso8601
+      today_entry = by_day.find { |entry| entry[:day] == current_service_day }
       return today_entry[:headcount] if today_entry
-      return 0 if by_day.last[:day] < today_day
+      return 0 if by_day.last[:day] < current_service_day
 
       by_day.last[:headcount]
     end

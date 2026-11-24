@@ -3,7 +3,7 @@
 // Fictional names only; in-memory state resets on reload. See ../README.md.
 import { json, notFound, unprocessable } from './respond'
 import { canonicalJson, sha256Hex } from '../../utils/admissionStore'
-import { evaluateLocalReEntry, localDayString } from '../../utils/reEntryRules'
+import { evaluateLocalReEntry, serviceDayString } from '../../utils/reEntryRules'
 
 export const DEMO_RE_ENTRY_SENTINEL = 'HAFAPASS_DEMO_RE_ENTRY_SENTINEL_2027'
 
@@ -45,6 +45,7 @@ function buildSingleEntryDemoEvent(template) {
     re_entry_mode: 'off',
     re_entry_max_count: null,
     re_entry_cutoff_at: null,
+    re_entry_cutoff_time: null,
     re_entry_cooldown_minutes: null,
   }
 }
@@ -52,7 +53,7 @@ function buildSingleEntryDemoEvent(template) {
 function initReEntryState(state) {
   if (state.reEntry) return state.reEntry
   const { staff } = state
-  const today = localDayString(Date.now(), 'Pacific/Guam')
+  const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
 
   // Normalize publish_checklist to array for EditEventPage compatibility and
   // apply default re-entry modes across the demo events so preview users can test all three modes immediately.
@@ -63,7 +64,8 @@ function initReEntryState(state) {
   if (event101) {
     event101.re_entry_mode = 'exit_scan'
     event101.re_entry_max_count = 2
-    event101.re_entry_cutoff_at = '2027-01-30T21:00:00+10:00'
+    event101.re_entry_cutoff_at = null
+    event101.re_entry_cutoff_time = '21:00'
     event101.re_entry_cooldown_minutes = null
   }
   const event102 = staff.events.find(e => e.id === 102)
@@ -71,6 +73,7 @@ function initReEntryState(state) {
     event102.re_entry_mode = 'cooldown'
     event102.re_entry_max_count = 3
     event102.re_entry_cutoff_at = null
+    event102.re_entry_cutoff_time = null
     event102.re_entry_cooldown_minutes = 15
   }
   const event103 = staff.events.find(e => e.id === 103)
@@ -78,6 +81,7 @@ function initReEntryState(state) {
     event103.re_entry_mode = 'off'
     event103.re_entry_max_count = null
     event103.re_entry_cutoff_at = null
+    event103.re_entry_cutoff_time = null
     event103.re_entry_cooldown_minutes = null
   }
   if (!staff.events.some(e => e.id === 104) && event101) {
@@ -168,16 +172,19 @@ function eventCounts(reEntry, event) {
   const insideSample = tickets.filter(t => t.occupancy_state === 'inside').length
   const conflicts = (reEntry.actionsByEvent[event.id] || []).filter(a => a.result === 'conflict').length
   const flaggedCount = tickets.filter(t => t.re_entry_conflict_flagged).length
-  const liveHeadcount = Math.max(0, (event.id === 101 ? 394 : insideSample) + delta.headcount)
+  const isOff = (event.re_entry_mode || 'off') === 'off'
+  const liveHeadcount = isOff ? null : Math.max(0, (event.id === 101 ? 394 : insideSample) + delta.headcount)
 
-  const headcountByDay = event.id === 101
-    ? [
-        { day: '2027-01-30', label: 'Jan 30, 2027', event_id: 101, event_title: 'Day 1 — Gi Divisions', entries: 240, exits: 52, re_entries: 41, headcount: 188, peak_headcount: 214, peak_headcount_at: '2027-01-30T14:15:00+10:00' },
-        { day: '2027-01-31', label: 'Jan 31, 2027', event_id: 101, event_title: 'Day 2 — No-Gi & Finals', entries: 178 + delta.entries, exits: 44 + delta.exits, re_entries: 33 + delta.re_entries, headcount: liveHeadcount, peak_headcount: Math.max(348, liveHeadcount), peak_headcount_at: '2027-01-31T15:05:00+10:00' },
-      ]
-    : [
-        { day: localDayString(Date.now(), 'Pacific/Guam'), label: 'Event Day', event_id: event.id, entries: base.entries + delta.entries, exits: base.exits + delta.exits, re_entries: base.re_entries + delta.re_entries, headcount: liveHeadcount, peak_headcount: Math.max(base.peak_headcount, liveHeadcount) },
-      ]
+  const headcountByDay = isOff
+    ? []
+    : event.id === 101
+      ? [
+          { day: '2026-11-23', label: 'Day 1 (Ended)', event_id: 101, event_title: 'Day 1 — Gi Divisions', entries: 240, exits: 52, re_entries: 41, headcount: 188, peak_headcount: 214, peak_headcount_at: '2026-11-23T14:15:00+10:00' },
+          { day: serviceDayString(Date.now(), event), label: 'Day 2 (Today)', event_id: 101, event_title: 'Day 2 — No-Gi & Finals', entries: 178 + delta.entries, exits: 44 + delta.exits, re_entries: 33 + delta.re_entries, headcount: liveHeadcount, peak_headcount: Math.max(394, liveHeadcount), peak_headcount_at: '2026-11-24T15:05:00+10:00' },
+        ]
+      : [
+          { day: serviceDayString(Date.now(), event), label: 'Event Day', event_id: event.id, entries: base.entries + delta.entries, exits: base.exits + delta.exits, re_entries: base.re_entries + delta.re_entries, headcount: liveHeadcount, peak_headcount: Math.max(base.peak_headcount, liveHeadcount) },
+        ]
 
   return {
     total: tickets.length,
@@ -209,27 +216,29 @@ function buildReEntryReport(reEntry, event) {
 
   const byDay = event.id === 101
     ? [
-        { day: '2027-01-30', label: 'Jan 30, 2027', event_id: 101, event_title: 'Day 1 — Gi Divisions', entries: 240, exits: 52, re_entries: 41, overrides: 1, conflicts_count: 2, current_headcount: 188, peak_headcount: 214, peak_headcount_at: '2027-01-30T14:15:00+10:00', peak_headcount_label: '2:15 PM' },
-        { day: '2027-01-31', label: 'Jan 31, 2027', event_id: 101, event_title: 'Day 2 — No-Gi & Finals', entries: 178 + delta.entries, exits: 44 + delta.exits, re_entries: 33 + delta.re_entries, overrides: 1 + delta.overrides, conflicts_count: counts.conflicts, current_headcount: counts.live_headcount, peak_headcount: peakHeadcount, peak_headcount_at: '2027-01-31T15:05:00+10:00', peak_headcount_label: '3:05 PM' },
+        { day: '2026-11-23', label: 'Day 1', event_id: 101, event_title: 'Day 1 — Gi Divisions', entries: 240, exits: 52, re_entries: 41, overrides: 1, conflicts_count: 2, current_headcount: 188, peak_headcount: 214, peak_headcount_at: '2026-11-23T14:15:00+10:00', peak_headcount_label: '2:15 PM' },
+        { day: serviceDayString(Date.now(), event), label: 'Day 2', event_id: 101, event_title: 'Day 2 — No-Gi & Finals', entries: 178 + delta.entries, exits: 44 + delta.exits, re_entries: 33 + delta.re_entries, overrides: 1 + delta.overrides, conflicts_count: counts.conflicts, current_headcount: counts.live_headcount ?? 0, peak_headcount: peakHeadcount, peak_headcount_at: '2026-11-24T15:05:00+10:00', peak_headcount_label: '3:05 PM' },
       ]
     : [
-        { day: localDayString(Date.now(), 'Pacific/Guam'), label: 'Today', event_id: event.id, entries: totalEntries, exits: totalExits, re_entries: totalReEntries, overrides: totalOverrides, conflicts_count: counts.conflicts, current_headcount: counts.live_headcount, peak_headcount: peakHeadcount, peak_headcount_at: isoAgo(30), peak_headcount_label: base.peak_headcount_label || '6:30 PM' },
+        { day: serviceDayString(Date.now(), event), label: 'Today', event_id: event.id, entries: totalEntries, exits: totalExits, re_entries: totalReEntries, overrides: totalOverrides, conflicts_count: counts.conflicts, current_headcount: counts.live_headcount ?? 0, peak_headcount: peakHeadcount, peak_headcount_at: isoAgo(30), peak_headcount_label: base.peak_headcount_label || '6:30 PM' },
       ]
 
   return {
     mode: event.re_entry_mode || 'off',
     max_count: event.re_entry_max_count ?? null,
     cutoff_at: event.re_entry_cutoff_at ?? null,
+    cutoff_time: event.re_entry_cutoff_time ?? null,
     cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
+    rollover_hour: 5,
     entries: totalEntries,
     exits: totalExits,
     re_entries: totalReEntries,
     overrides: totalOverrides,
     conflicts_count: counts.conflicts,
-    current_headcount: counts.live_headcount,
+    current_headcount: counts.live_headcount ?? 0,
     peak_headcount: peakHeadcount,
     peak_headcount_at: byDay.at(-1)?.peak_headcount_at || null,
-    peak_headcount_label: base.peak_headcount_label || '2:15 PM',
+    peak_headcount_label: base.peak_headcount_label || '3:05 PM',
     by_day: byDay,
   }
 }
@@ -273,7 +282,9 @@ async function buildSignedManifest(reEntry, event) {
       re_entry_mode: event.re_entry_mode || 'off',
       re_entry_max_count: event.re_entry_max_count ?? null,
       re_entry_cutoff_at: event.re_entry_cutoff_at ?? null,
+      re_entry_cutoff_time: event.re_entry_cutoff_time ?? null,
       re_entry_cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
+      re_entry_rollover_hour: 5,
     },
     version,
     generated_at: new Date(now).toISOString(),
@@ -300,6 +311,7 @@ export async function handle(ctx) {
     if ('re_entry_max_count' in body) event.re_entry_max_count = body.re_entry_max_count ? Number(body.re_entry_max_count) : null
     if ('re_entry_cooldown_minutes' in body) event.re_entry_cooldown_minutes = body.re_entry_cooldown_minutes ? Number(body.re_entry_cooldown_minutes) : null
     if ('re_entry_cutoff_at' in body) event.re_entry_cutoff_at = body.re_entry_cutoff_at || null
+    if ('re_entry_cutoff_time' in body) event.re_entry_cutoff_time = body.re_entry_cutoff_time || null
     reEntry.manifestVersions[event.id] = (reEntry.manifestVersions[event.id] || 1) + 1
     return json({ ...event, demo: true })
   }
@@ -394,7 +406,8 @@ export async function handle(ctx) {
         id: event.id, title: event.title, status: event.status, venue_name: event.venue_name,
         starts_at: event.starts_at, ends_at: event.ends_at, timezone: event.timezone || 'Pacific/Guam',
         re_entry_mode: event.re_entry_mode || 'off', re_entry_max_count: event.re_entry_max_count ?? null,
-        re_entry_cutoff_at: event.re_entry_cutoff_at ?? null, re_entry_cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
+        re_entry_cutoff_time: event.re_entry_cutoff_time ?? null, re_entry_cutoff_at: event.re_entry_cutoff_at ?? null,
+        re_entry_rollover_hour: event.re_entry_rollover_hour ?? 5, re_entry_cooldown_minutes: event.re_entry_cooldown_minutes ?? null,
       },
       counts: eventCounts(reEntry, event),
       devices: [{ id: device.id, name: device.name, status: 'active', effective: true, staff_name: 'Demo Staffer', last_seen_at: device.last_seen_at, last_synced_at: device.last_synced_at, last_manifest_version: device.last_manifest_version }],
@@ -405,7 +418,7 @@ export async function handle(ctx) {
         last_entry_at: t.last_entry_at, last_entry_gate: t.last_entry_gate, re_entry_conflict_flagged: true,
       })),
       latest_manifest: { version: reEntry.manifestVersions[event.id] || 1, ticket_count: tickets.length },
-      permissions: { can_recover: true, can_reverse: true, can_override: true },
+      permissions: { can_recover: true, can_reverse: true, can_override: (event.re_entry_mode || 'off') !== 'off' },
     })
   }
 
@@ -450,7 +463,7 @@ export async function handle(ctx) {
 
   if (method === 'post' && rest === `${deviceBase}/sync`) {
     const actions = Array.isArray(body.actions) ? body.actions : []
-    const today = localDayString(Date.now(), event.timezone || 'Pacific/Guam')
+    const today = serviceDayString(Date.now(), event)
     const delta = reEntry.deltas[event.id]
     const mode = event.re_entry_mode || 'off'
     const results = actions.map((action, index) => {
@@ -519,12 +532,15 @@ export async function handle(ctx) {
   }
 
   if (method === 'post' && rest === '/admissions/override') {
+    if ((event.re_entry_mode || 'off') === 'off') {
+      return unprocessable('Lead override is only available when re-entry is enabled for this event')
+    }
     const ticket = (reEntry.ticketsByEvent[event.id] || []).find(t => Number(t.id) === Number(body.ticket_id))
     if (!ticket) return notFound('Ticket not found')
     const reason = String(body.reason || '').trim()
     if (reason.length < 3) return unprocessable('Provide a reason for the override (3–500 characters)')
     const overrideAction = body.override_action === 'clear' ? 'clear' : 'admit'
-    const today = localDayString(Date.now(), event.timezone || 'Pacific/Guam')
+    const today = serviceDayString(Date.now(), event)
     const delta = reEntry.deltas[event.id]
     const wasInside = ticket.occupancy_state === 'inside'
 

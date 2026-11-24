@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 import apiClient, { getApiAuthContext } from '../api/client'
 import { captureScannerBindingContext, scannerBindingContextCurrent, currentScannerOwner } from './scannerAccountBinding'
-import { localDayString } from './reEntryRules'
+import { serviceDayString } from './reEntryRules'
 
 export { currentScannerOwner } from './scannerAccountBinding'
 
@@ -489,7 +489,7 @@ export async function clearAllAdmissionData({ isCurrent = () => true } = {}) {
 export async function queueAdmission({
   eventId, deviceId, manifestVersion, ticket, credentialHash, source,
   clientStatus = 'locally_accepted', confirmed = false,
-  reEntryMode = 'off', eventTimezone = 'Pacific/Guam', isReEntry = false, reEntryNumber = 0,
+  reEntryMode = 'off', eventTimezone = 'Pacific/Guam', eventMeta = null, isReEntry = false, reEntryNumber = 0,
 }) {
   if (ticket.door_check_mode === 'verify' && !isReEntry && confirmed !== true) throw new Error('Confirm this ticket at the door before admitting.')
   const db = await database()
@@ -513,7 +513,7 @@ export async function queueAdmission({
   }
   const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
   const occurredAt = new Date().toISOString()
-  const occupancyDay = localDayString(occurredAt, eventTimezone)
+  const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
   const action = {
     action_uuid: crypto.randomUUID(),
     event_id: Number(eventId),
@@ -553,7 +553,7 @@ export async function queueAdmission({
 
 export async function queueExit({
   eventId, deviceId, manifestVersion, ticket, credentialHash, source,
-  clientStatus = 'locally_exited', eventTimezone = 'Pacific/Guam', reEntryCount = 0,
+  clientStatus = 'locally_exited', eventTimezone = 'Pacific/Guam', eventMeta = null, reEntryCount = 0,
 }) {
   const db = await database()
   const transaction = db.transaction(['devices', 'queue', 'scan_states'], 'readwrite')
@@ -566,7 +566,7 @@ export async function queueExit({
   const prior = await scanStates.get([Number(eventId), Number(ticket.ticket_id)])
   const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
   const occurredAt = new Date().toISOString()
-  const occupancyDay = localDayString(occurredAt, eventTimezone)
+  const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
   const action = {
     action_uuid: crypto.randomUUID(),
     event_id: Number(eventId),
