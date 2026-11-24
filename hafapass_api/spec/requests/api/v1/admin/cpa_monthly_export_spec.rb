@@ -1284,8 +1284,9 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
 
     writer_error = nil
     writer = Thread.new do
+      signal = :failed
       ActiveRecord::Base.connection_pool.with_connection do
-        next if ready_to_commit.pop == :abort
+        next signal = :aborted if ready_to_commit.pop == :abort
 
         refund = Refund.create!(
           order: order, payment: capture, status: :succeeded,
@@ -1297,12 +1298,14 @@ RSpec.describe "CpaMonthlyReport snapshot isolation", :non_transactional do
           refund: refund, order_item: item,
           amount_cents: 1_000, organizer_proceeds_cents: 1_000, fee_cents: 0, organizer_fee_cents: 0
         )
-        commit_finished << :committed
-      rescue StandardError => e
-        # Always wake the reader so a writer failure can't hang the suite.
-        writer_error = e
-        commit_finished << :failed
+        signal = :committed
       end
+    rescue StandardError => e
+      # Covers failures while checking out the connection too.
+      writer_error = e
+    ensure
+      # Always wake the reader so a writer failure can't hang the suite.
+      commit_finished << signal
     end
     writer.report_on_exception = false
 
