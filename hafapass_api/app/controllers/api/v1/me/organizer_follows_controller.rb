@@ -2,9 +2,11 @@
 
 class Api::V1::Me::OrganizerFollowsController < ApplicationController
   def index
-    ids = current_user.organizer_follows.pluck(:organization_id)
+    follows = current_user.organizer_follows.to_a
+    ids = follows.map(&:organization_id)
     enabled_ids = EmailPreferences.organizer_enabled_ids(ids, current_user.email)
-    markers = EmailPreferences.consent_markers(ids, current_user.email)
+    markers = EmailPreferences.consent_markers(ids, current_user.email,
+      saved_addresses: follows.to_h { |follow| [follow.organization_id, follow.email_opted_in_address] })
     render json: { organizers: current_user.followed_organizations.includes(:organizer_profile).order(:name).map { |org|
       { id: org.id, name: org.organizer_profile.business_name, slug: org.slug, logo_url: org.organizer_profile.logo_url,
         verified: org.organizer_profile.verification_status_verified?,
@@ -20,7 +22,9 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
     end
     enabled = params[:email_opt_in] == true
     email = (enabled ? current_user.email : follow&.email_opted_in_address.presence || current_user.email).to_s.strip.downcase
-    EmailPreferences.with_platform_locks(email) do |preference, subscriber|
+    EmailPreferences.with_platform_locks_for([current_user.email, follow&.email_opted_in_address]) do
+      preference = EmailPreference.find_by!(email: email)
+      subscriber = PlatformSubscriber.find_by(email: email)
       follow = if params[:consent_only] == true
         current_user.organizer_follows.lock.find_by!(organization: organization)
       else
@@ -28,7 +32,8 @@ class Api::V1::Me::OrganizerFollowsController < ApplicationController
       end
       follow.lock!
       if params.key?(:email_opt_in)
-        if params[:consent_only] == true && params[:consent_marker] != EmailPreferences.consent_markers([organization.id], email).fetch(organization.id)
+        if params[:consent_only] == true && params[:consent_marker] != EmailPreferences.consent_markers([organization.id], current_user.email,
+            saved_addresses: { organization.id => follow.email_opted_in_address }).fetch(organization.id)
           return render json: { error: "Email preferences changed; reload before choosing again" }, status: :conflict
         end
         if enabled

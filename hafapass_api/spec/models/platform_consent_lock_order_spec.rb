@@ -38,4 +38,45 @@ RSpec.describe "Platform consent lock order", type: :request do
     expect(positions).not_to include(nil)
     expect(positions).to eq(positions.sort)
   end
+  it "F1: nests sorted email preference/subscriber locks and locks follows before deletion's first organization lock" do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with("DATA_RETENTION_DESTRUCTIVE_ENABLED").and_return("true")
+    SiteSetting.instance.update_columns(retention_purge_enabled: true)
+    allow(ClerkIdentity).to receive(:delete_user).and_return(true)
+    allow(EmailService).to receive(:send_privacy_request_confirmation_async).and_return(build_stubbed(:message_delivery, id: 1))
+    allow(MessageDeliveryJob).to receive(:perform_now)
+    admin = create(:user, :admin)
+    user = create(:user, email: "z-owner@example.test")
+    order = create(:order, user: user, buyer_email: user.email)
+    addresses = [user.email, "a-verified@example.test", "m-saved@example.test"]
+    pairs = addresses.sort.flat_map do |email|
+      preference = EmailPreference.create!(email: email)
+      subscriber = PlatformSubscriber.create!(email: email, source: "footer")
+      [["email_preferences", preference.id], ["platform_subscribers", subscriber.id]]
+    end
+    OrganizerFollow.create!(user: user, organization: order.event.organization,
+      email_opted_in_address: "m-saved@example.test", email_opted_in_at: Time.current)
+    request = PrivacyRequest.create!(kind: "deletion", user: user, requester_email: user.email,
+      verified_emails: ["a-verified@example.test", user.email, user.email.upcase],
+      status: "verified", verified_at: Time.current, verified_by: admin)
+    locks = []
+    callback = lambda do |*args|
+      payload = args.last
+      next unless payload[:sql].include?("FOR UPDATE")
+      table = payload[:sql][/FROM "(email_preferences|platform_subscribers|organizer_follows|organizations)"/, 1]
+      next unless table
+      id = payload[:binds].find { |bind| bind.name == "id" }&.value_for_database
+      locks << [table, id]
+    end
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      PrivacyRequestProcessor.new(request).execute!(actor: admin)
+    end
+    expect(locks.first(pairs.size)).to eq(pairs)
+    organization_lock = locks.index { |table, _id| table == "organizations" }
+    follow_lock = locks.index { |table, _id| table == "organizer_follows" }
+    expect(organization_lock).to be_present
+    expect(follow_lock).to be >= pairs.size
+    expect(follow_lock).to be < organization_lock
+    expect(request.reload.status).to eq("completed")
+  end
 end

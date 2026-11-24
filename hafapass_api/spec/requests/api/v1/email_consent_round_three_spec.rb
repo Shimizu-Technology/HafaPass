@@ -65,4 +65,36 @@ RSpec.describe "Consent recovery and stale writes", type: :request do
       expect(EmailPreferences.organizer_enabled?(organization, email)).to be(true)
     end
   end
+  it "F2: withdraws saved-address consent after contact changes, but rejects markers stale for either address" do
+    original = email
+    toggle(true)
+    post "/api/v1/users/sync", params: { email: "new-contact@example.test" }, headers: auth_headers(user), as: :json
+    expect(response).to have_http_status(:ok)
+    expect(user.reload.email).to eq("new-contact@example.test")
+    headers = auth_headers(user)
+    get "/api/v1/me/organizer_follows", headers: headers
+    observed = response.parsed_body.fetch("organizers").sole.fetch("consent_marker")
+    payload = { organization_id: organization.id, email_opt_in: false, consent_only: true, consent_marker: observed }
+    post "/api/v1/me/organizer_follows", params: payload, headers: headers, as: :json
+    expect(response).to have_http_status(:created)
+    follow = OrganizerFollow.find_by!(user: user, organization: organization)
+    expect(follow).to have_attributes(email_opted_in_address: original, email_opted_in_at: nil)
+    expect(MarketingUnsubscribe.exists?(organization: organization, email: original)).to be(true)
+    expect(EmailConsent.where(email: original, scope: "organizer").order(:id).last.action).to eq("unsubscribed")
+    get "/api/v1/me/organizer_follows", headers: headers
+    current = response.parsed_body.fetch("organizers").sole.fetch("consent_marker")
+    expect(current).to be > observed
+    count = EmailConsent.count
+    post "/api/v1/me/organizer_follows", params: payload, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(EmailConsent.count).to eq(count)
+    # A global withdrawal for the new address also invalidates the observed choice.
+    patch "/api/v1/email_preferences/#{EmailPreferences.token(user.email)}", params: { unsubscribe_all: true }, as: :json
+    expect(response).to have_http_status(:ok)
+    count = EmailConsent.count
+    post "/api/v1/me/organizer_follows", params: payload.merge(consent_marker: current), headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(EmailConsent.count).to eq(count)
+    expect(follow.reload.email_opted_in_at).to be_nil
+  end
 end

@@ -341,80 +341,89 @@ class PrivacyRequestProcessor
         DataRetention.ensure_destructive_enabled!
         @orders = nil
         @plan = nil
-        # Lock each rank across the whole request before descending to the next.
-        organization_ids = orders.map { |order| order.event.organization_id }.uniq
-        Organization.where(id: organization_ids).order(:id).lock("FOR UPDATE").load
-        Event.where(id: orders.map(&:event_id)).order(:id).lock("FOR UPDATE").load
-        orders.each(&:lock!)
-        Ticket.where(order_id: orders.map(&:id)).order(:id).lock("FOR UPDATE").load
-        raise Blocked, "A legal hold or money operation now blocks deletion" if blockers.any?
-        raise Blocked, "A protected record now blocks deletion" if
-          RetentionGuard.protected_batch?(orders).values.any?
+        # Lock every address affected by erasure, including saved follow identities
+        # that no longer match the account's current contact address.
+        consent_emails = buyer_emails + [user&.email]
+        consent_emails += OrganizerFollow.where(user_id: user.id).pluck(:email_opted_in_address) if user
+        EmailPreferences.with_platform_locks_for(consent_emails) do
+          follows = OrganizerFollow.where(email_opted_in_address: buyer_emails)
+          follows = follows.or(OrganizerFollow.where(user_id: user.id)) if user
+          follows.order(:id).lock.load
+          # Lock each rank across the whole request before descending to the next.
+          organization_ids = orders.map { |order| order.event.organization_id }.uniq
+          Organization.where(id: organization_ids).order(:id).lock("FOR UPDATE").load
+          Event.where(id: orders.map(&:event_id)).order(:id).lock("FOR UPDATE").load
+          orders.each(&:lock!)
+          Ticket.where(order_id: orders.map(&:id)).order(:id).lock("FOR UPDATE").load
+          raise Blocked, "A legal hold or money operation now blocks deletion" if blockers.any?
+          raise Blocked, "A protected record now blocks deletion" if
+            RetentionGuard.protected_batch?(orders).values.any?
 
-        current_plan = plan
-        owned_orders = current_plan.orders.select { |order| buyer_owned?(order) }
-        owned_references = owned_orders.map(&:reference)
-        personal_values = personal_tokens + owned_orders.flat_map { |order| [order.buyer_name, order.refund_reason] }
-          .compact.reject { |value| value.length < 3 }
-        buyer_emails.each { |email| PrivacyEmailSuppression.suppress!(email) }
-        PlatformSubscriber.where(email: buyer_emails).find_each do |subscriber|
-          DataRetention.update_unheld(PlatformSubscriber.where(id: subscriber.id), email: "deleted+subscriber-#{subscriber.id}@privacy.invalid", name: nil, interests: [], villages: [], status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
-        end
-        EmailConsent.where(email: buyer_emails).find_each do |consent|
-          DataRetention.update_unheld(EmailConsent.where(id: consent.id), email: "deleted+consent-#{consent.id}@privacy.invalid", ip: nil, user_agent: nil)
-        end
-        EmailPreference.where(email: buyer_emails).find_each do |preference|
-          DataRetention.update_unheld(EmailPreference.where(id: preference.id), email: "deleted+preference-#{preference.id}@privacy.invalid", all_unsubscribed: true)
-        end
-        AudienceMailing.where("recipient_emails ?| array[:emails]", emails: buyer_emails).find_each do |mailing|
-          DataRetention.update_unheld(AudienceMailing.where(id: mailing.id), recipient_emails: mailing.recipient_emails - buyer_emails)
-        end
-        DataRetention.update_unheld(OrganizerFollow.where(email_opted_in_address: buyer_emails),
-          email_opted_in_address: nil, email_opted_in_at: nil, updated_at: Time.current)
-        current_plan.orders.each do |order|
-          written = DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
-            eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
-            eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
-            anonymize_responses: current_plan.response_order_ids.include?(order.id),
-            response_ticket_ids: order.tickets.where(id: current_plan.response_ticket_ids).pluck(:id),
-            privacy_user_id: user&.id, privacy_emails: buyer_emails, privacy_names: personal_tokens)
-          raise Blocked, "A protected order now blocks deletion" unless written
-        end
-        WalletPass.where(id: current_plan.wallet_pass_ids).find_each do |pass|
-          pass.with_lock do
-            if RetentionGuard.protected?(pass)
-              Rails.logger.info("[PrivacyRequest] skipped protected wallet_passes record")
-            else
-              pass.destroy!
-            end
+          current_plan = plan
+          owned_orders = current_plan.orders.select { |order| buyer_owned?(order) }
+          owned_references = owned_orders.map(&:reference)
+          personal_values = personal_tokens + owned_orders.flat_map { |order| [order.buyer_name, order.refund_reason] }
+            .compact.reject { |value| value.length < 3 }
+          buyer_emails.each { |email| PrivacyEmailSuppression.suppress!(email) }
+          PlatformSubscriber.where(email: buyer_emails).find_each do |subscriber|
+            DataRetention.update_unheld(PlatformSubscriber.where(id: subscriber.id), email: "deleted+subscriber-#{subscriber.id}@privacy.invalid", name: nil, interests: [], villages: [], status: "unsubscribed", confirmation_nonce: SecureRandom.hex(24))
           end
-        end
-        redact_references!(current_plan, user, owned_references, personal_values)
-        if user
-          [EventFavorite, OrganizerFollow, EventReminder].each do |model|
-            model.where(user_id: user.id).find_each do |record|
-              record.with_lock do
-                if RetentionGuard.protected?(record)
-                  Rails.logger.info("[PrivacyRequest] skipped protected #{model.table_name} record")
-                else
-                  record.delete
-                end
+          EmailConsent.where(email: buyer_emails).find_each do |consent|
+            DataRetention.update_unheld(EmailConsent.where(id: consent.id), email: "deleted+consent-#{consent.id}@privacy.invalid", ip: nil, user_agent: nil)
+          end
+          EmailPreference.where(email: buyer_emails).find_each do |preference|
+            DataRetention.update_unheld(EmailPreference.where(id: preference.id), email: "deleted+preference-#{preference.id}@privacy.invalid", all_unsubscribed: true)
+          end
+          AudienceMailing.where("recipient_emails ?| array[:emails]", emails: buyer_emails).find_each do |mailing|
+            DataRetention.update_unheld(AudienceMailing.where(id: mailing.id), recipient_emails: mailing.recipient_emails - buyer_emails)
+          end
+          DataRetention.update_unheld(OrganizerFollow.where(email_opted_in_address: buyer_emails),
+            email_opted_in_address: nil, email_opted_in_at: nil, updated_at: Time.current)
+          current_plan.orders.each do |order|
+            written = DataRetention.anonymize_order!(order, buyer_owned: buyer_owned?(order),
+              eligible_ticket_ids: order.tickets.where(id: current_plan.ticket_ids).pluck(:id),
+              eligible_support_note_ids: current_plan.order_note_ids.fetch(order.id),
+              anonymize_responses: current_plan.response_order_ids.include?(order.id),
+              response_ticket_ids: order.tickets.where(id: current_plan.response_ticket_ids).pluck(:id),
+              privacy_user_id: user&.id, privacy_emails: buyer_emails, privacy_names: personal_tokens)
+            raise Blocked, "A protected order now blocks deletion" unless written
+          end
+          WalletPass.where(id: current_plan.wallet_pass_ids).find_each do |pass|
+            pass.with_lock do
+              if RetentionGuard.protected?(pass)
+                Rails.logger.info("[PrivacyRequest] skipped protected wallet_passes record")
+              else
+                pass.destroy!
               end
             end
           end
-          DataRetention.update_unheld(OrganizationMembership.where(user_id: user.id), user_id: nil,
-            invited_email: "deleted+user-#{user.id}@privacy.invalid", updated_at: Time.current)
-          DataRetention.update_unheld(OrganizerProfile.where(user_id: user.id), user_id: nil, verification_notes: nil,
-            updated_at: Time.current)
-          user.with_lock do
-            raise Blocked, "A protected account now blocks deletion" if RetentionGuard.protected?(user)
+          redact_references!(current_plan, user, owned_references, personal_values)
+          if user
+            [EventFavorite, OrganizerFollow, EventReminder].each do |model|
+              model.where(user_id: user.id).find_each do |record|
+                record.with_lock do
+                  if RetentionGuard.protected?(record)
+                    Rails.logger.info("[PrivacyRequest] skipped protected #{model.table_name} record")
+                  else
+                    record.delete
+                  end
+                end
+              end
+            end
+            DataRetention.update_unheld(OrganizationMembership.where(user_id: user.id), user_id: nil,
+              invited_email: "deleted+user-#{user.id}@privacy.invalid", updated_at: Time.current)
+            DataRetention.update_unheld(OrganizerProfile.where(user_id: user.id), user_id: nil, verification_notes: nil,
+              updated_at: Time.current)
+            user.with_lock do
+              raise Blocked, "A protected account now blocks deletion" if RetentionGuard.protected?(user)
 
-            user.update_columns(clerk_id: "deleted-user-#{user.id}", email: nil, first_name: nil,
-              last_name: nil, phone: nil, updated_at: Time.current)
+              user.update_columns(clerk_id: "deleted-user-#{user.id}", email: nil, first_name: nil,
+                last_name: nil, phone: nil, updated_at: Time.current)
+            end
           end
+          update_request_unless_protected!(status: "completed", executed_by: actor, executed_at: Time.current,
+            result: { retained_financial_orders: orders.count, removed_saved_records: true })
         end
-        update_request_unless_protected!(status: "completed", executed_by: actor, executed_at: Time.current,
-          result: { retained_financial_orders: orders.count, removed_saved_records: true })
       end
     end
 

@@ -54,7 +54,8 @@ class EmailPreferences
   end
 
   # Consent lock order (including creation): preference, then subscriber, then
-  # follow rows, then unsubscribe and consent rows. Acquire this before domain locks.
+  # follow rows, then organization/waitlist locks, then unsubscribe and consent rows.
+  # For multiple addresses, nest each preference/subscriber pair in sorted order.
   def self.with_platform_locks(email, create_subscriber: false, subscriber_attributes: {})
     email = email.to_s.strip.downcase
     preference = EmailPreference.find_or_create_by!(email: email)
@@ -68,6 +69,15 @@ class EmailPreferences
       else
         yield preference, nil
       end
+    end
+  end
+
+  def self.with_platform_locks_for(emails, &block)
+    addresses = emails.compact.map { |email| email.to_s.strip.downcase }.reject(&:blank?).uniq.sort
+    return yield if addresses.empty?
+
+    with_platform_locks(addresses.first) do
+      with_platform_locks_for(addresses.drop(1), &block)
     end
   end
 
@@ -93,12 +103,17 @@ class EmailPreferences
     OrganizerFollow.where(email_opted_in_address: email).order(:id).lock.load
   end
 
-  # Include global withdrawals as well as this organizer's address-specific decisions.
-  def self.consent_markers(ids, email)
-    email = email.to_s.strip.downcase
-    organizer = EmailConsent.where(email: email, scope: "organizer", organization_id: ids).group(:organization_id).maximum(:id)
-    global = EmailConsent.where(email: email, scope: "all").maximum(:id) || 0
-    ids.to_h { |id| [id, [organizer[id] || 0, global].max] }
+  # A follow choice can affect the current and previously verified addresses.
+  # Use the same grouped calculation for GET and locked consent-only POST checks.
+  def self.consent_markers(ids, email, saved_addresses: {})
+    current = email.to_s.strip.downcase
+    addresses = ids.to_h { |id| [id, [current, saved_addresses[id]].compact.map { |value| value.strip.downcase }.reject(&:blank?).uniq] }
+    emails = addresses.values.flatten.uniq
+    organizer = EmailConsent.where(email: emails, scope: "organizer", organization_id: ids).group(:organization_id, :email).maximum(:id)
+    global = EmailConsent.where(email: emails, scope: "all").group(:email).maximum(:id)
+    addresses.to_h do |id, affected|
+      [id, affected.flat_map { |address| [organizer[[id, address]] || 0, global[address] || 0] }.max || 0]
+    end
   end
 
   def self.unsubscribe_organizer!(organization:, email:, source:)
