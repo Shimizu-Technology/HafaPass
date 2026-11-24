@@ -25,6 +25,8 @@ module Api
               line_items: [:ticket_type_id, :quantity], registration_answers: {}),
             idempotency_key: request.headers["Idempotency-Key"])
           render json: sale_json(order)
+        rescue Commerce::OnlineDoorSale::AlreadyPaid => e
+          render json: sale_json(e.order.reload, provider_paid: true)
         rescue Commerce::OrderCreator::PriceChanged => e
           render json: { error: e.message, code: "price_changed", reconciliation_required: false }, status: :conflict
         rescue CheckoutAttempt::Conflict => e
@@ -36,7 +38,10 @@ module Api
         end
 
         def show
-          render json: sale_json(accessible_order)
+          order = accessible_order
+          check_provider = params[:check_provider] == "1"
+          provider_paid = check_provider && Commerce::OnlineDoorSale.provider_paid?(order)
+          render json: sale_json(check_provider ? order.reload : order, provider_paid: provider_paid, checked: check_provider)
         end
 
         def destroy
@@ -100,9 +105,10 @@ module Api
           order.ticket_fulfilled? && !order.ticket_access_blocked? && !order.full_refund_pending?
         end
 
-        def sale_json(order)
+        def sale_json(order, provider_paid: false, checked: false)
           payment = order.payments.sole
           state = sale_state(order, payment)
+          state = "confirming" if provider_paid && %w[waiting failed expired].include?(state)
           paid = state == "paid" && tickets_available?(order)
           {
             id: order.id,
@@ -112,7 +118,8 @@ module Api
             total_cents: order.total_cents,
             expires_at: order.expires_at,
             checkout_url: %w[waiting failed].include?(state) && order.pending? ? payment.stripe_checkout_url : nil,
-            pending: order.pending? && order.expires_at&.future?,
+            pending: state != "confirming" && order.pending? && order.expires_at&.future?,
+            payment_checked: checked,
             can_retry_setup: state == "waiting" && @event.online_door_card_enabled? && payment.stripe_checkout_session_id.nil?,
             can_email_tickets: paid && Commerce::OnlineDoorSale.buyer_email(order).present?,
             can_email_link: order.payment_method == "door_card_link" && Commerce::OnlineDoorSale.buyer_email(order).present?,
@@ -123,8 +130,9 @@ module Api
 
         def sale_state(order, payment)
           return "paid" if order.completed? || order.partially_refunded?
+          return "refunded" if order.refunded? || payment.refunded?
+          return "refunding" if payment.succeeded? && Commerce::LateCaptureRefund.open_issue?(payment)
           return "expired" if order.expired? || (order.pending? && !order.expires_at&.future?)
-          return "refunded" if order.refunded?
           return "failed" if payment.failed? || (order.pending? && payment.provider_payload.to_h["status"] == "requires_payment_method")
           return "cancelled" if order.cancelled?
 

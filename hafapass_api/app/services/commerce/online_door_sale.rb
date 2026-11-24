@@ -9,6 +9,14 @@ module Commerce
     class ProviderUnknown < StandardError
       attr_accessor :order_id
     end
+    class AlreadyPaid < StandardError
+      attr_reader :order
+
+      def initialize(order)
+        @order = order
+        super("Stripe already received payment for this sale.")
+      end
+    end
 
     PROVIDER_TIMEOUT = 15.seconds
     SETUP_LEASE_DURATION = 30.seconds
@@ -47,8 +55,14 @@ module Commerce
               (!Rails.env.local? || StripeService.payment_mode == "test")
             raise Unavailable, "Online door card sales are unavailable for this event."
           end
+          if (paid_order = matching_paid_checkout)
+            unless claim.attempt.reject!(claim.lease_token)
+              raise CheckoutAttempt::Conflict, "Checkout ownership changed; retry the original checkout request"
+            end
+            raise AlreadyPaid.new(paid_order)
+          end
           order = reserve!(claim, key_digest, request_digest)
-        rescue OrderCreator::CheckoutError, Unavailable, StripeService::PaymentError
+        rescue OrderCreator::CheckoutError, Unavailable, StripeService::PaymentError, ProviderUnknown
           claim.attempt.reject!(claim.lease_token)
           raise
         end
@@ -60,8 +74,38 @@ module Commerce
       open_session!(order) if event.reload.online_door_card_enabled?
       order.reload
     rescue ProviderUnknown => e
-      e.order_id = order&.id
+      e.order_id ||= order&.id
       raise
+    end
+
+    # A read from Stripe can warn staff, but only a signed webhook can settle
+    # this payment, issue tickets, or start the late-capture refund.
+    def self.provider_paid?(order, deadline: nil)
+      return false unless order.pending? || order.expired?
+
+      payment = order.payments.sole
+      return false if payment.stripe_checkout_session_id.blank?
+      return false if Rails.env.local? && payment.provider_environment != "test"
+
+      budget = deadline ? deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC) : PROVIDER_TIMEOUT
+      raise Timeout::Error unless budget.positive?
+
+      session = Timeout.timeout(budget) { StripeService.retrieve_door_checkout_session(payment) }
+      unless session.id == payment.stripe_checkout_session_id &&
+          session.livemode == (payment.provider_environment == "live") &&
+          session.amount_total == payment.amount_cents && session.currency == payment.currency
+        raise StripeService::PaymentError, "Stripe checkout could not be verified"
+      end
+
+      if session.status == "open" && (order.expired? || !order.expires_at&.future?)
+        raise StripeService::PaymentError, "Stripe has not closed the expired reservation"
+      end
+
+      session.status == "complete" && session.payment_status == "paid"
+    rescue Stripe::StripeError, StripeService::PaymentError, IOError, Timeout::Error
+      error = ProviderUnknown.new("Could not confirm the saved payment with Stripe. Check its status before charging again.")
+      error.order_id = order.id
+      raise error
     end
 
     def self.cancel!(order)
@@ -101,6 +145,28 @@ module Commerce
     private
 
     attr_reader :event, :user, :parameters, :key
+
+    def matching_paid_checkout
+      quantities = parameters.fetch("line_items").each_with_object(Hash.new(0)) do |line, counts|
+        counts[line["ticket_type_id"].to_i] += line["quantity"].to_i
+      end
+      requested_session = Seating::Credential.find_session(parameters["seat_hold_token"]) if parameters["seat_hold_token"].present?
+      requested_seats = requested_session&.seat_holds&.pluck(:event_seat_id)&.sort
+      email = parameters["buyer_email"].to_s.strip.downcase.presence
+      cutoff = OrderCreator::ONLINE_DOOR_HOLD_DURATION.ago
+      recent = event.orders.where(sold_by: user, source: "box_office", payment_method: Order::ONLINE_DOOR_CARD_METHODS,
+        status: [:pending, :expired])
+        .where("orders.expires_at >= :cutoff OR orders.expired_at >= :cutoff", cutoff: cutoff)
+        .order(id: :desc)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + PROVIDER_TIMEOUT
+      recent.find do |previous|
+        next false unless self.class.buyer_email(previous) == email &&
+          previous.order_items.item_ticket.group(:ticket_type_id).sum(:quantity) == quantities
+        next false unless previous.seat_hold_session&.seat_holds&.pluck(:event_seat_id)&.sort == requested_seats
+
+        self.class.provider_paid?(previous, deadline: deadline)
+      end
+    end
 
     def validate_request!
       unless key.to_s.match?(/\Abox-office-[a-zA-Z0-9-]{16,100}\z/)

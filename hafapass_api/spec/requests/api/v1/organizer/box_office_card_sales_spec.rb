@@ -30,11 +30,15 @@ RSpec.describe "Online box office card sales", type: :request do
       expect(line_items.sum { |item| item[:quantity] * item.dig(:price_data, :unit_amount) }).to eq(payment.amount_cents)
       session_fixture(payment, expires_at)
     end
+    allow(StripeService).to receive(:retrieve_door_checkout_session) do |payment|
+      session_fixture(payment, payment.order.inventory_holds.first.expires_at)
+    end
   end
 
   def session_fixture(payment, expires_at, status: "open")
     id = "cs_test_Door#{payment.id}"
-    OpenStruct.new(id: id, status: status, amount_total: payment.amount_cents, currency: "usd",
+    OpenStruct.new(id: id, status: status, payment_status: status == "complete" ? "paid" : "unpaid",
+      amount_total: payment.amount_cents, currency: "usd",
       livemode: false, expires_at: expires_at.to_i, url: "https://checkout.stripe.com/c/pay/#{id}")
   end
 
@@ -65,6 +69,73 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(StripeService).not_to receive(:create_door_checkout_session)
     expect { post path, params: cart, headers: headers }.not_to change(Order, :count)
     expect(response).to have_http_status(:unprocessable_content)
+  end
+
+  it "warns about a captured replacement checkout before the webhook without issuing tickets" do
+    order = create_sale
+    deadline = order.expires_at
+    payment = order.payments.sole
+    allow(StripeService).to receive(:retrieve_door_checkout_session).with(payment)
+      .and_return(session_fixture(payment, deadline, status: "complete"))
+
+    get "#{path}/#{order.id}", params: { check_provider: "1" }, headers: headers
+    expect(response.parsed_body).to include("status" => "confirming", "checkout_url" => nil, "tickets" => [])
+
+    travel_to(deadline + 5.seconds) do
+      ExpireInventoryHoldsJob.perform_now
+      get "#{path}/#{order.id}", params: { check_provider: "1" }, headers: headers
+      expect(response.parsed_body).to include("status" => "confirming", "tickets" => [])
+      retry_headers = headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+      expect do
+        post path, params: cart.merge(payment_method: "door_card_keyed"), headers: retry_headers
+      end.not_to change(Order, :count)
+      expect(response.parsed_body).to include("id" => order.id, "status" => "confirming", "tickets" => [])
+      expect(order.reload).to be_expired
+      expect(order.tickets).to be_empty
+
+      send_event("payment_intent.succeeded", payment_intent(order))
+      expect do
+        post path, params: cart.merge(payment_method: "door_card_keyed"), headers: retry_headers
+      end.not_to change(Order, :count)
+      expect(response).to have_http_status(:conflict)
+    end
+    expect(order.reload).to be_completed
+    expect(order.tickets.count).to eq(1)
+    expect(StripeService).to have_received(:create_door_checkout_session).once
+  end
+
+  it "leaves a replacement uncreated when Stripe status is unavailable" do
+    order = create_sale
+    allow(StripeService).to receive(:retrieve_door_checkout_session).and_raise(Timeout::Error)
+
+    expect do
+      post path, params: cart, headers: headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+    end.not_to change(Order, :count)
+    expect(response).to have_http_status(:bad_gateway)
+    expect(response.parsed_body).to include("order_id" => order.id, "reconciliation_required" => true)
+  end
+
+  [false, true].each do |includes_ended_night|
+    it "refunds after #{includes_ended_night ? 'an included night' : 'the event'} ends" do
+      start = Time.current
+      if includes_ended_night
+        night = create(:event, :published, organizer_profile: profile, starts_at: start, ends_at: start + 10.minutes)
+        other_night = create(:event, :published, organizer_profile: profile)
+        ticket_type.update!(is_pass: true, included_events: [night, other_night])
+      else
+        event.update!(starts_at: start, ends_at: start + 10.minutes, doors_open_at: start - 10.minutes)
+      end
+      order = create_sale
+      travel_to(order.expires_at + 5.seconds) do
+        ExpireInventoryHoldsJob.perform_now
+        expect do
+          2.times { send_event("payment_intent.succeeded", payment_intent(order)) }
+        end.to have_enqueued_job(LateCaptureRefundJob).with(order.payments.sole.id).exactly(:once)
+      end
+      expect(order.reload).to be_expired
+      expect(order.tickets).to be_empty
+      expect(ReconciliationException.where(order: order).sole.details).to include("reason" => "admission_ended")
+    end
   end
 
   it "allows only an admin to change the event switch" do
@@ -228,6 +299,7 @@ RSpec.describe "Online box office card sales", type: :request do
       expect(order.reload).to be_completed
       expect(order.tickets.count).to eq(1)
       expect(order.inventory_holds.sole).to be_consumed
+      expect(order.inventory_holds.sole).to have_attributes(released_at: nil, release_reason: nil)
       expect(ticket_type.reload.quantity_sold).to eq(1)
     end
   end

@@ -18,6 +18,7 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   const attempts = []
   const emailed = []
   const settled = new Map()
+  let providerPaid = false
   await page.route('**/api/v1/health', route => route.fulfill({ json: { status: 'ok' } }))
   await page.route('**/api/v1/config', route => route.fulfill({ json: { launch_capabilities: {} } }))
   await page.route('**/api/v1/organizer/organizations', route => route.fulfill({ json: [{ id: 1, name: 'Coral Lantern Studio (demo)' }] }))
@@ -53,12 +54,17 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
     return route.fulfill({ json: sale })
   })
   await page.route(`${base}/box_office_card_sales/*`, route => {
-    const orderId = Number(new URL(route.request().url()).pathname.split('/').at(-1))
+    const url = new URL(route.request().url())
+    const orderId = Number(url.pathname.split('/').at(-1))
     if (route.request().method() === 'GET' && settled.has(orderId)) return route.fulfill({ json: settled.get(orderId) })
     if (route.request().method() === 'DELETE') {
       sale = { ...sale, status: 'cancelled', pending: false, checkout_url: null }
     }
-    return route.fulfill({ json: sale })
+    const checked = url.searchParams.get('check_provider') === '1'
+    if (checked && providerPaid) return route.fulfill({ json: {
+      ...sale, status: 'confirming', pending: false, checkout_url: null, payment_checked: true,
+    } })
+    return route.fulfill({ json: { ...sale, payment_checked: checked } })
   })
   await page.route(`${base}/box_office_card_sales/*/email`, route => {
     emailed.push(sale.id)
@@ -72,6 +78,7 @@ async function prepare(page, { enabled = true, loseResponse = false } = {}) {
   return {
     attempts,
     emailed,
+    setProviderPaid(value) { providerPaid = value },
     update(changes) {
       sale = { ...sale, ...changes }
       if (sale.status === 'paid') settled.set(sale.id, sale)
@@ -134,7 +141,7 @@ for (const width of [390, 1280]) {
     await capture('waiting-phone')
 
     fixture.update({ status: 'failed' })
-    await page.getByRole('button', { name: 'Refresh payment status' }).click()
+    await page.getByRole('button', { name: 'Check payment status' }).click()
     await expect(page.getByRole('heading', { name: 'Failed' })).toBeVisible()
     await capture('failed')
     fixture.update({ status: 'paid', pending: false, checkout_url: null, can_email_tickets: true, tickets: [
@@ -153,11 +160,23 @@ for (const width of [390, 1280]) {
     await capture('waiting-keyed')
 
     fixture.update({ status: 'expired', pending: false, checkout_url: null })
-    await page.getByRole('button', { name: 'Refresh payment status' }).click()
+    await page.getByRole('button', { name: 'Check payment status' }).click()
     await expect(page.getByRole('heading', { name: 'Expired' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Open Stripe checkout' })).toHaveCount(0)
     await capture('expired')
 
+    fixture.setProviderPaid(true)
+    await page.getByRole('button', { name: 'Check payment status' }).click()
+    const confirming = page.getByRole('heading', { name: 'Paid — waiting for confirmation' })
+    await expect(confirming).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Start next sale' })).toHaveCount(0)
+    await expect(page.getByText('Ticket 1 of 1')).toHaveCount(0)
+    await capture('confirming')
+    await page.waitForResponse(response => response.url().endsWith('/box_office_card_sales/91'))
+    await expect(confirming).toBeVisible()
+    fixture.setProviderPaid(false)
+    fixture.update({ status: 'refunded' })
+    await expect(page.getByRole('heading', { name: 'Refunded' })).toBeVisible()
     await page.getByRole('button', { name: 'Start next sale' }).click()
     await openCheckout(page, 'Pay on buyer’s phone')
     await expect(waiting).toBeVisible()

@@ -29,8 +29,10 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
     inFlight.current = true
     const version = ++generation.current
     const canApply = () => version === generation.current && current()
-    if (!quiet) setBusy(true)
-    setError('')
+    if (!quiet) {
+      setBusy(true)
+      setError('')
+    }
     try {
       if (action === 'setup') {
         const data = await retrySetup()
@@ -39,8 +41,14 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
         const { data } = await requestApi('post', `${path}/email`, {})
         if (canApply()) setSale(previous => ({ ...previous, ...data }))
       } else {
-        const { data } = await requestApi(action === 'cancel' ? 'delete' : 'get', path)
-        if (canApply()) setSale(data)
+        const { data } = await requestApi(action === 'cancel' ? 'delete' : 'get', path,
+          action === 'check' ? { params: { check_provider: '1' } } : undefined)
+        if (canApply()) setSale(previous => {
+          if (action !== 'refresh') return data
+          if (previous?.status === 'confirming' && ['waiting', 'failed', 'expired'].includes(data.status)) return previous
+          return previous?.status === 'expired' && data.status === 'expired' && previous.payment_checked
+            ? { ...data, payment_checked: true } : data
+        })
       }
     } catch (problem) {
       if (!canApply()) return
@@ -74,7 +82,7 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
   }, [onPaid, sale?.status])
 
   useEffect(() => {
-    if (sale && !sale.pending) return
+    if (sale && !sale.pending && !['confirming', 'refunding'].includes(sale.status)) return
     const refreshIfVisible = () => { if (!document.hidden) update('refresh', true) }
     const timer = window.setInterval(refreshIfVisible, 4000)
     document.addEventListener('visibilitychange', refreshIfVisible)
@@ -99,6 +107,8 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
   const buyerPhone = sale.payment_method === 'door_card_link'
   const ticket = sale.tickets?.[selectedTicket]
   const titleKey = sale.status === 'paid' && !ticket ? 'paidUnavailable' : sale.status
+  const checkingPayment = sale.status === 'confirming' || sale.status === 'refunding'
+  const canLeaveSale = !checkingPayment && (sale.status !== 'expired' || (sale.payment_checked && !error))
 
   return (
     <section className="space-y-4 rounded-xl border border-neutral-200 bg-white p-4 sm:p-6" aria-labelledby="door-checkout-status">
@@ -156,6 +166,7 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
           </button>
       )}
       {sale.status === 'expired' && <p className="text-sm text-neutral-700">{t('boxOfficeCard.expiredHelp')}</p>}
+      {sale.status === 'confirming' && <p className="text-sm text-neutral-700">{t('boxOfficeCard.confirmingHelp')}</p>}
       {ticket && <div className="space-y-2 rounded-xl border border-neutral-200 p-4 text-center">
         <p className="break-words font-semibold [overflow-wrap:anywhere]">{ticket.tier}</p>
         <p className="break-words text-sm text-neutral-600 [overflow-wrap:anywhere]">{ticket.event}</p>
@@ -174,19 +185,19 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
       {error && <p role="alert" className="break-words text-sm text-red-800">{error}</p>}
       <div className="flex flex-wrap gap-2">
         {sale.pending ? <>
-          <button type="button" className={buttons} disabled={busy} onClick={() => update()}>
-            <RefreshCw aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.refresh')}
+          <button type="button" className={buttons} disabled={busy} onClick={() => update('check')}>
+            <RefreshCw aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.checkPayment')}
           </button>
           <button type="button" className={buttons} disabled={busy} onClick={() => update('cancel')}>
             {t('boxOfficeCard.cancel')}
           </button>
-        </> : (
-          <button type="button" className="btn-primary min-h-12 gap-2" onClick={onNext}>
+        </> : canLeaveSale && (
+          <button type="button" className="btn-primary min-h-12 gap-2" disabled={busy} onClick={onNext}>
             <QrCode aria-hidden="true" className="h-4 w-4" /> {t(recovery ? 'boxOfficeCard.closeRecovery' : 'boxOfficeCard.nextSale')}
           </button>
         )}
-        {sale.status === 'expired' && <button type="button" className={buttons} disabled={busy} onClick={() => update()}>
-          <RefreshCw aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.refresh')}
+        {(sale.status === 'expired' || sale.status === 'confirming') && <button type="button" className={buttons} disabled={busy} onClick={() => update('check')}>
+          <RefreshCw aria-hidden="true" className="h-4 w-4" /> {t('boxOfficeCard.checkPayment')}
         </button>}
         {recovery && sale.pending && <button type="button" className={buttons} onClick={onNext}>
           {t('boxOfficeCard.closeRecovery')}

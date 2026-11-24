@@ -36,7 +36,7 @@ function view(sale, event) {
   }
 }
 
-export async function handle({ method, path, body, config, state }) {
+export async function handle({ method, path, body, config, params, state }) {
   if (path !== eventPath && !path.startsWith(`${eventPath}/`)) return undefined
   const event = state.staff.events.find(item => item.id === 101)
   if (!event) return undefined
@@ -53,7 +53,8 @@ export async function handle({ method, path, body, config, state }) {
     attempts: new Map(),
     sales: new Map([
       [789998, { id: 789998, status: 'waiting', method: 'door_card_link', buyerName: 'Buyer · Lantern demo',
-        paidAt: Infinity, expiresAt: new Date(Date.now() + 35 * 60_000).toISOString(), total: 1323, canEmail: true, tiers: ['Admission'] }],
+        paidAt: Infinity, stripePaid: true, expiresAt: new Date(Date.now() + 35 * 60_000).toISOString(),
+        total: 1323, canEmail: true, tiers: ['Admission'] }],
       [789999, { id: 789999, status: 'paid', method: 'door_card_keyed', buyerName: 'Buyer · Reef demo',
         total: 1323, canEmail: true, tiers: ['Admission'] }],
     ]),
@@ -112,15 +113,23 @@ export async function handle({ method, path, body, config, state }) {
   }
 
   const sale = demo.sales.get(Number(id))
+  const checked = params?.get('check_provider') === '1'
   if (!sale) {
     // Demo storage is memory-only. A reopened preview clears the fictional
     // reservation and lets the tester start another sale.
-    if (method === 'get' && Number(id) >= 790000) return json(view({
+    if (method === 'get' && Number(id) >= 790000) return json({ ...view({
       id: Number(id), method: 'door_card_link', status: 'expired', total: 0, tiers: [],
-    }, event))
+    }, event), payment_checked: checked })
     return notFound()
   }
-  if (method === 'get' && !emailAction) return json(view(sale, event))
+  if (method === 'get' && !emailAction) {
+    const result = view(sale, event)
+    if (checked && result.pending && sale.stripePaid) {
+      sale.paidAt = Math.min(sale.paidAt, Date.now() + demoSaleDelay)
+      return json({ ...result, status: 'confirming', pending: false, checkout_url: null, payment_checked: true })
+    }
+    return json({ ...result, payment_checked: checked })
+  }
   if (method === 'delete' && !emailAction) {
     if (stateFor(sale) === 'waiting') sale.status = 'cancelled'
     return json(view(sale, event))

@@ -93,6 +93,11 @@ class StripeService
       }.compact, options.merge(idempotency_key: "#{payment.idempotency_key}:checkout"))
     end
 
+    def retrieve_door_checkout_session(payment)
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance)
+      client.v1.checkout.sessions.retrieve(payment.stripe_checkout_session_id, {}, options)
+    end
+
     def expire_door_checkout_session(payment:, session_id:)
       client, options = operation_client(payment: payment, settings: SiteSetting.instance)
       begin

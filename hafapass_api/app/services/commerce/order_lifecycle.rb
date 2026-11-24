@@ -122,7 +122,8 @@ module Commerce
           lapsed = reopen_expired || (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
           completed_late = lapsed && !unusable && late_completion && payment.present? &&
             late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
-          if unusable || (lapsed && !completed_late)
+          admission_ended = order.online_door_card? && door_admission_ended?(order.event, holds)
+          if unusable || admission_ended || (lapsed && !completed_late)
             if order.pending?
               release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
                 claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
@@ -132,7 +133,8 @@ module Commerce
               order: order,
               payment: payment,
               webhook_event: webhook_event,
-              code: "late_payment_success_after_hold_expiry"
+              code: "late_payment_success_after_hold_expiry",
+              details: admission_ended ? { reason: "admission_ended" } : {}
             )
             LateCaptureRefundJob.perform_later(payment.id) if payment
             next
@@ -144,7 +146,7 @@ module Commerce
               hold.pricing_tier.increment!(:quantity_sold, hold.quantity)
             end
             if reopen_expired
-              hold.update!(status: :consumed, consumed_at: Time.current)
+              hold.update!(status: :consumed, consumed_at: Time.current, released_at: nil, release_reason: nil)
             else
               hold.consume!
             end
@@ -303,6 +305,20 @@ module Commerce
       def pass_nights_exhausted?(holds)
         holds.map(&:ticket_type).uniq(&:id).any? do |ticket_type|
           ticket_type.pass? && !ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+        end
+      end
+
+      def door_admission_ended?(event, holds, at: Time.current)
+        return true if event.completed? || event.effective_ends_at <= at
+
+        holds.map(&:ticket_type).uniq(&:id).any? do |type|
+          if type.pass?
+            type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES)
+              .where("events.status = :completed OR COALESCE(events.ends_at, events.starts_at) <= :at",
+                completed: Event.statuses.fetch(:completed), at: at).exists?
+          else
+            (event.ends_at || event.starts_at) <= at
+          end
         end
       end
 
