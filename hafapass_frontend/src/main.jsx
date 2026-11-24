@@ -22,7 +22,12 @@ async function removeLegacyPrivateCaches() {
   await Promise.all(['tickets', 'my-tickets'].map(cacheName => window.caches.delete(cacheName)))
 }
 
-removeLegacyPrivateCaches().finally(() => {
+async function installDemoStaff() {
+  // Preview-only fictional staff sign-in; the literal check lets Rollup drop it.
+  if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') (await import('./demo/staff/session')).installDemoStaffSession()
+}
+
+removeLegacyPrivateCaches().then(installDemoStaff).catch(() => {}).finally(() => {
   const router = createBrowserRouter([{ path: '*', element: <Sentry.ErrorBoundary fallback={({ error, resetError }) => <ErrorFallback error={error} resetError={resetError} />}>
     <DraftNavigationProvider><ReleaseUpdateCoordinator /><ServiceCheck /></DraftNavigationProvider>
   </Sentry.ErrorBoundary> }])
