@@ -27,12 +27,54 @@ def money(cents):
     return f"{sign}${abs(cents) / 100:,.2f}"
 
 
-def fetch(base_url, token, date=None, timeout=20):
-    url = base_url.rstrip("/") + "/api/v1/ops/summary"
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+class UnsafeUrl(ValueError):
+    """The configured URL could expose the bearer token."""
+
+
+def validate_base_url(base_url):
+    """Return the normalized base URL, or raise UnsafeUrl.
+
+    https only, with a host and no credentials, query or fragment. Plain http is
+    accepted only for an explicit local development host, never a lookalike
+    (http://localhost.evil.example is refused).
+    """
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        host = parsed.hostname
+        parsed.port  # noqa: B018 - raises ValueError on a malformed port
+    except ValueError as error:
+        raise UnsafeUrl("OPS_SUMMARY_URL is not a valid URL.") from error
+    if parsed.scheme not in ("https", "http") or not host:
+        raise UnsafeUrl("OPS_SUMMARY_URL must be an https:// URL.")
+    if parsed.scheme == "http" and host not in LOCAL_HOSTS:
+        raise UnsafeUrl("OPS_SUMMARY_URL must be https:// so the token is never sent in the clear (http is only for localhost).")
+    if parsed.username is not None or parsed.password is not None:
+        raise UnsafeUrl("OPS_SUMMARY_URL must not contain a username or password.")
+    if parsed.query or parsed.fragment:
+        raise UnsafeUrl("OPS_SUMMARY_URL must not contain a query or fragment.")
+    return base_url.rstrip("/")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the bearer token must only go to the configured host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+def build_opener():
+    return urllib.request.build_opener(NoRedirect)
+
+
+def fetch(base_url, token, date=None, timeout=20, opener=None):
+    url = validate_base_url(base_url) + "/api/v1/ops/summary"
     if date:
         url += "?" + urllib.parse.urlencode({"date": date})
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - https URL from config
+    with (opener or build_opener()).open(request, timeout=timeout) as response:
         return json.load(response)
 
 
@@ -47,8 +89,10 @@ def attention(summary):
         problems.append("Stripe webhooks look silent while payments are being made")
     if hooks.get("failing"):
         problems.append(f"Stripe webhooks are failing ({hooks.get('failed_in_window', 0)} recent)")
+    if hooks.get("signature_failing"):
+        problems.append("Stripe is being rejected: signature verification fails (check the webhook signing secret)")
     for name, count in (health.get("operational_signals") or {}).items():
-        if count and name not in ("stripe_webhook_failures", "stripe_webhooks_silent"):
+        if count and name not in ("stripe_webhook_failures", "stripe_webhooks_silent", "stripe_webhook_signature_failures"):
             problems.append(f"{name.replace('_', ' ')}: {count}")
     queue = health.get("job_queue", {})
     if queue.get("available") and queue.get("oldest_ready_age_seconds", 0) > 300:
@@ -122,16 +166,25 @@ def main(argv=None):
     if not base_url or not token:
         print("Set OPS_SUMMARY_URL and OPS_SUMMARY_TOKEN (or OPS_SUMMARY_TOKEN_FILE).", file=sys.stderr)
         return 2
-    if not base_url.startswith("https://") and not base_url.startswith("http://localhost"):
-        print("OPS_SUMMARY_URL must be https:// so the token is never sent in the clear.", file=sys.stderr)
+    try:
+        validate_base_url(base_url)
+    except UnsafeUrl as error:
+        print(str(error), file=sys.stderr)
         return 2
 
     try:
         summary = fetch(base_url, token, args.date)
     except urllib.error.HTTPError as error:
+        if 300 <= error.code < 400:
+            print("Summary request failed: the server tried to redirect, which is refused so the token is not forwarded. "
+                  "Check OPS_SUMMARY_URL.", file=sys.stderr)
+            return 2
         reason = {401: "the token was rejected", 404: "the endpoint is off (no OPS_SUMMARY_TOKEN on the server)",
                   422: "the date was not accepted", 429: "rate limited, try again in a minute"}.get(error.code, f"HTTP {error.code}")
         print(f"Summary request failed: {reason}.", file=sys.stderr)
+        return 2
+    except UnsafeUrl as error:
+        print(str(error), file=sys.stderr)
         return 2
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
         print(f"Summary request failed: {type(error).__name__}.", file=sys.stderr)

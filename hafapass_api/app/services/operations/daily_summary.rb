@@ -45,11 +45,11 @@ module Operations
     end
 
     def call
-      # SystemReadiness (the same call GET /readiness makes) may lazily create
-      # the settings singleton, so it runs outside the write guard; everything
-      # that reads sales runs inside it.
-      readiness = SystemReadiness.call
+      # The whole read, readiness included, runs with database writes blocked.
+      # SystemReadiness(read_only: true) skips the one check that can write
+      # (it activates due fee changes), so this GET never changes data.
       ActiveRecord::Base.while_preventing_writes do
+        readiness = SystemReadiness.call(read_only: true)
         {
           guam_date: date.iso8601,
           window: { starts_at: window.begin.iso8601, ends_at: window.end.iso8601, partial: window.end > now },
@@ -146,6 +146,7 @@ module Operations
       checks = readiness.fetch(:checks)
       {
         readiness: readiness.fetch(:status),
+        skipped_checks: readiness.dig(:checks, :provider_policy_controls, :status) == "not_checked" ? %w[provider_policy_controls] : [],
         checks: { database: checks.dig(:database, :ready), job_queue: checks.dig(:job_queue, :ready), worker: checks.dig(:worker, :ready),
                   commerce_clock: checks.dig(:commerce_clock, :ready), configuration: checks.dig(:configuration, :ready) },
         stripe_webhooks: Operations::StripeWebhookHealth.call(now: now),

@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import unittest
+import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
@@ -43,6 +44,10 @@ class RenderTest(unittest.TestCase):
         self.assertIn("Stripe webhooks look silent", text)
         self.assertIn("failed background jobs: 2", text)
 
+    def test_signature_failures_are_called_out(self):
+        bad = {**SUMMARY, "health": {**SUMMARY["health"], "stripe_webhooks": {**SUMMARY["health"]["stripe_webhooks"], "signature_failing": True}}}
+        self.assertIn("signature verification fails", script.render(bad))
+
 
 class MainTest(unittest.TestCase):
     def run_main(self, env, argv=()):
@@ -74,6 +79,86 @@ class MainTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("rejected", err)
         self.assertNotIn(token, out + err)
+
+
+class UrlValidationTest(unittest.TestCase):
+    def test_accepts_https_and_explicit_local_http(self):
+        self.assertEqual(script.validate_base_url("https://hafapass-api.onrender.com/"), "https://hafapass-api.onrender.com")
+        self.assertEqual(script.validate_base_url("http://localhost:3103"), "http://localhost:3103")
+        self.assertEqual(script.validate_base_url("http://127.0.0.1:3103"), "http://127.0.0.1:3103")
+
+    def test_refuses_everything_that_could_leak_the_token(self):
+        for bad in ["http://example.com", "http://localhost.evil.example", "http://127.0.0.1.evil.example",
+                    "ftp://example.com", "file:///etc/passwd", "https://user:pass@example.com", "https://user@example.com",
+                    "https://example.com?x=1", "https://example.com#frag", "https://", "example.com", "", "https://exa mple.com:99999999"]:
+            with self.subTest(url=bad), self.assertRaises(script.UnsafeUrl):
+                script.validate_base_url(bad)
+
+    def test_main_reports_an_unsafe_url_without_the_token(self):
+        token = "t" * 40
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"OPS_SUMMARY_URL": "https://user:pw@example.com", "OPS_SUMMARY_TOKEN": token}, clear=True), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = script.main([])
+        self.assertEqual(code, 2)
+        self.assertNotIn(token, out.getvalue() + err.getvalue())
+        self.assertNotIn("pw", err.getvalue())
+
+
+class RedirectTest(unittest.TestCase):
+    """Real local servers: a redirect must never reach the second server with the bearer."""
+
+    def serve(self, handler_class):
+        import http.server
+        import threading
+        server = http.server.HTTPServer(("127.0.0.1", 0), handler_class)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        return server
+
+    def test_redirect_is_refused_and_the_bearer_is_never_forwarded(self):
+        import http.server
+        seen = []
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args):
+                pass
+
+        target = self.serve(Target)
+        location = f"http://127.0.0.1:{target.server_address[1]}/stolen"
+
+        class Redirector(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", location)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        origin = self.serve(Redirector)
+        base = f"http://127.0.0.1:{origin.server_address[1]}"
+        token = "t" * 40
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            script.fetch(base, token)
+        self.assertEqual(caught.exception.code, 302)
+        self.assertEqual(seen, [])
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"OPS_SUMMARY_URL": base, "OPS_SUMMARY_TOKEN": token}, clear=True), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = script.main([])
+        self.assertEqual(code, 2)
+        self.assertIn("redirect", err.getvalue())
+        self.assertNotIn(token, out.getvalue() + err.getvalue())
+        self.assertEqual(seen, [])
 
 
 if __name__ == "__main__":

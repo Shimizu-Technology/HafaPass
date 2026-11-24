@@ -38,6 +38,33 @@ RSpec.describe "GET /api/v1/ops/summary", type: :request do
     expect(response.body).not_to include("guam_date")
   end
 
+  describe "read-only guarantee" do
+    let!(:settings) { SiteSetting.instance }
+    let!(:due_change) do
+      FeeChange.create!(created_by: create(:user, :admin), old_terms: { "service_fee_percent" => "1" },
+        new_terms: { "service_fee_percent" => "2" }, effective_at: 1.hour.ago)
+    end
+
+    it "proves the setup: the regular readiness path would activate or block the due fee change" do
+      expect { SystemReadiness.call }.to change { due_change.reload.blocked_at.present? || due_change.activated_at.present? }.to(true)
+    end
+
+    it "performs no writes on a GET, even when a fee change is due" do
+      expect do
+        get "/api/v1/ops/summary", headers: headers
+        head "/api/v1/ops/summary", headers: headers
+      end.not_to(change { [FeeChange.where(blocked_at: nil, activated_at: nil).count, AuditLog.count, SiteSetting.count,
+        settings.reload.updated_at, WebhookEvent.count, RuntimeAlertState.count] })
+      expect(response).to have_http_status(:ok)
+      expect(due_change.reload).to have_attributes(blocked_at: nil, activated_at: nil)
+    end
+
+    it "reports the readiness check it skipped instead of claiming it passed" do
+      get "/api/v1/ops/summary", headers: headers
+      expect(response.parsed_body.dig("health", "skipped_checks")).to eq(["provider_policy_controls"])
+    end
+  end
+
   it "does not accept a user session in place of the token" do
     admin = create(:user, :admin)
     get "/api/v1/ops/summary", headers: auth_headers(admin)
@@ -85,6 +112,16 @@ RSpec.describe "GET /api/v1/ops/summary", type: :request do
     expect(entries.map { |entry| entry["outcome"] }).to eq(%w[ok unauthorized])
     expect(entries.first).to include("request_id", "date")
     expect(lines.join).not_to include(token, other_token)
+  end
+
+  it "limits HEAD requests with the same budget as GET" do
+    5.times { head "/api/v1/ops/summary", headers: { "Authorization" => "Bearer #{other_token}" } }
+    5.times { get "/api/v1/ops/summary", headers: { "Authorization" => "Bearer #{other_token}" } }
+    expect(response).to have_http_status(:unauthorized)
+    head "/api/v1/ops/summary", headers: headers
+    expect(response).to have_http_status(:too_many_requests)
+    get "/api/v1/ops/summary", headers: headers
+    expect(response).to have_http_status(:too_many_requests)
   end
 
   it "is limited to 10 requests a minute per address, valid or not" do

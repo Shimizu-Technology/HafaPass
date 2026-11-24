@@ -107,7 +107,7 @@ class Rack::Attack
   # The morning brief reads this once a day. The limit exists to stop token
   # guessing, so it counts every request, valid or not.
   throttle("ops-summary/ip", limit: 10, period: 1.minute) do |req|
-    req.ip if req.get? && req.path.to_s.downcase.match?(%r{\A/api/v1/ops/summary(?:\.[a-z0-9]+)?/*\z})
+    req.ip if (req.get? || req.head?) && req.path.to_s.downcase.match?(%r{\A/api/v1/ops/summary(?:\.[a-z0-9]+)?/*\z})
   end
 
   throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|
