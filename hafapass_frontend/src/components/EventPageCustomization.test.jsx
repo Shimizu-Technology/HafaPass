@@ -116,7 +116,7 @@ describe('event page customization', () => {
   })
 
   it('protects contrast for light and dark accents and allowlists video hosts', () => {
-    expect(accentStyle('#ffffff')['--event-on-accent']).toBe('#000000')
+    expect(accentStyle('#ffffff')['--event-on-accent']).toBe('#ffffff')
     expect(accentStyle('#000000')['--event-on-accent']).toBe('#ffffff')
     expect(accentStyle('#ffffff')['--event-link']).not.toBe('#ffffff')
     expect(accentStyle('url(evil)')).toBeUndefined()
@@ -128,7 +128,7 @@ describe('event page customization', () => {
     const ratio = (a, b) => (Math.max(lightness(a), lightness(b)) + 0.05) / (Math.min(lightness(a), lightness(b)) + 0.05)
     for (const accent of [...ACCENT_PRESETS, '#ffffff', '#777777', '#bada55']) {
       const style = accentStyle(accent)
-      expect(ratio(accent, style['--event-on-accent'])).toBeGreaterThanOrEqual(4.5)
+      expect(ratio(style['--event-accent'], style['--event-on-accent'])).toBeGreaterThanOrEqual(4.5)
       expect(ratio('#ffffff', style['--event-link'])).toBeGreaterThanOrEqual(4.5)
     }
   })

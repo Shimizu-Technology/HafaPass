@@ -15,8 +15,8 @@ export default function EventAlertsSignup({ source = 'home' }) {
     try { await apiClient.post('/platform_subscriptions', { email, source, website }); setState('accepted') }
     catch { setState('error') }
   }
-  return <section className="my-6 rounded-xl border border-current/20 p-4 sm:p-6">
-    <h2 className="text-lg font-semibold">{t('emailBase.signup')}</h2>
+  return <section data-testid={`email-signup-${source}`} className={source === 'footer' ? 'my-6 rounded-2xl border border-white/20 p-4 text-content-inverse sm:p-6' : 'my-6 rounded-2xl border border-neutral-200 bg-white p-4 text-content shadow-card sm:p-6'}>
+    <h2 className="font-display text-lg font-bold">{t('emailBase.signup')}</h2>
     <p className="my-2 text-sm">{t('emailBase.consent')}</p>
     {/* Both messages reserve their wrapped height before any response. */}
     <div className="grid">

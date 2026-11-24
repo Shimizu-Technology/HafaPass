@@ -32,7 +32,7 @@ for (const [engine, type] of [['chromium', chromium], ...(phase === 'after' && p
           await page.goto(base + (name === 'checkout' ? '/events/community-night' : path))
           if (name === 'checkout') {
             await page.getByRole('button', { name: 'Increase quantity for General admission', exact: true }).click()
-            await page.getByRole('button', { name: /Buy tickets/ }).click()
+            await page.getByRole('button', { name: /Checkout/ }).click()
           }
           await page.locator('main h1').waitFor()
           if (name.startsWith('events')) await page.waitForFunction(() => !document.querySelector('[aria-label="Loading events"]'))

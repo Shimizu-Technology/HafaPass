@@ -49,6 +49,22 @@ export function lowestPurchasablePrice(ticketTypes = []) {
   return prices.length ? Math.min(...prices) : null
 }
 
+// Discovery price summary: if every purchasable tier is free, label it "Free";
+// if paid tiers exist alongside a free tier (e.g. Child Under 5), lead with
+// the lowest paid all-in price and flag hasFree so the UI can add a note.
+export function priceSummary(ticketTypes = []) {
+  const entries = ticketTypes
+    .filter(isTicketPurchasable)
+    .map(ticket => ({ ticket, cents: ticketAllInCents(ticket) }))
+    .filter(entry => entry.cents !== null)
+  if (!entries.length) return null
+  const hasFree = entries.some(entry => entry.cents === 0)
+  const paid = entries.filter(entry => entry.cents > 0)
+  if (!paid.length) return { kind: 'free', cents: 0, hasFree: true, ticket: entries[0].ticket }
+  const lowestPaid = paid.reduce((best, entry) => (entry.cents < best.cents ? entry : best), paid[0])
+  return { kind: 'from', cents: lowestPaid.cents, hasFree, ticket: lowestPaid.ticket }
+}
+
 // All-in prices of purchasable tickets, e.g. for structured data offers.
 export function purchasableAllInPrices(ticketTypes = []) {
   return ticketTypes.filter(isTicketPurchasable).map(ticketAllInCents).filter(price => price !== null)

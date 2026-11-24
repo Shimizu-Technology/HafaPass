@@ -26,11 +26,13 @@ import PaidCheckoutGate from '../components/PaidCheckoutGate'
 import { useSupportContact } from '../utils/supportContact'
 import RegistrationQuestionField from '../components/checkout/RegistrationQuestionField'
 import { answersPayload, questionAnswerError } from '../utils/registrationAnswers'
+import { isClerkEnabled } from '../utils/demoMode'
+import DemoCheckoutNotice from '../demo/DemoCheckoutNotice'
 
 export default function CheckoutPage() {
   const { slug } = useParams()
   return <div className="min-h-screen bg-surface">
-    {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
+    {isClerkEnabled() ? <AuthenticatedCheckout key={slug} /> : <CheckoutContent key={slug} buyerId={checkoutBuyerIdentity()} />}
     <CheckoutSupport />
   </div>
 }
@@ -490,6 +492,7 @@ function CheckoutContent({ buyerId }) {
 
   const handleInfoSubmit = async (e) => {
     e.preventDefault()
+    if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return
     if (pricingConflict?.code === 'sales_closed') return
     if (!selectionMatchesEvent(event, lineItems, slug)) {
       if (getActiveCheckout(slug) || getCheckoutAttempt(slug)) retrySavedCheckout()
@@ -738,18 +741,18 @@ function CheckoutContent({ buyerId }) {
             }
             {t('checkout.yourInfo')}
           </div>
-          <div className="w-8 h-px bg-neutral-200" />
+          {displayedTotal > 0 && <><div className="w-8 h-px bg-neutral-200" />
           <div className={`flex items-center gap-1.5 text-sm font-medium ${step === 'payment' ? 'text-brand-800' : 'text-neutral-600'}`}>
             <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === 'payment' ? 'bg-brand-800 text-white' : 'bg-neutral-200 text-neutral-700'}`}>2</span>
             {t('checkout.payment')}
-          </div>
+          </div></>}
         </div>
 
         {/* Event summary card */}
-        <div className="card p-4 mb-6 flex items-center gap-4">
+        <div className="card p-4 mb-6 flex items-start gap-4">
           {approvedImageUrl(event.cover_image_url, event.image_asset_host) && (
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="80" height="80" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
+            <div className="aspect-video w-24 sm:w-28 rounded-xl overflow-hidden flex-shrink-0 bg-brand-800">
+              <img src={event.cover_image_url} alt={event.title} loading="lazy" decoding="async" width="160" height="90" className="w-full h-full object-cover" style={{ objectPosition: focalPosition(event.page_customization) }} />
             </div>
           )}
           <div className="min-w-0">
@@ -827,14 +830,14 @@ function CheckoutContent({ buyerId }) {
           <hr className="border-neutral-100 my-4" />
           <div className="space-y-3 rounded-xl bg-surface p-4 text-sm">
             <div className="flex justify-between"><span className="text-neutral-700">{t('checkout.subtotal')}</span><span>{formatPrice(displayedSubtotal)}</span></div>
-            <div className="flex justify-between gap-4">
+            {displayedTotal > 0 && <div className="flex justify-between gap-4">
               <span className="text-neutral-700">
                 {t('checkout.serviceFee')}
                 {feeIncludesProcessing && <span className="block text-sm text-neutral-600">{t('checkout.serviceFeeIncludesProcessing')}</span>}
               </span>
               {/* A fee is an amount, never "Free": absorbed fees show $0.00. */}
               <span>{formatMoneyCents(displayedFee)}</span>
-            </div>
+            </div>}
             {displayedDiscount > 0 && (
               <div className="flex justify-between text-success-700">
                 <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {orderData?.promo_code?.code || promoData?.code || t('buyer.Checkout.discount')}</span>
@@ -930,7 +933,7 @@ function CheckoutContent({ buyerId }) {
                   <label htmlFor="buyerPhone" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     {t('checkout.phone')} <span className="text-neutral-600 font-normal">({t('checkout.optional')})</span>
                   </label>
-                  <input id="buyerPhone" type="tel" value={buyerPhone}
+                  <input id="buyerPhone" type="tel" autoComplete="tel" inputMode="tel" value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
                     className="input" placeholder="(671) 555-0123" disabled={submitting} />
                 </div>
@@ -1009,13 +1012,13 @@ function CheckoutContent({ buyerId }) {
                     {formErrors[`waiver_${waiver.id}`] && <p id={`waiver-${waiver.id}-error`} className="mt-1 text-sm text-danger-700">{formErrors[`waiver_${waiver.id}`]}</p>}
                   </div>
                 ))}
-                <label htmlFor="platformOptIn" className="my-3 flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700"><input id="platformOptIn" type="checkbox" checked={platformOptIn} disabled={submitting} onChange={e => setPlatformOptIn(e.target.checked)} />{t('emailBase.checkout')}</label>
+                <label htmlFor="platformOptIn" className="my-3 flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700"><input id="platformOptIn" type="checkbox" checked={platformOptIn} disabled={submitting} onChange={e => setPlatformOptIn(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300 text-brand-600" />{t('emailBase.checkout')}</label>
                 <label className="flex items-start gap-3 rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700" htmlFor="marketingOptIn">
                   <input id="marketingOptIn" type="checkbox" checked={marketingOptIn} onChange={event => setMarketingOptIn(event.target.checked)} disabled={submitting} className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600" />
                   <span>{t('buyer.Checkout.marketingOptIn', { organizer: event.organizer?.business_name?.trim() || event.seller?.seller_name?.trim() || 'the organizer' })}</span>
                 </label>
                 <div>
-                  <label className="flex items-start gap-3 text-sm text-neutral-600" htmlFor="termsAccepted">
+                  <label className="flex min-h-11 items-start gap-3 rounded-xl border border-neutral-200 p-3 text-sm text-neutral-600" htmlFor="termsAccepted">
                     <input
                       id="termsAccepted"
                       aria-invalid={Boolean(formErrors.terms)}
@@ -1038,19 +1041,23 @@ function CheckoutContent({ buyerId }) {
                   {formErrors.terms && <p id="buyer-terms-error" className="text-danger-700 text-sm mt-1" role="alert">{formErrors.terms}</p>}
                 </div>
               </div>
-              <PaidCheckoutGate active={paidCheckoutAdminOnly}>
-              <button type="submit" disabled={submitting || checkoutExpired || pricingConflict?.code === 'sales_closed'} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
-                {submitting
-                  ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
-                  : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
-              </button>
-              </PaidCheckoutGate>
+              {import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1' ? (
+                <DemoCheckoutNotice />
+              ) : (
+                <PaidCheckoutGate active={paidCheckoutAdminOnly}>
+                <button type="submit" disabled={submitting || checkoutExpired || pricingConflict?.code === 'sales_closed'} className="w-full mt-6 btn-primary text-base !py-4 transition-colors duration-150">
+                  {submitting
+                    ? (isSimulate || displayedTotal === 0 ? t('checkout.placingOrder') : t('checkout.settingUpPayment'))
+                    : t('buyer.Checkout.placeOrderTotal', { action: displayedTotal === 0 && !isSimulate ? t('checkout.getFreeTickets') : isSimulate ? t('checkout.placeOrder') : t('checkout.continueToPayment'), total: formatPrice(displayedTotal) })}
+                </button>
+                </PaidCheckoutGate>
+              )}
             </form>
           </div>
         )}
 
         {/* Step 2: Payment */}
-        {step === 'payment' && clientSecret && stripePublishableKey && (
+        {import.meta.env.VITE_HAFAPASS_DEMO_DATA !== '1' && step === 'payment' && clientSecret && stripePublishableKey && (
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 mb-6">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <h2 className="text-base font-semibold text-neutral-900">{t('buyer.Checkout.payment')}</h2>

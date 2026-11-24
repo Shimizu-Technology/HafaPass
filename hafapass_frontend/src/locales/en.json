@@ -150,6 +150,7 @@
     "ticketsAvailable": "Tickets available",
     "completed": "Completed",
     "free": "Free",
+    "freeTicketsAvailable": "Free tickets available",
     "from": "From",
     "salesUnavailable": "Sales unavailable"
   },
@@ -289,7 +290,7 @@
     "copyright": "Shimizu Technology. All rights reserved.",
     "madeWith": "Built on Guam by Shimizu Technology",
     "help": "Get help",
-    "findTickets": "Find your tickets",
+    "findTickets": "Find my tickets",
     "contactSupport": "Contact support",
     "callSupport": "Call {{phone}}",
     "photoCredits": "Photo credits",
@@ -442,6 +443,7 @@
       "getTickets": "Get Tickets ",
       "nextUpOnGuam": "Next Up on Guam",
       "viewAllEvents": "View all events",
+      "seeAll": "See all",
       "loadingUpcomingEvents": "Loading upcoming events…",
       "eventsCouldntLoad": "Events couldn’t load",
       "pleaseTryAgainToSeeWhatsComingUp": "Please try again to see what's coming up.",
@@ -459,7 +461,8 @@
       "MusicConcerts": "Music & Concerts",
       "Sports": "Sports",
       "FestivalsCulture": "Festivals & Culture",
-      "ClassesWorkshops": "Classes & Workshops"
+      "ClassesWorkshops": "Classes & Workshops",
+      "findMyTickets": "Find my tickets"
     },
     "Checkout": {
       "marketingOptIn": "Send me news and offers from {{organizer}}. Optional; unsubscribe any time.",
@@ -552,7 +555,8 @@
       "multiNightPass_other": "Multi-Night Pass · {{count}} nights",
       "viewIncludedNights": "View included nights ({{count}})",
       "hideIncludedNights": "Hide included nights",
-      "freeNoPayment": "Free — no payment needed."
+      "freeNoPayment": "Free — no payment needed.",
+      "opensOn": "Opens {{date}}"
     },
     "WaitlistForm": {
       "failedToJoinWaitlist": "Failed to join waitlist",
@@ -856,17 +860,18 @@
       "tryATicketPrice": "Try a ticket price",
       "doorDemo": {
         "tryIt": "Tap a ticket to try the door scanner",
-        "adultTicket": "Adult Ticket",
-        "alumniTicket": "Free Alumni Ticket",
+        "adultTicket": "Adult",
+        "alumniTicket": "Free alumni",
         "verifyFirst": "Verify before admitting",
         "alumniAlert": "Free alumni — check ID",
         "for": "For:",
         "gradYear": "Grad year:",
-        "confirmAdmit": "Confirm & Admit",
+        "confirmAdmit": "Admit",
         "cancel": "Cancel",
         "notAdmitted": "Not admitted",
         "notUsed": "The ticket wasn’t used. Ready for the next guest.",
-        "fictional": "Example · names are fictional"
+        "fictional": "Example · names are fictional",
+        "scanning": "Scanning QR pass…"
       }
     },
     "organizer": {
@@ -879,8 +884,8 @@
       "eventTitle": "{{name}} events",
       "completedEvents_one": "{{count}} completed events",
       "completedEvents_other": "{{count}} completed events",
-      "ticketsIssued_one": "{{count}} tickets issued",
-      "ticketsIssued_other": "{{count}} tickets issued",
+      "ticketsIssued_one": "{{formattedCount}} tickets issued",
+      "ticketsIssued_other": "{{formattedCount}} tickets issued",
       "followers_one": "{{count}} followers",
       "followers_other": "{{count}} followers",
       "empty": "This organizer has no upcoming events listed."
@@ -1270,8 +1275,8 @@
     "orderRecoveryPage": {
       "pleaseWaitBeforeRequestingAnotherAccessLink": "Please wait before requesting another access link.",
       "weCouldNotRequestTheLinkRightNow": "We could not request the link right now. Please try again.",
-      "findYourOrder": "Find your order",
-      "findYourOrder2": "Find your order",
+      "findYourOrder": "Find your tickets",
+      "findYourOrder2": "Find your tickets",
       "enterTheReferenceFromYourReceiptAndThe": "Enter the reference from your receipt and the email used at checkout.",
       "checkYourEmail": "Check your email",
       "ifThoseDetailsMatchAnOrderANew": "If those details match an order, a new secure access link will arrive in your inbox. Check your spam folder too.",
@@ -1371,7 +1376,7 @@
     "home": {
       "hosting": "Hosting an event?",
       "sellTickets": "Sell tickets",
-      "title": "Your night out on Guam starts here.",
+      "title": "Your night out on\nGuam starts here.",
       "lede": "Find what’s on, get your tickets, and walk right in.",
       "firstEvents": "The first events are on their way.",
       "checkBack": "When organizers publish, you’ll find them here. Buy in a minute and keep your tickets on your phone.",
@@ -1380,7 +1385,7 @@
       "guamTime": "All dates in Guam time.",
       "noEvents": "No events are listed yet. Check back soon.",
       "comingUp": "Coming up",
-      "findTicket": "Already bought a ticket? Find it",
+      "findTicket": "Find my tickets",
       "howItWorks": "How your pass works",
       "stepFindTitle": "Find an event",
       "stepFindBody": "Everything on Guam, in Guam time.",
@@ -1402,7 +1407,29 @@
       "storyDoorBody": "Show the QR on your phone. Staff scan it and you walk right in.",
       "storyExampleEvent": "Your night out",
       "storyAdmitted": "Admitted",
-      "dateAndVillage": "Choose a date or village"
+      "dateAndVillage": "Choose a date or village",
+      "brandCardKicker": "HåfaPass Guam",
+      "brandCardHeadline": "Tickets for everything happening on Guam",
+      "brandArtTitle": "Your pass to",
+      "brandArtAccent": "what’s on",
+      "brandArtCategories": "Concerts · Sports · Food · Community",
+      "instantTickets": "Instant mobile QR tickets",
+      "emailDelivery": "Arrives by email in seconds",
+      "islandWide": "Island-wide",
+      "admitOne": "GU · ADMIT ONE",
+      "deckLabel": "HåfaPass featured events deck",
+      "choosePass": "Choose featured pass",
+      "previousPass": "Previous featured pass",
+      "nextPass": "Next featured pass",
+      "brandPassLabel": "HåfaPass Guam pass",
+      "featuredEventLabel": "Featured event",
+      "showPass": "Show {{label}} ({{index}} of {{count}})",
+      "passPosition": "{{index}} of {{count}}: {{label}}",
+      "brandArtBadge": "HåfaPass · Guam",
+      "pauseRotation": "Pause event rotation",
+      "resumeRotation": "Resume event rotation",
+      "storyKicker": "How HåfaPass works",
+      "examplePass": "Example pass · HP-0001"
     },
     "host": {
       "madeForGuam": "Made for events on Guam.",
@@ -1529,5 +1556,36 @@
     "history": "Send history",
     "unsubscribed": "Unsubscribed",
     "growth": "New subscribers by day"
+  },
+  "eventActions": {
+    "tickets": "Tickets",
+    "ended": "Event ended",
+    "joinWaitlist": "Join waitlist",
+    "notifyMe": "Notify me",
+    "reserve": "Reserve",
+    "reserveCount_one": "Reserve {{count}} ticket",
+    "reserveCount_other": "Reserve {{count}} tickets",
+    "checkoutTotal": "Checkout · {{total}}",
+    "checkout": "Checkout",
+    "salesOpen": "Sales open {{date}}",
+    "onSale": "On sale {{date}} · {{time}}",
+    "soldOutWaitlist": "Sold out — join the waitlist",
+    "soldOutTypes_one": "Ticket types ({{count}}) · Sold out",
+    "soldOutTypes_other": "Ticket types ({{count}}) · Sold out",
+    "checkWaitlist": "Already on the waitlist? Check your spot",
+    "selection_one": "{{count}} ticket · {{total}}",
+    "selection_other": "{{count}} tickets · {{total}}",
+    "actionSaved": "Saved. Your preference is up to date.",
+    "actionFailed": "That action could not be saved. Please try again.",
+    "readMore": "Read more",
+    "readLess": "Read less",
+    "showAll": "Show all {{count}}",
+    "showLess": "Show less",
+    "fullSchedule": "Show full schedule",
+    "copyLink": "Copy this event link",
+    "copy": "Copy",
+    "moreActions": "More actions",
+    "reserveTickets": "Reserve tickets",
+    "cardOnSale": "On sale {{date}}"
   }
 }

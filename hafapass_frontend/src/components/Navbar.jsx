@@ -9,8 +9,9 @@ import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../api/cl
 import LanguageSwitcher from './LanguageSwitcher'
 import { isWorkspacePath, publishAccountRole } from '../utils/workspace'
 import { useCanManageOrganizationSettings, useCanViewOrganizationSeries, useCanViewOrganizationFinances, useCanViewOrganizationActivity } from '../utils/organizerOrganizations'
+import { clerkPublishableKey } from '../utils/demoMode'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkPubKey = clerkPublishableKey()
 
 // A dark page introduction marks itself with data-header-band="dark". The
 // header stays dark while that band (or a light sheet tucked over its lower
@@ -103,7 +104,21 @@ function NavContent({ isSignedIn, isLoaded, userId, sessionId, clerkEnabled }) {
 
   useEffect(() => {
     setMobileMenuOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined
+    document.getElementById('primary-mobile-navigation')?.querySelector('a, button')?.focus()
+    const close = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileMenuOpen(false)
+        menuTrigger.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', close)
+    return () => document.removeEventListener('keydown', close)
+  }, [mobileMenuOpen])
 
   const loadedRole = currentRole?.status === 'loaded' ? currentRole.role : null
   // What this account can use. Unknown (still loading or an older API) keeps

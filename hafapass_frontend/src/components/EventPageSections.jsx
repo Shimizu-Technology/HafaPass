@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, ChevronLeft, ChevronRight, Play, Globe, Instagram, Facebook, Youtube, Music2, Link2 } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ChevronDown, Play, Globe, Instagram, Facebook, Youtube, Music2, Link2 } from 'lucide-react'
 import { safeLink, videoEmbed, normalizePageCustomization, approvedImageUrl } from '../utils/eventPageDesign'
 
 const linkIcons = {
@@ -167,23 +167,28 @@ function Video({ url }) {
 export default function EventPageSections({ design, imageAssetHost }) {
   const { t } = useTranslation()
   const page = normalizePageCustomization(design)
+  const [expanded, setExpanded] = useState({})
+  const order = ['lineup', 'schedule', 'faq', 'gallery', 'video', 'sponsors', 'links']
   return page.sections
     .filter((section) => section.enabled)
+    .sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))
     .map((section) => {
       const items = section.items || []
+      const collapsible = ['lineup', 'schedule'].includes(section.type) && items.length > 4
+      const visibleItems = collapsible && !expanded[section.type] ? items.slice(0, 4) : items
       if (section.type !== 'video' && section.type !== 'gallery' && !items.length) return null
       if (section.type === 'gallery' && !page.gallery.some(photo => approvedImageUrl(photo.url, imageAssetHost))) return null
       if (section.type === 'video' && !videoEmbed(section.url)) return null
       if (section.type === 'links' && !items.some(item => safeLink(item.url))) return null
       const title = t(`buyer.EventDetail.design.${section.type}`)
       return (
-        <section key={section.type} className="mb-8" aria-label={title}>
-          <h2 className="event-heading mb-3 text-lg font-semibold">{title}</h2>
+        <section key={section.type} className="mt-9 sm:mt-12" aria-label={title}>
+          <h2 className="mb-4 font-display text-2xl font-bold text-neutral-950 sm:text-3xl">{title}</h2>
           {section.type === 'gallery' && <Gallery photos={page.gallery.filter(photo => approvedImageUrl(photo.url, imageAssetHost))} />}
           {section.type === 'video' && <Video url={section.url} />}
           {section.type === 'lineup' && (
             <div className="grid gap-3 sm:grid-cols-2">
-              {items.map((item, index) => (
+              {visibleItems.map((item, index) => (
                 <div key={index} className="flex min-w-0 items-center gap-3 rounded-xl border border-neutral-200 p-3">
                   {approvedImageUrl(item.photo_url, imageAssetHost) && (
                     <img
@@ -218,23 +223,27 @@ export default function EventPageSections({ design, imageAssetHost }) {
           )}
           {section.type === 'schedule' && (
             <ol className="space-y-2">
-              {items.map((item, index) => (
-                <li key={index} className="flex gap-4 rounded-xl border border-neutral-200 p-3">
-                  <time className="font-semibold event-link">{item.time}</time>
-                  <div>
-                    <p className="font-semibold">{item.title}</p>
-                    {item.note && <p className="text-sm text-neutral-600">{item.note}</p>}
+              {visibleItems.map((item, index) => (
+                <li key={index} className="flex items-baseline gap-4 rounded-xl border border-neutral-200 p-3.5">
+                  <time className="w-[4.75rem] shrink-0 whitespace-nowrap tabular-nums text-sm font-semibold event-link">{item.time}</time>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-neutral-950">{item.title}</p>
+                    {item.note && <p className="mt-0.5 text-sm text-neutral-600">{item.note}</p>}
                   </div>
                 </li>
               ))}
             </ol>
           )}
-          {section.type === 'faq' && (
+          {collapsible && <button type="button" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-brand-800" aria-expanded={Boolean(expanded[section.type])} onClick={() => setExpanded(value => ({ ...value, [section.type]: !value[section.type] }))}>{t(expanded[section.type] ? 'eventActions.showLess' : section.type === 'lineup' ? 'eventActions.showAll' : 'eventActions.fullSchedule', { count: items.length })}</button>}
+          {section.type === 'faq'  && (
             <div className="space-y-2">
               {items.map((item, index) => (
-                <details key={index} className="rounded-xl border border-neutral-200 p-4">
-                  <summary className="cursor-pointer font-semibold">{item.question}</summary>
-                  <p className="mt-2 whitespace-pre-wrap text-neutral-600">{item.answer}</p>
+                <details key={index} className="group rounded-xl border border-neutral-200 bg-white">
+                  <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 p-4 text-left font-semibold text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden">
+                    <span>{item.question}</span>
+                    <ChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 text-content-muted transition-transform duration-200 ease-out-strong group-open:rotate-180" />
+                  </summary>
+                  <p className="px-4 pb-4 whitespace-pre-wrap text-neutral-600">{item.answer}</p>
                 </details>
               ))}
             </div>

@@ -695,4 +695,33 @@ describe('pending ticket transfer on the order page', () => {
     expect(screen.getByRole('link', { name: /Open Door QR \/ Ticket/ })).toHaveAttribute('href', '/tickets/child-1-cred?order=950')
     expect(screen.queryByRole('button', { name: 'Refresh QR' })).not.toBeInTheDocument()
   })
+
+  it('hides the raw published status label and never contradicts a completed simulated order', async () => {
+    const order = {
+      id: 951, reference: 'HP-951', status: 'completed', payment_environment: 'simulated', receipt_available: false,
+      buyer_email: 'guest@example.invalid', total_cents: 1675, order_items: [], tickets: [],
+      event: { id: 37, slug: 'copa-demo', title: 'Copa Event', status: 'published', starts_at: '2030-01-30T08:00:00Z', timezone: 'Pacific/Guam' },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/951/confirmation']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Copa Event')
+    expect(screen.queryByText(/^published$/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Test order — no real charge')).toBeInTheDocument()
+    expect(screen.queryByText('Checkout not completed — no charge')).not.toBeInTheDocument()
+  })
+
+  it('shows the event status badge when the event is postponed', async () => {
+    const order = {
+      id: 952, reference: 'HP-952', status: 'completed', buyer_email: 'guest@example.invalid', total_cents: 0, order_items: [], tickets: [],
+      event: { id: 38, slug: 'delayed-event', title: 'Delayed Event', status: 'postponed', starts_at: '2030-01-30T08:00:00Z', timezone: 'Pacific/Guam' },
+    }
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: {} } : order }))
+    render(<MemoryRouter initialEntries={['/orders/952/confirmation']}><Routes>
+      <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
+    </Routes></MemoryRouter>)
+    await screen.findByText('Delayed Event')
+    expect(screen.getByText(/^postponed$/i)).toBeInTheDocument()
+  })
 })

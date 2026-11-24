@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
@@ -34,11 +35,20 @@ function manualChunks(id) {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Domains are deploy configuration: VITE_PUBLIC_WEB_URL and VITE_API_URL.
   const env = loadEnv(mode, process.cwd(), 'VITE_')
+  if (env.VITE_HAFAPASS_DEMO_DATA === '1' && (process.env.CONTEXT === 'production' || (command === 'build' && process.env.CONTEXT !== 'deploy-preview'))) {
+    throw new Error('Demo data can only be built in the deploy-preview context; production is forbidden')
+  }
   const precache = offlinePrecache()
   return {
+    // Demo builds replace the provider at the module boundary so Stripe's eager
+    // script loader never runs. Flag-off retains the original provider/imports.
+    resolve: { alias: env.VITE_HAFAPASS_DEMO_DATA === '1' ? [{
+      find: /(?:\.\/|\.\.\/components\/)StripeProvider$/,
+      replacement: fileURLToPath(new URL('./src/demo/DisabledStripeProvider.jsx', import.meta.url)),
+    }] : [] },
     define: { 'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(applicationRevision || '') },
     plugins: [
       react(),

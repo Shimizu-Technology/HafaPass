@@ -96,7 +96,7 @@ export default function ServiceCheck() {
   useEffect(() => {
     let current = true
     const owner = currentScannerOwner()
-    if (!isScannerRoute) { setCachedScanner(null); return }
+    if (!isScannerRoute || import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') { setCachedScanner(null); return }
     const requestedEventId = new URLSearchParams(location.search).get('event')
     let eventId = requestedEventId
     try { eventId ??= window.localStorage.getItem('hafapass_scanner_event_id') } catch { /* Unavailable storage cannot authorize a fallback. */ }
@@ -111,7 +111,7 @@ export default function ServiceCheck() {
   }, [isScannerRoute, location.search, scannerRoute, status])
 
   // Previously authorized door access must survive an API or authentication-service outage.
-  const cachedDoor = isScannerRoute && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
+  const cachedDoor = import.meta.env.VITE_HAFAPASS_DEMO_DATA !== '1' && isScannerRoute && cachedScanner?.route === scannerRoute ? <main className="min-h-screen bg-neutral-50">
       <EnvironmentBanner offlineOnly />
       <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
         Using this device’s saved event access. Saved scans stay on this device. When services return, reload to reconnect.

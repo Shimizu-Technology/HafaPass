@@ -40,6 +40,19 @@ describe('ServiceCheck', () => {
     loadAuthorizedScanner.mockResolvedValue(null)
   })
 
+  it('never reads cached scanner admission data in a fictional demo build', async () => {
+    vi.stubEnv('VITE_HAFAPASS_DEMO_DATA', '1')
+    try {
+      useBackendAvailability.mockReturnValue({ status: 'unavailable', retry })
+      localStorage.setItem('hafapass_scanner_event_id', '37')
+      loadAuthorizedScanner.mockResolvedValue({ device: { id: 9 }, manifest: { payload: { event: { id: 37 } } } })
+      render(<MemoryRouter initialEntries={['/dashboard/scanner?event=37']}><ServiceCheck /></MemoryRouter>)
+      await act(async () => {})
+      expect(loadAuthorizedScanner).not.toHaveBeenCalled()
+      expect(screen.queryByText('Cached door scanner')).not.toBeInTheDocument()
+    } finally { vi.unstubAllEnvs() }
+  })
+
   describe('loading gate', () => {
     afterEach(() => vi.useRealTimers())
 
