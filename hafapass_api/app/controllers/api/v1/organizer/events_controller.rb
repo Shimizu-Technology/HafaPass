@@ -21,7 +21,7 @@ module Api
                 { event_seats: :active_precheckout_seat_holds }])
             .order(created_at: :desc, id: :desc)
           if params[:purpose] == "scan" && !OrganizationAuthorization.allowed?(user: current_user, organization: current_organization, permission: :scan)
-            assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner]).select(:event_id)
+            assigned_ids = current_organization.event_staff_assignments.effective.where(user: current_user, role: [:manager, :box_office, :scanner, :scanner_lead]).select(:event_id)
             events = events.where(id: assigned_ids)
           end
           query = params[:q].to_s.strip.first(200)
@@ -439,11 +439,17 @@ module Api
           end
 
           analytics = EventSalesAnalytics.call(@event)
+          admission_counts = Admissions::Counts.call(event: @event)
           render json: {
             total_tickets_sold: total_tickets_sold,
             total_revenue_cents: total_revenue_cents,
             financials: financials,
             tickets_checked_in: tickets_checked_in,
+            live_headcount: admission_counts[:live_headcount],
+            currently_inside: admission_counts[:currently_inside],
+            exits_count: admission_counts[:exits],
+            re_entries_count: admission_counts[:re_entries],
+            headcount_by_day: admission_counts[:headcount_by_day],
             tickets_by_type: tickets_by_type,
             pass_tickets: pass_tickets,
             recent_orders: recent_orders,
@@ -638,7 +644,9 @@ module Api
             :starts_at, :ends_at, :doors_open_at, :timezone,
             :category, :age_restriction, :max_capacity,
             :recurrence_rule, :recurrence_end_date, :show_attendees,
-            :fee_policy, :buyer_fee_percent, :transfers_enabled, supported_locales: [],
+            :fee_policy, :buyer_fee_percent, :transfers_enabled,
+            :re_entry_mode, :re_entry_max_count, :re_entry_cutoff_at, :re_entry_cooldown_minutes,
+            supported_locales: [],
             localized_content: AppLocale::ORGANIZER_CONTENT_LOCALES.index_with { Event::CONTENT_FIELDS },
             page_customization: {}
           )
@@ -649,8 +657,11 @@ module Api
           # An empty link field keeps the current link instead of clearing it.
           attributes.delete("slug") if attributes.key?("slug") && attributes["slug"].blank?
           timezone = attributes["timezone"].presence || @event&.timezone || "Pacific/Guam"
-          %w[starts_at ends_at doors_open_at].each do |key|
+          %w[starts_at ends_at doors_open_at re_entry_cutoff_at].each do |key|
             attributes[key] = EventTimeParser.call(attributes[key], timezone: timezone) if attributes.key?(key)
+          end
+          %w[re_entry_max_count re_entry_cooldown_minutes].each do |key|
+            attributes[key] = nil if attributes.key?(key) && attributes[key].blank?
           end
           attributes
         rescue EventTimeParser::ParseError => e
@@ -708,6 +719,7 @@ module Api
             "venue_id", "venue_name", "venue_address", "venue_city", "timezone",
             "category", "age_restriction", "max_capacity",
             "fee_policy", "buyer_fee_percent", "transfers_enabled",
+            "re_entry_mode", "re_entry_max_count", "re_entry_cooldown_minutes",
             "show_attendees"
           ).merge(
             "organizer_profile_id" => source.organizer_profile_id,
@@ -840,6 +852,10 @@ module Api
             fee_policy: event.fee_policy,
             buyer_fee_percent: event.buyer_fee_percent,
             transfers_enabled: event.transfers_available?,
+            re_entry_mode: event.re_entry_mode,
+            re_entry_max_count: event.re_entry_max_count,
+            re_entry_cutoff_at: event.re_entry_cutoff_at,
+            re_entry_cooldown_minutes: event.re_entry_cooldown_minutes,
             assigned_seating: event.assigned_seating?,
             policy_hold: event.policy_hold_summary,
             sales_status: event.sales_status(context: (@sales_context ||= Event.sales_context)),

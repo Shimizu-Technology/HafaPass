@@ -18,7 +18,17 @@ module Admissions
 
     def call
       row = ActiveRecord::Base.connection.select_one(sql).symbolize_keys.transform_values(&:to_i)
-      row.merge(remaining: row.fetch(:issued))
+      by_day = headcount_by_day
+      live_headcount = if @event.re_entry_enabled?
+        resolve_live_headcount(by_day, fallback: row.fetch(:currently_inside))
+      else
+        row.fetch(:currently_inside)
+      end
+      row.merge(
+        remaining: row.fetch(:issued),
+        live_headcount: live_headcount,
+        headcount_by_day: by_day
+      )
     end
 
     private
@@ -53,7 +63,11 @@ module Admissions
               WHERE (rt.ticket_id = t.id OR (t.parent_ticket_id IS NOT NULL AND rt.ticket_id = t.parent_ticket_id))
                 AND rt.released_at IS NULL AND r.status = #{Refund.statuses.fetch('pending')})) AS eligible_unadmitted,
           (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('conflict')}) AS conflicts,
-          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.result = #{AdmissionAction.results.fetch('rejected')}) AS rejected,
+          COUNT(*) FILTER (WHERE t.status = #{Ticket.statuses.fetch('checked_in')} AND t.occupancy_state = 'inside') AS currently_inside,
+          COUNT(*) FILTER (WHERE t.re_entry_conflict_flagged = TRUE) AS conflict_tickets,
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('exit')} AND a.result = #{AdmissionAction.results.fetch('accepted')}) AS exits,
+          (SELECT COUNT(*) FROM admission_actions a WHERE a.event_id = #{@event.id.to_i} AND a.kind = #{AdmissionAction.kinds.fetch('admit')} AND a.result = #{AdmissionAction.results.fetch('accepted')} AND a.reason_code = 're_entered') AS re_entries
         FROM tickets t
         JOIN ticket_types tt ON tt.id = t.ticket_type_id
         LEFT JOIN eligible_orders eo ON eo.id = t.order_id
@@ -87,6 +101,35 @@ module Admissions
       # Keep whitespace out of the literal while payment_predicate is squished.
       characters = BLANK_CHARACTERS.codepoints.map { |point| "\\#{point.to_s(16).rjust(4, '0')}" }.join
       "LENGTH(translate(#{column}, U&'#{characters}', '')) > 0"
+    end
+
+    def resolve_live_headcount(by_day, fallback:)
+      return fallback if by_day.empty?
+
+      today_day = @event.occupancy_day_for(Time.current).iso8601
+      today_entry = by_day.find { |entry| entry[:day] == today_day }
+      return today_entry[:headcount] if today_entry
+      return 0 if by_day.last[:day] < today_day
+
+      by_day.last[:headcount]
+    end
+
+    def headcount_by_day
+      report = ReEntryReport.call(event: @event)
+      report.fetch(:by_day).map do |entry|
+        {
+          day: entry[:day],
+          label: entry[:label],
+          event_id: entry[:event_id],
+          event_title: entry[:event_title],
+          entries: entry[:entries],
+          exits: entry[:exits],
+          re_entries: entry[:re_entries],
+          headcount: entry[:current_headcount],
+          peak_headcount: entry[:peak_headcount],
+          peak_headcount_at: entry[:peak_headcount_at]
+        }.compact
+      end
     end
   end
 end

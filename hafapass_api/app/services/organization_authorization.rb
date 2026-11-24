@@ -3,20 +3,21 @@
 class OrganizationAuthorization
   PERMISSIONS = {
     owner: %i[manage_organization manage_members manage_payout_settings view_events manage_events edit_event_content
-      manage_inventory manage_staff view_attendees manage_attendees manage_marketing box_office scan
+      manage_inventory manage_staff view_attendees manage_attendees manage_marketing box_office scan override_re_entry
       view_finance manage_finance refund payout view_activity_all view_activity_events view_activity_finance],
     manager: %i[view_events manage_events edit_event_content manage_inventory manage_staff view_attendees view_finance
-      manage_attendees manage_marketing box_office scan view_activity_events],
+      manage_attendees manage_marketing box_office scan override_re_entry view_activity_events],
     finance: %i[view_events view_finance manage_finance refund payout view_activity_finance],
     marketer: %i[view_events edit_event_content manage_marketing],
-    box_office: %i[view_events view_attendees manage_attendees box_office scan],
+    box_office: %i[view_events view_attendees manage_attendees box_office scan override_re_entry],
     scanner: %i[view_events scan]
   }.freeze
 
   EVENT_ASSIGNMENT_PERMISSIONS = {
     manager: PERMISSIONS.fetch(:manager),
     box_office: PERMISSIONS.fetch(:box_office),
-    scanner: PERMISSIONS.fetch(:scanner)
+    scanner: PERMISSIONS.fetch(:scanner),
+    scanner_lead: %i[view_events scan override_re_entry]
   }.freeze
 
   ASSIGNMENT_REQUIRED_ROLES = %w[box_office scanner].freeze

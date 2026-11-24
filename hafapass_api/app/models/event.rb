@@ -13,7 +13,8 @@ class Event < ApplicationRecord
   audits_operations :event,
     fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
       category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees
-      transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
+      transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_at re_entry_cooldown_minutes
+      recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
     observe: %w[title slug description short_description cover_image_url venue_name venue_address venue_city
       localized_content]
 
@@ -89,6 +90,7 @@ class Event < ApplicationRecord
   public_slug_redirects :slug_redirects
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
+  RE_ENTRY_MODES = %w[off exit_scan cooldown].freeze
   # A platform-admin policy hold: "sales" stops all sales but leaves the event
   # page up; "hidden" also removes it from public pages and discovery.
   POLICY_HOLD_SCOPES = %w[sales hidden].freeze
@@ -121,6 +123,10 @@ class Event < ApplicationRecord
   validate :chosen_slug_is_available, if: :slug_chosen?
   validates :max_capacity, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }, allow_nil: true
   validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
+  validates :re_entry_mode, inclusion: { in: RE_ENTRY_MODES }
+  validates :re_entry_max_count, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 1000 }, allow_nil: true
+  validates :re_entry_cooldown_minutes, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 1440 }, allow_nil: true
+  validate :re_entry_cooldown_required_for_cooldown_mode
   validate :capacity_covers_committed_inventory
   validate :fee_policy_matches_percent
   validate :supported_locales_are_known
@@ -292,6 +298,32 @@ class Event < ApplicationRecord
 
   def category_label
     CATEGORY_LABELS.fetch(category)
+  end
+
+  def re_entry_enabled?
+    re_entry_mode != "off"
+  end
+
+  def re_entry_exit_scan?
+    re_entry_mode == "exit_scan"
+  end
+
+  def re_entry_cooldown?
+    re_entry_mode == "cooldown"
+  end
+
+  def event_time_zone
+    ActiveSupport::TimeZone[timezone.presence || "Pacific/Guam"] || ActiveSupport::TimeZone["Pacific/Guam"]
+  end
+
+  def occupancy_day_for(at = Time.current)
+    at.in_time_zone(event_time_zone).to_date
+  end
+
+  def re_entry_cooldown_required_for_cooldown_mode
+    return unless re_entry_cooldown? && re_entry_cooldown_minutes.blank?
+
+    errors.add(:re_entry_cooldown_minutes, "is required when Cool-down re-entry mode is enabled")
   end
 
   # Production's one sales gate: HåfaPass has verified the organizer (one

@@ -214,6 +214,14 @@ function EventOverviewSession({ id, identity }) {
   const soldPercent = capacity > 0 ? Math.min(100, Math.round((sold / capacity) * 100)) : 0
   const checkIn = stats ? { admitted: stats.tickets_checked_in, total: stats.total_tickets_sold }
     : admissions ? { admitted: admissions.admitted, total: admissions.admitted + admissions.remaining } : null
+  const liveHeadcount = stats?.live_headcount ?? admissions?.live_headcount ?? null
+  const headcountByDay = stats?.headcount_by_day || admissions?.headcount_by_day || []
+  const numberFormat = new Intl.NumberFormat('en-US')
+  const reEntryLabel = event.re_entry_mode === 'exit_scan'
+    ? 'Exit scan (in & out)'
+    : event.re_entry_mode === 'cooldown'
+      ? `Cool-down (${event.re_entry_cooldown_minutes || 15} min)`
+      : null
   const checklist = organizerChecklist(event.publish_checklist || [])
   const openItems = checklist.filter(item => !item.complete)
   // Older servers send no sales_status; their published events are on sale.
@@ -262,9 +270,27 @@ function EventOverviewSession({ id, identity }) {
           </>}
           {checkIn && <div className="rounded-xl bg-neutral-50 p-3">
             <p className="text-xs text-neutral-600">Checked in</p>
-            <p className="mt-1 text-xl font-bold text-neutral-950">{checkIn.admitted}<span className="text-sm font-medium text-neutral-600"> / {checkIn.total}</span></p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-neutral-950">{numberFormat.format(checkIn.admitted)}<span className="text-sm font-medium text-neutral-600"> / {numberFormat.format(checkIn.total)}</span></p>
+          </div>}
+          {liveHeadcount != null && <div className="rounded-xl bg-neutral-50 p-3" data-testid="overview-live-headcount">
+            <p className="text-xs text-neutral-600">Inside now</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-neutral-950">{numberFormat.format(liveHeadcount)}</p>
+            {reEntryLabel && <p className="mt-0.5 text-xs text-neutral-600">Re-entry: {reEntryLabel}</p>}
           </div>}
         </div>
+        {headcountByDay.length > 1 && (
+          <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3" aria-label="Headcount by day">
+            <p className="text-xs font-semibold text-neutral-700">Live headcount by day</p>
+            <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {headcountByDay.map(day => (
+                <li key={`${day.event_id || 'e'}-${day.day}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-medium text-neutral-900">{day.event_title || day.label || day.day}</span>
+                  <span className="shrink-0 font-bold tabular-nums text-neutral-950">{numberFormat.format(day.headcount)} inside</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {extras.status === 'loading' && <p role="status" className="sr-only">Loading sales figures…</p>}
         {extras.status === 'error' && <div role="alert" className="mt-3 flex flex-wrap items-center gap-x-3 text-sm text-neutral-700">
           <p>Sales figures unavailable.</p>

@@ -9,7 +9,9 @@ const readSoundPreference = () => {
 // [frequency Hz, start offset s, duration s, waveform]
 const PATTERNS = {
   admit: [[880, 0, 0.16, 'sine']],
+  exit: [[660, 0, 0.12, 'sine'], [520, 0.14, 0.14, 'sine']],
   verify: [[440, 0, 0.13, 'sine'], [660, 0.2, 0.18, 'sine']],
+  already_inside: [[330, 0, 0.12, 'triangle'], [260, 0.16, 0.12, 'triangle'], [330, 0.32, 0.16, 'triangle']],
   refuse: [[220, 0, 0.18, 'square'], [220, 0.28, 0.18, 'square']],
 }
 

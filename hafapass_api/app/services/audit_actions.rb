@@ -241,10 +241,12 @@ class AuditActions
 
     define registry, area: "scanning", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[result reason_code ticket_id], metadata: %w[event_id], actions: {
+      snapshots: %w[result reason_code ticket_id], metadata: %w[event_id override_action], actions: {
         "ticket.checked_in" => "Checked in a ticket.",
         "ticket.admission_reconciled" => "Reconciled a ticket admission.",
-        "ticket.check_in_reversed" => "Reversed a ticket check-in."
+        "ticket.check_in_reversed" => "Reversed a ticket check-in.",
+        "ticket.re_entry_exited" => "Recorded a ticket exit scan.",
+        "ticket.re_entry_overridden" => "Overrode a ticket re-entry status."
       }
 
     define registry, area: "scanning", audience: %w[org_owner org_manager],
@@ -643,7 +645,7 @@ class AuditActions
 
     define registry, area: "events", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[status organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[status organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_at re_entry_cooldown_minutes recurrence_parent_id recurrence_rule recurrence_end_date], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "event.created" => "Created an event.",
         "event.updated" => "Updated an event.",
         "event.deleted" => "Deleted an event.",

@@ -70,9 +70,11 @@ class EventReportingService
       checked = rows.sum { |(_type, status, _time), count| status == "checked_in" ? count : 0 }
       attendance_counts(rows.sum(&:last), checked).merge(ticket_type_id: id, ticket_type_name: names[id])
     end
+    filtered_ids = (@type_id || @channel || @status) ? tickets.select(:id) : nil
     attendance_counts(counts.sum { |type| type[:total_active_tickets] }, counts.sum { |type| type[:checked_in_count] }).merge(
       by_ticket_type: counts.sort_by { |type| [type[:ticket_type_name].to_s.downcase, type[:ticket_type_id]] },
-      timezone: zone.tzinfo.identifier, pace: pace(groups)
+      timezone: zone.tzinfo.identifier, pace: pace(groups),
+      re_entry: Admissions::ReEntryReport.call(event: event, ticket_ids: filtered_ids, zone: zone)
     )
   end
 

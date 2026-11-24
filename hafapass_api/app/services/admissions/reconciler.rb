@@ -9,7 +9,7 @@ module Admissions
     Result = Data.define(:action, :ticket)
     FUTURE_TOLERANCE = 5.minutes
     MAX_BATCH_SIZE = 500
-    CLIENT_KINDS = %w[admit reverse].freeze
+    CLIENT_KINDS = %w[admit reverse exit].freeze
     CLIENT_SOURCES = %w[online offline].freeze
 
     def self.call(**)
@@ -39,8 +39,13 @@ module Admissions
     end
 
     # Online scans inspect live eligibility before the browser journals an
-    # admission. A hold consumes neither an action UUID nor a device sequence.
-    def preview(ticket_id:, credential_hash:, manifest_version:)
+    # admission or exit. A hold consumes neither an action UUID nor a device sequence.
+    def preview(ticket_id:, credential_hash:, manifest_version:, kind: "admit")
+      kind = kind.to_s.presence || "admit"
+      unless %w[admit exit].include?(kind)
+        return { status: "rejected", reason_code: "invalid_scan_kind" }
+      end
+
       ticket_id = Integer(ticket_id, exception: false)
       unless ticket_id&.positive? && credential_hash.is_a?(String) && credential_hash.match?(/\A[0-9a-f]{64}\z/)
         return { status: "rejected", reason_code: "credential_not_in_manifest" }
@@ -49,26 +54,86 @@ module Admissions
       AdmissionAction.transaction do
         lock_admission_context!
         validate_authorization!
-        input = { ticket_id: ticket_id, credential_hash: credential_hash,
-          manifest_version: Integer(manifest_version, exception: false), occurred_at: Time.current }
-        ticket, entry, rejection = resolve_ticket(input)
-        reason = rejection || lock_and_check_ticket(ticket, input)
-        next { status: "rejected", reason_code: reason } if reason
-
-        verification_required = verification_required?(ticket, entry, "online")
-        {
-          status: verification_required ? "verification_required" : "ready",
-          verification_required: verification_required,
-          ticket: DoorPayload.call(ticket).merge(ticket_id: ticket.id, code: "HP-T#{ticket.id}",
-            seat: ticket.seat_label, ticket_type: entry["ticket_type"],
-            door_check_mode: verification_required ? "verify" : "instant")
+        input = {
+          kind: kind,
+          source: "online",
+          ticket_id: ticket_id,
+          credential_hash: credential_hash,
+          manifest_version: Integer(manifest_version, exception: false),
+          occurred_at: Time.current
         }
+        ticket, entry, rejection = resolve_ticket(input)
+        return { status: "rejected", reason_code: rejection } if rejection
+
+        if device.event.re_entry_enabled?
+          preview_re_entry(ticket, entry, input)
+        else
+          preview_standard(ticket, entry, input)
+        end
       end
     end
 
     private
 
     attr_reader :device, :actor, :actions, :request
+
+    def preview_standard(ticket, entry, input)
+      return { status: "rejected", reason_code: "re_entry_disabled" } if input[:kind] == "exit"
+
+      reason = lock_and_check_ticket(ticket, input)
+      return { status: "rejected", reason_code: reason } if reason
+
+      verification_required = verification_required?(ticket, entry, "online")
+      {
+        status: verification_required ? "verification_required" : "ready",
+        verification_required: verification_required,
+        ticket: preview_ticket_payload(ticket, entry, verification_required: verification_required)
+      }
+    end
+
+    def preview_re_entry(ticket, entry, input)
+      decision = lock_and_evaluate_re_entry(ticket, input)
+      unless decision[:result] == :accepted
+        return {
+          status: "rejected",
+          reason_code: decision[:reason_code],
+          details: decision[:details],
+          ticket: preview_ticket_payload(ticket, entry, verification_required: false)
+        }
+      end
+
+      if input[:kind] == "exit"
+        return {
+          status: "ready",
+          verification_required: false,
+          action_kind: "exit",
+          ticket: preview_ticket_payload(ticket, entry, verification_required: false)
+        }
+      end
+
+      is_re_entry = decision[:details][:re_entry] == true
+      verification_required = !is_re_entry && verification_required?(ticket, entry, "online")
+      {
+        status: verification_required ? "verification_required" : "ready",
+        verification_required: verification_required,
+        re_entry: is_re_entry,
+        re_entry_number: decision[:details][:re_entry_number].to_i,
+        ticket: preview_ticket_payload(ticket, entry, verification_required: verification_required)
+      }
+    end
+
+    def preview_ticket_payload(ticket, entry, verification_required:)
+      DoorPayload.call(ticket).merge(
+        ticket_id: ticket.id,
+        code: "HP-T#{ticket.id}",
+        seat: ticket.seat_label,
+        ticket_type: entry["ticket_type"],
+        door_check_mode: verification_required ? "verify" : "instant",
+        occupancy_state: ticket.occupancy_state,
+        occupancy_day: ticket.occupancy_day&.iso8601,
+        re_entry_count: ticket.re_entry_count
+      )
+    end
 
     def validate_batch!
       raise SyncError, "actions must be a non-empty array" unless actions.is_a?(Array) && actions.any?
@@ -111,10 +176,10 @@ module Admissions
             (!action[:client_status].is_a?(String) || action[:client_status].length > 64)
           raise SyncError, "Each client_status must be a short string"
         end
-        if kind == "admit"
-          raise SyncError, "Each admission requires a ticket_id" unless Integer(action[:ticket_id], exception: false)&.positive?
+        if %w[admit exit].include?(kind)
+          raise SyncError, "Each #{kind} action requires a ticket_id" unless Integer(action[:ticket_id], exception: false)&.positive?
           unless action[:credential_hash].to_s.match?(/\A[0-9a-f]{64}\z/)
-            raise SyncError, "Each admission requires a SHA-256 credential hash"
+            raise SyncError, "Each #{kind} action requires a SHA-256 credential hash"
           end
         elsif action[:reverses_action_uuid].blank? || action[:reverses_action_uuid].to_s.length > 128
           raise SyncError, "Each reversal requires a valid reverses_action_uuid"
@@ -140,7 +205,11 @@ module Admissions
           raise SyncError, "Device sequence has already been synchronized"
         end
 
-        input.fetch(:kind) == "reverse" ? reconcile_reversal(input) : reconcile_admission(input)
+        case input.fetch(:kind)
+        when "reverse" then reconcile_reversal(input)
+        when "exit" then reconcile_exit(input)
+        else reconcile_admission(input)
+        end
       end
     end
 
@@ -162,17 +231,94 @@ module Admissions
 
     def reconcile_admission(input)
       ticket, manifest_entry, rejection = resolve_ticket(input)
-      reason = rejection || lock_and_check_ticket(ticket, input)
+      if rejection
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: rejection)
+      end
+
+      return reconcile_re_entry_admission(ticket, manifest_entry, input) if device.event.re_entry_enabled?
+
+      reason = lock_and_check_ticket(ticket, input)
       if reason
-        result = rejection.nil? && reason == "already_admitted" ? :conflict : :rejected
+        result = reason == "already_admitted" ? :conflict : :rejected
         return record_action(input, ticket: ticket, result: result, reason_code: reason)
       end
       if verification_required?(ticket, manifest_entry, input[:source]) && !input[:confirmed]
         return record_action(input, ticket: ticket, result: :rejected, reason_code: "verification_required")
       end
 
-      ticket.check_in!
+      ticket.check_in!(occurred_at: input.fetch(:occurred_at), device: device)
       record_action(input, ticket: ticket, result: :accepted, reason_code: "admitted", entry: manifest_entry)
+    end
+
+    def reconcile_re_entry_admission(ticket, manifest_entry, input)
+      decision = lock_and_evaluate_re_entry(ticket, input)
+      details = decision[:details]
+
+      unless decision[:result] == :accepted
+        apply_conflict_side_effects!(ticket, input, decision)
+        return record_action(input, ticket: ticket, result: decision[:result], reason_code: decision[:reason_code],
+          entry: manifest_entry, extra_metadata: details)
+      end
+
+      is_re_entry = details[:re_entry] == true
+      if !is_re_entry && verification_required?(ticket, manifest_entry, input[:source]) && !input[:confirmed]
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: "verification_required",
+          entry: manifest_entry)
+      end
+
+      scan_day = device.event.occupancy_day_for(input.fetch(:occurred_at))
+      if ticket.occupancy_day.present? && scan_day < ticket.occupancy_day
+        # Prior-day offline entry reconciled after a later day already ran: record without clobbering today's state.
+        if !ticket.checked_in?
+          ticket.check_in!(occurred_at: input.fetch(:occurred_at), device: device)
+        end
+      elsif !ticket.checked_in?
+        ticket.check_in!(occurred_at: input.fetch(:occurred_at), device: device)
+      else
+        ticket.record_re_entry!(occurred_at: input.fetch(:occurred_at), device: device, day: scan_day)
+      end
+
+      record_action(input, ticket: ticket, result: :accepted, reason_code: decision[:reason_code],
+        entry: manifest_entry, extra_metadata: details)
+    end
+
+    def reconcile_exit(input)
+      ticket, manifest_entry, rejection = resolve_ticket(input)
+      if rejection
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: rejection, kind: :exit)
+      end
+
+      unless device.event.re_entry_enabled?
+        return record_action(input, ticket: ticket, result: :rejected, reason_code: "re_entry_disabled",
+          kind: :exit, entry: manifest_entry)
+      end
+
+      decision = lock_and_evaluate_re_entry(ticket, input)
+      unless decision[:result] == :accepted
+        apply_conflict_side_effects!(ticket, input, decision)
+        return record_action(input, ticket: ticket, result: decision[:result], reason_code: decision[:reason_code],
+          kind: :exit, entry: manifest_entry, extra_metadata: decision[:details])
+      end
+
+      scan_day = device.event.occupancy_day_for(input.fetch(:occurred_at))
+      unless ticket.occupancy_day.present? && scan_day < ticket.occupancy_day
+        ticket.record_exit!(occurred_at: input.fetch(:occurred_at), day: scan_day)
+      end
+
+      record_action(input, ticket: ticket, result: :accepted, reason_code: "exited",
+        kind: :exit, entry: manifest_entry, extra_metadata: decision[:details])
+    end
+
+    def apply_conflict_side_effects!(ticket, input, decision)
+      return unless decision[:flag_conflict] || decision[:win_by_occurred_at]
+
+      updates = {}
+      updates[:re_entry_conflict_flagged] = true if decision[:flag_conflict]
+      if decision[:win_by_occurred_at]
+        updates[:last_entry_at] = input.fetch(:occurred_at)
+        updates[:last_entry_device_id] = device.id
+      end
+      ticket.update!(updates) if updates.any?
     end
 
     def lock_and_check_ticket(ticket, input)
@@ -186,6 +332,224 @@ module Admissions
       return "already_admitted" if ticket.checked_in?
 
       ticket.admission_block_reason
+    end
+
+    def lock_and_evaluate_re_entry(ticket, input)
+      ticket.order.lock!
+      ticket.lock!
+      validate_authorization!
+      unless secure_equal?(Digest::SHA256.hexdigest(ticket.scan_credential), input[:credential_hash])
+        return { result: :rejected, reason_code: "credential_revoked", details: {} }
+      end
+
+      block = ticket.admission_block_reason(allow_checked_in: true)
+      return { result: :rejected, reason_code: block, details: {} } if block
+
+      event = device.event
+      occurred_at = input.fetch(:occurred_at)
+      scan_day = event.occupancy_day_for(occurred_at)
+
+      if input[:kind] == "exit"
+        evaluate_exit_decision(ticket, event, input, occurred_at, scan_day)
+      else
+        evaluate_entry_decision(ticket, event, input, occurred_at, scan_day)
+      end
+    end
+
+    def evaluate_exit_decision(ticket, event, input, occurred_at, scan_day)
+      unless event.re_entry_exit_scan?
+        return { result: :rejected, reason_code: "re_entry_exit_not_used", details: {} }
+      end
+
+      if ticket.occupancy_day.present? && scan_day < ticket.occupancy_day
+        return evaluate_historical_day_exit(ticket, input, occurred_at, scan_day)
+      end
+
+      unless ticket.effective_occupancy_state(day: scan_day) == "inside"
+        return {
+          result: :conflict,
+          reason_code: "not_inside",
+          details: {
+            occupancy_state: ticket.effective_occupancy_state(day: scan_day),
+            last_exit_at: ticket.last_exit_at&.iso8601(6)
+          }.compact
+        }
+      end
+
+      if ticket.last_entry_at.present? && occurred_at < ticket.last_entry_at
+        return {
+          result: :conflict,
+          reason_code: "exit_before_latest_entry",
+          flag_conflict: input[:source] == "offline",
+          details: {
+            prior_entry_at: ticket.last_entry_at.iso8601(6),
+            prior_gate_name: ticket.last_entry_device&.name,
+            offline_conflict: input[:source] == "offline"
+          }.compact
+        }
+      end
+
+      { result: :accepted, reason_code: "exited", details: { gate_name: device.name } }
+    end
+
+    def evaluate_entry_decision(ticket, event, input, occurred_at, scan_day)
+      if ticket.occupancy_day.present? && scan_day < ticket.occupancy_day
+        return evaluate_historical_day_entry(ticket, event, input, occurred_at, scan_day)
+      end
+
+      same_day = ticket.entered_on_day?(scan_day)
+      effective_state = ticket.effective_occupancy_state(day: scan_day)
+      effective_re_entries = ticket.effective_re_entry_count(day: scan_day)
+
+      if event.re_entry_exit_scan?
+        evaluate_exit_scan_entry(ticket, event, input, occurred_at, same_day, effective_state, effective_re_entries)
+      else
+        evaluate_cooldown_entry(ticket, event, input, occurred_at, same_day, effective_re_entries)
+      end
+    end
+
+    def evaluate_exit_scan_entry(ticket, event, input, occurred_at, same_day, effective_state, effective_re_entries)
+      if effective_state == "inside"
+        offline = input[:source] == "offline"
+        earlier = offline && ticket.last_entry_at.present? && occurred_at < ticket.last_entry_at
+        prior_gate = ticket.last_entry_device&.name
+        return {
+          result: :conflict,
+          reason_code: "already_inside",
+          flag_conflict: offline,
+          win_by_occurred_at: earlier,
+          details: {
+            prior_entry_at: ticket.last_entry_at&.iso8601(6),
+            prior_gate_name: prior_gate,
+            prior_device_id: ticket.last_entry_device_id,
+            offline_conflict: (true if offline),
+            winner_by_occurred_at: (true if earlier)
+          }.compact
+        }
+      end
+
+      if same_day
+        cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+        return cutoff_rejection if cutoff_rejection
+
+        cap_rejection = check_re_entry_cap(event, effective_re_entries)
+        return cap_rejection if cap_rejection
+
+        return {
+          result: :accepted,
+          reason_code: "re_entered",
+          details: { re_entry: true, re_entry_number: effective_re_entries + 1, gate_name: device.name }
+        }
+      end
+
+      { result: :accepted, reason_code: "admitted", details: { re_entry: false, re_entry_number: 0, gate_name: device.name } }
+    end
+
+    def evaluate_cooldown_entry(ticket, event, input, occurred_at, same_day, effective_re_entries)
+      unless same_day
+        return { result: :accepted, reason_code: "admitted", details: { re_entry: false, re_entry_number: 0, gate_name: device.name } }
+      end
+
+      cooldown_minutes = event.re_entry_cooldown_minutes || 15
+      cooldown_seconds = cooldown_minutes.minutes
+      last_entry = ticket.last_entry_at
+      elapsed = last_entry ? (occurred_at - last_entry) : cooldown_seconds
+
+      if last_entry && (elapsed < cooldown_seconds)
+        offline = input[:source] == "offline"
+        earlier = offline && occurred_at < last_entry
+        elapsed_min = [(elapsed / 60.0).floor, 0].max
+        remaining_min = [((last_entry + cooldown_seconds - occurred_at) / 60.0).ceil, 1].max
+        return {
+          result: :conflict,
+          reason_code: "cooldown_active",
+          flag_conflict: offline,
+          win_by_occurred_at: earlier,
+          details: {
+            prior_entry_at: last_entry.iso8601(6),
+            prior_gate_name: ticket.last_entry_device&.name,
+            prior_device_id: ticket.last_entry_device_id,
+            cooldown_minutes: cooldown_minutes,
+            elapsed_minutes: elapsed_min,
+            remaining_minutes: remaining_min,
+            retry_after_at: (last_entry + cooldown_seconds).iso8601(6),
+            offline_conflict: (true if offline),
+            winner_by_occurred_at: (true if earlier)
+          }.compact
+        }
+      end
+
+      cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+      return cutoff_rejection if cutoff_rejection
+
+      cap_rejection = check_re_entry_cap(event, effective_re_entries)
+      return cap_rejection if cap_rejection
+
+      {
+        result: :accepted,
+        reason_code: "re_entered",
+        details: { re_entry: true, re_entry_number: effective_re_entries + 1, gate_name: device.name }
+      }
+    end
+
+    def evaluate_historical_day_entry(ticket, event, input, occurred_at, scan_day)
+      day_actions = ticket.admission_actions.result_accepted.where(occupancy_day: scan_day).order(:occurred_at, :received_at, :id)
+      last = day_actions.last
+      if event.re_entry_exit_scan? && last&.kind_admit?
+        return {
+          result: :conflict,
+          reason_code: "already_inside",
+          flag_conflict: input[:source] == "offline",
+          details: {
+            prior_entry_at: last.occurred_at.iso8601(6),
+            prior_gate_name: last.scanner_device&.name,
+            offline_conflict: (true if input[:source] == "offline")
+          }.compact
+        }
+      end
+
+      prior_entries = day_actions.count(&:kind_admit?)
+      if prior_entries.positive?
+        cutoff_rejection = check_re_entry_cutoff(event, occurred_at)
+        return cutoff_rejection if cutoff_rejection
+
+        cap_rejection = check_re_entry_cap(event, prior_entries - 1)
+        return cap_rejection if cap_rejection
+
+        return { result: :accepted, reason_code: "re_entered", details: { re_entry: true, re_entry_number: prior_entries, gate_name: device.name } }
+      end
+
+      { result: :accepted, reason_code: "admitted", details: { re_entry: false, re_entry_number: 0, gate_name: device.name } }
+    end
+
+    def evaluate_historical_day_exit(ticket, input, occurred_at, scan_day)
+      day_actions = ticket.admission_actions.result_accepted.where(occupancy_day: scan_day).order(:occurred_at, :received_at, :id)
+      last = day_actions.last
+      unless last&.kind_admit? && occurred_at >= last.occurred_at
+        return { result: :conflict, reason_code: "not_inside", details: { offline_conflict: (true if input[:source] == "offline") }.compact }
+      end
+
+      { result: :accepted, reason_code: "exited", details: { gate_name: device.name } }
+    end
+
+    def check_re_entry_cutoff(event, occurred_at)
+      return nil unless event.re_entry_cutoff_at.present? && occurred_at > event.re_entry_cutoff_at
+
+      {
+        result: :rejected,
+        reason_code: "re_entry_cutoff_passed",
+        details: { cutoff_at: event.re_entry_cutoff_at.iso8601(6) }
+      }
+    end
+
+    def check_re_entry_cap(event, current_re_entries)
+      return nil unless event.re_entry_max_count.present? && current_re_entries >= event.re_entry_max_count
+
+      {
+        result: :rejected,
+        reason_code: "re_entry_limit_reached",
+        details: { re_entry_count: current_re_entries, re_entry_max_count: event.re_entry_max_count }
+      }
     end
 
     # Offline decisions use the signed list available at the door (including
@@ -246,7 +610,7 @@ module Admissions
       entry = nil unless entry && secure_equal?(entry["credential_hash"], input[:credential_hash])
       return [nil, nil, "credential_not_in_manifest"] unless entry
 
-      ticket = device.event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets,
+      ticket = device.event.tickets.includes(:ticket_type, :inventory_retention, :pending_refund_tickets, :last_entry_device,
         { parent_ticket: [:pending_refund_tickets, :inventory_retention] }, order: :disputes).find_by(id: entry["ticket_id"])
       return [nil, entry, "ticket_not_found"] unless ticket
 
@@ -270,7 +634,8 @@ module Admissions
       end
     end
 
-    def record_action(input, ticket: nil, result:, reason_code:, kind: :admit, entry: nil, reverses_action: nil)
+    def record_action(input, ticket: nil, result:, reason_code:, kind: :admit, entry: nil, reverses_action: nil, extra_metadata: {})
+      occurred_at = input.fetch(:occurred_at)
       action = AdmissionAction.create!(
         organization: device.organization,
         event: device.event,
@@ -286,14 +651,23 @@ module Admissions
         credential_hash: input[:credential_hash],
         manifest_version: input.fetch(:manifest_version),
         sequence: input.fetch(:sequence),
-        occurred_at: input.fetch(:occurred_at),
+        occurred_at: occurred_at,
         received_at: Time.current,
+        occupancy_day: device.event.occupancy_day_for(occurred_at),
         attendee_snapshot: attendee_snapshot(ticket, entry),
-        metadata: { client_status: input[:client_status], confirmed: (true if input[:confirmed]),
-          reverses_action_uuid: kind == :reverse ? input[:reverses_action_uuid] : nil }.compact
+        metadata: {
+          client_status: input[:client_status],
+          confirmed: (true if input[:confirmed]),
+          reverses_action_uuid: kind == :reverse ? input[:reverses_action_uuid] : nil
+        }.merge(extra_metadata || {}).compact
       )
+      audit_action = case kind.to_sym
+      when :reverse then "ticket.check_in_reversed"
+      when :exit then "ticket.re_entry_exited"
+      else "ticket.admission_reconciled"
+      end
       AuditLogger.record!(
-        action: kind == :reverse ? "ticket.check_in_reversed" : "ticket.admission_reconciled",
+        action: audit_action,
         auditable: action,
         actor: actor,
         organization: device.organization,

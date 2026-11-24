@@ -13,12 +13,35 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
     return render json: [] if query.length < 2
 
     escaped = ActiveRecord::Base.sanitize_sql_like(query)
-    tickets = @event.tickets.scannable.preload(:ticket_type, :order, :inventory_retention, :pending_refund_tickets,
+    tickets = @event.tickets.scannable.preload(:ticket_type, :order, :inventory_retention, :pending_refund_tickets, :last_entry_device,
       parent_ticket: :pending_refund_tickets)
       .where("tickets.attendee_name ILIKE :query OR CAST(tickets.id AS TEXT) = :exact",
         query: "%#{escaped}%", exact: query.delete_prefix("HP-T"))
       .order(:attendee_name, :id).limit(20)
     render json: tickets.map { |ticket| ticket_json(ticket) }
+  end
+
+  def override
+    device = @event.scanner_devices.find_by(id: params[:scanner_device_id]) if params[:scanner_device_id].present?
+    result = Admissions::LeadOverride.call(
+      event: @event,
+      actor: current_user,
+      ticket_id: params[:ticket_id],
+      override_action: params[:override_action],
+      reason: params[:reason],
+      action_uuid: params[:action_uuid],
+      device: device,
+      request: request
+    )
+    render json: {
+      action: action_summary(result.action),
+      ticket: ticket_json(result.ticket.reload),
+      summary: Admissions::Counts.call(event: @event)
+    }
+  rescue Admissions::LeadOverride::ForbiddenError => e
+    render json: { error: e.message }, status: :forbidden
+  rescue Admissions::LeadOverride::OverrideError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def door_list
@@ -53,6 +76,9 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
 
   def admission_dashboard
     actions = @event.admission_actions.includes(:scanner_device, :actor_user, :reversal_action).order(received_at: :desc).limit(50)
+    flagged = @event.tickets.scannable.where(re_entry_conflict_flagged: true)
+      .preload(:ticket_type, :order, :inventory_retention, :pending_refund_tickets, :last_entry_device, parent_ticket: :pending_refund_tickets)
+      .order(updated_at: :desc).limit(50)
     {
       event: {
         id: @event.id,
@@ -61,18 +87,25 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
         venue_name: @event.venue_name,
         starts_at: @event.starts_at,
         ends_at: @event.ends_at,
-        timezone: @event.timezone
+        timezone: @event.timezone,
+        re_entry_mode: @event.re_entry_mode,
+        re_entry_max_count: @event.re_entry_max_count,
+        re_entry_cutoff_at: @event.re_entry_cutoff_at,
+        re_entry_cooldown_minutes: @event.re_entry_cooldown_minutes
       },
       counts: Admissions::Counts.call(event: @event),
       devices: @event.scanner_devices.includes(:user).order(last_seen_at: :desc).map { |device| device_summary(device) },
       recent_actions: actions.map { |action| action_summary(action) },
+      flagged_conflicts: flagged.map { |ticket| ticket_json(ticket) },
       latest_manifest: manifest_summary(@event.admission_manifests.order(version: :desc).first),
       permissions: {
         can_recover: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
           permission: :manage_staff, event: @event) && OrganizationAuthorization.allowed?(user: current_user,
           organization: current_organization, permission: :manage_attendees, event: @event),
         can_reverse: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
-          permission: :manage_attendees, event: @event)
+          permission: :manage_attendees, event: @event),
+        can_override: OrganizationAuthorization.allowed?(user: current_user, organization: current_organization,
+          permission: :override_re_entry, event: @event)
       }
     }
   end
@@ -86,7 +119,14 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
       seat: ticket.seat_label,
       status: ticket.status,
       checked_in_at: ticket.checked_in_at,
-      admission_allowed: ticket.admission_allowed?
+      admission_allowed: ticket.admission_allowed?,
+      occupancy_state: ticket.occupancy_state,
+      occupancy_day: ticket.occupancy_day&.iso8601,
+      last_entry_at: ticket.last_entry_at,
+      last_entry_gate: ticket.last_entry_device&.name,
+      last_exit_at: ticket.last_exit_at,
+      re_entry_count: ticket.re_entry_count,
+      re_entry_conflict_flagged: ticket.re_entry_conflict_flagged
     }
   end
 
@@ -113,8 +153,15 @@ class Api::V1::Organizer::AdmissionsController < Api::V1::Organizer::BaseControl
       reason_code: action.reason_code,
       occurred_at: action.occurred_at,
       received_at: action.received_at,
+      occupancy_day: action.occupancy_day&.iso8601,
       attendee: action.attendee_snapshot,
-      device_name: action.scanner_device&.name
+      device_name: action.scanner_device&.name || action.metadata["gate_name"],
+      details: action.metadata.slice(
+        "prior_entry_at", "prior_gate_name", "elapsed_minutes", "remaining_minutes",
+        "cooldown_minutes", "retry_after_at", "re_entry", "re_entry_number",
+        "re_entry_count", "re_entry_max_count", "cutoff_at", "offline_conflict",
+        "winner_by_occurred_at", "override_action"
+      )
     }
   end
 

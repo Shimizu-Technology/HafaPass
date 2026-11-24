@@ -18,6 +18,7 @@ class Ticket < ApplicationRecord
   belongs_to :parent_ticket, class_name: "Ticket", optional: true
   belongs_to :holder_user, class_name: "User", optional: true
   belongs_to :event_seat, optional: true
+  belongs_to :last_entry_device, class_name: "ScannerDevice", optional: true
   has_many :child_tickets, class_name: "Ticket", foreign_key: :parent_ticket_id, dependent: :restrict_with_error
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :pending_refund_tickets, -> {
@@ -33,6 +34,7 @@ class Ticket < ApplicationRecord
   has_one :inventory_retention, class_name: "TicketInventoryRetention", dependent: :restrict_with_error
 
   enum :status, { issued: 0, checked_in: 1, cancelled: 2, transferred: 3 }
+  OCCUPANCY_STATES = %w[outside inside].freeze
 
   scope :scannable, -> {
     where.not(parent_ticket_id: nil, ticket_type_id: TicketType.where(is_pass: true).select(:id))
@@ -43,6 +45,8 @@ class Ticket < ApplicationRecord
 
   validates :qr_code, uniqueness: true, allow_nil: true
   validates :holder_email, format: { with: URI::MailTo::EMAIL_REGEXP }, allow_blank: true
+  validates :occupancy_state, inclusion: { in: OCCUPANCY_STATES }
+  validates :re_entry_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :assigned_seat_matches_ticket
   validate :preserve_retained_inventory
   validate :preserve_first_admission
@@ -101,7 +105,7 @@ class Ticket < ApplicationRecord
     order.registration_responses.select { |response| response.ticket_id.nil? || response.ticket_id == answered_ticket_id }
   end
 
-  def admission_block_reason(payment_mode: nil)
+  def admission_block_reason(payment_mode: nil, allow_checked_in: false)
     return "pass_container" if pass_parent?
     return "cancelled" if cancelled? || (pass_child? && parent_ticket&.cancelled?)
     return "transferred" if transferred?
@@ -110,13 +114,25 @@ class Ticket < ApplicationRecord
     return "refund_pending" if refund_pending?
     return "unfulfilled" unless order.ticket_fulfilled?(payment_mode: payment_mode)
     return "event_unavailable" unless event.published?
-    return "not_admissible" unless issued?
+    return "not_admissible" unless issued? || (allow_checked_in && checked_in?)
 
     nil
   end
 
   def admission_allowed?(payment_mode: nil)
     admission_block_reason(payment_mode: payment_mode).nil?
+  end
+
+  def entered_on_day?(day)
+    checked_in? && occupancy_day.present? && occupancy_day == day
+  end
+
+  def effective_occupancy_state(day:)
+    entered_on_day?(day) ? occupancy_state : "outside"
+  end
+
+  def effective_re_entry_count(day:)
+    entered_on_day?(day) ? re_entry_count : 0
   end
 
   def refund_pending?
@@ -173,7 +189,7 @@ class Ticket < ApplicationRecord
     allocation[tickets.index(id)] || 0
   end
 
-  def check_in!(credential: nil, actor: nil)
+  def check_in!(credential: nil, actor: nil, occurred_at: nil, device: nil)
     with_entry_lock(actor: actor) do
       if actor && !OrganizationAuthorization.allowed?(user: actor, organization: event.organization,
           permission: :scan, event: event)
@@ -189,8 +205,49 @@ class Ticket < ApplicationRecord
       end
 
       at = Time.current
-      update!(status: :checked_in, checked_in_at: at, first_admitted_at: first_admitted_at || at)
+      entry_at = occurred_at || at
+      update!(
+        status: :checked_in,
+        checked_in_at: at,
+        first_admitted_at: first_admitted_at || at,
+        occupancy_state: "inside",
+        occupancy_day: event.occupancy_day_for(entry_at),
+        last_entry_at: entry_at,
+        last_entry_device: device || last_entry_device,
+        re_entry_count: 0,
+        re_entry_conflict_flagged: false
+      )
     end
+  end
+
+  # Caller holds the ticket entry lock and has validated re-entry eligibility.
+  def record_re_entry!(occurred_at:, device: nil, day: nil, clear_conflict: false)
+    target_day = day || event.occupancy_day_for(occurred_at)
+    same_day = entered_on_day?(target_day)
+    next_count = same_day ? re_entry_count + 1 : 0
+    at = Time.current
+    update!(
+      status: :checked_in,
+      checked_in_at: checked_in_at || at,
+      first_admitted_at: first_admitted_at || at,
+      occupancy_state: "inside",
+      occupancy_day: target_day,
+      last_entry_at: occurred_at,
+      last_entry_device: device,
+      re_entry_count: next_count,
+      re_entry_conflict_flagged: clear_conflict ? false : re_entry_conflict_flagged
+    )
+  end
+
+  # Caller holds the ticket entry lock and has validated exit eligibility.
+  def record_exit!(occurred_at:, day: nil, clear_conflict: false)
+    target_day = day || event.occupancy_day_for(occurred_at)
+    update!(
+      occupancy_state: "outside",
+      occupancy_day: target_day,
+      last_exit_at: occurred_at,
+      re_entry_conflict_flagged: clear_conflict ? false : re_entry_conflict_flagged
+    )
   end
 
   def reverse_check_in!
@@ -202,7 +259,18 @@ class Ticket < ApplicationRecord
       if known_admission_at.nil? && !inventory_retained?
         raise AdmissionError, "Admission history requires organizer review before Undo"
       end
-      update!(status: :issued, checked_in_at: nil, first_admitted_at: known_admission_at)
+      update!(
+        status: :issued,
+        checked_in_at: nil,
+        first_admitted_at: known_admission_at,
+        occupancy_state: "outside",
+        occupancy_day: nil,
+        last_entry_at: nil,
+        last_exit_at: nil,
+        last_entry_device_id: nil,
+        re_entry_count: 0,
+        re_entry_conflict_flagged: false
+      )
     end
   end
 
