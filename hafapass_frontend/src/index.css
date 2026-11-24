@@ -440,6 +440,9 @@
    rest. Checkout, forms, dashboards and the scanner never use these. */
 .hero-rise-clip { overflow: clip; padding-bottom: 0.12em; margin-bottom: -0.12em; }
 .hero-rise { text-wrap: wrap; }
+@media (max-width: 639px) {
+  .hero-rise { font-size: clamp(2rem, calc((100vw - 2rem) * 0.112), 3rem); white-space: pre-line; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .hero-rise[data-hero-animate="true"] { animation: hero-headline-rise 580ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 }
