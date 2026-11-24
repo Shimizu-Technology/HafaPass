@@ -31,9 +31,8 @@ class PayoutReserves
   end
 
   def initialize(event:, actor:, amount_cents: nil, note: nil, early_release_reason: nil, skip_reason: nil,
-    settlement: nil, request: nil)
+    request: nil)
     @skip_reason = skip_reason.to_s.strip.presence
-    @settlement = settlement
     @event = event
     @actor = actor
     @amount_cents = amount_cents
@@ -98,10 +97,13 @@ class PayoutReserves
     end
   end
 
-  # Records an administrator's decision to pay this event without the
-  # standard reserve, with who and why, against the statement version they
-  # finalized (new or identical). Called after Settlements::Finalizer so an
-  # identical, already-finalized statement still records the decision.
+  # Finalizes the statement without the standard reserve and records who
+  # decided it and why, in one transaction: the reason, the reserve and payout
+  # state are checked under the locks first, so a refusal never leaves a new
+  # statement version behind. An identical, already-finalized statement is
+  # returned by the finalizer and the decision is still recorded against it.
+  # Settlements::Finalizer takes the same FOR NO KEY UPDATE locks, so nesting
+  # it here upgrades nothing. Returns the settlement.
   def skip!
     authorize!
     if skip_reason.to_s.length < MIN_EARLY_REASON_LENGTH
@@ -113,17 +115,21 @@ class PayoutReserves
       raise ReserveError, "A reserve is already held for this event" if schedule.reserve_hold_posted?
       raise ReserveError, "This event already has a payout requested or sent" if schedule.payout_committed?
 
+      suggested = schedule.suggested_reserve_cents
+      net = schedule.net_before_reserve_cents
+      finalized = Settlements::Finalizer.call(event: event, actor: actor, request: request)
       AuditLogger.record!(action: PayoutSchedule::SKIP_ACTION, auditable: event, actor: actor,
         organization: event.organization, event: event,
-        metadata: { reason: skip_reason, settlement_id: settlement&.id, settlement_version: settlement&.version,
-          suggested_reserve_cents: schedule.suggested_reserve_cents, net_before_reserve_cents: schedule.net_before_reserve_cents },
+        metadata: { reason: skip_reason, settlement_id: finalized.id, settlement_version: finalized.version,
+          suggested_reserve_cents: suggested, net_before_reserve_cents: net },
         request: request)
+      finalized
     end
   end
 
   private
 
-  attr_reader :event, :actor, :amount_cents, :note, :early_release_reason, :skip_reason, :settlement, :request
+  attr_reader :event, :actor, :amount_cents, :note, :early_release_reason, :skip_reason, :request
 
   def authorize!
     raise ReserveError, "Administrator access is required" unless actor&.persisted? && actor.admin?

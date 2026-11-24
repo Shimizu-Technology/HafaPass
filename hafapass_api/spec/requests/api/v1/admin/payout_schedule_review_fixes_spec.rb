@@ -129,6 +129,48 @@ RSpec.describe "Admin payout schedule review fixes", type: :request do
     end
   end
 
+  # Round 2, minor 1: a refused skip never leaves a new statement version.
+  it "finalizes without a reserve atomically: a refused skip leaves no new statement" do
+    sell_and_complete!
+    travel_to(guam(2027, 2, 1, 9)) do
+      [nil, "short", "Approved for payee 123-45-6789 by phone"].each do |reason|
+        post "/api/v1/admin/payout_schedule/#{event.id}/finalize", headers: admin_headers,
+          params: { skip_reserve: true, skip_reason: reason }.compact
+        expect(response).to have_http_status(:unprocessable_entity), reason.inspect
+      end
+      PayoutReserves.hold!(event: event, actor: admin)
+      post "/api/v1/admin/payout_schedule/#{event.id}/finalize", headers: admin_headers,
+        params: { skip_reserve: true, skip_reason: "Trusted organizer, approved by Leon" }
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("A reserve is already held for this event")
+      expect(event.settlements).to be_empty
+      expect(AuditLog.where(action: %w[settlement.finalized payout_reserve.skipped])).to be_empty
+    end
+  end
+
+  # Round 2, minor 3: Due candidates.
+  it "lists an event cancelled before it started that still owes buyers refunds, and skips old free events" do
+    cancelled = create(:event, :cancelled, organization: organization, organizer_profile: profile,
+      starts_at: guam(2027, 6, 1, 9), ends_at: guam(2027, 6, 1, 18))
+    free_old = create(:event, :completed, organization: organization, organizer_profile: profile,
+      starts_at: guam(2026, 1, 10, 9), ends_at: guam(2026, 1, 10, 18))
+    travel_to(guam(2026, 1, 5, 12)) do
+      order, _item, capture = record_card_sale!(cancelled, ticket_type: create(:ticket_type, event: cancelled, price_cents: 3000),
+        quantity: 2, processing_fee_cents: 180)
+      create(:refund, order: order, payment: capture, amount_cents: 3000, status: :pending, succeeded_at: nil)
+      free = create(:ticket_type, :free, event: free_old)
+      create(:order, event: free_old, subtotal_cents: 0, service_fee_cents: 0, total_cents: 0).tap do |free_order|
+        create(:order_item, order: free_order, ticket_type: free, unit_price_cents: 0, fee_cents: 0, organizer_proceeds_cents: 0)
+      end
+    end
+    travel_to(guam(2026, 11, 24, 9)) do
+      allow(Settlements::Calculator).to receive(:call).and_call_original
+      row = due_row("transfers", cancelled)
+      expect(row).to include("next_step" => "resolve_money", "blocker" => "Resolve pending refunds and open disputes")
+      expect(Settlements::Calculator).not_to have_received(:call).with(free_old)
+    end
+  end
+
   # Minor: the remainder is due 3 business days after the actual release.
   it "dates the remainder from the actual release day and decides early release from the reserve's own date" do
     sell_and_complete!

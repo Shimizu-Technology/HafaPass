@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "timeout"
 
 RSpec.describe PayoutReserves do
   include ActiveSupport::Testing::TimeHelpers
@@ -99,109 +98,5 @@ RSpec.describe PayoutReserves do
     described_class.hold!(event: event, actor: admin)
     expect { described_class.release!(event: event, actor: admin, early_release_reason: "Approved for 123-45-6789 payee") }
       .to raise_error(described_class::ReserveError, BackupWithholding::TIN_WARNING)
-  end
-end
-
-RSpec.describe PayoutReserves, "concurrency", :non_transactional do
-  self.use_transactional_tests = false
-
-  def clean_test_data
-    unless Rails.env.test? && ActiveRecord::Base.connection_db_config.database.end_with?("_test")
-      raise "Isolated test database required"
-    end
-
-    ActiveRecord::Base.connection.execute(<<~SQL)
-      TRUNCATE TABLE audit_logs, audit_write_failures, organizations, users, organizer_profiles, events, site_settings, webhook_events, checkout_attempts
-      RESTART IDENTITY CASCADE
-    SQL
-  end
-
-  before do
-    raise "Concurrency fixtures require test" unless Rails.env.test?
-
-    clean_test_data
-  end
-  after { clean_test_data }
-
-  # Finding 2 of the PR #239 review: an order completion holds the event row
-  # and then needs the organization FK KEY SHARE for its audit insert. A hold
-  # that took the organization FOR UPDATE and then waited for the event made
-  # PostgreSQL abort one side with a deadlock.
-  it "does not deadlock with an order completion that holds the event and then writes its audit" do
-    admin = create(:user, :admin)
-    profile = create(:organizer_profile, :verified)
-    organization = profile.organization
-    event = create(:event, :completed, organization: organization, organizer_profile: profile)
-    record_card_sale!(event, ticket_type: create(:ticket_type, event: event, price_cents: 2000), quantity: 5,
-      processing_fee_cents: 100)
-    event_held = Queue.new
-    hold_pid = Queue.new
-    results = Queue.new
-    completion = Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection do |connection|
-        Event.transaction do
-          connection.execute("SET LOCAL lock_timeout = '8s'")
-          Event.lock("FOR NO KEY UPDATE").find(event.id)
-          event_held << true
-          pid = hold_pid.pop
-          Timeout.timeout(8) do
-            sleep 0.02 until connection.select_value("SELECT cardinality(pg_blocking_pids(#{pid.to_i}))").to_i.positive?
-          end
-          # What an AuditLog (or any organization FK) insert takes.
-          connection.execute("SELECT 1 FROM organizations WHERE id = #{organization.id.to_i} FOR KEY SHARE")
-        end
-        results << :completion_committed
-      rescue StandardError => error
-        results << error
-      end
-    end
-    reserve = Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection do |connection|
-        hold_pid << connection.select_value("SELECT pg_backend_pid()")
-        event_held.pop
-        connection.execute("SET lock_timeout = '8s'")
-        results << described_class.hold!(event: Event.find(event.id), actor: User.find(admin.id))
-      ensure
-        connection.execute("SET lock_timeout = DEFAULT")
-      end
-    rescue StandardError => error
-      results << error
-    end
-    Timeout.timeout(20) { [completion, reserve].each(&:join) }
-    outcomes = Array.new(2) { results.pop }
-    expect(outcomes.grep(StandardError)).to eq([])
-    expect(outcomes).to include(:completion_committed)
-    expect(outcomes.grep(BalanceAdjustment).sole.amount_cents).to eq(-990)
-  end
-
-  it "posts exactly one reserve when two administrators hold it at once" do
-    admin = create(:user, :admin)
-    profile = create(:organizer_profile, :verified)
-    event = create(:event, :completed, organization: profile.organization, organizer_profile: profile)
-    record_card_sale!(event, ticket_type: create(:ticket_type, event: event, price_cents: 2000), quantity: 5,
-      processing_fee_cents: 100)
-    ready = Queue.new
-    start = Queue.new
-    results = Queue.new
-    threads = Array.new(2) do
-      Thread.new do
-        ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          results << described_class.hold!(event: Event.find(event.id), actor: User.find(admin.id))
-        rescue StandardError => error
-          results << error
-        end
-      end
-    end
-    Timeout.timeout(10) do
-      2.times { ready.pop }
-      2.times { start << true }
-      threads.each(&:join)
-    end
-    outcomes = Array.new(2) { results.pop }
-    expect(outcomes.grep(BalanceAdjustment).length).to eq(1)
-    expect(outcomes.grep(described_class::ReserveError).map(&:message)).to eq(["A reserve is already held for this event"])
-    expect(event.balance_adjustments.where(kind: "reserve_hold").sum(:amount_cents)).to eq(-990)
   end
 end

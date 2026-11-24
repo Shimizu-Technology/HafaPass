@@ -5,9 +5,14 @@
 # Read-only; each row is a PayoutSchedule over the shared settlement
 # calculator.
 #
-# Candidates: events that ended in the last LOOKBACK_DAYS, plus any older event
-# that still holds a reserve or has a payout in flight. Launch-sized volumes
-# make one calculator run per candidate acceptable; snapshot if this grows.
+# Candidates: events that started and ended in the last LOOKBACK_DAYS; any
+# started event, however old, with paid sales; events cancelled before they
+# started that still have paid sales (refunds may be outstanding); and any
+# event holding a reserve or with a payout in flight. Drafts and archived
+# events are excluded (archiving requires the money to be closed), so nothing
+# payable ages out. Free-only events never run the calculator unless recent.
+# Each candidate runs the calculator once; fully settled events are then
+# dropped as "done". Snapshot per event if volumes outgrow that.
 class AdminPayoutDueList
   LOOKBACK_DAYS = 120
   TRANSFER_STEPS = %w[complete_event resolve_money hold_reserve finalize_statement send_transfer record_transfer].freeze
@@ -60,6 +65,13 @@ class AdminPayoutDueList
 
   attr_reader :at, :filter
 
+  # One payout-account lookup per organization, not per event row.
+  def payout_account_ready?(organization)
+    (@payout_account_ready ||= {}).fetch(organization.id) do
+      @payout_account_ready[organization.id] = organization.payout_account.present?
+    end
+  end
+
   def organization_available(organization)
     (@organization_available ||= {})[organization.id] ||= OrganizationPayoutBalance.available_cents(organization)
   end
@@ -71,11 +83,14 @@ class AdminPayoutDueList
   def candidate_events
     started = Event.where(status: %i[published completed cancelled]).where("events.starts_at <= ?", at)
     recent = started.where("COALESCE(events.ends_at, events.starts_at) >= ?", at - LOOKBACK_DAYS.days)
-    with_sales = started.where(id: Order.excluding_test_payments
-      .where(status: OrganizationFinanceSummary::SETTLED_ORDER_STATUSES).select(:event_id))
+    paid_sales = Order.excluding_test_payments.where(status: OrganizationFinanceSummary::SETTLED_ORDER_STATUSES)
+      .where("orders.subtotal_cents > 0").select(:event_id)
+    with_sales = started.where(id: paid_sales)
+    cancelled_early = Event.where(status: :cancelled).where(id: paid_sales)
     reserved = BalanceAdjustment.effective.where(kind: PayoutSchedule::RESERVE_KINDS).where.not(event_id: nil).select(:event_id)
     in_flight = Payout.where(status: PayoutSchedule::IN_FLIGHT_STATUSES).select(:event_id)
     Event.where(id: recent.select(:id)).or(Event.where(id: with_sales.select(:id)))
+      .or(Event.where(id: cancelled_early.select(:id)))
       .or(Event.where(id: reserved)).or(Event.where(id: in_flight))
       .where.not(status: %i[draft archived]).includes(:organization).order(:id)
   end
@@ -117,7 +132,7 @@ class AdminPayoutDueList
       reserve_release_due: schedule.reserve_release_due?,
       reserve_released_on: schedule.reserve_released_on,
       reserve_skipped: schedule.reserve_skipped?,
-      payout_account_ready: event.organization.payout_account.present?,
+      payout_account_ready: payout_account_ready?(event.organization),
       settlement: settlement && { id: settlement.id, version: settlement.version,
                                   available_to_payout_cents: settlement.available_to_payout_cents,
                                   # What PayoutCreator would accept now: also capped
