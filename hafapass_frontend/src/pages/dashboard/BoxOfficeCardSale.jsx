@@ -105,7 +105,7 @@ export default function BoxOfficeCardSale({ path, initial, requestApi, current, 
         <div className="min-w-0">
           <p className="text-sm font-semibold text-neutral-600">{t(buyerPhone ? 'boxOfficeCard.link' : 'boxOfficeCard.keyed')}</p>
           <h3 ref={heading} tabIndex={-1} id="door-checkout-status" aria-live="polite"
-            className="mt-1 scroll-mt-20 text-xl font-bold text-neutral-950">
+            className="mt-1 scroll-mt-28 text-xl font-bold text-neutral-950">
             {t(`boxOfficeCard.state.${titleKey}`)}
           </h3>
           <p className="mt-1 text-sm text-neutral-600">{sale.reference}</p>
