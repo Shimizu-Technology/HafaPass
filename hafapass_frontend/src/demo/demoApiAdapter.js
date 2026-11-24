@@ -143,7 +143,7 @@ export function createDemoAdapter() {
 
     // Registered feature handlers (organizer, admin, door) answer first.
     const handled = await runDemoHandlers({ method, path, body, params, config, state, serverNow })
-    if (handled !== undefined) {
+    if (handled != null) {
       const status = handled.status || 200
       if (status >= 400) return fail(config, status, handled.data)
       return ok(config, handled.data, status)
@@ -317,6 +317,12 @@ export function createDemoAdapter() {
 
     if (method === 'post' && /^\/me\/(event_favorites|organizer_follows|event_reminders|event_referrals)$/.test(path)) {
       return fail(config, 401, { error: 'Sign-in is disabled in demo preview.' })
+    }
+
+    // Any organizer/admin change no handler claimed succeeds in memory only.
+    // This runs after every registered handler, so feature files always win.
+    if (['post', 'put', 'patch', 'delete'].includes(method) && /^\/(organizer|admin)\//.test(path)) {
+      return ok(config, { demo: true, saved: false, message: 'Demo preview: nothing was saved.' })
     }
 
     // Never fall through to the real network in demo mode. Staff screens get a
