@@ -12,13 +12,18 @@ vi.mock('../../components/QRCode', () => ({ default: () => null }))
 function mountBoxOffice() { return render(<MemoryRouter initialEntries={['/dashboard/events/37/box-office']}><Routes><Route path="/dashboard/events/:id/box-office" element={<BoxOfficePage />} /></Routes></MemoryRouter>) }
 
 // A retry keeps the operation fixed but receives its own cancellable transport.
+const receipt = {
+  id: 922, reference: 'DEMO-DOOR-1', status: 'completed', total_cents: 500,
+  event_title: 'Demo Door Event', admissions: [], email_available: true,
+}
+
 const operation = ([url, payload, { signal: _signal, ...config }]) => [url, payload, config]
 
 describe('uncertain box office sale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.sessionStorage.clear()
-    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url === '/config' ? { launch_capabilities: { door_card: true } } : url === '/organizer/card_present_account' ? { payment_ready: true } : url.endsWith('/summary') ? {} : url.endsWith('/orders/922') ? receipt : { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] } }))
   })
 
   it('retries the original operation and immutable payload after losing a response and reloading', async () => {
@@ -36,7 +41,7 @@ describe('uncertain box office sale', () => {
     expect(screen.getByLabelText('Buyer name')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
     first.unmount()
-    apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Door Buyer', total_cents: 500, tickets: [] } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed', buyer_name: 'Door Buyer', total_cents: 500, tickets: [] } })
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2))
@@ -77,12 +82,32 @@ describe('uncertain box office sale', () => {
     const original = apiClient.post.mock.calls[0]
     expect(original[1].payment_method).toBe('door_cash')
     first.unmount()
-    apiClient.post.mockResolvedValueOnce({ data: { id: 922, buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed', buyer_name: 'Walk-in', total_cents: 500, tickets: [] } })
     mountBoxOffice()
     await user.click(await screen.findByRole('button', { name: /Retry saved sale/ }))
     await screen.findByText('Sale complete!')
     expect(operation(apiClient.post.mock.calls[1])).toEqual(operation(original))
     expect(window.sessionStorage.getItem('hafapass:pending-box-office:v2:local-preview:default:37')).toBeNull()
+  })
+
+  it('reloads the confirmed order and adds a missing email through fulfillment', async () => {
+    apiClient.post.mockResolvedValueOnce({ data: { id: 922, status: 'completed' } })
+    const user = userEvent.setup()
+    const first = mountBoxOffice()
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
+    await screen.findByRole('button', { name: 'Email tickets' })
+    first.unmount()
+    mountBoxOffice()
+
+    await user.click(await screen.findByRole('button', { name: 'Email tickets' }))
+    await user.type(screen.getByLabelText('Confirm buyer email'), 'buyer@example.test')
+    apiClient.post.mockResolvedValueOnce({ data: { email: 'buyer@example.test', email_status: 'queued' } })
+    await user.click(screen.getByRole('button', { name: 'Send tickets' }))
+    expect(await screen.findByText('Ticket email queued for buyer@example.test.')).toBeInTheDocument()
+    expect(apiClient.post.mock.lastCall.slice(0, 2)).toEqual([
+      '/organizer/events/37/box_office/orders/922/email', { email: 'buyer@example.test' },
+    ])
   })
 
   it('retains the original card key and locks new sales when an initiated replay requires reconciliation', async () => {
@@ -153,4 +178,102 @@ it.each(['door_cash', 'door_card'])('does not suggest cash while a saved %s sale
   mountBoxOffice()
   expect(await screen.findByText(/Card payments at the door aren't available/)).not.toHaveTextContent('Use cash')
   expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
+})
+
+describe('receipt stays dependable on bad signal', () => {
+  const eventBody = { id: 37, organization_id: 1, permissions: { box_office: true }, title: 'Door Event', ticket_types: [{ id: 7, name: 'Admission', price_cents: 500, quantity_available: 10, quantity_sold: 0 }] }
+  const sale = (id, reference) => ({ data: { id, status: 'completed', total_cents: 500, receipt: { ...receipt, id, reference } } })
+  const receiptKey = 'hafapass:box-office-receipt:local-preview:default:37'
+
+  // `eventReply` decides how each event request after the first one answers.
+  const serve = eventReply => {
+    let eventCalls = 0
+    apiClient.get.mockImplementation(url => {
+      if (url === '/config') return Promise.resolve({ data: { launch_capabilities: { door_card: true } } })
+      if (url === '/organizer/card_present_account') return Promise.resolve({ data: { payment_ready: true } })
+      if (url.endsWith('/summary')) return Promise.resolve({ data: {} })
+      eventCalls += 1
+      return eventCalls === 1 ? Promise.resolve({ data: eventBody }) : eventReply()
+    })
+  }
+  const sell = async user => {
+    await user.click(await screen.findByRole('button', { name: 'Add Admission' }))
+    await user.click(screen.getByRole('button', { name: /Process sale/ }))
+  }
+
+  beforeEach(() => { vi.clearAllMocks(); window.sessionStorage.clear() })
+
+  it.each([
+    ['a lost connection', () => Promise.reject(new Error('Network Error'))],
+    ['a server error', () => Promise.reject({ response: { status: 503 } })],
+  ])('keeps the receipt when the count refresh after a sale fails with %s', async (_label, eventReply) => {
+    serve(eventReply)
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Sale complete!')).toBeInTheDocument()
+    expect(await screen.findByText('Ticket counts may be out of date.')).toBeInTheDocument()
+    expect(screen.getByText(/DEMO-A/)).toBeInTheDocument()
+    expect(screen.queryByText('Failed to load event.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Admission' })).toBeEnabled()
+
+    apiClient.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/summary') ? {} : eventBody }))
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByText('Ticket counts may be out of date.')).not.toBeInTheDocument())
+    expect(screen.getByText('Sale complete!')).toBeInTheDocument()
+  })
+
+  it.each([401, 403, 404])('still fails closed when the refresh after a sale reports %s', async status => {
+    serve(() => Promise.reject({ response: { status } }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Failed to load event.')).toBeInTheDocument()
+    expect(screen.queryByText('Sale complete!')).not.toBeInTheDocument()
+  })
+
+  it('fails closed when the refreshed event no longer grants box office access', async () => {
+    serve(() => Promise.resolve({ data: { ...eventBody, permissions: { box_office: false } } }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Failed to load event.')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['sold out', { response: { status: 422, data: { error: 'Only 0 Admission left.' } } }, 'Only 0 Admission left.'],
+    ['price changed', { response: { status: 409, data: { code: 'price_changed', error: 'Ticket price changed. Review the updated total before paying.' } } }, 'Ticket price changed. Review the updated total before paying.'],
+  ])('dismisses the previous buyer\'s receipt and focuses the error when the next sale is %s', async (_label, failure, message) => {
+    serve(() => Promise.resolve({ data: eventBody }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    expect(await screen.findByText('Sale complete!')).toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBe('922')
+
+    apiClient.post.mockRejectedValueOnce(failure)
+    await sell(user)
+    const alert = await screen.findByText(message)
+    expect(screen.queryByText('Sale complete!')).not.toBeInTheDocument()
+    expect(screen.queryByText(/DEMO-A/)).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBeNull()
+    expect(document.activeElement).toBe(alert.closest('[role="alert"]'))
+  })
+
+  it('shows only the newest buyer\'s receipt after two sales', async () => {
+    serve(() => Promise.resolve({ data: eventBody }))
+    apiClient.post.mockResolvedValueOnce(sale(922, 'DEMO-A')).mockResolvedValueOnce(sale(923, 'DEMO-B'))
+    mountBoxOffice()
+    const user = userEvent.setup()
+    await sell(user)
+    await screen.findByText(/DEMO-A/)
+    await sell(user)
+    expect(await screen.findByText(/DEMO-B/)).toBeInTheDocument()
+    expect(screen.queryByText(/DEMO-A/)).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(receiptKey)).toBe('923')
+  })
 })

@@ -11,6 +11,21 @@ const SCREENS = [
   ['/dashboard/finances', /Sales, fees and payouts across every Isla Demo Sports League event/],
 ]
 
+test('box office demo completes cash and provides ticket delivery actions', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/dashboard/events/101/box-office')
+  await page.getByRole('button', { name: /^Add / }).first().click()
+  await page.getByRole('button', { name: /Process sale/ }).click()
+  await expect(page.getByText('Sale complete!')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Print tickets' })).toBeVisible()
+  await page.getByRole('button', { name: 'Show QR' }).click()
+  await expect(page.getByRole('dialog', { name: 'Show QR' }).getByRole('img')).toBeVisible()
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Email tickets' }).click()
+  await page.getByRole('textbox', { name: 'Confirm buyer email' }).fill('player@example.invalid')
+  await page.getByRole('button', { name: 'Send tickets' }).click()
+  await expect(page.getByText('Ticket email queued for player@example.invalid.')).toBeVisible()
+})
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   test.describe(`demo staff screens at ${viewport.width}px`, () => {
     test.use({ viewport })
