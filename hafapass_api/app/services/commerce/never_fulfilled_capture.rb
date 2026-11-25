@@ -44,6 +44,12 @@ module Commerce
     # and changes source digests for events with such processing.
     ORGANIZER_BEARS_PROCESSING = false
 
+    # P5 and P9 (design §1). Snapshotted onto each classification row, so a
+    # later change is prospective. P9's CPA sign-off is recorded against
+    # NeverFulfilledClassification::POLICY_VERSION.
+    DISPUTE_FEE_BEARER = :platform
+    ALLOCATION_POLICY = :item_record
+
     CAPTURED_PAYMENT_STATUSES = %w[succeeded partially_refunded refunded].freeze
 
     module_function
@@ -92,6 +98,12 @@ module Commerce
 
     def organizer_bears_processing?
       ORGANIZER_BEARS_PROCESSING
+    end
+
+    # The design's writer entry point (§4.3). Readers in this module are
+    # unchanged until A2.
+    def classify!(**)
+      NeverFulfilledClassification.classify!(**)
     end
   end
 end

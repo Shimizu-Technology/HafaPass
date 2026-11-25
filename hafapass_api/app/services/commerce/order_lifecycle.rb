@@ -29,8 +29,13 @@ module Commerce
       #
       # The creator and hosted-checkout webhook already hold the event context
       # when passing event_context_locked. Every later lock is still acquired.
+      #
+      # provider_lookup: { provider_object_id:, livemode: } when the caller
+      # retrieved the PaymentIntent over the authenticated API instead of
+      # receiving a signed webhook. Together with the exact amount and
+      # currency it is the evidence a never-fulfilled classification needs.
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
-        late_completion: false, event_context_locked: false)
+        late_completion: false, event_context_locked: false, provider_lookup: nil)
         if event_context_locked && !Order.connection.transaction_open?
           raise ArgumentError, "event_context_locked requires the caller's open transaction"
         end
@@ -38,12 +43,13 @@ module Commerce
         AuditContext.set(fail_open: true) do
           complete_with_audit!(order, payment: payment, webhook_event: webhook_event,
             provider_amount_cents: provider_amount_cents, provider_currency: provider_currency, wallet_type: wallet_type,
-            late_completion: late_completion, event_context_locked: event_context_locked)
+            late_completion: late_completion, event_context_locked: event_context_locked, provider_lookup: provider_lookup)
         end
       end
 
       def complete_with_audit!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
-        late_completion: false, event_context_locked: false)
+        late_completion: false, event_context_locked: false, provider_lookup: nil)
+        evidence = capture_evidence(webhook_event, provider_lookup, provider_amount_cents, provider_currency)
         completed_now = false
         completed_late = false
 
@@ -61,26 +67,29 @@ module Commerce
           end
 
           if order.completed? || order.partially_refunded? || order.refunded?
-            mark_payment_succeeded!(payment)
+            record_capture_on_released_or_fulfilled_order!(order, payment, webhook_event, evidence)
             next
           end
 
+          # The legacy guard (no late-capture exception) stays until A3; a
+          # classified payment never reopens either.
           reopen_expired = late_completion && webhook_event && order.online_door_card? && order.expired? &&
-            payment && !ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+            payment && !late_capture_recorded?(payment)
           unless order.pending? || reopen_expired
             mark_payment_succeeded!(payment)
             # One late capture, one exception and one refund job: a second
             # notice for the same payment (the expiry job's own check, then
             # the webhook) must not open a duplicate.
-            next if payment && ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+            next if payment && late_capture_recorded?(payment)
 
-            ReconciliationException.create!(
+            issue = ReconciliationException.create!(
               order: order,
               payment: payment,
               webhook_event: webhook_event,
               code: "late_payment_success_after_inventory_release",
               details: { order_status: order.status }
             )
+            classify_order_capture!(order, payment, issue, webhook_event, evidence)
             # Enqueued after commit (ApplicationJob.enqueue_after_transaction_commit).
             LateCaptureRefundJob.perform_later(payment.id) if payment
             next
@@ -108,13 +117,14 @@ module Commerce
               claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             if payment.present?
               mark_payment_succeeded!(payment)
-              ReconciliationException.create!(
+              issue = ReconciliationException.create!(
                 order: order,
                 payment: payment,
                 webhook_event: webhook_event,
                 code: "pass_all_included_nights_cancelled",
                 details: { reason: "All included nights for a pass in this order were cancelled before completion" }
               )
+              classify_order_capture!(order, payment, issue, webhook_event, evidence)
               LateCaptureRefundJob.perform_later(payment.id)
             end
             next
@@ -129,13 +139,14 @@ module Commerce
                 claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             end
             mark_payment_succeeded!(payment)
-            ReconciliationException.create!(
+            issue = ReconciliationException.create!(
               order: order,
               payment: payment,
               webhook_event: webhook_event,
               code: "late_payment_success_after_hold_expiry",
               details: admission_ended ? { reason: "admission_ended" } : {}
             )
+            classify_order_capture!(order, payment, issue, webhook_event, evidence) if payment
             LateCaptureRefundJob.perform_later(payment.id) if payment
             next
           end
@@ -237,7 +248,8 @@ module Commerce
         if !order.online_door_card? && (late = succeeded_provider_payment(order, at: at))
           payment, intent = late
           complete!(order, payment: payment, provider_amount_cents: intent.amount_received,
-            provider_currency: intent.currency, late_completion: true)
+            provider_currency: intent.currency, late_completion: true,
+            provider_lookup: { provider_object_id: intent.id, livemode: intent.livemode })
           order.reload
           return order.expired? unless order.pending?
         end
@@ -377,6 +389,109 @@ module Commerce
           expected_currency: payment.currency,
           actual_currency: currency
         )
+      end
+
+      # What proved this capture, for NeverFulfilledClassification. A signed
+      # webhook receipt names its own PaymentIntent; an API lookup passes the
+      # retrieved intent's ID and mode. Anything else is no evidence.
+      def capture_evidence(webhook_event, provider_lookup, amount_cents, currency)
+        base = { "amount_cents" => amount_cents, "currency" => currency&.to_s&.downcase }
+        if webhook_event
+          object = webhook_event.payload.to_h.dig("data", "object").to_h
+          base.merge("source" => "signed_webhook", "webhook_event_id" => webhook_event.id,
+            "event_type" => webhook_event.event_type, "provider_object_id" => object["id"])
+        elsif provider_lookup
+          base.merge("source" => "provider_lookup", "provider_object_id" => provider_lookup[:provider_object_id],
+            "livemode" => provider_lookup[:livemode])
+        end
+      end
+
+      def late_capture_recorded?(payment)
+        UnfulfilledCapture.exists?(payment_id: payment.id) ||
+          ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+      end
+
+      # Order scope: the order was released and no capture on it fulfilled it.
+      # Written in the same transaction as the capture and its exception.
+      def classify_order_capture!(order, payment, issue, webhook_event, evidence)
+        NeverFulfilledClassification.classify!(order: order, payment: payment, code: issue.code,
+          provider_evidence: evidence, exception: issue, webhook_event: webhook_event)
+      end
+
+      # A success notice for an order that already completed, or that a
+      # refund has since moved to partially refunded or refunded.
+      #
+      # - Never-fulfilled order: a distinct capture is another order-scope
+      #   capture (the marker keeps its first time). It opens the ordinary
+      #   late-capture exception but enqueues no refund: the order-wide refund
+      #   path cannot return a second capture on its own balance, so its
+      #   repayment waits for the per-payment workflow (tranche 4).
+      # - Fulfilled order: a distinct capture is payment scope, keyed by the
+      #   order's verified fulfilling payment. It never touches the sale.
+      #   Legacy orders recover that payment only from the completion audit;
+      #   without it the capture is quarantined as ambiguous ownership.
+      def record_capture_on_released_or_fulfilled_order!(order, payment, webhook_event, evidence)
+        return unless payment
+
+        previously_captured = payment.succeeded? || payment.partially_refunded? || payment.refunded?
+        mark_payment_succeeded!(payment)
+        return unless NeverFulfilledClassification.applicable?(payment)
+        return if UnfulfilledCapture.exists?(payment_id: payment.id)
+
+        if order.never_fulfilled?
+          return if late_capture_recorded?(payment)
+
+          issue = ReconciliationException.create!(order: order, payment: payment, webhook_event: webhook_event,
+            code: "late_payment_success_after_inventory_release",
+            details: { order_status: order.status, second_capture: true })
+          classify_order_capture!(order, payment, issue, webhook_event, evidence)
+          return
+        end
+        return if payment.id == order.fulfilled_by_payment_id
+
+        fulfilling_id = order.fulfilled_by_payment_id || recover_fulfilling_payment!(order, payment, previously_captured)
+        return if fulfilling_id == :not_second_capture || fulfilling_id == payment.id
+
+        if fulfilling_id.nil?
+          ReconciliationException.find_by(payment: payment, code: NeverFulfilledClassification::OWNERSHIP_AMBIGUOUS_CODE) ||
+            ReconciliationException.create!(order: order, payment: payment, webhook_event: webhook_event,
+              code: NeverFulfilledClassification::OWNERSHIP_AMBIGUOUS_CODE,
+              details: { reason: "no_completion_evidence", order_status: order.status })
+          return
+        end
+
+        issue = ReconciliationException.find_by(payment: payment, code: NeverFulfilledClassification::SECOND_CAPTURE_CODE) ||
+          ReconciliationException.create!(order: order, payment: payment, webhook_event: webhook_event,
+            code: NeverFulfilledClassification::SECOND_CAPTURE_CODE,
+            details: { fulfilling_payment_id: fulfilling_id, order_status: order.status })
+        NeverFulfilledClassification.classify!(order: order, payment: payment, code: "unfulfilled_second_capture",
+          capture_scope: "payment", provider_evidence: evidence, exception: issue, webhook_event: webhook_event)
+      end
+
+      # Positive completion provenance only: the order.completed audit's
+      # payment_id naming a captured, unclassified payment on this order. The
+      # audit is written fail-open, so its absence proves nothing and the
+      # earliest capture is never assumed. Returns the fulfilling payment ID,
+      # :not_second_capture for a repeated notice of the order's only capture,
+      # or nil when ownership is ambiguous.
+      def recover_fulfilling_payment!(order, payment, previously_captured)
+        audit = AuditLog.where(action: "order.completed", deduplication_key: "order:#{order.id}:completed").order(:id).first
+        claimed = audit&.metadata.to_h["payment_id"]
+        candidate = order.payments.find_by(id: claimed) if claimed.present?
+        if candidate && (candidate.succeeded? || candidate.partially_refunded? || candidate.refunded?) &&
+            !UnfulfilledCapture.exists?(payment_id: candidate.id)
+          order.update!(fulfilled_by_payment_id: candidate.id)
+          AuditLogger.record!(action: "order.fulfilling_payment_recovered", auditable: order,
+            organization: order.event.organization, event: order.event, outcome: "succeeded",
+            deduplication_key: "order:#{order.id}:fulfilling_payment_recovered",
+            metadata: { payment_id: candidate.id, completion_audit_id: audit.id })
+          return candidate.id
+        end
+
+        others = order.payments.where(status: %i[succeeded partially_refunded refunded]).where.not(id: payment.id).exists?
+        return :not_second_capture if candidate.nil? && previously_captured && !others
+
+        nil
       end
 
       def mark_payment_succeeded!(payment)
