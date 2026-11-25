@@ -174,6 +174,7 @@ entries are described above and defined in the registry's audience variants.
 | `connected_account.readiness_revoked` | yes | payout_settings | A | yes | no | — | — | Revoked payout account readiness approval. |
 | `connected_account.synced` | yes | payout_settings | A | yes | no | — | — | Synchronized payout account provider data. |
 | `dispute.lost` | yes | disputes | O/F | yes | yes | `status`, `amount_cents`, `currency` | `order_id`, `payment_id`, `event_title`, `order_reference`, `amount_cents`, `currency` | Lost a payment dispute. |
+| `dispute.loss_reversed` | yes | disputes | O/F | yes | yes | `status`, `amount_cents`, `currency` | `order_id`, `payment_id`, `event_title`, `order_reference`, `amount_cents`, `currency` | Recorded that a lost payment dispute was later won. |
 | `dispute.opened` | yes | disputes | O/F | yes | yes | `status`, `amount_cents`, `currency` | `order_id`, `payment_id`, `event_title`, `order_reference`, `amount_cents`, `currency` | Opened a payment dispute. |
 | `dispute.updated` | yes | disputes | O/F | yes | yes | `status`, `amount_cents`, `currency` | `order_id`, `payment_id`, `event_title`, `order_reference`, `amount_cents`, `currency` | Updated a payment dispute. |
 | `dispute.won` | yes | disputes | O/F | yes | yes | `status`, `amount_cents`, `currency` | `order_id`, `payment_id`, `event_title`, `order_reference`, `amount_cents`, `currency` | Won a payment dispute. |
@@ -348,6 +349,21 @@ entries are described above and defined in the registry's audience variants.
 | `reconciliation_exception.resolved` | yes | refunds | A | yes | yes | — | — | Resolved a payment reconciliation exception. |
 | `order.fraud_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested a fraud refund after a Stripe early fraud warning. |
 | `order.admin_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested an administrator refund for an order. |
+| `never_fulfilled_capture.classified` | yes | orders | A | yes | yes | — | — | Recorded a captured payment that HåfaPass did not fulfil. |
+| `order.fulfilling_payment_recovered` | yes | orders | A | yes | yes | — | — | Recorded which payment fulfilled a legacy order. |
+| `buyer_return_posting.recorded` | yes | orders | A | yes | yes | — | — | Recorded money returned to the buyer of an unfulfilled payment. |
+| `dispute.loss_receipt_after_win` | yes | orders | A | yes | yes | — | — | Kept a dispute loss notice that arrived after the dispute was won. |
+| `repayment_operation.reserved` | yes | orders | A | yes | yes | — | — | Reserved a payment's return to its buyer. |
+| `repayment_operation.submission_requested` | yes | orders | A | yes | yes | — | — | Sent a payment's return to its buyer to the card processor. |
+| `repayment_operation.succeeded` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer succeeded. |
+| `repayment_operation.failed_terminal` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer did not move money. |
+| `repayment_operation.unknown` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer has an unknown result. |
+| `repayment_operation.adopted` | yes | orders | A | yes | yes | — | — | Linked an earlier automatic refund to the payment's return workflow. |
+| `reconciliation_exception.reopened` | yes | orders | A | yes | yes | — | — | Reopened a payment's return to its buyer after money came back. |
+| `never_fulfilled_capture.buyer_overpaid` | yes | orders | A | yes | yes | — | — | Recorded that a buyer was repaid more than an unfulfilled payment. |
+| `webhook_event.replayed` | yes | orders | A | yes | yes | — | — | Applied a stored Stripe notice to the payment it describes. |
+| `never_fulfilled_capture.sale_effects_held` | yes | orders | A | yes | yes | — | — | Recorded a refund or lost dispute without changing a sale it is not proven to belong to. |
+| `never_fulfilled_capture.sale_effects_released` | yes | orders | A | yes | yes | — | — | Applied or closed the held sale changes of a refund or lost dispute. |
 | `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |

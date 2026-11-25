@@ -39,10 +39,19 @@ class PayoutCreator
 
   attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request, :withholding_override_reason
 
+  # Organization -> event -> payout (docs/LOCKING.md). The event row is the
+  # lock every capture holds until it commits, so the hold check below and
+  # the database's submission fence see any capture that committed first,
+  # and a capture that starts later waits for this authorization. NO KEY
+  # UPDATE on the organization, like the other payout paths that lock an
+  # event: a capture holding the event may still insert its audit row
+  # (organization FK KEY SHARE). The gateway call runs after these locks.
   def submit_payout!(payout)
-    payout.organization.with_lock do
+    payout.organization.with_lock("FOR NO KEY UPDATE") do
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+        raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
 
         PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
         AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: actor,
@@ -94,7 +103,9 @@ class PayoutCreator
 
   def record_observed_submission!(payout, **attributes)
     Payout.transaction do
-      payout.organization.lock!
+      # The same organization -> event -> payout order as the submission.
+      payout.organization.lock!("FOR NO KEY UPDATE")
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       provider_result = attributes.dup
       withholding_review = false
@@ -183,6 +194,7 @@ class PayoutCreator
       if RefundReconciliationQueue.outstanding_for_event?(settlement.event)
         raise PayoutError, "Resolve outstanding refund liabilities before paying out this event"
       end
+      raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(settlement.event)
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"
@@ -210,22 +222,26 @@ class PayoutCreator
       withholding = BackupWithholding.for_payout(organization: settlement.organization,
         amount_cents: amount, actor: actor, override_reason: withholding_override_reason)
 
-      payout = settlement.payouts.create!(
-        organization: settlement.organization,
-        event: settlement.event,
-        connected_account: account,
-        provider: account.provider,
-        idempotency_key: idempotency_key,
-        amount_cents: amount,
-        currency: settlement.currency,
-        status: :pending,
-        payee_snapshot: account.safe_payout_details,
-        payee_approval_digest: account.provider == "manual" ? account.bank_destination_digest :
-          (account.provider == "check" ? account.readiness_state_digest : nil),
-        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
-        tax_approval_digest: account.readiness_state_digest,
-        **withholding
-      )
+      # This release's reader leaves never-fulfilled orders out; the database
+      # lets only such a reader create a payout on an event that has one.
+      payout = FinancialIntegrity.with_settlement_reader do
+        settlement.payouts.create!(
+          organization: settlement.organization,
+          event: settlement.event,
+          connected_account: account,
+          provider: account.provider,
+          idempotency_key: idempotency_key,
+          amount_cents: amount,
+          currency: settlement.currency,
+          status: :pending,
+          payee_snapshot: account.safe_payout_details,
+          payee_approval_digest: account.provider == "manual" ? account.bank_destination_digest :
+            (account.provider == "check" ? account.readiness_state_digest : nil),
+          tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
+          tax_approval_digest: account.readiness_state_digest,
+          **withholding
+        )
+      end
       PayoutLineAllocator.record!(payout)
       AuditLogger.record!(action: "payout.created", auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event, outcome: "requested",

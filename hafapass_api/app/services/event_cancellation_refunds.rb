@@ -2,15 +2,22 @@
 
 class EventCancellationRefunds
   PAID_STATUSES = [:completed, :partially_refunded, :refunded].freeze
+  REPAYMENT_WORKFLOW_MESSAGE = "HåfaPass returns this payment to the buyer separately"
 
   # A recorded manual return is a succeeded Refund, so it is included once
-  # in the succeeded-refund total.
+  # in the succeeded-refund total. A payment the never-fulfilled repayment
+  # workflow returns (a classified capture, or one with a late-capture or
+  # second-capture exception: the repayment fence) is not part of the sale:
+  # its amount, refunds and disputes are left out of the estimate, the
+  # reservation and the run, and it is never refunded as a cancellation
+  # (design §6.2). A's valid sale on the same order is unaffected.
   def self.balance_cents(order)
     captured_payments = order.payments.where(status: [:succeeded, :partially_refunded, :refunded])
+      .excluding_isolated_captures.excluding_repayment_fenced
     captured_payments = captured_payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
     captured = captured_payments.sum(:amount_cents)
-    refunds = order.refunds.where(status: [:pending, :succeeded])
-    disputes = order.disputes.lost
+    refunds = order.refunds.where(status: [:pending, :succeeded]).excluding_isolated_payments.excluding_repayment_fenced
+    disputes = order.disputes.lost.excluding_isolated_payments.excluding_repayment_fenced
     if Rails.env.production?
       refunds = refunds.where(payment_id: captured_payments.select(:id))
       disputes = disputes.where(payment_id: captured_payments.select(:id))
@@ -45,7 +52,8 @@ class EventCancellationRefunds
       capture_filter += " AND (provider_environment = 'live' OR (provider_environment IS NULL AND " \
         "provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))"
     end
-    payments = Payment.where(order_id: ids).group(:order_id).pluck(:order_id,
+    fenced_order_ids = Payment.where(order_id: ids).where("hafapass_fenced_payment(payments.id)").distinct.pluck(:order_id).to_set
+    payments = Payment.where(order_id: ids).excluding_isolated_captures.excluding_repayment_fenced.group(:order_id).pluck(:order_id,
       Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE #{capture_filter}), 0)"),
       Arel.sql("COALESCE(BOOL_OR(provider = 'stripe' AND (provider_environment IN ('test', 'simulate') OR (provider_environment IS NULL AND (provider_payload->>'livemode' = 'false' OR provider_payload->>'simulated' = 'true')))), false)"),
       Arel.sql("COALESCE(BOOL_OR(status IN (#{captured_statuses}) AND (provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))), false)"))
@@ -58,13 +66,13 @@ class EventCancellationRefunds
 
     refund_statuses = Refund.statuses.values_at("pending", "succeeded").join(", ")
     live_payment_ids = Payment.live_or_legacy_capture.select(:id)
-    refund_scope = Refund.where(order_id: ids)
+    refund_scope = Refund.where(order_id: ids).excluding_isolated_payments.excluding_repayment_fenced
     refund_scope = refund_scope.where(payment_id: live_payment_ids) if exclude_nonlive
     refunds = refund_scope.group(:order_id).pluck(:order_id,
       Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status IN (#{refund_statuses})), 0)"),
       Arel.sql("COALESCE(BOOL_OR(status = #{Refund.statuses.fetch('pending')}), false)"))
       .index_by(&:first)
-    dispute_scope = Dispute.where(order_id: ids)
+    dispute_scope = Dispute.where(order_id: ids).excluding_isolated_payments.excluding_repayment_fenced
     dispute_scope = dispute_scope.where(payment_id: live_payment_ids) if exclude_nonlive
     disputes = dispute_scope.group(:order_id).pluck(:order_id,
       Arel.sql("COALESCE(SUM(amount_cents) FILTER (WHERE status = #{Dispute.statuses.fetch('lost')}), 0)"),
@@ -76,7 +84,7 @@ class EventCancellationRefunds
         captured_cents: payments[id]&.at(1) || 0,
         amount_cents: [(payments[id]&.at(1) || 0) - (refunds[id]&.at(1) || 0) - lost_cents, 0].max,
         pending_refund: refunds[id]&.at(2) || false, open_dispute: disputes[id]&.at(2) || false,
-        lost_dispute: lost_cents.positive? }
+        lost_dispute: lost_cents.positive?, repayment_workflow: fenced_order_ids.include?(id) }
     end
   end
 
@@ -131,6 +139,9 @@ class EventCancellationRefunds
         item.last_error = "Waiting for an existing refund" if status == :waiting_on_pending_refund
         if status == :skipped && !entry[:lost_dispute]
           item.last_error = entry[:captured_cents].zero? ? "No payment to refund" : "Order already fully refunded"
+        end
+        if status == :skipped && entry[:repayment_workflow] && entry[:captured_cents].zero?
+          item.last_error = REPAYMENT_WORKFLOW_MESSAGE
         end
       end
     end

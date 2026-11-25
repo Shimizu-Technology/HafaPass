@@ -3,7 +3,22 @@
 class Refund < ApplicationRecord
   belongs_to :order
   belongs_to :payment, optional: true
+
+  # Rows on the order's sale, never those on a payment-scope never-fulfilled
+  # capture (UnfulfilledCapture.excluding_isolated).
+  scope :excluding_isolated_payments, -> { UnfulfilledCapture.excluding_isolated(self, :payment_id) }
+  # Refunds on the sale of their own order: with a recorded fulfilling
+  # payment only its refunds; otherwise every non-isolated refund.
+  scope :on_sale, -> {
+    excluding_isolated_payments.joins(:order).where("orders.fulfilled_by_payment_id IS NULL OR refunds.payment_id IS NULL " \
+      "OR refunds.payment_id = orders.fulfilled_by_payment_id")
+  }
+  # Refunds from the payment that owns the sale (or from no payment: cash and
+  # manual returns). A no-op unless another payment on the order has one.
+  scope :owned_by_sale, -> { where("refunds.payment_id IS NULL OR hafapass_sale_owner_payment(refunds.payment_id)") }
+  scope :excluding_repayment_fenced, -> { where("refunds.payment_id IS NULL OR NOT hafapass_fenced_payment(refunds.payment_id)") }
   belongs_to :requested_by, class_name: "User", optional: true
+  belongs_to :repayment_operation, optional: true
   has_many :refund_items, dependent: :restrict_with_error
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :promoter_commission_entries, dependent: :restrict_with_error
@@ -27,6 +42,10 @@ class Refund < ApplicationRecord
 
   after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
     if: -> { previously_new_record? || saved_change_to_status? }
+  # A refund of a repayment operation carries its outcome to the operation
+  # in the same transaction, whichever writer recorded it.
+  after_save -> { Commerce::BuyerRepayment.record_outcome!(self) },
+    if: -> { repayment_operation_id.present? && saved_change_to_status? && !pending? }
   after_commit :resume_event_cancellation_refunds,
     if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
 

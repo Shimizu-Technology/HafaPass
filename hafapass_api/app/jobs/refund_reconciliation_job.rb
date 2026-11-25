@@ -7,6 +7,10 @@ class RefundReconciliationJob < ApplicationJob
   DEFAULT_MAX_CONSECUTIVE_ERRORS = 5
 
   def perform
+    # Captures an older release acknowledged without classifying them hold
+    # their events' payouts in the database until classified or quarantined
+    # (no network call; A1-R1 recheck blocker 3).
+    Commerce::NeverFulfilledReconcile.discover_overlap_captures!
     max_refunds = positive_limit("REFUND_RECONCILIATION_MAX_REFUNDS", DEFAULT_MAX_REFUNDS)
     budget = StripeService::CallBudget.new(positive_limit("REFUND_RECONCILIATION_MAX_STRIPE_CALLS", DEFAULT_MAX_STRIPE_CALLS))
     max_errors = positive_limit("REFUND_RECONCILIATION_MAX_CONSECUTIVE_ERRORS", DEFAULT_MAX_CONSECUTIVE_ERRORS)

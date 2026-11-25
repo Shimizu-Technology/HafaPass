@@ -17,9 +17,9 @@ module Settlements
 
     def call
       items = statement_items.sort_by { |item| [item[:occurred_at].to_f, item[:kind], item[:source_type], item[:source_id]] }
-      gross = orders.sum(&:subtotal_cents)
-      discounts = orders.sum(&:discount_cents)
-      charged = orders.sum(&:total_cents)
+      gross = sale_orders.sum(&:subtotal_cents)
+      discounts = sale_orders.sum(&:discount_cents)
+      charged = sale_orders.sum(&:total_cents)
       refunds = succeeded_refunds.sum(&:amount_cents)
       refunded_fees = refund_items.sum { |item| item.fee_cents + item.organizer_fee_cents }
       refunded_proceeds = refund_items.sum(&:organizer_proceeds_cents)
@@ -94,12 +94,35 @@ module Settlements
       @order_ids ||= orders.map(&:id)
     end
 
+    # An order HåfaPass never fulfilled (order-scope classification, the
+    # database marker) is not a sale. Its proceeds and every offset on them
+    # (refunds and refund items, losses, platform fees) stay out of the
+    # statement and the payout balance, so a capture returned partly by
+    # refund and partly by dispute pays the organizer nothing (A1-R1 review
+    # finding 2); the buyer's ledger holds that money. Only its actual
+    # processing stays, under the never-fulfilled bearer rule below. Events
+    # without such an order are unchanged, digests included.
+    def sale_orders
+      @sale_orders ||= orders.reject(&:never_fulfilled?)
+    end
+
+    def sale_order_ids
+      @sale_order_ids ||= sale_orders.map(&:id)
+    end
+
     def order_items
-      @order_items ||= OrderItem.where(order_id: order_ids).order(:id).to_a
+      @order_items ||= all_order_items.select { |item| sale_order_ids.include?(item.order_id) }
+    end
+
+    def all_order_items
+      @all_order_items ||= OrderItem.where(order_id: order_ids).order(:id).to_a
     end
 
     def succeeded_refunds
-      @succeeded_refunds ||= Refund.succeeded.where(order_id: order_ids).order(:id).to_a
+      # A payment-scope never-fulfilled capture (a distinct second payment on a
+      # fulfilled order) is not part of the sale; its refunds and disputes are
+      # never the organizer's (design §4.3). A2 books them per payment.
+      @succeeded_refunds ||= Refund.succeeded.where(order_id: sale_order_ids).on_sale.order(:id).to_a
     end
 
     def refund_items
@@ -127,11 +150,25 @@ module Settlements
     end
 
     def platform_fee_components
-      @platform_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "platform").order(:id).to_a
+      @platform_fee_components ||= FeeComponent.where(order_id: sale_order_ids, kind: "platform").order(:id).to_a
     end
 
     def processing_fee_components
       @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false).order(:id).to_a
+    end
+
+    # Captures HåfaPass never fulfilled (late capture on a released order,
+    # auto-refunded, no tickets). The organizer never received these sales, so
+    # nothing on them is charged to the organizer: no lost dispute, and no
+    # Stripe processing unless Commerce::NeverFulfilledCapture says the
+    # organizer bears it. Same evidence as the CPA export.
+    def never_fulfilled_order_ids
+      @never_fulfilled_order_ids ||= Set.new(Commerce::NeverFulfilledCapture.order_ids_among(order_ids)) |
+        orders.select(&:never_fulfilled?).map(&:id)
+    end
+
+    def never_fulfilled_platform_processing?(component)
+      !Commerce::NeverFulfilledCapture.organizer_bears_processing? && never_fulfilled_order_ids.include?(component.order_id)
     end
 
     # Bearer comes only from each order's creation-time snapshot, never from
@@ -147,7 +184,9 @@ module Settlements
     # the platform share. All of it stays with the organizer for other orders.
     def processing_split(component)
       @processing_splits ||= {}
-      @processing_splits[component.id] ||= if platform_processing_order_ids.include?(component.order_id)
+      @processing_splits[component.id] ||= if never_fulfilled_platform_processing?(component)
+        [component.amount_cents, 0]
+      elsif platform_processing_order_ids.include?(component.order_id)
         ticket_cents, other_cents = charged_by_line_kind.fetch(component.order_id, [0, 0])
         platform, organizer = Commerce::MoneyAllocator.call(component.amount_cents, [ticket_cents, other_cents])
         platform + organizer == component.amount_cents ? [platform, organizer] : [component.amount_cents, 0]
@@ -157,7 +196,7 @@ module Settlements
     end
 
     def charged_by_line_kind
-      @charged_by_line_kind ||= order_items.group_by(&:order_id).transform_values do |items|
+      @charged_by_line_kind ||= all_order_items.group_by(&:order_id).transform_values do |items|
         charged = ->(item) { item.subtotal_cents - item.discount_cents + item.fee_cents + item.tax_cents }
         tickets, others = items.partition(&:item_ticket?)
         [tickets.sum(&charged), others.sum(&charged)]
@@ -165,7 +204,8 @@ module Settlements
     end
 
     def lost_disputes
-      @lost_disputes ||= Dispute.lost.where(order_id: order_ids).order(:id).to_a
+      @lost_disputes ||= Dispute.lost.where(order_id: sale_order_ids).on_sale.order(:id).to_a
+        .reject { |dispute| never_fulfilled_order_ids.include?(dispute.order_id) }
     end
 
     def posted_adjustments
@@ -247,7 +287,9 @@ module Settlements
 
     def processing_items
       processing_fee_components.map do |component|
-        if platform_processing_order_ids.include?(component.order_id)
+        if never_fulfilled_platform_processing?(component)
+          never_fulfilled_processing_item(component)
+        elsif platform_processing_order_ids.include?(component.order_id)
           platform_processing_item(component)
         else
           # Legacy wording and metadata are part of existing source digests.
@@ -277,6 +319,21 @@ module Settlements
         occurred_at: component.updated_at,
         metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
           processing_fee_bearer: "platform", platform_cost_cents: platform_cents, organizer_cost_cents: organizer_cents }
+      )
+    end
+
+    # Only events with a never-fulfilled capture get this item, so existing
+    # digests for every other event are unchanged.
+    def never_fulfilled_processing_item(component)
+      statement_item(
+        kind: "processing_fee",
+        amount_cents: 0,
+        source: component,
+        description: "Card processing covered by HåfaPass; payment returned to the buyer",
+        occurred_at: component.updated_at,
+        metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
+          processing_fee_bearer: "platform", never_fulfilled_capture: true,
+          platform_cost_cents: component.amount_cents, organizer_cost_cents: 0 }
       )
     end
 

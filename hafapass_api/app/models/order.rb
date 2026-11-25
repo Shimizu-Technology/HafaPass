@@ -46,6 +46,10 @@ class Order < ApplicationRecord
   has_one :acquisition_attribution, dependent: :restrict_with_error
   has_many :marketplace_funnel_events, dependent: :restrict_with_error
   has_one :seat_hold_session, dependent: :restrict_with_error
+  has_many :unfulfilled_captures, dependent: :restrict_with_error
+  # Set once by the completion transaction; the database rejects another
+  # order's payment, a classified payment and any later change.
+  belongs_to :fulfilled_by_payment, class_name: "Payment", optional: true
 
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee
@@ -99,10 +103,26 @@ class Order < ApplicationRecord
       ActiveSupport::SecurityUtils.secure_compare(guest_access_version.to_s, version.to_s)
   end
 
+  # A dispute on the payment that fulfilled the order blocks admission. One on
+  # any other payment (a payment-scope never-fulfilled capture, or a second
+  # payment not classified yet) never touches the sale: ownership is
+  # positive (A1-R1 review finding 1). A legacy order with no fulfilling
+  # payment keeps the conservative order-wide rule.
   def ticket_access_blocked?
-    return disputes.any? { |dispute| dispute.open? || dispute.lost? } if disputes.loaded?
+    candidates = disputes.loaded? ? disputes.select { |dispute| dispute.open? || dispute.lost? } :
+      disputes.where(status: [:open, :lost]).to_a
+    return false if candidates.empty?
+    return true if fulfilled_by_payment_id.nil?
 
-    disputes.where(status: [:open, :lost]).exists?
+    candidates.any? { |dispute| dispute.payment_id.nil? || dispute.payment_id == fulfilled_by_payment_id }
+  end
+
+  # Payment-scope never-fulfilled captures on this order. Their refunds and
+  # disputes are kept out of the sale's balances, limits and admission.
+  def isolated_payment_ids
+    return [] if fulfilled_by_payment_id.nil?
+
+    UnfulfilledCapture.payment_scope.where(order_id: id).pluck(:payment_id)
   end
 
   def buyer_status
@@ -118,8 +138,7 @@ class Order < ApplicationRecord
   def full_refund_pending?
     return false unless total_cents.positive?
 
-    reserved = refunds.loaded? ? refunds.select { |refund| refund.pending? || refund.succeeded? } :
-      refunds.where(status: [:pending, :succeeded]).to_a
+    reserved = sale_refunds(%w[pending succeeded])
     reserved.any? { |refund| refund.pending? && !refund.organizer_ticket_selection? && !refund.preserves_tickets? } &&
       reserved.sum(&:amount_cents) >= total_cents
   end
@@ -127,6 +146,8 @@ class Order < ApplicationRecord
   # payment_mode lets bulk callers (scanner manifests) read the setting once.
   def ticket_fulfilled?(payment_mode: nil)
     return false unless completed? || partially_refunded?
+    # A never-fulfilled order can be partially refunded, but never admits.
+    return false if never_fulfilled?
     return true unless Rails.env.production? && total_cents.positive?
 
     # A partially refunded order may have already returned the entire payment
@@ -144,6 +165,12 @@ class Order < ApplicationRecord
           payment.provider_platform_account_id.present?)) &&
         !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
+  end
+
+  # Derived by the database from the order's first order-scope
+  # UnfulfilledCapture; no issued ticket can exist alongside it.
+  def never_fulfilled?
+    never_fulfilled_at.present?
   end
 
   def ticket_record_available?
@@ -173,9 +200,7 @@ class Order < ApplicationRecord
   end
 
   def refunded_cents
-    return refunds.select(&:succeeded?).sum(&:amount_cents) if refunds.loaded?
-
-    refunds.succeeded.sum(:amount_cents)
+    sale_refunds(%w[succeeded]).sum(&:amount_cents)
   end
 
   def net_cents
@@ -195,12 +220,19 @@ class Order < ApplicationRecord
   end
 
   def refundable_cents
-    committed_refunds = if refunds.loaded?
-      refunds.select { |refund| refund.pending? || refund.succeeded? }.sum(&:amount_cents)
-    else
-      refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
-    end
+    committed_refunds = sale_refunds(%w[pending succeeded]).sum(&:amount_cents)
     [total_cents - committed_refunds, 0].max
+  end
+
+  # Refunds against the sale. With a recorded fulfilling payment, only its
+  # refunds (and legacy rows with no payment): another payment's refund
+  # returned that payment's money, never the sale's. Without one, every
+  # refund counts, which keeps the sale's remaining balance conservative.
+  def sale_refunds(statuses)
+    list = refunds.loaded? ? refunds.select { |refund| statuses.include?(refund.status) } : refunds.where(status: statuses).to_a
+    return list if fulfilled_by_payment_id.nil?
+
+    list.select { |refund| refund.payment_id.nil? || refund.payment_id == fulfilled_by_payment_id }
   end
 
   private

@@ -8,8 +8,11 @@ class OrganizationPayoutBalance
     # Cash release requires every reconciliation item to be resolved, including
     # new/uncatalogued codes. RefundSafety's narrower list governs buyer refund
     # attempts; it is not the event closeout or organization payout policy.
-    return 0 if ReconciliationException.open.where(order_id: order_ids).exists? ||
-      ReconciliationException.open.joins(:payment).where(payments: { order_id: order_ids }).exists?
+    # The one exception is a proven platform-only over-return (P4): it alerts
+    # finance and never holds the organizer.
+    open = ReconciliationException.open.where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE)
+    return 0 if open.where(order_id: order_ids).exists? ||
+      open.joins(:payment).where(payments: { order_id: order_ids }).exists?
 
     return 0 if StripeProcessingFees.missing_count(order_ids).positive?
 

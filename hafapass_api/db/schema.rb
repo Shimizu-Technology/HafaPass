@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -240,6 +240,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "balance_adjustments_status_valid"
   end
 
+  create_table "buyer_return_postings", force: :cascade do |t|
+    t.bigint "never_fulfilled_capture_id", null: false
+    t.integer "sequence", null: false
+    t.string "kind", null: false
+    t.string "source_type", null: false
+    t.bigint "source_id", null: false
+    t.bigint "reverses_posting_id"
+    t.integer "gross_cents", null: false
+    t.integer "applied_cents", null: false
+    t.integer "excess_cents", null: false
+    t.integer "proceeds_cents", null: false
+    t.integer "fee_cents", null: false
+    t.integer "organizer_fee_cents", null: false
+    t.integer "tax_cents", null: false
+    t.datetime "recorded_at", null: false
+    t.string "recording_source", null: false
+    t.datetime "capture_recorded_at", null: false
+    t.datetime "recognized_at", null: false
+    t.string "recognition_state", default: "recognized", null: false
+    t.string "allocation_policy", null: false
+    t.string "policy_version", null: false
+    t.string "allocation_method", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.text "note"
+    t.datetime "posted_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["kind", "source_type", "source_id"], name: "index_buyer_return_postings_on_movement", unique: true
+    t.index ["never_fulfilled_capture_id", "sequence"], name: "index_buyer_return_postings_on_capture_sequence", unique: true
+    t.index ["recognized_at"], name: "index_buyer_return_postings_on_recognized_at"
+    t.index ["reverses_posting_id"], name: "index_buyer_return_postings_on_reverses_posting_id", unique: true
+    t.check_constraint "(applied_cents + excess_cents) = gross_cents", name: "buyer_return_postings_gross_identity"
+    t.check_constraint "(kind::text = ANY (ARRAY['refund'::character varying::text, 'dispute_loss'::character varying::text])) AND reverses_posting_id IS NULL AND gross_cents > 0 AND applied_cents >= 0 AND excess_cents >= 0 AND proceeds_cents >= 0 AND fee_cents >= 0 AND organizer_fee_cents >= 0 AND tax_cents >= 0 OR (kind::text = ANY (ARRAY['dispute_loss_reversal'::character varying::text, 'refund_reversal'::character varying::text])) AND reverses_posting_id IS NOT NULL AND gross_cents < 0", name: "buyer_return_postings_direction"
+    t.check_constraint "(kind::text = ANY (ARRAY['refund'::character varying::text, 'refund_reversal'::character varying::text])) AND source_type::text = 'Refund'::text OR (kind::text = ANY (ARRAY['dispute_loss'::character varying::text, 'dispute_loss_reversal'::character varying::text])) AND source_type::text = 'Dispute'::text", name: "buyer_return_postings_source_matches_kind"
+    t.check_constraint "(proceeds_cents + fee_cents + organizer_fee_cents + tax_cents) = applied_cents", name: "buyer_return_postings_components_sum"
+    t.check_constraint "allocation_method::text = ANY (ARRAY['refund_items'::character varying::text, 'bounded'::character varying::text, 'cumulative_pro_rata'::character varying::text, 'recomputed'::character varying::text])", name: "buyer_return_postings_allocation_method_valid"
+    t.check_constraint "kind::text = ANY (ARRAY['refund'::character varying::text, 'dispute_loss'::character varying::text, 'dispute_loss_reversal'::character varying::text, 'refund_reversal'::character varying::text])", name: "buyer_return_postings_kind_valid"
+    t.check_constraint "recognition_state::text = ANY (ARRAY['recognized'::character varying::text, 'pending_correction'::character varying::text])", name: "buyer_return_postings_recognition_state_valid"
+    t.check_constraint "recognized_at = GREATEST(recorded_at, capture_recorded_at)", name: "buyer_return_postings_recognition"
+    t.check_constraint "recording_source::text = 'database'::text OR evidence <> '{}'::jsonb", name: "buyer_return_postings_backfill_evidence"
+    t.check_constraint "recording_source::text = ANY (ARRAY['database'::character varying::text, 'backfill'::character varying::text])", name: "buyer_return_postings_recording_source_valid"
+    t.check_constraint "sequence > 0", name: "buyer_return_postings_sequence_positive"
+  end
+
   create_table "card_present_accounts", force: :cascade do |t|
     t.integer "connection_mode", default: 0, null: false
     t.datetime "created_at", null: false
@@ -434,6 +476,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "loss_recorded_at"
+    t.datetime "loss_reversed_at"
     t.index ["order_id"], name: "index_disputes_on_order_id"
     t.index ["payment_id"], name: "index_disputes_on_payment_id"
     t.index ["provider", "provider_dispute_id"], name: "index_disputes_on_provider_and_provider_dispute_id", unique: true
@@ -895,6 +939,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.check_constraint "char_length(currency::text) = 3", name: "fee_components_currency_length"
   end
 
+  create_table "financial_cutovers", force: :cascade do |t|
+    t.string "key", null: false
+    t.datetime "recorded_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["key"], name: "index_financial_cutovers_on_key", unique: true
+  end
+
   create_table "guest_list_entries", force: :cascade do |t|
     t.string "added_by"
     t.datetime "created_at", null: false
@@ -1334,6 +1384,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.index ["retention_anonymized_at"], name: "index_message_provider_events_on_retention_anonymized_at"
   end
 
+  create_table "never_fulfilled_captures", force: :cascade do |t|
+    t.bigint "order_id", null: false
+    t.bigint "payment_id", null: false
+    t.string "capture_scope", null: false
+    t.string "code", null: false
+    t.integer "captured_cents", null: false
+    t.string "currency", null: false
+    t.integer "proceeds_cents", null: false
+    t.integer "fee_cents", null: false
+    t.integer "organizer_fee_cents", null: false
+    t.integer "tax_cents", null: false
+    t.datetime "capture_recorded_at", null: false
+    t.string "processing_bearer", null: false
+    t.string "dispute_fee_bearer", null: false
+    t.string "allocation_policy", null: false
+    t.string "policy_version", null: false
+    t.string "provenance", null: false
+    t.jsonb "provenance_evidence", default: {}, null: false
+    t.datetime "created_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["order_id"], name: "index_never_fulfilled_captures_on_order_id"
+    t.index ["payment_id"], name: "index_never_fulfilled_captures_on_payment_id", unique: true
+    t.check_constraint "(proceeds_cents + fee_cents + organizer_fee_cents + tax_cents) = captured_cents", name: "never_fulfilled_captures_components_sum"
+    t.check_constraint "(processing_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])) AND (dispute_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "never_fulfilled_captures_bearers_valid"
+    t.check_constraint "allocation_policy::text = ANY (ARRAY['item_record'::character varying::text, 'cumulative_pro_rata'::character varying::text])", name: "never_fulfilled_captures_allocation_policy_valid"
+    t.check_constraint "capture_scope::text = 'order'::text OR fee_cents = 0 AND organizer_fee_cents = 0 AND tax_cents = 0", name: "never_fulfilled_captures_payment_scope_principal"
+    t.check_constraint "capture_scope::text = ANY (ARRAY['order'::character varying::text, 'payment'::character varying::text])", name: "never_fulfilled_captures_scope_valid"
+    t.check_constraint "captured_cents > 0", name: "never_fulfilled_captures_captured_positive"
+    t.check_constraint "char_length(currency::text) = 3", name: "never_fulfilled_captures_currency_length"
+    t.check_constraint "code::text = ANY (ARRAY['late_payment_success_after_inventory_release'::character varying::text, 'late_payment_success_after_hold_expiry'::character varying::text, 'pass_all_included_nights_cancelled'::character varying::text, 'unfulfilled_second_capture'::character varying::text, 'event_not_eligible'::character varying::text])", name: "never_fulfilled_captures_code_valid"
+    t.check_constraint "proceeds_cents >= 0 AND fee_cents >= 0 AND organizer_fee_cents >= 0 AND tax_cents >= 0", name: "never_fulfilled_captures_components_nonnegative"
+    t.check_constraint "provenance::text = 'lifecycle'::text OR provenance_evidence <> '{}'::jsonb", name: "never_fulfilled_captures_backfill_evidence"
+    t.check_constraint "provenance::text = ANY (ARRAY['lifecycle'::character varying::text, 'backfill'::character varying::text])", name: "never_fulfilled_captures_provenance_valid"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.bigint "catalog_item_id"
     t.datetime "created_at", null: false
@@ -1421,12 +1505,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.string "checkout_ip_digest"
     t.bigint "sold_by_id"
     t.datetime "platform_opt_in_at"
+    t.datetime "never_fulfilled_at"
+    t.bigint "fulfilled_by_payment_id"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
     t.index ["event_id", "checkout_ip_digest"], name: "index_orders_on_event_id_and_checkout_ip_digest", where: "(checkout_ip_digest IS NOT NULL)"
     t.index ["event_id"], name: "index_orders_on_event_id"
+    t.index ["fulfilled_by_payment_id"], name: "index_orders_on_fulfilled_by_payment_id", where: "(fulfilled_by_payment_id IS NOT NULL)"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
     t.index ["reference"], name: "index_orders_on_reference", unique: true
@@ -1441,6 +1528,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.check_constraint "discount_cents >= 0", name: "orders_discount_nonnegative"
     t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
+    t.check_constraint "never_fulfilled_at IS NULL OR completed_at IS NULL AND (status <> ALL (ARRAY[0, 1]))", name: "orders_never_fulfilled_not_completed"
+    t.check_constraint "never_fulfilled_at IS NULL OR fulfilled_by_payment_id IS NULL", name: "orders_fulfilled_xor_never_fulfilled"
     t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
     t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "orders_processing_fee_bearer_snapshot_valid"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
@@ -1687,6 +1776,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.datetime "retention_anonymized_at"
     t.string "stripe_checkout_session_id"
     t.text "stripe_checkout_url"
+    t.datetime "capture_recorded_at"
+    t.index ["id", "order_id"], name: "index_payments_on_id_and_order_id", unique: true
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
@@ -2074,6 +2165,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id"
     t.datetime "retention_anonymized_at"
+    t.datetime "hold_started_at"
     t.index "((details ->> 'warning_id'::text))", name: "index_reconciliation_exceptions_on_early_fraud_warning_id", unique: true, where: "(((code)::text = 'early_fraud_warning'::text) AND (details ? 'warning_id'::text))"
     t.index ["order_id"], name: "index_reconciliation_exceptions_on_order_id"
     t.index ["payment_id"], name: "index_reconciliation_exceptions_on_payment_id"
@@ -2151,10 +2243,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.datetime "succeeded_at"
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "success_recorded_at"
+    t.bigint "repayment_operation_id"
     t.index ["idempotency_key"], name: "index_refunds_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_refunds_on_order_id"
     t.index ["payment_id"], name: "index_refunds_on_payment_id"
     t.index ["provider", "provider_refund_id"], name: "index_refunds_on_unique_provider_refund", unique: true, where: "(provider_refund_id IS NOT NULL)"
+    t.index ["repayment_operation_id"], name: "index_refunds_on_repayment_operation_id", unique: true, where: "(repayment_operation_id IS NOT NULL)"
     t.index ["requested_by_id"], name: "index_refunds_on_requested_by_id"
     t.index ["retention_anonymized_at"], name: "index_refunds_on_retention_anonymized_at"
     t.check_constraint "amount_cents > 0", name: "refunds_amount_positive"
@@ -2204,6 +2299,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
     t.index ["ticket_id", "registration_question_id"], name: "index_registration_responses_unique_ticket", unique: true, where: "(ticket_id IS NOT NULL)"
     t.index ["ticket_id"], name: "index_registration_responses_on_ticket_id"
+  end
+
+  create_table "repayment_operations", force: :cascade do |t|
+    t.bigint "never_fulfilled_capture_id", null: false
+    t.bigint "payment_id", null: false
+    t.integer "sequence", null: false
+    t.integer "amount_cents", null: false
+    t.string "currency", null: false
+    t.string "idempotency_key", null: false
+    t.string "state", default: "reserved", null: false
+    t.string "source", null: false
+    t.boolean "adopted", default: false, null: false
+    t.bigint "refund_id"
+    t.integer "submission_count", default: 0, null: false
+    t.datetime "last_submitted_at"
+    t.string "terminal_reason"
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "created_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.datetime "updated_at", null: false
+    t.index ["idempotency_key"], name: "index_repayment_operations_on_idempotency_key", unique: true
+    t.index ["never_fulfilled_capture_id", "sequence"], name: "index_repayment_operations_on_capture_sequence", unique: true
+    t.index ["payment_id", "state"], name: "index_repayment_operations_on_payment_id_and_state"
+    t.index ["refund_id"], name: "index_repayment_operations_on_refund_id", unique: true
+    t.check_constraint "(state::text <> ALL (ARRAY['submitting'::character varying::text, 'unknown'::character varying::text])) OR refund_id IS NOT NULL", name: "repayment_operations_submitted_has_refund"
+    t.check_constraint "amount_cents > 0", name: "repayment_operations_amount_positive"
+    t.check_constraint "sequence > 0", name: "repayment_operations_sequence_positive"
+    t.check_constraint "source::text = ANY (ARRAY['automatic'::character varying::text, 'admin_late_capture'::character varying::text, 'admin_order_refund'::character varying::text, 'fraud_warning'::character varying::text, 'evaluator'::character varying::text, 'queue_retry'::character varying::text, 'adoption'::character varying::text])", name: "repayment_operations_source_valid"
+    t.check_constraint "state::text = ANY (ARRAY['reserved'::character varying::text, 'submitting'::character varying::text, 'unknown'::character varying::text, 'succeeded'::character varying::text, 'failed_terminal'::character varying::text])", name: "repayment_operations_state_valid"
+    t.check_constraint "submission_count >= 0", name: "repayment_operations_submission_count_nonnegative"
   end
 
   create_table "runtime_alert_states", primary_key: "signal", id: :string, force: :cascade do |t|
@@ -2961,7 +3085,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "replayed_at"
+    t.string "provider_payment_intent_id"
+    t.string "provider_object_id"
+    t.boolean "provider_livemode"
+    t.string "provider_account_id"
+    t.bigint "provider_amount_cents"
+    t.string "provider_currency"
     t.index ["provider", "provider_event_id"], name: "index_webhook_events_on_unique_provider_event", unique: true
+    t.index ["provider_payment_intent_id"], name: "index_webhook_events_on_provider_payment_intent_id", where: "(provider_payment_intent_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_webhook_events_on_retention_anonymized_at"
     t.index ["status", "created_at"], name: "index_webhook_events_on_status_and_created_at"
     t.check_constraint "attempts >= 0", name: "webhook_events_attempts_nonnegative"
@@ -3006,6 +3138,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   add_foreign_key "balance_adjustments", "organizations", on_delete: :restrict
   add_foreign_key "balance_adjustments", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "balance_adjustments", "users", column: "reversed_by_user_id", on_delete: :nullify
+  add_foreign_key "buyer_return_postings", "buyer_return_postings", column: "reverses_posting_id"
+  add_foreign_key "buyer_return_postings", "never_fulfilled_captures"
   add_foreign_key "card_present_accounts", "organizations", on_delete: :restrict
   add_foreign_key "card_present_accounts", "users", column: "verified_by_user_id", on_delete: :restrict
   add_foreign_key "card_present_payment_attempts", "card_present_accounts", on_delete: :restrict
@@ -3152,11 +3286,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
+  add_foreign_key "never_fulfilled_captures", "orders"
+  add_foreign_key "never_fulfilled_captures", "payments", column: ["payment_id", "order_id"], primary_key: ["id", "order_id"], name: "fk_never_fulfilled_captures_same_order_payment"
   add_foreign_key "order_items", "catalog_items", on_delete: :restrict
   add_foreign_key "order_items", "orders", on_delete: :restrict
   add_foreign_key "order_items", "pricing_tiers", on_delete: :restrict
   add_foreign_key "order_items", "ticket_types", on_delete: :restrict
   add_foreign_key "orders", "events"
+  add_foreign_key "orders", "payments", column: ["fulfilled_by_payment_id", "id"], primary_key: ["id", "order_id"], name: "fk_orders_fulfilled_by_same_order_payment"
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "orders", "users", column: "sold_by_id"
@@ -3227,11 +3364,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   add_foreign_key "refund_tickets", "tickets", on_delete: :restrict
   add_foreign_key "refunds", "orders", on_delete: :restrict
   add_foreign_key "refunds", "payments", on_delete: :restrict
+  add_foreign_key "refunds", "repayment_operations"
   add_foreign_key "refunds", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "registration_questions", "events", on_delete: :restrict
   add_foreign_key "registration_responses", "orders", on_delete: :restrict
   add_foreign_key "registration_responses", "registration_questions", on_delete: :restrict
   add_foreign_key "registration_responses", "tickets", on_delete: :restrict
+  add_foreign_key "repayment_operations", "never_fulfilled_captures"
+  add_foreign_key "repayment_operations", "payments"
+  add_foreign_key "repayment_operations", "refunds"
   add_foreign_key "scanner_devices", "events", on_delete: :restrict
   add_foreign_key "scanner_devices", "organizations", on_delete: :restrict
   add_foreign_key "scanner_devices", "users", on_delete: :restrict
@@ -3335,6 +3476,1130 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     $$;
     CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
+  SQL
+
+  execute <<~SQL
+    CREATE OR REPLACE FUNCTION hafapass_payment_capture_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      captured boolean := NEW.status IN (1, 4, 5);
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.capture_recorded_at IS NOT NULL THEN
+        IF NEW.capture_recorded_at IS DISTINCT FROM OLD.capture_recorded_at THEN
+          RAISE EXCEPTION 'A payment''s capture recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF captured AND (TG_OP = 'INSERT' OR OLD.status NOT IN (1, 4, 5)) THEN
+        NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, timezone('UTC', clock_timestamp()));
+      ELSIF NEW.capture_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A capture recording time is written only when the payment is first captured'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payments_capture_recorded_at ON payments;
+    CREATE TRIGGER payments_capture_recorded_at BEFORE INSERT OR UPDATE OF status, capture_recorded_at ON payments
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payment_capture_recorded_at();
+    CREATE OR REPLACE FUNCTION hafapass_append_only() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION '% rows are append-only', TG_TABLE_NAME USING ERRCODE = '23514';
+    END;
+    $$;
+    -- Only the confirmed synthetic-data purge may empty these tables, with the
+    -- same transaction-scoped opt-in it sets for audit_logs.
+    CREATE OR REPLACE FUNCTION hafapass_append_only_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.audit_truncate', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION '% cannot be truncated', TG_TABLE_NAME USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_append_only ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_append_only BEFORE UPDATE OR DELETE ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER never_fulfilled_captures_no_truncate BEFORE TRUNCATE ON never_fulfilled_captures
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    DROP TRIGGER IF EXISTS financial_cutovers_append_only ON financial_cutovers;
+    CREATE TRIGGER financial_cutovers_append_only BEFORE UPDATE OR DELETE ON financial_cutovers
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER financial_cutovers_no_truncate BEFORE TRUNCATE ON financial_cutovers
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    CREATE OR REPLACE FUNCTION hafapass_check_never_fulfilled_capture() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      ord orders%ROWTYPE;
+      pay payments%ROWTYPE;
+      cutover timestamp;
+    BEGIN
+      SELECT * INTO ord FROM orders WHERE id = NEW.order_id FOR UPDATE;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Classified order does not exist' USING ERRCODE = '23503';
+      END IF;
+      SELECT * INTO pay FROM payments WHERE id = NEW.payment_id FOR SHARE;
+      IF NOT FOUND OR pay.order_id <> NEW.order_id THEN
+        RAISE EXCEPTION 'A classified payment must belong to the classified order' USING ERRCODE = '23503';
+      END IF;
+      IF pay.status NOT IN (1, 4, 5) THEN
+        RAISE EXCEPTION 'Only a captured payment can be classified' USING ERRCODE = '23514';
+      END IF;
+      IF pay.amount_cents <> NEW.captured_cents OR lower(pay.currency) <> lower(NEW.currency) THEN
+        RAISE EXCEPTION 'A classification must match its payment''s amount and currency' USING ERRCODE = '23514';
+      END IF;
+
+      IF pay.capture_recorded_at IS NOT NULL THEN
+        NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, pay.capture_recorded_at);
+        IF NEW.capture_recorded_at <> pay.capture_recorded_at THEN
+          RAISE EXCEPTION 'A classification must use its payment''s recorded capture time' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        SELECT recorded_at INTO cutover FROM financial_cutovers WHERE key = 'a1_capture_recording';
+        IF NEW.provenance <> 'backfill' OR NEW.capture_recorded_at IS NULL OR cutover IS NULL
+            OR NEW.capture_recorded_at > cutover THEN
+          RAISE EXCEPTION 'A capture recorded before A1 needs a backfilled time with evidence, no later than the cutover'
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+
+      IF NEW.capture_scope = 'order' THEN
+        IF ord.completed_at IS NOT NULL OR ord.status IN (0, 1) OR ord.fulfilled_by_payment_id IS NOT NULL
+            OR EXISTS (SELECT 1 FROM audit_logs WHERE action = 'order.completed'
+              AND deduplication_key = 'order:' || ord.id || ':completed') THEN
+          RAISE EXCEPTION 'A pending or fulfilled order cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM tickets WHERE order_id = NEW.order_id AND status <> 2) THEN
+          RAISE EXCEPTION 'An order with active tickets cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        IF ord.fulfilled_by_payment_id IS NULL THEN
+          RAISE EXCEPTION 'A second capture needs the order''s verified fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+        IF ord.fulfilled_by_payment_id = NEW.payment_id THEN
+          RAISE EXCEPTION 'The fulfilling payment cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_check ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_check BEFORE INSERT ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_never_fulfilled_capture();
+
+    -- The order marker is derived from its first order-scope row, never written directly.
+    CREATE OR REPLACE FUNCTION hafapass_mark_never_fulfilled_order() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.capture_scope = 'order' THEN
+        UPDATE orders SET never_fulfilled_at = NEW.created_at WHERE id = NEW.order_id AND never_fulfilled_at IS NULL;
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_mark_order ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_mark_order AFTER INSERT ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_mark_never_fulfilled_order();
+    CREATE OR REPLACE FUNCTION hafapass_guard_order_fulfillment() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      payment_status integer;
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.never_fulfilled_at IS NOT NULL OR NEW.fulfilled_by_payment_id IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s fulfilment is recorded by its lifecycle, not at creation' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+
+      IF NEW.never_fulfilled_at IS DISTINCT FROM OLD.never_fulfilled_at THEN
+        IF OLD.never_fulfilled_at IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s never-fulfilled marker is set once' USING ERRCODE = '23514';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE order_id = NEW.id AND capture_scope = 'order'
+            AND created_at = NEW.never_fulfilled_at) THEN
+          RAISE EXCEPTION 'The never-fulfilled marker comes only from an order-scope classification' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+
+      IF NEW.fulfilled_by_payment_id IS DISTINCT FROM OLD.fulfilled_by_payment_id THEN
+        IF OLD.fulfilled_by_payment_id IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s fulfilling payment is set once' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status NOT IN (1, 2, 4) THEN
+          RAISE EXCEPTION 'Only a fulfilled order records its fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+        SELECT status INTO payment_status FROM payments
+          WHERE id = NEW.fulfilled_by_payment_id AND order_id = NEW.id FOR KEY SHARE;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'The fulfilling payment must belong to this order' USING ERRCODE = '23503';
+        END IF;
+        IF payment_status NOT IN (1, 4, 5) THEN
+          RAISE EXCEPTION 'The fulfilling payment must be captured' USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE payment_id = NEW.fulfilled_by_payment_id
+            OR (order_id = NEW.id AND capture_scope = 'order')) THEN
+          RAISE EXCEPTION 'A never-fulfilled payment or order cannot record a fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS orders_fulfillment_guard ON orders;
+    CREATE TRIGGER orders_fulfillment_guard BEFORE INSERT OR UPDATE OF never_fulfilled_at, fulfilled_by_payment_id ON orders
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_order_fulfillment();
+    CREATE OR REPLACE FUNCTION hafapass_guard_ticket_issuance() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status = 2 THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' AND OLD.status <> 2 AND OLD.order_id = NEW.order_id THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        PERFORM 1 FROM orders WHERE id = NEW.order_id FOR KEY SHARE;
+      ELSE
+        BEGIN
+          PERFORM 1 FROM orders WHERE id = NEW.order_id FOR KEY SHARE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+          RAISE EXCEPTION 'Lock the order before reactivating or reassigning a ticket' USING ERRCODE = '55P03';
+        END;
+      END IF;
+      IF EXISTS (SELECT 1 FROM orders WHERE id = NEW.order_id AND never_fulfilled_at IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE order_id = NEW.order_id AND capture_scope = 'order') THEN
+        RAISE EXCEPTION 'Tickets cannot be issued on a never-fulfilled order' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS tickets_issuance_guard ON tickets;
+    CREATE TRIGGER tickets_issuance_guard BEFORE INSERT OR UPDATE OF order_id, status ON tickets
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_ticket_issuance();
+    CREATE OR REPLACE FUNCTION hafapass_refund_success_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.success_recorded_at IS NOT NULL THEN
+        IF NEW.success_recorded_at IS DISTINCT FROM OLD.success_recorded_at THEN
+          RAISE EXCEPTION 'A refund''s success recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.success_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A refund''s success recording time is written by the database' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status = 1 AND (TG_OP = 'INSERT' OR OLD.status <> 1) THEN
+        NEW.success_recorded_at := timezone('UTC', clock_timestamp());
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_success_recorded_at ON refunds;
+    CREATE TRIGGER refunds_success_recorded_at BEFORE INSERT OR UPDATE OF status, success_recorded_at ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_success_recorded_at();
+
+    -- loss_reversed_at: the application asks for it by writing any value on a
+    -- lost dispute; the database replaces it with its own time, once.
+    CREATE OR REPLACE FUNCTION hafapass_dispute_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.loss_recorded_at IS NOT NULL THEN
+        IF NEW.loss_recorded_at IS DISTINCT FROM OLD.loss_recorded_at THEN
+          RAISE EXCEPTION 'A dispute''s loss recording time is set once' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A dispute''s loss recording time is written by the database' USING ERRCODE = '23514';
+      ELSIF NEW.status = 2 AND (TG_OP = 'INSERT' OR OLD.status <> 2) THEN
+        NEW.loss_recorded_at := timezone('UTC', clock_timestamp());
+      END IF;
+
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.loss_reversed_at IS NOT NULL THEN
+          RAISE EXCEPTION 'A dispute loss is reversed only after it was recorded' USING ERRCODE = '23514';
+        END IF;
+      ELSIF OLD.loss_reversed_at IS NOT NULL THEN
+        IF NEW.loss_reversed_at IS DISTINCT FROM OLD.loss_reversed_at OR NEW.status <> 2 THEN
+          RAISE EXCEPTION 'A reversed dispute loss is final' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_reversed_at IS NOT NULL THEN
+        IF OLD.status <> 2 OR NEW.status <> 2 THEN
+          RAISE EXCEPTION 'Only a recorded dispute loss can be reversed' USING ERRCODE = '23514';
+        END IF;
+        NEW.loss_reversed_at := timezone('UTC', clock_timestamp());
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS disputes_recorded_at ON disputes;
+    CREATE TRIGGER disputes_recorded_at BEFORE INSERT OR UPDATE OF status, loss_recorded_at, loss_reversed_at ON disputes
+      FOR EACH ROW EXECUTE FUNCTION hafapass_dispute_recorded_at();
+    CREATE OR REPLACE FUNCTION hafapass_check_buyer_return_posting() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      src_payment bigint;
+      src_amount integer;
+      src_currency text;
+      src_status integer;
+      stamp timestamp;
+      cutover timestamp;
+      reversed buyer_return_postings%ROWTYPE;
+      prev_sequence integer;
+      prev_applied bigint;
+      prev_proceeds bigint;
+      prev_fee bigint;
+      prev_organizer_fee bigint;
+      prev_tax bigint;
+    BEGIN
+      SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'A return posting needs its classified capture' USING ERRCODE = '23503';
+      END IF;
+      PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+
+      NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, cap.capture_recorded_at);
+      IF NEW.capture_recorded_at <> cap.capture_recorded_at OR NEW.allocation_policy <> cap.allocation_policy
+          OR NEW.policy_version <> cap.policy_version THEN
+        RAISE EXCEPTION 'A return posting copies its capture''s recording time and allocation policy' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.source_type = 'Refund' THEN
+        SELECT payment_id, amount_cents, currency, status, success_recorded_at
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM refunds WHERE id = NEW.source_id;
+      ELSE
+        SELECT payment_id, amount_cents, currency, status,
+            CASE WHEN NEW.kind = 'dispute_loss_reversal' THEN loss_reversed_at ELSE loss_recorded_at END
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM disputes WHERE id = NEW.source_id;
+      END IF;
+      IF NOT FOUND OR src_payment IS DISTINCT FROM cap.payment_id THEN
+        RAISE EXCEPTION 'A return posting''s movement must belong to the classified payment' USING ERRCODE = '23503';
+      END IF;
+      IF lower(src_currency) <> lower(cap.currency) THEN
+        RAISE EXCEPTION 'A return posting''s movement must be in the capture''s currency' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.kind = 'refund' THEN
+        IF src_status <> 1 OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A refund posting needs a succeeded refund of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss' THEN
+        IF src_status <> 2 OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A dispute posting needs a lost dispute of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss_reversal' THEN
+        SELECT * INTO reversed FROM buyer_return_postings WHERE id = NEW.reverses_posting_id;
+        IF NOT FOUND OR reversed.never_fulfilled_capture_id <> NEW.never_fulfilled_capture_id
+            OR reversed.kind <> 'dispute_loss' OR reversed.source_id <> NEW.source_id
+            OR src_status <> 2 OR stamp IS NULL OR NEW.gross_cents <> -reversed.gross_cents THEN
+          RAISE EXCEPTION 'A loss reversal needs the reversed loss''s posting and a recorded reversal' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        -- refund_reversal needs an approved finance action, which A1 does not ship.
+        RAISE EXCEPTION 'Refund reversals are posted only by an approved finance correction' USING ERRCODE = '23514';
+      END IF;
+
+      IF stamp IS NOT NULL THEN
+        NEW.recorded_at := COALESCE(NEW.recorded_at, stamp);
+        IF NEW.recorded_at <> stamp OR NEW.recording_source <> 'database' THEN
+          RAISE EXCEPTION 'A return posting uses its movement''s database recording time' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        SELECT recorded_at INTO cutover FROM financial_cutovers WHERE key = 'a1_return_recording';
+        IF NEW.recording_source <> 'backfill' OR NEW.recorded_at IS NULL OR cutover IS NULL
+            OR NEW.recorded_at > cutover OR NEW.evidence = '{}'::jsonb THEN
+          RAISE EXCEPTION 'A movement recorded before A1 needs a backfilled time with evidence, no later than the cutover'
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      NEW.recognized_at := COALESCE(NEW.recognized_at, GREATEST(NEW.recorded_at, NEW.capture_recorded_at));
+
+      SELECT COALESCE(MAX(sequence), 0), COALESCE(SUM(applied_cents), 0), COALESCE(SUM(proceeds_cents), 0),
+          COALESCE(SUM(fee_cents), 0), COALESCE(SUM(organizer_fee_cents), 0), COALESCE(SUM(tax_cents), 0)
+        INTO prev_sequence, prev_applied, prev_proceeds, prev_fee, prev_organizer_fee, prev_tax
+        FROM buyer_return_postings WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+      IF NEW.sequence <> prev_sequence + 1 THEN
+        RAISE EXCEPTION 'Return postings are sequenced 1, 2, ... per capture' USING ERRCODE = '23514';
+      END IF;
+      -- Excess is decided on gross against the captured amount alone.
+      IF NEW.kind IN ('refund', 'dispute_loss') AND NEW.applied_cents <> LEAST(NEW.gross_cents, cap.captured_cents - prev_applied) THEN
+        RAISE EXCEPTION 'A return applies the smaller of its gross and the amount still owed' USING ERRCODE = '23514';
+      END IF;
+      IF prev_applied + NEW.applied_cents NOT BETWEEN 0 AND cap.captured_cents
+          OR prev_proceeds + NEW.proceeds_cents NOT BETWEEN 0 AND cap.proceeds_cents
+          OR prev_fee + NEW.fee_cents NOT BETWEEN 0 AND cap.fee_cents
+          OR prev_organizer_fee + NEW.organizer_fee_cents NOT BETWEEN 0 AND cap.organizer_fee_cents
+          OR prev_tax + NEW.tax_cents NOT BETWEEN 0 AND cap.tax_cents THEN
+        RAISE EXCEPTION 'Cumulative returned shares must stay within the capture''s components' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS buyer_return_postings_check ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_check BEFORE INSERT ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_buyer_return_posting();
+    DROP TRIGGER IF EXISTS buyer_return_postings_append_only ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_append_only BEFORE UPDATE OR DELETE ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER buyer_return_postings_no_truncate BEFORE TRUNCATE ON buyer_return_postings
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    CREATE OR REPLACE FUNCTION hafapass_fenced_payment(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT target IS NOT NULL AND (
+        EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE payment_id = target)
+        OR EXISTS (SELECT 1 FROM reconciliation_exceptions WHERE payment_id = target
+          AND code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined')))
+    $$;
+
+    -- Identity is append-only; state moves forward only. Operation n > 1 is
+    -- reserved only after every earlier operation reached a verified
+    -- terminal state, so a retry is never a new operation (design §6.3).
+    CREATE OR REPLACE FUNCTION hafapass_check_repayment_operation() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      last_sequence integer;
+      expected_key text;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Repayment operations are append-only' USING ERRCODE = '23514';
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+        IF NOT FOUND OR cap.payment_id <> NEW.payment_id OR cap.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A repayment operation belongs to its classified payment' USING ERRCODE = '23514';
+        END IF;
+        PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+        SELECT COALESCE(MAX(sequence), 0) INTO last_sequence FROM repayment_operations
+          WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+        IF NEW.sequence <> last_sequence + 1 THEN
+          RAISE EXCEPTION 'Repayment operations are numbered contiguously' USING ERRCODE = '23514';
+        END IF;
+        -- Each reserved operation has its own key; only an adopted legacy
+        -- first operation keeps the older release's key.
+        expected_key := 'late-capture:payment:' || NEW.payment_id ||
+          CASE WHEN NEW.adopted THEN '' ELSE ':op:' || NEW.sequence END;
+        IF NEW.idempotency_key <> expected_key THEN
+          RAISE EXCEPTION 'Repayment operation % must use key %', NEW.sequence, expected_key USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM repayment_operations WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id
+            AND state NOT IN ('succeeded', 'failed_terminal')) THEN
+          RAISE EXCEPTION 'A new repayment operation waits until earlier ones are verified' USING ERRCODE = '23514';
+        END IF;
+        IF NOT NEW.adopted AND (NEW.state <> 'reserved' OR NEW.refund_id IS NOT NULL OR NEW.submission_count <> 0) THEN
+          RAISE EXCEPTION 'A new repayment operation starts reserved' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.adopted AND (NEW.sequence <> 1 OR NEW.refund_id IS NULL) THEN
+          RAISE EXCEPTION 'Only the legacy first operation is adopted, with its refund' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+
+      IF (NEW.never_fulfilled_capture_id, NEW.payment_id, NEW.sequence, NEW.amount_cents, NEW.currency,
+          NEW.idempotency_key, NEW.source, NEW.adopted, NEW.created_at) IS DISTINCT FROM
+         (OLD.never_fulfilled_capture_id, OLD.payment_id, OLD.sequence, OLD.amount_cents, OLD.currency,
+          OLD.idempotency_key, OLD.source, OLD.adopted, OLD.created_at) THEN
+        RAISE EXCEPTION 'A repayment operation''s identity is immutable' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.refund_id IS NOT NULL AND NEW.refund_id IS DISTINCT FROM OLD.refund_id THEN
+        RAISE EXCEPTION 'A repayment operation''s refund is set once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count < OLD.submission_count THEN
+        RAISE EXCEPTION 'Submission counts never decrease' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.state IN ('succeeded', 'failed_terminal') AND NEW.state IS DISTINCT FROM OLD.state THEN
+        RAISE EXCEPTION 'A verified repayment outcome is final' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.state IS DISTINCT FROM OLD.state AND NOT (
+          -- reserved -> succeeded records a provider fact that arrived without
+          -- this operation's own send; it is never refused, and is audited.
+          (OLD.state = 'reserved' AND NEW.state IN ('submitting', 'failed_terminal', 'succeeded')) OR
+          (OLD.state = 'submitting' AND NEW.state IN ('unknown', 'succeeded', 'failed_terminal')) OR
+          (OLD.state = 'unknown' AND NEW.state IN ('submitting', 'succeeded', 'failed_terminal'))) THEN
+        RAISE EXCEPTION 'Repayment operation cannot move from % to %', OLD.state, NEW.state USING ERRCODE = '23514';
+      END IF;
+      -- Only the gate sends, and each send is counted once: entering
+      -- "submitting", or re-sending a stale "submitting" after the in-flight
+      -- bound, adds exactly one.
+      IF NEW.state = 'submitting' AND OLD.state <> 'submitting' AND NEW.submission_count <> OLD.submission_count + 1 THEN
+        RAISE EXCEPTION 'Each submission is counted once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count <> OLD.submission_count AND
+          (NEW.state <> 'submitting' OR NEW.submission_count <> OLD.submission_count + 1) THEN
+        RAISE EXCEPTION 'Submissions are counted only by the gate, one at a time' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS repayment_operations_check ON repayment_operations;
+    CREATE TRIGGER repayment_operations_check BEFORE INSERT OR UPDATE OR DELETE ON repayment_operations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_repayment_operation();
+    CREATE OR REPLACE TRIGGER repayment_operations_no_truncate BEFORE TRUNCATE ON repayment_operations
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+
+    CREATE OR REPLACE FUNCTION hafapass_refund_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      op repayment_operations%ROWTYPE;
+      inbound boolean;
+    BEGIN
+      IF NEW.repayment_operation_id IS NOT NULL AND
+          (TG_OP = 'INSERT' OR NEW.repayment_operation_id IS DISTINCT FROM OLD.repayment_operation_id) THEN
+        IF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL THEN
+          RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF NOT FOUND OR op.payment_id IS DISTINCT FROM NEW.payment_id OR op.idempotency_key <> NEW.idempotency_key
+            OR op.amount_cents <> NEW.amount_cents OR op.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A refund matches its repayment operation exactly' USING ERRCODE = '23514';
+        END IF;
+      ELSIF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+      END IF;
+
+      IF NOT hafapass_fenced_payment(NEW.payment_id) THEN
+        RETURN NEW;
+      END IF;
+      -- Provider evidence passes only when positively identified: a row that
+      -- carries the provider's refund ID, or the insert of an inbound record
+      -- (provider:stripe:refund:<id>), which never reaches the gate.
+      IF NEW.provider_refund_id IS NOT NULL THEN
+        RETURN NEW;
+      END IF;
+      inbound := NEW.idempotency_key LIKE 'provider:stripe:refund:%';
+      IF TG_OP = 'INSERT' AND inbound THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'INSERT' AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'Repayment fence: this payment is returned only through a repayment operation'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.failure_code = 'provider_result_unknown' AND
+          (TG_OP = 'INSERT' OR OLD.failure_code IS DISTINCT FROM 'provider_result_unknown') THEN
+        IF NEW.repayment_operation_id IS NULL THEN
+          RAISE EXCEPTION 'Repayment fence: this refund cannot be submitted' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF op.state <> 'submitting' THEN
+          RAISE EXCEPTION 'Repayment fence: only the operation gate submits this refund' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_repayment_fence ON refunds;
+    CREATE TRIGGER refunds_repayment_fence BEFORE INSERT OR UPDATE OF failure_code, repayment_operation_id, provider_refund_id ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_repayment_fence();
+
+    -- P10 strict for every payout writer, old or new: no payout on an event
+    -- with an open never-fulfilled item is created, released from hold or
+    -- submitted. Holding, failing, reversing and recording a transfer that
+    -- already left are not refused here (the application guards paid
+    -- recording with the existing queue rule).
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status NOT IN (0, 1) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      IF EXISTS (SELECT 1 FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = NEW.event_id)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = NEW.event_id))) THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
+    -- The payment that may change the sale's items, tickets and commission:
+    -- the order's recorded fulfilling payment; an order-scope never-
+    -- fulfilled capture (there is no sale to damage); or, with no fulfilling
+    -- payment recorded, the order's only captured payment of its mode, and
+    -- for a fenced payment only when the order was never fulfilled.
+    -- Payment.live_or_legacy_capture's mode rule: a test or simulated
+    -- capture never competes with a live one for the same sale.
+    CREATE OR REPLACE FUNCTION hafapass_live_or_legacy(environment text, payload jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE AS $$
+      SELECT COALESCE(environment = 'live', false) OR (environment IS NULL
+        AND payload->>'livemode' IS DISTINCT FROM 'false' AND payload->>'simulated' IS DISTINCT FROM 'true')
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_sale_owner_payment(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT CASE
+          WHEN o.fulfilled_by_payment_id IS NOT NULL THEN o.fulfilled_by_payment_id = p.id
+          WHEN EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id AND c.capture_scope = 'order')
+            THEN true
+          ELSE NOT EXISTS (SELECT 1 FROM payments other WHERE other.order_id = p.order_id AND other.id <> p.id
+              AND other.status IN (1, 4, 5)
+              AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+            AND (NOT hafapass_fenced_payment(p.id) OR (o.completed_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.order_id = o.id AND t.status <> 2)))
+        END
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target), false)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_sale_effect_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      origin_payment bigint;
+    BEGIN
+      IF TG_TABLE_NAME = 'tickets' THEN
+        IF NOT EXISTS (SELECT 1 FROM disputes d WHERE d.order_id = NEW.order_id AND d.status = 2
+            AND (d.payment_id IS NULL OR hafapass_sale_owner_payment(d.payment_id))) THEN
+          RAISE EXCEPTION 'Sale ownership: a lost dispute on another payment cannot cancel this order''s tickets'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.refund_id IS NOT NULL THEN
+        SELECT payment_id INTO origin_payment FROM refunds WHERE id = NEW.refund_id;
+      ELSIF TG_TABLE_NAME = 'ticket_inventory_retentions' THEN
+        SELECT payment_id INTO origin_payment FROM disputes WHERE id = NEW.dispute_id;
+      END IF;
+      IF origin_payment IS NOT NULL AND NOT hafapass_sale_owner_payment(origin_payment) THEN
+        RAISE EXCEPTION 'Sale ownership: payment % does not own this sale', origin_payment USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refund_items_sale_ownership ON refund_items;
+    CREATE TRIGGER refund_items_sale_ownership BEFORE INSERT ON refund_items
+      FOR EACH ROW EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS promoter_commission_entries_sale_ownership ON promoter_commission_entries;
+    CREATE TRIGGER promoter_commission_entries_sale_ownership BEFORE INSERT ON promoter_commission_entries
+      FOR EACH ROW WHEN (NEW.refund_id IS NOT NULL) EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS ticket_inventory_retentions_sale_ownership ON ticket_inventory_retentions;
+    CREATE TRIGGER ticket_inventory_retentions_sale_ownership BEFORE INSERT ON ticket_inventory_retentions
+      FOR EACH ROW EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS tickets_dispute_sale_ownership ON tickets;
+    CREATE TRIGGER tickets_dispute_sale_ownership BEFORE UPDATE OF status ON tickets
+      FOR EACH ROW WHEN (NEW.status = 2 AND OLD.status IS DISTINCT FROM NEW.status
+        AND NEW.cancellation_reason = 'payment_dispute_lost')
+      EXECUTE FUNCTION hafapass_sale_effect_guard();
+
+    -- When the event's earliest open blocking never-fulfilled item opened,
+    -- or NULL when nothing blocks it.
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(re.created_at) FROM reconciliation_exceptions re
+        WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+          AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+            OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+              WHERE o.event_id = target_event))
+    $$;
+
+    -- An event whose never-fulfilled order is in a status the 7bcd97c2
+    -- settlement reader counts as a sale (completed, refunded or partially
+    -- refunded). That reader would pay the organizer its proceeds, so only a
+    -- reader that excludes them (this release's Settlements::Finalizer and
+    -- PayoutCreator, which name themselves in hafapass.settlement_reader)
+    -- may finalize its statement or create a payout on it. This keeps the
+    -- fence across a rollback until the A2 readers (A1-R1 review finding 2).
+    CREATE OR REPLACE FUNCTION hafapass_settlement_reader_required(target_event bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM orders o WHERE o.event_id = target_event AND o.never_fulfilled_at IS NOT NULL
+          AND o.status IN (1, 2, 4))
+        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM 'nfc-a1r1'
+    $$;
+
+    -- P10 strict for every payout writer, old or new. Refused on an event
+    -- with an open blocking item: creating a payout; releasing a held one;
+    -- and moving one to processing or paid, unless its submission was
+    -- authorized before the earliest open item. That is the outcome of a
+    -- request already sent (or money that already left), recorded with its
+    -- evidence, never a new payment. Holding, failing and reversing are
+    -- never refused.
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+    BEGIN
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status NOT IN (0, 1, 2) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      IF block_start IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' AND ((NEW.status = 1 AND OLD.status = 0)
+            OR (NEW.status = 2 AND OLD.status IN (0, 1, 5)))
+          AND EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < block_start) THEN
+        RETURN NEW;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
+
+    -- The actual submission authorization of both releases is this audit
+    -- row, written under the payout lock before the gateway call; a pending
+    -- payout is submitted without a status change.
+    CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF hafapass_payout_block_start((SELECT event_id FROM payouts WHERE id = NEW.auditable_id)) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS audit_logs_payout_submission_fence ON audit_logs;
+    CREATE TRIGGER audit_logs_payout_submission_fence BEFORE INSERT ON audit_logs
+      FOR EACH ROW WHEN (NEW.action = 'payout.submission_requested' AND NEW.auditable_type = 'Payout')
+      EXECUTE FUNCTION hafapass_payout_submission_fence();
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_finalization_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS settlements_finalization_fence ON settlements;
+    CREATE TRIGGER settlements_finalization_fence BEFORE INSERT OR UPDATE OF status ON settlements
+      FOR EACH ROW WHEN (NEW.status = 1)
+      EXECUTE FUNCTION hafapass_settlement_finalization_fence();
+
+    CREATE OR REPLACE FUNCTION hafapass_evidence_hold_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.evidence_resolution', true) IS DISTINCT FROM NEW.id::text THEN
+        RAISE EXCEPTION 'Evidence hold: % closes only when its evidence is recorded', NEW.code USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS reconciliation_exceptions_evidence_hold ON reconciliation_exceptions;
+    CREATE TRIGGER reconciliation_exceptions_evidence_hold BEFORE UPDATE OF status ON reconciliation_exceptions
+      FOR EACH ROW WHEN (OLD.status = 0 AND NEW.status IS DISTINCT FROM OLD.status
+        AND NEW.code IN ('unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held'))
+      EXECUTE FUNCTION hafapass_evidence_hold_guard();
+
+    -- An outbound row of a fenced payment gets a provider refund ID only
+    -- from an exact identity (the provider ID or the row's own metadata
+    -- key) that the application matched in this transaction. Never from an
+    -- amount and date, and never by an older release's writer.
+    CREATE OR REPLACE FUNCTION hafapass_refund_identity_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.idempotency_key = 'provider:stripe:refund:' || NEW.provider_refund_id
+          OR NOT hafapass_fenced_payment(NEW.payment_id)
+          OR current_setting('hafapass.refund_identity', true) IS NOT DISTINCT FROM NEW.id::text THEN
+        RETURN NEW;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: refund % needs an exact provider identity match', NEW.id USING ERRCODE = '23514';
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_identity_fence ON refunds;
+    CREATE TRIGGER refunds_identity_fence BEFORE UPDATE OF provider_refund_id ON refunds
+      FOR EACH ROW WHEN (OLD.provider_refund_id IS NULL AND NEW.provider_refund_id IS NOT NULL)
+      EXECUTE FUNCTION hafapass_refund_identity_fence();
+    -- What the sale's own payment returned (refunds without a payment are
+    -- the sale's: cash and manual returns).
+    CREATE OR REPLACE FUNCTION hafapass_sale_refund_total(target_order bigint) RETURNS bigint
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE(SUM(r.amount_cents), 0)::bigint FROM refunds r
+        WHERE r.order_id = target_order AND r.status = 1
+          AND (r.payment_id IS NULL OR hafapass_sale_owner_payment(r.payment_id))
+    $$;
+
+    -- An older release sums every same-mode refund on the order, so a refund
+    -- on another payment (B) would count toward the sale paid by A and could
+    -- mark it fully refunded, cancel its tickets and release its inventory.
+    -- Once the order has such a refund, its refund total may not exceed what
+    -- the owning payment returned and it may become refunded only when that
+    -- covers the total. Orders whose refunds all come from the sale's own
+    -- payment are never affected.
+    CREATE OR REPLACE FUNCTION hafapass_guard_order_refund_aggregate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      owned bigint;
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM refunds r WHERE r.order_id = NEW.id AND r.status = 1
+          AND r.payment_id IS NOT NULL AND NOT hafapass_sale_owner_payment(r.payment_id)) THEN
+        RETURN NEW;
+      END IF;
+      owned := LEAST(hafapass_sale_refund_total(NEW.id), NEW.total_cents);
+      IF (NEW.refund_amount_cents IS DISTINCT FROM OLD.refund_amount_cents AND NEW.refund_amount_cents > owned)
+          OR (NEW.status = 2 AND OLD.status IS DISTINCT FROM NEW.status AND owned < NEW.total_cents) THEN
+        RAISE EXCEPTION 'Sale ownership: order % refund total would count another payment''s refunds', NEW.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS orders_sale_refund_aggregate ON orders;
+    CREATE TRIGGER orders_sale_refund_aggregate BEFORE UPDATE OF status, refund_amount_cents ON orders
+      FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.refund_amount_cents IS DISTINCT FROM NEW.refund_amount_cents)
+      EXECUTE FUNCTION hafapass_guard_order_refund_aggregate();
+
+    -- A real Stripe capture recorded since the A1 capture cutover that no
+    -- release classified: on an order another payment fulfilled, or on a sold
+    -- order with another capture and no recorded fulfilling payment. 7bcd97c2
+    -- acknowledges such a second capture without an exception; this release
+    -- classifies or quarantines it (Commerce::NeverFulfilledReconcile).
+    CREATE OR REPLACE FUNCTION hafapass_unclassified_capture(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT p.provider = 'stripe' AND p.status IN (1, 4, 5) AND p.capture_recorded_at IS NOT NULL
+          AND p.provider_environment IN ('test', 'live') AND p.provider_payment_id IS NOT NULL
+          AND NOT starts_with(p.provider_payment_id, 'sim_') AND p.provider_payload->>'simulated' IS DISTINCT FROM 'true'
+          AND o.never_fulfilled_at IS NULL
+          -- Payment.live_or_legacy_capture's mode rule: a test capture never
+          -- competes with a live one for the same sale.
+          AND CASE WHEN o.fulfilled_by_payment_id IS NOT NULL THEN o.fulfilled_by_payment_id <> p.id
+              AND EXISTS (SELECT 1 FROM payments f WHERE f.id = o.fulfilled_by_payment_id
+                AND hafapass_live_or_legacy(f.provider_environment, f.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+            ELSE (o.completed_at IS NOT NULL OR o.status IN (1, 2, 4))
+              AND EXISTS (SELECT 1 FROM payments other WHERE other.order_id = o.id AND other.id <> p.id
+                AND other.status IN (1, 4, 5)
+                AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+              -- An item on another capture already holds this order.
+              AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions held JOIN payments other ON other.id = held.payment_id
+                WHERE other.order_id = o.id AND other.id <> p.id AND held.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement'))
+          END
+          AND NOT EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = p.id
+            AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement'))
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target), false)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT re.created_at AS started FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT p.capture_recorded_at FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (1, 4, 5) AND hafapass_unclassified_capture(p.id)
+      ) blocks
+    $$;
+
+    -- P10 strict for every payout writer, old or new. On an event with an
+    -- open blocking item: creating a payout, releasing a held one and any
+    -- other move to pending, processing or paid is refused, except
+    --   pending -> processing: the gateway outcome of a submission
+    --     authorized before the earliest open item (a request already sent);
+    --   pending, processing or held -> paid: that pre-hold submission, a
+    --     transfer time (paid_at) before the earliest open item, and this
+    --     release's verified confirmation that the money left before the
+    --     hold, named in the same transaction (hafapass.payout_transfer).
+    --     A submission authorization does not prove a transfer, and a
+    --     timestamp alone proves nothing. 7bcd97c2 never names one.
+    -- Holding, failing and reversing are never refused.
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+      submitted_before boolean;
+    BEGIN
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status NOT IN (0, 1, 2) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      IF block_start IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' THEN
+        submitted_before := EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < block_start);
+        IF NEW.status = 1 AND OLD.status = 0 AND submitted_before THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2
+            AND OLD.status IN (0, 1, 5)
+            AND submitted_before AND NEW.paid_at IS NOT NULL AND NEW.paid_at < block_start
+            AND current_setting('hafapass.payout_transfer', true) IS NOT DISTINCT FROM NEW.id::text THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2 THEN
+          RAISE EXCEPTION 'Repayment fence: payout % needs verified transfer evidence from before the hold', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
+
+    -- A signed receipt's provider identity, read from its own payload (the
+    -- same fields StripeWebhookProcessor.provider_identity stores). A
+    -- capture receipt carries it only when the intent succeeded.
+    CREATE OR REPLACE FUNCTION hafapass_keep_receipt_identity() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      object jsonb := OLD.payload -> 'data' -> 'object';
+      amount jsonb;
+    BEGIN
+      IF NEW.provider_payment_intent_id IS NOT NULL OR jsonb_typeof(object) IS DISTINCT FROM 'object'
+          OR (OLD.event_type = 'payment_intent.succeeded' AND object->>'status' IS DISTINCT FROM 'succeeded') THEN
+        RETURN NEW;
+      END IF;
+      NEW.provider_payment_intent_id := CASE
+        WHEN starts_with(OLD.event_type, 'payment_intent.') THEN NULLIF(object->>'id', '')
+        WHEN jsonb_typeof(object->'payment_intent') = 'object' THEN NULLIF(object->'payment_intent'->>'id', '')
+        ELSE NULLIF(object->>'payment_intent', '') END;
+      IF NEW.provider_payment_intent_id IS NULL THEN
+        RETURN NEW;
+      END IF;
+      amount := CASE OLD.event_type WHEN 'charge.refunded' THEN object->'amount_refunded'
+        WHEN 'payment_intent.succeeded' THEN object->'amount_received' ELSE object->'amount' END;
+      NEW.provider_object_id := COALESCE(NEW.provider_object_id, NULLIF(object->>'id', ''));
+      NEW.provider_livemode := COALESCE(NEW.provider_livemode,
+        CASE WHEN OLD.payload ? 'livemode' THEN OLD.payload->'livemode' = 'true'::jsonb END);
+      NEW.provider_account_id := COALESCE(NEW.provider_account_id, NULLIF(OLD.payload->>'account', ''));
+      NEW.provider_amount_cents := COALESCE(NEW.provider_amount_cents,
+        CASE WHEN jsonb_typeof(amount) = 'number' AND (amount #>> '{}') ~ '^[0-9]+$' THEN (amount #>> '{}')::bigint END);
+      NEW.provider_currency := COALESCE(NEW.provider_currency, lower(NULLIF(object->>'currency', '')));
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS webhook_events_keep_identity ON webhook_events;
+    CREATE TRIGGER webhook_events_keep_identity BEFORE UPDATE OF payload ON webhook_events
+      FOR EACH ROW WHEN (OLD.payload IS DISTINCT FROM NEW.payload
+        AND OLD.event_type IN ('payment_intent.succeeded', 'refund.created', 'refund.updated', 'refund.failed', 'charge.refund.updated', 'charge.refunded', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed'))
+      EXECUTE FUNCTION hafapass_keep_receipt_identity();
+    CREATE OR REPLACE FUNCTION hafapass_unclassified_capture(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT p.provider = 'stripe' AND p.status IN (1, 4, 5) AND p.capture_recorded_at IS NOT NULL
+          AND p.provider_environment IN ('test', 'live') AND p.provider_payment_id IS NOT NULL
+          AND NOT starts_with(p.provider_payment_id, 'sim_') AND p.provider_payload->>'simulated' IS DISTINCT FROM 'true'
+          AND CASE
+            -- Another payment's order-scope capture marked the order. Every
+            -- further capture on it is another order-scope capture
+            -- (OrderLifecycle), whatever the order's status since; there is
+            -- no sale for a test capture to compete with.
+            WHEN o.never_fulfilled_at IS NOT NULL THEN true
+            -- Payment.live_or_legacy_capture's mode rule: a test capture never
+            -- competes with a live one for the same sale.
+            WHEN o.fulfilled_by_payment_id IS NOT NULL THEN o.fulfilled_by_payment_id <> p.id
+              AND EXISTS (SELECT 1 FROM payments f WHERE f.id = o.fulfilled_by_payment_id
+                AND hafapass_live_or_legacy(f.provider_environment, f.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+            ELSE (o.completed_at IS NOT NULL OR o.status IN (1, 2, 4))
+              AND EXISTS (SELECT 1 FROM payments other WHERE other.order_id = o.id AND other.id <> p.id
+                AND other.status IN (1, 4, 5)
+                AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+              -- With no recorded fulfilling payment, the order's first capture
+              -- of this mode (a capture from before the cutover counts as
+              -- first) may be the sale itself: once another capture of this
+              -- mode has an item, that first capture alone is no longer an
+              -- overlap. Every later capture stays one until it has its own
+              -- item, so one payment's item never hides another's liability.
+              AND NOT (EXISTS (SELECT 1 FROM reconciliation_exceptions held JOIN payments other ON other.id = held.payment_id
+                  WHERE other.order_id = o.id AND other.id <> p.id AND held.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement')
+                    AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                      = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+                AND NOT EXISTS (SELECT 1 FROM payments earlier WHERE earlier.order_id = o.id AND earlier.id <> p.id
+                  AND earlier.status IN (1, 4, 5)
+                  AND hafapass_live_or_legacy(earlier.provider_environment, earlier.provider_payload)
+                    = hafapass_live_or_legacy(p.provider_environment, p.provider_payload)
+                  AND (COALESCE(earlier.capture_recorded_at, '-infinity'::timestamp), earlier.id) < (p.capture_recorded_at, p.id)))
+          END
+          AND NOT EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = p.id
+            AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement'))
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target), false)
+    $$;
+
+    -- When an unclassified overlap capture began to overlap, or NULL when the
+    -- payment is not one: the later of its own capture and the order's first
+    -- other capture that can compete with it, by the predicate's own mode
+    -- rule (of its mode; any mode on a marked order). The fulfilling or
+    -- marking payment is one of them. A capture from before the cutover has
+    -- no recording time and was captured before every recorded one, so it
+    -- counts as the earliest (-infinity), never as absent. Recording times
+    -- are database-stamped once (payments_capture_recorded_at), so a later
+    -- capture only adds a competitor and can only make this earlier.
+    CREATE OR REPLACE FUNCTION hafapass_overlap_hold_start(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT GREATEST(p.capture_recorded_at, (SELECT MIN(COALESCE(other.capture_recorded_at, '-infinity'::timestamp))
+          FROM payments other WHERE other.order_id = p.order_id AND other.id <> p.id
+            AND other.status IN (1, 4, 5)
+            AND (o.never_fulfilled_at IS NOT NULL OR hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+              = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))))
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target AND hafapass_unclassified_capture(p.id)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) AS started
+          FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT hafapass_overlap_hold_start(p.id) FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (1, 4, 5)
+      ) blocks
+    $$;
+
+    -- Stamped on insert by the database (whatever value a writer supplies)
+    -- and never changed: the earliest overlap start of any unclassified
+    -- capture on the payment's order (its own included), or the start of a
+    -- blocking item still open on the same payment, whichever is earlier.
+    -- The new row is not yet visible here, so the first classifying exception
+    -- still sees the overlap it is about to end, and any start it takes out
+    -- of the overlap set (its own, or the order's first capture that its
+    -- item stops counting) is kept on the row. The items discovery writes
+    -- after it (a quarantine, a repayment wait) keep the same start for as
+    -- long as the payment's hold stays open. Once every item on the payment
+    -- is closed and no capture on the order is unclassified, a later item
+    -- starts at its own time.
+    CREATE OR REPLACE FUNCTION hafapass_exception_hold_start() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        IF NEW.hold_started_at IS DISTINCT FROM OLD.hold_started_at THEN
+          RAISE EXCEPTION 'An exception''s hold start is recorded once, from its capture' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      NEW.hold_started_at := CASE WHEN NEW.payment_id IS NOT NULL AND NEW.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+        THEN LEAST((SELECT MIN(hafapass_overlap_hold_start(x.id)) FROM payments x
+            WHERE x.order_id = (SELECT target.order_id FROM payments target WHERE target.id = NEW.payment_id)),
+          (SELECT MIN(LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at))) FROM reconciliation_exceptions re
+            WHERE re.payment_id = NEW.payment_id AND re.status = 0
+              AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held'))) END;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS reconciliation_exceptions_hold_start ON reconciliation_exceptions;
+    CREATE TRIGGER reconciliation_exceptions_hold_start BEFORE INSERT OR UPDATE OF hold_started_at ON reconciliation_exceptions
+      FOR EACH ROW EXECUTE FUNCTION hafapass_exception_hold_start();
+
+    -- The event row every capture holds until it commits (docs/LOCKING.md
+    -- rank 2). Already held by this release's payout writers; NOWAIT for an
+    -- older writer that holds the payout (rank 3) and would otherwise wait
+    -- in reverse order. A row lock taken in this block's subtransaction is
+    -- kept when the block returns.
+    CREATE OR REPLACE FUNCTION hafapass_lock_payout_event(target_event bigint) RETURNS void
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM 1 FROM events WHERE id = target_event FOR NO KEY UPDATE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE EXCEPTION 'Repayment fence: event % has a sale or capture in progress; retry this payout step', target_event
+        USING ERRCODE = '55P03';
+    END;
+    $$;
+
+    -- 20261126140000's fence, after the event lock (finding 3).
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+      submitted_before boolean;
+    BEGIN
+      IF TG_OP = 'UPDATE' AND (NEW.status = OLD.status
+          OR NEW.status NOT IN (0, 1, 2)) THEN
+        RETURN NEW;
+      END IF;
+      -- Lock in one statement; every later statement reads a fresh snapshot.
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status NOT IN (0, 1, 2) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      IF block_start IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' THEN
+        submitted_before := EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < block_start);
+        IF NEW.status = 1 AND OLD.status = 0 AND submitted_before THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2
+            AND OLD.status IN (0, 1, 5)
+            AND submitted_before AND NEW.paid_at IS NOT NULL AND NEW.paid_at < block_start
+            AND current_setting('hafapass.payout_transfer', true) IS NOT DISTINCT FROM NEW.id::text THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2 THEN
+          RAISE EXCEPTION 'Repayment fence: payout % needs verified transfer evidence from before the hold', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      target_event bigint;
+    BEGIN
+      SELECT event_id INTO target_event FROM payouts WHERE id = NEW.auditable_id;
+      PERFORM hafapass_lock_payout_event(target_event);
+      IF hafapass_payout_block_start(target_event) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_finalization_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
   SQL
 
 end

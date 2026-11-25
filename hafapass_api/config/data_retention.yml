@@ -380,6 +380,13 @@
         "metadata"
       ]
     },
+    "financial_cutovers": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "recorded_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "guest_list_entries": {
       "category": "organizer PII",
       "period": "7_years_after_year_end",
@@ -557,6 +564,27 @@
         "payload",
         "processing_error"
       ]
+    },
+    "never_fulfilled_captures": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "buyer_return_postings": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "posted_at",
+      "action": "keep",
+      "pii_columns": []
+    },
+    "repayment_operations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
     },
     "order_items": {
       "category": "financial record",
@@ -1519,7 +1547,9 @@
       "reason": "pii",
       "status": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "loss_recorded_at": "system",
+      "loss_reversed_at": "system"
     },
     "distribution_links": {
       "id": "system",
@@ -1833,6 +1863,11 @@
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
+    "financial_cutovers": {
+      "id": "system",
+      "key": "system",
+      "recorded_at": "system"
+    },
     "guest_list_entries": {
       "id": "system",
       "added_by": "non-personal",
@@ -2132,6 +2167,73 @@
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
+    "never_fulfilled_captures": {
+      "id": "system",
+      "order_id": "system",
+      "payment_id": "system",
+      "capture_scope": "system",
+      "code": "system",
+      "captured_cents": "financial",
+      "currency": "financial",
+      "proceeds_cents": "financial",
+      "fee_cents": "financial",
+      "organizer_fee_cents": "financial",
+      "tax_cents": "financial",
+      "capture_recorded_at": "system",
+      "processing_bearer": "financial",
+      "dispute_fee_bearer": "financial",
+      "allocation_policy": "financial",
+      "policy_version": "system",
+      "provenance": "system",
+      "provenance_evidence": "system",
+      "created_at": "system"
+    },
+    "buyer_return_postings": {
+      "id": "system",
+      "never_fulfilled_capture_id": "system",
+      "sequence": "system",
+      "kind": "system",
+      "source_type": "system",
+      "source_id": "system",
+      "reverses_posting_id": "system",
+      "gross_cents": "financial",
+      "applied_cents": "financial",
+      "excess_cents": "financial",
+      "proceeds_cents": "financial",
+      "fee_cents": "financial",
+      "organizer_fee_cents": "financial",
+      "tax_cents": "financial",
+      "recorded_at": "system",
+      "recording_source": "system",
+      "capture_recorded_at": "system",
+      "recognized_at": "financial",
+      "recognition_state": "financial",
+      "allocation_policy": "financial",
+      "policy_version": "system",
+      "allocation_method": "system",
+      "evidence": "system",
+      "note": "system",
+      "posted_at": "system"
+    },
+    "repayment_operations": {
+      "id": "system",
+      "never_fulfilled_capture_id": "system",
+      "payment_id": "system",
+      "sequence": "system",
+      "amount_cents": "financial",
+      "currency": "financial",
+      "idempotency_key": "system",
+      "state": "financial",
+      "source": "system",
+      "adopted": "system",
+      "refund_id": "system",
+      "submission_count": "system",
+      "last_submitted_at": "system",
+      "terminal_reason": "system",
+      "evidence": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "order_items": {
       "id": "system",
       "catalog_item_id": "system",
@@ -2203,7 +2305,9 @@
       "locale": "non-personal",
       "marketing_opt_in": "pii",
       "retention_anonymized_at": "non-personal",
-      "platform_opt_in_at": "pii"
+      "platform_opt_in_at": "pii",
+      "never_fulfilled_at": "non-personal",
+      "fulfilled_by_payment_id": "non-personal"
     },
     "organization_invitation_dispatches": {
       "id": "system",
@@ -2386,7 +2490,8 @@
       "provider_environment": "system",
       "provider_account_id": "system",
       "provider_platform_account_id": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "capture_recorded_at": "system"
     },
     "payout_check_adjustments": {
       "id": "system",
@@ -2646,7 +2751,8 @@
       "status": "system",
       "updated_at": "system",
       "webhook_event_id": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "hold_started_at": "system"
     },
     "referral_attributions": {
       "id": "system",
@@ -2701,7 +2807,9 @@
       "status": "system",
       "succeeded_at": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "success_recorded_at": "system",
+      "repayment_operation_id": "system"
     },
     "registration_questions": {
       "id": "system",
@@ -3297,7 +3405,14 @@
       "provider_event_id": "system",
       "status": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "replayed_at": "system",
+      "provider_payment_intent_id": "system",
+      "provider_object_id": "system",
+      "provider_livemode": "system",
+      "provider_account_id": "system",
+      "provider_amount_cents": "financial",
+      "provider_currency": "financial"
     },
     "webhook_rejection_counts": {
       "id": "system",

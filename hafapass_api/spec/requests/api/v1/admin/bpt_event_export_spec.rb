@@ -17,6 +17,8 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       buyer_email: "private-buyer@example.test")
     payment = create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment,
       **(payment_id ? { provider_payment_id: payment_id } : {}))
+    # Completion records the fulfilling payment; a later capture is not the sale's.
+    order.update!(fulfilled_by_payment_id: payment.id)
     create(:fee_component, order: order, amount_cents: fee)
     [order, payment]
   end
@@ -32,14 +34,23 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     line = create(:order_item, order: order, discount_cents: 200, organizer_proceeds_cents: 2200)
     create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 81)
     create(:fee_component, order: order, kind: "processing", amount_cents: 99)
-    create(:payment, :succeeded, order: order, provider_environment: "live")
+    later_capture = create(:payment, :succeeded, order: order, provider_environment: "live")
+    # A historical later capture (recorded before A1), which reconcile's
+    # backfill decides; a capture recorded since A1 and left unclassified
+    # would hold this event's payouts (hafapass_unclassified_capture).
+    stamp!(later_capture, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
     refund = create(:refund, order: order, payment: capture, succeeded_at: october_end)
     create(:refund_item, refund: refund, order_item: line, amount_cents: 500, organizer_proceeds_cents: 390,
       fee_cents: 60, organizer_fee_cents: 50)
 
     test_payment = create(:payment, :succeeded, order: order, provider_environment: "test")
     test_refund = create(:refund, order: order, payment: test_payment, succeeded_at: october_end)
+    # A test-mode refund's items on a live sale exist only from before A1:
+    # the sale-ownership guard now refuses them (only the fulfilling payment
+    # changes the sale). Readers must still ignore the historical row.
+    ActiveRecord::Base.connection.execute("ALTER TABLE refund_items DISABLE TRIGGER refund_items_sale_ownership")
     create(:refund_item, refund: test_refund, order_item: line, amount_cents: 25, organizer_proceeds_cents: 0, fee_cents: 25)
+    ActiveRecord::Base.connection.execute("ALTER TABLE refund_items ENABLE TRIGGER refund_items_sale_ownership")
 
     settlement = create(:settlement, event: event, organization: event.organization)
     bank_account = create(:connected_account, organization: event.organization, provider: "manual", with_readiness_approval: false)
@@ -119,7 +130,8 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     end
   end
 
-  it "keeps closed January unchanged when a late door-card capture and auto-refund settle in February and dates cross-month capture and refund by recording month" do
+  it "keeps closed January unchanged when a late door-card capture and auto-refund settle in February and dates cross-month capture and refund by recording month",
+    repayment_submitter: :active do
     same_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
     cross_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
     tt1 = create(:ticket_type, event: same_month_event, price_cents: 1_200, quantity_available: 1)
@@ -172,12 +184,14 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       OpenStruct.new(id: "re_live_BptSameFeb", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment1.provider_payment_id)
     )
     travel_to(feb_capture) do
-      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment1.provider_payment_id, livemode: payment1.provider_environment == "live" })
       Commerce::LateCaptureRefund.call(payment: payment1)
     end
 
     travel_to(feb_late_capture) do
-      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment2.provider_payment_id, livemode: payment2.provider_environment == "live" })
     end
 
     get path, params: { year: 2027, month: 2 }, headers: auth_headers(admin)

@@ -65,7 +65,7 @@ module Commerce
         payment.update!(provider_payload: payment.provider_payload.to_h.merge("status" => state))
         if state == "succeeded"
           OrderLifecycle.complete!(@order, payment: payment, provider_amount_cents: intent.amount_received,
-            provider_currency: intent.currency)
+            provider_currency: intent.currency, provider_lookup: { provider_object_id: intent.id, livemode: intent.livemode })
         elsif state == "canceled"
           OrderLifecycle.fail!(@order, payment: payment, reason: "payment_cancelled")
         end

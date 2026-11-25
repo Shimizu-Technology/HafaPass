@@ -27,10 +27,14 @@
 #       `proceeds_collected`), its refund in `buyer_refunds_paid` (not
 #       `proceeds_refunded`), and the balance carries in
 #       `closing_buyer_refunds_owed`, so organizer custody matches the payout
-#       statement. "Never fulfilled" needs the late-capture reconciliation
-#       exception as evidence (see #unfulfilled_capture_sql). Its
+#       statement. "Never fulfilled" is Commerce::NeverFulfilledCapture: the
+#       late-capture exception linked to the capture's own payment (see
+#       #unfulfilled_capture_sql), shared with Settlements::Calculator. Its
 #       service fee stays in fee revenue and fee refunds, as in the BPT detail
-#       CSV; its Stripe processing is informational only (never organizer-borne).
+#       CSV; its Stripe processing is informational only (never organizer-borne
+#       under the shared bearer switch). A lost dispute on it clears the buyer
+#       balance, not organizer custody, capped per order so a refund and a
+#       dispute cannot both clear it (#buyer_returns_by_event).
 #     * Paid payouts: `COALESCE(paid_audit.created_at, payouts.paid_at)` across
 #       all live (non-simulated) USD payouts. Audit joins rely on fields that
 #       survive `DataRetention.anonymize!` (`action`, `auditable_id`,
@@ -350,18 +354,29 @@ class CpaMonthlyReport
   end
 
   # A capture HåfaPass never fulfilled (hold expired, inventory released, or
-  # every pass night cancelled first) is owed back to the buyer. The evidence is
-  # the late-capture reconciliation exception OrderLifecycle writes in the same
-  # transaction that records the capture; it is a 7-year financial record whose
-  # code and order survive retention. completed_at alone is not enough: legacy
+  # every pass night cancelled first) is owed back to the buyer. The shared
+  # Commerce::NeverFulfilledCapture predicate decides it from the payment row
+  # and the late-capture exception linked to that payment, so the same order
+  # is classified the same way in every month, even when its capture and
+  # exception straddle a Guam midnight, and Settlements::Calculator agrees.
+  # Here the qualifying payment must also be a live USD Stripe agent capture
+  # recorded before month end. completed_at alone is not enough: legacy
   # completed orders can have a null completed_at.
   def unfulfilled_capture_sql
-    @unfulfilled_capture_sql ||= ActiveRecord::Base.sanitize_sql_array([
-      "(orders.completed_at IS NULL AND EXISTS (SELECT 1 FROM reconciliation_exceptions late_re " \
-      "WHERE late_re.order_id = orders.id AND late_re.code IN (?) AND late_re.created_at < ?))",
-      Commerce::LateCaptureRefund::CODES, month_end
-    ])
+    @unfulfilled_capture_sql ||= Commerce::NeverFulfilledCapture.order_sql(
+      payment_sql: LIVE_AGENT_CAPTURE_SQL, recorded_before: month_end
+    )
   end
+
+  LIVE_AGENT_CAPTURE_SQL = <<~SQL.squish.freeze
+    nf_pay.provider = 'stripe' AND nf_pay.currency = 'usd'
+    AND (nf_pay.provider_environment = 'live' OR (nf_pay.provider_environment IS NULL
+      AND nf_pay.provider_payload->>'livemode' IS DISTINCT FROM 'false'
+      AND nf_pay.provider_payload->>'simulated' IS DISTINCT FROM 'true'))
+    AND LEFT(COALESCE(nf_pay.provider_payment_id, ''), 4) <> 'sim_'
+    AND nf_pay.provider_payload->>'simulated' IS DISTINCT FROM 'true'
+    AND nf_pay.provider_payload->>'livemode' IS DISTINCT FROM 'false'
+  SQL
 
   def fulfilled_custody_sql
     @fulfilled_custody_sql ||= "NOT #{unfulfilled_capture_sql}"
@@ -726,12 +741,7 @@ class CpaMonthlyReport
     refunded_proceeds_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
       .where(fulfilled_custody_sql)
       .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
-    buyer_refunded_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
-      .where(unfulfilled_capture_sql)
-      .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
-    buyer_refunded_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
-      .where(unfulfilled_capture_sql)
-      .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
+    buyer_refunded_before, buyer_refunded_month, buyer_overpaid_before, buyer_overpaid_month = buyer_returns_by_event
 
     refunds_total_before = refunds_before.joins(:order).group("orders.event_id").sum(:amount_cents)
     refunds_total_month = refunds_in_month.joins(:order).group("orders.event_id").sum(:amount_cents)
@@ -740,11 +750,16 @@ class CpaMonthlyReport
     allocated_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
       .group("orders.event_id").sum("refund_items.amount_cents")
 
-    chargebacks_before = disputes_before.joins(:order).group("orders.event_id").sum(:amount_cents)
-    chargebacks_month = disputes_in_month.joins(:order).group("orders.event_id").sum(:amount_cents)
+    # A lost dispute on a never-fulfilled capture returns the buyer's money,
+    # so it clears the buyer obligation (buyer_returns_by_event), never
+    # organizer custody.
+    chargebacks_before = disputes_before.joins(:order).where(fulfilled_custody_sql)
+      .group("orders.event_id").sum(:amount_cents)
+    chargebacks_month = disputes_in_month.joins(:order).where(fulfilled_custody_sql)
+      .group("orders.event_id").sum(:amount_cents)
 
     # Label chargebacks lost in this month for disputes opened in an earlier closed month
-    disputes_in_month.joins(:order)
+    disputes_in_month.joins(:order).where(fulfilled_custody_sql)
       .where("disputes.opened_at < ?", month_start)
       .pluck("orders.event_id", "disputes.opened_at")
       .each do |event_id, opened_at|
@@ -771,6 +786,7 @@ class CpaMonthlyReport
       refunded_proceeds_before.keys | refunded_proceeds_month.keys |
       buyer_owed_before.keys | buyer_owed_month.keys |
       buyer_refunded_before.keys | buyer_refunded_month.keys |
+      buyer_overpaid_before.keys | buyer_overpaid_month.keys |
       refunds_total_before.keys | refunds_total_month.keys |
       chargebacks_before.keys | chargebacks_month.keys |
       payouts_gross_before.keys | payouts_gross_month.keys |
@@ -827,6 +843,13 @@ class CpaMonthlyReport
       if !unalloc_month.zero? || !unalloc_cumulative.zero?
         exception_notes << "Unallocated legacy refunds: $#{FinanceExports.money(unalloc_cumulative)} cumulative ($#{FinanceExports.money(unalloc_month)} in month)"
       end
+      overpaid_month = buyer_overpaid_month.fetch(event_id, 0)
+      overpaid_cumulative = buyer_overpaid_before.fetch(event_id, 0) + overpaid_month
+      unless overpaid_cumulative.zero?
+        exception_notes << "Never-fulfilled payment returned to the buyer twice (refund and lost dispute): " \
+          "$#{FinanceExports.money(overpaid_cumulative)} ticket share cumulative " \
+          "($#{FinanceExports.money(overpaid_month)} in month), a HåfaPass loss outside organizer custody"
+      end
       has_exception = exception_notes.any?
 
       bridge_cents = settlement_bridge_by_event.fetch(event_id, 0)
@@ -840,7 +863,7 @@ class CpaMonthlyReport
         payouts_made, payout_rev, closing,
         buyer_opening, buyer_captured, buyer_paid, buyer_closing,
         reserve_held, reserve_released, ending_reserve,
-        unalloc_month, unalloc_cumulative, bridge_cents,
+        unalloc_month, unalloc_cumulative, overpaid_cumulative, bridge_cents,
         fee_gross, fee_refund, proc_month_total
       ]
       next if active_values.all?(&:zero?)
@@ -891,6 +914,57 @@ class CpaMonthlyReport
       .sort_by { |row| [row[:organization_id], row[:event_id] || Float::INFINITY] }
   end
 
+  # Buyer obligation on never-fulfilled captures, cleared by succeeded
+  # refunds (RefundItem ticket share) and lost disputes (the dispute amount's
+  # ticket share, allocated pro rata between the ticket share and the rest of
+  # the payment), each in its own recording month. Clearing is capped per
+  # order at the ticket share captured, so a refund after a lost dispute (or a
+  # lost dispute after a refund) cannot clear the same obligation twice; the
+  # excess is a HåfaPass loss, flagged as a reconciliation exception.
+  # Returns per-event [cleared_before, cleared_month, overpaid_before, overpaid_month].
+  def buyer_returns_by_event
+    order_rows = agent_orders.where(unfulfilled_capture_sql).pluck(:id, :event_id, :total_cents)
+    results = Array.new(4) { Hash.new(0) }
+    return results if order_rows.empty?
+
+    order_ids = order_rows.map(&:first)
+    owed = OrderItem.where(order_id: order_ids).group(:order_id).sum(:organizer_proceeds_cents)
+    returns = Hash.new { |hash, key| hash[key] = [] }
+
+    refund_at = "COALESCE(refunds.succeeded_at, refunds.created_at)"
+    RefundItem.joins(:refund)
+      .where(refund_id: agent_refunds.where(order_id: order_ids).where("#{refund_at} < ?", month_end).select(:id))
+      .group("refunds.order_id", Arel.sql(refund_at))
+      .pluck("refunds.order_id", Arel.sql("#{refund_at} < #{ActiveRecord::Base.connection.quote(month_start)}"),
+        Arel.sql("SUM(refund_items.organizer_proceeds_cents)"))
+      .each { |order_id, before, cents| returns[order_id] << [before, cents.to_i] }
+
+    totals = order_rows.to_h { |id, _event_id, total| [id, total.to_i] }
+    lost_disputes_base.where(order_id: order_ids).joins(dispute_lost_audit_join_sql)
+      .where("#{DISPUTE_LOST_AT_SQL} < ?", month_end)
+      .pluck(:order_id, Arel.sql("#{DISPUTE_LOST_AT_SQL} < #{ActiveRecord::Base.connection.quote(month_start)}"), :amount_cents)
+      .each do |order_id, before, amount|
+        ticket = owed.fetch(order_id, 0)
+        rest = [totals.fetch(order_id) - ticket, 0].max
+        share = Commerce::MoneyAllocator.call(amount.to_i, [ticket, rest]).first
+        returns[order_id] << [before, share]
+      end
+
+    cleared_before, cleared_month, overpaid_before, overpaid_month = results
+    order_rows.each do |order_id, event_id, _total|
+      ticket = owed.fetch(order_id, 0)
+      returned_before = returns[order_id].select(&:first).sum(&:last)
+      returned_total = returns[order_id].sum(&:last)
+      cleared_through_start = returned_before.clamp(0, ticket)
+      cleared_through_end = returned_total.clamp(0, ticket)
+      cleared_before[event_id] += cleared_through_start
+      cleared_month[event_id] += cleared_through_end - cleared_through_start
+      overpaid_before[event_id] += returned_before - cleared_through_start
+      overpaid_month[event_id] += (returned_total - cleared_through_end) - (returned_before - cleared_through_start)
+    end
+    results.each { |hash| hash.delete_if { |_event_id, cents| cents.zero? } }
+  end
+
   # SQL-aggregated actual Stripe processing costs, period-dated strictly by
   # the immutable append-only recording time `fee_components.created_at`
   # (completely independent of current mutable `stripe_fee_evidences.status`).
@@ -910,16 +984,20 @@ class CpaMonthlyReport
     totals = Hash.new { |hash, key| hash[key] = [0, 0, 0] }
 
     # 0. Never-fulfilled captures have no organizer proceeds to deduct from, so
-    #    their processing cost is HåfaPass's (informational total only).
-    base.where(unfulfilled_capture_sql)
-      .where("#{recorded_at_expr} >= ?", month_start)
-      .group("orders.event_id")
-      .sum("fee_components.amount_cents")
-      .each do |event_id, amount|
-        totals[event_id][2] += amount.to_i
-      end
+    #    their processing cost is HåfaPass's (informational total only). The
+    #    bearer rule is shared with Settlements::Calculator and awaits
+    #    Leon/CPA confirmation (Commerce::NeverFulfilledCapture).
     all_processing = base
-    base = base.where(fulfilled_custody_sql)
+    unless Commerce::NeverFulfilledCapture.organizer_bears_processing?
+      base.where(unfulfilled_capture_sql)
+        .where("#{recorded_at_expr} >= ?", month_start)
+        .group("orders.event_id")
+        .sum("fee_components.amount_cents")
+        .each do |event_id, amount|
+          totals[event_id][2] += amount.to_i
+        end
+      base = base.where(fulfilled_custody_sql)
+    end
 
     # 1. Organizer-borne or legacy NULL bearer: 100% organizer
     base.where("orders.processing_fee_bearer_snapshot IS DISTINCT FROM 'platform'")

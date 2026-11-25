@@ -12,6 +12,7 @@ module Commerce
       refund_operation_not_found refund_operation_mismatch refund_terminal_status_conflict
       refunded_payment_not_found refund_missing_order_item_ledger provider_refund_total_decreased
       refund_aggregate_requires_reconciliation
+      never_fulfilled_return_quarantined never_fulfilled_sale_effects_held
     ].freeze
 
     # except_payment_codes: { payment_id => codes } ignores those codes only

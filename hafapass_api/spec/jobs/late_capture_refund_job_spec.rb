@@ -23,40 +23,60 @@ RSpec.describe LateCaptureRefundJob do
     allow(Sentry).to receive(:capture_message)
   end
 
-  # A buyer pays after HåfaPass released the order: the success webhook
-  # records the late capture and enqueues this job.
+  # A buyer pays after HåfaPass released the order: the verified provider
+  # lookup records and classifies the late capture and enqueues this job.
   def late_capture
     result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }],
       buyer_email: "late@example.com", buyer_name: "Late Buyer")
     Commerce::OrderLifecycle.cancel!(result.order)
     expect do
       Commerce::OrderLifecycle.complete!(result.order, payment: result.payment,
-        provider_amount_cents: result.payment.amount_cents, provider_currency: "usd")
+        provider_amount_cents: result.payment.amount_cents, provider_currency: "usd",
+        provider_lookup: { provider_object_id: result.payment.provider_payment_id, livemode: false })
     end.to have_enqueued_job(described_class).with(result.payment.id)
+    expect(UnfulfilledCapture.find_by(payment_id: result.payment.id)).to be_present
     [result.order.reload, result.payment.reload]
   end
 
-  it "refunds the whole late payment once, emails the buyer and resolves the exception with an audit note" do
+  it "sends nothing in A1-R1 and records why the repayment waits" do
+    order, payment = late_capture
+    issue = ReconciliationException.find_by!(order: order, code: "late_payment_success_after_inventory_release")
+
+    2.times { described_class.perform_now(payment.id) }
+
+    expect(refunds).to be_empty
+    expect(order.refunds).to be_empty
+    expect(RepaymentOperation.where(payment_id: payment.id)).to be_empty
+    expect(issue.reload).to be_open
+    expect(issue.details).to include("wait_reason" => "repayment_inactive", "owed_cents" => payment.amount_cents)
+    expect(Sentry).not_to have_received(:capture_message).with(/finance review required/, anything)
+  end
+
+  it "refunds the whole late payment once, emails the buyer and resolves the exception with an audit note",
+    repayment_submitter: :active do
     order, payment = late_capture
     issue = ReconciliationException.find_by!(order: order, code: "late_payment_success_after_inventory_release")
 
     2.times { described_class.perform_now(payment.id) }
 
     expect(refunds).to eq([{ intent_id: payment.provider_payment_id, amount_cents: payment.amount_cents,
-      reason: "late_capture_refund", idempotency_key: "late-capture:payment:#{payment.id}" }])
+      reason: "late_capture_refund", idempotency_key: "late-capture:payment:#{payment.id}:op:1" }])
     refund = order.refunds.sole
     expect(refund).to have_attributes(status: "succeeded", reason: "late_capture_refund", amount_cents: payment.amount_cents)
     expect(order.reload).to be_refunded
     expect(payment.reload).to be_refunded
     expect(issue.reload).to be_resolved
     audit = AuditLog.find_by!(auditable: issue, action: "reconciliation_exception.resolved")
-    expect(audit.metadata).to include("refund_id" => refund.id, "code" => "late_payment_success_after_inventory_release")
+    expect(audit.metadata).to include("refund_ids" => [refund.id], "code" => "late_payment_success_after_inventory_release",
+      "trigger" => "refund_succeeded", "pending" => "none", "owed_cents" => 0)
+    expect(RepaymentOperation.sole).to have_attributes(sequence: 1, state: "succeeded", submission_count: 1,
+      refund_id: refund.id, idempotency_key: "late-capture:payment:#{payment.id}:op:1")
     expect(MessageDelivery.where(order: order, template: "refund_notification").count).to eq(1)
-    expect(Sentry).to have_received(:capture_message).with(/refunding automatically/, hash_including(level: :warning)).once
+    expect(Sentry).to have_received(:capture_message).with(/returning it to the buyer/, hash_including(level: :warning)).once
     expect(ticket_type.reload.quantity_sold).to eq(0)
   end
 
-  it "writes the buyer email for an expired hold rather than a generic refund" do
+  it "writes the buyer email for an expired hold rather than a generic refund", repayment_submitter: :active do
     order, payment = late_capture
     described_class.perform_now(payment.id)
     delivery = MessageDelivery.find_by!(order: order, template: "refund_notification")
@@ -68,6 +88,21 @@ RSpec.describe LateCaptureRefundJob do
     expect(payload.fetch("html")).not_to include("late_capture_refund", "Refund Processed")
   end
 
+  it "never repays an unproven (unclassified) late capture; finance verifies it first", repayment_submitter: :active do
+    result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 1 }],
+      buyer_email: "late@example.com", buyer_name: "Late Buyer")
+    Commerce::OrderLifecycle.cancel!(result.order)
+    Commerce::OrderLifecycle.complete!(result.order, payment: result.payment,
+      provider_amount_cents: result.payment.amount_cents, provider_currency: "usd")
+    expect(UnfulfilledCapture.where(payment_id: result.payment.id)).to be_empty
+
+    described_class.perform_now(result.payment.id)
+
+    expect(refunds).to be_empty
+    expect(result.order.refunds).to be_empty
+    expect(ReconciliationException.open.where(payment: result.payment, code: Commerce::LateCaptureRefund::CODES)).to exist
+  end
+
   it "does nothing without an open late-capture exception or for simulated payments" do
     order, payment = late_capture
     ReconciliationException.where(order: order).find_each(&:resolve!)
@@ -76,14 +111,16 @@ RSpec.describe LateCaptureRefundJob do
     expect(refunds).to be_empty
   end
 
-  it "keeps the exception open for finance review when another financial exception blocks the refund" do
+  it "waits quietly, with the exception open, when another financial exception needs finance review",
+    repayment_submitter: :active do
     order, payment = late_capture
     create(:reconciliation_exception, order: order, payment: payment, code: "payment_amount_mismatch")
 
     perform_enqueued_jobs { described_class.perform_later(payment.id) }
 
     expect(refunds).to be_empty
+    expect(order.refunds).to be_empty
     expect(ReconciliationException.open.where(order: order, code: Commerce::LateCaptureRefund::CODES)).to exist
-    expect(Sentry).to have_received(:capture_message).with(/finance review required/, hash_including(level: :error))
+    expect(Sentry).not_to have_received(:capture_message).with(/finance review required/, anything)
   end
 end

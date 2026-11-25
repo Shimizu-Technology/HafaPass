@@ -30,7 +30,7 @@ module Commerce
     end
 
     def call
-      captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+      captured = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
       payment = captured.first if captured.one?
       cash_order = order.payment_method == "door_cash" && payment&.provider == "door_cash"
       free_order = order.total_cents.zero?

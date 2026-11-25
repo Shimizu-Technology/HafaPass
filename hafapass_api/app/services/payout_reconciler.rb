@@ -19,9 +19,14 @@ class PayoutReconciler
       raise ReconciliationError, "A withholding override only applies when recording payment"
     end
     Payout.transaction do
-      # Match payout reservation's organization-first locking, so releasing a
-      # reservation and reserving a new payout cannot use competing snapshots.
-      payout.organization.lock!
+      # Match payout reservation's organization -> event -> payout locking, so
+      # releasing a reservation and reserving a new payout cannot use
+      # competing snapshots, and the hold read below sees any capture on the
+      # event that committed first (every capture holds the event row until
+      # it commits). NO KEY UPDATE on the organization so a capture holding
+      # the event can still insert its audit row (organization FK KEY SHARE).
+      payout.organization.lock!("FOR NO KEY UPDATE")
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       payout.connected_account.lock! if status == "paid"
       if payout.failure_code == "provider_result_conflict"
@@ -95,6 +100,20 @@ class PayoutReconciler
         if queue.any? && !payout.event.cancelled?
           raise ReconciliationError, "Resolve outstanding refund liabilities before recording this payout as paid"
         end
+        # P10 holds an event with an open never-fulfilled item. A transfer
+        # that already left is still recorded: its submission was authorized
+        # before the hold opened, the admin confirms it was sent before the
+        # hold, and the confirmed transfer time is earlier than the hold. The
+        # database enforces all three for every writer (the confirmation is
+        # named by FinancialIntegrity.with_payout_transfer below).
+        if (hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event))
+          sent_before_hold = normalized["sent_before_hold_confirmed"] == true ||
+            (payout.event.cancelled? && normalized["sent_before_cancellation_confirmed"] == true)
+          unless sent_before_hold && confirmed_at < hold_started_at &&
+              Commerce::NeverFulfilledPayoutHold.submitted_before?(payout, hold_started_at)
+            raise ReconciliationError, Commerce::NeverFulfilledPayoutHold::PAID_MESSAGE
+          end
+        end
         if liability[:unresolved] || queue.any?
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"
@@ -120,6 +139,7 @@ class PayoutReconciler
         end
       end
 
+      hold_started_at ||= nil
       shortfall = if status == "paid" && (payout.status_processing? || payout.held_from_status == "processing")
         PayeeWithholdingBalance.shortfall_for(payout)
       else
@@ -131,7 +151,14 @@ class PayoutReconciler
         failure_code: status == "failed" ? "reconciled_failure" : nil,
         failure_message: status == "failed" ? normalized.fetch("reason") : nil }
       updates[:under_withheld_cents] = shortfall if status == "paid"
-      payout.update!(updates)
+      # On a held event the database records paid only with this verified
+      # pre-hold transfer confirmation (checked above), never from a
+      # submission authorization or a timestamp alone.
+      if status == "paid" && hold_started_at
+        FinancialIntegrity.with_payout_transfer(payout.id) { payout.update!(updates) }
+      else
+        payout.update!(updates)
+      end
       if shortfall.positive?
         AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
           organization: payout.organization, before_data: { under_withheld_cents: 0 },
@@ -146,7 +173,8 @@ class PayoutReconciler
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "under_withheld_cents"),
         metadata: { reconciliation: normalized,
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
-          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil }, request: request)
+          buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
+          **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}) }, request: request)
     end
     payout
   rescue PayoutWithholdingGuard::WithholdingError => e
@@ -192,6 +220,9 @@ class PayoutReconciler
     end
     if ActiveModel::Type::Boolean.new.cast(values["approved_tax_payee_confirmed"])
       normalized["approved_tax_payee_confirmed"] = true
+    end
+    if ActiveModel::Type::Boolean.new.cast(values["sent_before_hold_confirmed"])
+      normalized["sent_before_hold_confirmed"] = true
     end
     if ActiveModel::Type::Boolean.new.cast(values["sent_before_cancellation_confirmed"])
       normalized["sent_before_cancellation_confirmed"] = true

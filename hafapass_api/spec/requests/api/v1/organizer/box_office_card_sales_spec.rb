@@ -282,7 +282,7 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(response.parsed_body.fetch("tickets").sole.fetch("scan_credential")).to eq(order.tickets.sole.scan_credential)
   end
 
-  it "shows a retryable decline and queues one late refund after the released capacity sells" do
+  it "shows a retryable decline and queues one late refund after the released capacity sells", repayment_submitter: :active do
     ticket_type.update!(quantity_available: 1)
     order = create_sale
     payment = order.payments.sole
@@ -308,12 +308,60 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(ReconciliationException.where(payment: payment, code: Commerce::LateCaptureRefund::CODES).count).to eq(1)
     expect(StripeService).to receive(:refund_payment).once.with("pi_Door#{payment.id}",
       amount_cents: payment.amount_cents, reason: "late_capture_refund",
-      idempotency_key: "late-capture:payment:#{payment.id}", payment: payment)
+      idempotency_key: "late-capture:payment:#{payment.id}:op:1", payment: payment)
       .and_return(OpenStruct.new(id: "re_DoorCapacity", status: "succeeded", amount: payment.amount_cents, currency: "usd",
         payment_intent: "pi_Door#{payment.id}"))
     2.times { LateCaptureRefundJob.perform_now(payment.id) }
     expect(payment.reload).to be_refunded
     expect(order.refunds.sole).to be_succeeded
+  end
+
+  it "classifies a door capture after its released capacity sold, once, from the signed event (A1 tranche 2)" do
+    ticket_type.update!(quantity_available: 1)
+    order = create_sale
+    payment = order.payments.sole
+    send_event("checkout.session.expired", { id: payment.stripe_checkout_session_id, status: "expired" })
+    expect(order.reload).to be_expired
+    post "/api/v1/organizer/events/#{event.id}/box_office", params: cart.merge(payment_method: "door_cash"),
+      headers: headers.merge("Idempotency-Key" => "box-office-#{SecureRandom.uuid}")
+    expect(response).to have_http_status(:created)
+
+    expect do
+      send_event("payment_intent.succeeded", payment_intent(order), id: "evt_DoorLateClassified")
+      send_event("payment_intent.succeeded", payment_intent(order), id: "evt_DoorLateClassified")
+      send_event("payment_intent.succeeded", payment_intent(order), id: "evt_DoorLateClassifiedAgain")
+    end.to have_enqueued_job(LateCaptureRefundJob).with(payment.id).exactly(:once)
+
+    capture = UnfulfilledCapture.find_by!(payment: payment)
+    receipt = WebhookEvent.find_by!(provider_event_id: "evt_DoorLateClassified")
+    expect(capture).to have_attributes(order_id: order.id, capture_scope: "order",
+      code: "late_payment_success_after_hold_expiry", captured_cents: payment.amount_cents, provenance: "lifecycle")
+    expect(capture.capture_recorded_at).to eq(payment.reload.capture_recorded_at)
+    expect(capture.proceeds_cents + capture.fee_cents + capture.organizer_fee_cents + capture.tax_cents).to eq(order.total_cents)
+    expect(capture.provenance_evidence).to include("source" => "signed_webhook", "webhook_event_id" => receipt.id,
+      "provider_object_id" => "pi_Door#{payment.id}", "amount_cents" => payment.amount_cents)
+    expect(order.reload.never_fulfilled_at).to eq(capture.created_at)
+    expect(order).to be_expired
+    expect(order.tickets).to be_empty
+    expect(UnfulfilledCapture.count).to eq(1)
+    expect(ReconciliationException.where(payment: payment, code: Commerce::LateCaptureRefund::CODES).count).to eq(1)
+    expect(ticket_type.reload.quantity_sold).to eq(1)
+  end
+
+  it "keeps the legacy reopen guard and never reopens a classified door payment" do
+    order = create_sale
+    payment = order.payments.sole
+    send_event("checkout.session.expired", { id: payment.stripe_checkout_session_id, status: "expired" })
+    event.update!(status: :cancelled)
+    send_event("payment_intent.succeeded", payment_intent(order))
+    expect(UnfulfilledCapture.find_by!(payment: payment)).to be_present
+    event.update!(status: :published)
+
+    # Capacity is free again, but the classified payment stays unfulfilled.
+    send_event("payment_intent.succeeded", payment_intent(order), id: "evt_DoorAfterClassified")
+    expect(order.reload).to be_expired
+    expect(order.tickets).to be_empty
+    expect(order.never_fulfilled_at).to be_present
   end
 
   it "releases a Session that expired before its create response was saved" do

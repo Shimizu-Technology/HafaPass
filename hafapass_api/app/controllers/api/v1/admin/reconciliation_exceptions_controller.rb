@@ -37,6 +37,17 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
     .merge("card_present_result_unknown" => "verified_no_ledger_change",
       Commerce::EarlyFraudWarningRefund::CODE => "reviewed_no_action").freeze
   EVIDENCE_NOTE_MINIMUM = 20
+  EVIDENCE_HOLD_MESSAGE = "This hold closes only when its evidence is recorded; a note cannot close it."
+  EVIDENCE_HOLD_MESSAGES = {
+    "unfulfilled_second_capture" => "This second payment closes when it is classified and fully returned to the buyer.",
+    "never_fulfilled_ownership_ambiguous" => "Which payment fulfilled this order is not proven. " \
+      "It stays held until completion evidence identifies it; a note cannot close it.",
+    "never_fulfilled_classification_quarantined" => "This payment's provider evidence did not prove the capture. " \
+      "It closes when reconcile records positive evidence; a note cannot close it.",
+    "never_fulfilled_sale_effects_held" => "A refund or lost dispute on a payment that is not proven to own this sale. " \
+      "It closes when the payment is classified or its ownership is proven; a note cannot close it.",
+    "never_fulfilled_repayment_reopened" => "Money came back after this payment was repaid. It closes when the buyer is repaid again."
+  }.freeze
 
   before_action -> { response.headers["Cache-Control"] = "no-store" }
   before_action :set_issue, only: [:show, :resolve, :refund_buyer]
@@ -130,13 +141,16 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
         status: :unprocessable_content
     end
     if (problem = late_capture_refund_blocker(@issue))
+      # An older release's refund on this payment is settled by lookup only.
+      Commerce::RepaymentAdjudication.enqueue_for!(@issue.payment)
       return render json: { error: problem }, status: :unprocessable_content
     end
 
     amount_cents = late_capture_owed_cents(@issue)
     refund = nil
     begin
-      refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user)
+      refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user,
+        source: "admin_late_capture")
     rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::RefundCreator::RefundError,
       StripeService::PaymentError, Stripe::StripeError => e
       @issue.payment.refunds.reset # the service may have recorded a failed refund
@@ -165,7 +179,9 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   # Every organization whose payouts are frozen by open exceptions, with the
   # events whose statements cannot be finalized.
   def payout_blocks
-    counts = linked_scope.merge(ReconciliationException.open).where.not(events: { id: nil })
+    # A proven platform-only over-return (P4) alerts without holding payouts.
+    counts = linked_scope.merge(ReconciliationException.open)
+      .where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE).where.not(events: { id: nil })
       .group("events.organization_id", "events.id").count
     events = Event.where(id: counts.keys.map(&:last)).includes(:organization).index_by(&:id)
     blocked = counts.group_by { |(organization_id, _), _| organization_id }.map do |organization_id, rows|
@@ -199,30 +215,42 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   end
 
   def late_capture_refundable?(issue)
-    issue.open? && Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment.present? &&
+    issue.open? && Commerce::LateCaptureRefund.repayment_codes.include?(issue.code) && issue.payment.present? &&
       issue.payment.provider == "stripe" && %w[test live].include?(issue.payment.provider_environment)
   end
 
+  # A classified capture's gross ledger (design §6.1); otherwise the
+  # payment's own refunds, as before classification existed.
+  def classified_capture(issue)
+    issue.payment && UnfulfilledCapture.find_by(payment_id: issue.payment_id)
+  end
+
   def late_capture_owed_cents(issue)
+    capture = classified_capture(issue)
+    return Commerce::BuyerReturnLedger.for(capture).owed_cents if capture
+
     returned = issue.payment.refunds.select { |refund| refund.pending? || refund.succeeded? }.sum(&:amount_cents)
     [issue.payment.amount_cents - returned, 0].max
   end
 
   # Uses the preloaded payment refunds (reloaded by lock! in #resolve).
   def late_capture_refund(issue)
+    operation = RepaymentOperation.where(payment_id: issue.payment_id).in_sequence.last
+    return operation.refund if operation&.refund
+
     key = Commerce::LateCaptureRefund.idempotency_key(issue.payment)
     issue.payment.refunds.find { |refund| refund.idempotency_key == key }
   end
 
-  # Why Refund buyer cannot run now, or nil.
+  # Why Refund buyer cannot run now, or nil. A classified capture asks the
+  # repayment workflow itself, so the button and the gate agree.
   def late_capture_refund_blocker(issue)
-    earlier = late_capture_refund(issue)
-    if earlier&.failed? || earlier&.cancelled?
-      return "The automatic refund failed. Use Retry refund on its row in Refund issues."
-    end
-    return "A refund for this payment is already #{earlier.status}." if earlier&.pending? || earlier&.succeeded?
-    return "A refund for this payment is still pending. Wait for it to finish." if issue.payment.refunds.any?(&:pending?)
-    return "Nothing is owed to the buyer for this payment." unless late_capture_owed_cents(issue).positive?
+    capture = classified_capture(issue)
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch("classification_pending") unless capture
+
+    availability = Commerce::BuyerRepayment.availability(capture)
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch(availability.wait_reason) if availability.waiting?
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch("repayment_inactive") unless Commerce::BuyerRepayment.submitter_active?
 
     nil
   end
@@ -246,6 +274,30 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   # What a note-only resolution needs: {} (allowed), { confirmation: flag }
   # (allowed with that flag and an evidence note) or { blocked: message }.
   def resolution_rule(issue)
+    # Evidence holds close only when their evidence is recorded (the
+    # repayment finishes, the payment is classified, ownership is proven or
+    # the provider evidence is replayed). A note never closes them, and the
+    # database refuses it too (FinancialIntegrity::EVIDENCE_HOLD_CODES).
+    return { blocked: EVIDENCE_HOLD_MESSAGES.fetch(issue.code, EVIDENCE_HOLD_MESSAGE) } if issue.evidence_hold?
+    # Provider evidence that names a fenced payment stays until it is
+    # recorded: Verify the refund (Stripe lookup) or let replay apply it.
+    if Commerce::BuyerRepayment::ORPHAN_CODES.include?(issue.code) && orphan_names_fenced_payment?(issue)
+      return { blocked: "Stripe reported a refund or dispute for a payment HåfaPass must return. " \
+        "Use Verify to record it from Stripe; a note cannot close it." }
+    end
+    capture = classified_capture(issue)
+    if capture && Commerce::NeverFulfilledResolution.resolvable_codes(capture).include?(issue.code)
+      return {} if Commerce::NeverFulfilledResolution.resolvable_now?(capture)
+
+      availability = Commerce::BuyerRepayment.availability(capture)
+      if availability.in_flight_cents.positive? || capture.repayment_operations.open_states.exists?
+        return { blocked: "A refund or dispute on this payment is still pending. It resolves this exception when it finishes." }
+      end
+
+      owed = availability.owed_cents
+      return { blocked: "The buyer is still owed #{format('$%<dollars>d.%<cents>02d', dollars: owed / 100, cents: owed % 100)}. " \
+        "Use Refund buyer; the exception resolves when the repayment finishes." }
+    end
     if Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment
       if issue.payment.refunds.any?(&:pending?)
         return { blocked: "A refund for this payment is still pending. It resolves this exception when it succeeds." }
@@ -264,6 +316,11 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
 
     flag = CONFIRMATION_BY_CODE[issue.code]
     flag ? { confirmation: flag } : {}
+  end
+
+  def orphan_names_fenced_payment?(issue)
+    payment = issue.payment || Commerce::BuyerRepayment.orphan_payment(issue)
+    payment.present? && Commerce::BuyerRepayment.fenced_payment?(payment)
   end
 
   def confirmed?(flag)

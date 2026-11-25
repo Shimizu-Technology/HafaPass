@@ -32,6 +32,12 @@ module Commerce
       if refund.nil? && provider_id.present?
         refund = ExternalRefundRecovery.restore_historical_identity!(payment: payment, provider_id: provider_id)
       end
+      # An inbound row keyed by this provider refund whose finalization was
+      # refused or interrupted (an older release's order-wide total, A1-R1
+      # recheck blocker 1): the key is the provider ID, an exact identity.
+      if refund.nil? && provider_id.present?
+        refund = Refund.find_by(provider: "stripe", idempotency_key: "provider:stripe:refund:#{provider_id}", provider_refund_id: nil)
+      end
       if refund
         raise RefundError, "Provider refund belongs to another payment" unless refund.payment_id == payment.id
 
@@ -49,21 +55,47 @@ module Commerce
       refund
     end
 
-    def self.reconcile_refund!(refund:, provider_refund:)
-      new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key,
-        provider_refund: provider_refund).send(:finalize_refund!, refund, provider_refund)
+    # identity_verified: the caller found provider_refund by this row's own
+    # key (StripeService.find_refund with no amount or date) or by its
+    # provider ID, so it is this operation's refund (A1-R1 review finding 4).
+    def self.reconcile_refund!(refund:, provider_refund:, identity_verified: false)
+      creator = new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key,
+        provider_refund: provider_refund)
+      creator.instance_variable_set(:@identity_verified_refund_id, refund.id) if identity_verified
+      creator.send(:finalize_refund!, refund, provider_refund)
+    end
+
+    # Replays the sale effects of a succeeded refund whose payment has since
+    # been proven to own the sale (SaleEffectHold.release!, which holds the
+    # refund prefix). The refund and the payment were recorded already.
+    def self.apply_held_sale_effects!(refund)
+      refund.lock!
+      creator = new(order: refund.order, reason: refund.reason, idempotency_key: refund.idempotency_key)
+      observation = OpenStruct.new(id: refund.provider_refund_id, status: "succeeded", amount: refund.amount_cents,
+        currency: refund.currency)
+      creator.send(:apply_sale_effects!, refund, observation)
     end
 
     PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to refund this order."
     FREE_PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to cancel these tickets."
     DISPUTE_MESSAGE = "Contact support about the payment dispute before continuing."
+    # A distinct second payment on a fulfilled order (payment-scope
+    # never-fulfilled capture). The order-wide refund path never sends money
+    # for it; its per-payment repayment is a later A1 tranche.
+    ISOLATED_PAYMENT_MESSAGE = "This payment is a second payment on a fulfilled order. " \
+      "HåfaPass returns it to the buyer separately; contact support."
 
     # What can still be returned on one captured payment: the smaller of the
     # order's and the payment's remaining balance, with pending refunds counted.
+    # A payment-scope never-fulfilled capture is limited by its own ledger only,
+    # and never counts toward the sale's balance.
     def self.remaining_cents(order:, payment:)
       payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      return payment_remaining if UnfulfilledCapture.isolated_payment?(payment.id)
+
       order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
-        live_payments = order.payments.merge(Payment.live_or_legacy_capture)
+        live_payments = order.payments.merge(Payment.live_or_legacy_capture).excluding_isolated_captures
+        live_payments = live_payments.where(id: order.fulfilled_by_payment_id) if order.fulfilled_by_payment_id
         live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
         [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
       else
@@ -74,12 +106,13 @@ module Commerce
 
     def initialize(order:, amount_cents: nil, reason: nil, requested_by: nil, idempotency_key: nil,
       provider_refund: nil, tickets: nil, payment: nil, cash_return: nil, manual_card_return: nil,
-      organizer_initiated: false, admin_initiated: false, preserve_tickets: false)
+      organizer_initiated: false, admin_initiated: false, preserve_tickets: false, repayment_source: nil)
       @order = order
       @requested_amount_cents = amount_cents&.to_i
       @reason = reason
       @requested_by = requested_by
       @idempotency_key = idempotency_key.presence || "refund:order:#{order.id}:#{SecureRandom.uuid}"
+      @caller_key = idempotency_key.presence
       @provider_refund = provider_refund
       @tickets = tickets.nil? ? nil : Array(tickets).compact
       @captured_payment = payment
@@ -88,6 +121,7 @@ module Commerce
       @organizer_initiated = organizer_initiated
       @admin_initiated = admin_initiated
       @preserve_tickets = preserve_tickets
+      @repayment_source = repayment_source
     end
 
     def call
@@ -106,19 +140,33 @@ module Commerce
         recover_provider_refund(refund)
       end
       if !response && !provider_refund && !provider_submission_allowed?(refund, mark_unknown: true)
+        evaluate_later!(refund)
         return refund.reload
       end
       response ||= submit_provider_refund(refund)
+      # The response to this row's own POST, or a lookup by its own key, is
+      # this operation's refund.
+      @identity_verified_refund_id = refund.id unless provider_refund
       finalize_refund!(refund, response)
     rescue Stripe::InvalidRequestError, Stripe::CardError, StripeService::PaymentError => e
-      fail_refund!(refund, "provider_error", e.message)
+      fail_refund!(refund, "provider_error", e.message, provider_error_code: e.respond_to?(:code) ? e.code : nil)
+      evaluate_later!(refund)
       raise RefundError, "Refund provider rejected the request"
     rescue Stripe::StripeError, IOError, Timeout::Error => e
       mark_unknown!(refund, "provider_result_unknown", e.message)
+      evaluate_later!(refund)
       raise RefundError, "Refund provider result is unknown; retry with the same idempotency key"
     end
 
-    private :execute_refund
+    # The evaluator needs the order lock; these outcomes were recorded after
+    # the HTTP call, outside it.
+    def evaluate_later!(refund)
+      return unless refund&.payment_id && UnfulfilledCapture.exists?(payment_id: refund.payment_id)
+
+      NeverFulfilledResolutionJob.perform_later(refund.payment_id, "refund_#{refund.reload.status}")
+    end
+
+    private :execute_refund, :evaluate_later!
 
     private
 
@@ -171,7 +219,24 @@ module Commerce
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
         next validate_replay!(existing) if existing
-        unless order.completed? || order.partially_refunded? || refundable_late_capture?
+        # A fenced payment (design §6, §10.1) is returned only through a
+        # repayment operation: one workflow for every outbound entry point.
+        if (fenced = outbound_fenced_payment)
+          # The same caller request again is a replay of what it reserved.
+          replayed = BuyerRepayment.request_refund(idempotency_key)
+          next validate_replay!(replayed) if replayed && replayed.payment_id == fenced.id
+
+          next reserve_repayment!(fenced)
+        end
+        isolated = captured_payment.present? && UnfulfilledCapture.isolated_payment?(captured_payment.id)
+        # Money already returned by the provider on an isolated payment is
+        # always recorded, whatever the sale's own status is now.
+        raise RefundError, ISOLATED_PAYMENT_MESSAGE if isolated && (provider_refund.nil? || !tickets.nil?)
+        # The same holds for any classified payment: a provider fact is gross
+        # return evidence and is never refused because the outbound balance is
+        # exhausted (design §7.3). Its posting separates applied from excess.
+        inbound_classified = inbound_classified_return?
+        unless isolated || inbound_classified || order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
         # Checked under the organization and event locks that payout creation
@@ -184,12 +249,13 @@ module Commerce
         raise RefundError, DISPUTE_MESSAGE if organizer_ticket_selection? && order.ticket_access_blocked?
 
         selected_tickets = lock_selected_tickets!
-        captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+        captured = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
         if captured_payment.nil? && captured.many?
           raise RefundError, "Multiple captured payments require finance reconciliation before a refund"
         end
         payment = captured_payment || captured.first
-        unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
+        unless payment && payment.order_id == order.id &&
+            (payment.succeeded? || payment.partially_refunded? || (inbound_classified && payment.refunded?))
           raise RefundError, "A captured payment is required for a refund"
         end
         if cash_return || manual_card_return
@@ -212,7 +278,7 @@ module Commerce
           raise RefundError, "Ticket refunds must match the selected ticket value"
         end
         raise RefundError, "Refund amount must be positive" unless amount.positive?
-        raise RefundError, "Refund amount exceeds refundable balance" if amount > remaining
+        raise RefundError, "Refund amount exceeds refundable balance" if amount > remaining && !inbound_classified
         if @preserve_tickets
           if requested_amount_cents.nil? || selected_tickets
             raise RefundError, "Enter a custom amount to keep all tickets active"
@@ -262,6 +328,39 @@ module Commerce
       @organizer_initiated && !tickets.nil?
     end
 
+    # The payment an outbound request would refund, when the repayment fence
+    # covers it. Inbound provider facts and manual returns are never fenced.
+    def outbound_fenced_payment
+      return if provider_refund || cash_return || manual_card_return
+
+      payment = captured_payment ||
+        order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
+          .then { |captured| captured.first if captured.one? }
+      payment if payment && payment.order_id == order.id && BuyerRepayment.fenced_payment?(payment)
+    end
+
+    def reserve_repayment!(payment)
+      raise RefundError, "Tickets on this payment cannot be selected; HåfaPass returns it to the buyer" unless tickets.nil?
+      raise RefundError, "Choose Full order refund for this payment" if @preserve_tickets
+
+      source = @repayment_source || (@admin_initiated ? "admin_order_refund" : "automatic")
+      refund = BuyerRepayment.reserve!(order: order, payment: payment, source: source, requested_by: requested_by,
+        amount_cents: requested_amount_cents, reason: reason, organizer_initiated: @organizer_initiated,
+        request_key: @caller_key)
+      # An existing operation is a retry: look it up by its key before any send.
+      @replayed_refund = true unless refund.previously_new_record?
+      refund
+    end
+
+    # A provider-reported refund (webhook or ExternalRefundRecovery) of a
+    # classified never-fulfilled payment, or of any payment the repayment
+    # fence covers, with no ticket selection. The provider fact is recorded
+    # first, outside the outbound balance and review checks (design §7.3).
+    def inbound_classified_return?
+      provider_refund.present? && tickets.nil? && captured_payment.present? && captured_payment.order_id == order.id &&
+        (UnfulfilledCapture.exists?(payment_id: captured_payment.id) || BuyerRepayment.fenced_payment?(captured_payment))
+    end
+
     def reservation_payload
       payload = organizer_ticket_selection? ? { organizer_ticket_selection: true } : {}
       payload[:preserve_tickets] = true if @preserve_tickets
@@ -289,6 +388,16 @@ module Commerce
           raise RefundError, DISPUTE_MESSAGE
         end
 
+        if BuyerRepayment.fenced_payment?(refund.payment_id)
+          # The operation gate decides, and fails closed in A1-R1. Its own
+          # availability check covers finance review for this payment.
+          next true unless mark_unknown
+          next false unless BuyerRepayment.gate!(refund, replayable: refund.created_at > PROVIDER_REPLAY_WINDOW.ago)
+
+          refund.update!(failure_code: "provider_result_unknown", failure_message: "Refund provider response is pending")
+          audit_refund!(refund, "submission_requested", outcome: "requested")
+          next true
+        end
         ensure_financial_review_resolved!
         # Persist uncertainty before leaving the locks for the external call.
         # A process crash must not make an attempted operation look unsubmitted.
@@ -445,14 +554,17 @@ module Commerce
       refund
     end
 
-    def fail_refund!(refund, code, message, status: :failed)
+    def fail_refund!(refund, code, message, status: :failed, provider_error_code: nil)
       return unless refund
 
       refund.with_lock do
         return refund if refund.succeeded?
 
         refund.refund_tickets.update_all(released_at: Time.current)
-        refund.update!(status: status, failed_at: Time.current, failure_code: code, failure_message: message)
+        payload = refund.provider_payload
+        payload = payload.merge("provider_error_code" => provider_error_code.to_s) if provider_error_code.present?
+        refund.update!(status: status, failed_at: Time.current, failure_code: code, failure_message: message,
+          provider_payload: payload)
         audit_refund!(refund, "failed", outcome: "failed", source: "provider")
       end
     end
@@ -464,6 +576,7 @@ module Commerce
         return refund unless refund.pending?
 
         refund.update!(failure_code: code, failure_message: message)
+        BuyerRepayment.record_unknown!(refund)
         audit_refund!(refund, "unknown", outcome: "unknown", source: "provider")
       end
     end
@@ -515,6 +628,21 @@ module Commerce
           validation_error = "Refund provider identity differs from the acknowledged operation; finance review is required"
           next
         end
+        # A fenced payment's outbound row is bound to a provider refund only
+        # by exact identity: the provider ID, the row's own metadata key, or
+        # the inbound record's own provider key. Never by amount and date
+        # (A1-R1 review finding 4); the database refuses any other binding.
+        exact_identity = incoming_id.present? && (owner&.id == refund.id || @identity_verified_refund_id == refund.id ||
+          refund.idempotency_key == "provider:stripe:refund:#{incoming_id}")
+        if incoming_id.present? && refund.provider_refund_id.blank? && !exact_identity &&
+            BuyerRepayment.fenced_payment?(refund.payment_id)
+          ReconciliationException.create!(order: refund.order, payment: refund.payment,
+            code: "refund_operation_mismatch", details: { provider_refund_id: incoming_id, refund_id: refund.id,
+              reason: "identity_unproven" })
+          audit_refund!(refund, "provider_result_conflict", outcome: "unknown", source: "provider", observation: provider_refund)
+          validation_error = "Stripe's refund does not carry this request's identity; finance review is required"
+          next
+        end
         # A webhook can finish this operation while the original POST is still
         # in flight. Re-read every terminal state under the same locks before
         # touching its released ticket reservations or financial allocations.
@@ -543,16 +671,21 @@ module Commerce
           next
         end
 
-        refund.update!(
-          provider_refund_id: provider_refund.id,
-          provider_payload: refund.provider_payload.merge("status" => provider_status),
-          failure_code: nil,
-          failure_message: nil,
-          status: :pending
-        )
+        bind = lambda do
+          refund.update!(
+            provider_refund_id: provider_refund.id,
+            provider_payload: refund.provider_payload.merge("status" => provider_status),
+            failure_code: nil,
+            failure_message: nil,
+            status: :pending
+          )
+        end
+        exact_identity ? FinancialIntegrity.with_evidence(:refund_identity, refund.id, &bind) : bind.call
         if %w[failed canceled cancelled].include?(provider_status)
           fail_refund!(refund, "provider_#{provider_status}", "Provider refund #{provider_status}",
             status: provider_status == "failed" ? :failed : :cancelled)
+          # A failure returns no money but ends what was in flight (§7.1).
+          NeverFulfilledResolution.evaluate_payment!(refund.payment_id, trigger: "refund_failed", actor: requested_by)
           return refund.reload
         end
         unless provider_status == "succeeded"
@@ -561,52 +694,17 @@ module Commerce
         end
 
         refund.update!(status: :succeeded, succeeded_at: Time.current, failure_code: nil, failure_message: nil)
-        allocate_items!(refund)
-        record_promoter_commission_reversal!(refund)
-
-        succeeded_refunds = refund.order.refunds.succeeded
-        if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
-          succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
+        if UnfulfilledCapture.isolated_payment?(refund.payment_id)
+          finalize_isolated_payment_refund!(refund, provider_refund)
+          next
         end
-        succeeded_total = succeeded_refunds.sum(:amount_cents)
-        full_refund = succeeded_total >= refund.order.total_cents
-        # A ticket-selected refund can reach the order total when the rest
-        # are free. A transferred ticket left with its new holder must still
-        # admit them and hear about later changes, so the order stays
-        # partially refunded (a refunded order no longer fulfils tickets).
-        retained_transfer = full_refund && refund.refund_tickets.any? &&
-          refund.order.tickets.where.not(status: :cancelled).where.not(id: refund.refund_tickets.select(:ticket_id))
-            .any? { |ticket| ticket.transferred_away_from?(refund.order) }
-        order_refunded = full_refund && !retained_transfer && !tickets_remain_after_refund?(refund)
-        refund.order.update!(
-          status: order_refunded ? :refunded : :partially_refunded,
-          refund_amount_cents: succeeded_total,
-          refund_reason: reason,
-          refunded_at: Time.current,
-          stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
-        )
-        update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
-        resolve_repaid_late_capture!(refund)
-        audit_refund!(refund, "succeeded", outcome: "succeeded",
-          source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
-        AuditLogger.record!(action: "order.#{order_refunded ? 'refunded' : 'partially_refunded'}",
-          auditable: refund.order, actor: requested_by, organization: refund.order.event.organization,
-          event: refund.order.event, outcome: "succeeded",
-          deduplication_key: "order:#{refund.order_id}:refund:#{refund.id}",
-          after_data: { status: refund.order.status, refund_amount_cents: succeeded_total },
-          metadata: { refund_id: refund.id, amount_cents: refund.amount_cents },
-          **(cash_return || manual_card_return ? {} : { source: "provider" }))
-        StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
-        if refund.organizer_ticket_selection?
-          release_refunded_tickets!(refund)
-        elsif full_refund && !refund.preserves_tickets?
-          release_fully_refunded_inventory!(refund)
-        elsif refund.refund_tickets.any?
-          release_refunded_tickets!(refund)
+        # The provider fact is recorded; the sale changes only from a payment
+        # that positively owns it (A1-R1 review finding 1).
+        unless SaleEffectHold.owner?(refund.payment_id)
+          hold_sale_effects!(refund, provider_refund)
+          next
         end
-        unless refund.provider == "door_cash" && refund.provider_payload["manual_record"] == true
-          EmailService.send_refund_notification_async(refund.order, refund: refund)
-        end
+        full_refund = apply_sale_effects!(refund, provider_refund)
       end
 
       raise RefundError, validation_error if validation_error
@@ -615,6 +713,92 @@ module Commerce
         refund.order.event.notify_waitlist_if_available
       end
       refund.reload
+    end
+
+    # Everything a succeeded refund does to the sale it belongs to. Caller
+    # holds organization -> event -> order -> refund. Returns whether the
+    # sale is now fully refunded. Only for a payment that owns the sale.
+    def apply_sale_effects!(refund, provider_refund)
+      allocate_items!(refund)
+      BuyerReturnPostings.record_refund!(refund)
+      record_promoter_commission_reversal!(refund)
+
+      # Only the sale's own payment's refunds count, as the database requires
+      # (orders_sale_refund_aggregate): a refund on another payment never
+      # makes this sale fully refunded.
+      succeeded_refunds = refund.order.refunds.succeeded.on_sale.owned_by_sale
+      if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
+        succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
+      end
+      succeeded_total = succeeded_refunds.sum(:amount_cents)
+      full_refund = succeeded_total >= refund.order.total_cents
+      # A ticket-selected refund can reach the order total when the rest
+      # are free. A transferred ticket left with its new holder must still
+      # admit them and hear about later changes, so the order stays
+      # partially refunded (a refunded order no longer fulfils tickets).
+      retained_transfer = full_refund && refund.refund_tickets.any? &&
+        refund.order.tickets.where.not(status: :cancelled).where.not(id: refund.refund_tickets.select(:ticket_id))
+          .any? { |ticket| ticket.transferred_away_from?(refund.order) }
+      order_refunded = full_refund && !retained_transfer && !tickets_remain_after_refund?(refund)
+      refund.order.update!(
+        status: order_refunded ? :refunded : :partially_refunded,
+        # Only a classified payment's inbound refunds can exceed the total
+        # (money returned twice); its postings keep the gross amounts.
+        refund_amount_cents: [succeeded_total, refund.order.total_cents].min,
+        refund_reason: reason,
+        refunded_at: Time.current,
+        stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
+      )
+      update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+      if UnfulfilledCapture.exists?(payment_id: refund.payment_id)
+        NeverFulfilledResolution.evaluate_payment!(refund.payment_id, trigger: "refund_succeeded", actor: requested_by)
+      else
+        resolve_repaid_late_capture!(refund)
+      end
+      audit_refund!(refund, "succeeded", outcome: "succeeded",
+        source: cash_return || manual_card_return ? nil : "provider", observation: provider_refund)
+      AuditLogger.record!(action: "order.#{order_refunded ? 'refunded' : 'partially_refunded'}",
+        auditable: refund.order, actor: requested_by, organization: refund.order.event.organization,
+        event: refund.order.event, outcome: "succeeded",
+        deduplication_key: "order:#{refund.order_id}:refund:#{refund.id}",
+        after_data: { status: refund.order.status, refund_amount_cents: succeeded_total },
+        metadata: { refund_id: refund.id, amount_cents: refund.amount_cents },
+        **(cash_return || manual_card_return ? {} : { source: "provider" }))
+      StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
+      if refund.organizer_ticket_selection?
+        release_refunded_tickets!(refund)
+      elsif full_refund && !refund.preserves_tickets?
+        release_fully_refunded_inventory!(refund)
+      elsif refund.refund_tickets.any?
+        release_refunded_tickets!(refund)
+      end
+      unless refund.provider == "door_cash" && refund.provider_payload["manual_record"] == true
+        EmailService.send_refund_notification_async(refund.order, refund: refund)
+      end
+      full_refund
+    end
+
+    # A provider refund on a payment whose ownership of the sale is not
+    # proven: the refund and the payment's own status are recorded, the
+    # sale is not touched, and one evidence hold keeps the event's payouts
+    # and finalization until SaleEffectHold.release! decides (finding 1).
+    def hold_sale_effects!(refund, provider_refund)
+      update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+      BuyerReturnPostings.record_refund!(refund)
+      audit_refund!(refund, "succeeded", outcome: "succeeded", source: "provider", observation: provider_refund)
+      StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
+      SaleEffectHold.hold!(refund, reason: refund.order.fulfilled_by_payment_id ? "not_fulfilling_payment" : "ownership_unproven")
+    end
+
+    # Payment-only finalization (design §4.3): the refund and the payment's own
+    # refund status. No order status, RefundItem, ticket, inventory, promo,
+    # waitlist or commission change, and no ticket-cancellation email.
+    def finalize_isolated_payment_refund!(refund, provider_refund)
+      update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+      BuyerReturnPostings.record_refund!(refund)
+      audit_refund!(refund, "succeeded", outcome: "succeeded", source: "provider", observation: provider_refund)
+      StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
+      NeverFulfilledResolution.evaluate_payment!(refund.payment_id, trigger: "refund_succeeded", actor: requested_by)
     end
 
     def tickets_remain_after_refund?(refund)
@@ -660,6 +844,11 @@ module Commerce
         remaining -= allocation
         break if remaining.zero?
       end
+      # A classified payment's refund may exceed what is left on its items
+      # (money returned twice). RefundItems cover what fits; its return
+      # posting records the gross amount and the excess (design §7.3).
+      return if remaining.positive? &&
+        (UnfulfilledCapture.exists?(payment_id: refund.payment_id) || BuyerRepayment.fenced_payment?(refund.payment_id))
 
       raise RefundError, "Refund could not be allocated to order items" unless remaining.zero?
     end

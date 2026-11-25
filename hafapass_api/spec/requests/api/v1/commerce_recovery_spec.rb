@@ -140,7 +140,10 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
 
   %i[expired cancelled hold_expired].each do |terminal|
     %i[app external].each do |recovery|
-      it "F02 repays a #{terminal} late capture via #{recovery}, never fulfilling or releasing twice" do
+      # HåfaPass's own repayment ("app") sends only from A1-R2; a provider
+      # refund ("external") is recorded in either release.
+      it "F02 repays a #{terminal} late capture via #{recovery}, never fulfilling or releasing twice",
+        **(recovery == :app ? { repayment_submitter: :active } : {}) do
         order, payment, type = late_capture(terminal)
         object = { id: "re_late", payment_intent: payment.provider_payment_id, amount: 5250, currency: "usd", status: "succeeded" }
         if recovery == :app
@@ -172,7 +175,17 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
     end
   end
 
-  it "does not grant the late-capture refund exception to an unrelated state or unresolved mismatch" do
+  it "F02 sends nothing for a late capture from the app in A1-R1" do
+    order, payment, = late_capture(:expired)
+    allow(StripeService).to receive(:refund_payment)
+    expect { Commerce::RefundCreator.call(order: order, payment: payment, idempotency_key: "late-repay") }
+      .to raise_error(Commerce::BuyerRepayment::Waiting, /next release/)
+    expect(StripeService).not_to have_received(:refund_payment)
+    expect(order.refunds).to be_empty
+  end
+
+  it "does not grant the late-capture refund exception to an unrelated state or unresolved mismatch",
+    repayment_submitter: :active do
     order, payment, = checkout_fixture(pending: true)
     payment.update!(status: :succeeded, succeeded_at: Time.current)
     expect { Commerce::RefundCreator.call(order: order, payment: payment) }.to raise_error(Commerce::RefundCreator::RefundError)

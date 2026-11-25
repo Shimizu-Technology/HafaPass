@@ -91,6 +91,7 @@ class RefundReconciliationActions
 
     replacement = order.refunds.find_by(idempotency_key: "refund-reconciliation/#{@record.id}")
     return replacement if replacement
+    return retry_repayment!(@record) if @record.payment && Commerce::BuyerRepayment.fenced_payment?(@record.payment)
 
     provider = find_provider_refund(@record)
     if provider && provider.status.to_s != "failed" && !%w[canceled cancelled].include?(provider.status.to_s)
@@ -137,19 +138,21 @@ class RefundReconciliationActions
   end
 
   def refund_late_capture!
-    unless Commerce::LateCaptureRefund::CODES.include?(@record.code) && @record.open? && @record.payment
+    unless Commerce::LateCaptureRefund.repayment_codes.include?(@record.code) && @record.open? && @record.payment
       raise ActionError, "Only an open late-capture exception can be refunded here"
     end
 
-    earlier = order.refunds.find_by(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(@record.payment))
-    if earlier&.failed? || earlier&.cancelled?
-      raise ActionError, "The automatic refund failed; use Retry refund on its refund row"
-    end
+    retry_repayment!(@record)
+  end
 
-    result = Commerce::LateCaptureRefund.call(payment: @record.payment, requested_by: @actor)
-    audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
+  # A fenced payment is returned only by the repayment workflow: a retry
+  # continues its open operation, or reserves the next one for what is still
+  # available once the earlier ones are verified (design §6.3).
+  def retry_repayment!(record)
+    result = Commerce::LateCaptureRefund.call(payment: record.payment, requested_by: @actor, source: "queue_retry")
+    audit!("refund_reconciliation.retry", record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
     result
-  rescue Commerce::LateCaptureRefund::NotApplicable => e
+  rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::BuyerRepayment::Waiting => e
     raise ActionError, e.message
   end
 
@@ -190,7 +193,10 @@ class RefundReconciliationActions
     if @record.provider_refund_id.present? && provider.id != @record.provider_refund_id
       raise ActionError, "Stripe returned a different refund; finance review is required"
     end
-    result = Commerce::RefundCreator.reconcile_refund!(refund: @record, provider_refund: provider)
+    # Found by this row's provider ID, or (for a fenced payment) by its own
+    # key alone, so the identity is exact; an amount and date match is not.
+    exact = @record.provider_refund_id.present? || Commerce::BuyerRepayment.fenced_payment?(@record.payment)
+    result = Commerce::RefundCreator.reconcile_refund!(refund: @record, provider_refund: provider, identity_verified: exact)
     audit!("refund_reconciliation.resynced", @record, { provider_refund_id: provider.id, provider_status: provider.status })
     result
   end
@@ -199,6 +205,12 @@ class RefundReconciliationActions
     if refund.provider_refund_id.present?
       StripeService.retrieve_refund(refund.provider_refund_id, payment: refund.payment,
         call_budget: @stripe_call_budget)
+    elsif Commerce::BuyerRepayment.fenced_payment?(refund.payment)
+      # A fenced payment's pending refund is found only by its own key. A
+      # Stripe refund without that key is someone else's movement and is
+      # recorded on its own (Verify), never bound by amount and date.
+      StripeService.find_refund(refund.payment.provider_payment_id,
+        idempotency_key: refund.idempotency_key, payment: refund.payment, call_budget: @stripe_call_budget)
     else
       StripeService.find_refund(refund.payment.provider_payment_id,
         idempotency_key: refund.idempotency_key, payment: refund.payment,
@@ -221,7 +233,7 @@ class RefundReconciliationActions
       order.with_lock do
         item.with_lock do
           raise ActionError, "This return has already been resolved" unless item.needs_manual?
-          payments = order.payments.where(status: [:succeeded, :partially_refunded])
+          payments = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures
           payments = payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
           payment = payments.order(:id).first
           amount = EventCancellationRefunds.balance_cents(order)
