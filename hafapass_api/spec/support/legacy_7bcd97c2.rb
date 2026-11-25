@@ -8,15 +8,29 @@
 # constant resolves to the current application, which matches 7bcd97c2 for
 # what those two classes call. Loaded on first use only.
 module Legacy7bcd97c2
+  # Classes the verbatim files define. A reference such as
+  # Legacy7bcd97c2::Commerce::RefundCreator::RefundError in a matcher is
+  # evaluated before the example's first legacy call, so it loads the files
+  # first; otherwise, in a process where no earlier example loaded them, it
+  # would fall through to the current application's class.
+  LEGACY_CONSTANTS = { "Commerce" => %i[RefundCreator LateCaptureRefund], "Settlements" => %i[Calculator Finalizer] }.freeze
+
+  def self.legacy_constant(namespace, name)
+    return unless LEGACY_CONSTANTS.fetch(namespace.name.demodulize).include?(name) && !@loading
+
+    load!
+    namespace.const_get(name, false) if namespace.const_defined?(name, false)
+  end
+
   module Commerce
     def self.const_missing(name)
-      ::Commerce.const_get(name)
+      Legacy7bcd97c2.legacy_constant(self, name) || ::Commerce.const_get(name)
     end
   end
 
   module Settlements
     def self.const_missing(name)
-      ::Settlements.const_get(name)
+      Legacy7bcd97c2.legacy_constant(self, name) || ::Settlements.const_get(name)
     end
   end
 
@@ -24,8 +38,9 @@ module Legacy7bcd97c2
     payout_reconciler settlements_finalizer].freeze
 
   def self.load!
-    return if @loaded
+    return if @loaded || @loading
 
+    @loading = true
     dir = File.expand_path("legacy_7bcd97c2", __dir__)
     FILES.each do |name|
       path = File.join(dir, "#{name}.rb.txt")
@@ -38,6 +53,8 @@ module Legacy7bcd97c2
       klass.define_singleton_method(:const_missing) { |name| ::Settlements.const_get(name) }
     end
     @loaded = true
+  ensure
+    @loading = false
   end
 
   def self.payout_creator
