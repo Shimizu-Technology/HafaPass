@@ -275,6 +275,19 @@ module Commerce
         expired_now
       end
 
+      # A capture an older release acknowledged on a sold order without
+      # classifying it (A1-R1 recheck blocker 3), found by
+      # NeverFulfilledReconcile from its signed receipt. Applies exactly what
+      # this release does when that notice arrives: fulfilling-payment
+      # recovery from the completion audit, then payment-scope
+      # classification, or the ownership-ambiguous hold. Caller holds
+      # organization -> event -> order -> payment.
+      def record_discovered_capture!(order, payment, webhook_event, evidence)
+        raise ArgumentError, "discovery must run inside the reconcile transaction" unless Order.connection.transaction_open?
+
+        record_capture_on_released_or_fulfilled_order!(order, payment, webhook_event, evidence)
+      end
+
       private
 
       # Network call; never run while holding the order or event locks.

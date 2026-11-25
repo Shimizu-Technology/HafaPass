@@ -34,7 +34,11 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     line = create(:order_item, order: order, discount_cents: 200, organizer_proceeds_cents: 2200)
     create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 81)
     create(:fee_component, order: order, kind: "processing", amount_cents: 99)
-    create(:payment, :succeeded, order: order, provider_environment: "live")
+    later_capture = create(:payment, :succeeded, order: order, provider_environment: "live")
+    # A historical later capture (recorded before A1), which reconcile's
+    # backfill decides; a capture recorded since A1 and left unclassified
+    # would hold this event's payouts (hafapass_unclassified_capture).
+    stamp!(later_capture, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
     refund = create(:refund, order: order, payment: capture, succeeded_at: october_end)
     create(:refund_item, refund: refund, order_item: line, amount_cents: 500, organizer_proceeds_cents: 390,
       fee_cents: 60, organizer_fee_cents: 50)

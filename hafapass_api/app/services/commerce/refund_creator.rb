@@ -32,6 +32,12 @@ module Commerce
       if refund.nil? && provider_id.present?
         refund = ExternalRefundRecovery.restore_historical_identity!(payment: payment, provider_id: provider_id)
       end
+      # An inbound row keyed by this provider refund whose finalization was
+      # refused or interrupted (an older release's order-wide total, A1-R1
+      # recheck blocker 1): the key is the provider ID, an exact identity.
+      if refund.nil? && provider_id.present?
+        refund = Refund.find_by(provider: "stripe", idempotency_key: "provider:stripe:refund:#{provider_id}", provider_refund_id: nil)
+      end
       if refund
         raise RefundError, "Provider refund belongs to another payment" unless refund.payment_id == payment.id
 
@@ -717,7 +723,10 @@ module Commerce
       BuyerReturnPostings.record_refund!(refund)
       record_promoter_commission_reversal!(refund)
 
-      succeeded_refunds = refund.order.refunds.succeeded.on_sale
+      # Only the sale's own payment's refunds count, as the database requires
+      # (orders_sale_refund_aggregate): a refund on another payment never
+      # makes this sale fully refunded.
+      succeeded_refunds = refund.order.refunds.succeeded.on_sale.owned_by_sale
       if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
         succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
       end

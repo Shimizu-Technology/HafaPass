@@ -398,7 +398,7 @@ RSpec.describe FinancialIntegrity do
         "never_fulfilled_captures" => %w[never_fulfilled_captures_append_only never_fulfilled_captures_check
           never_fulfilled_captures_mark_order never_fulfilled_captures_no_truncate],
         "financial_cutovers" => %w[financial_cutovers_append_only financial_cutovers_no_truncate],
-        "orders" => %w[orders_fulfillment_guard],
+        "orders" => %w[orders_fulfillment_guard orders_sale_refund_aggregate],
         "tickets" => %w[tickets_issuance_guard]
       }
     end

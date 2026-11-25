@@ -32,7 +32,11 @@ RSpec.describe TaxReports do
     create(:fee_component, order: order, kind: "processing", estimated: true, amount_cents: 999)
     %w[test simulate].each { |environment| refund(sale(at: at, environment: environment), at: at) }
     sale(at: at, environment: nil)
-    create(:payment, :succeeded, order: order, provider_environment: "live")
+    later_capture = create(:payment, :succeeded, order: order, provider_environment: "live")
+    # A historical later capture (recorded before A1), which reconcile's
+    # backfill decides; a capture recorded since A1 and left unclassified
+    # would hold this event's payouts (hafapass_unclassified_capture).
+    stamp!(later_capture, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
     refund(order, at: at + 1.day)
     refund(order, at: at + 1.day, status: :failed)
     account = create(:connected_account, organization: organization)

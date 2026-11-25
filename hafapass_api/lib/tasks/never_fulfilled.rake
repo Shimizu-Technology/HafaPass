@@ -70,5 +70,12 @@ namespace :never_fulfilled do
     pending = report.assessments.reject { |item| %w[held reconciled].include?(item.disposition) }
     puts "unclassified_or_unposted=#{pending.count} dispositions=#{report.counts.sort.to_h}"
     puts "unposted_movement_payments=#{Commerce::NeverFulfilledReconcile.unposted_movement_payment_ids.count}"
+    # Captures an older release acknowledged without classifying them; each
+    # holds its event's payouts until classified or quarantined.
+    puts "overlap_captures=#{Commerce::NeverFulfilledReconcile.overlap_capture_ids.count}"
+    # Open orphan provider notices whose receipt no longer names a payment
+    # (payload cleared before its identity was kept): finance dispositions
+    # each from Stripe before R2 (docs/NEVER_FULFILLED_RELEASE.md).
+    puts "orphan_receipts_without_identity=#{Commerce::NeverFulfilledReconcile.orphan_receipts_without_identity.count}"
   end
 end

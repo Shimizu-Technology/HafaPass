@@ -22,7 +22,8 @@ WHERE NOT t.tgisinternal AND t.tgname IN (
   'repayment_operations_no_truncate', 'refunds_repayment_fence', 'payouts_repayment_fence',
   'refund_items_sale_ownership', 'promoter_commission_entries_sale_ownership',
   'ticket_inventory_retentions_sale_ownership', 'tickets_dispute_sale_ownership', 'audit_logs_payout_submission_fence',
-  'settlements_finalization_fence', 'reconciliation_exceptions_evidence_hold', 'refunds_identity_fence')
+  'settlements_finalization_fence', 'reconciliation_exceptions_evidence_hold', 'refunds_identity_fence',
+  'orders_sale_refund_aggregate', 'webhook_events_keep_identity')
 ORDER BY t.tgname;
 
 SELECT 'unvalidated_constraints' AS section, conrelid::regclass::text AS table_name, conname
@@ -102,6 +103,27 @@ WHERE re.status = 0 AND re.code IN ('refund_operation_not_found', 'refunded_paym
   'disputed_payment_not_found', 'refund_aggregate_requires_reconciliation')
 GROUP BY re.code, unbound ORDER BY re.code, unbound;
 
+-- Captures an older release acknowledged without classifying them (the
+-- database holds each event's payouts and statements until reconcile or
+-- RefundReconciliationJob classifies or quarantines them). Expected: none
+-- before A1-R2.
+SELECT 'overlap_captures' AS section, p.id AS payment_id, p.order_id, o.event_id, p.capture_recorded_at,
+  o.fulfilled_by_payment_id
+FROM payments p JOIN orders o ON o.id = p.order_id
+WHERE p.provider = 'stripe' AND p.status IN (1, 4, 5) AND p.capture_recorded_at IS NOT NULL
+  AND hafapass_unclassified_capture(p.id)
+ORDER BY p.id;
+
+-- Open orphan notices whose receipt no longer names a payment intent (its
+-- payload was cleared before its identity was kept). Each needs a finance
+-- disposition from Stripe before A1-R2.
+SELECT 'orphan_receipts_without_identity' AS section, re.code, count(*) AS open_items
+FROM reconciliation_exceptions re JOIN webhook_events w ON w.id = re.webhook_event_id
+WHERE re.status = 0 AND re.payment_id IS NULL AND re.code IN ('refund_operation_not_found', 'refunded_payment_not_found',
+  'disputed_payment_not_found') AND w.provider_payment_intent_id IS NULL
+  AND COALESCE(w.payload -> 'data' -> 'object' ->> 'payment_intent', w.payload -> 'data' -> 'object' -> 'payment_intent' ->> 'id', '') = ''
+GROUP BY re.code ORDER BY re.code;
+
 -- 4. Never-fulfilled items by code (§10.5 after A1-R1: Q and R are dispositioned).
 SELECT 'never_fulfilled_items' AS section, code, status, count(*) AS items
 FROM reconciliation_exceptions
@@ -129,15 +151,10 @@ FROM never_fulfilled_captures GROUP BY capture_scope, provenance ORDER BY 2, 3;
 
 -- 5. Fail-closed payouts (boundary item 5): events with an open blocking item,
 -- their payouts by status, and any payout on them that changed since R1.
+-- Blocked by the guards' own function: open blocking items and overlap captures.
 WITH blocked_events AS (
-  SELECT DISTINCT o.event_id FROM reconciliation_exceptions re
-  LEFT JOIN payments p ON p.id = re.payment_id
-  JOIN orders o ON o.id = COALESCE(re.order_id, p.order_id)
-  WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release',
-    'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture',
-    'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined',
-    'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement',
-    'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+  SELECT e.id AS event_id, hafapass_payout_block_start(e.id) AS block_start FROM events e
+  WHERE hafapass_payout_block_start(e.id) IS NOT NULL
 )
 SELECT 'payouts_on_blocked_events' AS section, py.event_id, py.status, count(*) AS payouts, sum(py.amount_cents) AS cents,
   count(*) FILTER (WHERE py.updated_at > (:'r1_live_at')::timestamptz AT TIME ZONE 'UTC') AS changed_since_r1
@@ -163,6 +180,19 @@ FROM audit_logs a JOIN payouts py ON a.auditable_type = 'Payout' AND a.auditable
 JOIN affected_events e ON e.event_id = py.event_id
 WHERE a.action LIKE 'payout.%' AND a.occurred_at > (:'r1_live_at')::timestamptz AT TIME ZONE 'UTC'
 GROUP BY py.event_id, a.action ORDER BY py.event_id, a.action;
+
+-- Every payout recorded paid while its event was held, with its evidence:
+-- the submission authorization and the transfer time must both be earlier
+-- than the hold, and the confirmation must say the money left before it.
+SELECT 'paid_under_hold' AS section, py.id AS payout_id, py.event_id, py.paid_at,
+  a.metadata ->> 'never_fulfilled_hold_started_at' AS hold_started_at,
+  (SELECT min(s.occurred_at) FROM audit_logs s WHERE s.auditable_type = 'Payout' AND s.auditable_id = py.id
+    AND s.action = 'payout.submission_requested') AS submission_requested_at,
+  a.metadata -> 'reconciliation' ->> 'sent_before_hold_confirmed' AS sent_before_hold_confirmed,
+  py.paid_at < (a.metadata ->> 'never_fulfilled_hold_started_at')::timestamp AS transfer_before_hold
+FROM audit_logs a JOIN payouts py ON a.auditable_type = 'Payout' AND a.auditable_id = py.id
+WHERE a.action = 'payout.reconciled' AND a.metadata ? 'never_fulfilled_hold_started_at'
+ORDER BY py.id;
 
 SELECT 'finalized_settlements_on_late_capture_events' AS section, count(*) AS settlements
 FROM settlements s WHERE s.status = 1 AND s.event_id IN (

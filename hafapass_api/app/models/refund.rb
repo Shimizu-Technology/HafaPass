@@ -13,6 +13,9 @@ class Refund < ApplicationRecord
     excluding_isolated_payments.joins(:order).where("orders.fulfilled_by_payment_id IS NULL OR refunds.payment_id IS NULL " \
       "OR refunds.payment_id = orders.fulfilled_by_payment_id")
   }
+  # Refunds from the payment that owns the sale (or from no payment: cash and
+  # manual returns). A no-op unless another payment on the order has one.
+  scope :owned_by_sale, -> { where("refunds.payment_id IS NULL OR hafapass_sale_owner_payment(refunds.payment_id)") }
   scope :excluding_repayment_fenced, -> { where("refunds.payment_id IS NULL OR NOT hafapass_fenced_payment(refunds.payment_id)") }
   belongs_to :requested_by, class_name: "User", optional: true
   belongs_to :repayment_operation, optional: true

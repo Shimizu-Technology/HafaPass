@@ -135,7 +135,9 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
       "receipt_account_mismatch" => { payload: { "account" => "acct_someone_else" } },
       "receipt_time_inconsistent" => { provider_created_at: captured_at + 1.day },
       "receipt_time_unknown" => { provider_created_at: nil },
-      "receipt_names_another_payment" => { anonymized: true }
+      # Cleared before any release kept its identity (a pre-A1 privacy request).
+      "receipt_identity_missing" => { anonymized: true },
+      "receipt_names_another_payment" => { object: { "id" => "pi_someone_else" } }
     }
     payments = cases.transform_values { |changes| historical_late_capture(receipt_changes: changes)[1] }
     install_cutovers!
@@ -145,6 +147,23 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
     cases.each_key { |reason| expect(reasons.fetch(payments.fetch(reason).id)).to eq(["ambiguous", reason]) }
     expect(UnfulfilledCapture.count + BuyerReturnPosting.count).to eq(0)
     expect(ReconciliationException.where(code: described_class::AMBIGUOUS_CODE).count).to eq(cases.size)
+  end
+
+  # A1-R1 recheck: retention or a privacy request clearing the payload of a
+  # receipt (from either release) keeps its provider identity, so the
+  # capture is still proven exactly afterwards.
+  it "still proves the capture from the identity kept when retention clears the receipt payload" do
+    _order, payment, issue = historical_late_capture
+    receipt = issue.webhook_event
+    expect(receipt.provider_payment_intent_id).to be_nil # written before A1-R1 kept it
+    WebhookEvent.where(id: receipt.id).update_all(payload: {}, retention_anonymized_at: Time.current)
+    expect(receipt.reload).to have_attributes(payload: {}, provider_payment_intent_id: payment.provider_payment_id,
+      provider_object_id: payment.provider_payment_id, provider_amount_cents: payment.amount_cents, provider_currency: "usd",
+      provider_livemode: payment.provider_environment == "live")
+    install_cutovers!
+
+    expect(described_class.call(dry_run: false).counts).to eq("classify" => 1)
+    expect(UnfulfilledCapture.find_by!(payment: payment).provenance_evidence).to include("webhook_event_id" => receipt.id)
   end
 
   it "accepts the late-capture refund key as lifecycle evidence when no receipt is linked" do

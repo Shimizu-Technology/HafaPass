@@ -12,12 +12,22 @@ module Commerce
   # posting and exception rows through the guarded writers; it never updates or
   # deletes a historical row and makes no network call.
   #
-  # Nothing schedules it. The release plan uses dry-run counts and an
-  # authorized run (§10.5); per-payment after-commit calls are a tranche 4
-  # hook (call_for_payment).
+  # Nothing schedules the order-scope backfill. The release plan uses
+  # dry-run counts and an authorized run (§10.5); per-payment after-commit
+  # calls are a tranche 4 hook (call_for_payment). Overlap captures (below)
+  # are also discovered by RefundReconciliationJob and by a redelivered
+  # capture notice, because they are what this release's own webhook handler
+  # would have recorded.
   #
   # Dispositions:
   #   classify      positive provenance and positively matched movements
+  #   discover      an overlap capture: a capture an older release
+  #                 acknowledged on a sold order without classifying it
+  #                 (hafapass_unclassified_capture, which also holds the
+  #                 event's payouts). Its signed receipt proves it exactly
+  #                 -> the lifecycle's own second-capture path
+  #   quarantine    an overlap capture whose receipt does not prove it ->
+  #                 never_fulfilled_classification_quarantined
   #   post          already classified; post unposted movements with evidence
   #   ambiguous     any proof missing or ambiguous -> never_fulfilled_backfill_ambiguous
   #   restatement   the event has a finalized settlement or a reserved, sent or
@@ -61,12 +71,69 @@ module Commerce
     end
 
     # Captured Stripe payments with a late-capture exception and no
-    # classification, plus classified payments with an unposted movement.
+    # classification, overlap captures, plus classified payments with an
+    # unposted movement.
     def self.candidate_payment_ids
       unclassified = ReconciliationException.where(code: LateCaptureRefund::CODES).where.not(payment_id: nil)
         .where.not(payment_id: UnfulfilledCapture.select(:payment_id)).distinct.pluck(:payment_id)
       unposted = unposted_movement_payment_ids
-      (unclassified + unposted).uniq
+      (unclassified + overlap_capture_ids + unposted).uniq
+    end
+
+    # The database's own definition (it holds the event's payouts and
+    # statements until each one is classified or quarantined).
+    def self.overlap_capture_ids
+      Payment.where(provider: "stripe", status: CAPTURED_STATUSES).where.not(capture_recorded_at: nil)
+        .where.not(id: UnfulfilledCapture.select(:payment_id))
+        .where("hafapass_unclassified_capture(payments.id)").order(:id).pluck(:id)
+    end
+
+    def self.overlap_capture?(payment)
+      ActiveRecord::Base.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_unclassified_capture(?)", payment.id])
+      ) == true
+    end
+
+    # Classifies or quarantines every overlap capture (scheduled through
+    # RefundReconciliationJob). No network call; each payment re-reads under
+    # its locks. Returns the assessments.
+    def self.discover_overlap_captures!
+      overlap_capture_ids.filter_map do |id|
+        payment = Payment.find_by(id: id)
+        call_for_payment(payment, dry_run: false) if payment
+      rescue ActiveRecord::ActiveRecordError => e
+        Rails.logger.error("[NeverFulfilledReconcile] overlap capture #{id}: #{e.class}")
+        nil
+      end
+    end
+
+    # Open orphan refund or dispute notices whose receipt no longer names a
+    # payment intent anywhere: neither the kept identity nor the payload.
+    # They cannot hold a specific event, so finance records a disposition
+    # for each (Verify, or a note with its confirmation) before A1-R2.
+    def self.orphan_receipts_without_identity
+      ReconciliationException.open.where(code: StripeWebhookProcessor::ORPHAN_CODES, payment_id: nil)
+        .joins(:webhook_event).where(webhook_events: { provider_payment_intent_id: nil })
+        .where("COALESCE(webhook_events.payload -> 'data' -> 'object' ->> 'payment_intent', " \
+          "webhook_events.payload -> 'data' -> 'object' -> 'payment_intent' ->> 'id', '') = ''")
+    end
+
+    # Signed receipt facts for a capture, from its payload or, once the
+    # payload is cleared, from the provider identity kept with it.
+    def self.capture_receipt_facts(receipt)
+      payload = receipt.payload.to_h
+      object = payload.dig("data", "object").to_h
+      if object.present?
+        { intent: object["id"], succeeded: object["status"] == "succeeded", amount: object["amount_received"],
+          currency: object["currency"], livemode: payload.key?("livemode") ? payload["livemode"] : :missing,
+          account: payload["account"].presence, source: "payload" }
+      elsif receipt.provider_payment_intent_id.present?
+        # Stored only for a succeeded intent (StripeWebhookProcessor.provider_identity,
+        # hafapass_keep_receipt_identity).
+        { intent: receipt.provider_payment_intent_id, succeeded: true, amount: receipt.provider_amount_cents,
+          currency: receipt.provider_currency, livemode: receipt.provider_livemode.nil? ? :missing : receipt.provider_livemode,
+          account: receipt.provider_account_id.presence, source: "stored_identity" }
+      end
     end
 
     def self.unposted_movement_payment_ids
@@ -121,6 +188,11 @@ module Commerce
           NeverFulfilledResolution.evaluate!(capture, trigger: "reconcile")
         when "ambiguous", "restatement"
           open_finance_item!(assessment)
+        when "discover"
+          receipt = WebhookEvent.find_by(id: assessment.details[:webhook_event_id])
+          OrderLifecycle.record_discovered_capture!(order, payment, receipt, assessment.capture_attributes)
+        when "quarantine"
+          quarantine_overlap!(assessment)
         end
         assessment
       end
@@ -133,6 +205,7 @@ module Commerce
       end
       capture = UnfulfilledCapture.find_by(payment_id: payment.id)
       return assess_classified(capture, result) if capture
+      return assess_overlap(result) if self.class.overlap_capture?(payment)
       # An ordinary payment is never a candidate: no lifecycle late-capture record.
       unless ReconciliationException.exists?(payment: payment, code: LateCaptureRefund::CODES)
         return result.call("reconciled", "not_a_candidate")
@@ -166,6 +239,57 @@ module Commerce
       return result.call("ambiguous", problem, movement_count: movements.length) if problem
 
       result.call("post", nil, backfills: backfills, movement_count: movements.length)
+    end
+
+    # An overlap capture: proven only by its own signed capture receipt
+    # (the exact intent, succeeded, amount, currency, mode, account and a
+    # consistent provider time). The evidence handed to the lifecycle names
+    # that receipt, so the classification's provenance is exact.
+    def assess_overlap(result)
+      # The sale's own payment on an order completed before A1 recorded it:
+      # the completion audit names it, which is all the lifecycle needs to
+      # record it as the fulfilling payment.
+      if order.fulfilled_by_payment_id.nil? && completion_audit_payment_id == payment.id
+        return result.call("discover", nil, details: { fulfilling_payment_recovery: true })
+      end
+
+      receipt = capture_receipt
+      problem = receipt ? signed_capture_problem(receipt) : "capture_receipt_missing"
+      details = { webhook_event_id: receipt&.id, receipt_status: receipt&.status,
+        fulfilled_by_payment_id: order.fulfilled_by_payment_id }.compact
+      return result.call("quarantine", problem, details: details) if problem
+
+      facts = self.class.capture_receipt_facts(receipt)
+      evidence = { "source" => "signed_webhook", "webhook_event_id" => receipt.id, "event_type" => receipt.event_type,
+        "provider_object_id" => facts[:intent], "amount_cents" => facts[:amount], "currency" => facts[:currency].to_s.downcase,
+        "discovered_by" => "reconcile", "receipt_facts" => facts[:source], "receipt_status" => receipt.status }
+      result.call("discover", nil, capture_attributes: evidence, details: details)
+    end
+
+    def completion_audit_payment_id
+      audit = AuditLog.where(action: "order.completed", deduplication_key: "order:#{order.id}:completed").order(:id).first
+      claimed = audit&.metadata.to_h["payment_id"]
+      claimed.to_s.match?(/\A\d+\z/) ? claimed.to_i : nil
+    end
+
+    # The earliest payment_intent.succeeded receipt for this payment's intent.
+    def capture_receipt
+      linked = WebhookEvent.where(id: PaymentEvent.where(payment_id: payment.id).select(:webhook_event_id),
+        event_type: "payment_intent.succeeded")
+      named = WebhookEvent.where(event_type: "payment_intent.succeeded").where(provider_payment_intent_id: payment.provider_payment_id)
+        .or(WebhookEvent.where(event_type: "payment_intent.succeeded", provider_payment_intent_id: nil)
+          .where("webhook_events.payload -> 'data' -> 'object' ->> 'id' = ?", payment.provider_payment_id))
+      linked.order(:id).first || named.order(:id).first
+    end
+
+    def quarantine_overlap!(assessment)
+      ReconciliationException.find_by(payment: payment, code: NeverFulfilledClassification::QUARANTINE_CODE) ||
+        ReconciliationException.create!(order: order, payment: payment,
+          webhook_event_id: assessment.details[:webhook_event_id],
+          code: NeverFulfilledClassification::QUARANTINE_CODE,
+          details: { reason: assessment.reason, capture_scope: "payment",
+            classification_code: NeverFulfilledClassification::SECOND_CAPTURE_CODE, discovered_by: "reconcile" }
+            .merge(assessment.details.except(:webhook_event_id)))
     end
 
     # Points 1-5 of design §4.5. Returns [problem, evidence].
@@ -232,18 +356,18 @@ module Commerce
     RECEIPT_CLOCK_SKEW = 5.minutes
 
     def signed_capture_problem(receipt)
-      payload = receipt.payload.to_h
-      object = payload.dig("data", "object").to_h
+      facts = self.class.capture_receipt_facts(receipt)
+      return "receipt_identity_missing" unless facts
       return "receipt_names_another_payment" unless receipt.event_type == "payment_intent.succeeded" &&
-        object["id"].present? && object["id"] == payment.provider_payment_id
-      return "receipt_not_succeeded" unless object["status"] == "succeeded"
+        facts[:intent].present? && facts[:intent] == payment.provider_payment_id
+      return "receipt_not_succeeded" unless facts[:succeeded]
 
-      amount = object["amount_received"]
+      amount = facts[:amount]
       return "receipt_amount_mismatch" unless amount.is_a?(Integer) && amount == payment.amount_cents
-      return "receipt_currency_mismatch" unless object["currency"].to_s.casecmp?(payment.currency.to_s)
+      return "receipt_currency_mismatch" unless facts[:currency].to_s.casecmp?(payment.currency.to_s)
       return "receipt_mode_mismatch" unless %w[test live].include?(payment.provider_environment) &&
-        payload["livemode"] == (payment.provider_environment == "live")
-      return "receipt_account_mismatch" unless payload["account"].presence == payment.provider_account_id.presence
+        facts[:livemode] == (payment.provider_environment == "live")
+      return "receipt_account_mismatch" unless facts[:account] == payment.provider_account_id.presence
 
       provider_at = receipt.provider_created_at
       return "receipt_time_unknown" unless provider_at

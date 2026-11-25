@@ -46,14 +46,22 @@ class StripeWebhookProcessor
 
   # The provider identity a signed refund or dispute notice carries, stored
   # outside its payload (A1-R1 review finding 5).
+  # A capture notice keeps it too, only when the intent succeeded, so a
+  # second capture an older release acknowledged can still be proven after
+  # its payload is cleared (the database keeps the same fields when any
+  # release clears a payload: hafapass_keep_receipt_identity).
   def self.provider_identity(event_type, payload)
-    return {} unless REPLAYABLE_TYPES.include?(event_type)
+    return {} unless FinancialIntegrity::WEBHOOK_IDENTITY_TYPES.include?(event_type)
 
     object = payload.to_h.dig("data", "object").to_h
-    intent = object["payment_intent"]
+    capture = event_type == "payment_intent.succeeded"
+    return {} if capture && object["status"] != "succeeded"
+
+    intent = capture ? object["id"] : object["payment_intent"]
     intent = intent["id"] if intent.is_a?(Hash)
     amount = object["amount_refunded"] if event_type == "charge.refunded"
-    amount ||= object["amount"]
+    amount = object["amount_received"] if capture
+    amount ||= object["amount"] unless capture
     { provider_payment_intent_id: intent.presence&.to_s, provider_object_id: object["id"].presence&.to_s,
       provider_livemode: payload.to_h.key?("livemode") ? payload["livemode"] == true : nil,
       provider_account_id: payload.to_h["account"].presence&.to_s,
@@ -68,7 +76,10 @@ class StripeWebhookProcessor
 
   def call
     receipt = store_receipt!
-    return receipt if receipt.processed? || receipt.ignored?
+    if receipt.processed? || receipt.ignored?
+      discover_acknowledged_capture!(receipt)
+      return receipt
+    end
 
     receipt.update!(status: :processing, attempts: receipt.attempts + 1, last_error: nil)
     AuditContext.set(source: "provider", fail_open: true) { process!(receipt) }
@@ -81,6 +92,22 @@ class StripeWebhookProcessor
   private
 
   attr_reader :event, :payload
+
+  # A capture notice an older release already processed returns early, but
+  # if that release acknowledged a second capture without classifying it,
+  # this release classifies or quarantines it now (A1-R1 recheck blocker 3).
+  def discover_acknowledged_capture!(receipt)
+    return unless receipt.processed? && receipt.event_type == "payment_intent.succeeded"
+
+    payment = receipt.payment_event&.payment
+    return unless payment && Commerce::NeverFulfilledReconcile.overlap_capture?(payment)
+
+    Commerce::NeverFulfilledReconcile.call_for_payment(payment, dry_run: false)
+  rescue ActiveRecord::ActiveRecordError => e
+    # The receipt stays processed; the database keeps the event held and
+    # RefundReconciliationJob retries the discovery.
+    Rails.logger.error("[StripeWebhookProcessor] overlap capture discovery for receipt #{receipt.id}: #{e.class}")
+  end
 
   def replay!(receipt, payment)
     WebhookEvent.transaction do

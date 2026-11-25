@@ -99,7 +99,8 @@ class PayoutReconciler
         # that already left is still recorded: its submission was authorized
         # before the hold opened, the admin confirms it was sent before the
         # hold, and the confirmed transfer time is earlier than the hold. The
-        # database enforces the submission half for every writer.
+        # database enforces all three for every writer (the confirmation is
+        # named by FinancialIntegrity.with_payout_transfer below).
         if (hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event))
           sent_before_hold = normalized["sent_before_hold_confirmed"] == true ||
             (payout.event.cancelled? && normalized["sent_before_cancellation_confirmed"] == true)
@@ -145,7 +146,14 @@ class PayoutReconciler
         failure_code: status == "failed" ? "reconciled_failure" : nil,
         failure_message: status == "failed" ? normalized.fetch("reason") : nil }
       updates[:under_withheld_cents] = shortfall if status == "paid"
-      payout.update!(updates)
+      # On a held event the database records paid only with this verified
+      # pre-hold transfer confirmation (checked above), never from a
+      # submission authorization or a timestamp alone.
+      if status == "paid" && hold_started_at
+        FinancialIntegrity.with_payout_transfer(payout.id) { payout.update!(updates) }
+      else
+        payout.update!(updates)
+      end
       if shortfall.positive?
         AuditLogger.record!(action: "payout.under_withholding_carried", auditable: payout, actor: actor,
           organization: payout.organization, before_data: { under_withheld_cents: 0 },
