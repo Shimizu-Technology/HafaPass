@@ -73,6 +73,7 @@ echo "previous release ${OLD_SHA} and $(git -C "$repo_dir" rev-parse HEAD) on da
 # Upgrade path: the previous release's schema and its own data first.
 (cd "$old_api" && bin/rails db:drop db:create db:schema:load >/dev/null 2>&1)
 run old u_existing_data
+run old u_existing_r17
 run old exports EXPORT_TAG=baseline
 echo "== new db:migrate (upgrade from the previous release's schema)"
 # The schema dump after the migration goes to the scratch directory, never
@@ -240,6 +241,34 @@ wait "$capture_pid"
 reset_pause submission_audit
 run new r16_state
 run new r16_discover
+run new verify_task
+
+# Upgrade cutoff (2f961e48 recheck): on two sales the previous release
+# recorded before the upgrade (A has no capture recording time, no
+# fulfilling payment is recorded), it captures B and then C (a notice
+# without its mode) before discovery. The same transfer between the two
+# captures is tried in both releases after B, after C and after each
+# discovery: C first on r17c, B first on r17b. Then the pre-hold transfer.
+gap_attempts() { # key phase
+  run new r17_paid_gap REHEARSAL_KEY="$1" REHEARSAL_PHASE="$2"
+  run old r17_paid_gap REHEARSAL_KEY="$1" REHEARSAL_PHASE="$2"
+}
+for key in r17c r17b; do
+  run old r17_old_capture REHEARSAL_KEY="$key" REHEARSAL_PAYMENT=b
+  gap_attempts "$key" after_b
+  run old r17_old_capture REHEARSAL_KEY="$key" REHEARSAL_PAYMENT=c
+  gap_attempts "$key" after_c
+done
+run new r17_discover REHEARSAL_KEY=r17c REHEARSAL_PAYMENT=c
+gap_attempts r17c after_first
+run new r17_discover REHEARSAL_KEY=r17c REHEARSAL_PAYMENT=b
+gap_attempts r17c after_second
+run new r17_discover REHEARSAL_KEY=r17b REHEARSAL_PAYMENT=b
+gap_attempts r17b after_first
+run new r17_discover REHEARSAL_KEY=r17b REHEARSAL_PAYMENT=c
+gap_attempts r17b after_second
+run new r17_paid_pre_hold REHEARSAL_KEY=r17c
+run new r17_paid_pre_hold REHEARSAL_KEY=r17b
 run new verify_task
 
 # Readers on a fully returned never-fulfilled order in an ordinary event.

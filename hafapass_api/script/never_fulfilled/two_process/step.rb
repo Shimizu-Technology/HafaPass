@@ -161,6 +161,33 @@ module RehearsalFixtures
       idempotency_key: "second:#{order.id}:#{intent}", amount_cents: amount_cents, currency: "usd", status: :pending)
   end
 
+  # A settled card sale 7bcd97c2 recorded before the upgrade, as its
+  # checkout does (line item, platform fee, captured payment A, verified
+  # processing cost) with its completion audit naming A. Runs in the
+  # previous release on its schema, so A has no capture recording time and
+  # the order no recorded fulfilling payment. Unique fields are explicit.
+  def legacy_settled_sale!(key)
+    user = create(:user, :organizer, clerk_id: "clerk_reh_#{key}", email: "rehearsal.#{key}.organizer@example.com")
+    organization = create(:organization, name: "Rehearsal #{key} Organization")
+    profile = create(:organizer_profile, :verified, user: user, organization: organization)
+    event = create(:event, :published, organization: organization, organizer_profile: profile, title: "Rehearsal #{key} Event")
+    type = create(:ticket_type, event: event, price_cents: 2000, quantity_available: 20, quantity_sold: 0)
+    order = create(:order, event: event, subtotal_cents: 10_000, service_fee_cents: 500, total_cents: 10_500,
+      processing_fee_bearer_snapshot: "organizer", buyer_email: "rehearsal.#{key}@example.com", completed_at: Time.current)
+    item = create(:order_item, order: order, ticket_type: type, name: type.name, unit_price_cents: 2000, quantity: 5,
+      subtotal_cents: 10_000, discount_cents: 0, fee_cents: 500, organizer_fee_cents: 0, organizer_proceeds_cents: 10_000)
+    create(:fee_component, order: order, kind: "platform", amount_cents: 500, estimated: true)
+    a = create(:payment, :succeeded, order: order, amount_cents: 10_500, provider_payment_id: "pi_reh_#{key}_a",
+      idempotency_key: "reh-#{key}-a")
+    component = create(:fee_component, order: order, order_item: item, kind: "processing", amount_cents: 100, estimated: false,
+      provider_reference: "txn_reh_#{key}_a")
+    create(:stripe_fee_evidence, :verified, payment: a, fee_component: component, provider_charge_id: "ch_reh_#{key}_a",
+      provider_balance_transaction_id: component.provider_reference)
+    AuditLogger.record!(action: "order.completed", auditable: order, organization: organization, event: event, outcome: "succeeded",
+      deduplication_key: "order:#{order.id}:completed", after_data: { status: order.status }, metadata: { payment_id: a.id })
+    [event, order.reload, a.reload, user]
+  end
+
   # Builds the data 7bcd97c2 had before the upgrade: an ordinary online sale
   # it fulfilled itself and two orphan refund notices, one of which its
   # retention already cleared. Runs in the previous release on its schema.
@@ -345,6 +372,26 @@ when "setup"
   r16["r16_other_pending"] = reserve.call("r16_other", "reh-r16-other")
   r16["r16b_pending"] = reserve.call("r16b", "reh-r16b-pending")
   S.save!(**r16)
+
+  # Upgrade cutoff (2f961e48 recheck): on each legacy sale the previous
+  # release recorded before the upgrade, B and C wait for its captures, and
+  # a payout is submitted (and its transfer made) before B's capture.
+  r17 = {}
+  %w[r17c r17b].each do |key|
+    target = Event.find(S.state.fetch("#{key}_event"))
+    target.update_columns(status: Event.statuses.fetch("completed"))
+    order = Order.find(S.state.fetch("#{key}_order"))
+    a = Payment.find(S.state.fetch("#{key}_a"))
+    r17["#{key}_b"] = F.second_payment!(order, a, "pi_reh_#{key}_b", amount_cents: order.total_cents).id
+    r17["#{key}_c"] = F.second_payment!(order, a, "pi_reh_#{key}_c", amount_cents: order.total_cents).id
+    F.approved_bank_account!(target.organization, actor: User.find(S.state.fetch("#{key}_user")), admin: admin)
+    r17["#{key}_sent"] = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: target, actor: admin), actor: admin,
+      idempotency_key: "reh-#{key}-sent", amount_cents: 2000).id
+    sleep 0.05
+    r17["#{key}_pre_hold"] = Time.current.utc.iso8601(6)
+  end
+  sleep 0.05
+  S.save!(**r17)
 
   S.save!(cpa_event: cpa_event.id, admin: admin.id, late_event: late_event.id, iso_event: iso_event.id, l1_payment: p1.id, l1_order: l1.id, l2_payment: p2.id,
     l3_payment: p3.id, l3_refund: r3.id, l4_payment: p4.id, l4_refund: r4.id,
@@ -827,6 +874,78 @@ when "r16_discover"
       .map { |code, at| [code, at&.utc&.iso8601(6)] }, block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(b.order.event)&.utc&.iso8601(6) }]
   })
 
+when "u_existing_r17"
+  raise "existing data comes from the previous release" if new_release
+
+  saved = %w[r17c r17b].each_with_object({}) do |key, values|
+    event, order, a, user = F.legacy_settled_sale!(key)
+    values.merge!("#{key}_event" => event.id, "#{key}_order" => order.id, "#{key}_a" => a.id, "#{key}_user" => user.id)
+  end
+  S.save!(**saved)
+  Rehearsal.outcome!(step, action: "legacy sales", value: saved)
+
+when "r17_old_capture"
+  # 7bcd97c2 acknowledges B or C on its own legacy sale. C's notice carries
+  # no mode, which 7bcd97c2 accepts outside production and this release
+  # cannot prove from the receipt.
+  key = ENV.fetch("REHEARSAL_KEY")
+  which = ENV.fetch("REHEARSAL_PAYMENT")
+  payment = S.find(Payment, "#{key}_#{which}")
+  object = { id: payment.provider_payment_id, amount: payment.amount_cents, amount_received: payment.amount_cents, currency: "usd",
+    status: "succeeded" }
+  S.attempt(step, "payment_intent.succeeded on #{which.upcase} (#{key})") do
+    S.webhook!("payment_intent.succeeded", object, id: "evt_reh_#{key}_#{which}", livemode: which == "b" ? false : nil)
+  end
+  Rehearsal.outcome!(step, action: "state", value: { key: key, payment: which, receipt: S.receipt("evt_reh_#{key}_#{which}"),
+    captured: payment.reload.slice(:status, :capture_recorded_at), exceptions: ReconciliationException.where(payment_id: payment.id).count })
+
+when "r17_paid_gap"
+  # The same transfer, made between B's and C's captures, in each release
+  # after each step (REHEARSAL_PHASE).
+  key = ENV.fetch("REHEARSAL_KEY")
+  payout = S.find(Payout, "#{key}_sent")
+  b = S.find(Payment, "#{key}_b")
+  unless S.state["#{key}_gap"]
+    sleep 0.05
+    S.save!("#{key}_gap" => (b.capture_recorded_at + ((Time.current - b.capture_recorded_at) / 2)).utc.iso8601(6))
+  end
+  gap = Time.iso8601(S.state.fetch("#{key}_gap"))
+  S.attempt(step, "PayoutReconciler.call paid (#{key} #{ENV.fetch('REHEARSAL_PHASE')}, transfer #{gap.utc.iso8601(6)})") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-#{key}-gap",
+      evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: gap.utc.iso8601(6),
+        approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+  end
+  Rehearsal.outcome!(step, action: "state", value: { key: key, phase: ENV.fetch("REHEARSAL_PHASE"), payout: payout.reload.slice(:status, :paid_at),
+    block_started_at: (Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event)&.utc&.iso8601(6) if new_release),
+    b_capture_recorded_at: b.capture_recorded_at.utc.iso8601(6), c_capture_recorded_at: S.find(Payment, "#{key}_c").capture_recorded_at&.utc&.iso8601(6) })
+
+when "r17_discover"
+  key = ENV.fetch("REHEARSAL_KEY")
+  payment = S.find(Payment, "#{key}_#{ENV.fetch('REHEARSAL_PAYMENT')}")
+  ids = %w[a b c].map { |which| S.state.fetch("#{key}_#{which}") }
+  overlap = -> { Commerce::NeverFulfilledReconcile.overlap_capture_ids & ids }
+  before = overlap.call
+  report = S.attempt(step, "NeverFulfilledReconcile.call (#{key} #{ENV.fetch('REHEARSAL_PAYMENT').upcase})") do
+    Commerce::NeverFulfilledReconcile.call(dry_run: false, payment_ids: [payment.id]).assessments.map { |item| [item.payment_id, item.disposition, item.reason] }
+  end
+  Rehearsal.outcome!(step, action: "state", value: { key: key, report: report, overlap_before: before, overlap_after: overlap.call,
+    fulfilled_by: payment.order.reload.fulfilled_by_payment_id,
+    block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(payment.order.event)&.utc&.iso8601(6),
+    holds: ReconciliationException.where(payment_id: ids, code: FinancialIntegrity::PAYOUT_BLOCKING_CODES).order(:id)
+      .map { |item| [item.payment_id, item.code, item.status, item.hold_started_at&.utc&.iso8601(6), item.details["reason"]] } })
+
+when "r17_paid_pre_hold"
+  key = ENV.fetch("REHEARSAL_KEY")
+  payout = S.find(Payout, "#{key}_sent")
+  pre = Time.iso8601(S.state.fetch("#{key}_pre_hold"))
+  S.attempt(step, "PayoutReconciler.call paid (#{key} pre-hold transfer #{pre.utc.iso8601(6)})") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-#{key}-pre",
+      evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: pre.utc.iso8601(6),
+        approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+  end
+  Rehearsal.outcome!(step, action: "state", value: { key: key, payout: payout.reload.slice(:status, :paid_at, :provider_payout_id),
+    audit_hold: AuditLog.where(auditable: payout, action: "payout.reconciled").pluck(Arel.sql("metadata ->> 'never_fulfilled_hold_started_at'")) })
+
 when "verify_task"
   output = `bin/rails never_fulfilled:verify 2>&1`
   Rehearsal.outcome!(step, action: "never_fulfilled:verify", value: output.lines.map(&:strip))
@@ -939,6 +1058,34 @@ when "assertions"
   check.call("fix3: the held payout on B1's event never reached the gateway", File.readlines(File.join(Rehearsal::DIR, "calls.jsonl"))
     .map { |line| JSON.parse(line) }.select { |call| call["kind"] == "payout_submit" }.map { |call| call["payout_id"] }
     .include?(S.state.fetch("r16_pending")), false)
+  # Upgrade cutoff (2f961e48 recheck): r17c discovers C first, r17b B first.
+  %w[r17c r17b].each do |key|
+    a, b, c = %w[a b c].map { |which| S.find(Payment, "#{key}_#{which}") }
+    t1 = b.capture_recorded_at.utc.iso8601(6)
+    gap_rows = rows.select { |row| row["step"] == "r17_paid_gap" && row["action"].start_with?("PayoutReconciler") && row["action"].include?("(#{key} ") }
+    check.call("cutoff #{key}: the same transfer between B and C refused after B, after C and after each discovery, in both releases",
+      gap_rows.map { |row| [row["role"], row["action"][/(after_\w+)/], row["result"]] }.sort,
+      %w[old new].product(%w[after_b after_c after_first after_second]).map { |role, phase| [role, phase, "refused"] }.sort)
+    gap_states = rows.select { |row| row["role"] == "new" && row["step"] == "r17_paid_gap" && row["action"] == "state" && row.dig("value", "key") == key }
+    check.call("cutoff #{key}: block start stays at B's capture through C and discovery",
+      [gap_states.map { |row| row.dig("value", "block_started_at") }.uniq, a.capture_recorded_at,
+        gap_states.all? { |row| row.dig("value", "c_capture_recorded_at").nil? || row.dig("value", "c_capture_recorded_at") > S.state.fetch("#{key}_gap") }],
+      [[t1], nil, true])
+    found = rows.select { |row| row["step"] == "r17_discover" && row["action"] == "state" && row.dig("value", "key") == key }
+    check.call("cutoff #{key}: one payment's item never hides the other; both discovered",
+      found.map { |row| [Array(row.dig("value", "report")).map { |item| item[1..2] }, row.dig("value", "overlap_after"), row.dig("value", "block_started_at")] },
+      key == "r17c" ? [[[["quarantine", "receipt_mode_mismatch"]], [b.id], t1], [[["discover", nil]], [], t1]] :
+        [[[["discover", nil]], [c.id], t1], [[["quarantine", "receipt_mode_mismatch"]], [], t1]])
+    holds = ReconciliationException.where(payment_id: [b.id, c.id], code: FinancialIntegrity::PAYOUT_BLOCKING_CODES).order(:id)
+    check.call("cutoff #{key}: A recovered as the sale, B classified, C quarantined, the first item keeps B's capture",
+      [S.find(Order, "#{key}_order").reload.fulfilled_by_payment_id, S.classification(b)&.values_at(:scope, :code), S.classification(c),
+        holds.where(payment_id: c.id).pluck(:code), holds.first.hold_started_at.utc.iso8601(6)],
+      [a.id, %w[payment unfulfilled_second_capture], nil, [Commerce::NeverFulfilledClassification::QUARANTINE_CODE], t1])
+    sent = S.find(Payout, "#{key}_sent")
+    check.call("cutoff #{key}: the pre-hold transfer is recorded paid with B's capture as the hold start",
+      [sent.status, sent.paid_at.utc.iso8601(6), AuditLog.where(auditable: sent, action: "payout.reconciled").pluck(Arel.sql("metadata ->> 'never_fulfilled_hold_started_at'"))],
+      ["paid", S.state.fetch("#{key}_pre_hold"), [t1]])
+  end
   baseline, upgraded = %w[baseline upgraded].map { |tag| JSON.parse(File.read(File.join(Rehearsal::DIR, "exports_#{tag}.json"))) }
   check.call("upgrade: CPA rows identical before and after the migration", upgraded["cpa"], baseline["cpa"])
   check.call("upgrade: BPT rows identical before and after the migration", upgraded["bpt"], baseline["bpt"])
