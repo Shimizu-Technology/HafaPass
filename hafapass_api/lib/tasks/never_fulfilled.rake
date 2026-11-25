@@ -46,6 +46,24 @@ namespace :never_fulfilled do
     end
   end
 
+  # R2 activation backlog (docs/NEVER_FULFILLED_RELEASE.md). DRY_RUN=1 (the
+  # default) only lists. DRY_RUN=0 enqueues each owed capture's job, and only
+  # when the deployed code's submitter is active; R1 refuses.
+  desc "List (DRY_RUN=1, default) or enqueue (DRY_RUN=0, A1-R2 only) the repayments A1-R1 left waiting"
+  task repayment_backlog: :environment do
+    enqueue = ENV.fetch("DRY_RUN", "1") == "0"
+    if enqueue && !Commerce::BuyerRepayment.submitter_active?
+      abort "never_fulfilled:repayment_backlog: the repayment submitter is inactive in this release; nothing enqueued"
+    end
+    report = Commerce::RepaymentBacklog.call(enqueue: enqueue)
+    puts "never_fulfilled:repayment_backlog #{enqueue ? 'ENQUEUE' : 'DRY RUN (nothing enqueued)'}"
+    report.entries.each do |entry|
+      puts [entry.payment_id, entry.order_id, entry.capture_scope, "owed_cents=#{entry.owed_cents}",
+        "wait=#{entry.wait_reason || 'none'}"].join("\t")
+    end
+    puts "waiting=#{report.entries.count} owed=#{report.entries.count { |entry| entry.owed_cents.positive? }} enqueued=#{report.enqueued}"
+  end
+
   desc "Read-only counts: unclassified late-capture payments and unposted movements on classified payments"
   task verify: :environment do
     report = Commerce::NeverFulfilledReconcile.call(dry_run: true)

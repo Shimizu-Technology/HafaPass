@@ -206,7 +206,13 @@ module Commerce
           unless replayable && operation.last_submitted_at && operation.last_submitted_at <= in_flight_bound.ago
             raise Waiting, "refund_unknown"
           end
+          # A retry after an empty lookup may be the first send that reaches
+          # Stripe, so it must still fit what is owed now, excluding its own
+          # reservation (A1-R1 review, R2 gate). If money came back another
+          # way meanwhile, it waits as unknown for adjudication or finance;
+          # it is never resent for more than is owed.
           raise Waiting, available.wait_reason if available.waiting? && available.wait_reason != "nothing_owed"
+          raise Waiting, "amount_exceeds_available" if operation.amount_cents > available.available_cents
         end
         operation.update!(state: "submitting", submission_count: operation.submission_count + 1,
           last_submitted_at: Time.current)
@@ -287,14 +293,23 @@ module Commerce
         end
       end
 
-      # A refund Stripe refused for a dispute waits until that charge's dispute
-      # is recorded and reconciled (closed), never on a timer (§6.3, §6.4).
+      # A refund Stripe refused for a dispute waits until the dispute that
+      # caused it is recorded and closed, never on a timer and never because
+      # some other dispute closed (§6.3, §6.4; A1-R1 review, R2 gate). The
+      # refusal does not name the dispute, so the matching disputes are the
+      # ones on this payment that were open when Stripe refused: opened
+      # before the refusal and not closed before it. There must be at least
+      # one recorded (else the cause is not recorded yet), and every one must
+      # be closed now. A dispute closed before the refusal never counts.
       def disputed_refund_unreconciled?(payment)
         refused = payment.refunds.failed.where("provider_payload ->> 'provider_error_code' IN (?)", DISPUTED_REFUND_CODES)
           .order(:id).last
         return false unless refused
 
-        !Dispute.where(payment_id: payment.id).where.not(status: :open).exists?
+        refused_at = refused.failed_at || refused.updated_at
+        matching = Dispute.where(payment_id: payment.id).where("opened_at <= ?", refused_at)
+          .where("closed_at IS NULL OR closed_at >= ?", refused_at)
+        !matching.exists? || matching.where(status: :open).exists?
       end
 
       def cancel_reservation!(operation, refund, available)
