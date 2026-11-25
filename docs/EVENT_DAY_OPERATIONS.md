@@ -2,7 +2,7 @@
 
 This is the operating contract for Phase 6 admissions and door sales. It explains what the software guarantees, what event staff must do, and which external approvals still block production card-present sales.
 
-The organizer supplies the event-day scanners, door lead and cash-table staff. HåfaPass provides the software, a setup session, team training, a [printable volunteer guide](VOLUNTEER_DOOR_GUIDE.md) and an on-call contact. See [organizer onboarding](ORGANIZER_ONBOARDING.md) before configuring an event.
+The organizer supplies the event-day scanners, door lead and cash-table staff. HåfaPass provides the software, a setup session, team training, a [volunteer door kit](door-kit/VOLUNTEER_QUICK_GUIDE.md) ([printable scanner](door-kit/PRINT_SCANNER_CARD.md) and [box-office](door-kit/PRINT_BOX_OFFICE_CARD.md) cards) and an on-call contact. See [organizer onboarding](ORGANIZER_ONBOARDING.md) before configuring an event.
 
 ## Safety invariants
 
