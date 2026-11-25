@@ -4111,11 +4111,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130200) do
     $$;
 
     -- P10 strict for every payout writer, old or new. Refused on an event
-    -- with an open blocking item: creating a payout as pending, processing
-    -- or paid; releasing a held payout; submitting a pending one; and
-    -- recording one as paid, unless its submission was authorized before the
-    -- earliest open item, which is money that already left (recorded with
-    -- its evidence, never a new payment). Holding, failing and reversing are
+    -- with an open blocking item: creating a payout; releasing a held one;
+    -- and moving one to processing or paid, unless its submission was
+    -- authorized before the earliest open item. That is the outcome of a
+    -- request already sent (or money that already left), recorded with its
+    -- evidence, never a new payment. Holding, failing and reversing are
     -- never refused.
     CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
@@ -4134,7 +4134,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130200) do
       IF block_start IS NULL THEN
         RETURN NEW;
       END IF;
-      IF NEW.status = 2 AND TG_OP = 'UPDATE' AND EXISTS (SELECT 1 FROM audit_logs a
+      IF TG_OP = 'UPDATE' AND ((NEW.status = 1 AND OLD.status = 0)
+            OR (NEW.status = 2 AND OLD.status IN (0, 1, 5)))
+          AND EXISTS (SELECT 1 FROM audit_logs a
           WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
             AND a.occurred_at < block_start) THEN
         RETURN NEW;

@@ -95,6 +95,22 @@ RSpec.describe "Never-fulfilled payout evidence holds" do
     expect(old_payout.reload).to be_status_pending
   end
 
+  it "records the outcome of a 7bcd97c2 submission authorized just before the hold opened" do
+    settlement = Settlements::Finalizer.call(event: event, actor: admin)
+    # The hold opens while the authorized request is at the gateway.
+    allow(PayoutGateway).to receive(:submit) do |submitted|
+      travel(1.minute) { open_block!(event) }
+      gateway_calls << submitted.id
+      PayoutGateway::Result.new(provider_payout_id: "manual_po_#{submitted.id}", status: :processing)
+    end
+
+    payout = Legacy7bcd97c2.payout_creator.call(settlement: settlement, actor: admin, idempotency_key: "f3-in-flight")
+
+    expect(gateway_calls).to eq([payout.id])
+    expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
+    expect(payout.reload).to have_attributes(status: "processing", provider_payout_id: "manual_po_#{payout.id}")
+  end
+
   it "records a transfer submitted and sent before the hold, only with that confirmation, in both releases" do
     settlement = Settlements::Finalizer.call(event: event, actor: admin)
     payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "f3-sent")

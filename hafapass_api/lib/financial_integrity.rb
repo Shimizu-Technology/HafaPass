@@ -475,6 +475,7 @@ module FinancialIntegrity
   PAYOUT_PENDING_STATUS = 0
   PAYOUT_PROCESSING_STATUS = 1
   PAYOUT_PAID_STATUS = 2
+  PAYOUT_HELD_STATUS = 5
   # The settlement reader that leaves never-fulfilled orders out (finding 2).
   SETTLEMENT_READER = "nfc-a1r1"
   SETTLEMENT_FINALIZED_STATUS = 1
@@ -772,11 +773,11 @@ module FinancialIntegrity
     $$;
 
     -- P10 strict for every payout writer, old or new. Refused on an event
-    -- with an open blocking item: creating a payout as pending, processing
-    -- or paid; releasing a held payout; submitting a pending one; and
-    -- recording one as paid, unless its submission was authorized before the
-    -- earliest open item, which is money that already left (recorded with
-    -- its evidence, never a new payment). Holding, failing and reversing are
+    -- with an open blocking item: creating a payout; releasing a held one;
+    -- and moving one to processing or paid, unless its submission was
+    -- authorized before the earliest open item. That is the outcome of a
+    -- request already sent (or money that already left), recorded with its
+    -- evidence, never a new payment. Holding, failing and reversing are
     -- never refused.
     CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
@@ -795,7 +796,9 @@ module FinancialIntegrity
       IF block_start IS NULL THEN
         RETURN NEW;
       END IF;
-      IF NEW.status = #{PAYOUT_PAID_STATUS} AND TG_OP = 'UPDATE' AND EXISTS (SELECT 1 FROM audit_logs a
+      IF TG_OP = 'UPDATE' AND ((NEW.status = #{PAYOUT_PROCESSING_STATUS} AND OLD.status = #{PAYOUT_PENDING_STATUS})
+            OR (NEW.status = #{PAYOUT_PAID_STATUS} AND OLD.status IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_HELD_STATUS})))
+          AND EXISTS (SELECT 1 FROM audit_logs a
           WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
             AND a.occurred_at < block_start) THEN
         RETURN NEW;
