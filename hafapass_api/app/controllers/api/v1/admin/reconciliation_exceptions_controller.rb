@@ -130,6 +130,8 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
         status: :unprocessable_content
     end
     if (problem = late_capture_refund_blocker(@issue))
+      # An older release's refund on this payment is settled by lookup only.
+      Commerce::RepaymentAdjudication.enqueue_for!(@issue.payment)
       return render json: { error: problem }, status: :unprocessable_content
     end
 
@@ -140,8 +142,6 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
         source: "admin_late_capture")
     rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::RefundCreator::RefundError,
       StripeService::PaymentError, Stripe::StripeError => e
-      # An older release's refund on this payment is settled by lookup, never resent.
-      Commerce::RepaymentAdjudication.enqueue_for!(@issue.payment) if e.is_a?(Commerce::BuyerRepayment::Waiting)
       @issue.payment.refunds.reset # the service may have recorded a failed refund
       record_buyer_refund!(amount_cents: amount_cents, refund: late_capture_refund(@issue), error: e)
       return render json: { error: e.message }, status: :unprocessable_content

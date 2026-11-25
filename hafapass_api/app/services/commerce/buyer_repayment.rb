@@ -289,9 +289,9 @@ module Commerce
       end
 
       def cancel_reservation!(operation, refund, available)
+        operation.update!(state: "failed_terminal", terminal_reason: "superseded_before_submission")
         refund.update!(status: :cancelled, failed_at: Time.current, failure_code: "repayment_superseded",
           failure_message: WAIT_MESSAGES.fetch(available.wait_reason || "amount_exceeds_available"))
-        operation.update!(state: "failed_terminal", terminal_reason: "superseded_before_submission")
         audit!(operation, "failed_terminal", metadata: { reason: available.wait_reason || "amount_exceeds_available",
           available_cents: available.available_cents })
       end

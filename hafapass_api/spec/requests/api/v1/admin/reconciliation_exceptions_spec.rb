@@ -245,6 +245,23 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(refunds.size).to eq(1)
     end
 
+    it "explains the A1-R1 wait and settles an older release's refund by lookup only" do
+      order, payment = late_capture
+      issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
+      legacy = before_repayment_fence do
+        payment.refunds.create!(order: order, provider: "stripe", idempotency_key: "late-capture:payment:#{payment.id}",
+          amount_cents: payment.amount_cents, currency: "usd", status: :pending, failure_code: "provider_result_unknown")
+      end
+
+      get "#{base}/#{issue.id}", headers: headers
+      expect(response.parsed_body.dig("reconciliation_exception", "actions")).to eq([])
+      expect do
+        post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+      end.to have_enqueued_job(RepaymentAdjudicationJob).with(legacy.id)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(refunds).to be_empty
+    end
+
     it "refuses a note-only resolution while the buyer is still owed, even with a confirmation flag",
       repayment_submitter: :active do
       order, payment = late_capture
