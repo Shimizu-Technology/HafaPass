@@ -41,7 +41,12 @@ module Commerce
         if key.present? && !payment.refunds.exists?(idempotency_key: key)
           raise RefundCreator::RefundError, "External refund key has no matching operation"
         end
-        if payment.refunds.pending.where(provider_refund_id: nil).exists?
+        # A refund that carries no HåfaPass key is positively someone else's
+        # (a Stripe Dashboard refund, say). On a fenced payment it is a separate
+        # movement, recorded even while HåfaPass's own operation is in flight;
+        # its posting splits applied from excess (design §7.3).
+        if payment.refunds.pending.where(provider_refund_id: nil).exists? &&
+            !(key.blank? && BuyerRepayment.fenced_payment?(payment))
           raise RefundCreator::RefundError, "An unidentified local refund needs finance review"
         end
 

@@ -60,7 +60,7 @@ RSpec.describe LateCaptureRefundJob do
     2.times { described_class.perform_now(payment.id) }
 
     expect(refunds).to eq([{ intent_id: payment.provider_payment_id, amount_cents: payment.amount_cents,
-      reason: "late_capture_refund", idempotency_key: "late-capture:payment:#{payment.id}" }])
+      reason: "late_capture_refund", idempotency_key: "late-capture:payment:#{payment.id}:op:1" }])
     refund = order.refunds.sole
     expect(refund).to have_attributes(status: "succeeded", reason: "late_capture_refund", amount_cents: payment.amount_cents)
     expect(order.reload).to be_refunded
@@ -70,7 +70,7 @@ RSpec.describe LateCaptureRefundJob do
     expect(audit.metadata).to include("refund_ids" => [refund.id], "code" => "late_payment_success_after_inventory_release",
       "trigger" => "refund_succeeded", "pending" => "none", "owed_cents" => 0)
     expect(RepaymentOperation.sole).to have_attributes(sequence: 1, state: "succeeded", submission_count: 1,
-      refund_id: refund.id, idempotency_key: "late-capture:payment:#{payment.id}")
+      refund_id: refund.id, idempotency_key: "late-capture:payment:#{payment.id}:op:1")
     expect(MessageDelivery.where(order: order, template: "refund_notification").count).to eq(1)
     expect(Sentry).to have_received(:capture_message).with(/returning it to the buyer/, hash_including(level: :warning)).once
     expect(ticket_type.reload.quantity_sold).to eq(0)

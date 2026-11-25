@@ -27,6 +27,7 @@ class PayoutHoldRelease
           if liability[:unresolved] || queue_outstanding
             raise ReleaseError, "Resolve outstanding buyer refund liabilities before releasing this payout"
           end
+          raise ReleaseError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
 
           payable = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
           other_reserved = payout.event.payouts.where(status: [:pending, :processing, :held, :paid])

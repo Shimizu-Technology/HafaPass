@@ -35,14 +35,14 @@ module Commerce
       end
 
       key = "early-fraud-warning:#{@issue.id}"
-      replay = order.refunds.find_by(idempotency_key: key)
+      replay = order.refunds.find_by(idempotency_key: key) || BuyerRepayment.request_refund(key)
       raise Error, "This fraud warning is already resolved" if @issue.resolved? && replay.nil?
 
       record!("order.fraud_refund_requested", order, outcome: "requested",
         attempt: @request&.request_id.presence || SecureRandom.uuid,
         metadata: { reconciliation_exception_id: @issue.id, payment_id: @issue.payment_id, note: @note })
       refund = RefundCreator.call(order: order, payment: @issue.payment, reason: REASON, requested_by: @actor,
-        idempotency_key: key)
+        idempotency_key: key, repayment_source: "fraud_warning")
       # A replay returns the earlier attempt as is; a failed one stays failed.
       raise Error, FAILED_MESSAGE if refund.failed? || refund.cancelled?
 

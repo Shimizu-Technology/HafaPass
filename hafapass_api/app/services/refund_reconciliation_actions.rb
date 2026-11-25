@@ -91,6 +91,7 @@ class RefundReconciliationActions
 
     replacement = order.refunds.find_by(idempotency_key: "refund-reconciliation/#{@record.id}")
     return replacement if replacement
+    return retry_repayment!(@record) if @record.payment && Commerce::BuyerRepayment.fenced_payment?(@record.payment)
 
     provider = find_provider_refund(@record)
     if provider && provider.status.to_s != "failed" && !%w[canceled cancelled].include?(provider.status.to_s)
@@ -137,19 +138,21 @@ class RefundReconciliationActions
   end
 
   def refund_late_capture!
-    unless Commerce::LateCaptureRefund::CODES.include?(@record.code) && @record.open? && @record.payment
+    unless Commerce::LateCaptureRefund.repayment_codes.include?(@record.code) && @record.open? && @record.payment
       raise ActionError, "Only an open late-capture exception can be refunded here"
     end
 
-    earlier = order.refunds.find_by(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(@record.payment))
-    if earlier&.failed? || earlier&.cancelled?
-      raise ActionError, "The automatic refund failed; use Retry refund on its refund row"
-    end
+    retry_repayment!(@record)
+  end
 
-    result = Commerce::LateCaptureRefund.call(payment: @record.payment, requested_by: @actor)
-    audit!("refund_reconciliation.retry", @record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
+  # A fenced payment is returned only by the repayment workflow: a retry
+  # continues its open operation, or reserves the next one for what is still
+  # available once the earlier ones are verified (design §6.3).
+  def retry_repayment!(record)
+    result = Commerce::LateCaptureRefund.call(payment: record.payment, requested_by: @actor, source: "queue_retry")
+    audit!("refund_reconciliation.retry", record, { retry_refund_id: result.id, amount_cents: result.amount_cents })
     result
-  rescue Commerce::LateCaptureRefund::NotApplicable => e
+  rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::BuyerRepayment::Waiting => e
     raise ActionError, e.message
   end
 

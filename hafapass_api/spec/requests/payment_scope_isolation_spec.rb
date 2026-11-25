@@ -179,7 +179,7 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
 
     2.times { LateCaptureRefundJob.perform_now(payment_b.id) }
 
-    expect(provider_refunds).to eq([["pi_iso_b", 1500, "late-capture:payment:#{payment_b.id}"]])
+    expect(provider_refunds).to eq([["pi_iso_b", 1500, "late-capture:payment:#{payment_b.id}:op:1"]])
     expect(RepaymentOperation.sole).to have_attributes(payment_id: payment_b.id, sequence: 1, amount_cents: 1500,
       state: "succeeded", submission_count: 1)
     expect(payment_b.reload).to be_refunded

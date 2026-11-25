@@ -50,8 +50,8 @@ class EventCancellationRefundJob < ApplicationJob
 
     order = item.order
     live_payment_ids = Payment.live_or_legacy_capture.where(order_id: order.id).select(:id)
-    disputes = order.disputes.excluding_isolated_payments
-    pending_refunds = order.refunds.pending.excluding_isolated_payments
+    disputes = order.disputes.excluding_isolated_payments.excluding_repayment_fenced
+    pending_refunds = order.refunds.pending.excluding_isolated_payments.excluding_repayment_fenced
     if Rails.env.production?
       disputes = disputes.where(payment_id: live_payment_ids)
       pending_refunds = pending_refunds.where(payment_id: live_payment_ids)
@@ -100,7 +100,8 @@ class EventCancellationRefundJob < ApplicationJob
       return nil
     end
 
-    eligible_payments = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures
+    eligible_payments = order.payments.where(status: [:succeeded, :partially_refunded])
+      .excluding_isolated_captures.excluding_repayment_fenced
     eligible_payments = eligible_payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
     payment = eligible_payments.order(:id).first
     if order.payment_method == "door_cash" || payment&.provider == "door_cash"
@@ -120,7 +121,8 @@ class EventCancellationRefundJob < ApplicationJob
   def submit_refund(item, run, amount)
     error = nil
     begin
-      payment = item.order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures
+      payment = item.order.payments.where(status: [:succeeded, :partially_refunded])
+        .excluding_isolated_captures.excluding_repayment_fenced
       payment = payment.merge(Payment.live_or_legacy_capture) if Rails.env.production?
       Commerce::RefundCreator.call(order: item.order, payment: payment.order(:id).first, amount_cents: amount,
         reason: "event_cancelled", requested_by: AuditContext.actor || run.started_by, idempotency_key: item.refund_key)

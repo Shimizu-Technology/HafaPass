@@ -13,8 +13,8 @@ module Commerce
   #   older than the in-flight bound -> cancelled as provider_request_absent
   #   past the gate, absent, newer   -> left in flight (it may still land)
   #
-  # The legacy first-operation key ("late-capture:payment:<id>") is adopted as
-  # repayment operation 1, so a later top-up is operation 2 with its own key.
+  # A refund under the legacy key ("late-capture:payment:<id>") is adopted as
+  # repayment operation 1, so the next operation is 2, with its own key.
   #
   # Locks: the Stripe lookup runs before any lock; recording takes the refund
   # prefix organization -> event -> order -> refund -> operation.
@@ -47,7 +47,7 @@ module Commerce
     def self.adopt_legacy!(capture)
       return if capture.repayment_operations.exists?
 
-      refund = capture.payment.refunds.find_by(idempotency_key: RepaymentOperation.key_for(capture.payment_id, 1))
+      refund = capture.payment.refunds.find_by(idempotency_key: RepaymentOperation.key_for(capture.payment_id, 1, adopted: true))
       return unless refund
 
       refund.lock!
@@ -84,7 +84,7 @@ module Commerce
         next Result.new(refund: refund, outcome: "not_pending") unless refund.pending? && refund.provider_refund_id.blank?
 
         capture = UnfulfilledCapture.find_by(payment_id: payment.id)
-        self.class.adopt_legacy!(capture) if capture
+        refund.reload if capture && self.class.adopt_legacy!(capture)
         if provider
           RefundCreator.reconcile_refund!(refund: refund, provider_refund: provider)
           next Result.new(refund: refund.reload, outcome: "recorded")

@@ -9,6 +9,34 @@ class StripeWebhookProcessor
     new(event: event, payload: payload).call
   end
 
+  # Refund and dispute notices that found no payment (or a payment that could
+  # not record them yet) leave an orphan exception on their receipt.
+  ORPHAN_CODES = %w[refund_operation_not_found refunded_payment_not_found disputed_payment_not_found].freeze
+  REPLAYABLE_TYPES = StripeReplayableEvents::TYPES
+
+  # Executable replay of stored provider evidence (docs/design/never-
+  # fulfilled-captures.md §7.2). Locks the receipt first, then the handlers
+  # take the normal refund and dispute prefix (organization -> event ->
+  # order). Reads only the stored payload, never refetches, and makes no
+  # network call. The stored object must name this payment's intent, mode and
+  # account; a mismatch leaves the orphan open. Idempotent per movement: a
+  # refund by provider refund ID, a dispute by provider dispute ID and a
+  # posting by (kind, source), so a second replay changes nothing.
+  def self.replay!(receipt, payment:)
+    new(event: Stripe::Event.construct_from(receipt.payload), payload: receipt.payload).send(:replay!, receipt, payment)
+  end
+
+  # Receipts whose open orphan exception may describe this payment.
+  def self.replayable_receipts(payment)
+    return WebhookEvent.none if payment.provider_payment_id.blank?
+
+    orphans = ReconciliationException.open.where(code: ORPHAN_CODES)
+      .where("reconciliation_exceptions.payment_id IS NULL OR reconciliation_exceptions.payment_id = ?", payment.id)
+    WebhookEvent.where(id: orphans.select(:webhook_event_id), event_type: REPLAYABLE_TYPES)
+      .where("webhook_events.payload -> 'data' -> 'object' ->> 'payment_intent' = ?", payment.provider_payment_id)
+      .order(:id)
+  end
+
   def initialize(event:, payload:)
     @event = event
     @payload = payload
@@ -29,6 +57,59 @@ class StripeWebhookProcessor
   private
 
   attr_reader :event, :payload
+
+  def replay!(receipt, payment)
+    WebhookEvent.transaction do
+      receipt.lock!
+      orphans = receipt.reconciliation_exceptions.open.where(code: ORPHAN_CODES)
+        .where("payment_id IS NULL OR payment_id = ?", payment.id).order(:id).to_a
+      next :nothing unless receipt.processed? && orphans.any? && REPLAYABLE_TYPES.include?(receipt.event_type)
+
+      object = event.data.object
+      unless replay_context_matches?(payment, object)
+        orphans.each do |orphan|
+          orphan.update!(details: orphan.details.to_h.merge("replay_blocked" => "payment_context_mismatch"))
+        end
+        next :payment_context_mismatch
+      end
+
+      started = Time.current
+      AuditContext.set(source: "provider", fail_open: true) do
+        case event.type
+        when "charge.refunded" then process_refund!(receipt, payment, object)
+        when "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed" then process_dispute!(receipt, payment, object)
+        else process_refund_operation!(receipt, payment, object)
+        end
+      end
+      # The handler opened a new item for this receipt: the evidence still
+      # cannot be recorded, so the orphan stays open.
+      next :unresolved if receipt.reconciliation_exceptions.open.where(payment_id: payment.id)
+        .where("created_at >= ?", started).where.not(id: orphans.map(&:id)).exists?
+
+      order = payment.order
+      order.event.organization.lock!("FOR NO KEY UPDATE")
+      order.event.lock!
+      order.lock!
+      orphans.each do |orphan|
+        orphan.resolve!
+        AuditLogger.record!(action: "webhook_event.replayed", auditable: orphan,
+          organization: order.event.organization, event: order.event, source: "provider", outcome: "succeeded",
+          deduplication_key: "webhook_event:#{receipt.id}:replayed:#{orphan.id}",
+          metadata: { code: orphan.code, webhook_event_id: receipt.id, provider_event_id: receipt.provider_event_id,
+            event_type: receipt.event_type, payment_id: payment.id, provider_object_id: value(object, :id) })
+      end
+      receipt.update!(replayed_at: Time.current)
+      Commerce::NeverFulfilledResolution.evaluate_payment!(payment.id, trigger: "replay")
+      :replayed
+    end
+  end
+
+  def replay_context_matches?(payment, object)
+    %w[test live].include?(payment.provider_environment) &&
+      value(object, :payment_intent).present? && value(object, :payment_intent) == payment.provider_payment_id &&
+      payload["livemode"] == (payment.provider_environment == "live") &&
+      payload["account"].presence == payment.provider_account_id.presence
+  end
 
   def store_receipt!
     WebhookEvent.create!(

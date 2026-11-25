@@ -33,9 +33,13 @@ class RepaymentOperation < ApplicationRecord
   attr_readonly :never_fulfilled_capture_id, :payment_id, :sequence, :amount_cents, :currency,
     :idempotency_key, :source, :adopted
 
-  def self.key_for(payment_id, sequence)
+  # Every operation HåfaPass reserves has its own key, operation 1 included,
+  # so an older release looking up the legacy key never finds (and never
+  # co-sends) a new operation's refund. Only an older release's own refund
+  # keeps the legacy key, as adopted operation 1.
+  def self.key_for(payment_id, sequence, adopted: false)
     base = Commerce::LateCaptureRefund.idempotency_key(Payment.new(id: payment_id))
-    sequence == 1 ? base : "#{base}:op:#{sequence}"
+    adopted ? base : "#{base}:op:#{sequence}"
   end
 
   def open?

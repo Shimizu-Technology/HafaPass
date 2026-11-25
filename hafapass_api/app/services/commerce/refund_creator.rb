@@ -89,6 +89,7 @@ module Commerce
       @reason = reason
       @requested_by = requested_by
       @idempotency_key = idempotency_key.presence || "refund:order:#{order.id}:#{SecureRandom.uuid}"
+      @caller_key = idempotency_key.presence
       @provider_refund = provider_refund
       @tickets = tickets.nil? ? nil : Array(tickets).compact
       @captured_payment = payment
@@ -195,6 +196,10 @@ module Commerce
         # A fenced payment (design §6, §10.1) is returned only through a
         # repayment operation: one workflow for every outbound entry point.
         if (fenced = outbound_fenced_payment)
+          # The same caller request again is a replay of what it reserved.
+          replayed = BuyerRepayment.request_refund(idempotency_key)
+          next validate_replay!(replayed) if replayed && replayed.payment_id == fenced.id
+
           next reserve_repayment!(fenced)
         end
         isolated = captured_payment.present? && UnfulfilledCapture.isolated_payment?(captured_payment.id)
@@ -314,17 +319,20 @@ module Commerce
 
       source = @repayment_source || (@admin_initiated ? "admin_order_refund" : "automatic")
       refund = BuyerRepayment.reserve!(order: order, payment: payment, source: source, requested_by: requested_by,
-        amount_cents: requested_amount_cents, reason: reason, organizer_initiated: @organizer_initiated)
+        amount_cents: requested_amount_cents, reason: reason, organizer_initiated: @organizer_initiated,
+        request_key: @caller_key)
       # An existing operation is a retry: look it up by its key before any send.
       @replayed_refund = true unless refund.previously_new_record?
       refund
     end
 
     # A provider-reported refund (webhook or ExternalRefundRecovery) of a
-    # classified never-fulfilled payment, with no ticket selection.
+    # classified never-fulfilled payment, or of any payment the repayment
+    # fence covers, with no ticket selection. The provider fact is recorded
+    # first, outside the outbound balance and review checks (design §7.3).
     def inbound_classified_return?
       provider_refund.present? && tickets.nil? && captured_payment.present? && captured_payment.order_id == order.id &&
-        UnfulfilledCapture.exists?(payment_id: captured_payment.id)
+        (UnfulfilledCapture.exists?(payment_id: captured_payment.id) || BuyerRepayment.fenced_payment?(captured_payment))
     end
 
     def reservation_payload
@@ -766,7 +774,8 @@ module Commerce
       # A classified payment's refund may exceed what is left on its items
       # (money returned twice). RefundItems cover what fits; its return
       # posting records the gross amount and the excess (design §7.3).
-      return if remaining.positive? && UnfulfilledCapture.exists?(payment_id: refund.payment_id)
+      return if remaining.positive? &&
+        (UnfulfilledCapture.exists?(payment_id: refund.payment_id) || BuyerRepayment.fenced_payment?(refund.payment_id))
 
       raise RefundError, "Refund could not be allocated to order items" unless remaining.zero?
     end

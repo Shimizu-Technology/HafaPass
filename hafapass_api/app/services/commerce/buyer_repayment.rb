@@ -128,8 +128,15 @@ module Commerce
 
       # Called by RefundCreator#reserve_refund! for an outbound refund of a
       # fenced payment, inside its organization -> event -> order transaction.
+      # The refund an earlier request with this caller key reserved, if any.
+      def request_refund(request_key)
+        return if request_key.blank?
+
+        RepaymentOperation.where("evidence ->> 'request_key' = ?", request_key).order(:id).last&.refund
+      end
+
       def reserve!(order:, payment:, source:, requested_by: nil, amount_cents: nil, reason: nil,
-        organizer_initiated: false)
+        organizer_initiated: false, request_key: nil)
         raise Waiting, "organizer_not_permitted" if organizer_initiated
 
         capture = UnfulfilledCapture.find_by(payment_id: payment.id, order_id: order.id)
@@ -151,7 +158,8 @@ module Commerce
         sequence = operations.length + 1
         operation = capture.repayment_operations.create!(payment: payment, sequence: sequence, amount_cents: amount,
           currency: capture.currency, idempotency_key: RepaymentOperation.key_for(payment.id, sequence),
-          source: source, evidence: { available_cents: available.available_cents, owed_cents: available.owed_cents })
+          source: source, evidence: { available_cents: available.available_cents, owed_cents: available.owed_cents,
+            request_key: request_key }.compact)
         refund = order.refunds.create!(payment: payment, requested_by: requested_by, provider: payment.provider,
           idempotency_key: operation.idempotency_key, amount_cents: amount, currency: capture.currency,
           status: :pending, reason: reason || LateCaptureRefund::REASON, repayment_operation: operation,

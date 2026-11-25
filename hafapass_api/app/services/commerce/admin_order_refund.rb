@@ -28,16 +28,34 @@ module Commerce
     def self.options(order)
       captured = captured_payments(order)
       payment = captured.first if captured.one?
+      repayment = repayment_availability(payment)
       {
         order_id: order.id,
         currency: order.currency,
-        refundable_cents: payment ? RefundCreator.remaining_cents(order: order, payment: payment) : 0,
+        refundable_cents: if repayment then repayment[:available_cents]
+                          elsif payment then RefundCreator.remaining_cents(order: order, payment: payment)
+                          else 0
+                          end,
         event_paid_out: order.event.paid_out_to_organizer?,
         organization_name: order.event.organization&.name,
-        unavailable_reason: unavailable_reason(order, captured),
+        unavailable_reason: repayment ? repayment[:reason] : unavailable_reason(order, captured),
         tickets: order.tickets.includes(:ticket_type, :order_item).order(:id).map { |ticket| ticket_option(order, ticket) }
       }.compact
     end
+
+    # A fenced payment is refunded here only up to what the repayment
+    # workflow says is available (design §6.2).
+    def self.repayment_availability(payment)
+      return unless payment && BuyerRepayment.fenced_payment?(payment)
+
+      capture = UnfulfilledCapture.find_by(payment_id: payment.id)
+      return { available_cents: 0, reason: BuyerRepayment::WAIT_MESSAGES.fetch("classification_pending") } unless capture
+
+      availability = BuyerRepayment.availability(capture)
+      reason = availability.wait_reason || ("repayment_inactive" unless BuyerRepayment.submitter_active?)
+      { available_cents: reason ? 0 : availability.available_cents, reason: reason && BuyerRepayment::WAIT_MESSAGES.fetch(reason) }
+    end
+    private_class_method :repayment_availability
 
     def self.captured_payments(order)
       order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
@@ -127,7 +145,7 @@ module Commerce
     # takes the full-refund path, which cancels them. Make that an explicit
     # choice. A smaller capture can't reach the total, so it stays allowed.
     def refuse_amount_that_completes_order!(amount)
-      return if amount.nil? || order.refunds.exists?(idempotency_key: refund_key)
+      return if amount.nil? || order.refunds.exists?(idempotency_key: refund_key) || order.never_fulfilled_at.present?
 
       returned = order.refunds.where(status: [:pending, :succeeded]).excluding_isolated_payments.sum(:amount_cents)
       return unless amount + returned == order.total_cents

@@ -21,8 +21,11 @@ module Settlements
 
       # The event-day closeout contract requires an empty reconciliation
       # queue, even when an item would not prevent a buyer refund attempt.
-      if event.orders.joins(:reconciliation_exceptions).merge(ReconciliationException.open).exists? ||
-          ReconciliationException.open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
+      # A proven platform-only over-return (P4) alerts finance without holding
+      # the organizer, so it never blocks finalization.
+      open = ReconciliationException.open.where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE)
+      if event.orders.joins(:reconciliation_exceptions).merge(open).exists? ||
+          open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
         return "Resolve open reconciliation exceptions"
       end
       return "Verify actual Stripe processing fees" if StripeProcessingFees.missing_count(event.orders.select(:id)).positive?

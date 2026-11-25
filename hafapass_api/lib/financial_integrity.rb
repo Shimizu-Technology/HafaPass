@@ -500,8 +500,10 @@ module FinancialIntegrity
         IF NEW.sequence <> last_sequence + 1 THEN
           RAISE EXCEPTION 'Repayment operations are numbered contiguously' USING ERRCODE = '23514';
         END IF;
+        -- Each reserved operation has its own key; only an adopted legacy
+        -- first operation keeps the older release's key.
         expected_key := 'late-capture:payment:' || NEW.payment_id ||
-          CASE WHEN NEW.sequence = 1 THEN '' ELSE ':op:' || NEW.sequence END;
+          CASE WHEN NEW.adopted THEN '' ELSE ':op:' || NEW.sequence END;
         IF NEW.idempotency_key <> expected_key THEN
           RAISE EXCEPTION 'Repayment operation % must use key %', NEW.sequence, expected_key USING ERRCODE = '23514';
         END IF;
@@ -580,8 +582,17 @@ module FinancialIntegrity
         RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
       END IF;
 
-      inbound := NEW.provider_refund_id IS NOT NULL OR NEW.idempotency_key LIKE 'provider:stripe:refund:%';
-      IF inbound OR NOT hafapass_fenced_payment(NEW.payment_id) THEN
+      IF NOT hafapass_fenced_payment(NEW.payment_id) THEN
+        RETURN NEW;
+      END IF;
+      -- Provider evidence passes only when positively identified: a row that
+      -- carries the provider's refund ID, or the insert of an inbound record
+      -- (provider:stripe:refund:<id>), which never reaches the gate.
+      IF NEW.provider_refund_id IS NOT NULL THEN
+        RETURN NEW;
+      END IF;
+      inbound := NEW.idempotency_key LIKE 'provider:stripe:refund:%';
+      IF TG_OP = 'INSERT' AND inbound THEN
         RETURN NEW;
       END IF;
       IF TG_OP = 'INSERT' AND NEW.repayment_operation_id IS NULL THEN
@@ -602,7 +613,7 @@ module FinancialIntegrity
     END;
     $$;
     DROP TRIGGER IF EXISTS refunds_repayment_fence ON refunds;
-    CREATE TRIGGER refunds_repayment_fence BEFORE INSERT OR UPDATE OF failure_code, repayment_operation_id ON refunds
+    CREATE TRIGGER refunds_repayment_fence BEFORE INSERT OR UPDATE OF failure_code, repayment_operation_id, provider_refund_id ON refunds
       FOR EACH ROW EXECUTE FUNCTION hafapass_refund_repayment_fence();
 
     -- P10 strict for every payout writer, old or new: no payout on an event

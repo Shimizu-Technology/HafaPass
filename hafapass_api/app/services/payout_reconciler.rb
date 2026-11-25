@@ -95,6 +95,12 @@ class PayoutReconciler
         if queue.any? && !payout.event.cancelled?
           raise ReconciliationError, "Resolve outstanding refund liabilities before recording this payout as paid"
         end
+        # A transfer that already left before the cancellation is still
+        # recorded with the existing confirmation; otherwise P10 holds it.
+        if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event) &&
+            !(payout.event.cancelled? && normalized["sent_before_cancellation_confirmed"] == true)
+          raise ReconciliationError, Commerce::NeverFulfilledPayoutHold::MESSAGE
+        end
         if liability[:unresolved] || queue.any?
           unless normalized["sent_before_cancellation_confirmed"] == true && normalized["cancellation_payout_reason"].present?
             raise ReconciliationError, "Confirm this payout was already sent before the cancellation and explain why it is being recorded while buyer refunds remain unresolved"

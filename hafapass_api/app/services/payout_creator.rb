@@ -43,6 +43,7 @@ class PayoutCreator
     payout.organization.with_lock do
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
+        raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
 
         PayoutWithholdingGuard.call(payout: payout, actor: actor, request: request)
         AuditLogger.record!(action: "payout.submission_requested", auditable: payout, actor: actor,
@@ -183,6 +184,7 @@ class PayoutCreator
       if RefundReconciliationQueue.outstanding_for_event?(settlement.event)
         raise PayoutError, "Resolve outstanding refund liabilities before paying out this event"
       end
+      raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(settlement.event)
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"

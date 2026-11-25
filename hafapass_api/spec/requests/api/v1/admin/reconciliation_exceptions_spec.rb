@@ -231,7 +231,7 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
 
       expect(response).to have_http_status(:created), response.body
       expect(refunds).to eq([{ intent_id: payment.provider_payment_id, amount_cents: payment.amount_cents,
-        idempotency_key: "late-capture:payment:#{payment.id}" }])
+        idempotency_key: "late-capture:payment:#{payment.id}:op:1" }])
       expect(issue.reload).to be_resolved
       refund = Refund.find(response.parsed_body.dig("refund", "id"))
       audit = AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue)
@@ -311,7 +311,7 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(issue.reload).to be_open
-      refund = order.refunds.find_by!(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment))
+      refund = order.refunds.find_by!(idempotency_key: "late-capture:payment:#{payment.id}:op:1")
       expect(refund).to be_failed
       expect(refund.repayment_operation).to have_attributes(sequence: 1, state: "failed_terminal", submission_count: 1)
       audit = AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue)

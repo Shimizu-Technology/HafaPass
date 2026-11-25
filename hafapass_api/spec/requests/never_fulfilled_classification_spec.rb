@@ -110,7 +110,7 @@ RSpec.describe "Never-fulfilled classification at late-capture boundaries", type
       expect(ticket_type.reload.quantity_sold).to eq(1)
 
       perform_enqueued_jobs
-      expect(refunds).to eq([["late-capture:payment:#{result.payment.id}", result.payment.amount_cents]])
+      expect(refunds).to eq([["late-capture:payment:#{result.payment.id}:op:1", result.payment.amount_cents]])
       expect(result.order.reload).to be_refunded
       expect(result.order.never_fulfilled_at).to be_present
       expect(UnfulfilledCapture.where(payment: result.payment).count).to eq(1)

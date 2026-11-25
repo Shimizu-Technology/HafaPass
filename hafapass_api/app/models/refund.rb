@@ -7,6 +7,7 @@ class Refund < ApplicationRecord
   # Rows on the order's sale, never those on a payment-scope never-fulfilled
   # capture (UnfulfilledCapture.excluding_isolated).
   scope :excluding_isolated_payments, -> { UnfulfilledCapture.excluding_isolated(self, :payment_id) }
+  scope :excluding_repayment_fenced, -> { where("refunds.payment_id IS NULL OR NOT hafapass_fenced_payment(refunds.payment_id)") }
   belongs_to :requested_by, class_name: "User", optional: true
   belongs_to :repayment_operation, optional: true
   has_many :refund_items, dependent: :restrict_with_error

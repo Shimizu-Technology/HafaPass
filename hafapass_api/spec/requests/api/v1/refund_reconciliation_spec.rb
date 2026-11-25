@@ -232,7 +232,7 @@ RSpec.describe "Refund reconciliation", type: :request do
     post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin)
     expect(response).to have_http_status(:ok), response.body
     expect(order.refunds.succeeded.sole).to have_attributes(amount_cents: 5250, reason: "late_capture_refund",
-      idempotency_key: "late-capture:payment:#{payment.id}")
+      idempotency_key: "late-capture:payment:#{payment.id}:op:1")
     expect(ReconciliationException.where(order: order, code: Commerce::LateCaptureRefund::CODES).pluck(:status)).to eq(%w[resolved resolved])
     expect(AuditLog.where(action: "refund_reconciliation.retry", auditable: issue)).to exist
     expect(AuditLog.where(action: "reconciliation_exception.resolved").count).to eq(2)
@@ -244,19 +244,48 @@ RSpec.describe "Refund reconciliation", type: :request do
     expect(StripeService).to have_received(:refund_payment).once
   end
 
-  it "points a late capture whose automatic refund failed to the failed refund's own retry" do
-    order = create(:order, event: event, status: :expired, completed_at: nil, total_cents: 5250)
+  def classified_late_capture_with_failed_legacy_refund
+    order = create(:order, event: event, status: :expired, completed_at: nil, subtotal_cents: 5000, service_fee_cents: 250,
+      total_cents: 5250)
+    create(:order_item, order: order, ticket_type: create(:ticket_type, event: event), quantity: 1, unit_price_cents: 5000,
+      subtotal_cents: 5000, fee_cents: 250, organizer_proceeds_cents: 5000)
     payment = payment_for(order)
     issue = create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_hold_expiry")
-    create(:refund, order: order, payment: payment, status: :failed, failed_at: 1.hour.ago, succeeded_at: nil,
-      amount_cents: 5250, idempotency_key: "late-capture:payment:#{payment.id}")
+    before_repayment_fence do
+      create(:refund, order: order, payment: payment, status: :failed, failed_at: 1.hour.ago, succeeded_at: nil,
+        amount_cents: 5250, idempotency_key: "late-capture:payment:#{payment.id}")
+    end
+    classify_order_scope!(order, payment)
+    [order, payment, issue]
+  end
+
+  it "sends nothing from the queue in A1-R1 for a late capture whose legacy refund failed" do
+    _order, _payment, issue = classified_late_capture_with_failed_legacy_refund
     allow(StripeService).to receive(:refund_payment)
 
     post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin)
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body["error"]).to include("Retry refund on its refund row")
+    expect(response.parsed_body["error"]).to include("next release")
     expect(StripeService).not_to have_received(:refund_payment)
+    expect(RepaymentOperation.count).to eq(0)
+  end
+
+  it "retries a late capture whose legacy refund failed as operation 2 with its own key", repayment_submitter: :active do
+    order, payment, issue = classified_late_capture_with_failed_legacy_refund
+    calls = []
+    allow(StripeService).to receive(:refund_payment) do |intent_id, amount_cents:, idempotency_key:, **|
+      calls << [amount_cents, idempotency_key]
+      OpenStruct.new(id: "re_queue_op2", status: "succeeded", amount: amount_cents, currency: "usd", payment_intent: intent_id)
+    end
+
+    2.times { post "/api/v1/admin/refund_reconciliation/exception/#{issue.id}/retry", headers: auth_headers(admin) }
+
+    expect(calls).to eq([[5250, "late-capture:payment:#{payment.id}:op:2"]])
+    expect(RepaymentOperation.in_sequence.pluck(:sequence, :state, :adopted, :source))
+      .to eq([[1, "failed_terminal", true, "adoption"], [2, "succeeded", false, "queue_retry"]])
+    expect(order.refunds.succeeded.sole.amount_cents).to eq(5250)
+    expect(issue.reload).to be_resolved
   end
 
   it "executes an unfulfilled buyer request once through RefundCreator" do

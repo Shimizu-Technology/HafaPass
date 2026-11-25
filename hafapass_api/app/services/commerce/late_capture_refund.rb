@@ -11,8 +11,9 @@ module Commerce
   # Every caller goes through RefundCreator, which routes a fenced payment to
   # Commerce::BuyerRepayment (docs/design/never-fulfilled-captures.md §6):
   # one repayment operation at a time, each with its own key
-  # ("late-capture:payment:<id>" for the first, ":op:<n>" after), sized to
-  # what is still available under the order lock.
+  # ("late-capture:payment:<id>:op:<n>"), sized to what is still available
+  # under the order lock. The bare legacy key belongs only to a refund an
+  # older release made, adopted as operation 1.
   class LateCaptureRefund
     CODES = %w[
       late_payment_success_after_inventory_release
@@ -23,8 +24,8 @@ module Commerce
 
     class NotApplicable < StandardError; end
 
-    # The first repayment operation's key, unchanged from the legacy
-    # automatic refund so an old worker's refund is adopted as operation 1.
+    # The older release's automatic-refund key. A refund it made with this
+    # key is adopted as repayment operation 1 (design §10.3 M-03).
     def self.idempotency_key(payment)
       "late-capture:payment:#{payment.id}"
     end

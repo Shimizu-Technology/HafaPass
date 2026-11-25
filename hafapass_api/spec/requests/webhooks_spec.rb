@@ -474,7 +474,7 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect(checkout.order.reconciliation_exceptions.pluck(:code)).to eq(["late_payment_success_after_hold_expiry"])
 
       perform_enqueued_jobs
-      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}"])
+      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}:op:1"])
       expect(checkout.order.reload).to be_refunded
     end
 
@@ -497,7 +497,7 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect { succeed!(checkout, event_id: "evt_late_after_cancel") }.to have_enqueued_job(LateCaptureRefundJob)
       perform_enqueued_jobs
 
-      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}"])
+      expect(refund_calls).to eq(["late-capture:payment:#{checkout.payment.id}:op:1"])
       expect(checkout.order.reload).to be_refunded
       expect(checkout.payment.reload).to be_refunded
       # Processing-fee lookups are separate, nonfinancial follow-up work.

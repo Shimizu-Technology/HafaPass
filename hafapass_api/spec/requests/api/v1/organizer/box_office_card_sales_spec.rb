@@ -308,7 +308,7 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(ReconciliationException.where(payment: payment, code: Commerce::LateCaptureRefund::CODES).count).to eq(1)
     expect(StripeService).to receive(:refund_payment).once.with("pi_Door#{payment.id}",
       amount_cents: payment.amount_cents, reason: "late_capture_refund",
-      idempotency_key: "late-capture:payment:#{payment.id}", payment: payment)
+      idempotency_key: "late-capture:payment:#{payment.id}:op:1", payment: payment)
       .and_return(OpenStruct.new(id: "re_DoorCapacity", status: "succeeded", amount: payment.amount_cents, currency: "usd",
         payment_intent: "pi_Door#{payment.id}"))
     2.times { LateCaptureRefundJob.perform_now(payment.id) }
