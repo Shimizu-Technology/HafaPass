@@ -131,6 +131,8 @@ class Order < ApplicationRecord
   # payment_mode lets bulk callers (scanner manifests) read the setting once.
   def ticket_fulfilled?(payment_mode: nil)
     return false unless completed? || partially_refunded?
+    # A never-fulfilled order can be partially refunded, but never admits.
+    return false if never_fulfilled?
     return true unless Rails.env.production? && total_cents.positive?
 
     # A partially refunded order may have already returned the entire payment
@@ -148,6 +150,12 @@ class Order < ApplicationRecord
           payment.provider_platform_account_id.present?)) &&
         !payment.provider_payment_id.start_with?("sim_") && payment.provider_payload.to_h["simulated"] != true
     end
+  end
+
+  # Derived by the database from the order's first order-scope
+  # UnfulfilledCapture; no issued ticket can exist alongside it.
+  def never_fulfilled?
+    never_fulfilled_at.present?
   end
 
   def ticket_record_available?

@@ -164,7 +164,10 @@ module Commerce
           finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
-          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, expired_at: nil, wallet_type: wallet_type)
+          # The verified payment that fulfilled the order, recorded once so a
+          # later distinct capture can be told apart without guessing.
+          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, expired_at: nil, wallet_type: wallet_type,
+            fulfilled_by_payment_id: payment&.id)
           PublicEventCache.bump_after_commit! if completed_late
           AuditLogger.record!(action: "order.completed", auditable: order,
             organization: order.event.organization, event: order.event, outcome: "succeeded",
