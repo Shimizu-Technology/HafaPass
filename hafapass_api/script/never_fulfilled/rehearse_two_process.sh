@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Two-process rehearsal (A1-R1 review release gate): the pinned previous
 # release (7bcd97c2) and this release run as separate `bin/rails runner`
-# processes against ONE task-owned localhost database with this branch's
-# schema, with Stripe and the payout gateway stubbed (two_process/stubs.rb;
-# a shared JSON ledger stands in for Stripe). The old process is paused
-# inside its stubbed calls (after its last refund gate, at its lookup before
-# the gate, at the payout gateway) while the new process acts.
+# processes against ONE task-owned localhost database, with Stripe and the
+# payout gateway stubbed (two_process/stubs.rb; a shared JSON ledger stands
+# in for Stripe). The database starts on the previous release's own schema
+# with data that release wrote, and is upgraded by this branch's migrations
+# (as bin/release-migrate does). The old process is paused inside its
+# stubbed calls (after its last refund gate, at its lookup before the gate,
+# at the payout gateway) and while holding an order lock, while the new
+# process acts. The assertions step checks the saved postconditions
+# (assertions.txt); any FAIL makes the script exit nonzero.
 #
 #   REHEARSAL_DIR=<scratch dir> REHEARSAL_DB=hafapass_ncap_rehearsal_<name> \
 #     script/never_fulfilled/rehearse_two_process.sh
@@ -34,7 +38,8 @@ if [[ ! -f "$old_api/Gemfile" ]]; then
   git -C "$repo_dir" archive "$OLD_SHA" hafapass_api | tar -x -C "$old_root"
 fi
 rm -f "$REHEARSAL_DIR"/calls.jsonl "$REHEARSAL_DIR"/outcomes.jsonl "$REHEARSAL_DIR"/stripe_ledger.json \
-  "$REHEARSAL_DIR"/state.json "$REHEARSAL_DIR"/*.reached "$REHEARSAL_DIR"/*.release "$REHEARSAL_DIR"/exports_*.json
+  "$REHEARSAL_DIR"/state.json "$REHEARSAL_DIR"/*.reached "$REHEARSAL_DIR"/*.release "$REHEARSAL_DIR"/exports_*.json \
+  "$REHEARSAL_DIR"/assertions.txt
 
 export RAILS_ENV=test DATABASE_URL="$url" REHEARSAL_DIR LANG=${LANG:-en_US.UTF-8} LC_ALL=${LC_ALL:-en_US.UTF-8}
 cleanup() {
@@ -64,9 +69,20 @@ reset_pause() { rm -f "$REHEARSAL_DIR/$1.reached" "$REHEARSAL_DIR/$1.release"; }
 : >"$REHEARSAL_DIR/runner.log"
 echo "previous release ${OLD_SHA} and $(git -C "$repo_dir" rev-parse HEAD) on database ${REHEARSAL_DB}"
 # A leftover rehearsal database of this exact name (KEEP_DB=1) is replaced.
-(cd "$api_dir" && bin/rails db:drop db:create db:schema:load >/dev/null 2>&1)
+# Upgrade path: the previous release's schema and its own data first.
+(cd "$old_api" && bin/rails db:drop db:create db:schema:load >/dev/null 2>&1)
+run old u_existing_data
+run old exports EXPORT_TAG=baseline
+echo "== new db:migrate (upgrade from the previous release's schema)"
+# The schema dump after the migration goes to the scratch directory, never
+# over the committed db/schema.rb.
+(cd "$api_dir" && SCHEMA="$REHEARSAL_DIR/upgraded_schema.rb" bin/rails db:migrate) >>"$REHEARSAL_DIR/runner.log" 2>&1
+run new exports EXPORT_TAG=upgraded
+run new u_upgrade_checks
+run old u_old_redact_orphan
 
 run new setup
+run new u_after_redaction
 run old r1_old_reserve
 run old r2_old_pre_fence_reservation
 
@@ -118,7 +134,54 @@ run old r8_submit REHEARSAL_KEY=second
 run new r8_submit REHEARSAL_KEY=second
 run new r8_reserve REHEARSAL_KEY=after_hold
 run old r8_finalize
+# Paid recording: a post-hold and a pre-hold transfer time in each release.
 run old r8_record_paid
+run new r8_record_paid
+# Held release in both releases.
+run new r8_hold_second
+run old r8_release_held
+run new r8_release_held
+
+# Blocker 1: A's $13.60 sale, classified B refunded $7.00, then Stripe's
+# $6.60 refund on A to the old release first, then to this one (twice).
+run new r10_state
+run old r10_refund_a
+run new r10_refund_a
+
+# Blocker 3: the old release acknowledges B's capture after A fulfilled
+# (two orders); it redacts one receipt; this release sees the hold and
+# verify, then recovers one by redelivery and one by the scheduled job.
+run old r12_old_capture_b REHEARSAL_KEY=x
+run old r12_old_capture_b REHEARSAL_KEY=y
+run old r12_old_redact_receipt REHEARSAL_KEY=y
+run new r12_check_held
+run new verify_task
+run old r12_old_finalize
+run new r12_new_redeliver
+run new r12_new_reconcile
+# A return written after classification: refused for B by the old release
+# and recorded by this one; written by the old release on an order-scope
+# capture and posted by reconcile.
+run old r12_refund_b
+run new r12_refund_b
+run old r12_old_late_return
+run new r12_new_post_late_return
+
+# Upgrade data: the old release acknowledges a second capture on the sale
+# it fulfilled before the upgrade, and holds that order's lock while this
+# release discovers it (lock contention).
+run old u_old_capture_on_legacy_sale
+run old r13_hold_order_lock REHEARSAL_PAUSE=order_lock &
+old_pid=$!
+wait_for order_lock
+run new u_new_discover_legacy_sale &
+new_pid=$!
+sleep 1
+release order_lock
+wait "$old_pid" || true
+wait "$new_pid"
+reset_pause order_lock
+run new verify_task
 
 # Readers on a fully returned never-fulfilled order in an ordinary event.
 run old r9_readers
@@ -127,6 +190,7 @@ run new r9_readers
 run old exports
 run new exports
 run new payout_history
+run new assertions
 (cd "$api_dir" && REHEARSAL_ROLE=new bin/rails never_fulfilled:release_evidence R1_SHA="$(git -C "$repo_dir" rev-parse HEAD)" \
   R1_LIVE_AT="$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)" \
   >"$REHEARSAL_DIR/release_evidence.txt" 2>>"$REHEARSAL_DIR/runner.log") || echo "release evidence failed (see runner.log)"
@@ -155,4 +219,12 @@ old["cpa"].each do |row|
 end
 puts "bpt: old sha256=#{Digest::SHA256.hexdigest(JSON.generate(old['bpt']))} new sha256=#{Digest::SHA256.hexdigest(JSON.generate(new['bpt']))}"
 puts "  rows old=#{old['bpt'].length} new=#{new['bpt'].length} #{old['bpt'] == new['bpt'] ? 'identical' : 'differ'}"
+baseline, upgraded = %w[baseline upgraded].map { |tag| JSON.parse(File.read(File.join(dir, "exports_#{tag}.json"))) }
+%w[cpa bpt].each do |kind|
+  puts "upgrade #{kind}: before migration sha256=#{Digest::SHA256.hexdigest(JSON.generate(baseline[kind]))} " \
+    "after sha256=#{Digest::SHA256.hexdigest(JSON.generate(upgraded[kind]))} rows=#{baseline[kind].length}/#{upgraded[kind].length}"
+end
+puts "assertions:"
+puts File.read(File.join(dir, "assertions.txt"))
 RUBY
+! grep -q '^FAIL' "$REHEARSAL_DIR/assertions.txt"

@@ -7,4 +7,6 @@
 module StripeReplayableEvents
   TYPES = %w[refund.created refund.updated refund.failed charge.refund.updated charge.refunded
     charge.dispute.created charge.dispute.updated charge.dispute.closed].freeze
+  # The signed capture notice that proves a payment was captured.
+  CAPTURE_TYPE = "payment_intent.succeeded"
 end

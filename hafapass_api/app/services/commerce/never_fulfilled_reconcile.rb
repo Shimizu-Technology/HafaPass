@@ -275,9 +275,9 @@ module Commerce
     # The earliest payment_intent.succeeded receipt for this payment's intent.
     def capture_receipt
       linked = WebhookEvent.where(id: PaymentEvent.where(payment_id: payment.id).select(:webhook_event_id),
-        event_type: "payment_intent.succeeded")
-      named = WebhookEvent.where(event_type: "payment_intent.succeeded").where(provider_payment_intent_id: payment.provider_payment_id)
-        .or(WebhookEvent.where(event_type: "payment_intent.succeeded", provider_payment_intent_id: nil)
+        event_type: StripeReplayableEvents::CAPTURE_TYPE)
+      named = WebhookEvent.where(event_type: StripeReplayableEvents::CAPTURE_TYPE).where(provider_payment_intent_id: payment.provider_payment_id)
+        .or(WebhookEvent.where(event_type: StripeReplayableEvents::CAPTURE_TYPE, provider_payment_intent_id: nil)
           .where("webhook_events.payload -> 'data' -> 'object' ->> 'id' = ?", payment.provider_payment_id))
       linked.order(:id).first || named.order(:id).first
     end
@@ -358,7 +358,7 @@ module Commerce
     def signed_capture_problem(receipt)
       facts = self.class.capture_receipt_facts(receipt)
       return "receipt_identity_missing" unless facts
-      return "receipt_names_another_payment" unless receipt.event_type == "payment_intent.succeeded" &&
+      return "receipt_names_another_payment" unless receipt.event_type == StripeReplayableEvents::CAPTURE_TYPE &&
         facts[:intent].present? && facts[:intent] == payment.provider_payment_id
       return "receipt_not_succeeded" unless facts[:succeeded]
 

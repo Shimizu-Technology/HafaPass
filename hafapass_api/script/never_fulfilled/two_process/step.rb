@@ -48,9 +48,46 @@ module RehearsalStep
       commissions: order.promoter_commission_entries.order(:id).pluck(:kind, :amount_cents) }
   end
 
-  def webhook!(type, object, id:)
-    payload = { "id" => id, "type" => type, "data" => { "object" => object.deep_stringify_keys } }
+  def webhook!(type, object, id:, livemode: nil)
+    # Stripe stamps every event with its creation time.
+    payload = { "id" => id, "type" => type, "created" => Time.now.to_i, "data" => { "object" => object.deep_stringify_keys } }
+    payload["livemode"] = livemode unless livemode.nil?
     StripeWebhookProcessor.call(event: Stripe::Event.construct_from(payload), payload: payload)
+  end
+
+  def capture!(payment, id:)
+    webhook!("payment_intent.succeeded", { id: payment.provider_payment_id, amount: payment.amount_cents,
+      amount_received: payment.amount_cents, currency: "usd", status: "succeeded" }, id: id, livemode: false)
+  end
+
+  def refund_notice!(payment, refund_id, amount, id:)
+    webhook!("refund.created", { id: refund_id, object: "refund", payment_intent: payment.provider_payment_id, amount: amount,
+      currency: "usd", status: "succeeded" }, id: id, livemode: false)
+  end
+
+  def money(order)
+    sale(order).merge(sold: order.order_items.filter_map(&:ticket_type).sum { |type| type.reload.quantity_sold },
+      refunds: refund_rows(order).map { |row| row[1..3] })
+  end
+
+  # This release's classification (the previous release has none).
+  def classification(payment)
+    return unless defined?(::UnfulfilledCapture)
+
+    capture = UnfulfilledCapture.find_by(payment_id: payment.id)
+    capture && { scope: capture.capture_scope, code: capture.code, provenance: capture.provenance,
+      webhook_event_id: capture.provenance_evidence["webhook_event_id"], receipt_facts: capture.provenance_evidence["receipt_facts"],
+      receipt_status: capture.provenance_evidence["receipt_status"],
+      postings: capture.buyer_return_postings.in_sequence.pluck(:kind, :gross_cents, :applied_cents, :excess_cents) }
+  end
+
+  def verify_counts
+    report = Commerce::NeverFulfilledReconcile.call(dry_run: true)
+    { pending: report.assessments.reject { |item| %w[held reconciled].include?(item.disposition) }
+      .map { |item| [item.payment_id, item.disposition, item.reason] },
+      unposted: Commerce::NeverFulfilledReconcile.unposted_movement_payment_ids.sort,
+      overlap: Commerce::NeverFulfilledReconcile.overlap_capture_ids,
+      orphans_without_identity: Commerce::NeverFulfilledReconcile.orphan_receipts_without_identity.count }
   end
 
   def receipt(id) = WebhookEvent.find_by(provider_event_id: id)&.slice(:status, :last_error)&.transform_values { |v| v.to_s.lines.first.to_s.strip }
@@ -58,13 +95,15 @@ end
 
 # Fixtures are built only by this release (the setup step and one helper).
 module RehearsalFixtures
+  # Both releases' factories (factory_bot_rails, test environment). The
+  # previous release builds only the data that existed before the upgrade.
+  extend FactoryBot::Syntax::Methods
   # Spec helpers for fixtures only; RSpec itself is not loaded here.
   if Rehearsal::ROLE == "new"
     Object.const_set(:RSpec, Module.new { def self.configure(*) = nil }) unless defined?(::RSpec)
     root = Rails.root.join("spec/support")
     require root.join("payout_statement_helpers").to_s
     require root.join("never_fulfilled_return_helpers").to_s
-    extend FactoryBot::Syntax::Methods
     extend PayoutStatementHelpers
     extend NeverFulfilledReturnHelpers
   end
@@ -85,9 +124,9 @@ module RehearsalFixtures
     end
   end
 
-  # A fulfilled two-ticket online sale paid by payment A (with a commission).
-  def online_sale!(event, ticket_type)
-    result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: 2 }],
+  # A fulfilled online sale paid by payment A (with a commission).
+  def online_sale!(event, ticket_type, quantity: 2)
+    result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: ticket_type.id, quantity: quantity }],
       buyer_email: "rehearsal.buyer@example.com", buyer_name: "Rehearsal Buyer")
     promoter = create(:promoter, event: event, commission_bps: 1000)
     ReferralAttribution.create!(order: result.order, promoter: promoter, code_snapshot: promoter.code, attributed_at: Time.current)
@@ -116,10 +155,39 @@ module RehearsalFixtures
     Payment.where(id: payment.id).update_all(provider_environment: "live")
   end
 
-  def second_payment!(order, a, intent)
+  def second_payment!(order, a, intent, amount_cents: 1500)
     order.payments.create!(provider: "stripe", provider_environment: "test",
       provider_platform_account_id: a.provider_platform_account_id, provider_payment_id: intent,
-      idempotency_key: "second:#{order.id}:#{intent}", amount_cents: 1500, currency: "usd", status: :pending)
+      idempotency_key: "second:#{order.id}:#{intent}", amount_cents: amount_cents, currency: "usd", status: :pending)
+  end
+
+  # Builds the data 7bcd97c2 had before the upgrade: an ordinary online sale
+  # it fulfilled itself and two orphan refund notices, one of which its
+  # retention already cleared. Runs in the previous release on its schema.
+  def existing_data!
+    SiteSetting.instance.update!(payment_mode: "test")
+    # Factory sequences restart in each process: unique fields are explicit.
+    user = create(:user, :organizer, clerk_id: "clerk_reh_existing", email: "rehearsal.existing.organizer@example.com")
+    organization = create(:organization, name: "Rehearsal Existing Organization")
+    profile = create(:organizer_profile, :verified, user: user, organization: organization)
+    event = create(:event, :published, organization: organization, organizer_profile: profile, title: "Rehearsal Existing Event")
+    type = create(:ticket_type, event: event, price_cents: 1200, quantity_available: 20, quantity_sold: 0)
+    result = Commerce::OrderCreator.call(event: event, line_items: [{ ticket_type_id: type.id, quantity: 1 }],
+      buyer_email: "rehearsal.existing@example.com", buyer_name: "Existing Buyer")
+    RehearsalStep.capture!(result.payment, id: "evt_reh_u_sale")
+    # Live money, so the CPA and BPT exports compare real rows across the
+    # upgrade (Payment.provider_environment is read-only in Active Record).
+    Payment.where(id: result.payment.id).update_all(provider_environment: "live")
+    RehearsalStep.webhook!("refund.created", { id: "re_reh_u_partial", object: "refund", payment_intent: result.payment.provider_payment_id,
+      amount: 300, currency: "usd", status: "succeeded" }, id: "evt_reh_u_partial", livemode: true)
+    RehearsalStep.webhook!("refund.created", { id: "re_reh_orphan", object: "refund", payment_intent: "pi_reh_orphan",
+      amount: 1360, currency: "usd", status: "succeeded" }, id: "evt_reh_orphan", livemode: false)
+    RehearsalStep.webhook!("refund.created", { id: "re_reh_orphan_gone", object: "refund", payment_intent: "pi_reh_orphan_gone",
+      amount: 900, currency: "usd", status: "succeeded" }, id: "evt_reh_orphan_gone", livemode: false)
+    # Cleared before the upgrade, as 7bcd97c2's retention would: no column
+    # kept its identity then.
+    WebhookEvent.where(provider_event_id: "evt_reh_orphan_gone").update_all(payload: {}, last_error: nil)
+    [event, type, result.order.reload, result.payment.reload]
   end
 end
 
@@ -196,7 +264,31 @@ when "setup"
   F.lose_dispute!(live_nf, "dp_reh_live_nf", amount: 860)
   F.close_fee_reviews!(live_nf_order)
 
-  S.save!(cpa_event: cpa_event.id, admin: admin.id, late_event: late_event.id, l1_payment: p1.id, l1_order: l1.id, l2_payment: p2.id,
+  # Fixtures for the later scenarios, built here because factory sequences
+  # restart in each process.
+  # The payment a redacted orphan notice (from before the upgrade) names.
+  _orphan_order, orphan_payment, = F.late_capture!(late_event, "orphan")
+  # Blocker 1: A's $13.60 sale; B captured and classified, refunded $7.00.
+  r10_type = F.create(:ticket_type, event: iso_event, price_cents: 1200, quantity_available: 20, quantity_sold: 0)
+  r10_order, r10_a = F.online_sale!(iso_event, r10_type, quantity: 1)
+  r10_b = F.second_payment!(r10_order, r10_a, "pi_reh_r10_b", amount_cents: r10_order.total_cents)
+  S.capture!(r10_b, id: "evt_reh_r10_b")
+  S.refund_notice!(r10_b, "re_reh_r10_b", 700, id: "evt_reh_r10_b_refund")
+  # Blocker 3: two fulfilled sales whose second payments the old release
+  # will acknowledge.
+  r12_profile = F.create(:organizer_profile, :verified)
+  r12_event = F.create(:event, :published, organization: r12_profile.organization, organizer_profile: r12_profile)
+  r12_type = F.create(:ticket_type, event: r12_event, price_cents: 1200, quantity_available: 20, quantity_sold: 0)
+  r12 = { r12_event: r12_event.id }
+  %w[x y].each do |key|
+    order, a = F.online_sale!(r12_event, r12_type, quantity: 1)
+    b = F.second_payment!(order, a, "pi_reh_r12_#{key}_b", amount_cents: order.total_cents)
+    r12.merge!("r12_#{key}_order" => order.id, "r12_#{key}_a" => a.id, "r12_#{key}_b" => b.id)
+  end
+  r12_event.update_columns(status: Event.statuses.fetch("completed"))
+  S.save!(orphan_payment: orphan_payment.id, r10_order: r10_order.id, r10_a: r10_a.id, r10_b: r10_b.id, **r12)
+
+  S.save!(cpa_event: cpa_event.id, admin: admin.id, late_event: late_event.id, iso_event: iso_event.id, l1_payment: p1.id, l1_order: l1.id, l2_payment: p2.id,
     l3_payment: p3.id, l3_refund: r3.id, l4_payment: p4.id, l4_refund: r4.id,
     iso_order: iso_order.id, iso_a: iso_a.id, iso_b: iso_b.id, pend_order: pend_order.id, pend_a: pend_a.id, pend_b: pend_b.id,
     legacy_order: legacy_order.id, legacy_a: legacy_a.id, legacy_b: legacy_b.id,
@@ -310,18 +402,41 @@ when "r8_open_block"
     provider_payment_id: "pi_reh_block_b_#{order.id}")
   issue = ReconciliationException.create!(order: order, payment: second,
     code: Commerce::NeverFulfilledClassification::OWNERSHIP_AMBIGUOUS_CODE, details: { reason: "no_completion_evidence" })
+  S.save!(hold_at: issue.created_at.utc.iso8601(6))
   Rehearsal.outcome!(step, action: "block opened", value: { exception_id: issue.id, at: issue.created_at.utc.iso8601(6) })
 
 when "r8_record_paid"
+  # Each release records paid with a transfer time after the hold (the
+  # in-flight outcome was recorded after it, so initiated_at is post-hold)
+  # and with one between the pre-hold submission and the hold. A submission
+  # is not a transfer: only this release's verified pre-hold confirmation
+  # may record paid on the held event; 7bcd97c2 is refused for both.
   event = S.find(Event, "pay_event")
+  hold_at = Time.iso8601(S.state.fetch("hold_at"))
   event.payouts.order(:id).each do |payout|
-    S.attempt(step, "PayoutReconciler.call paid (payout #{payout.id}, #{payout.status})") do
-      PayoutReconciler.call(payout: payout, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-#{payout.id}",
-        evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: (payout.initiated_at || payout.created_at).utc.iso8601(6),
-          approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+    submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").minimum(:occurred_at)
+    times = { "post-hold initiated_at" => payout.initiated_at || payout.created_at }
+    times["pre-hold transfer"] = submitted + ((hold_at - submitted) / 2) if submitted && submitted < hold_at
+    times.each do |label, confirmed_at|
+      S.attempt(step, "PayoutReconciler.call paid (payout #{payout.id}, #{payout.reload.status}, #{label} #{confirmed_at.utc.iso8601(6)})") do
+        PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-#{payout.id}",
+          evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: confirmed_at.utc.iso8601(6),
+            approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+      end
     end
   end
-  Rehearsal.outcome!(step, action: "payouts", value: event.payouts.order(:id).pluck(:id, :status, :amount_cents))
+  Rehearsal.outcome!(step, action: "payouts", value: event.payouts.order(:id).pluck(:id, :status, :amount_cents, :paid_at)
+    .map { |row| row[0..2] + [row[3]&.utc&.iso8601(6)] })
+
+when "r8_hold_second"
+  payout = S.find(Payout, "payout_second")
+  payout.update!(status: :held, held_from_status: payout.status)
+  Rehearsal.outcome!(step, action: "held", value: payout.reload.slice(:id, :status, :held_from_status))
+
+when "r8_release_held"
+  payout = S.find(Payout, "payout_second")
+  S.attempt(step, "PayoutHoldRelease.call (payout #{payout.id})") { PayoutHoldRelease.call(payout: payout, actor: S.find(User, "admin")) }
+  Rehearsal.outcome!(step, action: "payout", value: payout.reload.slice(:id, :status, :held_from_status))
 
 when "r9_readers"
   event = S.find(Event, "nf_event")
@@ -344,10 +459,220 @@ when "exports"
   bpt_rows = TaxReports.new(month.year).bpt_event_rows(month.month)
   bpt_rows = bpt_rows.respond_to?(:to_a) ? bpt_rows.to_a : bpt_rows
   cpa_rows = cpa_rows.map { |row| row.map(&:to_s) }
-  File.write(File.join(Rehearsal::DIR, "exports_#{Rehearsal::ROLE}.json"),
+  File.write(File.join(Rehearsal::DIR, "exports_#{ENV.fetch('EXPORT_TAG', Rehearsal::ROLE)}.json"),
     JSON.pretty_generate(cpa_header: CpaMonthlyReport::HEADER.map(&:to_s), cpa: cpa_rows, bpt: bpt_rows))
   Rehearsal.outcome!(step, action: "exports", value: { cpa_rows: cpa_rows.length, bpt_rows: bpt_rows.length,
     cpa_sha256: Digest::SHA256.hexdigest(JSON.generate(cpa_rows)), bpt_sha256: Digest::SHA256.hexdigest(JSON.generate(bpt_rows)) })
+
+when "u_existing_data"
+  raise "existing data comes from the previous release" if new_release
+
+  event, type, order, a = F.existing_data!
+  S.save!(u_event: event.id, u_type: type.id, u_order: order.id, u_a: a.id)
+  Rehearsal.outcome!(step, action: "existing data", value: { sale: S.money(order), payment: a.slice(:id, :status),
+    receipts: WebhookEvent.order(:id).pluck(:provider_event_id, :status, :event_type) })
+
+when "u_upgrade_checks"
+  order = S.find(Order, "u_order")
+  a = S.find(Payment, "u_a")
+  orphan = WebhookEvent.find_by!(provider_event_id: "evt_reh_orphan")
+  Rehearsal.outcome!(step, action: "after upgrade", value: { fulfilled_by: order.fulfilled_by_payment_id,
+    capture_recorded_at: a.capture_recorded_at, blocked: Commerce::NeverFulfilledPayoutHold.blocked?(order.event),
+    orphan_identity: orphan.provider_payment_intent_id, cutovers: FinancialCutover.order(:recorded_at).pluck(:key),
+    verify: S.verify_counts })
+
+when "u_old_redact_orphan"
+  # 7bcd97c2's retention clearing an orphan receipt's payload (update_all,
+  # as DataRetention does), after the upgrade.
+  WebhookEvent.where(provider_event_id: "evt_reh_orphan").update_all(payload: {}, last_error: nil, updated_at: Time.current)
+  Rehearsal.outcome!(step, action: "redacted", value: WebhookEvent.where(provider_event_id: "evt_reh_orphan").pick(:payload))
+
+when "u_after_redaction"
+  orphan = WebhookEvent.find_by!(provider_event_id: "evt_reh_orphan")
+  payment = S.find(Payment, "orphan_payment")
+  receipts = StripeWebhookProcessor.replayable_receipts(payment).pluck(:id)
+  replay = S.attempt(step, "StripeWebhookProcessor.replay! (redacted orphan)") { StripeWebhookProcessor.replay!(orphan, payment: payment) }
+  Rehearsal.outcome!(step, action: "state", value: { identity: orphan.slice(:payload, :provider_payment_intent_id,
+    :provider_object_id, :provider_amount_cents, :provider_currency, :provider_livemode), found_by_identity: receipts.include?(orphan.id),
+    replay: replay, orphan_items: orphan.reconciliation_exceptions.pluck(:code, :status, :payment_id),
+    verify: S.verify_counts })
+
+when "u_old_capture_on_legacy_sale"
+  # The previous release acknowledges a second capture on the sale it
+  # fulfilled before the upgrade (no fulfilling payment recorded).
+  order = S.find(Order, "u_order")
+  a = S.find(Payment, "u_a")
+  b = order.payments.create!(provider: "stripe", provider_environment: "test", provider_platform_account_id: a.provider_platform_account_id,
+    provider_payment_id: "pi_reh_u_b", idempotency_key: "second:#{order.id}:u_b", amount_cents: order.total_cents, currency: "usd",
+    status: :pending)
+  Payment.where(id: b.id).update_all(provider_environment: "live") # same mode as A
+  S.attempt(step, "payment_intent.succeeded on legacy sale's B") do
+    S.webhook!("payment_intent.succeeded", { id: b.provider_payment_id, amount: b.amount_cents, amount_received: b.amount_cents,
+      currency: "usd", status: "succeeded" }, id: "evt_reh_u_b", livemode: true)
+  end
+  S.save!(u_b: b.id)
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_u_b"), b: b.reload.slice(:status, :capture_recorded_at),
+    exceptions: ReconciliationException.where(payment_id: b.id).count })
+
+when "r13_hold_order_lock"
+  # Lock contention: the previous release holds the legacy order's row lock
+  # (as its refund or lifecycle writers do) while this release discovers.
+  Order.transaction do
+    S.find(Order, "u_order").lock!
+    Rehearsal.pause("order_lock")
+    sleep 2
+  end
+  Rehearsal.outcome!(step, action: "order lock released", value: Time.now.utc.iso8601(6))
+
+when "u_new_discover_legacy_sale"
+  order = S.find(Order, "u_order")
+  a = S.find(Payment, "u_a")
+  b = S.find(Payment, "u_b")
+  before = S.verify_counts
+  blocked = Commerce::NeverFulfilledPayoutHold.blocked?(order.event)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  report = S.attempt(step, "NeverFulfilledReconcile.call (legacy sale, under the old process's order lock)") do
+    Commerce::NeverFulfilledReconcile.call(dry_run: false, payment_ids: [a.id, b.id]).assessments.map { |item| [item.payment_id, item.disposition] }
+  end
+  waited = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  Rehearsal.outcome!(step, action: "state", value: { verify_before: before, blocked_before: blocked, report: report,
+    waited_seconds: waited.round(2), fulfilled_by: order.reload.fulfilled_by_payment_id, b: S.classification(b),
+    a_classified: UnfulfilledCapture.exists?(payment_id: a.id), sale: S.money(order), verify_after: S.verify_counts })
+
+when "r10_state"
+  order = S.find(Order, "r10_order")
+  Rehearsal.outcome!(step, action: "state", value: { total_cents: order.total_cents, sale: S.money(order),
+    b: S.classification(S.find(Payment, "r10_b")) })
+
+when "r10_refund_a"
+  # Stripe's $6.60 refund on A, delivered to this process (twice in this release).
+  a = S.find(Payment, "r10_a")
+  (new_release ? 2 : 1).times do |delivery|
+    S.attempt(step, "refund.created $6.60 on A (delivery #{delivery + 1})") { S.refund_notice!(a, "re_reh_r10_a", 660, id: "evt_reh_r10_a_refund") }
+  end
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r10_a_refund"), sale: S.money(a.order),
+    emails: nil })
+
+when "r12_old_capture_b"
+  key = ENV.fetch("REHEARSAL_KEY")
+  b = S.find(Payment, "r12_#{key}_b")
+  S.attempt(step, "payment_intent.succeeded on B (#{key})") { S.capture!(b, id: "evt_reh_r12_#{key}") }
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r12_#{key}"),
+    b: b.reload.slice(:status, :capture_recorded_at), exceptions: ReconciliationException.where(payment_id: b.id).count })
+
+when "r12_old_redact_receipt"
+  key = ENV.fetch("REHEARSAL_KEY")
+  WebhookEvent.where(provider_event_id: "evt_reh_r12_#{key}").update_all(payload: {}, last_error: nil, updated_at: Time.current)
+  Rehearsal.outcome!(step, action: "redacted", value: WebhookEvent.find_by!(provider_event_id: "evt_reh_r12_#{key}")
+    .slice(:payload, :provider_payment_intent_id, :provider_amount_cents, :provider_livemode))
+
+when "r12_old_finalize"
+  # 7bcd97c2's own checks see no exception on this event; its unrelated fee
+  # precheck is set aside so only the database decides.
+  Settlements::Finalizer.define_singleton_method(:open_money_blocker) { |_event| nil }
+  S.attempt(step, "Settlements::Finalizer.call (event with unclassified captures)") do
+    Settlements::Finalizer.call(event: S.find(Event, "r12_event"), actor: S.find(User, "admin"))
+  end
+
+when "r12_check_held"
+  event = S.find(Event, "r12_event")
+  S.attempt(step, "Settlements::Finalizer.call") { Settlements::Finalizer.call(event: event, actor: S.find(User, "admin")) }
+  Rehearsal.outcome!(step, action: "state", value: { block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6),
+    b_capture_times: %w[x y].map { |key| S.find(Payment, "r12_#{key}_b").capture_recorded_at&.utc&.iso8601(6) },
+    verify: S.verify_counts })
+
+when "r12_new_redeliver"
+  b = S.find(Payment, "r12_x_b")
+  2.times do |delivery|
+    S.attempt(step, "redelivered payment_intent.succeeded on B (x, delivery #{delivery + 1})") { S.capture!(b, id: "evt_reh_r12_x") }
+  end
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r12_x"), b: S.classification(b),
+    exceptions: ReconciliationException.where(payment_id: b.id).pluck(:code, :status), sale: S.money(b.order) })
+
+when "r12_new_reconcile"
+  b = S.find(Payment, "r12_y_b")
+  dry = Commerce::NeverFulfilledReconcile.call(dry_run: true, payment_ids: [b.id]).assessments.map { |item| [item.disposition, item.reason] }
+  S.attempt(step, "RefundReconciliationJob.perform_now (scheduled discovery)") { RefundReconciliationJob.perform_now }
+  Rehearsal.outcome!(step, action: "state", value: { dry_run: dry, b: S.classification(b),
+    exceptions: ReconciliationException.where(payment_id: b.id).pluck(:code, :status), sale: S.money(b.order), verify: S.verify_counts })
+
+when "r12_refund_b"
+  # Stripe's $5.00 refund on classified B (x), after classification.
+  b = S.find(Payment, "r12_x_b")
+  S.attempt(step, "refund.created $5.00 on classified B") { S.refund_notice!(b, "re_reh_r12_x_b", 500, id: "evt_reh_r12_x_b_refund") }
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r12_x_b_refund"), b: S.classification(b),
+    sale: S.money(b.order) })
+
+when "r12_old_late_return"
+  # The previous release records a Stripe refund on an order-scope
+  # classified capture (its order has no sale): written, never posted.
+  p1 = S.find(Payment, "l1_payment")
+  S.attempt(step, "refund.created $5.00 on classified order-scope capture") { S.refund_notice!(p1, "re_reh_l1_late", 500, id: "evt_reh_l1_late") }
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_l1_late"), refunds: S.refund_rows(p1.order),
+    postings: S.classification(p1)&.dig(:postings) })
+
+when "r12_new_post_late_return"
+  p1 = S.find(Payment, "l1_payment")
+  before = S.verify_counts
+  dry = Commerce::NeverFulfilledReconcile.call(dry_run: true, payment_ids: [p1.id]).assessments.map { |item| [item.disposition, item.reason] }
+  S.attempt(step, "NeverFulfilledReconcile.call (post)") { Commerce::NeverFulfilledReconcile.call(dry_run: false, payment_ids: [p1.id]).counts }
+  capture = UnfulfilledCapture.find_by!(payment_id: p1.id)
+  Rehearsal.outcome!(step, action: "state", value: { verify_before: before, dry_run: dry, postings: S.classification(p1)[:postings],
+    owed_cents: Commerce::BuyerReturnLedger.for(capture).owed_cents,
+    holds: ReconciliationException.where(payment_id: p1.id).pluck(:code, :status), verify_after: S.verify_counts })
+
+when "verify_task"
+  output = `bin/rails never_fulfilled:verify 2>&1`
+  Rehearsal.outcome!(step, action: "never_fulfilled:verify", value: output.lines.map(&:strip))
+
+when "assertions"
+  checks = {}
+  check = ->(name, actual, expected) { checks[name] = { pass: actual == expected, actual: actual, expected: expected } }
+  r10 = S.find(Order, "r10_order").reload
+  check.call("blocker1: A's sale partially refunded by its own $6.60 only",
+    [r10.status, r10.refund_amount_cents, r10.tickets.pluck(:status).uniq], ["partially_refunded", 660, ["issued"]])
+  check.call("blocker1: refunds A $6.60 once, B $7.00", Refund.where(order_id: r10.id, status: :succeeded).order(:id).pluck(:payment_id, :amount_cents),
+    [[S.state.fetch("r10_b"), 700], [S.state.fetch("r10_a"), 660]])
+  check.call("blocker1: A's refund items $6.60, no inventory retention",
+    [RefundItem.joins(:refund).where(refunds: { order_id: r10.id }).sum(:amount_cents),
+      TicketInventoryRetention.joins(:ticket).where(tickets: { order_id: r10.id }).count], [660, 0])
+  check.call("blocker1: one commission reversal", r10.promoter_commission_entries.order(:id).pluck(:kind), %w[earned refund_reversal])
+  hold_at = Time.iso8601(S.state.fetch("hold_at"))
+  first = S.find(Payout, "payout_first")
+  check.call("blocker2: pre-hold transfer recorded paid by this release, before the hold",
+    [first.status, first.paid_at.present? && first.paid_at < hold_at], ["paid", true])
+  check.call("blocker2: paid audit carries the hold and the confirmation",
+    AuditLog.where(auditable: first, action: "payout.reconciled").map { |a| [a.metadata.key?("never_fulfilled_hold_started_at"), a.metadata.dig("reconciliation", "sent_before_hold_confirmed")] },
+    [[true, true]])
+  check.call("blocker2: never-submitted payout stays held, never paid or released",
+    [S.find(Payout, "payout_second").status, AuditLog.where(auditable: S.find(Payout, "payout_second"), action: %w[payout.paid payout.reconciled payout.released_from_cancellation_hold]).count],
+    ["held", 0])
+  %w[x y].each do |key|
+    b = S.find(Payment, "r12_#{key}_b")
+    receipt = WebhookEvent.find_by!(provider_event_id: "evt_reh_r12_#{key}")
+    info = S.classification(b)
+    check.call("blocker3: B (#{key}) classified in payment scope from the old receipt",
+      info&.values_at(:scope, :code, :webhook_event_id, :receipt_status), ["payment", "unfulfilled_second_capture", receipt.id, "processed"])
+  end
+  check.call("blocker3: redacted receipt proven from its kept identity", S.classification(S.find(Payment, "r12_y_b"))[:receipt_facts], "stored_identity")
+  check.call("blocker3: B (x) refund after classification posted on B", S.classification(S.find(Payment, "r12_x_b"))[:postings],
+    [["refund", 500, 500, 0]])
+  check.call("blocker3: A's sales untouched", %w[x y].map { |key| S.find(Order, "r12_#{key}_order").reload.slice(:status, :refund_amount_cents).values },
+    [["completed", 0], ["completed", 0]])
+  check.call("blocker3: legacy return on an order-scope capture posted", S.classification(S.find(Payment, "l1_payment"))[:postings].map(&:first), ["refund"])
+  check.call("upgrade: legacy sale's fulfilling payment recovered, B classified",
+    [S.find(Order, "u_order").reload.fulfilled_by_payment_id, S.classification(S.find(Payment, "u_b"))&.fetch(:scope)], [S.state.fetch("u_a"), "payment"])
+  check.call("upgrade: redacted orphan keeps its identity and binds to the payment it names",
+    [WebhookEvent.find_by!(provider_event_id: "evt_reh_orphan").provider_payment_intent_id,
+      ReconciliationException.joins(:webhook_event).where(webhook_events: { provider_event_id: "evt_reh_orphan" }).pluck(:payment_id, :status)],
+    ["pi_reh_orphan", [[S.state.fetch("orphan_payment"), "open"]]])
+  check.call("upgrade: orphan cleared before the upgrade is reported for finance", S.verify_counts[:orphans_without_identity], 1)
+  check.call("verify: no overlap captures or unposted movements left", S.verify_counts.slice(:overlap, :unposted), { overlap: [], unposted: [] })
+  baseline, upgraded = %w[baseline upgraded].map { |tag| JSON.parse(File.read(File.join(Rehearsal::DIR, "exports_#{tag}.json"))) }
+  check.call("upgrade: CPA rows identical before and after the migration", upgraded["cpa"], baseline["cpa"])
+  check.call("upgrade: BPT rows identical before and after the migration", upgraded["bpt"], baseline["bpt"])
+  checks.each { |name, result| Rehearsal.outcome!(step, action: name, result: result[:pass] ? "PASS" : "FAIL", value: result.except(:pass)) }
+  File.write(File.join(Rehearsal::DIR, "assertions.txt"), checks.map { |name, result| "#{result[:pass] ? 'PASS' : 'FAIL'} #{name}" }.join("\n") + "\n")
 
 when "payout_history"
   rows = AuditLog.where(auditable_type: "Payout").where("action LIKE 'payout.%'").order(:id)

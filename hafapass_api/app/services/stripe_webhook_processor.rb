@@ -97,7 +97,7 @@ class StripeWebhookProcessor
   # if that release acknowledged a second capture without classifying it,
   # this release classifies or quarantines it now (A1-R1 recheck blocker 3).
   def discover_acknowledged_capture!(receipt)
-    return unless receipt.processed? && receipt.event_type == "payment_intent.succeeded"
+    return unless receipt.processed? && receipt.event_type == StripeReplayableEvents::CAPTURE_TYPE
 
     payment = receipt.payment_event&.payment
     return unless payment && Commerce::NeverFulfilledReconcile.overlap_capture?(payment)
