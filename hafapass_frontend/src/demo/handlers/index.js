@@ -4,6 +4,7 @@
 // `handle(ctx)` and add ONE import + ONE list entry below (see ../README.md).
 import * as boxOfficePrint from './box-office-print'
 import * as monitoring from './monitoring'
+import * as cpaExport from './cpa-export'
 import * as baseline from './baseline'
 import * as payouts from './payouts'
 
@@ -11,5 +12,6 @@ export const DEMO_HANDLERS = [
   boxOfficePrint,
   monitoring,
   payouts,
+  cpaExport,
   baseline,
 ]

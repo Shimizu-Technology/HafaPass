@@ -39,21 +39,47 @@ class Api::V1::Admin::TaxReportsController < Api::V1::Admin::BaseController
   end
 
   def bpt_events_export
-    month = params[:month].to_s
-    unless month.match?(/\A(?:0?[1-9]|1[0-2])\z/)
-      return render json: { error: "Choose a month from 1 to 12" }, status: :unprocessable_entity
-    end
+    month = validated_month
+    return unless month
 
-    period = format("%04d-%02d", @report.year, month.to_i)
+    period = format("%04d-%02d", @report.year, month)
     activity = @report.bpt_event_rows(month)
-    audit_export!("monthly_bpt_by_event", count: activity.size, organization_ids: activity.map(&:first).uniq, month: month.to_i)
+    audit_export!("monthly_bpt_by_event", count: activity.size, organization_ids: activity.map(&:first).uniq, month: month)
     rows = activity.map do |organization_id, event_id, *amounts|
       [period, organization_id, event_id, *amounts.map { |value| FinanceExports.money(value) }, "USD"]
     end
     stream_csv(filename: "hafapass-bpt-events-#{period}.csv", header: BPT_EVENT_HEADER, rows: rows)
   end
 
+  def cpa_monthly
+    month = validated_month
+    return unless month
+
+    render json: CpaMonthlyReport.new(@report.year, month).report
+  end
+
+  def cpa_monthly_export
+    month = validated_month
+    return unless month
+
+    monthly = CpaMonthlyReport.new(@report.year, month)
+    data = monthly.report
+    audit_export!("monthly_cpa_custodial_bpt", count: data[:rows].size,
+      organization_ids: monthly.organization_ids, month: month)
+    stream_csv(filename: "hafapass-cpa-monthly-#{monthly.period}.csv",
+      header: CpaMonthlyReport::HEADER, rows: monthly.csv_rows)
+  end
+
   private
+
+  def validated_month
+    month = params[:month].to_s
+    unless month.match?(/\A(?:0?[1-9]|1[0-2])\z/)
+      render json: { error: "Choose a month from 1 to 12" }, status: :unprocessable_entity
+      return nil
+    end
+    month.to_i
+  end
 
   def prepare_report
     response.headers["Cache-Control"] = "no-store"
