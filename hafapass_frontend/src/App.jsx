@@ -39,10 +39,12 @@ const EventStaffPage = lazy(() => import('./pages/dashboard/EventStaffPage'))
 const PromoCodesPage = lazy(() => import('./pages/dashboard/PromoCodesPage'))
 const GuestListPage = lazy(() => import('./pages/dashboard/GuestListPage'))
 const RefundsPage = lazy(() => import('./pages/dashboard/RefundsPage'))
+const PayoutStatementPage = lazy(() => import('./pages/dashboard/PayoutStatementPage'))
 const AttendeesPage = lazy(() => import('./pages/dashboard/AttendeesPage'))
 const BoxOfficePage = lazy(() => import('./pages/dashboard/BoxOfficePage'))
 const WaitlistPage = lazy(() => import('./pages/dashboard/WaitlistPage'))
 const TicketTransferAcceptPage = lazy(() => import('./pages/purchaseFlow').then(module => ({ default: module.TicketTransferAcceptPage })))
+const DoorPaymentReturnPage = lazy(() => import('./pages/DoorPaymentReturnPage'))
 const SalesToolsPage = lazy(() => import('./pages/dashboard/SalesToolsPage'))
 const CollectionsPage = lazy(() => import('./pages/CollectionsPage'))
 const CollectionPage = lazy(() => import('./pages/CollectionPage'))
@@ -60,6 +62,7 @@ const AdminEventsPage = lazy(() => import('./pages/admin/AdminEventsPage'))
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'))
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'))
 const AdminOperationsPage = lazy(() => import('./pages/admin/AdminOperationsPage'))
+const AdminMonitoringPage = lazy(() => import('./pages/admin/AdminMonitoringPage'))
 const SupportPage = lazy(() => import('./pages/support/SupportPage'))
 const MarketplaceAdminPage = lazy(() => import('./pages/admin/MarketplaceAdminPage'))
 const ProviderReadinessPage = lazy(() => import('./pages/admin/ProviderReadinessPage'))
@@ -95,6 +98,7 @@ function App() {
           <Route path="/go/:code" element={<DistributionRedirectPage />} />
           <Route path="/refer/:code" element={<DistributionRedirectPage />} />
           <Route path="/checkout/:slug" element={<CheckoutPage />} />
+          <Route path="/door-payment" element={<DoorPaymentReturnPage />} />
           <Route path="/orders/:id/confirmation" element={<OrderConfirmationPage />} />
           <Route path="/orders/recover" element={<OrderRecoveryPage />} />
           <Route path="/tickets/:credential" element={<TicketPage />} />
@@ -120,6 +124,7 @@ function App() {
           <Route path="/dashboard/events/:id/promo-codes" element={<ProtectedRoute><PromoCodesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/guest-list" element={<ProtectedRoute><GuestListPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/refunds" element={<ProtectedRoute><RefundsPage /></ProtectedRoute>} />
+          <Route path="/dashboard/events/:id/statement" element={<ProtectedRoute><PayoutStatementPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/attendees" element={<ProtectedRoute><AttendeesPage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/box-office" element={<ProtectedRoute><BoxOfficePage /></ProtectedRoute>} />
           <Route path="/dashboard/events/:id/waitlist" element={<ProtectedRoute><WaitlistPage /></ProtectedRoute>} />
@@ -151,6 +156,7 @@ function App() {
           <Route path="/admin/reconciliation_exceptions" element={<AdminRoute><AdminReconciliationExceptionsPage /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLogPage /></AdminRoute>} />
           <Route path="/admin/operations" element={<AdminRoute><AdminOperationsPage /></AdminRoute>} />
+          <Route path="/admin/monitoring" element={<AdminRoute><AdminMonitoringPage /></AdminRoute>} />
           <Route path="/support" element={<SupportRoute><SupportPage /></SupportRoute>} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />

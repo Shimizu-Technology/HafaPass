@@ -19,6 +19,8 @@ class OrganizationRoleMatrix
     { key: "attendees", label: "Guest list, waitlist & resend tickets", permissions: %i[manage_attendees] },
     { key: "door_sales", label: "Door sales", permissions: %i[box_office] },
     { key: "scan", label: "Scan tickets", permissions: %i[scan] },
+    { key: "override_re_entry", label: "Override re-entry blocks", permissions: %i[override_re_entry],
+      note: "Event-scoped Scanner lead assignments also grant Override re-entry blocks alongside Scan tickets for assigned events. Overrides require a written reason and are audited." },
     { key: "reverse", label: "Undo a check-in", permissions: %i[scan manage_attendees] },
     { key: "refunds", label: "Issue refunds", permissions: %i[refund] },
     { key: "reports", label: "Finance reports & sales exports", permissions: %i[view_finance],
@@ -57,6 +59,16 @@ class OrganizationRoleMatrix
     matrix[:rows].each do |row|
       lines << "| #{row[:label]} | #{roles.map { |role| row[:values].fetch(role[:key]) }.join(' | ')} |"
     end
+    lines += [
+      "", "## Event-assignment roles", "",
+      "Event assignments scope door staff and event-only managers to specific events (`event_staff_assignments.role`).", "",
+      "| Assignment role | Scan tickets | Override re-entry blocks | Undo a check-in | Door sales | Edit & manage event |",
+      "|---|---|---|---|---|---|",
+      "| Event manager (`event_manager`) | Assigned events | Assigned events | Assigned events | Assigned events | Assigned events |",
+      "| Box office (`box_office`) | Assigned events | Assigned events | Assigned events | Assigned events | No |",
+      "| Door scanner (`scanner`) | Assigned events | No | No | No | No |",
+      "| Scanner lead (`scanner_lead`) | Assigned events | Assigned events | No | No | No |"
+    ]
     lines += ["", "## Access notes", ""]
     matrix[:notes].each { |key, note| lines << "- #{note}" unless key == "scope" }
     matrix[:rows].each { |row| lines << "- **#{row[:label]}:** #{row[:note]}" if row[:note] }

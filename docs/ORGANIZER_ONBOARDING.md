@@ -14,7 +14,7 @@
 
 1. Set the cash outlet, inventory allocation, sale hours and till owner with the event lead. For an approved retail partner such as Deal Depot, assign named staff the minimum Box Office permissions for this event. Each person uses their own account.
 2. In **Box Office**, select the exact event and ticket types. Receive and count the cash before recording the sale. Give buyers the issued QR tickets. Keep a shift cash record and reconcile the drawer to the Box Office summary. Have the organizer confirm how and when retail cash is handed over.
-3. Train staff with the [Volunteer door guide](VOLUNTEER_DOOR_GUIDE.md) and [operations drill](EVENT_DAY_OPERATIONS.md#three-device-offline-drill). Before opening, have every device download the list, scan a practice QR, test manual lookup and reconnect with its queue empty.
+3. Train staff with the [Volunteer door kit](door-kit/VOLUNTEER_QUICK_GUIDE.md) ([printable scanner](door-kit/PRINT_SCANNER_CARD.md) and [box-office](door-kit/PRINT_BOX_OFFICE_CARD.md) cards) and [operations drill](EVENT_DAY_OPERATIONS.md#three-device-offline-drill). Before opening, have every device download the list, scan a practice QR, test manual lookup and reconnect with its queue empty.
 4. After closing, sync and reconcile all scanners, cash drawers and incidents. Reconcile refunds and disputes before finalizing settlements.
 
 ## Copa payout schedule

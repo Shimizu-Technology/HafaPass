@@ -32,12 +32,15 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
     users.each_with_index do |user, index|
       allow(ClerkAuthenticator).to receive(:verify).with("gate-#{index}").and_return({ "sub" => user.clerk_id })
     end
-    users.each_index do |index|
-      100.times { expect(hit(token: "gate-#{index}").first).to eq(204) }
+    # Keep every hit in one throttle window; a boundary mid-loop resets counts.
+    freeze_time do
+      users.each_index do |index|
+        100.times { expect(hit(token: "gate-#{index}").first).to eq(204) }
+      end
+      # Other paths still hit their configured req/ip budget under the same IP.
+      50.times { expect(hit(path: "/api/v1/events", method: "GET").first).to eq(204) }
+      expect(hit(path: "/api/v1/events", method: "GET").first).to eq(429)
     end
-    # Other paths still hit their configured req/ip budget under the same IP.
-    50.times { expect(hit(path: "/api/v1/events", method: "GET").first).to eq(204) }
-    expect(hit(path: "/api/v1/events", method: "GET").first).to eq(429)
   ensure
     original_req_limit.nil? ? ENV.delete("RACK_ATTACK_REQ_PER_IP_5M") : ENV["RACK_ATTACK_REQ_PER_IP_5M"] = original_req_limit
   end
@@ -45,8 +48,11 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
   it "binds the user budget to verified identity across changing IPs/device IDs" do
     user = create(:user)
     allow(ClerkAuthenticator).to receive(:verify).with("real").and_return({ "sub" => user.clerk_id })
-    180.times { |i| expect(hit(token: "real", ip: "198.51.100.#{i % 100}").first).to eq(204) }
-    status, headers, body = hit(token: "real", path: path.sub("456", "999"), ip: "198.51.100.254")
+    # Keep every hit in one throttle window; a boundary mid-loop resets counts.
+    status, headers, body = freeze_time do
+      180.times { |i| expect(hit(token: "real", ip: "198.51.100.#{i % 100}").first).to eq(204) }
+      hit(token: "real", path: path.sub("456", "999"), ip: "198.51.100.254")
+    end
     expect(status).to eq(429)
     expect(headers.fetch("Retry-After").to_i).to be_between(1, 60)
     expect(JSON.parse(body.join)).to include("error" => "Rate limit exceeded")
@@ -54,18 +60,22 @@ RSpec.describe "Production scanner rate-limit contract", type: :request do
 
   it "limits unauthenticated, invalid-token and nonexistent-user traffic despite forged user headers" do
     allow(ClerkAuthenticator).to receive(:verify).with("ghost").and_return({ "sub" => "nonexistent" })
-    60.times do |i|
-      expect(hit(token: [nil, "forged", "ghost"][i % 3], "HTTP_X_USER_ID" => i.to_s).first).to eq(204)
+    freeze_time do
+      60.times do |i|
+        expect(hit(token: [nil, "forged", "ghost"][i % 3], "HTTP_X_USER_ID" => i.to_s).first).to eq(204)
+      end
+      expect(hit(token: "forged", "HTTP_X_USER_ID" => "admin").first).to eq(429)
     end
-    expect(hit(token: "forged", "HTTP_X_USER_ID" => "admin").first).to eq(429)
   end
 
   it "bounds shared-NAT total traffic and manifest downloads independently" do
     user = create(:user)
     allow(ClerkAuthenticator).to receive(:verify).with("real").and_return({ "sub" => user.clerk_id })
     manifest = path.sub("/sync", "/manifest.json/")
-    12.times { expect(hit(token: "real", path: manifest, method: "GET").first).to eq(204) }
-    expect(hit(token: "real", path: manifest, method: "GET").first).to eq(429)
+    freeze_time do
+      12.times { expect(hit(token: "real", path: manifest, method: "GET").first).to eq(204) }
+      expect(hit(token: "real", path: manifest, method: "GET").first).to eq(429)
+    end
     expect(Rack::Attack.throttles.fetch("scanner/ip").limit).to eq(2400)
     # Real ceiling is enforced even when identity varies; unknown requests also
     # count toward it, without needing thousands of database/auth operations.

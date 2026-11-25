@@ -6,7 +6,7 @@ class EventStaffAssignment < ApplicationRecord
   belongs_to :user
   belongs_to :assigned_by_user, class_name: "User", optional: true
 
-  enum :role, { box_office: 0, scanner: 1, manager: 2 }
+  enum :role, { box_office: 0, scanner: 1, manager: 2, scanner_lead: 3 }
   enum :status, { active: 0, revoked: 1 }, prefix: true
 
   validates :role, uniqueness: { scope: [:event_id, :user_id] }

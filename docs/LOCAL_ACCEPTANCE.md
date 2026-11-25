@@ -9,6 +9,12 @@ DATABASE_URL=postgresql://localhost/hafapass_qa_readiness RAILS_ENV=development 
 DATABASE_URL=postgresql://localhost/hafapass_qa_readiness HAFAPASS_QA_FIXTURES=1 bundle exec rails qa:seed
 ```
 
+The schema load is the baseline for an empty fixture database. To apply pending migrations to an existing fixture database, target it explicitly so the default development database is never touched:
+
+```sh
+DATABASE_URL=postgresql://localhost/hafapass_qa_readiness RAILS_ENV=development bundle exec rails db:migrate
+```
+
 The fixture task is additive and repeatable. It creates two organizations, 21 paginated events in the first organization, an additional free-registration event, an event in the second organization, 21 simulated purchases, and one organizer-collected cash purchase. The oldest main event has the order history and a scanner assignment. The JSON output gives the relevant event IDs, cash order reference, free-event slug and local user IDs. It contains no passwords or access tokens. Existing fixtures are preserved; use another fixture name or a fresh owned database when a previous journey has changed them.
 
 The five platform users are ordinary organizer/attendee accounts. Owner, scanner and finance permissions come from organization memberships; none is a platform administrator. The scanner is assigned only to the oldest event. This permits a positive assigned-event check and a negative unassigned-event check.

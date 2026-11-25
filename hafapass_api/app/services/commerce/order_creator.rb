@@ -5,6 +5,7 @@ require "timeout"
 module Commerce
   class OrderCreator
     HOLD_DURATION = 10.minutes
+    ONLINE_DOOR_HOLD_DURATION = 35.minutes
     SETUP_LEASE_DURATION = 1.minute
     PROVIDER_REQUEST_TIMEOUT = 30.seconds
 
@@ -151,7 +152,14 @@ module Commerce
         # Organization rank precedes event locks, matching EventLifecycle#call.
         # Offer claims lock FOR UPDATE; other checkouts take FOR KEY SHARE, which
         # audit_logs inserts require and which stays compatible with FOR NO KEY UPDATE.
-        event.organization.lock!(waitlist_offer_token.present? ? "FOR UPDATE" : "FOR KEY SHARE")
+        organization_lock = if waitlist_offer_token.present?
+          "FOR UPDATE"
+        elsif online_door_card?
+          "FOR NO KEY UPDATE"
+        else
+          "FOR KEY SHARE"
+        end
+        event.organization.lock!(organization_lock)
         # Serialize capacity decisions across this event and any pass-included
         # night events in ascending event.id order (FOR NO KEY UPDATE).
         Passes::Locking.lock_events_for_line_items!(event: event, line_items: line_items)
@@ -201,6 +209,7 @@ module Commerce
         # even when paid checkout is unavailable.
         requires_payment = totals[:total_cents].positive? &&
           (payment_required.nil? ? StripeService.payment_enabled? : payment_required)
+        validate_online_door_checkout!(totals, selections) if online_door_card?
         validate_production_payment!(totals, requires_payment)
         # Stripe's minimum only; cash and card-present terminals have none.
         if requires_payment && stripe_payment? && totals[:total_cents] < MINIMUM_CHARGE_CENTS
@@ -208,7 +217,11 @@ module Commerce
         end
         validate_live_money_proof_scope!(totals)
         enforce_buyer_checkout_limits!(selections, totals) if @enforce_buyer_limits
-        expires_at = requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
+        expires_at = if online_door_card?
+          ONLINE_DOOR_HOLD_DURATION.from_now.change(usec: 0)
+        else
+          requires_payment && totals[:total_cents].positive? ? HOLD_DURATION.from_now : 1.minute.from_now
+        end
 
         order = Order.create!(
           user: user,
@@ -313,13 +326,15 @@ module Commerce
       # sees the committed sale.
       PublicEventCache.bump_after_commit! if @inventory_exhausted
 
-      intent = if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?
-        PaymentRecovery.call(order: order).payment_intent
-      else
-        create_provider_payment!(order, payment)
+      intent = unless order.online_door_card?
+        if payment&.provider == "stripe" && payment.provider_payment_id.present? && order.pending?
+          PaymentRecovery.call(order: order).payment_intent
+        else
+          create_provider_payment!(order, payment)
+        end
       end
       order.reload
-      guest_access_token = GuestOrderAccess.issue!(order) if order.user_id.nil?
+      guest_access_token = GuestOrderAccess.issue!(order) if order.user_id.nil? && !order.online_door_card?
       Result.new(order: order, payment: payment&.reload, payment_intent: intent, guest_access_token: guest_access_token)
     rescue StripeService::PaymentError => e
       raise CheckoutError, e.message
@@ -433,6 +448,26 @@ module Commerce
       ticket_type.max_per_order || (@enforce_buyer_limits ? TicketType::DEFAULT_MAX_PER_ORDER : nil)
     end
 
+    def online_door_card?
+      source == "box_office" && Order::ONLINE_DOOR_CARD_METHODS.include?(payment_method)
+    end
+
+    def validate_online_door_checkout!(totals, selections)
+      unless event.reload.online_door_card_enabled? && @sold_by &&
+          OrganizationAuthorization.allowed?(user: @sold_by, organization: event.organization, permission: :box_office, event: event)
+        raise CheckoutError, "Online door card sales are unavailable for this event."
+      end
+      if totals[:total_cents].zero? || !payment_required || !stripe_payment?
+        raise CheckoutError, "Use cash to finish a zero-dollar order."
+      end
+      line_count = selections.size + (totals[:service_fee_cents].positive? ? 1 : 0)
+      raise CheckoutError, "This cart has too many ticket lines for Stripe Checkout." if line_count > 100
+
+      if event.live_money_proof_candidate? || (Rails.env.production? && !PolicyRegistry.production_approved?)
+        raise CheckoutError, "Online door card sales are unavailable for this event."
+      end
+    end
+
     def validate_production_payment!(totals, requires_payment)
       return unless Rails.env.production? && totals[:total_cents].positive?
       return if !requires_payment && source == "box_office" && payment_method == "door_cash"
@@ -447,7 +482,8 @@ module Commerce
       # Production test mode is a QA tool: only platform admins buy paid
       # tickets with test cards, so no one else holds a test-paid ticket that
       # a door would admit. Free tickets stay open to everyone.
-      raise CheckoutError, PAID_SALES_OPEN_SOON if stripe && SiteSetting.instance.test_mode? && !user&.admin?
+      payment_actor = online_door_card? ? @sold_by : user
+      raise CheckoutError, PAID_SALES_OPEN_SOON if stripe && SiteSetting.instance.test_mode? && !payment_actor&.admin?
       unless event.organization.payout_ready?
         raise CheckoutError, "Paid tickets are not on sale until the organizer adds payout details"
       end

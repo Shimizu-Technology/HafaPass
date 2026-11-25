@@ -230,7 +230,7 @@ function ReportSession({ views, event, path, beginRequest }) {
     {!currentResult && <p role="status">Loading report…</p>}
     {currentResult?.error && <ReportError message={currentResult.error} onRetry={() => retry(value => value + 1)} />}
     {data && view.tab === 'sales' && <SalesReport data={data} />}
-    {data && view.tab === 'attendance' && <AttendanceReport data={data.attendance} />}
+    {data && view.tab === 'attendance' && <AttendanceReport data={data.attendance} event={event} />}
     {data && view.tab === 'demographics' && <DemographicsReport questions={data.demographics} answerLink={(question, bucket) =>
       to({ tab: 'registrations', question_id: question.question_id, answer_value: question.kind === 'short_text' ? bucket.label : bucket.value, search: null, page: null })} />}
     {data && roster && <RegistrationReport data={data} changePage={page => change({ page })} />}

@@ -83,3 +83,7 @@ test-results-pwa/
 
 # Local captured-mail and browser evidence stays outside the repository
 /evidence/
+
+# Python bytecode
+__pycache__/
+*.pyc

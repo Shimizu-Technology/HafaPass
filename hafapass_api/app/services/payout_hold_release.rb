@@ -7,8 +7,8 @@ class PayoutHoldRelease
     raise ReleaseError, "Administrator access is required" unless automatic || actor&.persisted? && actor.admin?
 
     released = false
-    payout.organization.with_lock do
-      payout.event.with_lock do
+    payout.organization.with_lock("FOR NO KEY UPDATE") do
+      payout.event.with_lock("FOR NO KEY UPDATE") do
         payout.with_lock do
           raise ReleaseError, "Payout is not on hold" unless payout.status_held?
           unless %w[pending processing].include?(payout.held_from_status)

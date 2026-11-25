@@ -167,8 +167,11 @@ class PayoutCreator
 
   def reserve!
     Payout.transaction do
-      settlement.organization.lock!
-      settlement.event.lock!
+      # FOR NO KEY UPDATE, like the finalizer and reserves (docs/LOCKING.md):
+      # serializes payout reservations and every organization money writer
+      # without blocking an order lifecycle's audit FK on the organization.
+      settlement.organization.lock!("FOR NO KEY UPDATE")
+      settlement.event.lock!("FOR NO KEY UPDATE")
       settlement.lock!
       existing = Payout.find_by(idempotency_key: idempotency_key)
       return [validate_idempotent_replay!(existing), false] if existing

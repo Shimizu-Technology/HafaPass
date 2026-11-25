@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 class WebhooksController < ActionController::API
+  # This controller doesn't inherit ApplicationController, so it tags its own
+  # Sentry scope: alert rules on area:webhook then match real errors too
+  # (docs/MONITORING_SETUP.md).
+  before_action { Sentry.set_tags(area: "webhook") }
+
   def stripe
     payload = request.body.read
     event = verified_stripe_event(payload)
@@ -16,7 +21,7 @@ class WebhooksController < ActionController::API
   rescue JSON::ParserError
     render json: { error: "Invalid payload" }, status: :bad_request
   rescue StandardError => e
-    Sentry.capture_exception(e, tags: { integration: "stripe_webhook", operation: "webhook_processing" })
+    Sentry.capture_exception(e, tags: { integration: "stripe_webhook", operation: "webhook_processing", area: "webhook" })
     render json: { error: "Webhook processing failed" }, status: :internal_server_error
   end
 
@@ -38,22 +43,33 @@ class WebhooksController < ActionController::API
       rescue Stripe::SignatureVerificationError
         next
       end
-      render json: { error: "Invalid signature" }, status: :bad_request
+      reject_signature!("invalid_signature", "Invalid signature", signature)
       nil
     elsif signature.present? && any_webhook_secret?
       # Signed, but no secret is configured for this event's mode.
-      render json: { error: "Webhook secret not configured for this Stripe mode" }, status: :bad_request
+      reject_signature!("secret_missing", "Webhook secret not configured for this Stripe mode", signature)
       nil
     elsif Rails.env.development? || Rails.env.test?
       Rails.logger.warn({ event: "unsigned_stripe_webhook", environment: Rails.env }.to_json)
       Stripe::Event.construct_from(JSON.parse(payload, symbolize_names: true))
     elsif any_webhook_secret?
-      render json: { error: "Stripe signature missing" }, status: :bad_request
+      reject_signature!("signature_missing", "Stripe signature missing", signature)
       nil
     else
-      render json: { error: "Webhook secret not configured" }, status: :bad_request
+      reject_signature!("secret_missing", "Webhook secret not configured", signature)
       nil
     end
+  end
+
+  # A rejection stores no receipt, so count it (no payload, no headers) to make
+  # a wrong or missing signing secret visible to the webhook alerts. On every
+  # branch, a signature header that isn't Stripe-shaped (or is absent) is
+  # internet noise, not a wrong secret. The counts are in memory and flushed in
+  # one write per interval (Operations::WebhookRejections).
+  def reject_signature!(reason, message, signature = nil)
+    reason = "signature_missing" unless Operations::WebhookRejections.stripe_shaped?(signature)
+    Operations::WebhookRejections.record!(provider: "stripe", reason: reason)
+    render json: { error: message }, status: :bad_request
   end
 
   def any_webhook_secret?

@@ -40,8 +40,12 @@ module Settlements
       settlement = nil
       source_digest = nil
       Event.transaction do
-        event.organization.lock!
-        event.lock!
+        # FOR NO KEY UPDATE (docs/LOCKING.md): it still serializes with payout
+        # creation, reserves, refunds, disputes and lifecycle changes, but lets
+        # an order lifecycle that already holds the event insert its audit row
+        # (organization FK KEY SHARE) instead of deadlocking with us.
+        event.organization.lock!("FOR NO KEY UPDATE")
+        event.lock!("FOR NO KEY UPDATE")
         unless event.completed? || event.cancelled?
           raise FinalizationError, "Only completed or cancelled events can be finalized"
         end

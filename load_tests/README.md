@@ -97,6 +97,15 @@ PAID_VUS=40 \
 k6 run load_tests/fd_championship_rush.js
 ```
 
+### Arrival profile: `PROFILE=burst` (default) or `ramp`
+
+`SCENARIO` chooses what each buyer does; `PROFILE` chooses how buyers arrive.
+
+- `burst` (default, the behaviour above): every VU starts at once and runs one pass.
+- `ramp`: new buyers arrive per second (k6 `ramping-arrival-rate`), climbing to `RAMP_PEAK_RATE` (default 100 per second) over `RAMP_UP` (30s), holding for `RAMP_HOLD` (30s) and falling over `RAMP_DOWN` (10s). `RAMP_PREALLOCATED_VUS` (100) and `RAMP_MAX_VUS` (600) bound the VU pool. With `SCENARIO=both` the paid ramp starts 5 s after the free one. **From one IP the defaults (peak 100/s, 70 s, about 5,000 orders) trip the per-IP throttles** (`RACK_ATTACK_ORDERS_PER_IP_1M`, `RACK_ATTACK_REQ_PER_IP_5M`): size the ramp to stay under them (`RAMP_PEAK_RATE=8 RAMP_UP=30s RAMP_HOLD=60s` at the tournament values) or raise the throttles on the isolated copy only. See the runbook.
+
+Extra guards: `HAFAPASS_RUSH_TARGET=<host>` must equal the `BASE_URL` host when set (`scripts/rush_test/run_k6.sh` always sets it), and `HAFAPASS_PRODUCTION_HOSTS=a.example,b.example` adds hosts to refuse. The denylist now also covers `*.shimizu-technology.com` and `hafapass.netlify.app`. Offline self-check: `node scripts/rush_test/check_k6_script.mjs`. The hosted Saturday run is in [docs/SATURDAY_2026-11-28_RUNBOOK.md](../docs/SATURDAY_2026-11-28_RUNBOOK.md).
+
 ### Pass/Fail Thresholds
 
 - `http_req_failed`: `0%` (`422` on `POST /api/v1/orders` is inspected by body; only genuine inventory-exhaustion responses are accepted)
@@ -112,7 +121,7 @@ k6 run load_tests/fd_championship_rush.js
 
 Local numbers compare code revisions; they are not hosted capacity. Run the API with `RAILS_ENV=staging` (production settings, `StageSafety` checks) against a throwaway local database whose name contains `bench` or `load` and `staging` (for example `hafapass_rush_bench_staging`), with simulated payments:
 
-1. `bin/rails db:create db:schema:load`, then `bin/rails runner ../load_tests/local_rush_fixture.rb`. It prints the `EVENT_SLUG`/`TICKET_TYPE_ID` pairs for a 200-ticket single event and a 200-pass two-night bundle. Recreate the database before every run: the PostgreSQL throttle counters and sold inventory persist.
+1. Initialize the empty isolated database from the checkout’s committed schema with `bin/rails db:create db:schema:load`, then run `bin/rails runner ../load_tests/local_rush_fixture.rb`. It prints the `EVENT_SLUG`/`TICKET_TYPE_ID` pairs for a 200-ticket single event and a 200-pass two-night bundle. Recreate the database before every run: the PostgreSQL throttle counters and sold inventory persist.
 2. Start Puma with the topology under test, for example `WEB_CONCURRENCY=2 RAILS_MAX_THREADS=5 DB_POOL=11 HAFAPASS_RUNTIME=embedded PORT=3101 bundle exec puma -C config/puma.rb`. On macOS, cluster mode also needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES PGGSSENCMODE=disable`. Raise `RACK_ATTACK_ORDERS_PER_IP_1M` (650 covers 600 buyers on one address).
 3. Run plain HTTP with `FORWARDED_PROTO=https`, which marks requests the way Render's TLS proxy does (staging forces SSL):
 

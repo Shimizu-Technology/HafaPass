@@ -2,8 +2,10 @@
 
 require "rails_helper"
 require "csv"
+require "ostruct"
 
 RSpec.describe "Admin monthly BPT event export", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
   let(:admin) { create(:user, :admin) }
   let(:path) { "/api/v1/admin/tax_reports/bpt_events_export" }
   let(:september_end) { Time.utc(2026, 9, 30, 14) }
@@ -115,5 +117,113 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       expect(response).to have_http_status(:unprocessable_entity)
       expect(response.parsed_body["error"]).to eq("Choose a month from 1 to 12")
     end
+  end
+
+  it "keeps closed January unchanged when a late door-card capture and auto-refund settle in February and dates cross-month capture and refund by recording month" do
+    same_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
+    cross_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
+    tt1 = create(:ticket_type, event: same_month_event, price_cents: 1_200, quantity_available: 1)
+    tt2 = create(:ticket_type, event: cross_month_event, price_cents: 1_200, quantity_available: 1)
+
+    jan_reserve = Time.zone.parse("2027-01-31T23:00:00+10:00")
+    jan_expire = Time.zone.parse("2027-01-31T23:40:00+10:00")
+    feb_capture = Time.zone.parse("2027-02-01T00:30:00+10:00")
+    feb_late_capture = Time.zone.parse("2027-02-28T23:00:00+10:00")
+    mar_refund = Time.zone.parse("2027-03-01T01:00:00+10:00")
+
+    create_expired_door_order = lambda do |target_event, target_tt, suffix|
+      order = nil
+      payment = nil
+      travel_to(jan_reserve) do
+        order = create(:order,
+          event: target_event, status: :pending, completed_at: nil, expires_at: jan_reserve + 35.minutes,
+          currency: "usd", payment_method: "door_card_link", source: "box_office",
+          subtotal_cents: 1_200, discount_cents: 0, service_fee_cents: 160, organizer_fee_cents: 0,
+          total_cents: 1_360, processing_fee_bearer_snapshot: "platform")
+        item = create(:order_item,
+          order: order, ticket_type: target_tt, quantity: 1, unit_price_cents: 1_200,
+          subtotal_cents: 1_200, discount_cents: 0, fee_cents: 160, organizer_fee_cents: 0,
+          organizer_proceeds_cents: 1_200)
+        create(:fee_component, order: order, kind: "platform", estimated: false, amount_cents: 160, created_at: jan_reserve)
+        create(:inventory_hold, order: order, order_item: item, ticket_type: target_tt, quantity: 1, expires_at: jan_reserve + 35.minutes)
+        payment = create(:payment,
+          order: order, provider: "stripe", provider_environment: "live",
+          provider_platform_account_id: "acct_LivePlatform",
+          stripe_checkout_session_id: "cs_live_Bpt#{suffix}",
+          provider_payment_id: "pi_live_Bpt#{suffix}",
+          amount_cents: 1_360, currency: "usd", status: :pending, succeeded_at: nil, created_at: jan_reserve)
+      end
+      travel_to(jan_expire) do
+        Commerce::OrderLifecycle.expire!(order, provider_expired: true)
+        target_tt.update!(quantity_sold: 1)
+      end
+      [order.reload, payment.reload]
+    end
+
+    order1, payment1 = create_expired_door_order.call(same_month_event, tt1, "SameFeb")
+    order2, payment2 = create_expired_door_order.call(cross_month_event, tt2, "CrossMar")
+
+    get path, params: { year: 2027, month: 1 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    jan_body_before = response.body.dup
+    expect(CSV.parse(jan_body_before, headers: true)).to be_empty
+
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_live_BptSameFeb", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment1.provider_payment_id)
+    )
+    travel_to(feb_capture) do
+      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::LateCaptureRefund.call(payment: payment1)
+    end
+
+    travel_to(feb_late_capture) do
+      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+    end
+
+    get path, params: { year: 2027, month: 2 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    feb_body_before_mar_refund = response.body.dup
+
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_live_BptCrossMar", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment2.provider_payment_id)
+    )
+    travel_to(mar_refund) do
+      Commerce::LateCaptureRefund.call(payment: payment2)
+    end
+
+    # Closed January remains empty and byte-identical
+    get path, params: { year: 2027, month: 1 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to eq(jan_body_before)
+
+    # Closed February remains byte-identical after the March 1 refund
+    get path, params: { year: 2027, month: 2 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to eq(feb_body_before_mar_refund)
+    feb_by_event = CSV.parse(response.body, headers: true).index_by { |r| r["event_id"] }
+    expect(feb_by_event.fetch(same_month_event.id.to_s).to_h).to include(
+      "gross_service_fees" => "1.60",
+      "refunded_service_fees" => "1.60",
+      "net_service_fees" => "0.00",
+      "ticket_face_value_collected_as_agent" => "12.00"
+    )
+    expect(feb_by_event.fetch(cross_month_event.id.to_s).to_h).to include(
+      "gross_service_fees" => "1.60",
+      "refunded_service_fees" => "0.00",
+      "net_service_fees" => "1.60",
+      "ticket_face_value_collected_as_agent" => "12.00"
+    )
+
+    # March records the cross-month refund
+    get path, params: { year: 2027, month: 3 }, headers: auth_headers(admin)
+    expect(response).to have_http_status(:ok)
+    mar_row = CSV.parse(response.body, headers: true).sole.to_h
+    expect(mar_row).to include(
+      "event_id" => cross_month_event.id.to_s,
+      "gross_service_fees" => "0.00",
+      "refunded_service_fees" => "1.60",
+      "net_service_fees" => "-1.60",
+      "ticket_face_value_collected_as_agent" => "0.00"
+    )
   end
 end

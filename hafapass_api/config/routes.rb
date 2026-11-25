@@ -32,6 +32,9 @@ Rails.application.routes.draw do
       end
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
+      # Read-only sales and health summary for the morning brief; a scoped
+      # bearer token (OPS_SUMMARY_TOKEN), never a user session.
+      get "ops/summary", to: "ops/summaries#show"
       get "config", to: "config#show"
       get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
       post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
@@ -225,18 +228,24 @@ Rails.application.routes.draw do
           resource :admissions, only: [:show], controller: "admissions" do
             get :search
             get :door_list
+            post :override
           end
           resource :finance, only: [:show], controller: "finances" do
             post :finalize
             post :payout
             get :orders_export
             get :statement_export
+            get :payout_statement
+            get :payout_statement_export
           end
           # Box Office (door sales)
           resource :box_office, only: [:create], controller: "box_office" do
             get :summary
             get "orders/:order_id", to: "box_office_receipts#show", as: :order
             post "orders/:order_id/email", to: "box_office_receipts#email", as: :order_email
+          end
+          resources :box_office_card_sales, only: [:index, :create, :show, :destroy] do
+            post :email, on: :member
           end
           resource :seating, only: [:show, :create], controller: "event_seating" do
             post :suspend
@@ -309,6 +318,8 @@ Rails.application.routes.draw do
           get :organizers_export
           get :receipts_export
           get :bpt_events_export
+          get :cpa_monthly
+          get :cpa_monthly_export
           post :preparation_export
         end
         get "tin_matching", to: "tin_matching#index"
@@ -325,6 +336,8 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         get "settings/fee_change_preview", to: "settings#fee_change_preview"
         resources :operations, only: [:index]
+        get "monitoring", to: "monitoring#show"
+        post "monitoring/test_alert", to: "monitoring#test_alert"
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           member do
@@ -466,6 +479,11 @@ Rails.application.routes.draw do
           post :check_amount_adjustment, on: :member
           post :release_hold, on: :member
         end
+        # Bank-transfer schedule: what is due, the 10% reserve and its release.
+        get "payout_schedule", to: "payout_schedules#index"
+        post "payout_schedule/:event_id/reserve", to: "payout_schedules#hold_reserve"
+        post "payout_schedule/:event_id/release", to: "payout_schedules#release_reserve"
+        post "payout_schedule/:event_id/finalize", to: "payout_schedules#finalize"
         resources :disputes, only: [:index]
         resources :reconciliation_exceptions, only: [:index, :show] do
           member do

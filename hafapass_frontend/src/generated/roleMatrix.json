@@ -40,6 +40,7 @@
       "manage_marketing",
       "box_office",
       "scan",
+      "override_re_entry",
       "view_finance",
       "manage_finance",
       "refund",
@@ -60,6 +61,7 @@
       "manage_marketing",
       "box_office",
       "scan",
+      "override_re_entry",
       "view_activity_events"
     ],
     "finance": [
@@ -80,7 +82,8 @@
       "view_attendees",
       "manage_attendees",
       "box_office",
-      "scan"
+      "scan",
+      "override_re_entry"
     ],
     "scanner": [
       "view_events",
@@ -100,6 +103,7 @@
       "manage_marketing",
       "box_office",
       "scan",
+      "override_re_entry",
       "view_activity_events"
     ],
     "box_office": [
@@ -107,11 +111,17 @@
       "view_attendees",
       "manage_attendees",
       "box_office",
-      "scan"
+      "scan",
+      "override_re_entry"
     ],
     "scanner": [
       "view_events",
       "scan"
+    ],
+    "scanner_lead": [
+      "view_events",
+      "scan",
+      "override_re_entry"
     ]
   },
   "assignment_required_roles": [
@@ -260,6 +270,19 @@
         "marketer": "No",
         "box_office": "Assigned events",
         "scanner": "Assigned events"
+      }
+    },
+    {
+      "key": "override_re_entry",
+      "label": "Override re-entry blocks",
+      "note": "Event-scoped Scanner lead assignments also grant Override re-entry blocks alongside Scan tickets for assigned events. Overrides require a written reason and are audited.",
+      "values": {
+        "owner": "Yes",
+        "manager": "Yes",
+        "finance": "No",
+        "marketer": "No",
+        "box_office": "Assigned events",
+        "scanner": "No"
       }
     },
     {

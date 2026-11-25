@@ -1,6 +1,6 @@
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, LogOut } from 'lucide-react'
 
-export default function DoorScanCard({ ticket, verifying = false, preview = false, titleId, onConfirm, onCancel, busy = false }) {
+export default function DoorScanCard({ ticket, verifying = false, preview = false, exitMode = false, badge = null, titleId, onConfirm, onCancel, busy = false }) {
   const base = 'flex w-full flex-col items-center gap-4 text-center [overflow-wrap:anywhere]'
   const action = 'flex min-h-14 w-full items-center justify-center rounded-xl px-4 py-3 text-base font-bold'
   const focus = 'focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white'
@@ -9,20 +9,27 @@ export default function DoorScanCard({ ticket, verifying = false, preview = fals
   const confirmText = busy ? 'Checking ticket…' : 'Confirm & Admit'
   const cancelText = 'Do Not Admit / Cancel'
   const AlertBanner = preview ? 'p' : 'h2'
+  const surface = verifying ? 'bg-neutral-950 text-white' : exitMode ? 'bg-sky-800 text-white' : 'bg-emerald-800 text-white'
+  const pillSurface = verifying ? 'bg-white text-neutral-950' : exitMode ? 'bg-sky-950 text-white' : 'bg-emerald-950 text-white'
+  const fieldsSurface = verifying ? 'bg-white/10' : exitMode ? 'bg-sky-950/80' : 'bg-emerald-950/80'
 
   return (
-    <div className={`${base} ${preview ? 'px-4 py-5' : 'mx-auto max-w-xl px-5 py-6 sm:px-8'} ${verifying ? 'bg-neutral-950 text-white' : 'bg-emerald-800 text-white'}`}>
+    <div className={`${base} ${preview ? 'px-4 py-5' : 'mx-auto max-w-xl px-5 py-6 sm:px-8'} ${surface}`}>
       {verifying ? (
         <AlertBanner id={titleId} className={`w-full rounded-xl bg-amber-300 px-4 py-3 font-black text-neutral-950 ${preview ? 'text-lg' : 'text-2xl sm:text-4xl'}`}>
           {ticket?.door_alert_label || 'VERIFY AT DOOR'}
         </AlertBanner>
+      ) : exitMode ? (
+        <p className={`flex items-center gap-2 font-display font-bold ${preview ? 'text-xl' : 'text-3xl sm:text-5xl'}`}>
+          <LogOut aria-hidden="true" className={preview ? 'h-6 w-6' : 'h-9 w-9'} /> Exited
+        </p>
       ) : (
         <p className={`flex items-center gap-2 font-display font-bold ${preview ? 'text-xl' : 'text-3xl sm:text-5xl'}`}>
-          <CheckCircle2 aria-hidden="true" className={preview ? 'h-6 w-6' : 'h-9 w-9'} /> Admitted
+          <CheckCircle2 aria-hidden="true" className={preview ? 'h-6 w-6' : 'h-9 w-9'} /> {badge || 'Admitted'}
         </p>
       )}
       {(ticket?.ticket_type_name || ticket?.ticket_type) && (
-        <p className={`max-w-full rounded-full px-4 py-2 font-bold ${verifying ? 'bg-white text-neutral-950' : 'bg-emerald-950 text-white'} ${preview ? 'text-base' : 'text-xl sm:text-2xl'}`}>
+        <p className={`max-w-full rounded-full px-4 py-2 font-bold ${pillSurface} ${preview ? 'text-base' : 'text-xl sm:text-2xl'}`}>
           {ticket.ticket_type_name || ticket.ticket_type}
         </p>
       )}
@@ -33,7 +40,7 @@ export default function DoorScanCard({ ticket, verifying = false, preview = fals
       )}
       {ticket?.seat && ticket.ticket_type_name && <p className="text-base font-semibold">{ticket.seat}</p>}
       {ticket?.door_fields?.length > 0 && (
-        <dl className={`w-full space-y-2 rounded-xl px-4 py-3 ${verifying ? 'bg-white/10' : 'bg-emerald-950/80'}`}>
+        <dl className={`w-full space-y-2 rounded-xl px-4 py-3 ${fieldsSurface}`}>
           {ticket.door_fields.map(({ label, value }, index) => (
             <div key={index} className={preview ? 'text-base' : 'text-lg sm:text-xl'}>
               <dt className="inline">{label}: </dt>

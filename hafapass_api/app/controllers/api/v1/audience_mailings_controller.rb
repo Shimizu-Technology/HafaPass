@@ -4,6 +4,10 @@ require "csv"
 
 # Organization context is resolved server-side. An admin must explicitly choose platform scope.
 class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
+  ORGANIZER_AUDIENCES = %w[buyers followers waitlists].freeze
+  # An explicit schedule must be at least this far ahead on the server clock.
+  SCHEDULE_GUARD = 1.minute
+
   skip_before_action :require_current_organization
   before_action :authorize_scope
   rescue_from ActiveRecord::RecordNotFound do
@@ -15,6 +19,8 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
 
   def audience
     return render json: { error: "Invalid date" }, status: :unprocessable_entity unless valid_filters?
+    # Checked before any count or export: an organizer may only look at their own lists.
+    return render json: { error: "Invalid audience" }, status: :unprocessable_entity unless valid_audience?
 
     if @organization.nil?
       scope = PlatformSubscriber.order(created_at: :desc)
@@ -30,15 +36,21 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
       page = scope.limit(200).to_a
       consents = EmailConsent.where(email: page.map(&:email)).order(created_at: :desc).group_by(&:email)
       rows = page.map { |row| row.as_json.merge(consents: consents.fetch(row.email, []).first(30).as_json) }
-      render json: { subscribers: rows, count: scope.count, counts: PlatformSubscriber.group(:status).count,
-        growth: PlatformSubscriber.where("created_at >= ?", 90.days.ago).group("DATE(created_at)").count, eligible: draft.audience_emails.size }
+      considered = scope.count
+      # Display-only additions: `considered` and `status_breakdown` describe the filtered list so the
+      # screen can explain who is left out. Recipient selection still comes only from audience_emails.
+      render json: { subscribers: rows, count: considered, counts: PlatformSubscriber.group(:status).count,
+        growth: PlatformSubscriber.where("created_at >= ?", 90.days.ago).group("DATE(created_at)").count, eligible: draft.audience_emails.size,
+        considered: considered, status_breakdown: scope.unscope(:order).group(:status).count }
     else
-      emails = draft.audience_emails
+      mailing = draft
+      emails = mailing.audience_emails
       if params[:format] == "csv"
         AuditLogger.record!(action: "email.audience_exported", auditable: @organization, metadata: { scope: params[:audience], count: emails.size })
         return send_data(csv(emails.map { |email| [email] }), filename: "organizer-audience.csv")
       end
-      render json: { subscribers: emails.first(200).map { |email| { email: email } }, count: emails.size, eligible: emails.size }
+      render json: { subscribers: emails.first(200).map { |email| { email: email } }, count: emails.size, eligible: emails.size,
+        considered: [mailing.candidate_count, emails.size].max }
     end
   end
 
@@ -61,6 +73,7 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     rows = mailings.includes(:organization).order(created_at: :desc).limit(100).to_a
     deliveries = MessageDelivery.where(audience_mailing_id: rows.map(&:id), template: "audience_mailing")
     @history_counts = deliveries.group(:audience_mailing_id, :status).count.group_by { |(key, _)| key.first }
+    @history_handed_off = handed_off(deliveries).group(:audience_mailing_id).count
     @history_unsubscribed = deliveries.where("recipient IN (SELECT email FROM email_preferences WHERE all_unsubscribed = TRUE) OR (EXISTS (SELECT 1 FROM audience_mailings am WHERE am.id = message_deliveries.audience_mailing_id AND am.organization_id IS NULL) AND recipient IN (SELECT email FROM platform_subscribers WHERE status = 'unsubscribed')) OR EXISTS (SELECT 1 FROM marketing_unsubscribes mu JOIN audience_mailings am ON am.organization_id = mu.organization_id WHERE am.id = message_deliveries.audience_mailing_id AND mu.email = message_deliveries.recipient)").group(:audience_mailing_id).count
     render json: { mailings: rows.map { |mailing| serialize(mailing) } }
   end
@@ -93,31 +106,43 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     delivery.requested_by = current_user
     delivery.save!
     MessageDeliveryJob.perform_later(delivery.id)
-    render json: { queued: true }
+    render json: { queued: true, recipient: current_user.email }
   end
 
   def send_now
     mailing = mailings.find(params[:id])
+    disposition = nil
     mailing.with_lock do
       return head :conflict unless mailing.status == "draft"
       return render json: { error: "Certified postal address required" }, status: :unprocessable_entity if mailing.address.blank?
 
-      begin
-        time = params[:scheduled_at].present? ? Time.iso8601(params[:scheduled_at]) : Time.current
-        raise ArgumentError if time < 1.minute.ago
-      rescue ArgumentError, TypeError
-        return render json: { error: "Invalid schedule" }, status: :unprocessable_entity
+      if params[:scheduled_at].present?
+        begin
+          time = Time.iso8601(params[:scheduled_at])
+        rescue ArgumentError, TypeError
+          return render json: { error: "Invalid schedule" }, status: :unprocessable_entity
+        end
+        # An explicit schedule never becomes an immediate send. The server clock decides, under
+        # the lock; sending now takes a separate request without scheduled_at.
+        if time <= Time.current + SCHEDULE_GUARD
+          return render json: { error: "Schedule lapsed", code: "schedule_lapsed" }, status: :unprocessable_entity
+        end
+
+        disposition = "scheduled_for"
+      else
+        time = Time.current
+        disposition = "sending_now"
       end
       mailing.update!(created_by: current_user, status: "scheduled", scheduled_at: time)
       ActiveRecord.after_all_transactions_commit do
-        if time <= Time.current
+        if disposition == "sending_now"
           AudienceMailingJob.perform_later(mailing.id)
         else
           AudienceMailingJob.set(wait_until: time).perform_later(mailing.id)
         end
       end
     end
-    render json: serialize(mailing)
+    render json: serialize(mailing).merge("disposition" => disposition)
   end
 
   def cancel
@@ -137,6 +162,10 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
     true
   rescue ArgumentError, TypeError
     false
+  end
+
+  def valid_audience?
+    @organization.nil? || params[:audience].blank? || ORGANIZER_AUDIENCES.include?(params[:audience])
   end
 
   def authorize_scope
@@ -165,11 +194,19 @@ class Api::V1::AudienceMailingsController < Api::V1::Organizer::BaseController
   def serialize(mailing)
     if @history_counts
       counts = @history_counts.fetch(mailing.id, []).to_h { |(key, count)| [key.last, count] }
-      return mailing.as_json(except: :recipient_emails).merge("counts" => counts, "unsubscribed" => @history_unsubscribed.fetch(mailing.id, 0))
+      return mailing.as_json(except: :recipient_emails).merge("counts" => counts, "unsubscribed" => @history_unsubscribed.fetch(mailing.id, 0),
+        "handed_off" => @history_handed_off.fetch(mailing.id, 0))
     end
     mailing.as_json(except: :recipient_emails).merge("counts" => mailing.message_deliveries.where(template: "audience_mailing").group(:status).count,
+      "handed_off" => handed_off(mailing.message_deliveries.where(template: "audience_mailing")).count,
       "unsubscribed" => mailing.message_deliveries.where(template: "audience_mailing")
         .where("recipient IN (SELECT email FROM email_preferences WHERE all_unsubscribed = TRUE) OR (EXISTS (SELECT 1 FROM audience_mailings am WHERE am.id = message_deliveries.audience_mailing_id AND am.organization_id IS NULL) AND recipient IN (SELECT email FROM platform_subscribers WHERE status = 'unsubscribed')) OR recipient IN (SELECT email FROM marketing_unsubscribes WHERE organization_id = ?)", mailing.organization_id).count)
+  end
+
+  # Display only: deliveries the email provider accepted. A provider message ID is the evidence;
+  # provider-reported statuses imply acceptance even when the ID was never stored (simulated mail).
+  def handed_off(deliveries)
+    deliveries.provider_accepted.or(deliveries.where(status: %i[sent delivered delayed bounced complained]))
   end
 
   def csv(rows)

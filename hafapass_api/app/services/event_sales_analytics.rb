@@ -40,7 +40,7 @@ class EventSalesAnalytics
   end
 
   def order_rows
-    @order_rows ||= orders.pluck(:id, :completed_at, :created_at, :total_cents, :source)
+    @order_rows ||= orders.pluck(:id, :completed_at, :created_at, :total_cents, :source, :payment_method)
   end
 
   def tickets_by_order
@@ -78,8 +78,10 @@ class EventSalesAnalytics
   # Amount is net of succeeded refunds, matching the page's revenue total.
   def sales_by_channel
     totals = CHANNELS.index_with { { orders: 0, tickets: 0, amount_cents: 0 } }
-    order_rows.each do |id, _completed_at, _created_at, total_cents, source|
+    order_rows.each do |id, _completed_at, _created_at, total_cents, source, payment_method|
       channel = CHANNELS.include?(source) ? source : "online"
+      channel = payment_method if source == "box_office" && Order::ONLINE_DOOR_CARD_METHODS.include?(payment_method)
+      totals[channel] ||= { orders: 0, tickets: 0, amount_cents: 0 }
       totals[channel][:orders] += 1
       totals[channel][:tickets] += tickets_by_order.fetch(id, 0)
       totals[channel][:amount_cents] += total_cents - refunds_by_order.fetch(id, 0)

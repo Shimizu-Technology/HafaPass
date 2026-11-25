@@ -105,7 +105,7 @@ class TaxReports
       .where("LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'")
       .where("provider_payload->>'simulated' IS DISTINCT FROM 'true' AND provider_payload->>'livemode' IS DISTINCT FROM 'false'")
     agent_orders = live_orders(captures)
-    collected = collected_orders(range, orders: agent_orders)
+    collected = collected_orders(range, orders: agent_orders, captures: captures)
     refunds = period_refunds(range, orders: agent_orders)
     refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: captures.select(:id)))
     orders = collected.select(:id)
@@ -155,12 +155,24 @@ class TaxReports
 
   def live_orders(captured = Payment.live_or_legacy_capture)
     # The shared scope is production-only; enforce live evidence in every env.
-    Order.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded], currency: "usd")
+    # Include expired/cancelled orders that still recorded a live capture
+    # (never-fulfilled late captures) so closed months stay stable before and
+    # after an auto-refund flips order.status to refunded.
+    Order.excluding_test_payments
+      .where(status: [:completed, :partially_refunded, :refunded, :expired, :cancelled], currency: "usd")
       .where(id: captured.select(:order_id))
   end
 
-  def collected_orders(range = period, orders: live_orders)
-    orders.where("COALESCE(orders.completed_at, orders.created_at) >= ? AND COALESCE(orders.completed_at, orders.created_at) < ?", range.begin, range.end)
+  def collected_orders(range = period, orders: live_orders, captures: Payment.live_or_legacy_capture)
+    capture_times = captures.group(:order_id).select(
+      "order_id, MIN(GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)) AS first_capture_recorded_at"
+    )
+    collected_at_sql = "CASE WHEN orders.completed_at IS NOT NULL THEN orders.completed_at " \
+      "ELSE COALESCE(order_captures.first_capture_recorded_at, orders.created_at) END"
+
+    orders
+      .joins("INNER JOIN (#{capture_times.to_sql}) order_captures ON order_captures.order_id = orders.id")
+      .where("(#{collected_at_sql}) >= ? AND (#{collected_at_sql}) < ?", range.begin, range.end)
   end
 
   def period_refunds(range = period, orders: live_orders)

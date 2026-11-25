@@ -2,7 +2,11 @@
 
 class SystemReadiness
   class << self
-    def call
+    # read_only: true is for callers that must not write (the ops summary).
+    # provider_policy_controls reads SiteSetting.instance, which creates the
+    # settings row and activates due fee changes, so it is skipped there and
+    # reported as not_checked; every other check only reads.
+    def call(read_only: false)
       checks = {
         database: database_check,
         job_queue: job_queue_check,
@@ -10,7 +14,7 @@ class SystemReadiness
         commerce_clock: commerce_clock_check,
         configuration: Rails.env.staging? ? StageSafety.call(runtime: true) : ProductionConfiguration.call,
         providers: provider_configuration,
-        provider_policy_controls: PlatformCapabilities.readiness,
+        provider_policy_controls: read_only ? { ready: true, status: "not_checked", reason: "read_only" } : PlatformCapabilities.readiness,
         operations: operational_signals
       }
 

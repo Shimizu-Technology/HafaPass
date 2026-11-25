@@ -244,7 +244,14 @@ class AuditActions
       snapshots: %w[result reason_code ticket_id], metadata: %w[event_id], actions: {
         "ticket.checked_in" => "Checked in a ticket.",
         "ticket.admission_reconciled" => "Reconciled a ticket admission.",
-        "ticket.check_in_reversed" => "Reversed a ticket check-in."
+        "ticket.check_in_reversed" => "Reversed a ticket check-in.",
+        "ticket.re_entry_exited" => "Recorded a ticket exit scan."
+      }
+
+    define registry, area: "scanning", audience: %w[org_owner org_manager],
+      tenant: true, event_required: true,
+      snapshots: %w[result reason_code ticket_id], metadata: %w[event_id override_action override_justification], actions: {
+        "ticket.re_entry_overridden" => "Overrode a ticket re-entry status."
       }
 
     define registry, area: "scanning", audience: %w[org_owner org_manager],
@@ -396,6 +403,12 @@ class AuditActions
         "settlement.finalized" => "Finalized an event settlement."
       }
 
+    define registry, area: "payouts", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[settlement_id], actions: {
+        "payout_reserve.skipped" => "Finalized an event statement without the standard chargeback reserve."
+      }
+
     define registry, area: "fees", audience: %w[org_owner org_finance],
       tenant: true, event_required: false,
       snapshots: %w[id kind amount_cents currency status effective_at event_id], metadata: %w[original_adjustment_id], actions: {
@@ -482,6 +495,7 @@ class AuditActions
     define registry, area: "platform", audience: %w[admin_only],
       tenant: false, event_required: false,
       snapshots: %w[], metadata: %w[], actions: {
+        "monitoring.test_alert_sent" => "Sent a labelled test alert to error monitoring.",
         "support.lookup" => "Looked up a support subject.",
         "user.role_updated" => "Updated a platform user role.",
         "operations.synthetic_data_purged" => "Purged synthetic platform data."
@@ -643,7 +657,7 @@ class AuditActions
 
     define registry, area: "events", audience: %w[org_owner org_manager],
       tenant: true, event_required: true,
-      snapshots: %w[status organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
+      snapshots: %w[status organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_time re_entry_cooldown_minutes recurrence_parent_id recurrence_rule recurrence_end_date], metadata: %w[source_event_id event_state_change_id ticket_count], actions: {
         "event.created" => "Created an event.",
         "event.updated" => "Updated an event.",
         "event.deleted" => "Deleted an event.",

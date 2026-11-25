@@ -2,7 +2,7 @@
 
 This is the operating contract for Phase 6 admissions and door sales. It explains what the software guarantees, what event staff must do, and which external approvals still block production card-present sales.
 
-The organizer supplies the event-day scanners, door lead and cash-table staff. HåfaPass provides the software, a setup session, team training, a [printable volunteer guide](VOLUNTEER_DOOR_GUIDE.md) and an on-call contact. See [organizer onboarding](ORGANIZER_ONBOARDING.md) before configuring an event.
+The organizer supplies the event-day scanners, door lead and cash-table staff. HåfaPass provides the software, a setup session, team training, a [volunteer door kit](door-kit/VOLUNTEER_QUICK_GUIDE.md) ([printable scanner](door-kit/PRINT_SCANNER_CARD.md) and [box-office](door-kit/PRINT_BOX_OFFICE_CARD.md) cards) and an on-call contact. See [organizer onboarding](ORGANIZER_ONBOARDING.md) before configuring an event.
 
 ## Safety invariants
 
@@ -43,7 +43,8 @@ The named event-day lead must complete these steps while every device is online:
 4. Test one dedicated test ticket on every camera/browser combination. Native `BarcodeDetector` is used where supported; the bundled ZXing reader is the fallback. Verify manual credential entry and attendee lookup.
 5. Download and print the emergency door list. Store it with the event lead, not in a public area.
 6. If accepting cash, prepare the cash-control process and staff sign-off. If accepting cards, confirm the UI says the Bank of Hawaii Clover account is `verified` and `payment_ready`; otherwise card must remain disabled.
-7. Run the three-device conflict drill below. Do not open doors if signatures, device authorization, queue sync, counts, or the fallback list fail.
+7. Confirm alerts reach the platform owner's phone: Admin → Monitoring & alerts shows Stripe webhooks healthy and Sentry configured, and the scanner and box-office alert rules in [Monitoring setup](MONITORING_SETUP.md) have been tested. A scanner or box-office alert on event day means switch to the offline manifest and emergency list first, then diagnose.
+8. Run the three-device conflict drill below. Do not open doors if signatures, device authorization, queue sync, counts, or the fallback list fail.
 
 ## Three-device offline drill
 
@@ -70,6 +71,17 @@ Automated coverage exercises signed manifests, duplicate reconciliation, revoked
 - The scanner plays a high tone for admit and two low beeps for a refusal or warning. Audio starts with the **Start camera** tap; use the **Sound** button to mute a device (the choice is remembered on that device). Rehearse with the venue noise and the phone's volume up; Android also vibrates.
 - While the camera runs, the scanner asks the browser to keep the screen on. If the browser can't, the page says so; set Auto-Lock (iPhone) or Screen timeout (Android) to Never for the shift.
 - Keep devices charged and sync before moving a device to another door. Never share one registered browser profile between staff accounts.
+
+## Re-entry & offline exit scans
+
+Re-entry is **Off** by default so single-entry events see no extra door controls. When an organizer enables **Exit scan (in & out)** or **Cool-down (no exit staff)** on an event:
+
+- **Service-day rollover**: Late-night events that cross midnight (for example 8:00 PM–2:00 AM) stay on one service day across midnight instead of resetting at 12:00 AM. Multi-day events roll over at 5:00 AM in the event's time zone so being inside on Day 1 never blocks Day 2 entry.
+- **Per-day cutoff time**: A configured re-entry cutoff applies to each service day in the event's time zone. First-time arrivals are still admitted after the cutoff; only re-entries are blocked.
+- **Offline exit scans**: An exit scanned on an **offline** device is queued on that phone and **keeps the ticket marked "inside" on the server (and at other gates) until the exit device reconnects and syncs**. Tell exit-lane volunteers to keep signal or sync regularly. If a guest exits at an offline lane and tries to re-enter at another gate before that exit syncs, the entry gate will show **Already inside**; a **Scanner lead** (or Owner / Manager / Box office) can verify the guest and use **Lead override** with a required reason, which is written to the audit log.
+- **Offline conflicts**: If two offline gates admit the same ticket, sync resolves by earliest `occurred_at` (with server tiebreak) and flags the ticket for a Scanner lead to review and clear or override.
+- **Admitted credentials (tickets inside)**: Live and peak occupancy counts track admitted tickets currently inside rather than verified unique people, so one person admitted on two separate tickets counts twice.
+- **Do not turn re-entry Off mid-event** while guests are outside: guests who scanned out will no longer be able to scan back in.
 
 ## Recovering a retained offline journal
 
@@ -106,6 +118,14 @@ Required production configuration:
 - `CLOVER_REST_PAY_BASE_URL`: approved Clover REST Pay `/connect` base URL. Production code requires HTTPS on a Clover domain.
 - `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_<id>`: encrypted OAuth/access token scoped to that HåfaPass organization (for example, organization 42 uses `CLOVER_REST_PAY_ACCESS_TOKEN_ORGANIZATION_42`). A global shared merchant token is intentionally unsupported. Never store the token in a card-present account row or return it to a browser.
 - One admin-reviewed `CardPresentAccount` with Guam merchant approval evidence, merchant ID, device ID, and POS ID.
+
+### Stripe Checkout without a reader
+
+An admin can enable **Online door card sales** for an event under Admin → Events → Launch reviews. Staff can choose **Pay on buyer’s phone** to show a checkout QR, or **Enter card on this device** to open a Stripe-hosted card form. To offer a payment link by email, enter the buyer’s email before preparing their phone checkout. Enter card details only in the Stripe-hosted form. Both methods use normal HåfaPass online service fees and the existing Stripe processing cost allocation. Staff-keyed cards have greater fraud risk than card-present payments. Stripe publishes an extra fee for manually entered cards where applicable. Radar and issuer authentication stay active. [Stripe pricing](https://stripe.com/pricing)
+
+A sale reserves the cart for 35 minutes, including any assigned seats and pass-night capacity. The same reservation counts against online and door inventory. Stripe Checkout requires at least 30 minutes for a configured session expiry. Cancel abandoned sales promptly to release inventory early. The sale resumes on reload in the same browser tab and organization. Use **Open card checkouts** to recover a lost tab or show or email a recent paid receipt. Sellers see their own sales and event managers and owners can assist across sellers. If payment is uncertain or the reservation expires, choose **Check payment status**. If you see **Paid — waiting for confirmation**, wait for the signed confirmation and keep the original sale open. A matching hosted checkout can also bring you back to the original sale before opening another Stripe Session. Only **Paid — tickets ready** confirms that the signed Stripe payment reached HåfaPass and it issued tickets. A decline can be retried on the same Checkout Session. A delayed confirmation for an expired general-admission reservation issues tickets if the original tier, door allocation and event or pass-night capacity still have room. If that inventory is gone, the event has ended or the purchased pass has no remaining nights, the checkout was cancelled, or a reserved seat has been released, the existing automatic refund and reconciliation path keeps the buyer whole. [Stripe Checkout expiry](https://docs.stripe.com/api/checkout/sessions/create) [Stripe cancellation](https://docs.stripe.com/api/checkout/sessions/expire)
+
+Before enabling an event, confirm the correct Stripe account and mode are configured for HåfaPass. Add `checkout.session.expired` to the existing Stripe webhook in test mode and in the production mode intended for the event. Keep the current PaymentIntent, refund, dispute, and Radar events enabled. Verify the Checkout payment page and refunds with test-mode fixtures before enabling a live event. The two new reporting methods are **Phone checkout** and **Staff-keyed checkout**. Their payments settle through Stripe. Only cash retained by the organizer is subtracted from platform payout custody.
 
 ## Outage and fallback decisions
 

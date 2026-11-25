@@ -251,6 +251,7 @@ entries are described above and defined in the registry's audience variants.
 | `message_delivery.replayed` | yes | messaging | A | no | no | — | — | Replayed a message delivery. |
 | `message_provider_event.external_confirmed` | yes | messaging | A | no | no | — | — | Confirmed an external email receipt using reviewed evidence. |
 | `message_provider_event.external_source_confirmed` | yes | messaging | A | no | no | — | — | Confirmed an external email receipt from signed application provenance. |
+| `monitoring.test_alert_sent` | yes | platform | A | no | no | — | — | Sent a labelled test alert to error monitoring. |
 | `operations.synthetic_data_purged` | yes | platform | A | no | no | — | — | Purged synthetic platform data. |
 | `order.agreement_accepted` | yes | orders | O/F | yes | yes | `policy_version`, `accepted_at` | `event_title`, `order_reference`, `amount_cents`, `currency` | Accepted the buyer agreement. |
 | `order.cancelled` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Cancelled an order. |
@@ -302,6 +303,7 @@ entries are described above and defined in the registry's audience variants.
 | `payout.under_withholding_carried` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents`, `event_title`, `order_reference`, `currency` | Carried a payout withholding shortfall. |
 | `payout.under_withholding_collected` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents`, `event_title`, `order_reference`, `currency` | Collected a payout withholding shortfall. |
 | `payout.withholding_review_required` | yes | payouts | O/F | yes | yes | `status`, `paid_at`, `check_amount_cents`, `under_withheld_cents`, `withheld_cents`, `withholding_rate_bps`, `carried_withholding_cents` | `amount_cents`, `settlement_id`, `adjustment_id`, `delta_cents`, `event_title`, `order_reference`, `currency` | Flagged a payout for withholding review. |
+| `payout_reserve.skipped` | yes | payouts | O/F | yes | yes | — | `settlement_id`, `event_title` | Finalized an event statement without the standard chargeback reserve. |
 | `pilot_closeout.approved` | yes | platform | A | yes | yes | — | — | Approved pilot closeout evidence. |
 | `pilot_closeout.rejected` | yes | platform | A | yes | yes | — | — | Rejected pilot closeout evidence. |
 | `pilot_closeout.revoked` | yes | platform | A | yes | yes | — | — | Revoked pilot closeout approval. |
@@ -408,6 +410,8 @@ entries are described above and defined in the registry's audience variants.
 | `ticket.check_in_reversed` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Reversed a ticket check-in. |
 | `ticket.checked_in` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Checked in a ticket. |
 | `ticket.display_credential_revoked` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Revoked a ticket display credential. |
+| `ticket.re_entry_exited` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `event_title` | Recorded a ticket exit scan. |
+| `ticket.re_entry_overridden` | yes | scanning | O/M | yes | yes | `result`, `reason_code`, `ticket_id` | `event_id`, `override_action`, `override_justification`, `event_title` | Overrode a ticket re-entry status. |
 | `ticket.scan_credential_rotated` | yes | tickets | O/M | yes | yes | `status`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Rotated a ticket scan code. |
 | `ticket_transfer.accepted` | yes | tickets | O/M | yes | yes | `ticket_id`, `status`, `expires_at`, `accepted_at`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Accepted ticket transfer. |
 | `ticket_transfer.cancelled` | yes | tickets | O/M | yes | yes | `ticket_id`, `status`, `expires_at`, `accepted_at`, `cancelled_at` | `source_event_id`, `event_state_change_id`, `ticket_count`, `event_title` | Cancelled ticket transfer. |

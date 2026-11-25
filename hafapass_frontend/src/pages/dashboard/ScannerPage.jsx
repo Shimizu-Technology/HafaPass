@@ -6,23 +6,25 @@ import JournalRecovery from '../../components/admissions/JournalRecovery'
 import SavedJournalExports from '../../components/admissions/SavedJournalExports'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, RefreshCw,
-  RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, Volume2, VolumeX, XCircle,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Download, Loader2, LogIn, LogOut, RefreshCw,
+  RotateCcw, Search, ShieldCheck, Smartphone, StopCircle, Users, Volume2, VolumeX, XCircle,
 } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { WORKSPACE_WIDTHS } from '../../utils/workspace'
 import apiClient, { getApiAuthContext, subscribeApiAuthContext } from '../../api/client'
 import { DEFAULT_EVENT_TIME_ZONE, formatEventDateTime } from '../../utils/eventTime'
 import {
-  applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission,
+  applySyncResults, captureAdmissionAccessContext, captureOrganizationAdmissionContexts, currentScannerOwner, clearEventAdmissionData, loadAuthorizedScanner, loadPendingDeviceIdentity, localScanState, queueAdmission, queueExit,
   queuedActions, queueReversal, loadDevice, invalidateManifestAccess, saveDevice, saveVerifiedManifest, sha256Hex, purgeExpiredAdmissionAccess, verifyLegacyJournalOwner,
 } from '../../utils/admissionStore'
+import { evaluateLocalReEntry, formatGateTime, formatReEntryFeedback, serviceDayString } from '../../utils/reEntryRules'
 import { scannerBindingRevision, scannerWithdrawalRevision, subscribeScannerBinding } from '../../utils/scannerAccountBinding'
 import useScreenWakeLock from '../../hooks/useScreenWakeLock'
 import useCameraRecovery from '../../hooks/useCameraRecovery'
 import useScanSound from '../../hooks/useScanSound'
 import DoorScanCard from '../../components/admissions/DoorScanCard'
 import VerificationOverlay from '../../components/admissions/VerificationOverlay'
+import ReEntryLeadOverride from '../../components/admissions/ReEntryLeadOverride'
 
 const LOOKUP_STATUS_LABELS = {
   issued: 'Issued', checked_in: 'Already checked in', cancelled: 'Cancelled',
@@ -192,23 +194,59 @@ async function scannerDefaultCandidates(config, q) {
   }
 }
 
-function admissionAcknowledgement(current, receipt) {
+const HEADCOUNT_FORMAT = new Intl.NumberFormat('en-US')
+
+function admissionAcknowledgement(current, receipt, timezone = DEFAULT_EVENT_TIME_ZONE) {
   const result = receipt.result || receipt.status
   const { buyer_name: _cachedBuyer, ...priorTicket } = current.ticket || {}
-  const next = result === 'accepted'
-    ? { type: 'success', message: 'Admission confirmed', detail: 'The server confirmed this entry.',
-      ticket: receipt.ticket ? { ...priorTicket, ...receipt.ticket } : current.ticket }
-    : receipt.reason_code === 'verification_required'
-      ? { type: 'warning', message: 'This ticket needs door verification', detail: 'Scan the ticket again to review the current door instructions.' }
-    : receipt.reason_code === 'refund_pending'
-      ? { type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
-      : { type: result === 'conflict' ? 'warning' : 'error', message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected', detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.' }
+  const mergedTicket = receipt.ticket ? { ...priorTicket, ...receipt.ticket } : current.ticket
+  let next
+  if (receipt.kind === 'exit') {
+    if (result === 'accepted') {
+      next = {
+        type: 'exit_success',
+        soundKind: 'exit',
+        message: 'Exit confirmed',
+        detail: 'The server recorded this guest’s exit.',
+        ticket: mergedTicket,
+      }
+    } else {
+      const formatted = formatReEntryFeedback(receipt.reason_code, receipt.details, timezone)
+      next = formatted
+        ? { ...formatted, ticket: mergedTicket }
+        : { type: result === 'conflict' ? 'warning' : 'error', message: 'Exit not recorded', detail: 'Ask a door manager to check the ticket status.', ticket: mergedTicket }
+    }
+  } else if (result === 'accepted') {
+    const isReEntry = receipt.reason_code === 're_entered' || receipt.details?.re_entry === true
+    const reEntryNum = receipt.details?.re_entry_number
+    next = {
+      type: 'success',
+      badge: isReEntry ? (reEntryNum ? `Re-entered (#${reEntryNum})` : 'Re-entered') : null,
+      message: isReEntry ? 'Re-entry confirmed' : 'Admission confirmed',
+      detail: isReEntry ? 'The server confirmed this re-entry.' : 'The server confirmed this entry.',
+      ticket: mergedTicket,
+    }
+  } else if (receipt.reason_code === 'verification_required') {
+    next = { type: 'warning', message: 'This ticket needs door verification', detail: 'Scan the ticket again to review the current door instructions.' }
+  } else if (receipt.reason_code === 'refund_pending') {
+    next = { type: 'error', message: 'Refund pending — do not admit', detail: 'Entry is paused while this ticket’s refund is unresolved. Ask a door manager to check its current status.' }
+  } else {
+    const formatted = formatReEntryFeedback(receipt.reason_code, receipt.details, timezone)
+    next = formatted
+      ? { ...formatted, ticket: mergedTicket }
+      : {
+          type: result === 'conflict' ? 'warning' : 'error',
+          message: receipt.reason_code === 'already_admitted' ? 'Already admitted on another device' : 'Do not admit — scan rejected',
+          detail: 'The server refused this entry. Ask a door manager to check the ticket and saved scan.',
+        }
+  }
   // A verdict that arrives while the guest waits is the door decision. Later
   // receipts for an already-decided scan update the panel, not the overlay,
   // except a confirmation: an amber "Already scanned" overlay must not keep
   // contradicting a panel that now says "Admission confirmed", so it clears.
+  const isSuccess = next.type === 'success' || next.type === 'exit_success'
   if (current.type === 'pending') return { ...current, ...next, alertType: next.type }
-  return { ...current, ...next, alertType: next.type === 'success' && current.alertType !== 'success' ? undefined : current.alertType }
+  return { ...current, ...next, alertType: isSuccess && current.alertType !== next.type ? undefined : current.alertType }
 }
 
 // Full-screen door feedback, readable at arm's length in a dark, loud venue.
@@ -228,13 +266,14 @@ export const SAME_CREDENTIAL_QUIET_MS = 5000
 export const OVERLAY_TAP_GUARD_MS = 400
 export const SCAN_RESULT_MESSAGE_ID = 'scan-result-message'
 
-function ScanResultOverlay({ id, type, ticket, onDismiss, onGesture }) {
+function ScanResultOverlay({ id, type, ticket, headline: customHeadline, subtext, badge, onDismiss, onGesture }) {
   const dialogRef = useRef(null)
   const buttonRef = useRef(null)
   const headlineId = useId()
   const armedRef = useRef(false)
   const [armed, setArmed] = useState(false)
-  const persistent = type !== 'success'
+  const isTransient = type === 'success' || type === 'exit_success'
+  const persistent = !isTransient
   const dismiss = useCallback(() => {
     if (!armedRef.current) return
     // Each dismissal is a tap or key press, which lets iOS resume audio.
@@ -271,19 +310,21 @@ function ScanResultOverlay({ id, type, ticket, onDismiss, onGesture }) {
       }
     }
   }, [dismiss, id, onDismiss, persistent])
-  const layout = 'flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center'
+  const layout = 'flex flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center [overflow-wrap:anywhere]'
   if (!persistent) {
-    // The admitted flash is visual only (the panel announces it) and clears itself.
+    const isExit = type === 'exit_success'
+    // The admitted/exited flash is visual only (the panel announces it) and clears itself.
     return (
       <div aria-hidden="true" onClick={dismiss} data-testid="scan-result-overlay" data-result={type} data-armed={armed}
-        className="fixed inset-0 z-[60] overflow-y-auto bg-emerald-800">
+        className={`fixed inset-0 z-[60] overflow-y-auto ${isExit ? 'bg-sky-800' : 'bg-emerald-800'}`}>
         <div className="flex min-h-full items-center justify-center">
-          <DoorScanCard ticket={ticket} />
+          <DoorScanCard ticket={ticket} exitMode={isExit} badge={badge} />
         </div>
       </div>
     )
   }
-  const [classes, Icon, headline] = OVERLAY_STYLES[type]
+  const [classes, Icon, defaultHeadline] = OVERLAY_STYLES[type]
+  const headline = customHeadline || defaultHeadline
   return (
     <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={headlineId} aria-describedby={SCAN_RESULT_MESSAGE_ID}
       data-testid="scan-result-overlay" data-result={type} data-armed={armed}
@@ -292,27 +333,30 @@ function ScanResultOverlay({ id, type, ticket, onDismiss, onGesture }) {
         className={`h-full w-full focus:outline-none ${layout}`}>
         <Icon aria-hidden="true" className="h-24 w-24 shrink-0" strokeWidth={2.5} />
         <span id={headlineId} className="font-display text-4xl font-bold sm:text-6xl">{headline}</span>
+        {customHeadline && subtext && <span className="max-w-lg text-xl font-bold sm:text-2xl">{subtext}</span>}
+        {customHeadline && ticket?.attendee_name && <span className="max-w-lg text-lg font-semibold opacity-90">{ticket.attendee_name}</span>}
         <span aria-hidden="true" className="text-lg font-semibold">Tap to continue</span>
       </button>
     </div>
   )
 }
 
-function ResultPanel({ result, className = '', panelRef }) {
+function ResultPanel({ result, className = '', panelRef, canOverride = false, online = false, overrideBusy = false, onOverride }) {
   if (!result) return null
   const styles = {
     pending: ['bg-neutral-50 border-neutral-300 text-neutral-900', Loader2],
     success: ['bg-emerald-50 border-emerald-300 text-emerald-900', CheckCircle2],
+    exit_success: ['bg-sky-50 border-sky-300 text-sky-950', LogOut],
     warning: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
     verify: ['bg-amber-50 border-amber-300 text-amber-900', AlertTriangle],
     error: ['bg-red-50 border-red-300 text-red-900', XCircle],
   }
-  const [classes, Icon] = styles[result.type]
+  const [classes, Icon] = styles[result.type] || styles.warning
   return (
     <div ref={panelRef} className={`rounded-2xl border-2 p-5 ${classes} ${className}`} role="status" aria-live="assertive" aria-atomic="true">
       <div className="flex gap-3">
         <Icon aria-hidden="true" className="h-7 w-7 shrink-0" />
-        <div className="min-w-0 break-words">
+        <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
           <p id={SCAN_RESULT_MESSAGE_ID} className="text-lg font-bold">{result.message}</p>
           {result.detail && <p className="mt-1 text-sm">{result.detail}</p>}
           {result.ticket && (
@@ -327,6 +371,14 @@ function ResultPanel({ result, className = '', panelRef }) {
           )}
           {result.type === 'success' && result.ticket?.buyer_name && <p className="mt-2">Bought by {result.ticket.buyer_name}</p>}
           {result.type === 'success' && result.ticket?.door_instructions && <p className="mt-2">{result.ticket.door_instructions}</p>}
+          {canOverride && online && result.overridable && result.ticket && onOverride && (
+            <ReEntryLeadOverride
+              ticket={result.ticket}
+              busy={overrideBusy}
+              onSubmit={onOverride}
+              defaultAction="admit"
+            />
+          )}
           {result.latency != null && <details className="mt-3 text-xs">
             <summary className="flex min-h-11 cursor-pointer items-center font-medium">Scan details</summary>
             <p className="pb-2">Local response: {Math.round(result.latency)}ms</p>
@@ -369,6 +421,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   const [manifest, setManifest] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [scanDirection, setScanDirection] = useState('admit')
+  const [overrideBusy, setOverrideBusy] = useState(false)
   const [online, setOnline] = useState(navigator.onLine && !offlineOnly)
   const [setupBusy, setSetupBusy] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -471,9 +525,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   )
 
   const refreshPending = useCallback(async (selectedEventId, selectedDevice) => {
-    if (!selectedEventId || !selectedDevice) return setPendingCount(0)
-    const count = (await queuedActions(selectedEventId, selectedDevice.id)).length
-    if (eventIdRef.current === String(selectedEventId)) setPendingCount(count)
+    if (!selectedEventId || !selectedDevice) {
+      setPendingCount(0)
+      return
+    }
+    const items = await queuedActions(selectedEventId, selectedDevice.id)
+    if (eventIdRef.current === String(selectedEventId)) {
+      setPendingCount(items.length)
+    }
   }, [])
 
   const stopCamera = useCallback(() => {
@@ -517,6 +576,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     setSearchQuery('')
     setSearchResults([])
     setPendingCount(0)
+    setScanDirection('admit')
     setError(null)
     setSetupBusy(true)
   }, [stopCamera, cancelSyncRetry])
@@ -715,13 +775,15 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         ? { ...existing, message: 'Undo is no longer queued', detail: 'Refresh admissions to check its result.' } : existing)
       return
     }
-    if (context.kind !== 'admit' || !context.ticketId) return
-    // Queue deletion and the terminal admit receipt commit atomically. Re-read
+    if (!['admit', 'exit'].includes(context.kind) || !context.ticketId) return
+    // Queue deletion and the terminal admit/exit receipt commit atomically. Re-read
     // after observing empty, including an ACK from a different browser tab.
     const receipt = await localScanState(selectedEventId, context.ticketId)
-    if (!current() || receipt?.action_uuid !== context.uuid || !['accepted', 'conflict', 'rejected'].includes(receipt.status)) return
+    if (!current() || receipt?.action_uuid !== context.uuid || !['accepted', 'exited', 'conflict', 'rejected'].includes(receipt.status)) return
+    const normalized = receipt.status === 'exited' ? { ...receipt, status: 'accepted', kind: 'exit' } : { ...receipt, kind: context.kind }
+    const tz = currentManifestRef.current?.payload?.event?.timezone || DEFAULT_EVENT_TIME_ZONE
     setScanResult(existing => current() && existing?.actionUuid === context.uuid && existing.actionKind === context.kind
-      ? admissionAcknowledgement(existing, receipt) : existing)
+      ? admissionAcknowledgement(existing, normalized, tz) : existing)
   }, [])
 
   const syncQueue = useCallback(async ({ selectedEventId = eventId, selectedDevice = device, quiet = false, automaticRetry = false } = {}) => {
@@ -784,7 +846,8 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
             if (result.reason_code === 'already_reversed') return { ...current, type: 'warning', message: 'Admission already reversed', detail: 'The original Undo was already confirmed. This saved request has been acknowledged.' }
             return { ...current, type: 'error', message: 'Admission reversal refused', detail: 'The server did not confirm this Undo. Ask a door manager to check the ticket status.' }
           }
-          return admissionAcknowledgement(current, result)
+          const tz = currentManifestRef.current?.payload?.event?.timezone || DEFAULT_EVENT_TIME_ZONE
+          return admissionAcknowledgement(current, result, tz)
         })
         // Receipt reconciliation may retain a newer peer's authorization. Never
         // reapply the old response's lease over the store's retained device.
@@ -1129,19 +1192,30 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     // alert when the verdict arrives (admissionAcknowledgement).
     const alertType = result.type !== 'pending' && result.actionKind !== 'reverse' ? result.type : undefined
     setScanResult({ ...result, feedbackId: ++feedbackSequenceRef.current, alertType })
-    if (result.type === 'success' || (result.type === 'pending' && result.actionKind === 'admit')) setSessionCount(count => count + 1)
+    if (result.type === 'success' || result.type === 'exit_success' || (result.type === 'pending' && ['admit', 'exit'].includes(result.actionKind))) setSessionCount(count => count + 1)
   }, [])
 
   // Sound and vibration fire once per door decision (iOS has no vibration).
-  const alertKey = scanResult?.alertType ? `${scanResult.feedbackId}:${scanResult.alertType}` : null
+  const alertKey = scanResult?.alertType ? `${scanResult.feedbackId}:${scanResult.alertType}:${scanResult.soundKind || ''}` : null
   useEffect(() => {
     if (!alertKey) return
-    const success = alertKey.endsWith(':success')
-    playScanSound(success ? 'admit' : alertKey.endsWith(':verify') ? 'verify' : 'refuse')
+    const soundKind = scanResult?.soundKind
+    if (soundKind === 'already_inside') {
+      playScanSound('already_inside')
+      if (navigator.vibrate) navigator.vibrate([120, 50, 120, 50, 180])
+      return
+    }
+    if (soundKind === 'exit' || scanResult?.alertType === 'exit_success') {
+      playScanSound('exit')
+      if (navigator.vibrate) navigator.vibrate([50, 40, 50])
+      return
+    }
+    const success = scanResult?.alertType === 'success'
+    playScanSound(success ? 'admit' : scanResult?.alertType === 'verify' ? 'verify' : 'refuse')
     if (navigator.vibrate) navigator.vibrate(success ? 80 : [100, 60, 100])
-  }, [alertKey, playScanSound])
+  }, [alertKey, playScanSound, scanResult?.alertType, scanResult?.soundKind])
   const overlay = scanResult?.alertType && scanResult.feedbackId !== dismissedFeedback
-    ? { id: scanResult.feedbackId, type: scanResult.alertType } : null
+    ? { id: scanResult.feedbackId, type: scanResult.alertType, headline: scanResult.headline, subtext: scanResult.headline ? scanResult.message : null, badge: scanResult.badge } : null
   const verification = scanResult?.verification
   useLayoutEffect(() => {
     if (!verification || !device || !manifest) verificationRef.current = null
@@ -1152,7 +1226,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   // the next guest cannot be admitted unseen behind it. If the held result came
   // from a code still in front of the camera, it stays ignored for a few
   // seconds after the dismissal tap too.
-  const holdsDoor = Boolean(overlay && overlay.type !== 'success')
+  const holdsDoor = Boolean(overlay && overlay.type !== 'success' && overlay.type !== 'exit_success')
   useEffect(() => {
     if (!holdsDoor) return undefined
     decodePausedRef.current = true
@@ -1205,15 +1279,29 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     if (!current() || savedDevice?.id !== device.id || savedDevice.owner_user_id !== owner || !savedDevice.effective) return
     const localState = await localScanState(eventId, ticket.ticket_id)
     if (!current() || accessRefused()) return
-    if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
+
+    const manifestEvent = scanManifest.payload?.event || {}
+    const reEntryMode = manifestEvent.re_entry_mode || 'off'
+    const tz = manifestEvent.timezone || DEFAULT_EVENT_TIME_ZONE
+    const effectiveKind = reEntryMode === 'exit_scan' && scanDirection === 'exit' ? 'exit' : 'admit'
+
+    if (reEntryMode === 'off' && ['pending', 'accepted', 'conflict', 'pending_reverse'].includes(localState?.status)) {
       showResult({ type: 'warning', message: 'Already scanned on this device', detail: 'This ticket is already admitted or waiting to sync.', ticket,
         ...(localState.status === 'pending' ? { actionUuid: localState.action_uuid, actionKind: 'admit', deviceId: device.id } : {}),
         latency: performance.now() - startedAt })
       return
     }
+    if (reEntryMode !== 'off' && localState?.status === 'pending_reverse') {
+      showResult({ type: 'warning', message: 'Undo pending on this device', detail: 'Wait for the pending Undo to sync before scanning this ticket again.', ticket,
+        latency: performance.now() - startedAt })
+      return
+    }
+
     let doorTicket = ticket
     let source = online && !forceOffline ? 'online' : 'offline'
     let needsManifestState = !confirmed || source === 'offline'
+    let isReEntry = false
+    let reEntryNumber = 0
     if (source === 'online' && !confirmed && scanManifest.payload.schema_version === 2) {
       const request = beginPrivateRead(scanRequestRef, eventId)
       const accessOptions = {
@@ -1224,7 +1312,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       let preview
       try {
         const response = await apiClient.post(`/organizer/events/${eventId}/scanner_devices/${device.id}/scan`, {
-          ticket_id: ticket.ticket_id, credential_hash: hash, manifest_version: scanManifest.payload.version,
+          ticket_id: ticket.ticket_id,
+          credential_hash: hash,
+          manifest_version: scanManifest.payload.version,
+          ...(effectiveKind === 'exit' ? { kind: 'exit' } : {}),
         }, { ...request.config, timeout: SCAN_PREVIEW_TIMEOUT_MS })
         preview = response.data
       } catch (scanError) {
@@ -1241,17 +1332,24 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       if (!current() || !request.current()) return
       if (preview?.status === 'rejected') {
         const reason = preview.reason_code
+        const reEntryFeedback = formatReEntryFeedback(reason, preview.details, tz)
+        if (reEntryFeedback) {
+          showResult({ ...reEntryFeedback, ticket: preview.ticket || ticket, latency: performance.now() - startedAt })
+          return
+        }
         const labels = { already_admitted: 'Already admitted', cancelled: 'Cancelled ticket', credential_revoked: 'Ticket credential is no longer valid',
           transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
         showResult({ type: reason === 'already_admitted' ? 'warning' : 'error', message: labels[reason] || 'Invalid ticket',
-          detail: 'Ask a door manager to check the ticket before admitting.', latency: performance.now() - startedAt })
+          detail: 'Ask a door manager to check the ticket before admitting.', ticket: preview.ticket || ticket, latency: performance.now() - startedAt })
         return
       }
       const modeByStatus = { ready: 'instant', verification_required: 'verify' }
       const mode = modeByStatus[preview?.status]
-      if (mode && preview.ticket?.ticket_id === ticket.ticket_id && preview.ticket.door_check_mode === mode) {
+      if (mode && preview.ticket?.ticket_id === ticket.ticket_id && (effectiveKind === 'exit' || preview.ticket.door_check_mode === mode)) {
         doorTicket = preview.ticket
         needsManifestState = false
+        isReEntry = preview.re_entry === true
+        reEntryNumber = Number(preview.re_entry_number || 0)
       } else {
         // Re-check the same grant and signed list after the network wait.
         await captureAdmissionAccessContext(eventId, accessOptions)
@@ -1261,20 +1359,85 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     }
     if (!current() || accessRefused()) return
     if (source === 'offline' && accessExpired()) throw scannerPolicyError('manifestExpired')
-    if (needsManifestState && ticket.state !== 'valid') {
-      const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
-      showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
-        detail: 'Sync the latest ticket list or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
-      return
+
+    if (needsManifestState) {
+      if (reEntryMode === 'off') {
+        if (ticket.state !== 'valid') {
+          const labels = { admitted: 'Already admitted', cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
+          showResult({ type: ticket.state === 'admitted' ? 'warning' : 'error', message: labels[ticket.state] || 'Ticket is not valid',
+            detail: 'Sync the latest ticket list or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
+          return
+        }
+      } else {
+        const localEval = evaluateLocalReEntry({
+          kind: effectiveKind,
+          manifestTicket: ticket,
+          localState,
+          eventMeta: manifestEvent,
+        })
+        if (!localEval.allowed) {
+          const formatted = formatReEntryFeedback(localEval.reasonCode, localEval.details, tz)
+          if (formatted) {
+            showResult({ ...formatted, ticket, latency: performance.now() - startedAt })
+            return
+          }
+          const labels = { cancelled: 'Cancelled ticket', transferred: 'Transferred ticket', payment_blocked: 'Payment blocked', refund_pending: 'Refund pending — do not admit' }
+          showResult({ type: 'error', message: labels[localEval.reasonCode] || 'Ticket is not valid',
+            detail: 'Sync the latest ticket list or ask a door manager for help.', ticket, latency: performance.now() - startedAt })
+          return
+        }
+        isReEntry = localEval.isReEntry
+        reEntryNumber = localEval.reEntryNumber
+      }
     }
 
     if (currentManifestRef.current?.digest !== scanManifest.digest) {
       showResult({ type: 'warning', message: 'Ticket list updated', detail: 'Scan this ticket again to use the updated event list.' })
       return
     }
-    if (!confirmed && doorTicket.door_check_mode === 'verify') {
+    if (effectiveKind === 'admit' && !confirmed && !isReEntry && doorTicket.door_check_mode === 'verify') {
       showResult({ type: 'verify', message: 'Verify this ticket before admitting', ticket: doorTicket,
         verification: { ticket: { ...doorTicket, state: ticket.state }, hash, clientStatus, presentation, scanManifest, source } })
+      return
+    }
+
+    if (effectiveKind === 'exit') {
+      const action = await queueExit({
+        eventId,
+        deviceId: device.id,
+        manifestVersion: scanManifest.payload.version,
+        ticket,
+        credentialHash: hash,
+        source,
+        clientStatus: source === 'online' ? 'online_exit' : 'locally_exited',
+        eventTimezone: tz,
+        eventMeta: scanManifest.payload.event,
+        reEntryCount: Number(ticket.re_entry_count || 0),
+      })
+      if (!current()) return
+      showResult({
+        type: source === 'online' ? 'pending' : 'exit_success',
+        soundKind: source === 'online' ? undefined : 'exit',
+        message: source === 'online' ? 'Recording exit…' : 'Exited offline',
+        actionUuid: action.action_uuid,
+        actionKind: 'exit',
+        deviceId: device.id,
+        detail: source === 'online'
+          ? 'Saved on this device. Waiting for server confirmation.'
+          : 'Saved on this device. Sync when connected so other gates see this exit.',
+        ticket: doorTicket,
+        latency: performance.now() - startedAt,
+      })
+      await refreshPending(eventId, device)
+      if (!current()) return
+      const receipt = await localScanState(eventId, ticket.ticket_id)
+      if (!current()) return
+      if (receipt?.action_uuid === action.action_uuid && ['exited', 'conflict', 'rejected'].includes(receipt.status)) {
+        const normalized = receipt.status === 'exited' ? { ...receipt, status: 'accepted', kind: 'exit' } : { ...receipt, kind: 'exit' }
+        setScanResult(existing => current() && existing?.actionUuid === action.action_uuid && existing.actionKind === 'exit'
+          ? admissionAcknowledgement(existing, normalized, tz) : existing)
+      }
+      if (online && current()) syncQueue({ quiet: true })
       return
     }
 
@@ -1286,6 +1449,11 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       credentialHash: hash,
       source,
       clientStatus,
+      reEntryMode,
+      eventTimezone: tz,
+      eventMeta: scanManifest.payload.event,
+      isReEntry,
+      reEntryNumber,
       ...(confirmed ? { confirmed: true } : {}),
     })
     if (!current()) return
@@ -1294,10 +1462,17 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       return
     }
     // Own the result before count refresh yields to an already-running sync.
-    showResult({ type: source === 'online' ? 'pending' : 'success', message: source === 'online' ? 'Waiting for server confirmation' : 'Admitted offline',
-      actionUuid: action.action_uuid, actionKind: 'admit', deviceId: device.id,
+    showResult({
+      type: source === 'online' ? 'pending' : 'success',
+      badge: isReEntry ? (reEntryNumber ? `Re-entered (#${reEntryNumber})` : 'Re-entered') : null,
+      message: source === 'online' ? 'Waiting for server confirmation' : (isReEntry ? 'Re-entered offline' : 'Admitted offline'),
+      actionUuid: action.action_uuid,
+      actionKind: 'admit',
+      deviceId: device.id,
       detail: source === 'online' ? 'Saved on this device. Entry is not confirmed until the server responds.' : 'Saved on this device. Other offline scanners cannot see this admission until they sync.',
-      ticket: doorTicket, latency: performance.now() - startedAt })
+      ticket: doorTicket,
+      latency: performance.now() - startedAt,
+    })
     await refreshPending(eventId, device)
     if (!current()) return
     // Another tab can acknowledge the transaction before queueAdmission returns.
@@ -1306,10 +1481,10 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     if (!current()) return
     if (receipt?.action_uuid === action.action_uuid && ['accepted', 'conflict', 'rejected'].includes(receipt.status)) {
       setScanResult(existing => current() && existing?.actionUuid === action.action_uuid && existing.actionKind === 'admit'
-        ? admissionAcknowledgement(existing, receipt) : existing)
+        ? admissionAcknowledgement(existing, receipt, tz) : existing)
     }
     if (online && current()) syncQueue({ quiet: true })
-  }, [device, eventId, refreshPending, showResult, syncQueue, online, beginPrivateRead, handlePrivateReadError])
+  }, [device, eventId, refreshPending, showResult, syncQueue, online, beginPrivateRead, handlePrivateReadError, scanDirection])
 
   const processCredential = useCallback(async (raw, lookupTicket) => {
     if (credentialInFlightRef.current || verificationRef.current) return
@@ -1590,8 +1765,60 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
     }
   }
 
+  const submitLeadOverride = async ({ ticketId, overrideAction, reason }) => {
+    if (!eventId || !online || overrideBusy) return false
+    setOverrideBusy(true)
+    setError(null)
+    try {
+      const response = await apiClient.post(`/organizer/events/${eventId}/admissions/override`, {
+        ticket_id: ticketId,
+        override_action: overrideAction,
+        reason,
+        scanner_device_id: device?.id,
+        action_uuid: crypto.randomUUID(),
+      })
+      const updatedSummary = response.data?.summary
+      const updatedTicket = response.data?.ticket
+      setDashboard(current => current ? {
+        ...current,
+        counts: updatedSummary || current.counts,
+        flagged_conflicts: (current.flagged_conflicts || []).filter(item => Number(item.id) !== Number(ticketId)),
+      } : current)
+      if (device) await downloadManifest(eventId, device).catch(() => {})
+      showResult({
+        type: overrideAction === 'clear' ? 'exit_success' : 'success',
+        soundKind: overrideAction === 'clear' ? 'exit' : undefined,
+        badge: overrideAction === 'admit' ? 'Lead override' : null,
+        message: overrideAction === 'admit' ? 'Lead override: admitted' : 'Lead override: inside status cleared',
+        detail: `Recorded in audit log (${reason}).`,
+        ticket: updatedTicket || scanResult?.ticket,
+      })
+      return true
+    } catch (overrideError) {
+      setError(overrideError.response?.data?.error || 'Could not record lead override. Check your permissions and try again.')
+      return false
+    } finally {
+      setOverrideBusy(false)
+    }
+  }
+
   const selectedEvent = events.find(event => String(event.id) === eventId) || (String(resolvedEvent?.id) === eventId ? resolvedEvent : null)
   const ready = Boolean(eventId && device && manifest && Number(manifest.payload?.event?.id) === Number(eventId))
+  const reEntryMode = manifest?.payload?.event?.re_entry_mode || dashboard?.event?.re_entry_mode || selectedEvent?.re_entry_mode || 'off'
+  const reEntryEnabled = reEntryMode !== 'off'
+  const isExitScanMode = reEntryMode === 'exit_scan'
+  const isCooldownMode = reEntryMode === 'cooldown'
+  const effectiveDirection = isExitScanMode ? scanDirection : 'admit'
+  const canOverride = reEntryEnabled && dashboard?.permissions?.can_override === true
+  const baseHeadcount = reEntryEnabled ? (dashboard?.counts?.live_headcount ?? dashboard?.counts?.currently_inside ?? null) : null
+  const untrackedPreReEntry = reEntryEnabled ? Number(dashboard?.counts?.untracked_pre_re_entry_admits || 0) : 0
+  const liveHeadcount = baseHeadcount != null ? Math.max(0, Number(baseHeadcount)) : null
+  const headcountByDay = reEntryEnabled ? (dashboard?.counts?.headcount_by_day || []) : []
+  const currentServiceDay = serviceDayString(Date.now(), manifest?.payload?.event || dashboard?.event || selectedEvent)
+  const flaggedConflicts = reEntryEnabled ? (dashboard?.flagged_conflicts || []) : []
+  useEffect(() => {
+    if (!isExitScanMode && scanDirection !== 'admit') setScanDirection('admit')
+  }, [isExitScanMode, scanDirection])
   const searchAttendeesRef = useRef(searchAttendees)
   searchAttendeesRef.current = searchAttendees
   const handedOffLookupRef = useRef(null)
@@ -1645,14 +1872,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
   // notices and tool links, 7-10 the camera and side column).
   return (
     <div className={`mx-auto flex w-full min-w-0 ${WORKSPACE_WIDTHS.standard} flex-col gap-3 px-4 py-4 sm:grid sm:px-6 lg:px-8 sm:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] sm:gap-x-4 sm:gap-y-0 sm:py-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,.65fr)] lg:grid-rows-[repeat(8,auto)_1fr_auto] lg:gap-x-6`}>
-      <div className="sm:col-start-1 sm:row-start-1 sm:min-w-0 sm:max-w-2xl sm:self-end">
+      <div className={`${isExitScanMode ? 'order-1 sm:order-none ' : ''}sm:col-start-1 sm:row-start-1 sm:min-w-0 sm:max-w-2xl sm:self-end`}>
         <div className="flex items-center justify-between gap-3 sm:flex-col-reverse sm:items-start sm:gap-0">
           <h1 className="font-display text-2xl font-bold text-neutral-950 sm:text-3xl">Check-in</h1>
           <Link to="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-800">All events</Link>
         </div>
         {selectedEvent && <p className="mt-2 hidden break-words text-base font-semibold text-neutral-900 sm:block">{selectedEvent.title}</p>}
       </div>
-      <div className="sm:col-start-2 sm:row-start-2">
+      <div className={`${isExitScanMode ? 'order-2 sm:order-none ' : ''}sm:col-start-2 sm:row-start-2`}>
         {!offlineOnly && eventListLoading && <p role="status" className="mb-2 text-sm">Loading events…</p>}
         {!offlineOnly && eventListError && <p role="alert" className="mb-2 text-sm text-red-800">{eventListError} <button type="button" className="min-h-11 underline" onClick={() => setEventListRetry(value => value + 1)}>Retry event search</button></p>}
         <label htmlFor="scanner-event" className="mb-1 block text-sm font-medium text-neutral-800">Event to scan</label>
@@ -1663,20 +1890,50 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </select>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 sm:col-span-2 sm:row-start-4 sm:mb-4 sm:mt-5" aria-label="Check-in status">
+      <div className={`${isExitScanMode ? 'order-4 sm:order-none ' : ''}grid gap-2 sm:col-span-2 sm:row-start-4 sm:mb-4 sm:mt-5 ${liveHeadcount != null ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-4'}`} aria-label="Check-in status">
         <div className={`flex items-center rounded-xl border p-2 sm:block sm:p-3 ${online ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-          <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}{online ? 'Online' : 'Offline mode'}</p>
+          <p className="flex flex-col items-start gap-1 text-xs font-semibold sm:flex-row sm:items-center sm:gap-2 sm:text-sm">{online ? <ShieldCheck className={liveHeadcount != null ? 'h-4 w-4 shrink-0' : 'h-4 w-4'} /> : <CloudOff className={liveHeadcount != null ? 'h-4 w-4 shrink-0' : 'h-4 w-4'} />}{online ? 'Online' : 'Offline mode'}</p>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className="text-lg font-bold sm:text-xl" data-testid="scanner-pending-count">{pendingCount}</p></div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Scans this session</p><p className="text-lg font-bold sm:text-xl">{sessionCount}</p></div>
-        <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className="btn-secondary flex flex-col items-center justify-center gap-1 !px-2 !py-2 text-xs disabled:opacity-50 sm:flex-row sm:gap-2 sm:!px-6 sm:!py-3 sm:text-base">
+        {liveHeadcount != null && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-2 sm:p-3">
+            <p className="flex items-center gap-1 text-xs leading-tight font-medium text-brand-950 sm:text-sm">
+              <Users aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> {isCooldownMode ? 'Entered' : 'Tickets inside'}
+            </p>
+            <p className="text-lg font-bold tabular-nums text-brand-950 sm:text-xl" data-testid="scanner-live-headcount">{HEADCOUNT_FORMAT.format(liveHeadcount)}</p>
+            {(!online || pendingCount > 0 || untrackedPreReEntry > 0) && (
+              <p className="text-[11px] leading-tight text-brand-900">
+                {untrackedPreReEntry > 0 ? `+${HEADCOUNT_FORMAT.format(untrackedPreReEntry)} earlier check-ins` : 'At last sync'}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Waiting to sync</p><p className={`text-lg font-bold sm:text-xl${liveHeadcount != null ? ' tabular-nums' : ''}`} data-testid="scanner-pending-count">{liveHeadcount != null ? HEADCOUNT_FORMAT.format(pendingCount) : pendingCount}</p></div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-2 sm:p-3"><p className="text-xs leading-tight text-neutral-700 sm:text-sm">Scans this session</p><p className={`text-lg font-bold sm:text-xl${liveHeadcount != null ? ' tabular-nums' : ''}`}>{liveHeadcount != null ? HEADCOUNT_FORMAT.format(sessionCount) : sessionCount}</p></div>
+        <button onClick={() => syncQueue()} disabled={!ready || !online || syncing} className={`btn-secondary flex flex-col items-center justify-center gap-1 !px-2 !py-2 text-xs disabled:opacity-50 sm:flex-row sm:gap-2 sm:!px-6 sm:!py-3 sm:text-base ${liveHeadcount != null ? 'col-span-2 sm:col-span-1' : ''}`}>
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block">
+      <div className={`${isExitScanMode ? 'order-5 sm:order-none ' : ''}flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block`}>
+        {headcountByDay.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs sm:mb-4" aria-label="Tickets inside by day">
+            <span className="font-semibold text-neutral-700">By day:</span>
+            {headcountByDay.map(day => {
+              const rowServiceDay = day.current_service_day || currentServiceDay
+              const isPastDay = Boolean(day.day && rowServiceDay && day.day < rowServiceDay)
+              const countText = isPastDay || isCooldownMode
+                ? `${HEADCOUNT_FORMAT.format(day.entries ?? day.headcount ?? 0)} entered`
+                : `${HEADCOUNT_FORMAT.format(day.headcount ?? 0)} tickets inside`
+              return (
+                <span key={`${day.event_id || 'e'}-${day.day}`} className="rounded-full bg-neutral-100 px-2.5 py-1 font-semibold tabular-nums text-neutral-900">
+                  {day.event_title || day.label || day.day}: {countText}
+                </span>
+              )
+            })}
+          </div>
+        )}
         {pendingCount > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">Sync saved scans before switching accounts or signing out. Unconfirmed scans need the original staff account to recover online.</p>}
-        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">{ready ? 'Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.' : 'Connect to prepare this device before scanning. Offline check-in needs saved event access and a verified ticket list.'}</p>}
+        {!online && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:mb-4">{ready ? (isExitScanMode ? 'Offline scans stay on this device. Offline exit scans keep tickets marked inside at other gates until this phone reconnects and syncs.' : 'Offline scans stay on this device. Other gates may have newer admissions. Sync when connected.') : 'Connect to prepare this device before scanning. Offline check-in needs saved event access and a verified ticket list.'}</p>}
         {ready && <section aria-label="Ticket list readiness" className="rounded-xl border border-neutral-200 bg-white p-3 sm:mb-5 sm:p-4">
           <p className="font-semibold text-neutral-950">Ticket list ready · {manifest.payload.tickets.length} {manifest.payload.tickets.length === 1 ? 'ticket' : 'tickets'}</p>
           <p className="mt-1 text-sm text-neutral-700">{expiryLabel ? `Access expires ${expiryLabel} · ${eventTimezone}` : 'Reconnect to verify the access expiry.'}</p>
@@ -1695,39 +1952,83 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         {setupBusy && <div role="status" className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm sm:mb-5"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> Preparing this device and verifying its ticket list…</div>}
       </div>
 
-      <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-7 sm:mb-5 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-span-3">
-        <section id="scanner-camera" className="scroll-mt-24 overflow-hidden rounded-2xl bg-neutral-950">
+      <div className={`${isExitScanMode ? 'order-3 sm:order-none ' : ''}flex flex-col gap-3 sm:col-span-2 sm:row-start-7 sm:mb-5 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-span-3`}>
+        {isExitScanMode && (
+          <div
+            data-testid="re-entry-mode-toggle"
+            role="group"
+            aria-label="Scan direction"
+            className="grid grid-cols-2 gap-2 rounded-2xl border-2 border-neutral-300 bg-neutral-100 p-1.5"
+          >
+            <button
+              type="button"
+              aria-pressed={effectiveDirection === 'admit'}
+              onClick={() => { primeSound(); setScanDirection('admit') }}
+              className={`flex min-h-14 items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-extrabold tracking-wide transition-colors ${
+                effectiveDirection === 'admit'
+                  ? 'bg-emerald-800 text-white shadow-sm ring-2 ring-emerald-950'
+                  : 'bg-white text-neutral-800 hover:bg-neutral-50'
+              }`}
+            >
+              <LogIn aria-hidden="true" className="h-5 w-5 shrink-0" />
+              <span>ENTRY</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={effectiveDirection === 'exit'}
+              onClick={() => { primeSound(); setScanDirection('exit') }}
+              className={`flex min-h-14 items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-extrabold tracking-wide transition-colors ${
+                effectiveDirection === 'exit'
+                  ? 'bg-sky-800 text-white shadow-sm ring-2 ring-sky-950'
+                  : 'bg-white text-neutral-800 hover:bg-neutral-50'
+              }`}
+            >
+              <LogOut aria-hidden="true" className="h-5 w-5 shrink-0" />
+              <span>EXIT</span>
+            </button>
+          </div>
+        )}
+        <section id="scanner-camera" className={`scroll-mt-24 overflow-hidden rounded-2xl bg-neutral-950 ${effectiveDirection === 'exit' ? 'ring-4 ring-sky-600' : ''}`}>
           <div className="flex">
             {/* The tap that starts the camera also unlocks audio on iOS. */}
             <button onClick={scanning ? stopCamera : () => { primeSound(); startCamera() }} disabled={!ready}
-              className="flex min-h-11 flex-1 items-center justify-center gap-2 bg-brand-800 px-4 py-4 font-semibold text-white enabled:hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-neutral-700">
+              className={`flex min-h-11 flex-1 items-center justify-center gap-2 px-4 py-4 font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-700 ${
+                effectiveDirection === 'exit' ? 'bg-sky-800 enabled:hover:bg-sky-900' : 'bg-brand-800 enabled:hover:bg-brand-900'
+              }`}>
               {scanning ? <><StopCircle className="h-5 w-5" /> Stop camera</> : <><Camera className="h-5 w-5" /> Start camera</>}
             </button>
             <button type="button" onClick={toggleSound} aria-pressed={soundOn}
-              className="flex min-h-11 shrink-0 items-center justify-center gap-2 border-l border-white/20 bg-brand-800 px-4 font-semibold text-white hover:bg-brand-900">
+              className={`flex min-h-11 shrink-0 items-center justify-center gap-2 border-l border-white/20 px-4 font-semibold text-white ${
+                effectiveDirection === 'exit' ? 'bg-sky-800 hover:bg-sky-900' : 'bg-brand-800 hover:bg-brand-900'
+              }`}>
               {soundOn ? <Volume2 aria-hidden="true" className="h-5 w-5" /> : <VolumeX aria-hidden="true" className="h-5 w-5" />} Sound
             </button>
           </div>
           <div className="relative aspect-[4/3] max-h-[60dvh] landscape:max-h-[45dvh]">
+            {effectiveDirection === 'exit' && (
+              <div className="pointer-events-none absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-sky-800 px-3 py-1 text-xs font-extrabold tracking-wide text-white shadow">
+                <LogOut aria-hidden="true" className="h-3.5 w-3.5" /> EXIT MODE
+              </div>
+            )}
             <video ref={videoRef} className={`h-full max-h-[60dvh] w-full object-cover landscape:max-h-[45dvh] ${scanning ? '' : 'hidden'}`} playsInline muted />
             {!scanning && (
               <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center text-neutral-200">
-                <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">{ready ? 'Point the camera at the ticket QR code' : setupBusy ? 'Preparing this scanner…' : 'Choose an assigned event and prepare this device to enable the camera.'}</p>
+                <Camera aria-hidden="true" className="mb-3 h-12 w-12" /><p className="text-sm">{ready ? (effectiveDirection === 'exit' ? 'Point the camera at the ticket QR code to scan EXIT' : 'Point the camera at the ticket QR code') : setupBusy ? 'Preparing this scanner…' : 'Choose an assigned event and prepare this device to enable the camera.'}</p>
               </div>
             )}
             {scanning && <div className="pointer-events-none absolute inset-0 m-auto h-52 max-h-[85%] w-52 max-w-[85%] rounded-3xl border-4 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />}
           </div>
 
         </section>
-        <ResultPanel result={scanResult} panelRef={resultPanelRef} />
+        <ResultPanel result={scanResult} panelRef={resultPanelRef} canOverride={canOverride} online={online} overrideBusy={overrideBusy} onOverride={submitLeadOverride} />
         {scanning && (!wakeLock.supported || wakeLock.failed) && <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800">This browser can’t keep the screen on. Set Auto-Lock or Screen timeout to Never while scanning.</p>}
         {cameraError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{cameraError} You can enter the ticket QR code below or find the attendee online.</p>}
       </div>
 
       {dashboard && (
-        <section className="rounded-2xl border border-neutral-200 bg-white p-3 sm:col-span-2 sm:row-start-10 sm:mb-5 sm:self-start sm:p-5 lg:col-span-1 lg:col-start-2 lg:row-start-8">
+        <section className={`${isExitScanMode ? 'order-8 sm:order-none ' : ''}rounded-2xl border border-neutral-200 bg-white p-3 sm:col-span-2 sm:row-start-10 sm:mb-5 sm:self-start sm:p-5 lg:col-span-1 lg:col-start-2 lg:row-start-8`}>
           <div className="mb-1 flex items-center justify-between sm:mb-4"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
-          <p className="mb-3 text-xs text-neutral-600">Server totals at the last sync. Issued includes tickets blocked from entry. These totals do not measure saleable stock or people inside; offline scans are pending.</p>
+          <p className="mb-3 text-xs text-neutral-600">Server totals at the last sync. Issued includes tickets blocked from entry. These totals do not measure saleable stock or tickets inside; offline scans are pending.</p>
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {[['Server check-ins', dashboard.counts.admitted], ['Eligible, not checked in', dashboard.counts.eligible_unadmitted ?? '—'], ['Issued, not checked in', dashboard.counts.issued ?? dashboard.counts.remaining], ['Conflicts', dashboard.counts.conflicts]].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-neutral-50 p-2 sm:p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-lg font-bold sm:text-2xl">{value}</p></div>
@@ -1737,20 +2038,22 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       )}
 
 
-      <nav aria-label="Check-in tools" className="flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800 sm:col-span-2 sm:row-start-6 sm:mb-4">
+      <nav aria-label="Check-in tools" className={`${isExitScanMode ? 'order-6 sm:order-none ' : ''}flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold text-brand-800 sm:col-span-2 sm:row-start-6 sm:mb-4`}>
         <a href="#scanner-camera" className="inline-flex min-h-11 items-center underline underline-offset-4">Use camera</a>
         <a href="#manual-ticket-entry" className="inline-flex min-h-11 items-center underline underline-offset-4">Enter QR code</a>
         <a href="#attendee-lookup" className="inline-flex min-h-11 items-center underline underline-offset-4">Find attendee</a>
       </nav>
 
-      <div className="flex flex-col gap-3 sm:col-span-2 sm:row-start-8 sm:mb-6 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-start-10 lg:mb-0">
+      <div className={`${isExitScanMode ? 'order-7 sm:order-none ' : ''}flex flex-col gap-3 sm:col-span-2 sm:row-start-8 sm:mb-6 sm:block sm:space-y-5 sm:self-start lg:col-span-1 lg:col-start-1 lg:row-start-10 lg:mb-0`}>
         <section id="manual-ticket-entry" className="scroll-mt-24 rounded-2xl border border-neutral-200 bg-white p-5">
           <h2 className="font-semibold text-neutral-950">Enter a ticket QR code</h2>
           <p id="manual-ticket-help" className="mb-3 text-sm text-neutral-700">Paste the QR code or link from the ticket. Some tickets ask you to check details before admitting. For a ticket number such as HP-T123, use attendee lookup below.</p>
           <label htmlFor="manual-ticket-code" className="mb-1 block text-sm font-medium text-neutral-800">Ticket QR code</label>
           <form onSubmit={event => { event.preventDefault(); primeSound(); if (credentialInFlightRef.current) return; processCredential(manualCode); setManualCode('') }} className="flex flex-col gap-2 sm:flex-row">
             <input value={manualCode} onChange={event => setManualCode(event.target.value)} id="manual-ticket-code" className="input min-w-0 flex-1" aria-describedby="manual-ticket-help" placeholder="Paste ticket QR code or link" disabled={!ready} />
-            <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy || !!verification}>{credentialBusy ? 'Checking ticket…' : 'Check in ticket'}</button>
+            <button className="btn-primary" disabled={!ready || !manualCode.trim() || credentialBusy || !!verification}>
+              {credentialBusy ? 'Checking ticket…' : effectiveDirection === 'exit' ? 'Scan exit' : 'Check in ticket'}
+            </button>
           </form>
         </section>
 
@@ -1777,17 +2080,17 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </section>
       </div>
 
-      <div className="sm:col-start-1 sm:row-span-2 sm:row-start-2 sm:max-w-2xl sm:self-start">
+      <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}sm:col-start-1 sm:row-span-2 sm:row-start-2 sm:max-w-2xl sm:self-start`}>
         <p className="text-sm text-neutral-700 sm:mt-2">Scan a ticket, check the result, then welcome the guest.</p>
         <p className="mt-2 text-sm text-neutral-600">Prepare this device online before the event.</p>
       </div>
-      {!offlineOnly && <div className="sm:col-start-2 sm:row-start-1">
+      {!offlineOnly && <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}sm:col-start-2 sm:row-start-1`}>
         <OperationalSearch label="Find an event" buttonLabel="Search events" hint="Search by event name, venue or event ID." query={listing.q} onSearch={listing.search} busy={eventListLoading} />
         {!eventListLoading && listing.q && events.length === 0 && <p role="status" className="mb-2 text-sm">No matching events. Try another search. Your selected event stays ready.</p>}
       </div>}
-      {!offlineOnly && <div className="empty:hidden sm:col-start-2 sm:row-start-3"><OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" /></div>}
+      {!offlineOnly && <div className={`${isExitScanMode ? 'order-9 sm:order-none ' : ''}empty:hidden sm:col-start-2 sm:row-start-3`}><OperationalPagination meta={eventMeta} page={listing.page} onPage={listing.goToPage} busy={eventListLoading} label="Event pages" /></div>}
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7">
+      <section className={`${isExitScanMode ? 'order-10 sm:order-none ' : ''}rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-9 sm:mb-5 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-7`}>
         <div className="flex items-start gap-3"><Smartphone aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-brand-800" /><div className="min-w-0 break-words">
           <h2 className="font-semibold text-neutral-950">{device?.name || (ready ? 'Device ready' : 'Device not ready')}</h2>
           <p className="mt-2 text-sm text-neutral-700">{ready ? 'This device is ready to scan. Sync saved scans while connected.' : 'Connect and choose an assigned event to prepare this device for scanning.'}</p>
@@ -1809,8 +2112,26 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       </section>
 
 
+      {canOverride && flaggedConflicts.length > 0 && (
+        <section className={`${isExitScanMode ? 'order-11 sm:order-none ' : ''}rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 sm:col-span-2 lg:col-span-1 lg:col-start-2`}>
+          <h2 className="mb-2 font-semibold text-amber-950">Flagged offline conflicts ({flaggedConflicts.length})</h2>
+          <p className="mb-3 text-xs text-amber-900">Two gates admitted these tickets while offline. Review and clear or override with a reason.</p>
+          <div className="space-y-3">
+            {flaggedConflicts.map(conflict => (
+              <div key={conflict.id} className="rounded-xl border border-amber-200 bg-white p-3 text-xs">
+                <p className="break-words font-bold text-neutral-950 [overflow-wrap:anywhere]">{conflict.attendee_name || 'Guest'} · {conflict.code}</p>
+                <p className="mt-0.5 text-neutral-700">
+                  {conflict.last_entry_gate ? `First gate: ${conflict.last_entry_gate}` : 'Conflict recorded'}
+                  {conflict.last_entry_at ? ` at ${formatGateTime(conflict.last_entry_at, eventTimezone)}` : ''}
+                </p>
+                {online && <ReEntryLeadOverride ticket={conflict} busy={overrideBusy} onSubmit={submitLeadOverride} defaultAction="clear" compact />}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {dashboard?.permissions?.can_reverse && (
-        <section className="rounded-2xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-11 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-9 lg:row-span-2">
+        <section className={`${isExitScanMode ? 'order-12 sm:order-none ' : ''}rounded-2xl border border-neutral-200 bg-white p-5 sm:col-span-2 sm:row-start-11 sm:self-start lg:col-span-1 lg:col-start-2 lg:row-start-9 lg:row-span-2`}>
           <h2 className="mb-3 font-semibold">Recent admissions</h2>
           <div className="space-y-2">
             {dashboard.recent_actions.filter(action => action.kind === 'admit' && action.result === 'accepted').slice(0, 8).map(action => {
@@ -1826,7 +2147,19 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         </section>
       )}
       {verification && ready && <VerificationOverlay ticket={scanResult.ticket} onConfirm={confirmVerification} onCancel={cancelVerification} busy={credentialBusy} />}
-      {overlay && overlay.type !== 'verify' && <ScanResultOverlay key={`${overlay.id}:${overlay.type}`} id={overlay.id} type={overlay.type} ticket={scanResult.ticket} onDismiss={setDismissedFeedback} onGesture={primeSound} />}
+      {overlay && overlay.type !== 'verify' && (
+        <ScanResultOverlay
+          key={`${overlay.id}:${overlay.type}`}
+          id={overlay.id}
+          type={overlay.type}
+          ticket={scanResult.ticket}
+          headline={overlay.headline}
+          subtext={overlay.subtext}
+          badge={overlay.badge}
+          onDismiss={setDismissedFeedback}
+          onGesture={primeSound}
+        />
+      )}
     </div>
   )
 }

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -65,8 +65,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.bigint "ticket_id"
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.date "occupancy_day"
     t.index ["action_uuid"], name: "index_admission_actions_on_action_uuid", unique: true
     t.index ["actor_user_id"], name: "index_admission_actions_on_actor_user_id"
+    t.index ["event_id", "occupancy_day", "occurred_at"], name: "index_admission_actions_on_event_day_occurred_at"
     t.index ["event_id", "occurred_at"], name: "index_admission_actions_on_event_id_and_occurred_at"
     t.index ["event_id", "result"], name: "index_admission_actions_on_event_id_and_result"
     t.index ["event_id"], name: "index_admission_actions_on_event_id"
@@ -77,7 +79,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.index ["scanner_device_id", "sequence"], name: "idx_admission_device_sequence", unique: true, where: "((scanner_device_id IS NOT NULL) AND (sequence IS NOT NULL))"
     t.index ["scanner_device_id"], name: "index_admission_actions_on_scanner_device_id"
     t.index ["ticket_id"], name: "index_admission_actions_on_ticket_id"
-    t.check_constraint "kind = ANY (ARRAY[0, 1])", name: "admission_actions_kind_valid"
+    t.check_constraint "kind = ANY (ARRAY[0, 1, 2, 3])", name: "admission_actions_kind_valid_re_entry"
     t.check_constraint "manifest_version IS NULL OR manifest_version > 0", name: "admission_actions_manifest_version_positive"
     t.check_constraint "result = ANY (ARRAY[0, 1, 2])", name: "admission_actions_result_valid"
     t.check_constraint "sequence IS NULL OR sequence > 0", name: "admission_actions_sequence_positive"
@@ -224,6 +226,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.bigint "reversed_by_user_id"
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.date "reserve_release_on"
     t.index ["created_by_user_id"], name: "index_balance_adjustments_on_created_by_user_id"
     t.index ["dispute_id"], name: "index_balance_adjustments_on_dispute_id"
     t.index ["event_id"], name: "index_balance_adjustments_on_event_id"
@@ -727,7 +730,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.index ["event_id"], name: "index_event_staff_assignments_on_event_id"
     t.index ["organization_id"], name: "index_event_staff_assignments_on_organization_id"
     t.index ["user_id"], name: "index_event_staff_assignments_on_user_id"
-    t.check_constraint "role = ANY (ARRAY[0, 1, 2])", name: "event_staff_assignments_role_valid"
+    t.check_constraint "role = ANY (ARRAY[0, 1, 2, 3])", name: "event_staff_assignments_role_valid_re_entry"
     t.check_constraint "status = ANY (ARRAY[0, 1])", name: "event_staff_assignments_status_valid"
   end
 
@@ -811,6 +814,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.integer "preview_token_version", default: 0, null: false
     t.datetime "organizer_sales_suspended_at"
     t.text "organizer_sales_suspension_reason"
+    t.boolean "online_door_card_enabled", default: false, null: false
+    t.string "re_entry_mode", default: "off", null: false
+    t.integer "re_entry_max_count"
+    t.integer "re_entry_cooldown_minutes"
+    t.string "re_entry_cutoff_time"
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -826,6 +834,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.check_constraint "fee_policy = ANY (ARRAY[0, 1, 2])", name: "events_fee_policy_valid"
     t.check_constraint "max_capacity IS NULL OR max_capacity > 0", name: "events_capacity_positive"
     t.check_constraint "policy_hold_at IS NULL AND policy_hold_scope IS NULL AND policy_hold_reason IS NULL OR policy_hold_at IS NOT NULL AND (policy_hold_scope::text = ANY (ARRAY['sales'::character varying::text, 'hidden'::character varying::text])) AND char_length(btrim(policy_hold_reason)) > 0", name: "events_policy_hold_consistent"
+    t.check_constraint "re_entry_cooldown_minutes IS NULL OR re_entry_cooldown_minutes > 0", name: "events_re_entry_cooldown_positive"
+    t.check_constraint "re_entry_cutoff_time IS NULL OR re_entry_cutoff_time::text ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'::text", name: "events_re_entry_cutoff_time_valid"
+    t.check_constraint "re_entry_max_count IS NULL OR re_entry_max_count > 0", name: "events_re_entry_max_count_positive"
+    t.check_constraint "re_entry_mode::text = ANY (ARRAY['off'::character varying::text, 'exit_scan'::character varying::text, 'cooldown'::character varying::text])", name: "events_re_entry_mode_valid"
   end
 
   create_table "fee_change_notices", force: :cascade do |t|
@@ -1673,10 +1685,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.string "provider_account_id"
     t.string "provider_platform_account_id"
     t.datetime "retention_anonymized_at"
+    t.string "stripe_checkout_session_id"
+    t.text "stripe_checkout_url"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payments_on_retention_anonymized_at"
+    t.index ["stripe_checkout_session_id"], name: "index_payments_on_stripe_checkout_session_id", unique: true, where: "(stripe_checkout_session_id IS NOT NULL)"
     t.check_constraint "amount_cents >= 0", name: "payments_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payments_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"
@@ -2195,6 +2210,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.integer "last_count", default: 0, null: false
     t.datetime "last_alerted_at"
     t.datetime "updated_at", null: false
+    t.datetime "incident_opened_at"
   end
 
   create_table "runtime_executions", id: false, force: :cascade do |t|
@@ -2690,9 +2706,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.text "door_instructions"
     t.boolean "scanner_show_buyer", default: false, null: false
     t.index ["event_id"], name: "index_ticket_types_on_event_id"
-    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying, 'name_only'::character varying, 'name_and_email'::character varying]::text[])", name: "ticket_types_attendee_info_mode_valid"
+    t.check_constraint "attendee_info_mode::text = ANY (ARRAY['none'::character varying::text, 'name_only'::character varying::text, 'name_and_email'::character varying::text])", name: "ticket_types_attendee_info_mode_valid"
     t.check_constraint "door_allocation IS NULL OR door_allocation >= 0", name: "ticket_types_door_allocation_nonnegative"
-    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying, 'verify'::character varying]::text[])", name: "ticket_types_door_check_mode_valid"
+    t.check_constraint "door_check_mode::text = ANY (ARRAY['instant'::character varying::text, 'verify'::character varying::text])", name: "ticket_types_door_check_mode_valid"
     t.check_constraint "max_per_buyer IS NULL OR max_per_buyer > 0", name: "ticket_types_max_per_buyer_positive"
     t.check_constraint "max_per_order IS NULL OR max_per_order > 0", name: "ticket_types_max_per_order_positive"
     t.check_constraint "price_cents >= 0", name: "ticket_types_price_nonnegative"
@@ -2724,11 +2740,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.datetime "first_admitted_at"
     t.datetime "retention_anonymized_at"
     t.bigint "parent_ticket_id"
+    t.string "occupancy_state", default: "outside", null: false
+    t.date "occupancy_day"
+    t.datetime "last_entry_at"
+    t.datetime "last_exit_at"
+    t.bigint "last_entry_device_id"
+    t.integer "re_entry_count", default: 0, null: false
+    t.boolean "re_entry_conflict_flagged", default: false, null: false
     t.index "lower((holder_email)::text)", name: "index_tickets_on_lower_holder_email"
+    t.index ["event_id", "occupancy_state"], name: "index_tickets_on_event_id_and_occupancy_state"
     t.index ["event_id"], name: "index_tickets_on_event_id"
     t.index ["event_seat_id"], name: "index_tickets_on_event_seat_id"
     t.index ["event_seat_id"], name: "index_tickets_one_active_per_event_seat", unique: true, where: "((event_seat_id IS NOT NULL) AND (status = ANY (ARRAY[0, 1, 3])))"
     t.index ["holder_user_id"], name: "index_tickets_on_holder_user_id"
+    t.index ["last_entry_device_id"], name: "index_tickets_on_last_entry_device_id", where: "(last_entry_device_id IS NOT NULL)"
     t.index ["order_id"], name: "index_tickets_on_order_id"
     t.index ["order_item_id"], name: "index_tickets_on_order_item_id"
     t.index ["parent_ticket_id", "event_id"], name: "index_tickets_on_parent_ticket_id_and_event_id", unique: true, where: "(parent_ticket_id IS NOT NULL)"
@@ -2738,7 +2763,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.index ["retention_anonymized_at"], name: "index_tickets_on_retention_anonymized_at"
     t.index ["ticket_type_id"], name: "index_tickets_on_ticket_type_id"
     t.check_constraint "display_credential_version > 0", name: "tickets_display_version_positive"
+    t.check_constraint "occupancy_state::text = ANY (ARRAY['outside'::character varying::text, 'inside'::character varying::text])", name: "tickets_occupancy_state_valid"
     t.check_constraint "parent_ticket_id IS NULL OR order_item_id IS NULL", name: "chk_tickets_pass_child_no_order_item"
+    t.check_constraint "re_entry_count >= 0", name: "tickets_re_entry_count_non_negative"
     t.check_constraint "scan_credential_version > 0", name: "tickets_scan_version_positive"
   end
 
@@ -2939,6 +2966,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
     t.index ["status", "created_at"], name: "index_webhook_events_on_status_and_created_at"
     t.check_constraint "attempts >= 0", name: "webhook_events_attempts_nonnegative"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4])", name: "webhook_events_status_valid"
+  end
+
+  create_table "webhook_rejection_counts", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "reason", null: false
+    t.datetime "bucket_started_at", null: false
+    t.integer "count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["bucket_started_at"], name: "index_webhook_rejection_counts_on_bucket_started_at"
+    t.index ["provider", "reason", "bucket_started_at"], name: "index_webhook_rejection_counts_on_bucket", unique: true
+    t.check_constraint "count >= 0", name: "webhook_rejection_counts_nonnegative"
   end
 
   add_foreign_key "accessible_seat_releases", "event_seats", on_delete: :restrict
@@ -3243,6 +3282,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_160000) do
   add_foreign_key "tickets", "order_items", on_delete: :restrict
   add_foreign_key "tickets", "orders"
   add_foreign_key "tickets", "pricing_tiers"
+  add_foreign_key "tickets", "scanner_devices", column: "last_entry_device_id"
   add_foreign_key "tickets", "ticket_types"
   add_foreign_key "tickets", "tickets", column: "parent_ticket_id", on_delete: :restrict
   add_foreign_key "tickets", "users", column: "holder_user_id", on_delete: :restrict

@@ -58,6 +58,16 @@ RSpec.describe "Puma process configuration" do
     expect(options[:solid_queue_mode]).to be_nil
   end
 
+  it "flushes buffered rejected-webhook counts when a cluster worker shuts down, with or without the embedded runtime" do
+    options = puma_options("WEB_CONCURRENCY" => "2", "RAILS_MAX_THREADS" => "5", "HAFAPASS_RUNTIME" => "solid_queue", "DB_POOL" => "11")
+    hooks = options.all_of(:before_worker_shutdown)
+    expect(hooks).not_to be_empty
+
+    allow(Operations::WebhookRejections).to receive(:flush!)
+    hooks.each { |hook| hook.respond_to?(:call) ? hook.call(0) : hook[:block].call(0) }
+    expect(Operations::WebhookRejections).to have_received(:flush!).at_least(:once)
+  end
+
   it "rejects a process count that is not a positive integer" do
     %w[0 -1 auto 2x].each do |value|
       ENV["WEB_CONCURRENCY"] = value

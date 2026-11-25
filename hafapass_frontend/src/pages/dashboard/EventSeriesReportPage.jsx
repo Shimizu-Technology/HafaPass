@@ -406,7 +406,8 @@ function EventSeriesReportSession({ seriesId, identity, path }) {
     { key: 'combined', label: 'Combined Series Total', subtitle: 'All events in this series', row: combined, total: true },
   ]
 
-  const channelRows = ['online_stripe', 'door_card', 'door_cash', 'free_comp'].map((key) => channels[key]).filter(Boolean)
+  const hostedDoorChannels = ['door_card_link', 'door_card_keyed'].filter(key => channels[key]?.orders_count > 0)
+  const channelRows = ['online_stripe', 'door_card', ...hostedDoorChannels, 'door_cash', 'free_comp'].map(key => channels[key]).filter(Boolean)
 
   return (
     <WorkspacePage>

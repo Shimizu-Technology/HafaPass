@@ -1,6 +1,6 @@
 # Copa de Marianas 2027 launch readiness
 
-The Marianas Sports Jiu-Jitsu Federation plans to sell spectator tickets for Saturday, January 30, 2027 at UOG Calvo Field House. Target on-sale date is Monday, January 4, Guam time. Athletes register through ASJJF. The organizer provides the door scanners and cash-table staff. HåfaPass provides the software, a setup session, a printable door guide, a full rehearsal and an on-call contact.
+The Marianas Sports Jiu-Jitsu Federation plans to sell spectator tickets for Saturday, January 30, 2027 at UOG Calvo Field House. Target on-sale date is Monday, January 4, Guam time. Athletes register through ASJJF. The organizer provides the door scanners and cash-table staff. HåfaPass provides the software, a setup session, a [volunteer door kit and printable role cards](door-kit/VOLUNTEER_QUICK_GUIDE.md), a full rehearsal and an on-call contact.
 
 | Gate (Guam time) | Acceptance | Status |
 | --- | --- | --- |

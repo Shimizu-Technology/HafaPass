@@ -1793,5 +1793,74 @@
         "context": "Shown when the browser's installer could not open; the buyer can still add HåfaPass from the browser menu. HåfaPass is the product name; keep it as written."
       }
     }
+  },
+  "emailFlow": {
+    "count": {
+      "willGet_one": {
+        "context": "Count of people who will receive a marketing email the organizer or HåfaPass admin is about to send. {{n}} is an already formatted number."
+      },
+      "willGet_other": {
+        "context": "Plural of willGet_one. {{n}} is an already formatted number such as 48,000."
+      },
+      "leftOut_one": {
+        "context": "People in the chosen list who will NOT receive the email because they did not agree to email, unsubscribed, or their address bounced. 'Left out' means excluded, not forgotten."
+      },
+      "leftOut_other": {
+        "context": "Plural of leftOut_one."
+      }
+    },
+    "subscriberStatuses": {
+      "complained": {
+        "context": "The person reported a HåfaPass email as spam in their mail app."
+      }
+    },
+    "history": {
+      "stats": {
+        "waiting": {
+          "context": "Handed to the email service but the service has not yet reported delivery."
+        },
+        "unsubscribed": {
+          "context": "Recipients of this email who have unsubscribed since it was sent."
+        }
+      },
+      "progress": {
+        "context": "Sending progress for a large email: {{done}} of {{total}} messages have been passed to the email delivery service."
+      },
+      "outcome": {
+        "skipped_one": {
+          "context": "Emails HåfaPass did not send because, at send time, the person had unsubscribed, opted out of all marketing, or their address was blocked after earlier bounces or spam reports."
+        },
+        "none": {
+          "context": "{{reasons}} is a comma-separated list such as '50 skipped (…), 2 failed'."
+        }
+      },
+      "states": {
+        "partial": {
+          "context": "Status badge: the email went out, but some recipients were skipped or failed."
+        }
+      },
+      "cancelAlreadyCancelled": {
+        "context": "Shown when someone tries to cancel a scheduled email that another team member (or they, in another tab) already cancelled."
+      }
+    },
+    "errors": {
+      "addressMissingPlatform": {
+        "context": "Shown to the HåfaPass platform admin. HAFAPASS_POSTAL_ADDRESS is a server setting name; do not translate it."
+      }
+    },
+    "send": {
+      "estimate_one": {
+        "context": "The number of people is an estimate: HåfaPass re-checks consent and unsubscribes when the email actually sends, so the final count can be higher or lower."
+      },
+      "estimate_other": {
+        "context": "Plural of estimate_one."
+      },
+      "lapsedTitlePast": {
+        "context": "The date and time the sender picked for a scheduled email is now in the past (it passed while they were reviewing)."
+      },
+      "lapsedTitleSoon": {
+        "context": "The picked send time is still in the future but less than one minute away, which is too soon to schedule."
+      }
+    }
   }
 }

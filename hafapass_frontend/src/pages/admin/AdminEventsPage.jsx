@@ -1,6 +1,7 @@
 import AdminAccessRecovery from '../../components/AdminAccessRecovery'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Loader2, Search, Star, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import apiClient from '../../api/client'
 import AdminLayout from './AdminLayout'
@@ -25,7 +26,8 @@ const categories = ['', 'nightlife', 'concert', 'festival', 'dining', 'sports', 
 // mounted while it is open, because each dialog lives inside its own trigger.
 // The page owns `open` so a list refresh after a gate action keeps the row
 // expanded and the closed dialog can return focus to its trigger.
-function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCandidate }) {
+function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCandidate, toggleOnlineDoor }) {
+  const { t } = useTranslation()
   const panelId = `release-gates-${event.id}`
   return (
     <div className="min-w-40">
@@ -41,6 +43,10 @@ function ReleaseGatesControl({ event, open, onToggle, onComplete, toggleProofCan
         <LiveMoneyProofReviewDialog event={event} onComplete={onComplete} />
         {!event.live_money_proof_candidate && <LivePilotOperationsDialog event={event} onComplete={onComplete} />}
         {!event.live_money_proof_candidate && <PilotCloseoutDialog event={event} onComplete={onComplete} />}
+        {!event.live_money_proof_candidate && <button type="button" onClick={() => toggleOnlineDoor(event)}
+          className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">
+          {t(event.online_door_card_enabled ? 'boxOfficeCard.disableAdmin' : 'boxOfficeCard.enableAdmin')}
+        </button>}
         {event.status === 'draft' && <button type="button" onClick={() => toggleProofCandidate(event)} className="min-h-11 rounded-full border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">{event.live_money_proof_candidate ? 'Remove proof-candidate flag' : 'Mark as hidden proof candidate'}</button>}
       </div>}
     </div>
@@ -111,14 +117,14 @@ function AdminEventsPageSession({ identity, resourcePath }) {
 
   useEffect(() => { fetchEvents(); return () => pendingLoad.current?.abort() }, [fetchEvents])
 
-  const toggleFeatured = async (event) => {
+  const toggleEventFlag = async (event, field) => {
     if (mutationBusy.current) return
     const request = beginRequest()
     if (!request) return
     mutationBusy.current = true
     setActionError('')
     try {
-      const res = await apiClient.patch(`/admin/events/${event.id}`, { is_featured: !event.is_featured }, request.config)
+      const res = await apiClient.patch(`/admin/events/${event.id}`, { [field]: !event[field] }, request.config)
       if (!request.current()) return
       setEvents(prev => prev.map(e => e.id === event.id ? res.data : e))
     } catch (err) {
@@ -241,9 +247,9 @@ function AdminEventsPageSession({ identity, resourcePath }) {
                       <span className="block text-xs text-neutral-500 md:hidden">Revenue: ${(event.revenue_cents / 100).toFixed(2)}</span>
                     </td>
                     <td className="hidden whitespace-nowrap px-3 py-3 text-right text-neutral-700 md:table-cell">${(event.revenue_cents / 100).toFixed(2)}</td>
-                    <td className="px-3 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} /></td>
+                    <td className="px-3 py-3"><ReleaseGatesControl event={event} open={openGates.has(event.id)} onToggle={() => toggleGates(event.id)} onComplete={refreshAfterAction} toggleProofCandidate={toggleProofCandidate} toggleOnlineDoor={item => toggleEventFlag(item, 'online_door_card_enabled')} /></td>
                     <td className="px-3 py-3 text-center">
-                      <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleFeatured(event)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
+                      <button type="button" aria-label={event.is_featured ? `Remove ${event.title} from featured events` : `Feature ${event.title}`} onClick={() => toggleEventFlag(event, 'is_featured')} className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors">
                         <Star className={`w-4 h-4 ${event.is_featured ? 'fill-amber-700 text-amber-700' : 'text-neutral-500'}`} />
                       </button>
                     </td>

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Payment < ApplicationRecord
+  encrypts :stripe_checkout_url
+
   belongs_to :order
   has_one :stripe_fee_evidence, dependent: :restrict_with_error
   has_many :reconciliation_exceptions, dependent: :restrict_with_error

@@ -700,7 +700,8 @@
       "action": "anonymize",
       "pii_columns": [
         "failure_message",
-        "provider_payload"
+        "provider_payload",
+        "stripe_checkout_url"
       ]
     },
     "payout_check_adjustments": {
@@ -1266,7 +1267,8 @@
       "source": "non-personal",
       "ticket_id": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "occupancy_day": "system"
     },
     "admission_manifests": {
       "id": "system",
@@ -1367,6 +1369,7 @@
       "order_id": "system",
       "organization_id": "system",
       "reason": "pii",
+      "reserve_release_on": "financial",
       "reversal_of_id": "system",
       "reversed_by_user_id": "system",
       "status": "system",
@@ -1734,6 +1737,7 @@
     },
     "events": {
       "id": "system",
+      "online_door_card_enabled": "system",
       "preview_token_digest": "pii",
       "preview_token_version": "system",
       "age_restriction": "non-personal",
@@ -1782,7 +1786,11 @@
       "localized_content_sources": "pii",
       "page_customization": "pii",
       "organizer_sales_suspended_at": "system",
-      "organizer_sales_suspension_reason": "pii"
+      "organizer_sales_suspension_reason": "pii",
+      "re_entry_mode": "non-personal",
+      "re_entry_max_count": "non-personal",
+      "re_entry_cutoff_time": "non-personal",
+      "re_entry_cooldown_minutes": "non-personal"
     },
     "fee_change_notices": {
       "id": "system",
@@ -2359,6 +2367,8 @@
     },
     "payments": {
       "id": "system",
+      "stripe_checkout_session_id": "system",
+      "stripe_checkout_url": "pii",
       "amount_cents": "financial",
       "created_at": "system",
       "currency": "financial",
@@ -2729,7 +2739,8 @@
       "signal": "system",
       "last_count": "non-personal",
       "last_alerted_at": "system",
-      "updated_at": "system"
+      "updated_at": "system",
+      "incident_opened_at": "system"
     },
     "runtime_executions": {
       "task_key": "system",
@@ -3126,7 +3137,14 @@
       "ticket_type_id": "system",
       "updated_at": "system",
       "first_admitted_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "occupancy_state": "non-personal",
+      "occupancy_day": "system",
+      "last_entry_at": "system",
+      "last_exit_at": "system",
+      "last_entry_device_id": "system",
+      "re_entry_count": "non-personal",
+      "re_entry_conflict_flagged": "non-personal"
     },
     "tin_match_requests": {
       "id": "system",
@@ -3280,6 +3298,15 @@
       "status": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system"
+    },
+    "webhook_rejection_counts": {
+      "id": "system",
+      "provider": "system",
+      "reason": "system",
+      "bucket_started_at": "system",
+      "count": "non-personal",
+      "created_at": "system",
+      "updated_at": "system"
     },
     "platform_subscribers": {
       "id": "non-personal",

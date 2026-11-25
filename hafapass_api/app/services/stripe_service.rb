@@ -68,6 +68,47 @@ class StripeService
       end
     end
 
+    def create_door_checkout_session(payment:, line_items:, expires_at:)
+      settings = SiteSetting.instance
+      environment = payment.provider_environment
+      if (environment == "live" && (!Rails.env.production? || !settings.can_enable_live?)) || environment == "simulate"
+        raise PaymentError, "Online door card payments are unavailable in this payment mode"
+      end
+
+      client, options = operation_client(payment: payment, settings: settings)
+      order = payment.order
+      metadata = { hafapass_door_payment: payment.id, hafapass_door_checkout: order.checkout_key_digest }
+      checkout_return = "#{PublicSiteUrl.frontend}/door-payment"
+      client.v1.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        expires_at: expires_at.to_i,
+        line_items: line_items,
+        client_reference_id: order.reference,
+        metadata: metadata,
+        payment_intent_data: { metadata: metadata, description: "HåfaPass box office · #{order.reference}" },
+        success_url: "#{checkout_return}?result=finished",
+        cancel_url: checkout_return,
+        customer_email: Commerce::OnlineDoorSale.buyer_email(order)
+      }.compact, options.merge(idempotency_key: "#{payment.idempotency_key}:checkout"))
+    end
+
+    def retrieve_door_checkout_session(payment)
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance)
+      client.v1.checkout.sessions.retrieve(payment.stripe_checkout_session_id, {}, options)
+    end
+
+    def expire_door_checkout_session(payment:, session_id:)
+      client, options = operation_client(payment: payment, settings: SiteSetting.instance)
+      begin
+        client.v1.checkout.sessions.expire(session_id, {}, options.merge(idempotency_key: "#{payment.idempotency_key}:expire"))
+      rescue Stripe::InvalidRequestError
+        # A concurrent payment or earlier cancellation can close the Session.
+        # Read the resulting state before releasing the local inventory.
+        client.v1.checkout.sessions.retrieve(session_id, {}, options)
+      end
+    end
+
     # Both fields are required: a legacy automatic intent may currently offer
     # cards yet still lack the fixed allowlist required for this release.
     def card_only_intent?(intent)

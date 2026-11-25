@@ -25,6 +25,10 @@ test('box office demo completes cash and provides ticket delivery actions', asyn
   await page.getByRole('textbox', { name: 'Confirm buyer email' }).fill('player@example.invalid')
   await page.getByRole('button', { name: 'Send tickets' }).click()
   await expect(page.getByText('Ticket email queued for player@example.invalid.')).toBeVisible()
+  // A reload restores the receipt instead of "Could not load the order".
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Print tickets' })).toBeVisible()
+  await expect(page.getByText(/Could not load the order/)).toHaveCount(0)
 })
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
@@ -49,3 +53,23 @@ test('buyer account pages keep the sign-in-is-off notice', async ({ page }) => {
   await page.goto('/my-tickets')
   await expect(page.getByRole('heading', { name: 'Your tickets in this preview' })).toBeVisible()
 })
+
+for (const [mode, control] of [
+  ['Pay on buyer’s phone', { role: 'img', name: 'Stripe payment QR' }],
+  ['Enter card on this device', { role: 'link', name: 'Open Stripe checkout' }],
+]) {
+  test(`demo box office simulates ${mode} without Stripe`, async ({ page }) => {
+    const external = []
+    page.on('request', request => { if (/stripe\.com/.test(request.url())) external.push(request.url()) })
+    await page.goto('/dashboard/events/101/box-office')
+    await page.getByRole('button', { name: /^Add / }).first().click()
+    await page.getByRole('button', { name: mode }).click()
+    await page.getByRole('button', { name: 'Prepare Stripe checkout' }).click()
+    await expect(page.getByRole('heading', { name: 'Waiting for payment…' })).toBeVisible()
+    const checkout = page.getByRole(control.role, { name: control.name })
+    await expect(checkout).toBeVisible()
+    if (control.role === 'link') await expect(checkout).toHaveAttribute('href', /\/door-payment\?result=finished&demo=1$/)
+    await expect(page.getByRole('heading', { name: 'Paid — tickets ready' })).toBeVisible({ timeout: 12_000 })
+    expect(external).toEqual([])
+  })
+}

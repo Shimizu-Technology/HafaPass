@@ -108,7 +108,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
   end
 
   def event_params
-    params.permit(:is_featured, :live_money_proof_candidate)
+    params.permit(:is_featured, :live_money_proof_candidate, :online_door_card_enabled)
   end
 
   def event_json(e)
@@ -122,6 +122,7 @@ class Api::V1::Admin::EventsController < Api::V1::Admin::BaseController
       translation_status: e.translation_status,
       category: e.category,
       is_featured: e.is_featured,
+      online_door_card_enabled: e.online_door_card_enabled,
       starts_at: e.starts_at,
       created_at: e.created_at,
       tickets_sold: tickets_sold,

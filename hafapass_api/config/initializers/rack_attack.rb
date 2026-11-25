@@ -43,7 +43,7 @@ class Rack::Attack
     path = req.path.to_s.downcase
     base = %r{\A/api/v1/organizer/events/[^/]+/}
     path.match?(base) && (
-      (req.post? && path.match?(%r{/scanner_devices/[^/]+/(?:scan|sync)(?:\.[a-z0-9]+)?/*\z})) ||
+      (req.post? && path.match?(%r{(?:/scanner_devices/[^/]+/(?:scan|sync)|/admissions/override)(?:\.[a-z0-9]+)?/*\z})) ||
       (req.get? && path.match?(%r{/(?:scanner_devices/[^/]+/manifest|admissions(?:/search)?)(?:\.[a-z0-9]+)?/*\z}))
     )
   end
@@ -70,6 +70,19 @@ class Rack::Attack
   end
 
   # ─── General Throttles ────────────────────────────────────────────────────
+
+  throttle("box-office-card-status/user-order", limit: 6, period: 1.minute) do |req|
+    next unless req.get? || req.head?
+
+    order_id = Rack::Utils.unescape_path(req.path).b.downcase[
+      %r{\A/+api/+v1/+organizer/+events/+[^/]+/+box_office_card_sales/+([^/.]+)(?:\.[^/]+)?/*\z}, 1
+    ].to_i
+    next unless order_id.positive? && req.GET["check_provider"] == "1"
+
+    token = req.get_header("HTTP_AUTHORIZATION").to_s.match(/\ABearer (\S+)\z/i)&.captures&.first
+    subject = ClerkAuthenticator.verify(token)&.dig("sub") if token
+    "#{subject}:#{order_id}" if subject.present?
+  end
 
   # Provider webhooks arrive from a small pool of provider addresses, and a
   # rejected delivery is retried later, so they never share the visitor budget.
@@ -102,6 +115,12 @@ class Rack::Attack
 
   throttle("webhooks/ip", limit: 600, period: 1.minute) do |req|
     req.ip if provider_webhook.call(req)
+  end
+
+  # The morning brief reads this once a day. The limit exists to stop token
+  # guessing, so it counts every request, valid or not.
+  throttle("ops-summary/ip", limit: 10, period: 1.minute) do |req|
+    req.ip if (req.get? || req.head?) && req.path.to_s.downcase.match?(%r{\A/api/v1/ops/summary(?:\.[a-z0-9]+)?/*\z})
   end
 
   throttle("ticket-view/credential", limit: 60, period: 1.minute) do |req|

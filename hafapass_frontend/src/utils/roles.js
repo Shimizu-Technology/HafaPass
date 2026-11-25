@@ -26,12 +26,19 @@ export const TEAM_ROLES = ['manager', 'finance', 'marketer', 'box_office', 'scan
 export const EVENT_INVITE_ROLES = ['box_office', 'scanner']
 // Event assignments for people already on the team.
 export const EVENT_ASSIGNMENT_DESCRIPTION = roleMatrix.notes.assignments
-export const EVENT_ASSIGNMENT_ROLES = ['manager', 'box_office', 'scanner']
+export const EVENT_ASSIGNMENT_ROLES = ['manager', 'box_office', 'scanner_lead', 'scanner']
+
+const EVENT_ASSIGNMENT_EXTRA_ROLES = {
+  scanner_lead: {
+    label: 'Scanner lead',
+    description: 'Scans tickets and resolves re-entry conflicts with audited overrides for assigned events.',
+  },
+}
 
 const humanize = value => value ? value.replaceAll('_', ' ').replace(/^\w/, character => character.toUpperCase()) : ''
 
-export const roleLabel = role => ORGANIZATION_ROLES[role]?.label || PLATFORM_ROLES[role]?.label || humanize(role)
-export const roleDescription = role => ORGANIZATION_ROLES[role]?.description || PLATFORM_ROLES[role]?.description || ''
+export const roleLabel = role => ORGANIZATION_ROLES[role]?.label || EVENT_ASSIGNMENT_EXTRA_ROLES[role]?.label || PLATFORM_ROLES[role]?.label || humanize(role)
+export const roleDescription = role => ORGANIZATION_ROLES[role]?.description || EVENT_ASSIGNMENT_EXTRA_ROLES[role]?.description || PLATFORM_ROLES[role]?.description || ''
 
 export const INVITATION_STATUS = {
   pending: { label: 'Invite pending', tone: 'warning' },
