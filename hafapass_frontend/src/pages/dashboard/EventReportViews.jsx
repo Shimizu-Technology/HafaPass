@@ -83,9 +83,9 @@ export function AttendanceReport({ data, event = null }) {
     : isCooldown
       ? `Cool-down (${reEntry.cooldown_minutes || 15} min)`
       : 'Off (single entry)'
-  const summaryOccupancyLabel = isCooldown ? 'Admitted' : (multiDay ? 'Entered / active' : 'Inside now')
+  const summaryOccupancyLabel = isCooldown ? 'Admitted' : (multiDay ? 'Tickets inside / active' : 'Tickets inside')
   const summaryOccupancyValue = isCooldown ? number(reEntry?.entries || 0) : number(reEntry?.current_headcount || 0)
-  const dayOccupancyHeader = isCooldown ? 'Admitted' : 'Inside / status'
+  const dayOccupancyHeader = isCooldown ? 'Admitted' : 'Tickets inside / status'
   return <>
     <Metrics items={[
       ['Expected', number(data.total_active_tickets)], ['Checked in', number(data.checked_in_count)],
@@ -94,7 +94,10 @@ export function AttendanceReport({ data, event = null }) {
     {showReEntry && (
       <section aria-labelledby="re-entry-headcount" className="space-y-4 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 id="re-entry-headcount" className="text-lg font-bold">Re-entry &amp; Headcount</h4>
+          <div>
+            <h4 id="re-entry-headcount" className="text-lg font-bold">Re-entry &amp; Tickets Inside</h4>
+            <p className="mt-0.5 text-xs text-neutral-600">Counts admitted tickets currently inside, not verified unique people.</p>
+          </div>
           <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-800">Mode: {modeLabel}</span>
         </div>
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -103,7 +106,7 @@ export function AttendanceReport({ data, event = null }) {
             ['Exits', number(reEntry.exits || 0)],
             ['Re-entries', number(reEntry.re_entries || 0)],
             [summaryOccupancyLabel, summaryOccupancyValue],
-            [isCooldown ? 'Peak admitted' : 'Peak headcount', reEntry.peak_headcount > 0
+            [isCooldown ? 'Peak admitted' : 'Peak tickets inside', reEntry.peak_headcount > 0
               ? `${number(reEntry.peak_headcount)}${reEntry.peak_headcount_label ? ` · ${reEntry.peak_headcount_label}` : ''}`
               : '0'],
           ].map(([label, value]) => (
@@ -115,9 +118,10 @@ export function AttendanceReport({ data, event = null }) {
         </dl>
         {reEntry.by_day?.length > 0 && (
           <>
-            <ul aria-label="Daily headcount and re-entry summary" className="space-y-2 sm:hidden print:hidden">
+            <ul aria-label="Daily tickets inside and re-entry summary" className="space-y-2 sm:hidden print:hidden">
               {reEntry.by_day.map(day => {
-                const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+                const rowServiceDay = day.current_service_day || currentServiceDay
+                const isPastDay = Boolean(day.day && rowServiceDay && day.day < rowServiceDay)
                 const dayStatus = isCooldown
                   ? `${number(day.entries)} admitted`
                   : isPastDay
@@ -132,15 +136,15 @@ export function AttendanceReport({ data, event = null }) {
                       <div><dt className="text-xs text-neutral-600">Exits</dt><dd className="font-semibold tabular-nums">{number(day.exits)}</dd></div>
                       <div><dt className="text-xs text-neutral-600">Re-entries</dt><dd className="font-semibold tabular-nums">{number(day.re_entries)}</dd></div>
                       <div><dt className="text-xs text-neutral-600">Overrides</dt><dd className="font-semibold tabular-nums">{number(day.overrides || 0)}</dd></div>
-                      <div><dt className="text-xs text-neutral-600">{isCooldown || isPastDay ? 'Entered' : 'Inside now'}</dt><dd className="font-semibold tabular-nums">{dayStatus}</dd></div>
-                      <div><dt className="text-xs text-neutral-600">{isCooldown ? 'Peak admitted' : 'Peak headcount'}</dt><dd className="font-semibold tabular-nums">{number(day.peak_headcount)}{day.peak_headcount_label ? ` · ${day.peak_headcount_label}` : ''}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">{isCooldown || isPastDay ? 'Entered' : 'Tickets inside'}</dt><dd className="font-semibold tabular-nums">{dayStatus}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">{isCooldown ? 'Peak admitted' : 'Peak tickets inside'}</dt><dd className="font-semibold tabular-nums">{number(day.peak_headcount)}{day.peak_headcount_label ? ` · ${day.peak_headcount_label}` : ''}</dd></div>
                     </dl>
                   </li>
                 )
               })}
             </ul>
             <div className="hidden sm:block print:block">
-              <Table label="Daily headcount and re-entry breakdown">
+              <Table label="Daily tickets inside and re-entry breakdown">
                 <thead className="bg-neutral-100"><tr>
                   <th scope="col" className={cell}>Day</th>
                   <th scope="col" className={numeric}>Entries</th>
@@ -148,11 +152,12 @@ export function AttendanceReport({ data, event = null }) {
                   <th scope="col" className={numeric}>Re-entries</th>
                   <th scope="col" className={numeric}>Overrides</th>
                   <th scope="col" className={numeric}>{dayOccupancyHeader}</th>
-                  <th scope="col" className={numeric}>{isCooldown ? 'Peak admitted' : 'Peak headcount'}</th>
+                  <th scope="col" className={numeric}>{isCooldown ? 'Peak admitted' : 'Peak tickets inside'}</th>
                 </tr></thead>
                 <tbody className="divide-y divide-neutral-200">
                   {reEntry.by_day.map(day => {
-                    const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+                    const rowServiceDay = day.current_service_day || currentServiceDay
+                    const isPastDay = Boolean(day.day && rowServiceDay && day.day < rowServiceDay)
                     const dayCell = isCooldown
                       ? number(day.entries)
                       : isPastDay

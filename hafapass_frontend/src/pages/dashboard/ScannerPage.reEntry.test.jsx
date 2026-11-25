@@ -226,7 +226,7 @@ describe('ScannerPage re-entry UX', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStorage.clear() })
 
-  it('hides the Entry/Exit toggle and Inside now tile when mode is Off (no extra taps or headcount noise)', async () => {
+  it('hides the Entry/Exit toggle and Tickets inside tile when mode is Off (no extra taps or headcount noise)', async () => {
     await prepareOfflineReEntry({
       eventOverrides: { re_entry_mode: 'off' },
       tickets: [{ ticket_id: 1, state: 'valid', attendee_name: 'Avery Lindqvist', ticket_type: 'General', credential_hash: await sha256Hex('off-1') }],
@@ -343,7 +343,7 @@ describe('ScannerPage re-entry UX', () => {
     render(<ScannerPage />)
     expect(await screen.findByTestId('scanner-live-headcount')).toHaveTextContent('9,999')
     expect(screen.getByText(/Jan 30, 2026: 4,200 entered/)).toBeInTheDocument()
-    expect(screen.getByText(/Today: 9,999 inside/)).toBeInTheDocument()
+    expect(screen.getByText(/Today: 9,999 tickets inside/)).toBeInTheDocument()
     expect(screen.getByText(/Flagged offline conflicts \(1\)/)).toBeInTheDocument()
 
     const user = userEvent.setup()
@@ -358,7 +358,7 @@ describe('ScannerPage re-entry UX', () => {
     )
   })
 
-  it('labels cooldown mode as Entered instead of Inside now and defaults already-inside lead override to Admit (re-entry)', async () => {
+  it('labels cooldown mode as Entered instead of Tickets inside and defaults already-inside lead override to Admit (re-entry)', async () => {
     const today = serviceDayString(Date.now(), { timezone: 'Pacific/Guam' })
     const manifest = await signedManifest(eventId, [{
       ticket_id: 301, state: 'admitted', occupancy_state: 'inside', occupancy_day: today,
@@ -399,7 +399,7 @@ describe('ScannerPage re-entry UX', () => {
     const tile = await screen.findByTestId('scanner-live-headcount')
     expect(tile).toHaveTextContent('42')
     expect(tile.parentElement).toHaveTextContent('Entered')
-    expect(tile.parentElement).not.toHaveTextContent('Inside now')
+    expect(tile.parentElement).not.toHaveTextContent('Tickets inside')
 
     const user = userEvent.setup()
     await enterCode(user, 'qr-301', 'Check in ticket')
@@ -498,9 +498,10 @@ describe('ReEntrySettings & AttendanceReport re-entry views', () => {
         }}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'Re-entry & Headcount' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Re-entry & Tickets Inside' })).toBeInTheDocument()
+    expect(screen.getByText(/Counts admitted tickets currently inside, not verified unique people/i)).toBeInTheDocument()
     expect(screen.getAllByText('312 · 2:15 PM').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole('region', { name: 'Daily headcount and re-entry breakdown' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Daily tickets inside and re-entry breakdown' })).toBeInTheDocument()
     expect(screen.getAllByText('297').length).toBeGreaterThanOrEqual(2)
   })
 })

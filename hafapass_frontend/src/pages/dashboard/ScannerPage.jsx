@@ -1897,7 +1897,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
         {liveHeadcount != null && (
           <div className="rounded-xl border border-brand-200 bg-brand-50/70 p-2 sm:p-3">
             <p className="flex items-center gap-1 text-xs leading-tight font-medium text-brand-950 sm:text-sm">
-              <Users aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> {isCooldownMode ? 'Entered' : 'Inside now'}
+              <Users aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /> {isCooldownMode ? 'Entered' : 'Tickets inside'}
             </p>
             <p className="text-lg font-bold tabular-nums text-brand-950 sm:text-xl" data-testid="scanner-live-headcount">{HEADCOUNT_FORMAT.format(liveHeadcount)}</p>
             {(!online || pendingCount > 0 || untrackedPreReEntry > 0) && (
@@ -1916,13 +1916,14 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
 
       <div className={`${isExitScanMode ? 'order-5 sm:order-none ' : ''}flex flex-col gap-3 empty:hidden sm:col-span-2 sm:row-start-5 sm:block`}>
         {headcountByDay.length > 1 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs sm:mb-4" aria-label="Live headcount by day">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs sm:mb-4" aria-label="Tickets inside by day">
             <span className="font-semibold text-neutral-700">By day:</span>
             {headcountByDay.map(day => {
-              const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+              const rowServiceDay = day.current_service_day || currentServiceDay
+              const isPastDay = Boolean(day.day && rowServiceDay && day.day < rowServiceDay)
               const countText = isPastDay || isCooldownMode
                 ? `${HEADCOUNT_FORMAT.format(day.entries ?? day.headcount ?? 0)} entered`
-                : `${HEADCOUNT_FORMAT.format(day.headcount ?? 0)} inside`
+                : `${HEADCOUNT_FORMAT.format(day.headcount ?? 0)} tickets inside`
               return (
                 <span key={`${day.event_id || 'e'}-${day.day}`} className="rounded-full bg-neutral-100 px-2.5 py-1 font-semibold tabular-nums text-neutral-900">
                   {day.event_title || day.label || day.day}: {countText}
@@ -2027,7 +2028,7 @@ export default function ScannerPage({ offlineOnly = false, offlineEventId = null
       {dashboard && (
         <section className={`${isExitScanMode ? 'order-8 sm:order-none ' : ''}rounded-2xl border border-neutral-200 bg-white p-3 sm:col-span-2 sm:row-start-10 sm:mb-5 sm:self-start sm:p-5 lg:col-span-1 lg:col-start-2 lg:row-start-8`}>
           <div className="mb-1 flex items-center justify-between sm:mb-4"><h2 className="font-semibold">Door totals</h2><button onClick={downloadDoorList} disabled={!online || downloading} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-brand-800 disabled:opacity-50" aria-label="Download emergency door list" title="Download emergency door list">{downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}</button></div>
-          <p className="mb-3 text-xs text-neutral-600">Server totals at the last sync. Issued includes tickets blocked from entry. These totals do not measure saleable stock or people inside; offline scans are pending.</p>
+          <p className="mb-3 text-xs text-neutral-600">Server totals at the last sync. Issued includes tickets blocked from entry. These totals do not measure saleable stock or tickets inside; offline scans are pending.</p>
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {[['Server check-ins', dashboard.counts.admitted], ['Eligible, not checked in', dashboard.counts.eligible_unadmitted ?? '—'], ['Issued, not checked in', dashboard.counts.issued ?? dashboard.counts.remaining], ['Conflicts', dashboard.counts.conflicts]].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-neutral-50 p-2 sm:p-3"><p className="text-xs text-neutral-500">{label}</p><p className="text-lg font-bold sm:text-2xl">{value}</p></div>

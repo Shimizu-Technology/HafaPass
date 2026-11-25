@@ -80,6 +80,7 @@ Re-entry is **Off** by default so single-entry events see no extra door controls
 - **Per-day cutoff time**: A configured re-entry cutoff applies to each service day in the event's time zone. First-time arrivals are still admitted after the cutoff; only re-entries are blocked.
 - **Offline exit scans**: An exit scanned on an **offline** device is queued on that phone and **keeps the ticket marked "inside" on the server (and at other gates) until the exit device reconnects and syncs**. Tell exit-lane volunteers to keep signal or sync regularly. If a guest exits at an offline lane and tries to re-enter at another gate before that exit syncs, the entry gate will show **Already inside**; a **Scanner lead** (or Owner / Manager / Box office) can verify the guest and use **Lead override** with a required reason, which is written to the audit log.
 - **Offline conflicts**: If two offline gates admit the same ticket, sync resolves by earliest `occurred_at` (with server tiebreak) and flags the ticket for a Scanner lead to review and clear or override.
+- **Admitted credentials (tickets inside)**: Live and peak occupancy counts track admitted tickets currently inside rather than verified unique people, so one person admitted on two separate tickets counts twice.
 - **Do not turn re-entry Off mid-event** while guests are outside: guests who scanned out will no longer be able to scan back in.
 
 ## Recovering a retained offline journal

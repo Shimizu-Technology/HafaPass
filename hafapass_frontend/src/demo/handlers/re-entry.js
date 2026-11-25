@@ -375,8 +375,8 @@ export async function handle(ctx) {
 
   if (method === 'get' && rest === '/reports/export.csv') {
     const report = buildReEntryReport(reEntry, event)
-    const header = 'Day,Entries,Exits,Re-entries,Overrides,Current headcount,Peak headcount,Peak headcount time\n'
-    const lines = report.by_day.map(d => `${d.day},${d.entries},${d.exits},${d.re_entries},${d.overrides},${d.current_headcount},${d.peak_headcount},${d.peak_headcount_label || ''}`).join('\n')
+    const header = 'Source event,Source event ID,Day,Entries,Exits,Re-entries,Overrides,Tickets inside,Peak tickets inside,Peak tickets inside time\n'
+    const lines = report.by_day.map(d => `${d.event_title || ''},${d.event_id || ''},${d.day},${d.entries},${d.exits},${d.re_entries},${d.overrides},${d.current_headcount},${d.peak_headcount},${d.peak_headcount_label || ''}`).join('\n')
     return json(new Blob([`\uFEFF${header}${lines}\n`], { type: 'text/csv;charset=utf-8' }))
   }
 

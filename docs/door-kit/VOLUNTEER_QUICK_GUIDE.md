@@ -115,20 +115,20 @@ If Wi-Fi or cell service drops, keep scanning. Your phone checks the saved ticke
 
 #### Using the ENTRY / EXIT switch
 
-When Exit scan is on, you see big **ENTRY** and **EXIT** buttons plus the live **Inside now** count:
+When Exit scan is on, you see big **ENTRY** and **EXIT** buttons plus the live **Tickets inside** count (admitted tickets, so one person holding two tickets counts twice):
 
 1. **Incoming lanes:** Keep green **ENTRY** selected.
 2. **Exit lane:** Tap blue **EXIT** before scanning guests who are stepping out.
 
 ![Check-in screen in Exit scan mode showing big green ENTRY and EXIT buttons above Start camera and Inside now 394 counter below. Demo data, all names fictional.](img/06-scanner-reentry-switch-390.png)  
-*Exit-scan mode with **ENTRY / EXIT** switch and live **Inside now** count. Demo data · all names fictional.*
+*Exit-scan mode with **ENTRY / EXIT** switch and live **Tickets inside** count. Demo data · all names fictional.*
 
 - **Already inside (blocks shared screenshots):** If someone scans a ticket at **ENTRY** that is still marked inside, the phone flashes amber **Already inside** with the time and gate of the earlier scan. Have them scan out at the Exit lane first, or send them to the **Door lead**.
 
 ![Amber Already inside overlay reading Already inside scanned in at 10:40 PM at Gate 1 for fictional guest Bram Okafor. Demo data, all names fictional.](img/07-scanner-reentry-already-inside-390.png)  
 *Warning when an already-inside ticket is scanned at ENTRY. Demo data · all names fictional.*
 
-- **Scanning a guest out:** Switch to **EXIT** and scan their QR. A blue **Exited** flash confirms they are checked out and lowers **Inside now** by 1. *(Scanning a ticket that isn't inside shows **Not inside**.)*
+- **Scanning a guest out:** Switch to **EXIT** and scan their QR. A blue **Exited** flash confirms they are checked out and lowers **Tickets inside** by 1. *(Scanning a ticket that isn't inside shows **Not inside**.)*
 
 ![Blue full-screen Exited overlay showing Youth Spectator Ages 5 to 17 and fictional guest Bram Okafor. Demo data, all names fictional.](img/08-scanner-reentry-exit-390.png)  
 *Confirmed exit scan. Demo data · all names fictional.*
@@ -171,7 +171,7 @@ When Exit scan is on, you see big **ENTRY** and **EXIT** buttons plus the live *
 > - **Leaving:** Guest scans QR on **EXIT** → blue **Exited**.
 > - **Coming back:** Guest scans QR on **ENTRY** → green **Re-entered**.
 > - **Stops shared screenshots:** Scanning a ticket that is still inside triggers **Already inside**.
-> - **Live count:** **Inside now** updates automatically.
+> - **Live count:** **Tickets inside** updates automatically.
 >
 > #### **Option B — Hand stamp + Re-entry Off**
 > - **Event setting:** Re-entry policy left on **Off (single entry)**.
@@ -361,7 +361,7 @@ Do this **15–30 minutes before doors open** (and again at midday break if need
 7. Keep a blank **numbered paper exception log** (`#`, `Time`, `Gate`, `Name`, `Order #`, `Tier`, `Reason`, `Initials`) at the Manager Desk.
 
 ![Organizer Event Overview desktop screen highlighting the left sidebar navigation to Attendee list, Door Scanner, Box office, and Reports, plus live Inside now 394 headcount. Demo data, all names fictional.](img/23-organizer-overview-1280.png)  
-*Organizer Event Overview showing **Attendee list**, **Door Scanner**, **Box office**, and live **Inside now**. Demo data · all names fictional.*
+*Organizer Event Overview showing **Attendee list**, **Door Scanner**, **Box office**, and live **Tickets inside**. Demo data · all names fictional.*
 
 #### Organizer setup & attendance report (desktop)
 
@@ -372,7 +372,7 @@ Do this **15–30 minutes before doors open** (and again at midday break if need
 *Organizer **Re-entry policy** settings. Choose before doors open. Demo data · all names fictional.*
 
 ![Organizer Reports Attendance and Door Pace desktop screen showing Download CSV, Expected 520, Checked in 418, and Re-entry and Headcount metrics with Entries, Exits, Re-entries, Overrides, and Peak headcount. Demo data, all names fictional.](img/25-organizer-attendance-report-1280.png)  
-*Organizer **Attendance & Door Pace** and **Re-entry & Headcount** report with **Download CSV**. Demo data · all names fictional.*
+*Organizer **Attendance & Door Pace** and **Re-entry & Tickets Inside** report with **Download CSV**. Demo data · all names fictional.*
 
 ### Volunteers: Using the backup list if scanners fail
 
@@ -427,7 +427,7 @@ Print **one double-sided Letter sheet per lane** (open the `.html` card in Chrom
 | `06`–`10` | Exit-scan ENTRY/EXIT switch, Already inside, Exited, Cool-down wait, Cap reached + Lead override | PR #242 (`feat/re-entry`) |
 | `12`–`15` | Box office tiers (Adult/Youth/Under-5 free), Cash complete, Show QR, Email tickets | PR #236 (`feat/box-office-print-tickets`, on `main`) + PR #237 |
 | `16`–`22` | Payment methods + fee quote, Pay on buyer’s phone QR, Enter card on this device, Open card checkouts, Paid — waiting for confirmation, Paid — tickets ready, Door sales summary | PR #240 (`feat/box-office-card-links`) |
-| `23`–`25` | Organizer Event Overview (sidebar + Inside now), Re-entry policy settings, Attendance & Door Pace report | PR #237 + PR #242 (`feat/re-entry`) |
+| `23`–`25` | Organizer Event Overview (sidebar + Tickets inside), Re-entry policy settings, Attendance & Door Pace report | PR #237 + PR #242 (`feat/re-entry`) |
 
 ### Deeper Runbooks
 
