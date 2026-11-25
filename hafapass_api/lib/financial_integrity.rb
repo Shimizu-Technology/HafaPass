@@ -1114,7 +1114,14 @@ module FinancialIntegrity
   #                   payout cutoff later; an item added while the payment's
   #                   hold is still open keeps its start too. An episode
   #                   after the payment's items all closed starts at its own
-  #                   time (finding 2).
+  #                   time (finding 2). From the 2f961e48 recheck: a capture
+  #                   from before the cutover (no recording time) counts as
+  #                   the order's first competitor instead of being skipped,
+  #                   competitors follow the predicate's own mode rule, an
+  #                   item keeps the earliest start of any unclassified
+  #                   capture on its order, and with no recorded fulfilling
+  #                   payment an item stops counting only the order's first
+  #                   capture of its mode, never a later one.
   #   event lock      every payout decision the fence makes (creation,
   #                   submission authorization, its outcome, paid, release
   #                   from hold, statement finalization) first holds the event
@@ -1154,9 +1161,21 @@ module FinancialIntegrity
                 AND other.status IN (#{CAPTURED_PAYMENT_STATUSES})
                 AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
                   = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
-              -- An item on another capture already holds this order.
-              AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions held JOIN payments other ON other.id = held.payment_id
-                WHERE other.order_id = o.id AND other.id <> p.id AND held.code IN (#{sql_list(CLASSIFYING_CODES)}))
+              -- With no recorded fulfilling payment, the order's first capture
+              -- of this mode (a capture from before the cutover counts as
+              -- first) may be the sale itself: once another capture of this
+              -- mode has an item, that first capture alone is no longer an
+              -- overlap. Every later capture stays one until it has its own
+              -- item, so one payment's item never hides another's liability.
+              AND NOT (EXISTS (SELECT 1 FROM reconciliation_exceptions held JOIN payments other ON other.id = held.payment_id
+                  WHERE other.order_id = o.id AND other.id <> p.id AND held.code IN (#{sql_list(CLASSIFYING_CODES)})
+                    AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                      = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+                AND NOT EXISTS (SELECT 1 FROM payments earlier WHERE earlier.order_id = o.id AND earlier.id <> p.id
+                  AND earlier.status IN (#{CAPTURED_PAYMENT_STATUSES})
+                  AND hafapass_live_or_legacy(earlier.provider_environment, earlier.provider_payload)
+                    = hafapass_live_or_legacy(p.provider_environment, p.provider_payload)
+                  AND (COALESCE(earlier.capture_recorded_at, '-infinity'::timestamp), earlier.id) < (p.capture_recorded_at, p.id)))
           END
           AND NOT EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id)
           AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = p.id
@@ -1166,14 +1185,21 @@ module FinancialIntegrity
 
     -- When an unclassified overlap capture began to overlap, or NULL when the
     -- payment is not one: the later of its own capture and the order's first
-    -- other capture (every overlap needs another captured payment on the
-    -- order: the fulfilling one, the marking one or a competing one). Both
-    -- times are database-stamped once (payments_capture_recorded_at).
+    -- other capture that can compete with it, by the predicate's own mode
+    -- rule (of its mode; any mode on a marked order). The fulfilling or
+    -- marking payment is one of them. A capture from before the cutover has
+    -- no recording time and was captured before every recorded one, so it
+    -- counts as the earliest (-infinity), never as absent. Recording times
+    -- are database-stamped once (payments_capture_recorded_at), so a later
+    -- capture only adds a competitor and can only make this earlier.
     CREATE OR REPLACE FUNCTION hafapass_overlap_hold_start(target bigint) RETURNS timestamp
     LANGUAGE sql STABLE AS $$
-      SELECT GREATEST(p.capture_recorded_at, (SELECT MIN(other.capture_recorded_at) FROM payments other
-          WHERE other.order_id = p.order_id AND other.id <> p.id AND other.status IN (#{CAPTURED_PAYMENT_STATUSES})))
-        FROM payments p WHERE p.id = target AND hafapass_unclassified_capture(p.id)
+      SELECT GREATEST(p.capture_recorded_at, (SELECT MIN(COALESCE(other.capture_recorded_at, '-infinity'::timestamp))
+          FROM payments other WHERE other.order_id = p.order_id AND other.id <> p.id
+            AND other.status IN (#{CAPTURED_PAYMENT_STATUSES})
+            AND (o.never_fulfilled_at IS NOT NULL OR hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+              = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))))
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target AND hafapass_unclassified_capture(p.id)
     $$;
 
     CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
@@ -1193,13 +1219,17 @@ module FinancialIntegrity
     $$;
 
     -- Stamped on insert by the database (whatever value a writer supplies)
-    -- and never changed: the payment's own overlap start, or the start of a
+    -- and never changed: the earliest overlap start of any unclassified
+    -- capture on the payment's order (its own included), or the start of a
     -- blocking item still open on the same payment, whichever is earlier.
     -- The new row is not yet visible here, so the first classifying exception
-    -- still sees the overlap it is about to end, and the items discovery
-    -- writes after it (a quarantine, a repayment wait) keep the same start
-    -- for as long as the payment's hold stays open. Once every item on the
-    -- payment is closed, a later item starts at its own time.
+    -- still sees the overlap it is about to end, and any start it takes out
+    -- of the overlap set (its own, or the order's first capture that its
+    -- item stops counting) is kept on the row. The items discovery writes
+    -- after it (a quarantine, a repayment wait) keep the same start for as
+    -- long as the payment's hold stays open. Once every item on the payment
+    -- is closed and no capture on the order is unclassified, a later item
+    -- starts at its own time.
     CREATE OR REPLACE FUNCTION hafapass_exception_hold_start() RETURNS trigger
     LANGUAGE plpgsql AS $$
     BEGIN
@@ -1210,7 +1240,8 @@ module FinancialIntegrity
         RETURN NEW;
       END IF;
       NEW.hold_started_at := CASE WHEN NEW.payment_id IS NOT NULL AND NEW.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
-        THEN LEAST(hafapass_overlap_hold_start(NEW.payment_id),
+        THEN LEAST((SELECT MIN(hafapass_overlap_hold_start(x.id)) FROM payments x
+            WHERE x.order_id = (SELECT target.order_id FROM payments target WHERE target.id = NEW.payment_id)),
           (SELECT MIN(LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at))) FROM reconciliation_exceptions re
             WHERE re.payment_id = NEW.payment_id AND re.status = #{OPEN_EXCEPTION_STATUS}
               AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)}))) END;
