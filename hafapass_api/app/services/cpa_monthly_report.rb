@@ -22,6 +22,15 @@
 #       `GREATEST(COALESCE(payments.succeeded_at, payments.created_at),
 #       payments.created_at)`, leaving the earlier reservation month untouched
 #       and labelling the capture month `"Late capture relates to <Mon YYYY>"`.
+#       A never-fulfilled capture is owed back to the buyer, not the organizer:
+#       its proceeds portion is booked in `buyer_refund_captures` (not
+#       `proceeds_collected`), its refund in `buyer_refunds_paid` (not
+#       `proceeds_refunded`), and the balance carries in
+#       `closing_buyer_refunds_owed`, so organizer custody matches the payout
+#       statement. "Never fulfilled" needs the late-capture reconciliation
+#       exception as evidence (see #unfulfilled_capture_sql). Its
+#       service fee stays in fee revenue and fee refunds, as in the BPT detail
+#       CSV; its Stripe processing is informational only (never organizer-borne).
 #     * Paid payouts: `COALESCE(paid_audit.created_at, payouts.paid_at)` across
 #       all live (non-simulated) USD payouts. Audit joins rely on fields that
 #       survive `DataRetention.anonymize!` (`action`, `auditable_id`,
@@ -82,6 +91,10 @@ class CpaMonthlyReport
     closing_custodial_liability
     closing_custodial_payables
     closing_organizer_deficits
+    opening_buyer_refunds_owed
+    buyer_refund_captures
+    buyer_refunds_paid
+    closing_buyer_refunds_owed
     reserve_held
     reserve_released
     ending_reserve_balance
@@ -112,6 +125,10 @@ class CpaMonthlyReport
     organizer_payouts_made_cents
     payout_reversals_cents
     closing_custodial_liability_cents
+    opening_buyer_refunds_owed_cents
+    buyer_refund_captures_cents
+    buyer_refunds_paid_cents
+    closing_buyer_refunds_owed_cents
     reserve_held_cents
     reserve_released_cents
     ending_reserve_balance_cents
@@ -330,6 +347,24 @@ class CpaMonthlyReport
 
   def agent_orders
     @agent_orders ||= real_usd_orders.where(id: agent_captures.select(:order_id))
+  end
+
+  # A capture HåfaPass never fulfilled (hold expired, inventory released, or
+  # every pass night cancelled first) is owed back to the buyer. The evidence is
+  # the late-capture reconciliation exception OrderLifecycle writes in the same
+  # transaction that records the capture; it is a 7-year financial record whose
+  # code and order survive retention. completed_at alone is not enough: legacy
+  # completed orders can have a null completed_at.
+  def unfulfilled_capture_sql
+    @unfulfilled_capture_sql ||= ActiveRecord::Base.sanitize_sql_array([
+      "(orders.completed_at IS NULL AND EXISTS (SELECT 1 FROM reconciliation_exceptions late_re " \
+      "WHERE late_re.order_id = orders.id AND late_re.code IN (?) AND late_re.created_at < ?))",
+      Commerce::LateCaptureRefund::CODES, month_end
+    ])
+  end
+
+  def fulfilled_custody_sql
+    @fulfilled_custody_sql ||= "NOT #{unfulfilled_capture_sql}"
   end
 
   ORDER_CUSTODIAL_AT_SQL = <<~SQL.squish.freeze
@@ -659,9 +694,15 @@ class CpaMonthlyReport
     prior_period_event_labels = Hash.new { |hash, key| hash[key] = [] }
     prior_period_org_labels = Hash.new { |hash, key| hash[key] = [] }
 
-    proceeds_before = OrderItem.joins(:order).where(order_id: orders_before.select(:id))
+    # Fulfilled orders are organizer custody. Never-fulfilled captures (no
+    # completed_at) are owed back to the buyer and never reach a payout.
+    proceeds_before = OrderItem.joins(:order).where(order_id: orders_before.where(fulfilled_custody_sql).select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
-    proceeds_month = OrderItem.joins(:order).where(order_id: orders_in_month.select(:id))
+    proceeds_month = OrderItem.joins(:order).where(order_id: orders_in_month.where(fulfilled_custody_sql).select(:id))
+      .group("orders.event_id").sum(:organizer_proceeds_cents)
+    buyer_owed_before = OrderItem.joins(:order).where(order_id: orders_before.where(unfulfilled_capture_sql).select(:id))
+      .group("orders.event_id").sum(:organizer_proceeds_cents)
+    buyer_owed_month = OrderItem.joins(:order).where(order_id: orders_in_month.where(unfulfilled_capture_sql).select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
 
     # Label late Stripe capture backfills and never-fulfilled late captures recorded
@@ -680,8 +721,16 @@ class CpaMonthlyReport
       end
 
     refunded_proceeds_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
+      .where(fulfilled_custody_sql)
       .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
     refunded_proceeds_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
+      .where(fulfilled_custody_sql)
+      .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
+    buyer_refunded_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
+      .where(unfulfilled_capture_sql)
+      .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
+    buyer_refunded_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
+      .where(unfulfilled_capture_sql)
       .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
 
     refunds_total_before = refunds_before.joins(:order).group("orders.event_id").sum(:amount_cents)
@@ -720,6 +769,8 @@ class CpaMonthlyReport
     candidate_event_ids = (
       proceeds_before.keys | proceeds_month.keys |
       refunded_proceeds_before.keys | refunded_proceeds_month.keys |
+      buyer_owed_before.keys | buyer_owed_month.keys |
+      buyer_refunded_before.keys | buyer_refunded_month.keys |
       refunds_total_before.keys | refunds_total_month.keys |
       chargebacks_before.keys | chargebacks_month.keys |
       payouts_gross_before.keys | payouts_gross_month.keys |
@@ -760,6 +811,11 @@ class CpaMonthlyReport
 
       closing = opening + collected - refunded - chargebacks - proc_month_org + other_adj - payouts_made + payout_rev
 
+      buyer_opening = buyer_owed_before.fetch(event_id, 0) - buyer_refunded_before.fetch(event_id, 0)
+      buyer_captured = buyer_owed_month.fetch(event_id, 0)
+      buyer_paid = buyer_refunded_month.fetch(event_id, 0)
+      buyer_closing = buyer_opening + buyer_captured - buyer_paid
+
       reserve_held = adj[:reserve_held_month]
       reserve_released = adj[:reserve_released_month]
       ending_reserve = [-adj[:reserve_net_through_month], 0].max
@@ -782,6 +838,7 @@ class CpaMonthlyReport
       active_values = [
         opening, collected, refunded, chargebacks, proc_month_org, other_adj,
         payouts_made, payout_rev, closing,
+        buyer_opening, buyer_captured, buyer_paid, buyer_closing,
         reserve_held, reserve_released, ending_reserve,
         unalloc_month, unalloc_cumulative, bridge_cents,
         fee_gross, fee_refund, proc_month_total
@@ -806,6 +863,10 @@ class CpaMonthlyReport
         closing_custodial_liability_cents: closing,
         closing_custodial_payables_cents: [closing, 0].max,
         closing_organizer_deficits_cents: [-closing, 0].max,
+        opening_buyer_refunds_owed_cents: buyer_opening,
+        buyer_refund_captures_cents: buyer_captured,
+        buyer_refunds_paid_cents: buyer_paid,
+        closing_buyer_refunds_owed_cents: buyer_closing,
         reserve_held_cents: reserve_held,
         reserve_released_cents: reserve_released,
         ending_reserve_balance_cents: ending_reserve,
@@ -847,6 +908,18 @@ class CpaMonthlyReport
       .where("#{recorded_at_expr} < ?", month_end)
 
     totals = Hash.new { |hash, key| hash[key] = [0, 0, 0] }
+
+    # 0. Never-fulfilled captures have no organizer proceeds to deduct from, so
+    #    their processing cost is HåfaPass's (informational total only).
+    base.where(unfulfilled_capture_sql)
+      .where("#{recorded_at_expr} >= ?", month_start)
+      .group("orders.event_id")
+      .sum("fee_components.amount_cents")
+      .each do |event_id, amount|
+        totals[event_id][2] += amount.to_i
+      end
+    all_processing = base
+    base = base.where(fulfilled_custody_sql)
 
     # 1. Organizer-borne or legacy NULL bearer: 100% organizer
     base.where("orders.processing_fee_bearer_snapshot IS DISTINCT FROM 'platform'")
@@ -912,7 +985,7 @@ class CpaMonthlyReport
     end
 
     # Label processing fees recorded in this month for captures booked in an earlier month
-    base.joins(agent_capture_join_sql)
+    all_processing.joins(agent_capture_join_sql)
       .where("#{recorded_at_expr} >= ?", month_start)
       .where("(#{ORDER_CUSTODIAL_AT_SQL}) < ?", month_start)
       .pluck("orders.event_id", Arel.sql(ORDER_CUSTODIAL_AT_SQL))
@@ -1077,6 +1150,10 @@ class CpaMonthlyReport
         closing_custodial_liability_cents: closing,
         closing_custodial_payables_cents: [closing, 0].max,
         closing_organizer_deficits_cents: [-closing, 0].max,
+        opening_buyer_refunds_owed_cents: 0,
+        buyer_refund_captures_cents: 0,
+        buyer_refunds_paid_cents: 0,
+        closing_buyer_refunds_owed_cents: 0,
         reserve_held_cents: reserve_held,
         reserve_released_cents: reserve_released,
         ending_reserve_balance_cents: ending_reserve,
@@ -1174,6 +1251,10 @@ class CpaMonthlyReport
       FinanceExports.money(row[:closing_custodial_liability_cents]),
       FinanceExports.money(row[:closing_custodial_payables_cents]),
       FinanceExports.money(row[:closing_organizer_deficits_cents]),
+      FinanceExports.money(row[:opening_buyer_refunds_owed_cents]),
+      FinanceExports.money(row[:buyer_refund_captures_cents]),
+      FinanceExports.money(row[:buyer_refunds_paid_cents]),
+      FinanceExports.money(row[:closing_buyer_refunds_owed_cents]),
       FinanceExports.money(row[:reserve_held_cents]),
       FinanceExports.money(row[:reserve_released_cents]),
       FinanceExports.money(row[:ending_reserve_balance_cents]),

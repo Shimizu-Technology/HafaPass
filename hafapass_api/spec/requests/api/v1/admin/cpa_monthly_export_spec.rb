@@ -142,6 +142,10 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "closing_custodial_liability" => "10.00",
       "closing_custodial_payables" => "10.00",
       "closing_organizer_deficits" => "0.00",
+      "opening_buyer_refunds_owed" => "0.00",
+      "buyer_refund_captures" => "0.00",
+      "buyer_refunds_paid" => "0.00",
+      "closing_buyer_refunds_owed" => "0.00",
       "reserve_held" => "10.00",
       "reserve_released" => "0.00",
       "ending_reserve_balance" => "10.00",
@@ -1216,7 +1220,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     expect(alerts["summary"]).to include("Reversed payout(s) missing reversal audit evidence ($90.00)")
   end
 
-  it "keeps closed January byte-identical when a late door-card capture and auto-refund occur in February, and dates cross-month capture and refund by recording month" do
+  it "keeps closed January byte-identical when a late door-card capture and auto-refund occur in February, and books never-fulfilled captures as refunds owed to buyers by recording month" do
     org = create(:organization)
     profile = create(:organizer_profile, organization: org)
     same_month_event = create(:event, :published, organization: org, organizer_profile: profile,
@@ -1232,7 +1236,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     feb_late_capture = Time.zone.parse("2027-02-28T23:00:00+10:00")
     mar_refund = Time.zone.parse("2027-03-01T01:00:00+10:00")
 
-    create_expired_door_order = lambda do |target_event, target_tt, suffix|
+    create_expired_door_order = lambda do |target_event, target_tt, suffix, bearer = "platform"|
       order = nil
       payment = nil
       travel_to(jan_reserve) do
@@ -1240,7 +1244,7 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
           event: target_event, status: :pending, completed_at: nil, expires_at: jan_reserve + 35.minutes,
           currency: "usd", payment_method: "door_card_link", source: "box_office",
           subtotal_cents: 1_200, discount_cents: 0, service_fee_cents: 160, organizer_fee_cents: 0,
-          total_cents: 1_360, processing_fee_bearer_snapshot: "platform")
+          total_cents: 1_360, processing_fee_bearer_snapshot: bearer)
         item = create(:order_item,
           order: order, ticket_type: target_tt, quantity: 1, unit_price_cents: 1_200,
           subtotal_cents: 1_200, discount_cents: 0, fee_cents: 160, organizer_fee_cents: 0,
@@ -1263,7 +1267,9 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     end
 
     order1, payment1 = create_expired_door_order.call(same_month_event, tt1, "SameFeb")
-    order2, payment2 = create_expired_door_order.call(cross_month_event, tt2, "CrossMar")
+    # Organizer-borne processing on the cross-month order: the organizer never
+    # receives this order, so its Stripe fee must not be deducted from them.
+    order2, payment2 = create_expired_door_order.call(cross_month_event, tt2, "CrossMar", "organizer")
 
     # Snapshot closed January BEFORE any February capture arrives
     fetch_csv(year: 2027, month: 1)
@@ -1291,11 +1297,25 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       expect(order2.reload).to be_expired
       expect(order2.completed_at).to be_nil
       expect(payment2.reload).to be_succeeded
+      create(:fee_component, order: order2, kind: "processing", estimated: false, amount_cents: 69, created_at: feb_late_capture)
     end
 
     # Snapshot closed February BEFORE the March 1 refund runs
     fetch_csv(year: 2027, month: 2)
     feb_body_before_mar_refund = response.body.dup
+
+    # Month-end, refund still owed: organizer payable matches the payout statement ($0).
+    feb_at_close = CSV.parse(feb_body_before_mar_refund, headers: true)
+      .select { |r| r["row_type"] == "event" }.index_by { |r| r["event_id"] }
+    [same_month_event, cross_month_event].each do |target_event|
+      row = feb_at_close.fetch(target_event.id.to_s)
+      calc = Settlements::Calculator.call(target_event).attributes
+      cpa_unpaid = BigDecimal(row["closing_custodial_liability"]) - BigDecimal(row["ending_reserve_balance"]) +
+        BigDecimal(row["non_custodial_settlement_bridge"])
+      expect((cpa_unpaid * 100).to_i).to eq(settlement_unpaid_balance_cents(calc))
+      expect(settlement_unpaid_balance_cents(calc)).to eq(0)
+      expect(PayoutStatement.call(event: target_event)[:closing][:total_cents]).to eq(0)
+    end
 
     # March 1: auto-refund succeeds for event 2
     allow(StripeService).to receive(:refund_payment).and_return(
@@ -1315,40 +1335,83 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     feb_csv = fetch_csv(year: 2027, month: 2)
     expect(response.body).to eq(feb_body_before_mar_refund)
 
+    # Never-fulfilled captures are owed back to the buyer, never to the organizer.
+    # The service fee stays in fee revenue until refunded, as in the BPT detail CSV.
     feb_by_event = feb_csv.select { |r| r["row_type"] == "event" }.index_by { |r| r["event_id"] }
     expect(feb_by_event.fetch(same_month_event.id.to_s).to_h).to include(
       "opening_custodial_liability" => "0.00",
-      "proceeds_collected" => "12.00",
-      "proceeds_refunded" => "12.00",
+      "proceeds_collected" => "0.00",
+      "proceeds_refunded" => "0.00",
       "closing_custodial_liability" => "0.00",
+      "closing_custodial_payables" => "0.00",
+      "opening_buyer_refunds_owed" => "0.00",
+      "buyer_refund_captures" => "12.00",
+      "buyer_refunds_paid" => "12.00",
+      "closing_buyer_refunds_owed" => "0.00",
       "fee_revenue_gross" => "1.60",
       "fee_refunds" => "1.60",
       "fee_revenue_net" => "0.00"
     )
     expect(feb_by_event.fetch(same_month_event.id.to_s)["prior_period_note"]).to include("Late capture relates to Jan 2027")
 
-    expect(feb_by_event.fetch(cross_month_event.id.to_s).to_h).to include(
+    # The reviewer's case: captured Feb 28, refund still owed at month-end.
+    feb_cross = feb_by_event.fetch(cross_month_event.id.to_s).to_h
+    expect(feb_cross).to include(
       "opening_custodial_liability" => "0.00",
-      "proceeds_collected" => "12.00",
+      "proceeds_collected" => "0.00",
       "proceeds_refunded" => "0.00",
-      "closing_custodial_liability" => "12.00",
+      "organizer_processing_deducted" => "0.00",
+      "closing_custodial_liability" => "0.00",
+      "closing_custodial_payables" => "0.00",
+      "closing_organizer_deficits" => "0.00",
+      "opening_buyer_refunds_owed" => "0.00",
+      "buyer_refund_captures" => "12.00",
+      "buyer_refunds_paid" => "0.00",
+      "closing_buyer_refunds_owed" => "12.00",
       "fee_revenue_gross" => "1.60",
       "fee_refunds" => "0.00",
-      "fee_revenue_net" => "1.60"
+      "fee_revenue_net" => "1.60",
+      "stripe_processing_costs_informational" => "0.69"
     )
-    expect(feb_by_event.fetch(cross_month_event.id.to_s)["prior_period_note"]).to include("Late capture relates to Jan 2027")
+    expect(feb_cross["prior_period_note"]).to include("Late capture relates to Jan 2027")
+    feb_total = feb_csv.find { |r| r["row_type"] == "total" }.to_h
+    expect(feb_total).to include(
+      "closing_custodial_payables" => "0.00",
+      "buyer_refund_captures" => "24.00",
+      "buyer_refunds_paid" => "12.00",
+      "closing_buyer_refunds_owed" => "12.00"
+    )
 
-    # March books the cross-month auto-refund cleanly and brings custodial liability back to $0.00
+    # March books the cross-month auto-refund against the buyer liability.
     mar_csv = fetch_csv(year: 2027, month: 3)
     mar_event = mar_csv.find { |r| r["row_type"] == "event" && r["event_id"] == cross_month_event.id.to_s }.to_h
     expect(mar_event).to include(
-      "opening_custodial_liability" => "12.00",
+      "opening_custodial_liability" => "0.00",
       "proceeds_collected" => "0.00",
-      "proceeds_refunded" => "12.00",
+      "proceeds_refunded" => "0.00",
       "closing_custodial_liability" => "0.00",
+      "opening_buyer_refunds_owed" => "12.00",
+      "buyer_refund_captures" => "0.00",
+      "buyer_refunds_paid" => "12.00",
+      "closing_buyer_refunds_owed" => "0.00",
       "fee_revenue_gross" => "0.00",
       "fee_refunds" => "1.60",
       "fee_revenue_net" => "-1.60"
+    )
+  end
+
+  it "keeps a legacy completed Stripe order with a null completed_at in organizer custody, not refunds owed to buyers" do
+    event = create(:event, :published)
+    order, = captured_order(event: event, at: Time.zone.parse("2027-02-10T12:00:00+10:00"), subtotal: 1_200, fee: 160,
+      payment_id: "pi_live_LegacyNullCompleted")
+    order.update_columns(completed_at: nil, created_at: Time.zone.parse("2027-02-10T12:00:00+10:00"))
+
+    row = fetch_csv(year: 2027, month: 2).find { |r| r["row_type"] == "event" }.to_h
+    expect(row).to include(
+      "proceeds_collected" => "12.00",
+      "closing_custodial_liability" => "12.00",
+      "buyer_refund_captures" => "0.00",
+      "closing_buyer_refunds_owed" => "0.00"
     )
   end
 end

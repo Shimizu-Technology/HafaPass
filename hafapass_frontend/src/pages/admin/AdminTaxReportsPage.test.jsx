@@ -101,6 +101,24 @@ describe('AdminTaxReportsPage', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/admin/tax_reports', expect.objectContaining({ params: { year: String(year - 1) } })))
   })
 
+  it('shows refunds owed to buyers apart from organizer payables only when there is a balance', async () => {
+    const { unmount } = show()
+    expect(await screen.findByText('Custodial liability (organizer proceeds)')).toBeInTheDocument()
+    expect(screen.queryByText('Refunds owed to buyers (not organizer money)')).not.toBeInTheDocument()
+    unmount()
+
+    apiClient.get.mockImplementation((url, cfg) => {
+      if (url === '/admin/tax_reports/cpa_monthly') {
+        const base = makeCpaMonthly(cfg?.params?.year || year, cfg?.params?.month || currentMonth)
+        return Promise.resolve({ data: { ...base, totals: { ...base.totals, closing_buyer_refunds_owed_cents: 1200 } } })
+      }
+      return Promise.resolve({ data: { ...report, year: Number(cfg?.params?.year || year) } })
+    })
+    show()
+    const label = await screen.findByText('Refunds owed to buyers (not organizer money)')
+    expect(label.closest('div').parentElement).toHaveTextContent('$12.00')
+  })
+
   // Regression test for Material Finding #7 (and CodeRabbit #8): never render one
   // month's figures under another month's heading while a slow request is pending
   // or arrives late; enable deferral only after initial load so the test works in

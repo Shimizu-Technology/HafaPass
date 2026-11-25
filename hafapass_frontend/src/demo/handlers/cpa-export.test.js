@@ -27,7 +27,11 @@ describe('cpa-export demo handler', () => {
         row.organizer_payouts_made_cents +
         row.payout_reversals_cents
       expect(row.closing_custodial_liability_cents).toBe(expectedClosing)
+      expect(row.closing_buyer_refunds_owed_cents).toBe(
+        row.opening_buyer_refunds_owed_cents + row.buyer_refund_captures_cents - row.buyer_refunds_paid_cents,
+      )
     }
+    expect(res.data.totals.closing_buyer_refunds_owed_cents).toBe(1700)
     expect(res.data.totals.closing_custodial_payables_cents - res.data.totals.closing_organizer_deficits_cents)
       .toBe(res.data.totals.closing_custodial_liability_cents)
   })
@@ -57,6 +61,7 @@ describe('cpa-export demo handler', () => {
     expect(text).toContain('"row_type","month","organization_id"')
     expect(text).toContain('"cumulative_unallocated_refunds_exception"')
     expect(text).toContain('"prior_period_note"')
+    expect(text).toContain('"closing_organizer_deficits","opening_buyer_refunds_owed","buyer_refund_captures","buyer_refunds_paid","closing_buyer_refunds_owed","reserve_held"')
     expect(text).toContain('"total","2026-02"')
 
     const pre2018 = await handle({

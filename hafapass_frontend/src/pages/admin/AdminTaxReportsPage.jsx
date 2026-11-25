@@ -94,6 +94,7 @@ function CpaMonthlyPanel({ cpaMonthly, cpaLoading, cpaError, onRetry, year, mont
             <SummaryRow label="Organizer deficits / receivables (owed to HåfaPass)" value={money(totals.closing_organizer_deficits_cents)} />
             <SummaryRow label="Net custodial roll-forward (payables − deficits)" value={money(totals.closing_custodial_liability_cents)} />
             {totals.non_custodial_settlement_bridge_cents !== 0 && <SummaryRow label="Non-custodial settlement bridge (e.g. Clover)" value={money(totals.non_custodial_settlement_bridge_cents)} hint="In settlement statements, excluded from HåfaPass custody" />}
+            {(totals.closing_buyer_refunds_owed_cents || 0) !== 0 && <SummaryRow label="Refunds owed to buyers (not organizer money)" value={money(totals.closing_buyer_refunds_owed_cents)} hint="Ticket price from card payments that arrived after the order was released; each is refunded automatically" />}
           </dl>
           <div className="mt-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700">
             <p className="font-medium text-neutral-900">Chargeback reserve sub-ledger (part of closing liability)</p>
