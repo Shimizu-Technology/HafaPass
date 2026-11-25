@@ -572,6 +572,13 @@
       "action": "keep",
       "pii_columns": []
     },
+    "buyer_return_postings": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "posted_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "order_items": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -1533,7 +1540,9 @@
       "reason": "pii",
       "status": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "loss_recorded_at": "system",
+      "loss_reversed_at": "system"
     },
     "distribution_links": {
       "id": "system",
@@ -2172,6 +2181,33 @@
       "provenance_evidence": "system",
       "created_at": "system"
     },
+    "buyer_return_postings": {
+      "id": "system",
+      "never_fulfilled_capture_id": "system",
+      "sequence": "system",
+      "kind": "system",
+      "source_type": "system",
+      "source_id": "system",
+      "reverses_posting_id": "system",
+      "gross_cents": "financial",
+      "applied_cents": "financial",
+      "excess_cents": "financial",
+      "proceeds_cents": "financial",
+      "fee_cents": "financial",
+      "organizer_fee_cents": "financial",
+      "tax_cents": "financial",
+      "recorded_at": "system",
+      "recording_source": "system",
+      "capture_recorded_at": "system",
+      "recognized_at": "financial",
+      "recognition_state": "financial",
+      "allocation_policy": "financial",
+      "policy_version": "system",
+      "allocation_method": "system",
+      "evidence": "system",
+      "note": "system",
+      "posted_at": "system"
+    },
     "order_items": {
       "id": "system",
       "catalog_item_id": "system",
@@ -2744,7 +2780,8 @@
       "status": "system",
       "succeeded_at": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "success_recorded_at": "system"
     },
     "registration_questions": {
       "id": "system",

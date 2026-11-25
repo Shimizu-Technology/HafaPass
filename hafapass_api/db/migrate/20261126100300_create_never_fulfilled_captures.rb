@@ -68,7 +68,7 @@ class CreateNeverFulfilledCaptures < ActiveRecord::Migration[8.1]
     # transaction commits, so every capture left with a NULL
     # capture_recorded_at was recorded before the cutover row's time.
     safety_assured do
-      execute FinancialIntegrity::SQL
+      execute FinancialIntegrity::FOUNDATION_SQL
       execute "INSERT INTO financial_cutovers (key) VALUES ('a1_capture_recording')"
     end
   end

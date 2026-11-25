@@ -21,6 +21,8 @@ class UnfulfilledCapture < ApplicationRecord
 
   belongs_to :order
   belongs_to :payment
+  has_many :buyer_return_postings, foreign_key: :never_fulfilled_capture_id, inverse_of: :unfulfilled_capture,
+    dependent: :restrict_with_exception
 
   # A payment-scope capture is a distinct second payment on a fulfilled order.
   # It is isolated from the sale (design §4.3): its refunds, disputes and fees
@@ -59,6 +61,11 @@ class UnfulfilledCapture < ApplicationRecord
 
   def payment_scope?
     capture_scope == "payment"
+  end
+
+  # Snapshot K (design §5.4), in BuyerReturnPosting::COMPONENTS order.
+  def components
+    [proceeds_cents, fee_cents, organizer_fee_cents, tax_cents]
   end
 
   private

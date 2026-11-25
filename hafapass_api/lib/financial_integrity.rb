@@ -233,7 +233,201 @@ module FinancialIntegrity
       FOR EACH ROW EXECUTE FUNCTION hafapass_guard_ticket_issuance();
   SQL
 
-  SQL = (CAPTURE_RECORDED_AT_SQL + APPEND_ONLY_SQL + CLASSIFICATION_SQL + ORDER_GUARD_SQL + TICKET_GUARD_SQL).freeze
+  # Tranche 1 (migration 20261126100300). Frozen: that migration replays it.
+  FOUNDATION_SQL = (CAPTURE_RECORDED_AT_SQL + APPEND_ONLY_SQL + CLASSIFICATION_SQL + ORDER_GUARD_SQL + TICKET_GUARD_SQL).freeze
+
+  REFUND_STATUS_SUCCEEDED = 1
+  DISPUTE_STATUS_LOST = 2
+
+  # Durable movement recording times (design §5.2). Like the capture time, the
+  # database stamps each one in the statement that first records the fact and
+  # never accepts an application value, so a backdated business field
+  # (refunds.succeeded_at, disputes.closed_at) is never recording evidence.
+  # Rows that reached the state before A1 keep NULL; their time comes once from
+  # bounded evidence (financial_cutovers a1_return_recording) on the posting.
+  RETURN_RECORDED_AT_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_refund_success_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.success_recorded_at IS NOT NULL THEN
+        IF NEW.success_recorded_at IS DISTINCT FROM OLD.success_recorded_at THEN
+          RAISE EXCEPTION 'A refund''s success recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.success_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A refund''s success recording time is written by the database' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status = #{REFUND_STATUS_SUCCEEDED} AND (TG_OP = 'INSERT' OR OLD.status <> #{REFUND_STATUS_SUCCEEDED}) THEN
+        NEW.success_recorded_at := #{NOW_UTC};
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_success_recorded_at ON refunds;
+    CREATE TRIGGER refunds_success_recorded_at BEFORE INSERT OR UPDATE OF status, success_recorded_at ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_success_recorded_at();
+
+    -- loss_reversed_at: the application asks for it by writing any value on a
+    -- lost dispute; the database replaces it with its own time, once.
+    CREATE OR REPLACE FUNCTION hafapass_dispute_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.loss_recorded_at IS NOT NULL THEN
+        IF NEW.loss_recorded_at IS DISTINCT FROM OLD.loss_recorded_at THEN
+          RAISE EXCEPTION 'A dispute''s loss recording time is set once' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A dispute''s loss recording time is written by the database' USING ERRCODE = '23514';
+      ELSIF NEW.status = #{DISPUTE_STATUS_LOST} AND (TG_OP = 'INSERT' OR OLD.status <> #{DISPUTE_STATUS_LOST}) THEN
+        NEW.loss_recorded_at := #{NOW_UTC};
+      END IF;
+
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.loss_reversed_at IS NOT NULL THEN
+          RAISE EXCEPTION 'A dispute loss is reversed only after it was recorded' USING ERRCODE = '23514';
+        END IF;
+      ELSIF OLD.loss_reversed_at IS NOT NULL THEN
+        IF NEW.loss_reversed_at IS DISTINCT FROM OLD.loss_reversed_at OR NEW.status <> #{DISPUTE_STATUS_LOST} THEN
+          RAISE EXCEPTION 'A reversed dispute loss is final' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_reversed_at IS NOT NULL THEN
+        IF OLD.status <> #{DISPUTE_STATUS_LOST} OR NEW.status <> #{DISPUTE_STATUS_LOST} THEN
+          RAISE EXCEPTION 'Only a recorded dispute loss can be reversed' USING ERRCODE = '23514';
+        END IF;
+        NEW.loss_reversed_at := #{NOW_UTC};
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS disputes_recorded_at ON disputes;
+    CREATE TRIGGER disputes_recorded_at BEFORE INSERT OR UPDATE OF status, loss_recorded_at, loss_reversed_at ON disputes
+      FOR EACH ROW EXECUTE FUNCTION hafapass_dispute_recorded_at();
+  SQL
+
+  # Append-only gross return postings (design §5.2-§5.4). The writer
+  # (Commerce::BuyerReturnPostings) computes every amount; this trigger is the
+  # guarantee that what it inserts is a real movement of the classified
+  # payment, in the frozen sequence, with excess decided on gross and every
+  # cumulative share inside the capture's snapshot. It locks the order
+  # FOR UPDATE (rank 3), which every writer already holds.
+  POSTING_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_check_buyer_return_posting() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      src_payment bigint;
+      src_amount integer;
+      src_currency text;
+      src_status integer;
+      stamp timestamp;
+      cutover timestamp;
+      reversed buyer_return_postings%ROWTYPE;
+      prev_sequence integer;
+      prev_applied bigint;
+      prev_proceeds bigint;
+      prev_fee bigint;
+      prev_organizer_fee bigint;
+      prev_tax bigint;
+    BEGIN
+      SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'A return posting needs its classified capture' USING ERRCODE = '23503';
+      END IF;
+      PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+
+      NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, cap.capture_recorded_at);
+      IF NEW.capture_recorded_at <> cap.capture_recorded_at OR NEW.allocation_policy <> cap.allocation_policy
+          OR NEW.policy_version <> cap.policy_version THEN
+        RAISE EXCEPTION 'A return posting copies its capture''s recording time and allocation policy' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.source_type = 'Refund' THEN
+        SELECT payment_id, amount_cents, currency, status, success_recorded_at
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM refunds WHERE id = NEW.source_id;
+      ELSE
+        SELECT payment_id, amount_cents, currency, status,
+            CASE WHEN NEW.kind = 'dispute_loss_reversal' THEN loss_reversed_at ELSE loss_recorded_at END
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM disputes WHERE id = NEW.source_id;
+      END IF;
+      IF NOT FOUND OR src_payment IS DISTINCT FROM cap.payment_id THEN
+        RAISE EXCEPTION 'A return posting''s movement must belong to the classified payment' USING ERRCODE = '23503';
+      END IF;
+      IF lower(src_currency) <> lower(cap.currency) THEN
+        RAISE EXCEPTION 'A return posting''s movement must be in the capture''s currency' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.kind = 'refund' THEN
+        IF src_status <> #{REFUND_STATUS_SUCCEEDED} OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A refund posting needs a succeeded refund of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss' THEN
+        IF src_status <> #{DISPUTE_STATUS_LOST} OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A dispute posting needs a lost dispute of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss_reversal' THEN
+        SELECT * INTO reversed FROM buyer_return_postings WHERE id = NEW.reverses_posting_id;
+        IF NOT FOUND OR reversed.never_fulfilled_capture_id <> NEW.never_fulfilled_capture_id
+            OR reversed.kind <> 'dispute_loss' OR reversed.source_id <> NEW.source_id
+            OR src_status <> #{DISPUTE_STATUS_LOST} OR stamp IS NULL OR NEW.gross_cents <> -reversed.gross_cents THEN
+          RAISE EXCEPTION 'A loss reversal needs the reversed loss''s posting and a recorded reversal' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        -- refund_reversal needs an approved finance action, which A1 does not ship.
+        RAISE EXCEPTION 'Refund reversals are posted only by an approved finance correction' USING ERRCODE = '23514';
+      END IF;
+
+      IF stamp IS NOT NULL THEN
+        NEW.recorded_at := COALESCE(NEW.recorded_at, stamp);
+        IF NEW.recorded_at <> stamp OR NEW.recording_source <> 'database' THEN
+          RAISE EXCEPTION 'A return posting uses its movement''s database recording time' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        SELECT recorded_at INTO cutover FROM financial_cutovers WHERE key = 'a1_return_recording';
+        IF NEW.recording_source <> 'backfill' OR NEW.recorded_at IS NULL OR cutover IS NULL
+            OR NEW.recorded_at > cutover OR NEW.evidence = '{}'::jsonb THEN
+          RAISE EXCEPTION 'A movement recorded before A1 needs a backfilled time with evidence, no later than the cutover'
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      NEW.recognized_at := COALESCE(NEW.recognized_at, GREATEST(NEW.recorded_at, NEW.capture_recorded_at));
+
+      SELECT COALESCE(MAX(sequence), 0), COALESCE(SUM(applied_cents), 0), COALESCE(SUM(proceeds_cents), 0),
+          COALESCE(SUM(fee_cents), 0), COALESCE(SUM(organizer_fee_cents), 0), COALESCE(SUM(tax_cents), 0)
+        INTO prev_sequence, prev_applied, prev_proceeds, prev_fee, prev_organizer_fee, prev_tax
+        FROM buyer_return_postings WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+      IF NEW.sequence <> prev_sequence + 1 THEN
+        RAISE EXCEPTION 'Return postings are sequenced 1, 2, ... per capture' USING ERRCODE = '23514';
+      END IF;
+      -- Excess is decided on gross against the captured amount alone.
+      IF NEW.kind IN ('refund', 'dispute_loss') AND NEW.applied_cents <> LEAST(NEW.gross_cents, cap.captured_cents - prev_applied) THEN
+        RAISE EXCEPTION 'A return applies the smaller of its gross and the amount still owed' USING ERRCODE = '23514';
+      END IF;
+      IF prev_applied + NEW.applied_cents NOT BETWEEN 0 AND cap.captured_cents
+          OR prev_proceeds + NEW.proceeds_cents NOT BETWEEN 0 AND cap.proceeds_cents
+          OR prev_fee + NEW.fee_cents NOT BETWEEN 0 AND cap.fee_cents
+          OR prev_organizer_fee + NEW.organizer_fee_cents NOT BETWEEN 0 AND cap.organizer_fee_cents
+          OR prev_tax + NEW.tax_cents NOT BETWEEN 0 AND cap.tax_cents THEN
+        RAISE EXCEPTION 'Cumulative returned shares must stay within the capture''s components' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS buyer_return_postings_check ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_check BEFORE INSERT ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_buyer_return_posting();
+    DROP TRIGGER IF EXISTS buyer_return_postings_append_only ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_append_only BEFORE UPDATE OR DELETE ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER buyer_return_postings_no_truncate BEFORE TRUNCATE ON buyer_return_postings
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+  SQL
+
+  # Tranche 3 (migration 20261126110000).
+  RETURNS_SQL = (RETURN_RECORDED_AT_SQL + POSTING_SQL).freeze
+
+  SQL = (FOUNDATION_SQL + RETURNS_SQL).freeze
+  RETURNS_SENTINEL_TABLE = "buyer_return_postings"
 
   module SchemaDump
     private
@@ -246,8 +440,10 @@ module FinancialIntegrity
         "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '#{trigger}' AND tgrelid = '#{table}'::regclass)"
       )
 
+      sql = FinancialIntegrity::FOUNDATION_SQL
+      sql += FinancialIntegrity::RETURNS_SQL if @connection.data_source_exists?(RETURNS_SENTINEL_TABLE)
       stream.puts "  execute <<~SQL"
-      FinancialIntegrity::SQL.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
+      sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
       stream.puts "  SQL"
       stream.puts
     end

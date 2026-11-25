@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -240,6 +240,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
     t.check_constraint "status = ANY (ARRAY[0, 1, 2])", name: "balance_adjustments_status_valid"
   end
 
+  create_table "buyer_return_postings", force: :cascade do |t|
+    t.bigint "never_fulfilled_capture_id", null: false
+    t.integer "sequence", null: false
+    t.string "kind", null: false
+    t.string "source_type", null: false
+    t.bigint "source_id", null: false
+    t.bigint "reverses_posting_id"
+    t.integer "gross_cents", null: false
+    t.integer "applied_cents", null: false
+    t.integer "excess_cents", null: false
+    t.integer "proceeds_cents", null: false
+    t.integer "fee_cents", null: false
+    t.integer "organizer_fee_cents", null: false
+    t.integer "tax_cents", null: false
+    t.datetime "recorded_at", null: false
+    t.string "recording_source", null: false
+    t.datetime "capture_recorded_at", null: false
+    t.datetime "recognized_at", null: false
+    t.string "recognition_state", default: "recognized", null: false
+    t.string "allocation_policy", null: false
+    t.string "policy_version", null: false
+    t.string "allocation_method", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.text "note"
+    t.datetime "posted_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["kind", "source_type", "source_id"], name: "index_buyer_return_postings_on_movement", unique: true
+    t.index ["never_fulfilled_capture_id", "sequence"], name: "index_buyer_return_postings_on_capture_sequence", unique: true
+    t.index ["recognized_at"], name: "index_buyer_return_postings_on_recognized_at"
+    t.index ["reverses_posting_id"], name: "index_buyer_return_postings_on_reverses_posting_id", unique: true
+    t.check_constraint "(applied_cents + excess_cents) = gross_cents", name: "buyer_return_postings_gross_identity"
+    t.check_constraint "(kind::text = ANY (ARRAY['refund'::character varying::text, 'dispute_loss'::character varying::text])) AND reverses_posting_id IS NULL AND gross_cents > 0 AND applied_cents >= 0 AND excess_cents >= 0 AND proceeds_cents >= 0 AND fee_cents >= 0 AND organizer_fee_cents >= 0 AND tax_cents >= 0 OR (kind::text = ANY (ARRAY['dispute_loss_reversal'::character varying::text, 'refund_reversal'::character varying::text])) AND reverses_posting_id IS NOT NULL AND gross_cents < 0", name: "buyer_return_postings_direction"
+    t.check_constraint "(kind::text = ANY (ARRAY['refund'::character varying::text, 'refund_reversal'::character varying::text])) AND source_type::text = 'Refund'::text OR (kind::text = ANY (ARRAY['dispute_loss'::character varying::text, 'dispute_loss_reversal'::character varying::text])) AND source_type::text = 'Dispute'::text", name: "buyer_return_postings_source_matches_kind"
+    t.check_constraint "(proceeds_cents + fee_cents + organizer_fee_cents + tax_cents) = applied_cents", name: "buyer_return_postings_components_sum"
+    t.check_constraint "allocation_method::text = ANY (ARRAY['refund_items'::character varying::text, 'bounded'::character varying::text, 'cumulative_pro_rata'::character varying::text, 'recomputed'::character varying::text])", name: "buyer_return_postings_allocation_method_valid"
+    t.check_constraint "kind::text = ANY (ARRAY['refund'::character varying::text, 'dispute_loss'::character varying::text, 'dispute_loss_reversal'::character varying::text, 'refund_reversal'::character varying::text])", name: "buyer_return_postings_kind_valid"
+    t.check_constraint "recognition_state::text = ANY (ARRAY['recognized'::character varying::text, 'pending_correction'::character varying::text])", name: "buyer_return_postings_recognition_state_valid"
+    t.check_constraint "recognized_at = GREATEST(recorded_at, capture_recorded_at)", name: "buyer_return_postings_recognition"
+    t.check_constraint "recording_source::text = 'database'::text OR evidence <> '{}'::jsonb", name: "buyer_return_postings_backfill_evidence"
+    t.check_constraint "recording_source::text = ANY (ARRAY['database'::character varying::text, 'backfill'::character varying::text])", name: "buyer_return_postings_recording_source_valid"
+    t.check_constraint "sequence > 0", name: "buyer_return_postings_sequence_positive"
+  end
+
   create_table "card_present_accounts", force: :cascade do |t|
     t.integer "connection_mode", default: 0, null: false
     t.datetime "created_at", null: false
@@ -434,6 +476,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "loss_recorded_at"
+    t.datetime "loss_reversed_at"
     t.index ["order_id"], name: "index_disputes_on_order_id"
     t.index ["payment_id"], name: "index_disputes_on_payment_id"
     t.index ["provider", "provider_dispute_id"], name: "index_disputes_on_provider_and_provider_dispute_id", unique: true
@@ -2198,6 +2242,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
     t.datetime "succeeded_at"
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "success_recorded_at"
     t.index ["idempotency_key"], name: "index_refunds_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_refunds_on_order_id"
     t.index ["payment_id"], name: "index_refunds_on_payment_id"
@@ -3053,6 +3098,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
   add_foreign_key "balance_adjustments", "organizations", on_delete: :restrict
   add_foreign_key "balance_adjustments", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "balance_adjustments", "users", column: "reversed_by_user_id", on_delete: :nullify
+  add_foreign_key "buyer_return_postings", "buyer_return_postings", column: "reverses_posting_id"
+  add_foreign_key "buyer_return_postings", "never_fulfilled_captures"
   add_foreign_key "card_present_accounts", "organizations", on_delete: :restrict
   add_foreign_key "card_present_accounts", "users", column: "verified_by_user_id", on_delete: :restrict
   add_foreign_key "card_present_payment_attempts", "card_present_accounts", on_delete: :restrict
@@ -3587,6 +3634,172 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
     DROP TRIGGER IF EXISTS tickets_issuance_guard ON tickets;
     CREATE TRIGGER tickets_issuance_guard BEFORE INSERT OR UPDATE OF order_id, status ON tickets
       FOR EACH ROW EXECUTE FUNCTION hafapass_guard_ticket_issuance();
+    CREATE OR REPLACE FUNCTION hafapass_refund_success_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.success_recorded_at IS NOT NULL THEN
+        IF NEW.success_recorded_at IS DISTINCT FROM OLD.success_recorded_at THEN
+          RAISE EXCEPTION 'A refund''s success recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.success_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A refund''s success recording time is written by the database' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status = 1 AND (TG_OP = 'INSERT' OR OLD.status <> 1) THEN
+        NEW.success_recorded_at := timezone('UTC', clock_timestamp());
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_success_recorded_at ON refunds;
+    CREATE TRIGGER refunds_success_recorded_at BEFORE INSERT OR UPDATE OF status, success_recorded_at ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_success_recorded_at();
+
+    -- loss_reversed_at: the application asks for it by writing any value on a
+    -- lost dispute; the database replaces it with its own time, once.
+    CREATE OR REPLACE FUNCTION hafapass_dispute_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.loss_recorded_at IS NOT NULL THEN
+        IF NEW.loss_recorded_at IS DISTINCT FROM OLD.loss_recorded_at THEN
+          RAISE EXCEPTION 'A dispute''s loss recording time is set once' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A dispute''s loss recording time is written by the database' USING ERRCODE = '23514';
+      ELSIF NEW.status = 2 AND (TG_OP = 'INSERT' OR OLD.status <> 2) THEN
+        NEW.loss_recorded_at := timezone('UTC', clock_timestamp());
+      END IF;
+
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.loss_reversed_at IS NOT NULL THEN
+          RAISE EXCEPTION 'A dispute loss is reversed only after it was recorded' USING ERRCODE = '23514';
+        END IF;
+      ELSIF OLD.loss_reversed_at IS NOT NULL THEN
+        IF NEW.loss_reversed_at IS DISTINCT FROM OLD.loss_reversed_at OR NEW.status <> 2 THEN
+          RAISE EXCEPTION 'A reversed dispute loss is final' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.loss_reversed_at IS NOT NULL THEN
+        IF OLD.status <> 2 OR NEW.status <> 2 THEN
+          RAISE EXCEPTION 'Only a recorded dispute loss can be reversed' USING ERRCODE = '23514';
+        END IF;
+        NEW.loss_reversed_at := timezone('UTC', clock_timestamp());
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS disputes_recorded_at ON disputes;
+    CREATE TRIGGER disputes_recorded_at BEFORE INSERT OR UPDATE OF status, loss_recorded_at, loss_reversed_at ON disputes
+      FOR EACH ROW EXECUTE FUNCTION hafapass_dispute_recorded_at();
+    CREATE OR REPLACE FUNCTION hafapass_check_buyer_return_posting() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      src_payment bigint;
+      src_amount integer;
+      src_currency text;
+      src_status integer;
+      stamp timestamp;
+      cutover timestamp;
+      reversed buyer_return_postings%ROWTYPE;
+      prev_sequence integer;
+      prev_applied bigint;
+      prev_proceeds bigint;
+      prev_fee bigint;
+      prev_organizer_fee bigint;
+      prev_tax bigint;
+    BEGIN
+      SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'A return posting needs its classified capture' USING ERRCODE = '23503';
+      END IF;
+      PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+
+      NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, cap.capture_recorded_at);
+      IF NEW.capture_recorded_at <> cap.capture_recorded_at OR NEW.allocation_policy <> cap.allocation_policy
+          OR NEW.policy_version <> cap.policy_version THEN
+        RAISE EXCEPTION 'A return posting copies its capture''s recording time and allocation policy' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.source_type = 'Refund' THEN
+        SELECT payment_id, amount_cents, currency, status, success_recorded_at
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM refunds WHERE id = NEW.source_id;
+      ELSE
+        SELECT payment_id, amount_cents, currency, status,
+            CASE WHEN NEW.kind = 'dispute_loss_reversal' THEN loss_reversed_at ELSE loss_recorded_at END
+          INTO src_payment, src_amount, src_currency, src_status, stamp FROM disputes WHERE id = NEW.source_id;
+      END IF;
+      IF NOT FOUND OR src_payment IS DISTINCT FROM cap.payment_id THEN
+        RAISE EXCEPTION 'A return posting''s movement must belong to the classified payment' USING ERRCODE = '23503';
+      END IF;
+      IF lower(src_currency) <> lower(cap.currency) THEN
+        RAISE EXCEPTION 'A return posting''s movement must be in the capture''s currency' USING ERRCODE = '23514';
+      END IF;
+
+      IF NEW.kind = 'refund' THEN
+        IF src_status <> 1 OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A refund posting needs a succeeded refund of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss' THEN
+        IF src_status <> 2 OR NEW.gross_cents <> src_amount THEN
+          RAISE EXCEPTION 'A dispute posting needs a lost dispute of the same gross amount' USING ERRCODE = '23514';
+        END IF;
+      ELSIF NEW.kind = 'dispute_loss_reversal' THEN
+        SELECT * INTO reversed FROM buyer_return_postings WHERE id = NEW.reverses_posting_id;
+        IF NOT FOUND OR reversed.never_fulfilled_capture_id <> NEW.never_fulfilled_capture_id
+            OR reversed.kind <> 'dispute_loss' OR reversed.source_id <> NEW.source_id
+            OR src_status <> 2 OR stamp IS NULL OR NEW.gross_cents <> -reversed.gross_cents THEN
+          RAISE EXCEPTION 'A loss reversal needs the reversed loss''s posting and a recorded reversal' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        -- refund_reversal needs an approved finance action, which A1 does not ship.
+        RAISE EXCEPTION 'Refund reversals are posted only by an approved finance correction' USING ERRCODE = '23514';
+      END IF;
+
+      IF stamp IS NOT NULL THEN
+        NEW.recorded_at := COALESCE(NEW.recorded_at, stamp);
+        IF NEW.recorded_at <> stamp OR NEW.recording_source <> 'database' THEN
+          RAISE EXCEPTION 'A return posting uses its movement''s database recording time' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        SELECT recorded_at INTO cutover FROM financial_cutovers WHERE key = 'a1_return_recording';
+        IF NEW.recording_source <> 'backfill' OR NEW.recorded_at IS NULL OR cutover IS NULL
+            OR NEW.recorded_at > cutover OR NEW.evidence = '{}'::jsonb THEN
+          RAISE EXCEPTION 'A movement recorded before A1 needs a backfilled time with evidence, no later than the cutover'
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      NEW.recognized_at := COALESCE(NEW.recognized_at, GREATEST(NEW.recorded_at, NEW.capture_recorded_at));
+
+      SELECT COALESCE(MAX(sequence), 0), COALESCE(SUM(applied_cents), 0), COALESCE(SUM(proceeds_cents), 0),
+          COALESCE(SUM(fee_cents), 0), COALESCE(SUM(organizer_fee_cents), 0), COALESCE(SUM(tax_cents), 0)
+        INTO prev_sequence, prev_applied, prev_proceeds, prev_fee, prev_organizer_fee, prev_tax
+        FROM buyer_return_postings WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+      IF NEW.sequence <> prev_sequence + 1 THEN
+        RAISE EXCEPTION 'Return postings are sequenced 1, 2, ... per capture' USING ERRCODE = '23514';
+      END IF;
+      -- Excess is decided on gross against the captured amount alone.
+      IF NEW.kind IN ('refund', 'dispute_loss') AND NEW.applied_cents <> LEAST(NEW.gross_cents, cap.captured_cents - prev_applied) THEN
+        RAISE EXCEPTION 'A return applies the smaller of its gross and the amount still owed' USING ERRCODE = '23514';
+      END IF;
+      IF prev_applied + NEW.applied_cents NOT BETWEEN 0 AND cap.captured_cents
+          OR prev_proceeds + NEW.proceeds_cents NOT BETWEEN 0 AND cap.proceeds_cents
+          OR prev_fee + NEW.fee_cents NOT BETWEEN 0 AND cap.fee_cents
+          OR prev_organizer_fee + NEW.organizer_fee_cents NOT BETWEEN 0 AND cap.organizer_fee_cents
+          OR prev_tax + NEW.tax_cents NOT BETWEEN 0 AND cap.tax_cents THEN
+        RAISE EXCEPTION 'Cumulative returned shares must stay within the capture''s components' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS buyer_return_postings_check ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_check BEFORE INSERT ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_buyer_return_posting();
+    DROP TRIGGER IF EXISTS buyer_return_postings_append_only ON buyer_return_postings;
+    CREATE TRIGGER buyer_return_postings_append_only BEFORE UPDATE OR DELETE ON buyer_return_postings
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER buyer_return_postings_no_truncate BEFORE TRUNCATE ON buyer_return_postings
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
   SQL
 
 end
