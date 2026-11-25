@@ -119,7 +119,8 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     end
   end
 
-  it "keeps closed January unchanged when a late door-card capture and auto-refund settle in February and dates cross-month capture and refund by recording month" do
+  it "keeps closed January unchanged when a late door-card capture and auto-refund settle in February and dates cross-month capture and refund by recording month",
+    repayment_submitter: :active do
     same_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
     cross_month_event = create(:event, :published, online_door_card_enabled: true, max_capacity: 1)
     tt1 = create(:ticket_type, event: same_month_event, price_cents: 1_200, quantity_available: 1)
@@ -172,12 +173,14 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       OpenStruct.new(id: "re_live_BptSameFeb", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment1.provider_payment_id)
     )
     travel_to(feb_capture) do
-      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment1.provider_payment_id, livemode: payment1.provider_environment == "live" })
       Commerce::LateCaptureRefund.call(payment: payment1)
     end
 
     travel_to(feb_late_capture) do
-      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment2.provider_payment_id, livemode: payment2.provider_environment == "live" })
     end
 
     get path, params: { year: 2027, month: 2 }, headers: auth_headers(admin)

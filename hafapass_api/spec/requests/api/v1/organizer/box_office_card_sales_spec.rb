@@ -282,7 +282,7 @@ RSpec.describe "Online box office card sales", type: :request do
     expect(response.parsed_body.fetch("tickets").sole.fetch("scan_credential")).to eq(order.tickets.sole.scan_credential)
   end
 
-  it "shows a retryable decline and queues one late refund after the released capacity sells" do
+  it "shows a retryable decline and queues one late refund after the released capacity sells", repayment_submitter: :active do
     ticket_type.update!(quantity_available: 1)
     order = create_sale
     payment = order.payments.sole

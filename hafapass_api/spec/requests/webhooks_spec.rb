@@ -463,7 +463,8 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect(checkout.order.reconciliation_exceptions.pluck(:code)).to eq(["payment_amount_mismatch"])
     end
 
-    it "releases and refunds once when the inventory was resold, even if the success is reported twice" do
+    it "releases and refunds once when the inventory was resold, even if the success is reported twice",
+      repayment_submitter: :active do
       checkout = lapsed_checkout("pi_late_resold", quantity: 2)
       ticket_type.update_columns(quantity_available: 2, quantity_sold: 1)
 
@@ -477,7 +478,8 @@ RSpec.describe "Stripe webhooks", type: :request do
       expect(checkout.order.reload).to be_refunded
     end
 
-    it "refunds a payment that succeeded while expiry was cancelling it, despite the failed cancel" do
+    it "refunds a payment that succeeded while expiry was cancelling it, despite the failed cancel",
+      repayment_submitter: :active do
       checkout = lapsed_checkout("pi_late_cancel_race")
       # Expiry sees the payment still in progress, then the buyer's payment
       # succeeds before the cancel reaches Stripe, so the cancel is refused.

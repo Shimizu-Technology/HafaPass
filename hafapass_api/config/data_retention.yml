@@ -579,6 +579,13 @@
       "action": "keep",
       "pii_columns": []
     },
+    "repayment_operations": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "order_items": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -2208,6 +2215,25 @@
       "note": "system",
       "posted_at": "system"
     },
+    "repayment_operations": {
+      "id": "system",
+      "never_fulfilled_capture_id": "system",
+      "payment_id": "system",
+      "sequence": "system",
+      "amount_cents": "financial",
+      "currency": "financial",
+      "idempotency_key": "system",
+      "state": "financial",
+      "source": "system",
+      "adopted": "system",
+      "refund_id": "system",
+      "submission_count": "system",
+      "last_submitted_at": "system",
+      "terminal_reason": "system",
+      "evidence": "system",
+      "created_at": "system",
+      "updated_at": "system"
+    },
     "order_items": {
       "id": "system",
       "catalog_item_id": "system",
@@ -2781,7 +2807,8 @@
       "succeeded_at": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system",
-      "success_recorded_at": "system"
+      "success_recorded_at": "system",
+      "repayment_operation_id": "system"
     },
     "registration_questions": {
       "id": "system",
@@ -3377,7 +3404,8 @@
       "provider_event_id": "system",
       "status": "system",
       "updated_at": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "replayed_at": "system"
     },
     "webhook_rejection_counts": {
       "id": "system",

@@ -172,7 +172,8 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
     end
   end
 
-  it "does not grant the late-capture refund exception to an unrelated state or unresolved mismatch" do
+  it "does not grant the late-capture refund exception to an unrelated state or unresolved mismatch",
+    repayment_submitter: :active do
     order, payment, = checkout_fixture(pending: true)
     payment.update!(status: :succeeded, succeeded_at: Time.current)
     expect { Commerce::RefundCreator.call(order: order, payment: payment) }.to raise_error(Commerce::RefundCreator::RefundError)

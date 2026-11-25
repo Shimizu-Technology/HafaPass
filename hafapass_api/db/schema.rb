@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_120200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2243,10 +2243,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
     t.datetime "success_recorded_at"
+    t.bigint "repayment_operation_id"
     t.index ["idempotency_key"], name: "index_refunds_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_refunds_on_order_id"
     t.index ["payment_id"], name: "index_refunds_on_payment_id"
     t.index ["provider", "provider_refund_id"], name: "index_refunds_on_unique_provider_refund", unique: true, where: "(provider_refund_id IS NOT NULL)"
+    t.index ["repayment_operation_id"], name: "index_refunds_on_repayment_operation_id", unique: true, where: "(repayment_operation_id IS NOT NULL)"
     t.index ["requested_by_id"], name: "index_refunds_on_requested_by_id"
     t.index ["retention_anonymized_at"], name: "index_refunds_on_retention_anonymized_at"
     t.check_constraint "amount_cents > 0", name: "refunds_amount_positive"
@@ -2296,6 +2298,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
     t.index ["retention_anonymized_at"], name: "index_registration_responses_on_retention_anonymized_at"
     t.index ["ticket_id", "registration_question_id"], name: "index_registration_responses_unique_ticket", unique: true, where: "(ticket_id IS NOT NULL)"
     t.index ["ticket_id"], name: "index_registration_responses_on_ticket_id"
+  end
+
+  create_table "repayment_operations", force: :cascade do |t|
+    t.bigint "never_fulfilled_capture_id", null: false
+    t.bigint "payment_id", null: false
+    t.integer "sequence", null: false
+    t.integer "amount_cents", null: false
+    t.string "currency", null: false
+    t.string "idempotency_key", null: false
+    t.string "state", default: "reserved", null: false
+    t.string "source", null: false
+    t.boolean "adopted", default: false, null: false
+    t.bigint "refund_id"
+    t.integer "submission_count", default: 0, null: false
+    t.datetime "last_submitted_at"
+    t.string "terminal_reason"
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "created_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.datetime "updated_at", null: false
+    t.index ["idempotency_key"], name: "index_repayment_operations_on_idempotency_key", unique: true
+    t.index ["never_fulfilled_capture_id", "sequence"], name: "index_repayment_operations_on_capture_sequence", unique: true
+    t.index ["payment_id", "state"], name: "index_repayment_operations_on_payment_id_and_state"
+    t.index ["refund_id"], name: "index_repayment_operations_on_refund_id", unique: true
+    t.check_constraint "(state::text <> ALL (ARRAY['submitting'::character varying::text, 'unknown'::character varying::text])) OR refund_id IS NOT NULL", name: "repayment_operations_submitted_has_refund"
+    t.check_constraint "amount_cents > 0", name: "repayment_operations_amount_positive"
+    t.check_constraint "sequence > 0", name: "repayment_operations_sequence_positive"
+    t.check_constraint "source::text = ANY (ARRAY['automatic'::character varying::text, 'admin_late_capture'::character varying::text, 'admin_order_refund'::character varying::text, 'fraud_warning'::character varying::text, 'evaluator'::character varying::text, 'queue_retry'::character varying::text, 'adoption'::character varying::text])", name: "repayment_operations_source_valid"
+    t.check_constraint "state::text = ANY (ARRAY['reserved'::character varying::text, 'submitting'::character varying::text, 'unknown'::character varying::text, 'succeeded'::character varying::text, 'failed_terminal'::character varying::text])", name: "repayment_operations_state_valid"
+    t.check_constraint "submission_count >= 0", name: "repayment_operations_submission_count_nonnegative"
   end
 
   create_table "runtime_alert_states", primary_key: "signal", id: :string, force: :cascade do |t|
@@ -3053,6 +3084,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
     t.datetime "retention_anonymized_at"
+    t.datetime "replayed_at"
     t.index ["provider", "provider_event_id"], name: "index_webhook_events_on_unique_provider_event", unique: true
     t.index ["retention_anonymized_at"], name: "index_webhook_events_on_retention_anonymized_at"
     t.index ["status", "created_at"], name: "index_webhook_events_on_status_and_created_at"
@@ -3324,11 +3356,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
   add_foreign_key "refund_tickets", "tickets", on_delete: :restrict
   add_foreign_key "refunds", "orders", on_delete: :restrict
   add_foreign_key "refunds", "payments", on_delete: :restrict
+  add_foreign_key "refunds", "repayment_operations"
   add_foreign_key "refunds", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "registration_questions", "events", on_delete: :restrict
   add_foreign_key "registration_responses", "orders", on_delete: :restrict
   add_foreign_key "registration_responses", "registration_questions", on_delete: :restrict
   add_foreign_key "registration_responses", "tickets", on_delete: :restrict
+  add_foreign_key "repayment_operations", "never_fulfilled_captures"
+  add_foreign_key "repayment_operations", "payments"
+  add_foreign_key "repayment_operations", "refunds"
   add_foreign_key "scanner_devices", "events", on_delete: :restrict
   add_foreign_key "scanner_devices", "organizations", on_delete: :restrict
   add_foreign_key "scanner_devices", "users", on_delete: :restrict
@@ -3800,6 +3836,168 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_110000) do
       FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
     CREATE OR REPLACE TRIGGER buyer_return_postings_no_truncate BEFORE TRUNCATE ON buyer_return_postings
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    CREATE OR REPLACE FUNCTION hafapass_fenced_payment(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT target IS NOT NULL AND (
+        EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE payment_id = target)
+        OR EXISTS (SELECT 1 FROM reconciliation_exceptions WHERE payment_id = target
+          AND code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined')))
+    $$;
+
+    -- Identity is append-only; state moves forward only. Operation n > 1 is
+    -- reserved only after every earlier operation reached a verified
+    -- terminal state, so a retry is never a new operation (design §6.3).
+    CREATE OR REPLACE FUNCTION hafapass_check_repayment_operation() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      last_sequence integer;
+      expected_key text;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Repayment operations are append-only' USING ERRCODE = '23514';
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+        IF NOT FOUND OR cap.payment_id <> NEW.payment_id OR cap.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A repayment operation belongs to its classified payment' USING ERRCODE = '23514';
+        END IF;
+        PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+        SELECT COALESCE(MAX(sequence), 0) INTO last_sequence FROM repayment_operations
+          WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+        IF NEW.sequence <> last_sequence + 1 THEN
+          RAISE EXCEPTION 'Repayment operations are numbered contiguously' USING ERRCODE = '23514';
+        END IF;
+        expected_key := 'late-capture:payment:' || NEW.payment_id ||
+          CASE WHEN NEW.sequence = 1 THEN '' ELSE ':op:' || NEW.sequence END;
+        IF NEW.idempotency_key <> expected_key THEN
+          RAISE EXCEPTION 'Repayment operation % must use key %', NEW.sequence, expected_key USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM repayment_operations WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id
+            AND state NOT IN ('succeeded', 'failed_terminal')) THEN
+          RAISE EXCEPTION 'A new repayment operation waits until earlier ones are verified' USING ERRCODE = '23514';
+        END IF;
+        IF NOT NEW.adopted AND (NEW.state <> 'reserved' OR NEW.refund_id IS NOT NULL OR NEW.submission_count <> 0) THEN
+          RAISE EXCEPTION 'A new repayment operation starts reserved' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.adopted AND (NEW.sequence <> 1 OR NEW.refund_id IS NULL) THEN
+          RAISE EXCEPTION 'Only the legacy first operation is adopted, with its refund' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+
+      IF (NEW.never_fulfilled_capture_id, NEW.payment_id, NEW.sequence, NEW.amount_cents, NEW.currency,
+          NEW.idempotency_key, NEW.source, NEW.adopted, NEW.created_at) IS DISTINCT FROM
+         (OLD.never_fulfilled_capture_id, OLD.payment_id, OLD.sequence, OLD.amount_cents, OLD.currency,
+          OLD.idempotency_key, OLD.source, OLD.adopted, OLD.created_at) THEN
+        RAISE EXCEPTION 'A repayment operation''s identity is immutable' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.refund_id IS NOT NULL AND NEW.refund_id IS DISTINCT FROM OLD.refund_id THEN
+        RAISE EXCEPTION 'A repayment operation''s refund is set once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count < OLD.submission_count THEN
+        RAISE EXCEPTION 'Submission counts never decrease' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.state IN ('succeeded', 'failed_terminal') AND NEW.state IS DISTINCT FROM OLD.state THEN
+        RAISE EXCEPTION 'A verified repayment outcome is final' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.state IS DISTINCT FROM OLD.state AND NOT (
+          -- reserved -> succeeded records a provider fact that arrived without
+          -- this operation's own send; it is never refused, and is audited.
+          (OLD.state = 'reserved' AND NEW.state IN ('submitting', 'failed_terminal', 'succeeded')) OR
+          (OLD.state = 'submitting' AND NEW.state IN ('unknown', 'succeeded', 'failed_terminal')) OR
+          (OLD.state = 'unknown' AND NEW.state IN ('submitting', 'succeeded', 'failed_terminal'))) THEN
+        RAISE EXCEPTION 'Repayment operation cannot move from % to %', OLD.state, NEW.state USING ERRCODE = '23514';
+      END IF;
+      -- Only the gate sends, and each send is counted once: entering
+      -- "submitting", or re-sending a stale "submitting" after the in-flight
+      -- bound, adds exactly one.
+      IF NEW.state = 'submitting' AND OLD.state <> 'submitting' AND NEW.submission_count <> OLD.submission_count + 1 THEN
+        RAISE EXCEPTION 'Each submission is counted once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count <> OLD.submission_count AND
+          (NEW.state <> 'submitting' OR NEW.submission_count <> OLD.submission_count + 1) THEN
+        RAISE EXCEPTION 'Submissions are counted only by the gate, one at a time' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS repayment_operations_check ON repayment_operations;
+    CREATE TRIGGER repayment_operations_check BEFORE INSERT OR UPDATE OR DELETE ON repayment_operations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_repayment_operation();
+    CREATE OR REPLACE TRIGGER repayment_operations_no_truncate BEFORE TRUNCATE ON repayment_operations
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+
+    CREATE OR REPLACE FUNCTION hafapass_refund_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      op repayment_operations%ROWTYPE;
+      inbound boolean;
+    BEGIN
+      IF NEW.repayment_operation_id IS NOT NULL AND
+          (TG_OP = 'INSERT' OR NEW.repayment_operation_id IS DISTINCT FROM OLD.repayment_operation_id) THEN
+        IF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL THEN
+          RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF NOT FOUND OR op.payment_id IS DISTINCT FROM NEW.payment_id OR op.idempotency_key <> NEW.idempotency_key
+            OR op.amount_cents <> NEW.amount_cents OR op.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A refund matches its repayment operation exactly' USING ERRCODE = '23514';
+        END IF;
+      ELSIF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+      END IF;
+
+      inbound := NEW.provider_refund_id IS NOT NULL OR NEW.idempotency_key LIKE 'provider:stripe:refund:%';
+      IF inbound OR NOT hafapass_fenced_payment(NEW.payment_id) THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'INSERT' AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'Repayment fence: this payment is returned only through a repayment operation'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.failure_code = 'provider_result_unknown' AND
+          (TG_OP = 'INSERT' OR OLD.failure_code IS DISTINCT FROM 'provider_result_unknown') THEN
+        IF NEW.repayment_operation_id IS NULL THEN
+          RAISE EXCEPTION 'Repayment fence: this refund cannot be submitted' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF op.state <> 'submitting' THEN
+          RAISE EXCEPTION 'Repayment fence: only the operation gate submits this refund' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_repayment_fence ON refunds;
+    CREATE TRIGGER refunds_repayment_fence BEFORE INSERT OR UPDATE OF failure_code, repayment_operation_id ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_repayment_fence();
+
+    -- P10 strict for every payout writer, old or new: no payout on an event
+    -- with an open never-fulfilled item is created, released from hold or
+    -- submitted. Holding, failing, reversing and recording a transfer that
+    -- already left are not refused here (the application guards paid
+    -- recording with the existing queue rule).
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status NOT IN (0, 1) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      IF EXISTS (SELECT 1 FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = NEW.event_id)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = NEW.event_id))) THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
   SQL
 
 end

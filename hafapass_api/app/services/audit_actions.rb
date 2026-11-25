@@ -225,7 +225,16 @@ class AuditActions
         "never_fulfilled_capture.classified" => "Recorded a captured payment that HåfaPass did not fulfil.",
         "order.fulfilling_payment_recovered" => "Recorded which payment fulfilled a legacy order.",
         "buyer_return_posting.recorded" => "Recorded money returned to the buyer of an unfulfilled payment.",
-        "dispute.loss_receipt_after_win" => "Kept a dispute loss notice that arrived after the dispute was won."
+        "dispute.loss_receipt_after_win" => "Kept a dispute loss notice that arrived after the dispute was won.",
+        "repayment_operation.reserved" => "Reserved a payment's return to its buyer.",
+        "repayment_operation.submission_requested" => "Sent a payment's return to its buyer to the card processor.",
+        "repayment_operation.succeeded" => "Recorded that a payment's return to its buyer succeeded.",
+        "repayment_operation.failed_terminal" => "Recorded that a payment's return to its buyer did not move money.",
+        "repayment_operation.unknown" => "Recorded that a payment's return to its buyer has an unknown result.",
+        "repayment_operation.adopted" => "Linked an earlier automatic refund to the payment's return workflow.",
+        "reconciliation_exception.reopened" => "Reopened a payment's return to its buyer after money came back.",
+        "never_fulfilled_capture.buyer_overpaid" => "Recorded that a buyer was repaid more than an unfulfilled payment.",
+        "webhook_event.replayed" => "Applied a stored Stripe notice to the payment it describes."
       }
 
     # A paid late completion used a promo code past max_uses (see

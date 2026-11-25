@@ -1220,7 +1220,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     expect(alerts["summary"]).to include("Reversed payout(s) missing reversal audit evidence ($90.00)")
   end
 
-  it "keeps closed January byte-identical when a late door-card capture and auto-refund occur in February, and books never-fulfilled captures as refunds owed to buyers by recording month" do
+  it "keeps closed January byte-identical when a late door-card capture and auto-refund occur in February, and books never-fulfilled captures as refunds owed to buyers by recording month",
+    repayment_submitter: :active do
     org = create(:organization)
     profile = create(:organizer_profile, organization: org)
     same_month_event = create(:event, :published, organization: org, organizer_profile: profile,
@@ -1281,7 +1282,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       OpenStruct.new(id: "re_live_SameFeb", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment1.provider_payment_id)
     )
     travel_to(feb_capture) do
-      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment1.provider_payment_id, livemode: payment1.provider_environment == "live" })
       expect(order1.reload).to be_expired
       expect(order1.completed_at).to be_nil
       expect(order1.tickets).to be_empty
@@ -1293,7 +1295,8 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
 
     # February 28: late capture for event 2 (NOT refunded yet in February!)
     travel_to(feb_late_capture) do
-      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
+        provider_lookup: { provider_object_id: payment2.provider_payment_id, livemode: payment2.provider_environment == "live" })
       expect(order2.reload).to be_expired
       expect(order2.completed_at).to be_nil
       expect(payment2.reload).to be_succeeded

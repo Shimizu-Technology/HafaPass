@@ -210,7 +210,7 @@ RSpec.describe "Refund reconciliation", type: :request do
       .failure_code).to eq("provider_result_unknown")
   end
 
-  it "lists an unrepaid late capture as an owed buyer balance and refunds it once from the queue" do
+  it "lists an unrepaid late capture as an owed buyer balance and refunds it once from the queue", repayment_submitter: :active do
     order = create(:order, event: event, status: :expired, completed_at: nil, subtotal_cents: 5000, service_fee_cents: 250,
       total_cents: 5250)
     ticket_type = create(:ticket_type, event: event)
@@ -219,6 +219,7 @@ RSpec.describe "Refund reconciliation", type: :request do
     payment = payment_for(order)
     issue = create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_hold_expiry")
     create(:reconciliation_exception, order: order, payment: payment, code: "late_payment_success_after_inventory_release")
+    classify_order_scope!(order, payment)
     allow(StripeService).to receive(:refund_payment).and_return(OpenStruct.new(
       id: "re_late_queue", status: "succeeded", amount: 5250, currency: "usd"))
 

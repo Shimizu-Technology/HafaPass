@@ -942,7 +942,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
       expect(response.parsed_body.fetch("error")).to eq("All included nights for this pass have been cancelled")
     end
 
-    it "routes an in-flight paid pass order to refund recovery instead of completing with 0 children when all nights are cancelled" do
+    it "routes an in-flight paid pass order to refund recovery instead of completing with 0 children when all nights are cancelled",
+      repayment_submitter: :active do
       checkout = Commerce::OrderCreator.call(
         event: pass_event,
         line_items: [{ ticket_type_id: pass_tt.id, quantity: 1 }],
@@ -964,7 +965,8 @@ RSpec.describe "Multi-night passes lifecycle, refunds, disputes, storm reschedul
           order,
           payment: payment,
           provider_amount_cents: payment.amount_cents,
-          provider_currency: payment.currency
+          provider_currency: payment.currency,
+          provider_lookup: { provider_object_id: payment.provider_payment_id, livemode: payment.provider_environment == "live" }
         )
       end.to have_enqueued_job(LateCaptureRefundJob).with(payment.id)
 

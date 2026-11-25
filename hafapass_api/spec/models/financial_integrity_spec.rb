@@ -233,7 +233,7 @@ RSpec.describe FinancialIntegrity do
       expect { isolated { connection.execute("UPDATE never_fulfilled_captures SET capture_scope = 'payment'") } }
         .to raise_error(ActiveRecord::StatementInvalid, /append-only/)
       # Postings reference captures, so a truncation has to name both tables.
-      expect { isolated { connection.execute("TRUNCATE never_fulfilled_captures, buyer_return_postings") } }
+      expect { isolated { connection.execute("TRUNCATE never_fulfilled_captures, buyer_return_postings CASCADE") } }
         .to raise_error(ActiveRecord::StatementInvalid, /cannot be truncated/)
       expect { isolated { connection.execute("UPDATE financial_cutovers SET recorded_at = recorded_at") } }
         .not_to raise_error # no rows in a schema-loaded database; the row case is below

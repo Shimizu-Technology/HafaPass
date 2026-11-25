@@ -8,6 +8,7 @@ class Refund < ApplicationRecord
   # capture (UnfulfilledCapture.excluding_isolated).
   scope :excluding_isolated_payments, -> { UnfulfilledCapture.excluding_isolated(self, :payment_id) }
   belongs_to :requested_by, class_name: "User", optional: true
+  belongs_to :repayment_operation, optional: true
   has_many :refund_items, dependent: :restrict_with_error
   has_many :refund_tickets, dependent: :restrict_with_error
   has_many :promoter_commission_entries, dependent: :restrict_with_error
@@ -31,6 +32,10 @@ class Refund < ApplicationRecord
 
   after_save -> { Wallet::PassSync.tickets_changed(order.tickets.select(:id)) },
     if: -> { previously_new_record? || saved_change_to_status? }
+  # A refund of a repayment operation carries its outcome to the operation
+  # in the same transaction, whichever writer recorded it.
+  after_save -> { Commerce::BuyerRepayment.record_outcome!(self) },
+    if: -> { repayment_operation_id.present? && saved_change_to_status? && !pending? }
   after_commit :resume_event_cancellation_refunds,
     if: -> { saved_change_to_status? && (succeeded? || failed? || cancelled?) }
 

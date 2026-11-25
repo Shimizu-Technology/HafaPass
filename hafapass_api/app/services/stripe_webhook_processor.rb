@@ -445,6 +445,7 @@ class StripeWebhookProcessor
           # A redelivered or stale loss notice: the loss posts once.
           Commerce::BuyerReturnPostings.record_dispute_loss!(dispute)
         end
+        Commerce::NeverFulfilledResolution.evaluate_payment!(payment.id, trigger: "dispute_#{provider_status}")
         next
       end
 
@@ -489,6 +490,7 @@ class StripeWebhookProcessor
         metadata: { order_id: payment.order_id, payment_id: payment.id,
           amount_cents: dispute.amount_cents, currency: dispute.currency,
           provider_status: provider_status })
+      Commerce::NeverFulfilledResolution.evaluate_payment!(payment.id, trigger: "dispute_#{status}")
     end
   end
 

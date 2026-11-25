@@ -213,11 +213,12 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
         buyer_email: "late@example.com", buyer_name: "Late Buyer")
       Commerce::OrderLifecycle.cancel!(result.order)
       Commerce::OrderLifecycle.complete!(result.order, payment: result.payment,
-        provider_amount_cents: result.payment.amount_cents, provider_currency: "usd")
+        provider_amount_cents: result.payment.amount_cents, provider_currency: "usd",
+        provider_lookup: { provider_object_id: result.payment.provider_payment_id, livemode: result.payment.provider_environment == "live" })
       [result.order.reload, result.payment.reload]
     end
 
-    it "offers Refund buyer and refunds through the shared late-capture path" do
+    it "offers Refund buyer and refunds through the shared late-capture path", repayment_submitter: :active do
       order, payment = late_capture
       issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
 
@@ -244,7 +245,8 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(refunds.size).to eq(1)
     end
 
-    it "refuses a note-only resolution while the buyer is still owed, even with a confirmation flag" do
+    it "refuses a note-only resolution while the buyer is still owed, even with a confirmation flag",
+      repayment_submitter: :active do
       order, payment = late_capture
       issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
 
@@ -256,24 +258,31 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(issue.reload).to be_open
       expect(AuditLog.where(auditable: issue)).to be_empty
 
-      # After the automatic refund fails, the guidance points to Retry refund
-      # and Refund buyer stays unavailable.
-      create(:refund, order: order, payment: payment, status: :failed, succeeded_at: nil, provider_refund_id: nil,
-        amount_cents: payment.amount_cents, idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment))
-      get "#{base}/#{issue.id}", headers: headers
-      detail = response.parsed_body["reconciliation_exception"]
-      expect(detail["actions"]).to eq([])
-      expect(detail["resolve_blocked_reason"]).to include("Retry refund")
+      # A verified provider rejection moved no money and ends operation 1, so
+      # Refund buyer is offered again and the next attempt is operation 2.
+      allow(StripeService).to receive(:refund_payment).and_raise(Stripe::InvalidRequestError.new("Try later", "amount"))
       post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
-      expect(refunds).to be_empty
+      expect(RepaymentOperation.sole).to have_attributes(sequence: 1, state: "failed_terminal")
+      get "#{base}/#{issue.id}", headers: headers
+      expect(response.parsed_body.dig("reconciliation_exception", "actions")).to include("refund_buyer")
+
+      allow(StripeService).to receive(:refund_payment) do |intent_id, amount_cents:, idempotency_key:, **|
+        refunds << { intent_id: intent_id, amount_cents: amount_cents, idempotency_key: idempotency_key }
+        OpenStruct.new(id: "re_late_op2", status: "succeeded", amount: amount_cents, currency: "usd", payment_intent: intent_id)
+      end
+      post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
+      expect(response).to have_http_status(:created), response.body
+      expect(refunds).to eq([{ intent_id: payment.provider_payment_id, amount_cents: payment.amount_cents,
+        idempotency_key: "late-capture:payment:#{payment.id}:op:2" }])
+      expect(issue.reload).to be_resolved
     end
 
-    it "refuses Refund buyer when nothing is owed or a refund is already pending, and resolves once returned" do
+    it "refuses Refund buyer and resolution while a provider refund is pending, and resolves once it succeeds",
+      repayment_submitter: :active do
       order, payment = late_capture
       issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
-      pending = create(:refund, order: order, payment: payment, status: :pending, succeeded_at: nil, provider_refund_id: nil,
-        amount_cents: payment.amount_cents, idempotency_key: "external-pending")
+      ingest_provider_refund!(payment, payment.amount_cents, id: "re_outside", status: "pending")
 
       post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
@@ -282,21 +291,17 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body["error"]).to include("still pending")
 
-      pending.update_columns(status: Refund.statuses[:succeeded], succeeded_at: Time.current, provider_refund_id: "re_outside")
+      ingest_provider_refund!(payment, payment.amount_cents, id: "re_outside", status: "succeeded")
+      expect(issue.reload).to be_resolved
+      expect(AuditLog.find_by!(action: "reconciliation_exception.resolved", auditable: issue).metadata)
+        .to include("trigger" => "refund_succeeded", "owed_cents" => 0)
       post "#{base}/#{issue.id}/refund_buyer", headers: headers, as: :json
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body["error"]).to include("Nothing is owed")
       expect(refunds).to be_empty
       expect(AuditLog.where(action: "reconciliation_exception.buyer_refund_requested")).to be_empty
-
-      get "#{base}/#{issue.id}", headers: headers
-      expect(response.parsed_body["reconciliation_exception"]).to include("actions" => ["resolve"], "late_capture_owed_cents" => 0)
-      post "#{base}/#{issue.id}/resolve", params: { note: "Refunded in the Stripe Dashboard as re_outside." }, headers: headers, as: :json
-      expect(response).to have_http_status(:ok)
-      expect(issue.reload).to be_resolved
     end
 
-    it "audits a failed Refund buyer attempt after the provider call, with the failed refund" do
+    it "audits a failed Refund buyer attempt after the provider call, with the failed refund", repayment_submitter: :active do
       order, payment = late_capture
       issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
       allow(StripeService).to receive(:refund_payment)
@@ -308,6 +313,7 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(issue.reload).to be_open
       refund = order.refunds.find_by!(idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment))
       expect(refund).to be_failed
+      expect(refund.repayment_operation).to have_attributes(sequence: 1, state: "failed_terminal", submission_count: 1)
       audit = AuditLog.find_by!(action: "reconciliation_exception.buyer_refund_requested", auditable: issue)
       expect(audit).to have_attributes(outcome: "failed", actor_user_id: admin.id)
       expect(audit.metadata).to include("refund_id" => refund.id, "refund_status" => "failed",

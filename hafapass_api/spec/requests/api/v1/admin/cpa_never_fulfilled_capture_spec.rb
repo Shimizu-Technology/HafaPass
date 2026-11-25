@@ -76,7 +76,7 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
     end
     travel_to(captured_at) do
       Commerce::OrderLifecycle.complete!(order, payment: payment, provider_amount_cents: 1_360, provider_currency: "usd",
-        late_completion: true)
+        late_completion: true, provider_lookup: { provider_object_id: payment.provider_payment_id, livemode: payment.provider_environment == "live" })
       create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: processing_cents,
         created_at: captured_at) if processing_cents.positive?
     end
@@ -103,7 +103,8 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
   end
 
   describe "R3-1: a capture and its exception straddling Guam midnight" do
-    it "books the capture as owed to the buyer in both months, so each month's roll-forward and the opening balance hold" do
+    it "books the capture as owed to the buyer in both months, so each month's roll-forward and the opening balance hold",
+      repayment_submitter: :active do
       order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-28T23:00:00"),
         captured_at: guam("2027-02-28T23:59:59"))
       # OrderLifecycle stamps the exception a moment after the capture inside
@@ -148,7 +149,8 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
   end
 
   describe "R3-2: organizer-borne processing on a never-fulfilled capture" do
-    it "charges the organizer nothing on the payout statement, the calculator and the CPA export after the auto-refund" do
+    it "charges the organizer nothing on the payout statement, the calculator and the CPA export after the auto-refund",
+      repayment_submitter: :active do
       _order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-27T09:00:00"),
         captured_at: guam("2027-02-28T22:00:00"))
       auto_refund!(payment, at: guam("2027-03-01T01:00:00"))
@@ -169,7 +171,7 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       expect(cpa_unpaid).to eq(unpaid_balance(attributes))
     end
 
-    it "keeps the bearer rule in one switch that both readers follow" do
+    it "keeps the bearer rule in one switch that both readers follow", repayment_submitter: :active do
       _order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-27T09:00:00"),
         captured_at: guam("2027-02-28T22:00:00"))
       auto_refund!(payment, at: guam("2027-03-01T01:00:00"))
@@ -181,7 +183,8 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
   end
 
   describe "R3-3: a lost dispute on a never-fulfilled capture" do
-    it "clears the buyer obligation instead of debiting the organizer, and a later refund cannot clear it twice" do
+    it "clears the buyer obligation instead of debiting the organizer, and a later refund cannot clear it twice",
+      repayment_submitter: :active do
       order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-10T09:00:00"),
         captured_at: guam("2027-02-10T10:00:00"), processing_cents: 0)
       lose_dispute!(order, payment, at: guam("2027-02-20T12:00:00"))
@@ -223,7 +226,7 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       expect(statement[:reconciles]).to be(true)
     end
 
-    it "caps the buyer obligation when the refund came first and the dispute is lost later" do
+    it "caps the buyer obligation when the refund came first and the dispute is lost later", repayment_submitter: :active do
       order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-10T09:00:00"),
         captured_at: guam("2027-02-10T10:00:00"), processing_cents: 0)
       auto_refund!(payment, at: guam("2027-02-10T10:05:00"))

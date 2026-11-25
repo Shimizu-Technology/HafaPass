@@ -136,9 +136,12 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
     amount_cents = late_capture_owed_cents(@issue)
     refund = nil
     begin
-      refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user)
+      refund = Commerce::LateCaptureRefund.call(payment: @issue.payment, requested_by: @current_user,
+        source: "admin_late_capture")
     rescue Commerce::LateCaptureRefund::NotApplicable, Commerce::RefundCreator::RefundError,
       StripeService::PaymentError, Stripe::StripeError => e
+      # An older release's refund on this payment is settled by lookup, never resent.
+      Commerce::RepaymentAdjudication.enqueue_for!(@issue.payment) if e.is_a?(Commerce::BuyerRepayment::Waiting)
       @issue.payment.refunds.reset # the service may have recorded a failed refund
       record_buyer_refund!(amount_cents: amount_cents, refund: late_capture_refund(@issue), error: e)
       return render json: { error: e.message }, status: :unprocessable_content
@@ -199,30 +202,42 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   end
 
   def late_capture_refundable?(issue)
-    issue.open? && Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment.present? &&
+    issue.open? && Commerce::LateCaptureRefund.repayment_codes.include?(issue.code) && issue.payment.present? &&
       issue.payment.provider == "stripe" && %w[test live].include?(issue.payment.provider_environment)
   end
 
+  # A classified capture's gross ledger (design §6.1); otherwise the
+  # payment's own refunds, as before classification existed.
+  def classified_capture(issue)
+    issue.payment && UnfulfilledCapture.find_by(payment_id: issue.payment_id)
+  end
+
   def late_capture_owed_cents(issue)
+    capture = classified_capture(issue)
+    return Commerce::BuyerReturnLedger.for(capture).owed_cents if capture
+
     returned = issue.payment.refunds.select { |refund| refund.pending? || refund.succeeded? }.sum(&:amount_cents)
     [issue.payment.amount_cents - returned, 0].max
   end
 
   # Uses the preloaded payment refunds (reloaded by lock! in #resolve).
   def late_capture_refund(issue)
+    operation = RepaymentOperation.where(payment_id: issue.payment_id).in_sequence.last
+    return operation.refund if operation&.refund
+
     key = Commerce::LateCaptureRefund.idempotency_key(issue.payment)
     issue.payment.refunds.find { |refund| refund.idempotency_key == key }
   end
 
-  # Why Refund buyer cannot run now, or nil.
+  # Why Refund buyer cannot run now, or nil. A classified capture asks the
+  # repayment workflow itself, so the button and the gate agree.
   def late_capture_refund_blocker(issue)
-    earlier = late_capture_refund(issue)
-    if earlier&.failed? || earlier&.cancelled?
-      return "The automatic refund failed. Use Retry refund on its row in Refund issues."
-    end
-    return "A refund for this payment is already #{earlier.status}." if earlier&.pending? || earlier&.succeeded?
-    return "A refund for this payment is still pending. Wait for it to finish." if issue.payment.refunds.any?(&:pending?)
-    return "Nothing is owed to the buyer for this payment." unless late_capture_owed_cents(issue).positive?
+    capture = classified_capture(issue)
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch("classification_pending") unless capture
+
+    availability = Commerce::BuyerRepayment.availability(capture)
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch(availability.wait_reason) if availability.waiting?
+    return Commerce::BuyerRepayment::WAIT_MESSAGES.fetch("repayment_inactive") unless Commerce::BuyerRepayment.submitter_active?
 
     nil
   end
@@ -246,6 +261,19 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   # What a note-only resolution needs: {} (allowed), { confirmation: flag }
   # (allowed with that flag and an evidence note) or { blocked: message }.
   def resolution_rule(issue)
+    capture = classified_capture(issue)
+    if capture && Commerce::NeverFulfilledResolution.resolvable_codes(capture).include?(issue.code)
+      return {} if Commerce::NeverFulfilledResolution.resolvable_now?(capture)
+
+      availability = Commerce::BuyerRepayment.availability(capture)
+      if availability.in_flight_cents.positive? || capture.repayment_operations.open_states.exists?
+        return { blocked: "A refund or dispute on this payment is still pending. It resolves this exception when it finishes." }
+      end
+
+      owed = availability.owed_cents
+      { blocked: "The buyer is still owed #{format('$%<dollars>d.%<cents>02d', dollars: owed / 100, cents: owed % 100)}. " \
+        "Use Refund buyer; the exception resolves when the repayment finishes." }
+    end
     if Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment
       if issue.payment.refunds.any?(&:pending?)
         return { blocked: "A refund for this payment is still pending. It resolves this exception when it succeeds." }

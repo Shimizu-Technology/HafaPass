@@ -58,8 +58,10 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
     end
     if refund_key
       travel_to(captured_at + 2.seconds) do
-        payment.refunds.create!(order: order, provider: "stripe", idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment),
-          amount_cents: total, currency: "usd", status: :pending)
+        before_repayment_fence do
+          payment.refunds.create!(order: order, provider: "stripe", idempotency_key: Commerce::LateCaptureRefund.idempotency_key(payment),
+            amount_cents: total, currency: "usd", status: :pending)
+        end
       end
     end
     [order, payment.reload, issue]

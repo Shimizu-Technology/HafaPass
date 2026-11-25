@@ -151,18 +151,18 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
       .to contain_exactly("unfulfilled_second_capture", "stripe_fee_adjustment_review_required")
   end
 
-  it "never sends a refund for B through the order-wide refund path" do
+  it "never sends a refund for B in A1-R1, through any outbound path" do
     order, payment_a, payment_b = sale_with_second_capture
     admin = create(:user, :admin)
 
     expect do
       Commerce::RefundCreator.call(order: order, payment: payment_b, reason: "requested_by_customer", requested_by: admin)
-    end.to raise_error(Commerce::RefundCreator::RefundError, /second payment on a fulfilled order/)
+    end.to raise_error(Commerce::BuyerRepayment::Waiting, /next release/)
     expect do
       Commerce::RefundCreator.call(order: order, payment: payment_b, amount_cents: 100, reason: "requested_by_customer",
         requested_by: admin, provider_refund: nil, tickets: [order.tickets.first])
     end.to raise_error(Commerce::RefundCreator::RefundError)
-    expect { Commerce::LateCaptureRefund.call(payment: payment_b) }.to raise_error(Commerce::LateCaptureRefund::NotApplicable)
+    expect { Commerce::LateCaptureRefund.call(payment: payment_b) }.to raise_error(Commerce::BuyerRepayment::Waiting)
     expect(provider_refunds).to be_empty
     expect(payment_b.refunds).to be_empty
 
@@ -170,6 +170,24 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
     options = Commerce::AdminOrderRefund.options(order)
     expect(options).to include(refundable_cents: payment_a.amount_cents)
     expect(Commerce::OrganizerRefundOptions.new(order).call.to_h.to_s).not_to include("several captured")
+  end
+
+  it "returns exactly B through one repayment operation in A1-R2 and leaves A's sale as it was",
+    repayment_submitter: :active do
+    order, payment_a, payment_b = sale_with_second_capture
+    before = sale_snapshot(order)
+
+    2.times { LateCaptureRefundJob.perform_now(payment_b.id) }
+
+    expect(provider_refunds).to eq([["pi_iso_b", 1500, "late-capture:payment:#{payment_b.id}"]])
+    expect(RepaymentOperation.sole).to have_attributes(payment_id: payment_b.id, sequence: 1, amount_cents: 1500,
+      state: "succeeded", submission_count: 1)
+    expect(payment_b.reload).to be_refunded
+    expect(payment_a.reload).to be_succeeded
+    expect(sale_snapshot(order)).to eq(before)
+    expect(ReconciliationException.open.where(payment: payment_b, code: "unfulfilled_second_capture")).to be_empty
+    expect(Commerce::BuyerReturnLedger.for(UnfulfilledCapture.find_by!(payment: payment_b))).to have_attributes(
+      owed_cents: 0, excess_cents: 0)
   end
 
   it "keeps B's verified processing fee on B's own evidence and never charges it to A's sale" do

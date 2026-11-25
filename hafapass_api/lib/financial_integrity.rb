@@ -426,7 +426,214 @@ module FinancialIntegrity
   # Tranche 3 (migration 20261126110000).
   RETURNS_SQL = (RETURN_RECORDED_AT_SQL + POSTING_SQL).freeze
 
-  SQL = (FOUNDATION_SQL + RETURNS_SQL).freeze
+  # Tranche 4 (migration 20261126120000): repayment operations and the R1
+  # compatibility fence (design §6.3, §10.1). Codes are literals so the
+  # migration never depends on application constants;
+  # spec/models/repayment_fence_spec.rb keeps them equal to the app's.
+  #
+  # A fenced payment is one HåfaPass may owe back in full: it has a
+  # never-fulfilled classification, or an exception of one of these codes
+  # (open or resolved). Old (7bcd97c2) code never writes repayment
+  # operations, so for a fenced payment the fence stops it from
+  #   (1) reserving an outbound refund: a refunds row with no provider refund
+  #       ID, no repayment operation and a key that is not an inbound
+  #       provider record (provider:stripe:refund:*);
+  #   (2) passing the last local gate: moving such a row's failure_code to
+  #       provider_result_unknown, which RefundCreator persists immediately
+  #       before its HTTP call. A row that belongs to a repayment operation
+  #       passes the gate only while that operation is "submitting", which
+  #       only the operation gate (Commerce::BuyerRepayment) sets.
+  # Recording a provider fact (inbound rows, rows carrying a provider refund
+  # ID, outcomes of a row already past the gate) is never refused.
+  FENCED_PAYMENT_CODES = %w[
+    late_payment_success_after_inventory_release late_payment_success_after_hold_expiry
+    pass_all_included_nights_cancelled unfulfilled_second_capture never_fulfilled_ownership_ambiguous
+    never_fulfilled_classification_quarantined
+  ].freeze
+  # Open exceptions that keep the event's payouts from being created,
+  # released or submitted (P10 strict). never_fulfilled_buyer_overpaid is
+  # deliberately absent: a proven platform-only over-return alerts without
+  # holding the organizer (P4).
+  PAYOUT_BLOCKING_CODES = (FENCED_PAYMENT_CODES + %w[
+    never_fulfilled_return_quarantined never_fulfilled_backfill_ambiguous never_fulfilled_backfill_restatement
+    never_fulfilled_repayment_reopened
+  ]).freeze
+  OPEN_EXCEPTION_STATUS = 0
+  PAYOUT_PENDING_STATUS = 0
+  PAYOUT_PROCESSING_STATUS = 1
+  OPERATION_STATES = %w[reserved submitting unknown succeeded failed_terminal].freeze
+
+  def self.sql_list(values)
+    values.map { |value| "'#{value}'" }.join(", ")
+  end
+
+  REPAYMENT_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_fenced_payment(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT target IS NOT NULL AND (
+        EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE payment_id = target)
+        OR EXISTS (SELECT 1 FROM reconciliation_exceptions WHERE payment_id = target
+          AND code IN (#{sql_list(FENCED_PAYMENT_CODES)})))
+    $$;
+
+    -- Identity is append-only; state moves forward only. Operation n > 1 is
+    -- reserved only after every earlier operation reached a verified
+    -- terminal state, so a retry is never a new operation (design §6.3).
+    CREATE OR REPLACE FUNCTION hafapass_check_repayment_operation() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      cap never_fulfilled_captures%ROWTYPE;
+      last_sequence integer;
+      expected_key text;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Repayment operations are append-only' USING ERRCODE = '23514';
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        SELECT * INTO cap FROM never_fulfilled_captures WHERE id = NEW.never_fulfilled_capture_id;
+        IF NOT FOUND OR cap.payment_id <> NEW.payment_id OR cap.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A repayment operation belongs to its classified payment' USING ERRCODE = '23514';
+        END IF;
+        PERFORM 1 FROM orders WHERE id = cap.order_id FOR UPDATE;
+        SELECT COALESCE(MAX(sequence), 0) INTO last_sequence FROM repayment_operations
+          WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id;
+        IF NEW.sequence <> last_sequence + 1 THEN
+          RAISE EXCEPTION 'Repayment operations are numbered contiguously' USING ERRCODE = '23514';
+        END IF;
+        expected_key := 'late-capture:payment:' || NEW.payment_id ||
+          CASE WHEN NEW.sequence = 1 THEN '' ELSE ':op:' || NEW.sequence END;
+        IF NEW.idempotency_key <> expected_key THEN
+          RAISE EXCEPTION 'Repayment operation % must use key %', NEW.sequence, expected_key USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM repayment_operations WHERE never_fulfilled_capture_id = NEW.never_fulfilled_capture_id
+            AND state NOT IN ('succeeded', 'failed_terminal')) THEN
+          RAISE EXCEPTION 'A new repayment operation waits until earlier ones are verified' USING ERRCODE = '23514';
+        END IF;
+        IF NOT NEW.adopted AND (NEW.state <> 'reserved' OR NEW.refund_id IS NOT NULL OR NEW.submission_count <> 0) THEN
+          RAISE EXCEPTION 'A new repayment operation starts reserved' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.adopted AND (NEW.sequence <> 1 OR NEW.refund_id IS NULL) THEN
+          RAISE EXCEPTION 'Only the legacy first operation is adopted, with its refund' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+
+      IF (NEW.never_fulfilled_capture_id, NEW.payment_id, NEW.sequence, NEW.amount_cents, NEW.currency,
+          NEW.idempotency_key, NEW.source, NEW.adopted, NEW.created_at) IS DISTINCT FROM
+         (OLD.never_fulfilled_capture_id, OLD.payment_id, OLD.sequence, OLD.amount_cents, OLD.currency,
+          OLD.idempotency_key, OLD.source, OLD.adopted, OLD.created_at) THEN
+        RAISE EXCEPTION 'A repayment operation''s identity is immutable' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.refund_id IS NOT NULL AND NEW.refund_id IS DISTINCT FROM OLD.refund_id THEN
+        RAISE EXCEPTION 'A repayment operation''s refund is set once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count < OLD.submission_count THEN
+        RAISE EXCEPTION 'Submission counts never decrease' USING ERRCODE = '23514';
+      END IF;
+      IF OLD.state IN ('succeeded', 'failed_terminal') AND NEW.state IS DISTINCT FROM OLD.state THEN
+        RAISE EXCEPTION 'A verified repayment outcome is final' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.state IS DISTINCT FROM OLD.state AND NOT (
+          -- reserved -> succeeded records a provider fact that arrived without
+          -- this operation's own send; it is never refused, and is audited.
+          (OLD.state = 'reserved' AND NEW.state IN ('submitting', 'failed_terminal', 'succeeded')) OR
+          (OLD.state = 'submitting' AND NEW.state IN ('unknown', 'succeeded', 'failed_terminal')) OR
+          (OLD.state = 'unknown' AND NEW.state IN ('submitting', 'succeeded', 'failed_terminal'))) THEN
+        RAISE EXCEPTION 'Repayment operation cannot move from % to %', OLD.state, NEW.state USING ERRCODE = '23514';
+      END IF;
+      -- Only the gate sends, and each send is counted once: entering
+      -- "submitting", or re-sending a stale "submitting" after the in-flight
+      -- bound, adds exactly one.
+      IF NEW.state = 'submitting' AND OLD.state <> 'submitting' AND NEW.submission_count <> OLD.submission_count + 1 THEN
+        RAISE EXCEPTION 'Each submission is counted once' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.submission_count <> OLD.submission_count AND
+          (NEW.state <> 'submitting' OR NEW.submission_count <> OLD.submission_count + 1) THEN
+        RAISE EXCEPTION 'Submissions are counted only by the gate, one at a time' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS repayment_operations_check ON repayment_operations;
+    CREATE TRIGGER repayment_operations_check BEFORE INSERT OR UPDATE OR DELETE ON repayment_operations
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_repayment_operation();
+    CREATE OR REPLACE TRIGGER repayment_operations_no_truncate BEFORE TRUNCATE ON repayment_operations
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+
+    CREATE OR REPLACE FUNCTION hafapass_refund_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      op repayment_operations%ROWTYPE;
+      inbound boolean;
+    BEGIN
+      IF NEW.repayment_operation_id IS NOT NULL AND
+          (TG_OP = 'INSERT' OR NEW.repayment_operation_id IS DISTINCT FROM OLD.repayment_operation_id) THEN
+        IF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL THEN
+          RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF NOT FOUND OR op.payment_id IS DISTINCT FROM NEW.payment_id OR op.idempotency_key <> NEW.idempotency_key
+            OR op.amount_cents <> NEW.amount_cents OR op.currency <> NEW.currency THEN
+          RAISE EXCEPTION 'A refund matches its repayment operation exactly' USING ERRCODE = '23514';
+        END IF;
+      ELSIF TG_OP = 'UPDATE' AND OLD.repayment_operation_id IS NOT NULL AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'A refund''s repayment operation is set once' USING ERRCODE = '23514';
+      END IF;
+
+      inbound := NEW.provider_refund_id IS NOT NULL OR NEW.idempotency_key LIKE 'provider:stripe:refund:%';
+      IF inbound OR NOT hafapass_fenced_payment(NEW.payment_id) THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'INSERT' AND NEW.repayment_operation_id IS NULL THEN
+        RAISE EXCEPTION 'Repayment fence: this payment is returned only through a repayment operation'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.failure_code = 'provider_result_unknown' AND
+          (TG_OP = 'INSERT' OR OLD.failure_code IS DISTINCT FROM 'provider_result_unknown') THEN
+        IF NEW.repayment_operation_id IS NULL THEN
+          RAISE EXCEPTION 'Repayment fence: this refund cannot be submitted' USING ERRCODE = '23514';
+        END IF;
+        SELECT * INTO op FROM repayment_operations WHERE id = NEW.repayment_operation_id;
+        IF op.state <> 'submitting' THEN
+          RAISE EXCEPTION 'Repayment fence: only the operation gate submits this refund' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_repayment_fence ON refunds;
+    CREATE TRIGGER refunds_repayment_fence BEFORE INSERT OR UPDATE OF failure_code, repayment_operation_id ON refunds
+      FOR EACH ROW EXECUTE FUNCTION hafapass_refund_repayment_fence();
+
+    -- P10 strict for every payout writer, old or new: no payout on an event
+    -- with an open never-fulfilled item is created, released from hold or
+    -- submitted. Holding, failing, reversing and recording a transfer that
+    -- already left are not refused here (the application guards paid
+    -- recording with the existing queue rule).
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      IF EXISTS (SELECT 1 FROM reconciliation_exceptions re
+          WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = NEW.event_id)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = NEW.event_id))) THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
+  SQL
+  REPAYMENT_SENTINEL_TABLE = "repayment_operations"
+
+  SQL = (FOUNDATION_SQL + RETURNS_SQL + REPAYMENT_SQL).freeze
   RETURNS_SENTINEL_TABLE = "buyer_return_postings"
 
   module SchemaDump
@@ -442,6 +649,7 @@ module FinancialIntegrity
 
       sql = FinancialIntegrity::FOUNDATION_SQL
       sql += FinancialIntegrity::RETURNS_SQL if @connection.data_source_exists?(RETURNS_SENTINEL_TABLE)
+      sql += FinancialIntegrity::REPAYMENT_SQL if @connection.data_source_exists?(REPAYMENT_SENTINEL_TABLE)
       stream.puts "  execute <<~SQL"
       sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
       stream.puts "  SQL"

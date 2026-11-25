@@ -42,6 +42,16 @@ module NeverFulfilledReturnHelpers
     connection.execute("ALTER TABLE #{table} ENABLE TRIGGER #{trigger}")
   end
 
+  # Rows an older release wrote before the A1-R1 repayment fence existed:
+  # runs the block with only that trigger disabled, inside the transaction.
+  def before_repayment_fence
+    connection = ActiveRecord::Base.connection
+    connection.execute("ALTER TABLE refunds DISABLE TRIGGER refunds_repayment_fence")
+    yield
+  ensure
+    connection.execute("ALTER TABLE refunds ENABLE TRIGGER refunds_repayment_fence")
+  end
+
   def ingest_provider_refund!(payment, amount, id: "re_nfr_#{SecureRandom.hex(4)}", status: "succeeded")
     Commerce::ExternalRefundRecovery.ingest!(payment: payment, provider_refund: OpenStruct.new(id: id, amount: amount,
       currency: "usd", payment_intent: payment.provider_payment_id, status: status, metadata: {}))

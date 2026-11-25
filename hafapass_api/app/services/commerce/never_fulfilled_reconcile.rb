@@ -112,10 +112,12 @@ module Commerce
           capture = classify_backfill!(assessment)
           BuyerReturnPostings.record_recorded_movements!(capture, backfills: assessment.backfills)
           resolve_superseded_quarantine!(capture)
+          NeverFulfilledResolution.evaluate!(capture, trigger: "reconcile")
         when "post"
           capture = UnfulfilledCapture.find_by!(payment_id: payment.id)
           BuyerReturnPostings.record_recorded_movements!(capture, backfills: assessment.backfills)
           resolve_superseded_quarantine!(capture)
+          NeverFulfilledResolution.evaluate!(capture, trigger: "reconcile")
         when "ambiguous", "restatement"
           open_finance_item!(assessment)
         end

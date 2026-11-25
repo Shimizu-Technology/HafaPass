@@ -92,7 +92,8 @@ RSpec.describe "Never-fulfilled classification at late-capture boundaries", type
       expect(result.order.reload).to be_cancelled
     end
 
-    it "classifies a lapsed capture whose released inventory sold, and keeps the automatic refund" do
+    it "classifies a lapsed capture whose released inventory sold, and keeps the automatic refund",
+      repayment_submitter: :active do
       refunds = []
       allow(StripeService).to receive(:refund_payment) do |intent_id, amount_cents:, idempotency_key:, **|
         refunds << [idempotency_key, amount_cents]

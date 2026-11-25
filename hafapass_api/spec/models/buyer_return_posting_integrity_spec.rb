@@ -15,7 +15,7 @@ RSpec.describe "Buyer return posting integrity" do
 
   def refund_on(payment, amount, status: :succeeded)
     payment.refunds.create!(order: payment.order, provider: "stripe", provider_refund_id: "re_int_#{SecureRandom.hex(4)}",
-      idempotency_key: "int:#{SecureRandom.hex(6)}", amount_cents: amount, currency: "usd", status: status)
+      idempotency_key: "provider:stripe:refund:int_#{SecureRandom.hex(6)}", amount_cents: amount, currency: "usd", status: status)
   end
 
   def dispute_on(payment, amount, status: :lost)
@@ -50,7 +50,7 @@ RSpec.describe "Buyer return posting integrity" do
         .to raise_error(ActiveRecord::StatementInvalid, /set once/)
       expect do
         isolated do
-          payment.refunds.create!(order: payment.order, provider: "stripe", idempotency_key: "int:backdated",
+          payment.refunds.create!(order: payment.order, provider: "stripe", idempotency_key: "provider:stripe:refund:int_backdated",
             amount_cents: 1, currency: "usd", status: :succeeded, success_recorded_at: 1.month.ago)
         end
       end.to raise_error(ActiveRecord::StatementInvalid, /written by the database/)
@@ -163,7 +163,7 @@ RSpec.describe "Buyer return posting integrity" do
 
   describe "schema reinstallation" do
     let(:triggers) do
-      { "refunds" => %w[refunds_success_recorded_at], "disputes" => %w[disputes_recorded_at],
+      { "refunds" => %w[refunds_repayment_fence refunds_success_recorded_at], "disputes" => %w[disputes_recorded_at],
         "buyer_return_postings" => %w[buyer_return_postings_append_only buyer_return_postings_check
           buyer_return_postings_no_truncate] }
     end

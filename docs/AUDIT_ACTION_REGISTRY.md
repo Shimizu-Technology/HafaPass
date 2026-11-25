@@ -353,6 +353,15 @@ entries are described above and defined in the registry's audience variants.
 | `order.fulfilling_payment_recovered` | yes | orders | A | yes | yes | — | — | Recorded which payment fulfilled a legacy order. |
 | `buyer_return_posting.recorded` | yes | orders | A | yes | yes | — | — | Recorded money returned to the buyer of an unfulfilled payment. |
 | `dispute.loss_receipt_after_win` | yes | orders | A | yes | yes | — | — | Kept a dispute loss notice that arrived after the dispute was won. |
+| `repayment_operation.reserved` | yes | orders | A | yes | yes | — | — | Reserved a payment's return to its buyer. |
+| `repayment_operation.submission_requested` | yes | orders | A | yes | yes | — | — | Sent a payment's return to its buyer to the card processor. |
+| `repayment_operation.succeeded` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer succeeded. |
+| `repayment_operation.failed_terminal` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer did not move money. |
+| `repayment_operation.unknown` | yes | orders | A | yes | yes | — | — | Recorded that a payment's return to its buyer has an unknown result. |
+| `repayment_operation.adopted` | yes | orders | A | yes | yes | — | — | Linked an earlier automatic refund to the payment's return workflow. |
+| `reconciliation_exception.reopened` | yes | orders | A | yes | yes | — | — | Reopened a payment's return to its buyer after money came back. |
+| `never_fulfilled_capture.buyer_overpaid` | yes | orders | A | yes | yes | — | — | Recorded that a buyer was repaid more than an unfulfilled payment. |
+| `webhook_event.replayed` | yes | orders | A | yes | yes | — | — | Applied a stored Stripe notice to the payment it describes. |
 | `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |

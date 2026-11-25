@@ -70,6 +70,7 @@ module Commerce
       if existing
         # Idempotent: picks up a movement an older worker recorded unposted.
         BuyerReturnPostings.record_recorded_movements!(existing)
+        NeverFulfilledResolution.evaluate!(existing, trigger: "classification_repeat")
         return Result.new(capture: existing)
       end
 
@@ -97,6 +98,8 @@ module Commerce
       # Movements recorded before classification (a dispute lost before the
       # capture was recorded, for example) post now, on the same locks.
       BuyerReturnPostings.record_recorded_movements!(capture)
+      # The capture may already be settled (a full loss before capture, E4).
+      NeverFulfilledResolution.evaluate!(capture, trigger: "classification")
       Result.new(capture: capture)
     end
 
