@@ -324,7 +324,7 @@ when "setup"
   # capture-first race (a pending and a sent payout, B1), an unrelated event
   # of the same organizer, and r16b for the payout-first race (B2).
   r16_profile = F.create(:organizer_profile, :verified)
-  r16 = { }
+  r16 = {}
   %w[r16 r16_other r16b].each do |key|
     target = F.create(:event, :completed, organization: r16_profile.organization, organizer_profile: r16_profile)
     order, _item, a = F.record_card_sale!(target, ticket_type: F.create(:ticket_type, event: target, price_cents: 2000),
