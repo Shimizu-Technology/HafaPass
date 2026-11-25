@@ -17,6 +17,35 @@ namespace :never_fulfilled do
     end
   end
 
+  # Same SQL as `psql -f script/never_fulfilled/release_evidence.sql`, in one
+  # READ ONLY transaction that is rolled back; the in-flight bound comes from
+  # the code (Commerce::BuyerRepayment.in_flight_bound).
+  desc "Read-only A1 release evidence (R1_SHA=<commit> R1_LIVE_AT=<ISO-8601 UTC>); BASELINE=1 for the pre-R1 baseline"
+  task release_evidence: :environment do
+    baseline = ENV["BASELINE"] == "1"
+    path = Rails.root.join("script/never_fulfilled/#{baseline ? 'baseline_before_r1' : 'release_evidence'}.sql")
+    connection = ActiveRecord::Base.connection
+    unless baseline
+      sha = ENV.fetch("R1_SHA")
+      raise ArgumentError, "R1_SHA must be a 40-hex commit" unless sha.match?(/\A\h{40}\z/)
+
+      live_at = Time.iso8601(ENV.fetch("R1_LIVE_AT")).utc.iso8601
+      variables = { "r1_sha" => sha, "r1_live_at" => live_at, "bound_seconds" => Commerce::BuyerRepayment.in_flight_bound.to_i.to_s }
+    end
+    statements = File.read(path).gsub(/^--.*$/, "").split(";").map(&:strip).reject(&:empty?)
+    statements = statements.reject { |sql| sql.match?(/\A(BEGIN|ROLLBACK)/i) }
+    connection.transaction do
+      connection.execute("SET TRANSACTION READ ONLY")
+      statements.each do |sql|
+        sql = sql.gsub(/:'(\w+)'/) { connection.quote(variables.fetch(Regexp.last_match(1))) } if variables
+        result = connection.exec_query(sql)
+        result.rows.each { |row| puts result.columns.zip(row).map { |column, value| "#{column}=#{value}" }.join("\t") }
+        puts "#{sql[/'(\w+)' AS section/, 1]}: (none)" if result.rows.empty?
+      end
+      raise ActiveRecord::Rollback
+    end
+  end
+
   desc "Read-only counts: unclassified late-capture payments and unposted movements on classified payments"
   task verify: :environment do
     report = Commerce::NeverFulfilledReconcile.call(dry_run: true)
