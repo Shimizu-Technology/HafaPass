@@ -9,9 +9,11 @@
 # into REHEARSAL_DIR (no checkout or worktree), loads this branch's
 # db/schema.rb into a task-owned localhost database with the old app, runs the
 # old specs that touch refunds, late captures and payouts, and classifies
-# every failure. Expected: the only failures are the A1-R1 repayment fence
-# refusing an old outbound refund on a fenced payment or an old payout on an
-# event with an open never-fulfilled item ("Repayment fence"). Any other
+# every failure. Expected: the only failures are the A1-R1 guards refusing an
+# old outbound refund on a fenced payment, an old payout or finalization on
+# an event with an open never-fulfilled item ("Repayment fence"), a sale
+# effect from a payment that does not own the sale ("Sale ownership"), or a
+# note closing an evidence hold ("Evidence hold"). Any other
 # failure means the new schema breaks the overlap. The database is dropped
 # afterwards unless KEEP_DB=1. Never point it at a shared or remote database.
 set -euo pipefail
@@ -58,7 +60,8 @@ set -e
 ruby -rjson -e '
   data = JSON.parse(File.read(ARGV[0]))
   failed = data["examples"].select { |example| example["status"] == "failed" }
-  fence, other = failed.partition { |example| example.dig("exception", "message").to_s.include?("Repayment fence") }
+  guards = ["Repayment fence", "Sale ownership", "Evidence hold"]
+  fence, other = failed.partition { |example| guards.any? { |guard| example.dig("exception", "message").to_s.include?(guard) } }
   puts data["summary_line"]
   puts "fence refusals: #{fence.size}"
   fence.each { |example| puts "  FENCE  #{example["id"]} #{example["full_description"]}" }
