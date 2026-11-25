@@ -344,12 +344,20 @@ class Event < ApplicationRecord
   # service day across midnight and past 05:00; multi-day events roll over at 05:00 local time.
   def occupancy_day_for(at = Time.current)
     tz = event_time_zone
-    if single_session_re_entry?
-      window_start = single_session_start_anchor - 6.hours
-      window_end = ends_at.present? ? (ends_at + 6.hours) : (starts_at + 24.hours)
-      return starts_at.in_time_zone(tz).to_date if at >= window_start && at <= window_end
-    end
+    window = single_session_occupancy_window
+    return starts_at.in_time_zone(tz).to_date if window&.cover?(at)
+
     (at - RE_ENTRY_ROLLOVER_HOUR.hours).in_time_zone(tz).to_date
+  end
+
+  # The inclusive window (both ends) in which a single-session event keeps its
+  # start date as the service day. Admissions::ReEntryReport ends the session's
+  # combined-peak day one microsecond after `window.end` to match.
+  def single_session_occupancy_window
+    return nil unless single_session_re_entry?
+
+    window_end = ends_at.present? ? (ends_at + 6.hours) : (starts_at + 24.hours)
+    (single_session_start_anchor - 6.hours)..window_end
   end
 
   # Per-service-day cutoff timestamp in the event's time zone.

@@ -687,6 +687,146 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       expect(report_day2).to include(current_headcount: 1, peak_headcount: 2, peak_headcount_label: "10:05 AM")
     end
 
+    # One pass night plus a direct GA ticket on the parent event, all exit_scan.
+    def build_pass_night_with_ga(night_starts_at:, night_ends_at:, parent_starts_at:, parent_ends_at:)
+      night = create(:event, :published, organizer_profile: profile, title: "Boundary Night 1",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan", starts_at: night_starts_at, ends_at: night_ends_at)
+      parent_event = create(:event, :published, organizer_profile: profile, title: "Boundary Mixed Event",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan", starts_at: parent_starts_at, ends_at: parent_ends_at)
+      pass_type = create(:ticket_type, event: parent_event, name: "1-Night Pass")
+      ga_type = create(:ticket_type, event: parent_event, name: "Single GA")
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: night, position: 0)
+      pass_order = create(:order, event: parent_event, buyer_name: "Pass Holder")
+      parent_ticket = create(:ticket, event: parent_event, order: pass_order, ticket_type: pass_type, attendee_name: "Pass Holder")
+      child = Passes::Issuance.call(order: pass_order, parent_ticket: parent_ticket).find { |c| c.event_id == night.id }
+      ga_order = create(:order, event: parent_event, buyer_name: "GA Holder")
+      ga_ticket = create(:ticket, event: parent_event, order: ga_order, ticket_type: ga_type, attendee_name: "GA Holder")
+      { night: night, parent_event: parent_event, child: child, ga_ticket: ga_ticket }
+    end
+
+    def reconcile_one(device, ticket:, uuid:, sequence:, occurred_at:, kind: "admit", source: "online")
+      # One manifest per event, built after the example has registered its gates.
+      @boundary_manifests ||= {}
+      manifest = @boundary_manifests[device.event_id] ||= Admissions::ManifestBuilder.call(event: device.event, actor: owner)
+      Admissions::Reconciler.call(device: device, actor: owner, actions: [{
+        action_uuid: uuid, kind: kind, source: source, sequence: sequence, manifest_version: manifest.version,
+        occurred_at: occurred_at.iso8601(6), ticket_id: ticket.id, credential_hash: Digest::SHA256.hexdigest(ticket.scan_credential)
+      }]).first.action
+    end
+
+    it "keeps a 22:00-07:00 pass night in the combined peak through its inclusive 13:00 window end (R2-4)" do
+      setup = build_pass_night_with_ga(
+        night_starts_at: Time.zone.parse("2027-01-30T22:00:00+10:00"), night_ends_at: Time.zone.parse("2027-01-31T07:00:00+10:00"),
+        parent_starts_at: Time.zone.parse("2027-01-30T22:00:00+10:00"), parent_ends_at: Time.zone.parse("2027-02-01T07:00:00+10:00")
+      )
+      night, parent_event = setup.values_at(:night, :parent_event)
+
+      travel_to(Time.zone.parse("2027-01-30T23:00:00+10:00"))
+      night_gate = create(:scanner_device, organization: organization, event: night, user: owner, name: "Night Gate",
+        authorization_expires_at: night.ends_at + 12.hours)
+      main_gate = create(:scanner_device, organization: organization, event: parent_event, user: owner, name: "Main Gate",
+        authorization_expires_at: parent_event.ends_at + 12.hours)
+      expect(reconcile_one(night_gate, ticket: setup[:child], uuid: "b13-n1", sequence: 1, occurred_at: Time.current))
+        .to have_attributes(result: "accepted")
+
+      # 13:00:00 exactly is still Night 1's service day (window end = 07:00 + 6 h, inclusive).
+      travel_to(Time.zone.parse("2027-01-31T13:00:00+10:00"))
+      expect(night.occupancy_day_for(Time.current)).to eq(Date.new(2027, 1, 30))
+      expect(reconcile_one(main_gate, ticket: setup[:ga_ticket], uuid: "b13-ga", sequence: 1, occurred_at: Time.current))
+        .to have_attributes(result: "accepted")
+      Admissions::Counts.expire_headcount_cache!(parent_event)
+      expect(Admissions::Counts.call(event: parent_event)[:live_headcount]).to eq(2)
+      expect(Admissions::ReEntryReport.call(event: parent_event))
+        .to include(current_headcount: 2, peak_headcount: 2, peak_headcount_label: "1:00 PM")
+
+      # One second later Night 1 has rolled over; the peak keeps its 13:00 value.
+      travel_to(Time.zone.parse("2027-01-31T13:00:01+10:00"))
+      Admissions::Counts.expire_headcount_cache!(parent_event)
+      expect(Admissions::Counts.call(event: parent_event)[:live_headcount]).to eq(1)
+      expect(Admissions::ReEntryReport.call(event: parent_event))
+        .to include(current_headcount: 1, peak_headcount: 2, peak_headcount_label: "1:00 PM")
+    end
+
+    it "clears the previous day before a scan at the exact 05:00 rollover instant (R2-4 guard)" do
+      setup = build_pass_night_with_ga(
+        night_starts_at: Time.zone.parse("2027-01-31T18:00:00+10:00"), night_ends_at: Time.zone.parse("2027-01-31T22:00:00+10:00"),
+        parent_starts_at: Time.zone.parse("2027-01-30T08:00:00+10:00"), parent_ends_at: Time.zone.parse("2027-01-31T22:00:00+10:00")
+      )
+      parent_event = setup[:parent_event]
+      other_ga = create(:ticket, event: parent_event, order: setup[:ga_ticket].order,
+        ticket_type: setup[:ga_ticket].ticket_type, attendee_name: "Early Bird")
+
+      travel_to(Time.zone.parse("2027-01-30T10:00:00+10:00"))
+      main_gate = create(:scanner_device, organization: organization, event: parent_event, user: owner, name: "Main Gate",
+        authorization_expires_at: parent_event.ends_at + 12.hours)
+      reconcile_one(main_gate, ticket: setup[:ga_ticket], uuid: "b05-ga1", sequence: 1, occurred_at: Time.current)
+
+      # Jan 30's leftover leaves at 05:00:00; a scan at that instant belongs to Jan 31 only.
+      travel_to(Time.zone.parse("2027-01-31T05:00:00+10:00"))
+      expect(parent_event.occupancy_day_for(Time.current)).to eq(Date.new(2027, 1, 31))
+      reconcile_one(main_gate, ticket: other_ga, uuid: "b05-ga2", sequence: 2, occurred_at: Time.current)
+      expect(Admissions::ReEntryReport.call(event: parent_event)).to include(current_headcount: 1, peak_headcount: 1)
+    end
+
+    it "keeps each ticket's accepted order when an online re-entry scanner's clock runs 8 s behind (R2-5)" do
+      setup = build_pass_night_with_ga(
+        night_starts_at: Time.zone.parse("2027-01-30T16:00:00+10:00"), night_ends_at: Time.zone.parse("2027-01-30T23:00:00+10:00"),
+        parent_starts_at: Time.zone.parse("2027-01-30T16:00:00+10:00"), parent_ends_at: Time.zone.parse("2027-01-31T23:00:00+10:00")
+      )
+      night, parent_event, child = setup.values_at(:night, :parent_event, :child)
+
+      travel_to(Time.zone.parse("2027-01-30T17:00:00+10:00"))
+      gate_a = create(:scanner_device, organization: organization, event: night, user: owner, name: "Gate A")
+      gate_b = create(:scanner_device, organization: organization, event: night, user: owner, name: "Gate B")
+      main_gate = create(:scanner_device, organization: organization, event: parent_event, user: owner, name: "Main Gate")
+      reconcile_one(gate_a, ticket: child, uuid: "skew-on-1", sequence: 1, occurred_at: Time.current)
+      travel_to(Time.zone.parse("2027-01-30T18:10:00+10:00"))
+      reconcile_one(gate_a, ticket: child, uuid: "skew-on-2", sequence: 2, kind: "exit", occurred_at: Time.current)
+
+      # Re-entry at 18:10:05 on Gate B, whose clock reads 18:09:57.
+      travel_to(Time.zone.parse("2027-01-30T18:10:05+10:00"))
+      expect(reconcile_one(gate_b, ticket: child, uuid: "skew-on-3", sequence: 1,
+        occurred_at: Time.zone.parse("2027-01-30T18:09:57+10:00"))).to have_attributes(result: "accepted", reason_code: "re_entered")
+      expect(child.reload.occupancy_state).to eq("inside")
+      expect(Admissions::ReEntryReport.call(event: night)).to include(current_headcount: 1, peak_headcount: 1)
+      expect(Admissions::ReEntryReport.call(event: parent_event)).to include(current_headcount: 1, peak_headcount: 1)
+
+      travel_to(Time.zone.parse("2027-01-30T18:15:00+10:00"))
+      reconcile_one(main_gate, ticket: setup[:ga_ticket], uuid: "skew-on-ga", sequence: 1, occurred_at: Time.current)
+      Admissions::Counts.expire_headcount_cache!(parent_event)
+      expect(Admissions::Counts.call(event: parent_event)[:live_headcount]).to eq(2)
+      expect(Admissions::ReEntryReport.call(event: parent_event))
+        .to include(current_headcount: 2, peak_headcount: 2, peak_headcount_label: "6:15 PM")
+    end
+
+    it "keeps each ticket's accepted order when a skewed offline re-entry syncs 20 minutes late (R2-5)" do
+      setup = build_pass_night_with_ga(
+        night_starts_at: Time.zone.parse("2027-01-30T16:00:00+10:00"), night_ends_at: Time.zone.parse("2027-01-30T23:00:00+10:00"),
+        parent_starts_at: Time.zone.parse("2027-01-30T16:00:00+10:00"), parent_ends_at: Time.zone.parse("2027-01-31T23:00:00+10:00")
+      )
+      night, parent_event, child = setup.values_at(:night, :parent_event, :child)
+
+      travel_to(Time.zone.parse("2027-01-30T17:00:00+10:00"))
+      gate_a = create(:scanner_device, organization: organization, event: night, user: owner, name: "Gate A")
+      gate_b = create(:scanner_device, organization: organization, event: night, user: owner, name: "Gate B")
+      main_gate = create(:scanner_device, organization: organization, event: parent_event, user: owner, name: "Main Gate")
+      reconcile_one(gate_a, ticket: child, uuid: "skew-off-1", sequence: 1, occurred_at: Time.current)
+      travel_to(Time.zone.parse("2027-01-30T18:10:00+10:00"))
+      reconcile_one(gate_a, ticket: child, uuid: "skew-off-2", sequence: 2, kind: "exit", occurred_at: Time.current)
+      travel_to(Time.zone.parse("2027-01-30T18:12:00+10:00"))
+      reconcile_one(main_gate, ticket: setup[:ga_ticket], uuid: "skew-off-ga", sequence: 1, occurred_at: Time.current)
+
+      # Gate B was offline and 8 s behind: it re-admitted the guest at 18:10:05 (stamped 18:09:57) and syncs at 18:30.
+      travel_to(Time.zone.parse("2027-01-30T18:30:00+10:00"))
+      expect(reconcile_one(gate_b, ticket: child, uuid: "skew-off-3", sequence: 1, source: "offline",
+        occurred_at: Time.zone.parse("2027-01-30T18:09:57+10:00"))).to have_attributes(result: "accepted", reason_code: "re_entered")
+      expect(child.reload.occupancy_state).to eq("inside")
+      Admissions::Counts.expire_headcount_cache!(parent_event)
+      expect(Admissions::Counts.call(event: parent_event)[:live_headcount]).to eq(2)
+      expect(Admissions::ReEntryReport.call(event: night)).to include(current_headcount: 1, peak_headcount: 1)
+      expect(Admissions::ReEntryReport.call(event: parent_event)).to include(current_headcount: 2, peak_headcount: 2)
+    end
+
     it "keeps overnight events (20:00-02:00) on one service day across midnight for anti-passback, exits, cooldown, cap, cutoff, and live headcount" do
       night_event = create(:event, :published,
         organizer_profile: profile,

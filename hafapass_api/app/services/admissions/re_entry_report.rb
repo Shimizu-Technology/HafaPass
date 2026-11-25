@@ -67,7 +67,6 @@ module Admissions
           a.result,
           a.reason_code,
           a.occurred_at,
-          a.received_at,
           COALESCE(
             a.occupancy_day,
             (((a.occurred_at AT TIME ZONE 'UTC') AT TIME ZONE :tz_name) - (:rollover_hours * INTERVAL '1 hour'))::date
@@ -89,40 +88,38 @@ module Admissions
         WHERE a.event_id = :event_id
           %<ticket_clause>s
       ),
+      -- Each ticket's accepted transitions replay in the order the server accepted
+      -- them (id), which is the order its occupancy state changed. A scanner whose
+      -- clock runs a few seconds behind can stamp an accepted re-entry before the
+      -- exit it followed; its effective time is clamped to that ticket's latest
+      -- earlier transition so the merged timeline never reorders one ticket.
       state_steps AS (
         SELECT
           day,
-          occurred_at,
-          received_at,
           id,
+          CASE WHEN ticket_id IS NULL THEN occurred_at ELSE MAX(occurred_at) OVER ticket_steps END AS effective_at,
           CASE
             WHEN ticket_id IS NULL THEN 0
-            WHEN target_state = 'inside' AND COALESCE(
-              LAG(target_state) OVER (
-                PARTITION BY day, ticket_id
-                ORDER BY occurred_at ASC, received_at ASC, id ASC
-              ), 'outside'
-            ) <> 'inside' THEN 1
-            WHEN target_state = 'outside' AND COALESCE(
-              LAG(target_state) OVER (
-                PARTITION BY day, ticket_id
-                ORDER BY occurred_at ASC, received_at ASC, id ASC
-              ), 'outside'
-            ) = 'inside' THEN -1
+            WHEN target_state = 'inside' AND COALESCE(LAG(target_state) OVER ticket_steps, 'outside') <> 'inside' THEN 1
+            WHEN target_state = 'outside' AND COALESCE(LAG(target_state) OVER ticket_steps, 'outside') = 'inside' THEN -1
             ELSE 0
           END AS delta
         FROM relevant_actions
         WHERE target_state IS NOT NULL
+        WINDOW ticket_steps AS (
+          PARTITION BY day, ticket_id
+          ORDER BY id ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        )
       ),
       running AS (
         SELECT
           day,
-          occurred_at,
-          received_at,
+          effective_at,
           id,
           SUM(delta) OVER (
             PARTITION BY day
-            ORDER BY occurred_at ASC, received_at ASC, id ASC
+            ORDER BY effective_at ASC, id ASC
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS running_inside
         FROM state_steps
@@ -131,9 +128,9 @@ module Admissions
         SELECT DISTINCT ON (day)
           day,
           GREATEST(running_inside, 0) AS peak_headcount,
-          CASE WHEN running_inside > 0 THEN occurred_at ELSE NULL END AS peak_headcount_at
+          CASE WHEN running_inside > 0 THEN effective_at ELSE NULL END AS peak_headcount_at
         FROM running
-        ORDER BY day, running_inside DESC, occurred_at ASC, received_at ASC, id ASC
+        ORDER BY day, running_inside DESC, effective_at ASC, id ASC
       ),
       day_totals AS (
         SELECT
@@ -192,7 +189,6 @@ module Admissions
           a.result,
           a.reason_code,
           a.occurred_at,
-          a.received_at,
           a.occupancy_day,
           es.tz_name,
           es.rollover_hours
@@ -208,7 +204,6 @@ module Admissions
           a.result,
           a.reason_code,
           a.occurred_at,
-          a.received_at,
           a.occupancy_day,
           es.tz_name,
           es.rollover_hours
@@ -226,7 +221,6 @@ module Admissions
           a.result,
           a.reason_code,
           a.occurred_at,
-          a.received_at,
           COALESCE(
             a.occupancy_day,
             (((a.occurred_at AT TIME ZONE 'UTC') AT TIME ZONE a.tz_name) - (a.rollover_hours * INTERVAL '1 hour'))::date
@@ -246,42 +240,36 @@ module Admissions
           END AS target_state
         FROM scoped_actions a
       ),
+      -- Same per-ticket causal replay as the single-event report (see BASE_SQL).
       state_steps AS (
         SELECT
           event_id,
           day,
-          occurred_at,
-          received_at,
           id,
+          CASE WHEN ticket_id IS NULL THEN occurred_at ELSE MAX(occurred_at) OVER ticket_steps END AS effective_at,
           CASE
             WHEN ticket_id IS NULL THEN 0
-            WHEN target_state = 'inside' AND COALESCE(
-              LAG(target_state) OVER (
-                PARTITION BY event_id, day, ticket_id
-                ORDER BY occurred_at ASC, received_at ASC, id ASC
-              ), 'outside'
-            ) <> 'inside' THEN 1
-            WHEN target_state = 'outside' AND COALESCE(
-              LAG(target_state) OVER (
-                PARTITION BY event_id, day, ticket_id
-                ORDER BY occurred_at ASC, received_at ASC, id ASC
-              ), 'outside'
-            ) = 'inside' THEN -1
+            WHEN target_state = 'inside' AND COALESCE(LAG(target_state) OVER ticket_steps, 'outside') <> 'inside' THEN 1
+            WHEN target_state = 'outside' AND COALESCE(LAG(target_state) OVER ticket_steps, 'outside') = 'inside' THEN -1
             ELSE 0
           END AS delta
         FROM relevant_actions
         WHERE target_state IS NOT NULL
+        WINDOW ticket_steps AS (
+          PARTITION BY event_id, day, ticket_id
+          ORDER BY id ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        )
       ),
       running AS (
         SELECT
           event_id,
           day,
-          occurred_at,
-          received_at,
+          effective_at,
           id,
           SUM(delta) OVER (
             PARTITION BY event_id, day
-            ORDER BY occurred_at ASC, received_at ASC, id ASC
+            ORDER BY effective_at ASC, id ASC
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS running_inside
         FROM state_steps
@@ -291,9 +279,9 @@ module Admissions
           event_id,
           day,
           GREATEST(running_inside, 0) AS peak_headcount,
-          CASE WHEN running_inside > 0 THEN occurred_at ELSE NULL END AS peak_headcount_at
+          CASE WHEN running_inside > 0 THEN effective_at ELSE NULL END AS peak_headcount_at
         FROM running
-        ORDER BY event_id, day, running_inside DESC, occurred_at ASC, received_at ASC, id ASC
+        ORDER BY event_id, day, running_inside DESC, effective_at ASC, id ASC
       ),
       day_totals AS (
         SELECT
@@ -312,21 +300,22 @@ module Admissions
           event_id,
           day,
           GREATEST(SUM(delta), 0) AS current_headcount,
-          MAX(occurred_at) AS max_occurred_at
+          MAX(effective_at) AS max_effective_at
         FROM state_steps
         GROUP BY event_id, day
       ),
+      -- An event-day's leftovers leave the combined timeline when that day stops being
+      -- the event's service day, with Event#occupancy_day_for's boundaries: the 05:00
+      -- rollover is exclusive (05:00 itself is the next day, and id 0 sorts this step
+      -- before any scan at that instant), and a single session's window end is
+      -- inclusive (the step lands one microsecond after it).
       rollover_steps AS (
         SELECT
           GREATEST(
             (((f.day + 1)::timestamp + (:standard_rollover_hours * INTERVAL '1 hour')) AT TIME ZONE es.tz_name) AT TIME ZONE 'UTC',
-            COALESCE(
-              CASE WHEN es.session_day = f.day THEN es.session_end_at ELSE NULL END,
-              (((f.day + 1)::timestamp + (:standard_rollover_hours * INTERVAL '1 hour')) AT TIME ZONE es.tz_name) AT TIME ZONE 'UTC'
-            ),
-            f.max_occurred_at + INTERVAL '1 microsecond'
-          ) AS occurred_at,
-          TIMESTAMP '0001-01-01 00:00:00' AS received_at,
+            CASE WHEN es.session_day = f.day THEN es.session_end_at + INTERVAL '1 microsecond' ELSE NULL END,
+            f.max_effective_at + INTERVAL '1 microsecond'
+          ) AS effective_at,
           0::bigint AS id,
           -f.current_headcount AS delta
         FROM final_inside f
@@ -334,20 +323,19 @@ module Admissions
         WHERE f.current_headcount > 0
       ),
       combined_steps AS (
-        SELECT occurred_at, received_at, id, delta
+        SELECT effective_at, id, delta
         FROM state_steps
         WHERE delta <> 0
         UNION ALL
-        SELECT occurred_at, received_at, id, delta
+        SELECT effective_at, id, delta
         FROM rollover_steps
       ),
       combined_running AS (
         SELECT
-          occurred_at,
-          received_at,
+          effective_at,
           id,
           SUM(delta) OVER (
-            ORDER BY occurred_at ASC, received_at ASC, id ASC
+            ORDER BY effective_at ASC, id ASC
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS running_inside
         FROM combined_steps
@@ -355,9 +343,9 @@ module Admissions
       combined_peak AS (
         SELECT
           GREATEST(running_inside, 0) AS peak_headcount,
-          CASE WHEN running_inside > 0 THEN occurred_at ELSE NULL END AS peak_headcount_at
+          CASE WHEN running_inside > 0 THEN effective_at ELSE NULL END AS peak_headcount_at
         FROM combined_running
-        ORDER BY running_inside DESC, occurred_at ASC, received_at ASC, id ASC
+        ORDER BY running_inside DESC, effective_at ASC, id ASC
         LIMIT 1
       )
       SELECT
@@ -435,10 +423,9 @@ module Admissions
 
       specs_sql = events_by_id.values.map do |ev, ev_zone|
         is_direct = ev.id == @event.id
-        session_day = ev.single_session_re_entry? ? ev.starts_at.in_time_zone(ev_zone).to_date : nil
-        session_end_at = if ev.single_session_re_entry?
-          (ev.ends_at.present? ? (ev.ends_at + 6.hours) : (ev.starts_at + 24.hours)).utc
-        end
+        session_window = ev.single_session_occupancy_window
+        session_day = session_window ? ev.starts_at.in_time_zone(ev.event_time_zone).to_date : nil
+        session_end_at = session_window&.end&.utc
         ActiveRecord::Base.sanitize_sql_array([
           "(?::bigint, ?::boolean, ?::text, ?::integer, ?::date, ?::timestamp)",
           ev.id.to_i, is_direct, ev_zone.tzinfo.name, ev.re_entry_rollover_hour.to_i, session_day, session_end_at
