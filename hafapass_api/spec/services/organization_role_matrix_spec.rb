@@ -34,8 +34,8 @@ RSpec.describe OrganizationRoleMatrix do
       "See events", "Create, edit & publish events", "Edit event page content only",
       "Cancel an event (with refunds)", "Copy/repeat events", "Ticket types & prices", "Seating",
       "See attendee names & emails", "Guest list, waitlist & resend tickets", "Door sales", "Scan tickets",
-      "Undo a check-in", "Issue refunds", "Finance reports & sales exports", "Finalize settlements",
-      "Request payouts", "Payout & W-9 details", "Promo codes, promoters & buyer emails",
+      "Override re-entry blocks", "Undo a check-in", "Issue refunds", "Finance reports & sales exports",
+      "Finalize settlements", "Request payouts", "Payout & W-9 details", "Promo codes, promoters & buyer emails",
       "Invite/remove team members & change roles", "Assign staff to events",
       "Organization profile & verification", "Transfer ownership", "View activity log (all / events / money)"
     ])
@@ -54,6 +54,9 @@ RSpec.describe OrganizationRoleMatrix do
     expect(values("content")).to include("marketer" => "Yes")
     expect(values("manage_events")).to include("marketer" => "No")
     expect(values("scan")).to include("scanner" => "Assigned events")
+    expect(values("override_re_entry")).to include("owner" => "Yes", "manager" => "Yes", "box_office" => "Assigned events", "scanner" => "No")
+    expect(described_class.data.dig(:event_assignment_permissions, :scanner_lead)).to contain_exactly(:view_events, :scan, :override_re_entry)
+    expect(described_class.markdown).to include("Scanner lead (`scanner_lead`)")
     expect(values("reverse")).to include("box_office" => "Assigned events", "scanner" => "No")
   end
 

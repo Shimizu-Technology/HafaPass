@@ -9,6 +9,7 @@ import apiClient from '../../api/client'
 import PageDesignEditor, { DescriptionToolbar } from '../../components/PageDesignEditor'
 import TicketTypeCRUD from '../../components/TicketTypeCRUD'
 import FeePolicyPanel from '../../components/FeePolicyPanel'
+import ReEntrySettings from '../../components/admissions/ReEntrySettings'
 import useEventCategories from '../../hooks/useEventCategories'
 import Dialog from '../../components/Dialog'
 import CancellationRefundProgress from '../../components/CancellationRefundProgress'
@@ -45,7 +46,11 @@ const eventForm = e => ({
   recurrence_rule: e.recurrence_rule || '',
   recurrence_end_date: e.recurrence_end_date || '',
   show_attendees: e.show_attendees !== false,
-  transfers_enabled: e.transfers_enabled === true
+  transfers_enabled: e.transfers_enabled === true,
+  re_entry_mode: e.re_entry_mode || 'off',
+  re_entry_max_count: e.re_entry_max_count != null ? String(e.re_entry_max_count) : '',
+  re_entry_cutoff_time: e.re_entry_cutoff_time || '',
+  re_entry_cooldown_minutes: e.re_entry_cooldown_minutes != null ? String(e.re_entry_cooldown_minutes) : '',
 })
 
 function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel, loading, reason, onReasonChange, requireReason = false }) {
@@ -127,7 +132,11 @@ function EditEventSession({ id, identity }) {
     recurrence_rule: '',
     recurrence_end_date: '',
     show_attendees: true,
-    transfers_enabled: false
+    transfers_enabled: false,
+    re_entry_mode: 'off',
+    re_entry_max_count: '',
+    re_entry_cutoff_time: '',
+    re_entry_cooldown_minutes: '',
   })
 
   const savedForm = eventForm(event || {})
@@ -280,6 +289,21 @@ function EditEventSession({ id, identity }) {
           errors.max_capacity = 'Max capacity must be a positive integer'
         }
       }
+      if (form.re_entry_mode === 'cooldown') {
+        const mins = Number(form.re_entry_cooldown_minutes)
+        if (!form.re_entry_cooldown_minutes || !Number.isInteger(mins) || mins < 1 || mins > 1440) {
+          errors.re_entry_cooldown_minutes = 'Cool-down minutes must be a whole number between 1 and 1440'
+        }
+      }
+      if (form.re_entry_max_count) {
+        const cap = Number(form.re_entry_max_count)
+        if (!Number.isInteger(cap) || cap < 1 || cap > 1000) {
+          errors.re_entry_max_count = 'Max re-entries must be a whole number between 1 and 1000'
+        }
+      }
+      if (form.re_entry_cutoff_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(form.re_entry_cutoff_time.trim())) {
+        errors.re_entry_cutoff_time = 'Enter a valid 24-hour cutoff time (HH:MM)'
+      }
       if (buyerVisibleChange && !changeReason.trim()) {
         errors.change_reason = scheduleChanged ? 'Explain the schedule change for ticket holders' : 'Explain the venue change for ticket holders'
       }
@@ -317,7 +341,12 @@ function EditEventSession({ id, identity }) {
         recurrence_rule: form.recurrence_rule || null,
         recurrence_end_date: form.recurrence_end_date || null,
         show_attendees: form.show_attendees,
-        ...(capabilities.ticket_transfers === true ? { transfers_enabled: form.transfers_enabled } : {})
+        ...(capabilities.ticket_transfers === true ? { transfers_enabled: form.transfers_enabled } : {}),
+        re_entry_mode: form.re_entry_mode || 'off',
+        re_entry_max_count: form.re_entry_max_count ? Number(form.re_entry_max_count) : null,
+        re_entry_cooldown_minutes: form.re_entry_mode === 'cooldown' && form.re_entry_cooldown_minutes
+          ? Number(form.re_entry_cooldown_minutes) : null,
+        re_entry_cutoff_time: form.re_entry_cutoff_time ? form.re_entry_cutoff_time.trim() : null,
       }
       if (!canManage) {
         const presentationFields = ['title', 'slug', 'short_description', 'description', 'category', 'cover_image_url', 'page_customization']
@@ -799,6 +828,18 @@ function EditEventSession({ id, identity }) {
                 </div>
               </div>
             )}
+            <ReEntrySettings
+              form={form}
+              updateField={updateField}
+              formErrors={formErrors}
+              disabled={submitting}
+              timezone={event?.timezone || 'Pacific/Guam'}
+              savedMode={event?.re_entry_mode || 'off'}
+              isLiveEvent={['published', 'postponed'].includes(event?.status)}
+              startsAt={form.starts_at}
+              endsAt={form.ends_at}
+              doorsOpenAt={form.doors_open_at}
+            />
           </div>
         </section>
 

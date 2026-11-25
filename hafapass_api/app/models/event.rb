@@ -13,7 +13,8 @@ class Event < ApplicationRecord
   audits_operations :event,
     fields: %w[organization_id organizer_profile_id venue_id starts_at ends_at doors_open_at timezone
       category age_restriction max_capacity fee_policy buyer_fee_percent is_featured show_attendees online_door_card_enabled
-      transfers_enabled recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
+      transfers_enabled re_entry_mode re_entry_max_count re_entry_cutoff_time
+      re_entry_cooldown_minutes recurrence_parent_id recurrence_rule recurrence_end_date supported_locales],
     observe: %w[title slug description short_description cover_image_url venue_name venue_address venue_city
       localized_content]
 
@@ -89,6 +90,9 @@ class Event < ApplicationRecord
   public_slug_redirects :slug_redirects
 
   RECURRENCE_RULES = %w[weekly biweekly monthly].freeze
+  RE_ENTRY_MODES = %w[off exit_scan cooldown].freeze
+  RE_ENTRY_ROLLOVER_HOUR = 5
+  RE_ENTRY_CUTOFF_TIME_REGEX = /\A([01]\d|2[0-3]):[0-5]\d\z/
   # A platform-admin policy hold: "sales" stops all sales but leaves the event
   # page up; "hidden" also removes it from public pages and discovery.
   POLICY_HOLD_SCOPES = %w[sales hidden].freeze
@@ -121,6 +125,11 @@ class Event < ApplicationRecord
   validate :chosen_slug_is_available, if: :slug_chosen?
   validates :max_capacity, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 }, allow_nil: true
   validates :buyer_fee_percent, numericality: { only_integer: true, in: 0..100 }
+  validates :re_entry_mode, inclusion: { in: RE_ENTRY_MODES }
+  validates :re_entry_max_count, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 1000 }, allow_nil: true
+  validates :re_entry_cooldown_minutes, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 1440 }, allow_nil: true
+  validates :re_entry_cutoff_time, format: { with: RE_ENTRY_CUTOFF_TIME_REGEX, message: "must be a 24-hour time (HH:MM)" }, allow_nil: true
+  validate :re_entry_cooldown_required_for_cooldown_mode
   validate :capacity_covers_committed_inventory
   validate :fee_policy_matches_percent
   validate :supported_locales_are_known
@@ -292,6 +301,91 @@ class Event < ApplicationRecord
 
   def category_label
     CATEGORY_LABELS.fetch(category)
+  end
+
+  def re_entry_enabled?
+    re_entry_mode != "off"
+  end
+
+  def re_entry_exit_scan?
+    re_entry_mode == "exit_scan"
+  end
+
+  def re_entry_cooldown?
+    re_entry_mode == "cooldown"
+  end
+
+  def event_time_zone
+    ActiveSupport::TimeZone[timezone.presence || "Pacific/Guam"] || ActiveSupport::TimeZone["Pacific/Guam"]
+  end
+
+  def single_session_re_entry?
+    starts_at.present? && (ends_at.blank? || (ends_at - starts_at) <= 24.hours)
+  end
+
+  def single_session_start_anchor
+    if doors_open_at.present? && starts_at.present? && doors_open_at < starts_at
+      doors_open_at
+    else
+      starts_at
+    end
+  end
+
+  def re_entry_rollover_hour
+    if single_session_re_entry?
+      start_hour = single_session_start_anchor.in_time_zone(event_time_zone).hour
+      return start_hour if start_hour < RE_ENTRY_ROLLOVER_HOUR
+    end
+    RE_ENTRY_ROLLOVER_HOUR
+  end
+
+  # Business-day rollover tied to the event's service day in its time zone.
+  # Single-session events (<= 24 h, or missing ends_at treated as start + 24 h) keep one
+  # service day across midnight and past 05:00; multi-day events roll over at 05:00 local time.
+  def occupancy_day_for(at = Time.current)
+    tz = event_time_zone
+    if single_session_re_entry?
+      window_start = single_session_start_anchor - 6.hours
+      window_end = ends_at.present? ? (ends_at + 6.hours) : (starts_at + 24.hours)
+      return starts_at.in_time_zone(tz).to_date if at >= window_start && at <= window_end
+    end
+    (at - RE_ENTRY_ROLLOVER_HOUR.hours).in_time_zone(tz).to_date
+  end
+
+  # Per-service-day cutoff timestamp in the event's time zone.
+  # For single-session events on their session day, the cutoff is the first HH:MM at or
+  # after the session start (doors_open_at when earlier than starts_at, else starts_at),
+  # so late-night events running past 05:00 (e.g. 22:00-07:00 with 06:00 cutoff) resolve
+  # cleanly to the next morning. Multi-day and non-session days use the 05:00 rollover rule.
+  def re_entry_cutoff_for_day(day)
+    return nil unless re_entry_cutoff_time.present? && day.present?
+
+    tz = event_time_zone
+    hour, minute = re_entry_cutoff_time.split(":").map(&:to_i)
+    if single_session_re_entry? && day == starts_at.in_time_zone(tz).to_date
+      anchor = single_session_start_anchor
+      anchor_date = anchor.in_time_zone(tz).to_date
+      candidate = tz.local(anchor_date.year, anchor_date.month, anchor_date.day, hour, minute, 0)
+      if candidate < anchor
+        next_date = anchor_date + 1.day
+        candidate = tz.local(next_date.year, next_date.month, next_date.day, hour, minute, 0)
+      end
+      return candidate
+    end
+
+    target_date = hour < RE_ENTRY_ROLLOVER_HOUR ? (day + 1.day) : day
+    tz.local(target_date.year, target_date.month, target_date.day, hour, minute, 0)
+  end
+
+  def re_entry_cutoff_passed?(at = Time.current, day: nil)
+    cutoff = re_entry_cutoff_for_day(day || occupancy_day_for(at))
+    cutoff.present? && at > cutoff
+  end
+
+  def re_entry_cooldown_required_for_cooldown_mode
+    return unless re_entry_cooldown? && re_entry_cooldown_minutes.blank?
+
+    errors.add(:re_entry_cooldown_minutes, "is required when Cool-down re-entry mode is enabled")
   end
 
   # Production's one sales gate: HåfaPass has verified the organizer (one

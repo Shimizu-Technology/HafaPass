@@ -72,6 +72,16 @@ Automated coverage exercises signed manifests, duplicate reconciliation, revoked
 - While the camera runs, the scanner asks the browser to keep the screen on. If the browser can't, the page says so; set Auto-Lock (iPhone) or Screen timeout (Android) to Never for the shift.
 - Keep devices charged and sync before moving a device to another door. Never share one registered browser profile between staff accounts.
 
+## Re-entry & offline exit scans
+
+Re-entry is **Off** by default so single-entry events see no extra door controls. When an organizer enables **Exit scan (in & out)** or **Cool-down (no exit staff)** on an event:
+
+- **Service-day rollover**: Late-night events that cross midnight (for example 8:00 PM–2:00 AM) stay on one service day across midnight instead of resetting at 12:00 AM. Multi-day events roll over at 5:00 AM in the event's time zone so being inside on Day 1 never blocks Day 2 entry.
+- **Per-day cutoff time**: A configured re-entry cutoff applies to each service day in the event's time zone. First-time arrivals are still admitted after the cutoff; only re-entries are blocked.
+- **Offline exit scans**: An exit scanned on an **offline** device is queued on that phone and **keeps the ticket marked "inside" on the server (and at other gates) until the exit device reconnects and syncs**. Tell exit-lane volunteers to keep signal or sync regularly. If a guest exits at an offline lane and tries to re-enter at another gate before that exit syncs, the entry gate will show **Already inside**; a **Scanner lead** (or Owner / Manager / Box office) can verify the guest and use **Lead override** with a required reason, which is written to the audit log.
+- **Offline conflicts**: If two offline gates admit the same ticket, sync resolves by earliest `occurred_at` (with server tiebreak) and flags the ticket for a Scanner lead to review and clear or override.
+- **Do not turn re-entry Off mid-event** while guests are outside: guests who scanned out will no longer be able to scan back in.
+
 ## Recovering a retained offline journal
 
 Sync queues before retiring access whenever possible. If staff or their device was already revoked, preserve the original browser/profile and journal; do not clear site data or admit those guests again.

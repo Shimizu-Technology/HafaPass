@@ -1,6 +1,8 @@
 import { openDB } from 'idb'
 import apiClient, { getApiAuthContext } from '../api/client'
 import { captureScannerBindingContext, scannerBindingContextCurrent, currentScannerOwner } from './scannerAccountBinding'
+import { serviceDayString } from './reEntryRules'
+import { getServerNow } from './serverClock'
 
 export { currentScannerOwner } from './scannerAccountBinding'
 
@@ -485,8 +487,12 @@ export async function clearAllAdmissionData({ isCurrent = () => true } = {}) {
   window.localStorage.removeItem('hafapass_scanner_event_id')
 }
 
-export async function queueAdmission({ eventId, deviceId, manifestVersion, ticket, credentialHash, source, clientStatus = 'locally_accepted', confirmed = false }) {
-  if (ticket.door_check_mode === 'verify' && confirmed !== true) throw new Error('Confirm this ticket at the door before admitting.')
+export async function queueAdmission({
+  eventId, deviceId, manifestVersion, ticket, credentialHash, source,
+  clientStatus = 'locally_accepted', confirmed = false,
+  reEntryMode = 'off', eventTimezone = 'Pacific/Guam', eventMeta = null, isReEntry = false, reEntryNumber = 0,
+}) {
+  if (ticket.door_check_mode === 'verify' && !isReEntry && confirmed !== true) throw new Error('Confirm this ticket at the door before admitting.')
   const db = await database()
   const transaction = db.transaction(['devices', 'queue', 'scan_states'], 'readwrite')
   const devices = transaction.objectStore('devices')
@@ -497,11 +503,18 @@ export async function queueAdmission({ eventId, deviceId, manifestVersion, ticke
   const scanStates = transaction.objectStore('scan_states')
   const prior = await scanStates.get([Number(eventId), Number(ticket.ticket_id)])
   const pending = await transaction.objectStore('queue').index('event_device').getAll([Number(eventId), Number(deviceId)])
-  if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(prior?.status) || pending.some(action => Number(action.ticket_id) === Number(ticket.ticket_id) && action.kind === 'admit')) {
+  if (reEntryMode === 'off') {
+    if (['pending', 'accepted', 'conflict', 'pending_reverse'].includes(prior?.status) || pending.some(action => Number(action.ticket_id) === Number(ticket.ticket_id) && action.kind === 'admit')) {
+      await transaction.done
+      return null
+    }
+  } else if (prior?.status === 'pending_reverse') {
     await transaction.done
     return null
   }
   const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
+  const occurredAt = new Date(getServerNow()).toISOString()
+  const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
   const action = {
     action_uuid: crypto.randomUUID(),
     event_id: Number(eventId),
@@ -511,7 +524,7 @@ export async function queueAdmission({ eventId, deviceId, manifestVersion, ticke
     source,
     sequence,
     manifest_version: manifestVersion,
-    occurred_at: new Date().toISOString(),
+    occurred_at: occurredAt,
     ticket_id: ticket.ticket_id,
     credential_hash: credentialHash,
     client_status: clientStatus,
@@ -521,13 +534,70 @@ export async function queueAdmission({ eventId, deviceId, manifestVersion, ticke
   await devices.put(storedDevice)
   await transaction.objectStore('queue').put(action)
   await scanStates.put({
+    ...prior,
     event_id: Number(eventId),
     ticket_id: Number(ticket.ticket_id),
     status: 'pending',
     action_uuid: action.action_uuid,
     attendee_name: ticket.attendee_name,
     ticket_type: ticket.ticket_type,
-    occurred_at: action.occurred_at,
+    occurred_at: occurredAt,
+    occupancy_state: 'inside',
+    occupancy_day: occupancyDay,
+    last_entry_at: occurredAt,
+    last_entry_gate: storedDevice.name || null,
+    re_entry_count: isReEntry ? reEntryNumber : 0,
+  })
+  await transaction.done
+  return action
+}
+
+export async function queueExit({
+  eventId, deviceId, manifestVersion, ticket, credentialHash, source,
+  clientStatus = 'locally_exited', eventTimezone = 'Pacific/Guam', eventMeta = null, reEntryCount = 0,
+}) {
+  const db = await database()
+  const transaction = db.transaction(['devices', 'queue', 'scan_states'], 'readwrite')
+  const devices = transaction.objectStore('devices')
+  const storedDevice = await devices.get(Number(eventId))
+  if (!storedDevice || storedDevice.id !== deviceId || storedDevice.owner_user_id !== currentScannerOwner()) throw new Error('Scanner device is not registered')
+  const authorizationExpiry = new Date(storedDevice.authorization_expires_at).getTime()
+  if (!storedDevice.effective || !Number.isFinite(authorizationExpiry) || authorizationExpiry <= Date.now()) throw new Error('Scanner authorization has expired. Reconnect before scanning.')
+  const scanStates = transaction.objectStore('scan_states')
+  const prior = await scanStates.get([Number(eventId), Number(ticket.ticket_id)])
+  const sequence = Number(storedDevice.next_sequence || storedDevice.last_sequence || 0) + 1
+  const occurredAt = new Date(getServerNow()).toISOString()
+  const occupancyDay = serviceDayString(occurredAt, eventMeta || { timezone: eventTimezone })
+  const action = {
+    action_uuid: crypto.randomUUID(),
+    event_id: Number(eventId),
+    device_id: deviceId,
+    owner_user_id: storedDevice.owner_user_id,
+    kind: 'exit',
+    source,
+    sequence,
+    manifest_version: manifestVersion,
+    occurred_at: occurredAt,
+    ticket_id: ticket.ticket_id,
+    credential_hash: credentialHash,
+    client_status: clientStatus,
+  }
+  storedDevice.next_sequence = sequence
+  await devices.put(storedDevice)
+  await transaction.objectStore('queue').put(action)
+  await scanStates.put({
+    ...prior,
+    event_id: Number(eventId),
+    ticket_id: Number(ticket.ticket_id),
+    status: 'exited_pending',
+    action_uuid: action.action_uuid,
+    attendee_name: ticket.attendee_name,
+    ticket_type: ticket.ticket_type,
+    occurred_at: occurredAt,
+    occupancy_state: 'outside',
+    occupancy_day: occupancyDay,
+    last_exit_at: occurredAt,
+    re_entry_count: Number(prior?.re_entry_count ?? reEntryCount ?? 0),
   })
   await transaction.done
   return action
@@ -652,6 +722,22 @@ export async function applySyncResults(eventId, device, results, owner = current
         status: state?.admission_status_before_reverse || 'accepted',
         reason_code: result.reason_code,
       })
+    } else if (result.kind === 'exit') {
+      await transaction.objectStore('scan_states').put({
+        ...state,
+        event_id: key[0],
+        ticket_id: key[1],
+        status: result.result === 'accepted' ? 'exited' : result.result,
+        reason_code: result.reason_code,
+        action_uuid: result.action_uuid,
+        occurred_at: result.occurred_at,
+        ...(result.result === 'accepted'
+          ? { occupancy_state: 'outside', last_exit_at: result.occurred_at }
+          : {}),
+        ...(result.ticket?.occupancy_state ? { occupancy_state: result.ticket.occupancy_state } : {}),
+        ...(result.ticket?.occupancy_day ? { occupancy_day: result.ticket.occupancy_day } : {}),
+        ...(result.ticket?.re_entry_count != null ? { re_entry_count: result.ticket.re_entry_count } : {}),
+      })
     } else {
       await transaction.objectStore('scan_states').put({
         ...state,
@@ -661,6 +747,13 @@ export async function applySyncResults(eventId, device, results, owner = current
         reason_code: result.reason_code,
         action_uuid: result.action_uuid,
         occurred_at: result.occurred_at,
+        details: result.details,
+        ...(result.result === 'accepted'
+          ? { occupancy_state: 'inside', last_entry_at: result.occurred_at }
+          : {}),
+        ...(result.ticket?.occupancy_state ? { occupancy_state: result.ticket.occupancy_state } : {}),
+        ...(result.ticket?.occupancy_day ? { occupancy_day: result.ticket.occupancy_day } : {}),
+        ...(result.ticket?.re_entry_count != null ? { re_entry_count: result.ticket.re_entry_count } : {}),
       })
     }
   }

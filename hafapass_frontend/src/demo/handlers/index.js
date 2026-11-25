@@ -6,6 +6,7 @@ import * as boxOfficeCard from './box-office-card'
 import * as boxOfficePrint from './box-office-print'
 import * as monitoring from './monitoring'
 import * as cpaExport from './cpa-export'
+import * as reEntry from './re-entry'
 import * as baseline from './baseline'
 import * as payouts from './payouts'
 
@@ -15,5 +16,6 @@ export const DEMO_HANDLERS = [
   monitoring,
   payouts,
   cpaExport,
+  reEntry,
   baseline,
 ]

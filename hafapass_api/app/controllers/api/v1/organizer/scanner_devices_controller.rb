@@ -75,7 +75,8 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
     return render_device_expired unless @device.effective?
 
     result = Admissions::Reconciler.new(device: @device, actor: current_user, actions: []).preview(
-      ticket_id: params[:ticket_id], credential_hash: params[:credential_hash], manifest_version: params[:manifest_version]
+      ticket_id: params[:ticket_id], credential_hash: params[:credential_hash],
+      manifest_version: params[:manifest_version], kind: params[:kind]
     )
     render json: result
   rescue Admissions::Reconciler::SyncError => e
@@ -174,7 +175,13 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
   end
 
   def action_json(action)
-    {
+    details = action.metadata.slice(
+      "prior_entry_at", "prior_gate_name", "elapsed_minutes", "remaining_minutes",
+      "cooldown_minutes", "retry_after_at", "re_entry", "re_entry_number",
+      "re_entry_count", "re_entry_max_count", "cutoff_at", "gate_name",
+      "offline_conflict", "winner_by_occurred_at", "override_action"
+    )
+    json = {
       action_uuid: action.action_uuid,
       ticket_id: action.ticket_id,
       kind: action.kind,
@@ -186,13 +193,23 @@ class Api::V1::Organizer::ScannerDevicesController < Api::V1::Organizer::BaseCon
       received_at: action.received_at,
       attendee: action.attendee_snapshot
     }
+    json[:details] = details if details.any?
+    json
   end
 
   def sync_result_json(result)
     action = result.action
     json = action_json(action)
-    if action.source_online? && action.kind_admit? && action.result_accepted?
-      json[:ticket] = Admissions::DoorPayload.call(result.ticket).merge(ticket_id: result.ticket.id)
+    if action.source_online? && (action.kind_admit? || action.kind_exit?) && action.result_accepted? && result.ticket
+      ticket_payload = Admissions::DoorPayload.call(result.ticket).merge(ticket_id: result.ticket.id)
+      if @event.re_entry_enabled?
+        ticket_payload.merge!(
+          occupancy_state: result.ticket.occupancy_state,
+          occupancy_day: result.ticket.occupancy_day&.iso8601,
+          re_entry_count: result.ticket.re_entry_count
+        )
+      end
+      json[:ticket] = ticket_payload
     end
     json
   end

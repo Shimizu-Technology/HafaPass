@@ -11,7 +11,9 @@ class EventReportExport
   }.freeze
   ATTENDANCE_COLUMNS = [
     "Ticket type", "Expected", "Checked in", "Not checked in", "Check-in rate (%)",
-    "30-minute window", "Local time", "Time zone", "Check-ins in window"
+    "30-minute window", "Local time", "Time zone", "Check-ins in window",
+    "Day", "Entries", "Exits", "Re-entries", "Overrides", "Current headcount",
+    "Peak headcount", "Peak headcount time"
   ].freeze
   DEMOGRAPHICS_COLUMNS = [
     "Question", "Asked per", "Answer", "Count", "Share of respondents (%)", "Respondents", "Blank or unanswered"
@@ -44,9 +46,15 @@ class EventReportExport
   def attendance_rows
     attendance = @report.attendance
     counts = [attendance.merge(ticket_type_name: "All tickets"), *attendance.fetch(:by_ticket_type)]
+    re_entry_days = Array(attendance.dig(:re_entry, :by_day))
     counts.map { |row| row.values_at(:ticket_type_name, :total_active_tickets, :checked_in_count, :remaining_count, :check_in_rate) } +
       attendance.fetch(:pace).map do |row|
         [nil, nil, nil, nil, nil, row[:bucket_start], row[:label], attendance[:timezone], row[:count]]
+      end +
+      re_entry_days.map do |day|
+        [nil, nil, nil, nil, nil, nil, nil, attendance[:timezone], nil,
+          day[:day], day[:entries], day[:exits], day[:re_entries], day[:overrides],
+          day[:current_headcount], day[:peak_headcount], day[:peak_headcount_label]]
       end
   end
 

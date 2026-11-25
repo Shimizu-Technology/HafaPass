@@ -228,6 +228,7 @@ Rails.application.routes.draw do
           resource :admissions, only: [:show], controller: "admissions" do
             get :search
             get :door_list
+            post :override
           end
           resource :finance, only: [:show], controller: "finances" do
             post :finalize

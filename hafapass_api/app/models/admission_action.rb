@@ -10,7 +10,7 @@ class AdmissionAction < ApplicationRecord
   has_one :reversal_action, -> { result_accepted }, class_name: "AdmissionAction", foreign_key: :reverses_action_id,
     dependent: :restrict_with_error, inverse_of: :reverses_action
 
-  enum :kind, { admit: 0, reverse: 1 }, prefix: true
+  enum :kind, { admit: 0, reverse: 1, exit: 2, override: 3 }, prefix: true
   enum :source, { online: 0, offline: 1, manual: 2 }, prefix: true
   enum :result, { accepted: 0, rejected: 1, conflict: 2 }, prefix: true
 
@@ -27,7 +27,7 @@ class AdmissionAction < ApplicationRecord
 
   attr_readonly :organization_id, :event_id, :ticket_id, :scanner_device_id, :actor_user_id,
     :reverses_action_id, :action_uuid, :kind, :source, :result, :reason_code, :credential_hash,
-    :manifest_version, :sequence, :occurred_at, :received_at, :attendee_snapshot, :metadata
+    :manifest_version, :sequence, :occurred_at, :received_at, :occupancy_day, :attendee_snapshot, :metadata
 
   before_update :prevent_mutation
   before_destroy :prevent_mutation
@@ -49,7 +49,7 @@ class AdmissionAction < ApplicationRecord
   def reversal_shape
     if kind_reverse? && result_accepted? && reverses_action.nil?
       errors.add(:reverses_action, "is required for a reversal")
-    elsif kind_admit? && reverses_action.present?
+    elsif !kind_reverse? && reverses_action.present?
       errors.add(:reverses_action, "is only allowed for a reversal")
     elsif reverses_action && (!reverses_action.kind_admit? || !reverses_action.result_accepted?)
       errors.add(:reverses_action, "must be an accepted admission")

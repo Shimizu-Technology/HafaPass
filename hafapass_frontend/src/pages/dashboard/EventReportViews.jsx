@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatRegistrationAnswer } from '../../utils/eventToolFormat'
+import { serviceDayString } from '../../utils/reEntryRules'
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 const quantity = new Intl.NumberFormat('en-US')
@@ -62,14 +63,126 @@ function Bar({ percent }) {
   </span>
 }
 
-export function AttendanceReport({ data }) {
+export function AttendanceReport({ data, event = null }) {
   const peak = Math.max(1, ...data.pace.map(bucket => bucket.count))
   const dates = new Set(data.pace.map(bucket => bucket.bucket_start.slice(0, 10)))
+  const reEntry = data.re_entry
+  const showReEntry = Boolean(reEntry && (reEntry.mode !== 'off' || reEntry.exits > 0 || reEntry.re_entries > 0 || reEntry.by_day?.length > 0))
+  const isCooldown = reEntry?.mode === 'cooldown'
+  const isExitScan = reEntry?.mode === 'exit_scan'
+  const multiDay = (reEntry?.by_day?.length || 0) > 1
+  const currentServiceDay = reEntry?.current_service_day || serviceDayString(Date.now(), {
+    timezone: data.timezone || event?.timezone,
+    starts_at: event?.starts_at ?? data.starts_at,
+    ends_at: event?.ends_at ?? data.ends_at,
+    doors_open_at: event?.doors_open_at ?? data.doors_open_at,
+    re_entry_rollover_hour: reEntry?.rollover_hour,
+  })
+  const modeLabel = isExitScan
+    ? 'Exit scan (in & out)'
+    : isCooldown
+      ? `Cool-down (${reEntry.cooldown_minutes || 15} min)`
+      : 'Off (single entry)'
+  const summaryOccupancyLabel = isCooldown ? 'Admitted' : (multiDay ? 'Entered / active' : 'Inside now')
+  const summaryOccupancyValue = isCooldown ? number(reEntry?.entries || 0) : number(reEntry?.current_headcount || 0)
+  const dayOccupancyHeader = isCooldown ? 'Admitted' : 'Inside / status'
   return <>
     <Metrics items={[
       ['Expected', number(data.total_active_tickets)], ['Checked in', number(data.checked_in_count)],
       ['Still to check in', number(data.remaining_count)], ['Check-in rate', `${data.check_in_rate}%`],
     ]} />
+    {showReEntry && (
+      <section aria-labelledby="re-entry-headcount" className="space-y-4 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 id="re-entry-headcount" className="text-lg font-bold">Re-entry &amp; Headcount</h4>
+          <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-800">Mode: {modeLabel}</span>
+        </div>
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          {[
+            ['Entries', number(reEntry.entries || 0)],
+            ['Exits', number(reEntry.exits || 0)],
+            ['Re-entries', number(reEntry.re_entries || 0)],
+            [summaryOccupancyLabel, summaryOccupancyValue],
+            [isCooldown ? 'Peak admitted' : 'Peak headcount', reEntry.peak_headcount > 0
+              ? `${number(reEntry.peak_headcount)}${reEntry.peak_headcount_label ? ` · ${reEntry.peak_headcount_label}` : ''}`
+              : '0'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <dt className="text-xs font-medium text-neutral-700">{label}</dt>
+              <dd className="mt-1 text-lg font-bold tabular-nums text-neutral-950">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {reEntry.by_day?.length > 0 && (
+          <>
+            <ul aria-label="Daily headcount and re-entry summary" className="space-y-2 sm:hidden print:hidden">
+              {reEntry.by_day.map(day => {
+                const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+                const dayStatus = isCooldown
+                  ? `${number(day.entries)} admitted`
+                  : isPastDay
+                    ? `${number(day.entries)} entered`
+                    : number(day.current_headcount)
+                return (
+                  <li key={`${day.event_id || 'e'}-${day.day}`} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                    <p className="font-bold text-neutral-950">{day.event_title || day.label || day.day}</p>
+                    {day.event_title && <p className="text-xs text-neutral-600">{day.label || day.day}</p>}
+                    <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div><dt className="text-xs text-neutral-600">Entries</dt><dd className="font-semibold tabular-nums">{number(day.entries)}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">Exits</dt><dd className="font-semibold tabular-nums">{number(day.exits)}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">Re-entries</dt><dd className="font-semibold tabular-nums">{number(day.re_entries)}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">Overrides</dt><dd className="font-semibold tabular-nums">{number(day.overrides || 0)}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">{isCooldown || isPastDay ? 'Entered' : 'Inside now'}</dt><dd className="font-semibold tabular-nums">{dayStatus}</dd></div>
+                      <div><dt className="text-xs text-neutral-600">{isCooldown ? 'Peak admitted' : 'Peak headcount'}</dt><dd className="font-semibold tabular-nums">{number(day.peak_headcount)}{day.peak_headcount_label ? ` · ${day.peak_headcount_label}` : ''}</dd></div>
+                    </dl>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="hidden sm:block print:block">
+              <Table label="Daily headcount and re-entry breakdown">
+                <thead className="bg-neutral-100"><tr>
+                  <th scope="col" className={cell}>Day</th>
+                  <th scope="col" className={numeric}>Entries</th>
+                  <th scope="col" className={numeric}>Exits</th>
+                  <th scope="col" className={numeric}>Re-entries</th>
+                  <th scope="col" className={numeric}>Overrides</th>
+                  <th scope="col" className={numeric}>{dayOccupancyHeader}</th>
+                  <th scope="col" className={numeric}>{isCooldown ? 'Peak admitted' : 'Peak headcount'}</th>
+                </tr></thead>
+                <tbody className="divide-y divide-neutral-200">
+                  {reEntry.by_day.map(day => {
+                    const isPastDay = Boolean(day.day && currentServiceDay && day.day < currentServiceDay)
+                    const dayCell = isCooldown
+                      ? number(day.entries)
+                      : isPastDay
+                        ? `${number(day.entries)} entered`
+                        : number(day.current_headcount)
+                    return (
+                      <tr key={`${day.event_id || 'e'}-${day.day}`}>
+                        <th scope="row" className={`${cell} min-w-28 break-words`}>
+                          {day.event_title || day.label || day.day}
+                          {day.event_title && <span className="block text-xs font-normal text-neutral-600">{day.label || day.day}</span>}
+                        </th>
+                        <td className={numeric}>{number(day.entries)}</td>
+                        <td className={numeric}>{number(day.exits)}</td>
+                        <td className={numeric}>{number(day.re_entries)}</td>
+                        <td className={numeric}>{number(day.overrides || 0)}</td>
+                        <td className={numeric}>{dayCell}</td>
+                        <td className={numeric}>
+                          {number(day.peak_headcount)}
+                          {day.peak_headcount_label && <span className="block text-xs font-normal text-neutral-600">{day.peak_headcount_label}</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </Table>
+            </div>
+          </>
+        )}
+      </section>
+    )}
     <section aria-labelledby="attendance-by-ticket" className="space-y-3 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
       <h4 id="attendance-by-ticket" className="text-lg font-bold">Check-ins by Ticket Type</h4>
       {data.by_ticket_type.length === 0 ? <p>No active tickets match these filters.</p>
