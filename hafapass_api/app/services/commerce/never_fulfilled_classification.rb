@@ -67,7 +67,11 @@ module Commerce
 
       # One classification per payment: a repeated notice returns the first.
       existing = self.class.capture_for(payment)
-      return Result.new(capture: existing) if existing
+      if existing
+        # Idempotent: picks up a movement an older worker recorded unposted.
+        BuyerReturnPostings.record_recorded_movements!(existing)
+        return Result.new(capture: existing)
+      end
 
       recorded_at = Payment.where(id: payment.id).pick(:capture_recorded_at)
       problem = identity_problem || capture_problem(recorded_at) || scope_problem
@@ -90,7 +94,17 @@ module Commerce
         metadata: { order_id: order.id, payment_id: payment.id, capture_scope: capture_scope, code: code,
           captured_cents: capture.captured_cents, reconciliation_exception_id: exception&.id }.compact,
         **(webhook_event ? { source: "provider" } : {}))
+      # Movements recorded before classification (a dispute lost before the
+      # capture was recorded, for example) post now, on the same locks.
+      BuyerReturnPostings.record_recorded_movements!(capture)
       Result.new(capture: capture)
+    end
+
+    # Order-scope snapshot K for `order` and its captured `payment`, or the
+    # quarantine reason (see #order_components). Shared with reconcile.
+    def self.order_components(order, payment)
+      new(order: order, payment: payment, code: nil, provider_evidence: nil, capture_scope: "order",
+        exception: nil, webhook_event: nil).send(:order_components)
     end
 
     private

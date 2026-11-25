@@ -184,7 +184,11 @@ module Commerce
         # Money already returned by the provider on an isolated payment is
         # always recorded, whatever the sale's own status is now.
         raise RefundError, ISOLATED_PAYMENT_MESSAGE if isolated && (provider_refund.nil? || !tickets.nil?)
-        unless isolated || order.completed? || order.partially_refunded? || refundable_late_capture?
+        # The same holds for any classified payment: a provider fact is gross
+        # return evidence and is never refused because the outbound balance is
+        # exhausted (design §7.3). Its posting separates applied from excess.
+        inbound_classified = inbound_classified_return?
+        unless isolated || inbound_classified || order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
         # Checked under the organization and event locks that payout creation
@@ -202,7 +206,8 @@ module Commerce
           raise RefundError, "Multiple captured payments require finance reconciliation before a refund"
         end
         payment = captured_payment || captured.first
-        unless payment && payment.order_id == order.id && (payment.succeeded? || payment.partially_refunded?)
+        unless payment && payment.order_id == order.id &&
+            (payment.succeeded? || payment.partially_refunded? || (inbound_classified && payment.refunded?))
           raise RefundError, "A captured payment is required for a refund"
         end
         if cash_return || manual_card_return
@@ -225,7 +230,7 @@ module Commerce
           raise RefundError, "Ticket refunds must match the selected ticket value"
         end
         raise RefundError, "Refund amount must be positive" unless amount.positive?
-        raise RefundError, "Refund amount exceeds refundable balance" if amount > remaining
+        raise RefundError, "Refund amount exceeds refundable balance" if amount > remaining && !inbound_classified
         if @preserve_tickets
           if requested_amount_cents.nil? || selected_tickets
             raise RefundError, "Enter a custom amount to keep all tickets active"
@@ -273,6 +278,13 @@ module Commerce
 
     def organizer_ticket_selection?
       @organizer_initiated && !tickets.nil?
+    end
+
+    # A provider-reported refund (webhook or ExternalRefundRecovery) of a
+    # classified never-fulfilled payment, with no ticket selection.
+    def inbound_classified_return?
+      provider_refund.present? && tickets.nil? && captured_payment.present? && captured_payment.order_id == order.id &&
+        UnfulfilledCapture.exists?(payment_id: captured_payment.id)
     end
 
     def reservation_payload
@@ -579,6 +591,7 @@ module Commerce
           next
         end
         allocate_items!(refund)
+        BuyerReturnPostings.record_refund!(refund)
         record_promoter_commission_reversal!(refund)
 
         succeeded_refunds = refund.order.refunds.succeeded.excluding_isolated_payments
@@ -597,7 +610,9 @@ module Commerce
         order_refunded = full_refund && !retained_transfer && !tickets_remain_after_refund?(refund)
         refund.order.update!(
           status: order_refunded ? :refunded : :partially_refunded,
-          refund_amount_cents: succeeded_total,
+          # Only a classified payment's inbound refunds can exceed the total
+          # (money returned twice); its postings keep the gross amounts.
+          refund_amount_cents: [succeeded_total, refund.order.total_cents].min,
           refund_reason: reason,
           refunded_at: Time.current,
           stripe_refund_id: refund.provider == "stripe" ? provider_refund.id : refund.order.stripe_refund_id
@@ -639,6 +654,7 @@ module Commerce
     # waitlist or commission change, and no ticket-cancellation email.
     def finalize_isolated_payment_refund!(refund, provider_refund)
       update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+      BuyerReturnPostings.record_refund!(refund)
       audit_refund!(refund, "succeeded", outcome: "succeeded", source: "provider", observation: provider_refund)
       StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
     end
@@ -686,6 +702,10 @@ module Commerce
         remaining -= allocation
         break if remaining.zero?
       end
+      # A classified payment's refund may exceed what is left on its items
+      # (money returned twice). RefundItems cover what fits; its return
+      # posting records the gross amount and the excess (design §7.3).
+      return if remaining.positive? && UnfulfilledCapture.exists?(payment_id: refund.payment_id)
 
       raise RefundError, "Refund could not be allocated to order items" unless remaining.zero?
     end

@@ -434,12 +434,20 @@ class StripeWebhookProcessor
       dispute = Dispute.find_or_initialize_by(provider: "stripe", provider_dispute_id: provider_id)
       new_dispute = dispute.new_record?
       before_data = dispute.attributes.slice("status", "reason", "closed_at") unless new_dispute
+      provider_status = value(object, :status).to_s
       if dispute.persisted? && (dispute.won? || dispute.lost?)
         cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
+        if dispute.lost? && late_win?(provider_status)
+          reverse_dispute_loss!(receipt, payment, dispute, provider_status)
+        elsif dispute.won? && provider_status == "lost"
+          record_loss_receipt_after_win!(receipt, payment, dispute)
+        elsif dispute.lost?
+          # A redelivered or stale loss notice: the loss posts once.
+          Commerce::BuyerReturnPostings.record_dispute_loss!(dispute)
+        end
         next
       end
 
-      provider_status = value(object, :status).to_s
       status = if event.type == "charge.dispute.closed"
         case provider_status
         when "won", "warning_closed" then :won
@@ -466,6 +474,7 @@ class StripeWebhookProcessor
       )
       dispute.save!
       StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{provider_id}:#{provider_status}") if status != :open
+      Commerce::BuyerReturnPostings.record_dispute_loss!(dispute) if dispute.lost?
       cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
       action = if status == :open
         event.type == "charge.dispute.created" ? "dispute.opened" : "dispute.updated"
@@ -523,6 +532,55 @@ class StripeWebhookProcessor
     return if warning_id.blank?
 
     ReconciliationException.where(code: "early_fraud_warning").where("details ->> 'warning_id' = ?", warning_id).order(:id).first
+  end
+
+  # Stripe can return disputed funds after a loss (a late win). Only a signed
+  # closed or updated notice whose dispute object says won (or
+  # warning_closed) reverses a recorded loss (design §5.6).
+  def late_win?(provider_status)
+    # process_dispute! receives only the dispute created, updated and closed events.
+    !event.type.end_with?(".created") && %w[won warning_closed].include?(provider_status)
+  end
+
+  # The loss stays recorded (status lost, closed_at unchanged, so the loss
+  # month is unchanged). The database stamps loss_reversed_at once; a
+  # duplicate or stale win changes nothing. A classified payment posts the
+  # recomputed signed delta; a fulfilled sale opens dispute_late_win for
+  # finance (the organizer-side credit is a follow-up, design §11).
+  def reverse_dispute_loss!(receipt, payment, dispute, provider_status)
+    if dispute.loss_reversed_at.nil?
+      dispute.update!(loss_reversed_at: Time.current)
+      dispute.reload
+      AuditLogger.record!(action: "dispute.loss_reversed", auditable: dispute,
+        organization: payment.order.event.organization, event: payment.order.event,
+        source: "provider", outcome: "succeeded",
+        deduplication_key: "dispute:#{dispute.id}:loss_reversed",
+        before_data: { status: "lost" }, after_data: dispute.attributes.slice("status", "closed_at", "loss_reversed_at"),
+        metadata: { order_id: payment.order_id, payment_id: payment.id, amount_cents: dispute.amount_cents,
+          currency: dispute.currency, provider_status: provider_status, webhook_event_id: receipt.id })
+      StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{dispute.provider_dispute_id}:loss_reversed")
+    end
+    if UnfulfilledCapture.exists?(payment_id: payment.id)
+      Commerce::BuyerReturnPostings.record_loss_reversal!(dispute)
+    else
+      ReconciliationException.where(payment: payment, code: "dispute_late_win").where("details ->> 'dispute_id' = ?", dispute.id.to_s)
+        .first || ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt,
+          code: "dispute_late_win", actual_amount_cents: dispute.amount_cents,
+          details: { dispute_id: dispute.id, provider_dispute_id: dispute.provider_dispute_id })
+    end
+  end
+
+  # A loss notice that arrives after the dispute was already recorded as won
+  # (reordered delivery of a late win). Net, no money stayed with the buyer, so
+  # nothing posts and the status is not rewritten; the receipt and this audit
+  # keep the evidence for finance and the A2 readers.
+  def record_loss_receipt_after_win!(receipt, payment, dispute)
+    AuditLogger.record!(action: "dispute.loss_receipt_after_win", auditable: dispute,
+      organization: payment.order.event.organization, event: payment.order.event,
+      source: "provider", outcome: "succeeded",
+      deduplication_key: "stripe:webhook:#{receipt.provider_event_id}:dispute.loss_receipt_after_win",
+      metadata: { order_id: payment.order_id, payment_id: payment.id, amount_cents: dispute.amount_cents,
+        webhook_event_id: receipt.id, provider_created_at: receipt.provider_created_at&.utc&.iso8601 })
   end
 
   # A dispute on a payment-scope never-fulfilled capture (a distinct second

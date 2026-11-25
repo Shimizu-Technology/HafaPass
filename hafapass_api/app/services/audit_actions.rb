@@ -223,7 +223,9 @@ class AuditActions
       tenant: true, event_required: true,
       snapshots: %w[], metadata: %w[], actions: {
         "never_fulfilled_capture.classified" => "Recorded a captured payment that HåfaPass did not fulfil.",
-        "order.fulfilling_payment_recovered" => "Recorded which payment fulfilled a legacy order."
+        "order.fulfilling_payment_recovered" => "Recorded which payment fulfilled a legacy order.",
+        "buyer_return_posting.recorded" => "Recorded money returned to the buyer of an unfulfilled payment.",
+        "dispute.loss_receipt_after_win" => "Kept a dispute loss notice that arrived after the dispute was won."
       }
 
     # A paid late completion used a promo code past max_uses (see
@@ -879,7 +881,8 @@ class AuditActions
         "dispute.opened" => "Opened a payment dispute.",
         "dispute.updated" => "Updated a payment dispute.",
         "dispute.won" => "Won a payment dispute.",
-        "dispute.lost" => "Lost a payment dispute."
+        "dispute.lost" => "Lost a payment dispute.",
+        "dispute.loss_reversed" => "Recorded that a lost payment dispute was later won."
       }
 
     define registry, area: "orders", audience: %w[org_owner org_finance],
