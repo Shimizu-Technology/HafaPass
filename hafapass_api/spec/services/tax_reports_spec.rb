@@ -11,7 +11,9 @@ RSpec.describe TaxReports do
     order = create(:order, :completed, event: event, completed_at: at)
     create(:order_item, order: order, unit_price_cents: gross, subtotal_cents: gross, discount_cents: 100,
       organizer_proceeds_cents: gross - 150, organizer_fee_cents: 50)
-    create(:payment, :succeeded, order: order, provider_environment: environment, succeeded_at: at)
+    payment = create(:payment, :succeeded, order: order, provider_environment: environment, succeeded_at: at)
+    # Completion records the fulfilling payment; a later capture is not the sale's.
+    order.update!(fulfilled_by_payment_id: payment.id)
     create(:fee_component, order: order, kind: "platform", amount_cents: fee, estimated: true)
     order
   end

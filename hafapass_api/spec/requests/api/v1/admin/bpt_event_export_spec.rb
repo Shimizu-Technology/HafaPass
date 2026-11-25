@@ -17,6 +17,8 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       buyer_email: "private-buyer@example.test")
     payment = create(:payment, :succeeded, order: order, provider: provider, provider_environment: environment,
       **(payment_id ? { provider_payment_id: payment_id } : {}))
+    # Completion records the fulfilling payment; a later capture is not the sale's.
+    order.update!(fulfilled_by_payment_id: payment.id)
     create(:fee_component, order: order, amount_cents: fee)
     [order, payment]
   end
@@ -39,7 +41,12 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
 
     test_payment = create(:payment, :succeeded, order: order, provider_environment: "test")
     test_refund = create(:refund, order: order, payment: test_payment, succeeded_at: october_end)
+    # A test-mode refund's items on a live sale exist only from before A1:
+    # the sale-ownership guard now refuses them (only the fulfilling payment
+    # changes the sale). Readers must still ignore the historical row.
+    ActiveRecord::Base.connection.execute("ALTER TABLE refund_items DISABLE TRIGGER refund_items_sale_ownership")
     create(:refund_item, refund: test_refund, order_item: line, amount_cents: 25, organizer_proceeds_cents: 0, fee_cents: 25)
+    ActiveRecord::Base.connection.execute("ALTER TABLE refund_items ENABLE TRIGGER refund_items_sale_ownership")
 
     settlement = create(:settlement, event: event, organization: event.organization)
     bank_account = create(:connected_account, organization: event.organization, provider: "manual", with_readiness_approval: false)
