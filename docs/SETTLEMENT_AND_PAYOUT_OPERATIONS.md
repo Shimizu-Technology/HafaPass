@@ -41,6 +41,7 @@ Automated production payout adapters remain disabled. Before enabling one, imple
 - Reverse an adjustment through its reversal operation; do not delete it.
 - Never attach an event, order, or dispute from another organization.
 - A lost dispute is sourced directly from the dispute ledger. Do not duplicate it with a manual `dispute_loss` adjustment.
+- A never-fulfilled capture (a card payment that succeeded after HåfaPass released its order, refunded automatically, no tickets issued; `Commerce::NeverFulfilledCapture`) is never charged to the organizer: its Stripe processing is shown as covered by HåfaPass and a lost dispute on it is not a chargeback. The CPA export books both against the buyer refund columns instead. Who bears that processing needs Leon/CPA confirmation; the switch is `Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING`, and flipping it changes source digests for affected events, so finalize affected statements again afterwards.
 
 ## Incident rules
 

@@ -134,6 +134,19 @@ module Settlements
       @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false).order(:id).to_a
     end
 
+    # Captures HåfaPass never fulfilled (late capture on a released order,
+    # auto-refunded, no tickets). The organizer never received these sales, so
+    # nothing on them is charged to the organizer: no lost dispute, and no
+    # Stripe processing unless Commerce::NeverFulfilledCapture says the
+    # organizer bears it. Same evidence as the CPA export.
+    def never_fulfilled_order_ids
+      @never_fulfilled_order_ids ||= Commerce::NeverFulfilledCapture.order_ids_among(order_ids)
+    end
+
+    def never_fulfilled_platform_processing?(component)
+      !Commerce::NeverFulfilledCapture.organizer_bears_processing? && never_fulfilled_order_ids.include?(component.order_id)
+    end
+
     # Bearer comes only from each order's creation-time snapshot, never from
     # the live site setting, so a settings change cannot restate past orders.
     def platform_processing_order_ids
@@ -147,7 +160,9 @@ module Settlements
     # the platform share. All of it stays with the organizer for other orders.
     def processing_split(component)
       @processing_splits ||= {}
-      @processing_splits[component.id] ||= if platform_processing_order_ids.include?(component.order_id)
+      @processing_splits[component.id] ||= if never_fulfilled_platform_processing?(component)
+        [component.amount_cents, 0]
+      elsif platform_processing_order_ids.include?(component.order_id)
         ticket_cents, other_cents = charged_by_line_kind.fetch(component.order_id, [0, 0])
         platform, organizer = Commerce::MoneyAllocator.call(component.amount_cents, [ticket_cents, other_cents])
         platform + organizer == component.amount_cents ? [platform, organizer] : [component.amount_cents, 0]
@@ -166,6 +181,7 @@ module Settlements
 
     def lost_disputes
       @lost_disputes ||= Dispute.lost.where(order_id: order_ids).order(:id).to_a
+        .reject { |dispute| never_fulfilled_order_ids.include?(dispute.order_id) }
     end
 
     def posted_adjustments
@@ -247,7 +263,9 @@ module Settlements
 
     def processing_items
       processing_fee_components.map do |component|
-        if platform_processing_order_ids.include?(component.order_id)
+        if never_fulfilled_platform_processing?(component)
+          never_fulfilled_processing_item(component)
+        elsif platform_processing_order_ids.include?(component.order_id)
           platform_processing_item(component)
         else
           # Legacy wording and metadata are part of existing source digests.
@@ -277,6 +295,21 @@ module Settlements
         occurred_at: component.updated_at,
         metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
           processing_fee_bearer: "platform", platform_cost_cents: platform_cents, organizer_cost_cents: organizer_cents }
+      )
+    end
+
+    # Only events with a never-fulfilled capture get this item, so existing
+    # digests for every other event are unchanged.
+    def never_fulfilled_processing_item(component)
+      statement_item(
+        kind: "processing_fee",
+        amount_cents: 0,
+        source: component,
+        description: "Card processing covered by HåfaPass; payment returned to the buyer",
+        occurred_at: component.updated_at,
+        metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
+          processing_fee_bearer: "platform", never_fulfilled_capture: true,
+          platform_cost_cents: component.amount_cents, organizer_cost_cents: 0 }
       )
     end
 
