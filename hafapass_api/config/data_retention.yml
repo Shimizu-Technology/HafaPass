@@ -1367,6 +1367,7 @@
       "order_id": "system",
       "organization_id": "system",
       "reason": "pii",
+      "reserve_release_on": "financial",
       "reversal_of_id": "system",
       "reversed_by_user_id": "system",
       "status": "system",

@@ -396,6 +396,12 @@ class AuditActions
         "settlement.finalized" => "Finalized an event settlement."
       }
 
+    define registry, area: "payouts", audience: %w[org_owner org_finance],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[settlement_id], actions: {
+        "payout_reserve.skipped" => "Finalized an event statement without the standard chargeback reserve."
+      }
+
     define registry, area: "fees", audience: %w[org_owner org_finance],
       tenant: true, event_required: false,
       snapshots: %w[id kind amount_cents currency status effective_at event_id], metadata: %w[original_adjustment_id], actions: {

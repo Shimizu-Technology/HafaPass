@@ -5,9 +5,11 @@
 import * as boxOfficePrint from './box-office-print'
 import * as monitoring from './monitoring'
 import * as baseline from './baseline'
+import * as payouts from './payouts'
 
 export const DEMO_HANDLERS = [
   boxOfficePrint,
   monitoring,
+  payouts,
   baseline,
 ]

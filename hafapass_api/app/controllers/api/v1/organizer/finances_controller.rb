@@ -71,7 +71,33 @@ class Api::V1::Organizer::FinancesController < Api::V1::Organizer::BaseControlle
     render json: { error: "Statement not found" }, status: :not_found
   end
 
+  # Plain-language payout statement for the event, optionally for one payout.
+  def payout_statement
+    render json: PayoutStatement.call(event: @event, payout: statement_payout)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  end
+
+  PAYOUT_STATEMENT_HEADER = %w[section line amount note].freeze
+
+  def payout_statement_export
+    payout = statement_payout
+    rows = PayoutStatement.new(event: @event, payout: payout).csv_rows
+    record_export!("payout_statement", payout_id: payout&.id)
+    stream_csv(
+      filename: "#{@event.slug.presence || "event-#{@event.id}"}-payout-statement-#{Date.current.iso8601}.csv",
+      header: PAYOUT_STATEMENT_HEADER,
+      rows: rows.map { |section, label, cents, note| [section, label, cents.nil? ? nil : FinanceExports.money(cents), note] }
+    )
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  end
+
   private
+
+  def statement_payout
+    params[:payout_id].present? ? @event.payouts.find(params[:payout_id]) : nil
+  end
 
   # Exports carry buyer contact details, so each one leaves an audit record.
   def record_export!(kind, **details)

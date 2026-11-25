@@ -19,7 +19,7 @@ for (const context of ['production', '', 'branch-deploy']) {
 // text from a demo file; add one when you add a fixture file (src/demo/README.md).
 const DEMO_STRINGS = [
   'DEMO-BOX-OFFICE-PRINT-',
-  'HAFAPASS_DEMO_FIXTURE_SENTINEL', 'HAFAPASS_DEMO_STAFF_SENTINEL', 'Isla Demo Sports League', 'demo_staff_user',
+  'HAFAPASS_DEMO_FIXTURE_SENTINEL', 'HAFAPASS_DEMO_STAFF_SENTINEL', 'HAFAPASS_DEMO_PAYOUT_SENTINEL', 'Isla Demo Sports League', 'demo_staff_user',
   'demo-staff-token', '[demo-api]', 'Demo preview · fictional data', 'x-hafapass-demo', 'Copa de Marianas 2027 (demo)',
   'Isla Demo Open (demo)',
 ]
@@ -60,7 +60,7 @@ function buildFound(env) {
 
 it('the string scan is not vacuous: a deploy-preview demo build does contain the demo layer', () => {
   const found = buildFound({ CONTEXT: 'deploy-preview', VITE_HAFAPASS_DEMO_DATA: '1' }).join('\n')
-  for (const needle of ['HAFAPASS_DEMO_STAFF_SENTINEL', 'Isla Demo Sports League', 'demo_staff_user']) expect(found).toContain(needle)
+  for (const needle of ['HAFAPASS_DEMO_STAFF_SENTINEL', 'HAFAPASS_DEMO_PAYOUT_SENTINEL', 'Isla Demo Sports League', 'demo_staff_user']) expect(found).toContain(needle)
 }, 240_000)
 
 it('ships no demo layer, handler or staff fixture in a production build, and keeps the demo staff identity off', () => {

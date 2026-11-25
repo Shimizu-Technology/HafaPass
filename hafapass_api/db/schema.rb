@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -224,6 +224,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_170100) do
     t.bigint "reversed_by_user_id"
     t.integer "status", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.date "reserve_release_on"
     t.index ["created_by_user_id"], name: "index_balance_adjustments_on_created_by_user_id"
     t.index ["dispute_id"], name: "index_balance_adjustments_on_dispute_id"
     t.index ["event_id"], name: "index_balance_adjustments_on_event_id"
