@@ -416,6 +416,7 @@ RSpec.describe FinancialIntegrity do
       installed = connection.select_rows(<<~SQL).group_by(&:first).transform_values { |rows| rows.map(&:last).sort }
         SELECT tgrelid::regclass::text, tgname FROM pg_trigger
         WHERE NOT tgisinternal AND tgrelid::regclass::text IN ('payments', 'never_fulfilled_captures', 'financial_cutovers', 'orders', 'tickets')
+          AND tgname <> 'tickets_dispute_sale_ownership' -- A1-R1 review guards (repayment_fence_spec.rb)
       SQL
       expect(installed).to eq(triggers.transform_values(&:sort))
     end

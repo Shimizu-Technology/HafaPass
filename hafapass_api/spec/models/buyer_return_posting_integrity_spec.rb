@@ -178,6 +178,7 @@ RSpec.describe "Buyer return posting integrity" do
       installed = connection.select_rows(<<~SQL).group_by(&:first).transform_values { |rows| rows.map(&:last).sort }
         SELECT tgrelid::regclass::text, tgname FROM pg_trigger
         WHERE NOT tgisinternal AND tgrelid::regclass::text IN ('refunds', 'disputes', 'buyer_return_postings')
+          AND tgname <> 'refunds_identity_fence' -- A1-R1 review guard (repayment_fence_spec.rb)
       SQL
       expect(installed).to eq(triggers.transform_values(&:sort))
     end

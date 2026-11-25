@@ -3405,7 +3405,13 @@
       "status": "system",
       "updated_at": "system",
       "retention_anonymized_at": "system",
-      "replayed_at": "system"
+      "replayed_at": "system",
+      "provider_payment_intent_id": "system",
+      "provider_object_id": "system",
+      "provider_livemode": "system",
+      "provider_account_id": "system",
+      "provider_amount_cents": "financial",
+      "provider_currency": "financial"
     },
     "webhook_rejection_counts": {
       "id": "system",

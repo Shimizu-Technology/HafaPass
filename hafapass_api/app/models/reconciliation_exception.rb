@@ -14,4 +14,17 @@ class ReconciliationException < ApplicationRecord
   def resolve!
     update!(status: :resolved, resolved_at: Time.current)
   end
+
+  # An evidence hold (FinancialIntegrity::EVIDENCE_HOLD_CODES) closes only
+  # through a path that recorded its evidence; the database refuses any
+  # other open -> resolved change, including a note-only resolution.
+  def resolve_with_evidence!
+    self.class.transaction do
+      FinancialIntegrity.with_evidence(:evidence_resolution, id) { resolve! }
+    end
+  end
+
+  def evidence_hold?
+    FinancialIntegrity::EVIDENCE_HOLD_CODES.include?(code)
+  end
 end

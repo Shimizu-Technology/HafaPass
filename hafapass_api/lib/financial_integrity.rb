@@ -454,13 +454,28 @@ module FinancialIntegrity
   # released or submitted (P10 strict). never_fulfilled_buyer_overpaid is
   # deliberately absent: a proven platform-only over-return alerts without
   # holding the organizer (P4).
-  PAYOUT_BLOCKING_CODES = (FENCED_PAYMENT_CODES + %w[
+  # A provider refund or lost dispute recorded on a payment that is not
+  # positively the sale's own (A1-R1 review finding 1). The provider fact is
+  # kept; the sale effects wait for ownership evidence.
+  SALE_EFFECTS_HELD_CODE = "never_fulfilled_sale_effects_held"
+  PAYOUT_BLOCKING_CODES = (FENCED_PAYMENT_CODES + %W[
     never_fulfilled_return_quarantined never_fulfilled_backfill_ambiguous never_fulfilled_backfill_restatement
-    never_fulfilled_repayment_reopened
+    never_fulfilled_repayment_reopened #{SALE_EFFECTS_HELD_CODE}
+  ]).freeze
+  # Holds that only evidence may close (review finding 3). The database
+  # refuses their open -> resolved change unless the same transaction named
+  # the exception in hafapass.evidence_resolution, which only the
+  # application's evidence paths set (FinancialIntegrity.with_evidence).
+  # A note, an older release's admin action or raw SQL cannot close them.
+  EVIDENCE_HOLD_CODES = (PAYOUT_BLOCKING_CODES - %w[
+    late_payment_success_after_inventory_release late_payment_success_after_hold_expiry
+    pass_all_included_nights_cancelled
   ]).freeze
   OPEN_EXCEPTION_STATUS = 0
   PAYOUT_PENDING_STATUS = 0
   PAYOUT_PROCESSING_STATUS = 1
+  PAYOUT_PAID_STATUS = 2
+  SETTLEMENT_FINALIZED_STATUS = 1
   OPERATION_STATES = %w[reserved submitting unknown succeeded failed_terminal].freeze
 
   def self.sql_list(values)
@@ -644,7 +659,217 @@ module FinancialIntegrity
   SQL
   REPAYMENT_SENTINEL_TABLE = "repayment_operations"
 
-  SQL = (FOUNDATION_SQL + RETURNS_SQL + REPAYMENT_SQL).freeze
+  # A1-R1 review fixes (migration 20261126130000). Each guard sits on the
+  # write that actually causes the effect, so an older release's writer, a
+  # rollback build or raw SQL fails closed in the same transaction and the
+  # provider fact stays in its signed receipt for a later replay.
+  #
+  #   sale ownership     refund items, commission reversals, dispute ticket
+  #                      cancellations and retained-inventory records need a
+  #                      payment that positively owns the sale (finding 1)
+  #   payout evidence    payout submission authorization (its audit row),
+  #                      paid recording and statement finalization on an
+  #                      event with an open blocking item (finding 3)
+  #   evidence holds     only an evidence path closes them (finding 3)
+  #   refund identity    binding a provider refund ID to an outbound row of
+  #                      a fenced payment needs an exact identity match the
+  #                      application verified (finding 4)
+  EVIDENCE_SQL = <<~SQL.freeze
+    -- The payment that may change the sale's items, tickets and commission:
+    -- the order's recorded fulfilling payment; an order-scope never-
+    -- fulfilled capture (there is no sale to damage); or, with no fulfilling
+    -- payment recorded, the order's only captured payment of its mode, and
+    -- for a fenced payment only when the order was never fulfilled.
+    -- Payment.live_or_legacy_capture's mode rule: a test or simulated
+    -- capture never competes with a live one for the same sale.
+    CREATE OR REPLACE FUNCTION hafapass_live_or_legacy(environment text, payload jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE AS $$
+      SELECT COALESCE(environment = 'live', false) OR (environment IS NULL
+        AND payload->>'livemode' IS DISTINCT FROM 'false' AND payload->>'simulated' IS DISTINCT FROM 'true')
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_sale_owner_payment(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT CASE
+          WHEN o.fulfilled_by_payment_id IS NOT NULL THEN o.fulfilled_by_payment_id = p.id
+          WHEN EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id AND c.capture_scope = 'order')
+            THEN true
+          ELSE NOT EXISTS (SELECT 1 FROM payments other WHERE other.order_id = p.order_id AND other.id <> p.id
+              AND other.status IN (#{CAPTURED_PAYMENT_STATUSES})
+              AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+            AND (NOT hafapass_fenced_payment(p.id) OR (o.completed_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.order_id = o.id AND t.status <> #{CANCELLED_TICKET_STATUS})))
+        END
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target), false)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_sale_effect_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      origin_payment bigint;
+    BEGIN
+      IF TG_TABLE_NAME = 'tickets' THEN
+        IF NOT EXISTS (SELECT 1 FROM disputes d WHERE d.order_id = NEW.order_id AND d.status = 2
+            AND (d.payment_id IS NULL OR hafapass_sale_owner_payment(d.payment_id))) THEN
+          RAISE EXCEPTION 'Sale ownership: a lost dispute on another payment cannot cancel this order''s tickets'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.refund_id IS NOT NULL THEN
+        SELECT payment_id INTO origin_payment FROM refunds WHERE id = NEW.refund_id;
+      ELSIF TG_TABLE_NAME = 'ticket_inventory_retentions' THEN
+        SELECT payment_id INTO origin_payment FROM disputes WHERE id = NEW.dispute_id;
+      END IF;
+      IF origin_payment IS NOT NULL AND NOT hafapass_sale_owner_payment(origin_payment) THEN
+        RAISE EXCEPTION 'Sale ownership: payment % does not own this sale', origin_payment USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refund_items_sale_ownership ON refund_items;
+    CREATE TRIGGER refund_items_sale_ownership BEFORE INSERT ON refund_items
+      FOR EACH ROW EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS promoter_commission_entries_sale_ownership ON promoter_commission_entries;
+    CREATE TRIGGER promoter_commission_entries_sale_ownership BEFORE INSERT ON promoter_commission_entries
+      FOR EACH ROW WHEN (NEW.refund_id IS NOT NULL) EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS ticket_inventory_retentions_sale_ownership ON ticket_inventory_retentions;
+    CREATE TRIGGER ticket_inventory_retentions_sale_ownership BEFORE INSERT ON ticket_inventory_retentions
+      FOR EACH ROW EXECUTE FUNCTION hafapass_sale_effect_guard();
+    DROP TRIGGER IF EXISTS tickets_dispute_sale_ownership ON tickets;
+    CREATE TRIGGER tickets_dispute_sale_ownership BEFORE UPDATE OF status ON tickets
+      FOR EACH ROW WHEN (NEW.status = #{CANCELLED_TICKET_STATUS} AND OLD.status IS DISTINCT FROM NEW.status
+        AND NEW.cancellation_reason = 'payment_dispute_lost')
+      EXECUTE FUNCTION hafapass_sale_effect_guard();
+
+    -- When the event's earliest open blocking never-fulfilled item opened,
+    -- or NULL when nothing blocks it.
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(re.created_at) FROM reconciliation_exceptions re
+        WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+          AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+            OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+              WHERE o.event_id = target_event))
+    $$;
+
+    -- P10 strict for every payout writer, old or new. Refused on an event
+    -- with an open blocking item: creating a payout as pending, processing
+    -- or paid; releasing a held payout; submitting a pending one; and
+    -- recording one as paid, unless its submission was authorized before the
+    -- earliest open item, which is money that already left (recorded with
+    -- its evidence, never a new payment). Holding, failing and reversing are
+    -- never refused.
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+    BEGIN
+      IF NEW.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}) OR
+          (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      IF block_start IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF NEW.status = #{PAYOUT_PAID_STATUS} AND TG_OP = 'UPDATE' AND EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < block_start) THEN
+        RETURN NEW;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_repayment_fence ON payouts;
+    CREATE TRIGGER payouts_repayment_fence BEFORE INSERT OR UPDATE OF status ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payout_repayment_fence();
+
+    -- The actual submission authorization of both releases is this audit
+    -- row, written under the payout lock before the gateway call; a pending
+    -- payout is submitted without a status change.
+    CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF hafapass_payout_block_start((SELECT event_id FROM payouts WHERE id = NEW.auditable_id)) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS audit_logs_payout_submission_fence ON audit_logs;
+    CREATE TRIGGER audit_logs_payout_submission_fence BEFORE INSERT ON audit_logs
+      FOR EACH ROW WHEN (NEW.action = 'payout.submission_requested' AND NEW.auditable_type = 'Payout')
+      EXECUTE FUNCTION hafapass_payout_submission_fence();
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_finalization_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS settlements_finalization_fence ON settlements;
+    CREATE TRIGGER settlements_finalization_fence BEFORE INSERT OR UPDATE OF status ON settlements
+      FOR EACH ROW WHEN (NEW.status = #{SETTLEMENT_FINALIZED_STATUS})
+      EXECUTE FUNCTION hafapass_settlement_finalization_fence();
+
+    CREATE OR REPLACE FUNCTION hafapass_evidence_hold_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.evidence_resolution', true) IS DISTINCT FROM NEW.id::text THEN
+        RAISE EXCEPTION 'Evidence hold: % closes only when its evidence is recorded', NEW.code USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS reconciliation_exceptions_evidence_hold ON reconciliation_exceptions;
+    CREATE TRIGGER reconciliation_exceptions_evidence_hold BEFORE UPDATE OF status ON reconciliation_exceptions
+      FOR EACH ROW WHEN (OLD.status = #{OPEN_EXCEPTION_STATUS} AND NEW.status IS DISTINCT FROM OLD.status
+        AND NEW.code IN (#{sql_list(EVIDENCE_HOLD_CODES)}))
+      EXECUTE FUNCTION hafapass_evidence_hold_guard();
+
+    -- An outbound row of a fenced payment gets a provider refund ID only
+    -- from an exact identity (the provider ID or the row's own metadata
+    -- key) that the application matched in this transaction. Never from an
+    -- amount and date, and never by an older release's writer.
+    CREATE OR REPLACE FUNCTION hafapass_refund_identity_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.idempotency_key = 'provider:stripe:refund:' || NEW.provider_refund_id
+          OR NOT hafapass_fenced_payment(NEW.payment_id)
+          OR current_setting('hafapass.refund_identity', true) IS NOT DISTINCT FROM NEW.id::text THEN
+        RETURN NEW;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: refund % needs an exact provider identity match', NEW.id USING ERRCODE = '23514';
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS refunds_identity_fence ON refunds;
+    CREATE TRIGGER refunds_identity_fence BEFORE UPDATE OF provider_refund_id ON refunds
+      FOR EACH ROW WHEN (OLD.provider_refund_id IS NULL AND NEW.provider_refund_id IS NOT NULL)
+      EXECUTE FUNCTION hafapass_refund_identity_fence();
+  SQL
+  EVIDENCE_SENTINEL_TRIGGER = %w[refund_items_sale_ownership refund_items].freeze
+
+  # Names an exception (or refund) as backed by evidence for the rest of the
+  # caller's transaction, so its database guard lets the write through.
+  def self.with_evidence(kind, id)
+    raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity].include?(kind.to_s)
+
+    connection = ActiveRecord::Base.connection
+    raise ArgumentError, "evidence needs an open transaction" unless connection.transaction_open?
+
+    connection.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT set_config(?, ?, true)", "hafapass.#{kind}", id.to_s]))
+    yield
+  ensure
+    connection&.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT set_config(?, '', true)", "hafapass.#{kind}"])) if connection&.transaction_open?
+  end
+
+  SQL = (FOUNDATION_SQL + RETURNS_SQL + REPAYMENT_SQL + EVIDENCE_SQL).freeze
   RETURNS_SENTINEL_TABLE = "buyer_return_postings"
 
   module SchemaDump
@@ -661,6 +886,11 @@ module FinancialIntegrity
       sql = FinancialIntegrity::FOUNDATION_SQL
       sql += FinancialIntegrity::RETURNS_SQL if @connection.data_source_exists?(RETURNS_SENTINEL_TABLE)
       sql += FinancialIntegrity::REPAYMENT_SQL if @connection.data_source_exists?(REPAYMENT_SENTINEL_TABLE)
+      evidence_trigger, evidence_table = EVIDENCE_SENTINEL_TRIGGER
+      if @connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '#{evidence_trigger}' " \
+          "AND tgrelid = '#{evidence_table}'::regclass)")
+        sql += FinancialIntegrity::EVIDENCE_SQL
+      end
       stream.puts "  execute <<~SQL"
       sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
       stream.puts "  SQL"
