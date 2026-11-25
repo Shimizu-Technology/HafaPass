@@ -17,9 +17,9 @@ module Settlements
 
     def call
       items = statement_items.sort_by { |item| [item[:occurred_at].to_f, item[:kind], item[:source_type], item[:source_id]] }
-      gross = orders.sum(&:subtotal_cents)
-      discounts = orders.sum(&:discount_cents)
-      charged = orders.sum(&:total_cents)
+      gross = sale_orders.sum(&:subtotal_cents)
+      discounts = sale_orders.sum(&:discount_cents)
+      charged = sale_orders.sum(&:total_cents)
       refunds = succeeded_refunds.sum(&:amount_cents)
       refunded_fees = refund_items.sum { |item| item.fee_cents + item.organizer_fee_cents }
       refunded_proceeds = refund_items.sum(&:organizer_proceeds_cents)
@@ -94,15 +94,35 @@ module Settlements
       @order_ids ||= orders.map(&:id)
     end
 
+    # An order HåfaPass never fulfilled (order-scope classification, the
+    # database marker) is not a sale. Its proceeds and every offset on them
+    # (refunds and refund items, losses, platform fees) stay out of the
+    # statement and the payout balance, so a capture returned partly by
+    # refund and partly by dispute pays the organizer nothing (A1-R1 review
+    # finding 2); the buyer's ledger holds that money. Only its actual
+    # processing stays, under the never-fulfilled bearer rule below. Events
+    # without such an order are unchanged, digests included.
+    def sale_orders
+      @sale_orders ||= orders.reject(&:never_fulfilled?)
+    end
+
+    def sale_order_ids
+      @sale_order_ids ||= sale_orders.map(&:id)
+    end
+
     def order_items
-      @order_items ||= OrderItem.where(order_id: order_ids).order(:id).to_a
+      @order_items ||= all_order_items.select { |item| sale_order_ids.include?(item.order_id) }
+    end
+
+    def all_order_items
+      @all_order_items ||= OrderItem.where(order_id: order_ids).order(:id).to_a
     end
 
     def succeeded_refunds
       # A payment-scope never-fulfilled capture (a distinct second payment on a
       # fulfilled order) is not part of the sale; its refunds and disputes are
       # never the organizer's (design §4.3). A2 books them per payment.
-      @succeeded_refunds ||= Refund.succeeded.where(order_id: order_ids).excluding_isolated_payments.order(:id).to_a
+      @succeeded_refunds ||= Refund.succeeded.where(order_id: sale_order_ids).on_sale.order(:id).to_a
     end
 
     def refund_items
@@ -130,7 +150,7 @@ module Settlements
     end
 
     def platform_fee_components
-      @platform_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "platform").order(:id).to_a
+      @platform_fee_components ||= FeeComponent.where(order_id: sale_order_ids, kind: "platform").order(:id).to_a
     end
 
     def processing_fee_components
@@ -143,7 +163,8 @@ module Settlements
     # Stripe processing unless Commerce::NeverFulfilledCapture says the
     # organizer bears it. Same evidence as the CPA export.
     def never_fulfilled_order_ids
-      @never_fulfilled_order_ids ||= Commerce::NeverFulfilledCapture.order_ids_among(order_ids)
+      @never_fulfilled_order_ids ||= Set.new(Commerce::NeverFulfilledCapture.order_ids_among(order_ids)) |
+        orders.select(&:never_fulfilled?).map(&:id)
     end
 
     def never_fulfilled_platform_processing?(component)
@@ -175,7 +196,7 @@ module Settlements
     end
 
     def charged_by_line_kind
-      @charged_by_line_kind ||= order_items.group_by(&:order_id).transform_values do |items|
+      @charged_by_line_kind ||= all_order_items.group_by(&:order_id).transform_values do |items|
         charged = ->(item) { item.subtotal_cents - item.discount_cents + item.fee_cents + item.tax_cents }
         tickets, others = items.partition(&:item_ticket?)
         [tickets.sum(&charged), others.sum(&charged)]
@@ -183,7 +204,7 @@ module Settlements
     end
 
     def lost_disputes
-      @lost_disputes ||= Dispute.lost.where(order_id: order_ids).excluding_isolated_payments.order(:id).to_a
+      @lost_disputes ||= Dispute.lost.where(order_id: sale_order_ids).on_sale.order(:id).to_a
         .reject { |dispute| never_fulfilled_order_ids.include?(dispute.order_id) }
     end
 

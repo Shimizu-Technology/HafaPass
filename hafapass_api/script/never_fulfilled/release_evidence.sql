@@ -19,7 +19,10 @@ WHERE NOT t.tgisinternal AND t.tgname IN (
   'never_fulfilled_captures_append_only', 'never_fulfilled_captures_no_truncate', 'orders_fulfillment_guard',
   'tickets_issuance_guard', 'refunds_success_recorded_at', 'disputes_recorded_at', 'buyer_return_postings_check',
   'buyer_return_postings_append_only', 'buyer_return_postings_no_truncate', 'repayment_operations_check',
-  'repayment_operations_no_truncate', 'refunds_repayment_fence', 'payouts_repayment_fence')
+  'repayment_operations_no_truncate', 'refunds_repayment_fence', 'payouts_repayment_fence',
+  'refund_items_sale_ownership', 'promoter_commission_entries_sale_ownership',
+  'ticket_inventory_retentions_sale_ownership', 'tickets_dispute_sale_ownership', 'audit_logs_payout_submission_fence',
+  'settlements_finalization_fence', 'reconciliation_exceptions_evidence_hold', 'refunds_identity_fence')
 ORDER BY t.tgname;
 
 SELECT 'unvalidated_constraints' AS section, conrelid::regclass::text AS table_name, conname
@@ -63,8 +66,11 @@ GROUP BY 2, 3 ORDER BY 2, 3;
 
 -- Outbound refunds on fenced payments that no repayment operation sent
 -- (legacy rows, including an adopted operation 1), with when each may be
--- adjudicated: submission + in-flight bound. adjudicable = false means a
--- request that may still land; it is never treated as absent.
+-- adjudicated: the row's last possible send, which is the later of
+-- created_at + the older release's 23-hour replay window and its recorded
+-- submission, plus the in-flight bound (Commerce::RepaymentAdjudication).
+-- adjudicable = false means a request that may still land; it is never
+-- treated as absent.
 WITH fenced AS (
   SELECT p.id FROM payments p WHERE hafapass_fenced_payment(p.id)
 ), submitted AS (
@@ -73,9 +79,10 @@ WITH fenced AS (
 )
 SELECT 'legacy_refunds_on_fenced_payments' AS section, r.id AS refund_id, r.payment_id, r.status, r.failure_code,
   r.idempotency_key, r.amount_cents, r.repayment_operation_id, COALESCE(s.at, r.updated_at) AS submitted_at,
-  COALESCE(s.at, r.updated_at) + make_interval(secs => (:'bound_seconds')::int) AS adjudicable_after,
-  r.failure_code IS NULL OR COALESCE(s.at, r.updated_at) + make_interval(secs => (:'bound_seconds')::int)
-    < timezone('UTC', now()) AS adjudicable
+  GREATEST(r.created_at + interval '23 hours', COALESCE(s.at, r.updated_at))
+    + make_interval(secs => (:'bound_seconds')::int) AS adjudicable_after,
+  r.failure_code IS NULL OR GREATEST(r.created_at + interval '23 hours', COALESCE(s.at, r.updated_at))
+    + make_interval(secs => (:'bound_seconds')::int) < timezone('UTC', now()) AS adjudicable
 FROM refunds r JOIN fenced f ON f.id = r.payment_id LEFT JOIN submitted s ON s.refund_id = r.id
 WHERE r.status = 0 AND r.provider_refund_id IS NULL AND r.idempotency_key NOT LIKE 'provider:stripe:refund:%'
   AND (r.repayment_operation_id IS NULL OR EXISTS (
@@ -102,8 +109,20 @@ WHERE code IN ('late_payment_success_after_inventory_release', 'late_payment_suc
   'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous',
   'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined',
   'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened',
-  'never_fulfilled_buyer_overpaid', 'provider_payment_cancel_failed')
+  'never_fulfilled_buyer_overpaid', 'provider_payment_cancel_failed', 'never_fulfilled_sale_effects_held')
 GROUP BY code, status ORDER BY code, status;
+
+-- Evidence holds closed, by how (A1-R1 review finding 3): only an evidence
+-- path closes them, so a manual or note resolution here is a defect.
+SELECT 'evidence_hold_resolutions' AS section, re.code, a.action, count(*) AS resolutions
+FROM reconciliation_exceptions re
+JOIN audit_logs a ON a.auditable_type = 'ReconciliationException' AND a.auditable_id = re.id
+  AND a.action IN ('reconciliation_exception.resolved', 'reconciliation_exception.manually_resolved',
+    'reconciliation_exception.resolved_without_ledger_change', 'never_fulfilled_capture.sale_effects_released')
+WHERE re.status = 1 AND re.code IN ('unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous',
+  'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous',
+  'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+GROUP BY re.code, a.action ORDER BY re.code, a.action;
 
 SELECT 'classifications' AS section, capture_scope, provenance, count(*) AS captures, sum(captured_cents) AS cents
 FROM never_fulfilled_captures GROUP BY capture_scope, provenance ORDER BY 2, 3;
@@ -118,12 +137,32 @@ WITH blocked_events AS (
     'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture',
     'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined',
     'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement',
-    'never_fulfilled_repayment_reopened')
+    'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
 )
 SELECT 'payouts_on_blocked_events' AS section, py.event_id, py.status, count(*) AS payouts, sum(py.amount_cents) AS cents,
   count(*) FILTER (WHERE py.updated_at > (:'r1_live_at')::timestamptz AT TIME ZONE 'UTC') AS changed_since_r1
 FROM payouts py JOIN blocked_events b ON b.event_id = py.event_id
 GROUP BY py.event_id, py.status ORDER BY py.event_id, py.status;
+
+-- Historical payout transitions (not only events blocked now): every payout
+-- audit since R1 went live on an event that ever had a never-fulfilled item,
+-- open or resolved. Compare with the same query on the pre-R1 baseline.
+WITH affected_events AS (
+  SELECT DISTINCT o.event_id FROM reconciliation_exceptions re
+  LEFT JOIN payments p ON p.id = re.payment_id
+  JOIN orders o ON o.id = COALESCE(re.order_id, p.order_id)
+  WHERE re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry',
+    'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous',
+    'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined',
+    'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened',
+    'never_fulfilled_sale_effects_held')
+)
+SELECT 'payout_transitions_since_r1' AS section, py.event_id, a.action, count(*) AS transitions,
+  sum(py.amount_cents) AS cents
+FROM audit_logs a JOIN payouts py ON a.auditable_type = 'Payout' AND a.auditable_id = py.id
+JOIN affected_events e ON e.event_id = py.event_id
+WHERE a.action LIKE 'payout.%' AND a.occurred_at > (:'r1_live_at')::timestamptz AT TIME ZONE 'UTC'
+GROUP BY py.event_id, a.action ORDER BY py.event_id, a.action;
 
 SELECT 'finalized_settlements_on_late_capture_events' AS section, count(*) AS settlements
 FROM settlements s WHERE s.status = 1 AND s.event_id IN (

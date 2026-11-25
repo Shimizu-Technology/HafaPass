@@ -7,6 +7,12 @@ class Refund < ApplicationRecord
   # Rows on the order's sale, never those on a payment-scope never-fulfilled
   # capture (UnfulfilledCapture.excluding_isolated).
   scope :excluding_isolated_payments, -> { UnfulfilledCapture.excluding_isolated(self, :payment_id) }
+  # Refunds on the sale of their own order: with a recorded fulfilling
+  # payment only its refunds; otherwise every non-isolated refund.
+  scope :on_sale, -> {
+    excluding_isolated_payments.joins(:order).where("orders.fulfilled_by_payment_id IS NULL OR refunds.payment_id IS NULL " \
+      "OR refunds.payment_id = orders.fulfilled_by_payment_id")
+  }
   scope :excluding_repayment_fenced, -> { where("refunds.payment_id IS NULL OR NOT hafapass_fenced_payment(refunds.payment_id)") }
   belongs_to :requested_by, class_name: "User", optional: true
   belongs_to :repayment_operation, optional: true

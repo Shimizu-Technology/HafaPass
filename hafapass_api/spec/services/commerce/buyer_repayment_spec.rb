@@ -332,13 +332,22 @@ RSpec.describe Commerce::BuyerRepayment do
       expect(posts).to be_empty
     end
 
-    it "never adjudicates a request as absent inside the in-flight bound, and cancels it after" do
+    # Review finding 4: an older release can pass its gate again for a row
+    # already marked unknown without writing anything, so absence is judged
+    # only from a lookup that started after the row's last possible send:
+    # created_at + that release's replay window + the in-flight bound.
+    it "never adjudicates a request as absent before its last possible send, and cancels it after" do
       _order, payment, = late_capture
       refund = legacy_refund!(payment, failure_code: "provider_result_unknown")
+      last_send = refund.created_at + Commerce::RefundCreator::PROVIDER_REPLAY_WINDOW + described_class.in_flight_bound
 
       expect(Commerce::RepaymentAdjudication.call(refund).outcome).to eq("in_flight")
+      # The first audit's bound has passed, but a silent retry could still be in flight.
+      expect(travel(described_class.in_flight_bound + 1.second) { Commerce::RepaymentAdjudication.call(refund) }.outcome)
+        .to eq("in_flight")
+      expect(travel_to(last_send - 1.second) { Commerce::RepaymentAdjudication.call(refund) }.outcome).to eq("in_flight")
       expect(refund.reload).to be_pending
-      result = travel(described_class.in_flight_bound + 1.second) { Commerce::RepaymentAdjudication.call(refund) }
+      result = travel_to(last_send + 1.second) { Commerce::RepaymentAdjudication.call(refund) }
       expect(result.outcome).to eq("provider_request_absent")
       expect(refund.reload).to have_attributes(status: "cancelled", failure_code: "provider_request_absent")
       expect(operations(payment)).to eq([[1, "failed_terminal", 1360, 1]])
@@ -359,7 +368,7 @@ RSpec.describe Commerce::BuyerRepayment do
       expect { LateCaptureRefundJob.perform_now(payment.id) }.to have_enqueued_job(RepaymentAdjudicationJob).with(refund.id)
       expect(posts).to be_empty
 
-      travel(described_class.in_flight_bound + 1.second) do
+      travel(Commerce::RefundCreator::PROVIDER_REPLAY_WINDOW + described_class.in_flight_bound + 1.second) do
         perform_enqueued_jobs(only: RepaymentAdjudicationJob)
         repay!(payment)
       end

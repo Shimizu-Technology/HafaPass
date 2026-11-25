@@ -101,12 +101,26 @@ RSpec.describe "Repayment fence" do
       end
       allow(StripeService).to receive(:find_refund).and_return(nil)
 
-      legacy_late_capture.call(payment: payment)
+      # The fence cannot stop a request already past the gate. The old worker
+      # resends the same key, but it cannot bind the result: on a fenced
+      # payment only an exact identity the new release verified may (review
+      # finding 4), so its recording rolls back and nothing is guessed.
+      expect { legacy_late_capture.call(payment: payment) }
+        .to raise_error(ActiveRecord::StatementInvalid, /exact provider identity/)
 
       # No new identity crosses the gate: Stripe's idempotency key makes this
       # the same operation, and the old worker refuses it after 23 hours.
       expect(posts).to eq([[payment.provider_payment_id, payment.amount_cents, "late-capture:payment:#{payment.id}"]])
-      expect(payment.refunds.count).to eq(1)
+      refund = payment.refunds.sole
+      expect(refund).to have_attributes(status: "pending", provider_refund_id: nil, failure_code: "provider_result_unknown")
+
+      # R1 adjudication finds that same request by its own key and records it.
+      found = OpenStruct.new(id: "re_legacy_retry", status: "succeeded", amount: payment.amount_cents, currency: "usd",
+        payment_intent: payment.provider_payment_id, metadata: { "hafapass_refund_key" => refund.idempotency_key })
+      allow(StripeService).to receive(:find_refund).and_return(found)
+      result = Commerce::RepaymentAdjudication.call(refund)
+      expect(result.outcome).to eq("recorded")
+      expect(refund.reload).to have_attributes(status: "succeeded", provider_refund_id: "re_legacy_retry")
     end
 
     it "cannot find or co-send a new release's operation, even past its gate (M-08)", repayment_submitter: :active do
@@ -244,12 +258,17 @@ RSpec.describe "Repayment fence" do
         connected_account: account, **attributes)
     end
 
-    it "refuses creation, release and submission on the affected event only, and never for an overpaid alert alone" do
+    it "refuses creation, release, submission and finalization on the affected event only, and never for an overpaid alert alone" do
+      settlement = create(:settlement, organization: organization, event: event)
+      held = create(:payout, organization: organization, event: event, settlement: settlement,
+        connected_account: account, status: :held, held_from_status: "pending")
       order, payment, = late_capture
       order.update_columns(event_id: event.id)
-      held = payout_on(event, status: :held, held_from_status: "pending")
 
-      expect { isolated { payout_on(event) } }.to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+      expect { isolated { create(:payout, organization: organization, event: event, settlement: settlement, connected_account: account) } }
+        .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+      expect { isolated { create(:settlement, organization: organization, event: event, version: 2) } }
+        .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
       expect { isolated { held.update_columns(status: Payout.statuses[:pending]) } }
         .to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
       expect { isolated { held.update_columns(status: Payout.statuses[:processing]) } }

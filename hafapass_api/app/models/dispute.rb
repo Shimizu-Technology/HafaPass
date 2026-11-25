@@ -7,6 +7,10 @@ class Dispute < ApplicationRecord
   # Rows on the order's sale, never those on a payment-scope never-fulfilled
   # capture (UnfulfilledCapture.excluding_isolated).
   scope :excluding_isolated_payments, -> { UnfulfilledCapture.excluding_isolated(self, :payment_id) }
+  scope :on_sale, -> {
+    excluding_isolated_payments.joins(:order).where("orders.fulfilled_by_payment_id IS NULL OR disputes.payment_id IS NULL " \
+      "OR disputes.payment_id = orders.fulfilled_by_payment_id")
+  }
   scope :excluding_repayment_fenced, -> { where("disputes.payment_id IS NULL OR NOT hafapass_fenced_payment(disputes.payment_id)") }
 
   enum :status, { open: 0, won: 1, lost: 2 }

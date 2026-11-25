@@ -26,8 +26,19 @@ class StripeProcessingFees
 
   # Production settles live money only, so test-mode QA payments never hold
   # back a settlement or payout there.
+  # A payment-scope never-fulfilled capture whose processing HåfaPass bears.
+  def self.platform_borne_isolated?(payment)
+    UnfulfilledCapture.payment_scope.exists?(payment_id: payment.id, processing_bearer: "platform")
+  end
+
   def self.missing_count(order_ids)
     scope = Payment.where(order_id: order_ids, provider: "stripe", status: [:succeeded, :partially_refunded, :refunded])
+    # Verified, deferred facts on a platform-borne isolated capture are not
+    # the organizer's cost; they stay visible as deferred evidence for A2.
+    scope = scope.where.not(id: StripeFeeEvidence.where(status: :review_required, last_error_code: PAYMENT_SCOPE_DEFERRED_CODE)
+      .where.not(evidence_digest: nil)
+      .where(payment_id: UnfulfilledCapture.payment_scope.where(processing_bearer: "platform").select(:payment_id))
+      .select(:payment_id))
     scope = scope.where(provider_environment: "live") if Rails.env.production?
     scope
       .where.not(provider_payment_id: nil).where("provider_payment_id NOT LIKE 'sim_%'")
@@ -105,7 +116,13 @@ class StripeProcessingFees
               evidence.update!(status: :review_required, evidence_digest: digest, attempts: evidence.attempts + 1,
                 next_attempt_at: nil, last_error_code: PAYMENT_SCOPE_DEFERRED_CODE)
               payment.reconciliation_exceptions.open.where(code: PENDING_CODE).find_each(&:resolve!)
-              payment.reconciliation_exceptions.find_or_create_by!(order: payment.order, code: REVIEW_CODE, status: :open)
+              # HåfaPass bears this cost (P1 snapshot "platform"): the facts are
+              # verified and kept for A2, and the sale's organizer is not held
+              # for a fee that is not theirs (A1-R1 review finding 2). An
+              # organizer-borne snapshot keeps the review hold.
+              unless platform_borne_isolated?(payment)
+                payment.reconciliation_exceptions.find_or_create_by!(order: payment.order, code: REVIEW_CODE, status: :open)
+              end
               next
             end
             evidence.assign_attributes(facts)

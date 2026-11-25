@@ -44,10 +44,18 @@ RSpec.describe "never_fulfilled:release_evidence" do
     expect(output).to match(/section=never_fulfilled_items\tcode=late_payment_success_after_hold_expiry\tstatus=0\titems=1/)
     expect(counts.call).to eq(before)
 
-    # The bound is measured on the database clock from the submission.
+    # The submission's bound alone is not enough: an older release can still
+    # resend inside its 23-hour replay window (A1-R1 review finding 4).
     refund.update_columns(updated_at: (Commerce::BuyerRepayment.in_flight_bound + 1.minute).ago)
     later = run_task("R1_SHA" => sha, "R1_LIVE_AT" => 1.hour.ago.utc.iso8601)
-    expect(later.lines.find { |text| text.start_with?("section=legacy_refunds_on_fenced_payments") }).to include("adjudicable=true")
+    expect(later.lines.find { |text| text.start_with?("section=legacy_refunds_on_fenced_payments") }).to include("adjudicable=false")
+
+    # After created_at + the replay window + the bound, on the database clock.
+    old = (Commerce::RefundCreator::PROVIDER_REPLAY_WINDOW + Commerce::BuyerRepayment.in_flight_bound + 1.minute).ago
+    refund.update_columns(created_at: old, updated_at: old)
+    latest = run_task("R1_SHA" => sha, "R1_LIVE_AT" => 1.hour.ago.utc.iso8601)
+    expect(latest.lines.find { |text| text.start_with?("section=legacy_refunds_on_fenced_payments") }).to include("adjudicable=true")
+    expect(latest).to include("section=triggers\ttgname=refunds_identity_fence", "section=triggers\ttgname=audit_logs_payout_submission_fence")
   end
 
   it "prints the pre-R1 baseline from 7bcd97c2 tables only" do

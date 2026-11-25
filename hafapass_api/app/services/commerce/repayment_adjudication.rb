@@ -9,9 +9,23 @@ module Commerce
   #
   #   found                      -> recorded through RefundCreator's normal finalization
   #   never past the gate        -> cancelled (the fence refuses its gate, so it cannot send)
-  #   past the gate, absent, and
-  #   older than the in-flight bound -> cancelled as provider_request_absent
-  #   past the gate, absent, newer   -> left in flight (it may still land)
+  #   past the gate, absent, and the lookup started after the row's
+  #   last possible send         -> cancelled as provider_request_absent
+  #   past the gate, absent, earlier -> left in flight (it may still land)
+  #
+  # The last possible send (A1-R1 review finding 4). An older release can
+  # pass its last local gate again for a row already marked
+  # provider_result_unknown without writing anything (the same update emits
+  # no SQL and its audit deduplicates), so neither the row nor its audit can
+  # show when the last send started. What does bound it is that release's
+  # own code: it resends a row only while the row is younger than its
+  # replay window (RefundCreator::PROVIDER_REPLAY_WINDOW, checked just
+  # before the gate), and a send that started then finishes within the
+  # in-flight bound. So no older-release send of this row can start after
+  # created_at + replay window, nor land after that + the in-flight bound.
+  # Absence is concluded only from a lookup that started after that time,
+  # and only if the row is unchanged when it is re-read under the locks.
+  # No drain evidence is assumed, so no runtime claim is needed.
   #
   # A refund under the legacy key ("late-capture:payment:<id>") is adopted as
   # repayment operation 1, so the next operation is 2, with its own key.
@@ -77,7 +91,9 @@ module Commerce
         payment&.provider == "stripe" && BuyerRepayment.fenced_payment?(payment)
       return Result.new(refund: refund, outcome: "not_pending") unless refund.pending? && refund.provider_refund_id.blank?
 
+      observed = refund.attributes.slice("status", "provider_refund_id", "failure_code", "failure_message", "updated_at")
       past_gate = refund.failure_code.present?
+      lookup_started_at = Time.current
       provider = lookup(payment) if past_gate
       lock! do
         refund.reload
@@ -86,10 +102,14 @@ module Commerce
         capture = UnfulfilledCapture.find_by(payment_id: payment.id)
         refund.reload if capture && self.class.adopt_legacy!(capture)
         if provider
-          RefundCreator.reconcile_refund!(refund: refund, provider_refund: provider)
+          RefundCreator.reconcile_refund!(refund: refund, provider_refund: provider, identity_verified: true)
           next Result.new(refund: refund.reload, outcome: "recorded")
         end
-        if past_gate && submitted_at > BuyerRepayment.in_flight_bound.ago(now)
+        # Absence needs a lookup that started after the last possible send,
+        # and the row exactly as it was when the lookup started.
+        changed = refund.attributes.slice(*observed.keys).except("updated_at") != observed.except("updated_at") ||
+          (refund.failure_code.present? != past_gate)
+        if changed || (past_gate && lookup_started_at < last_possible_send_at)
           next Result.new(refund: refund, outcome: "in_flight")
         end
 
@@ -103,7 +123,9 @@ module Commerce
           after_data: refund.attributes.slice("status", "provider_refund_id", "failure_code"),
           metadata: { order_id: refund.order_id, payment_id: payment.id, amount_cents: refund.amount_cents,
             currency: refund.currency, provider_observation: {}, manual_record: false, adjudication: code,
-            submitted_at: submitted_at&.iso8601, in_flight_bound_seconds: BuyerRepayment.in_flight_bound.to_i })
+            submitted_at: submitted_at&.iso8601, in_flight_bound_seconds: BuyerRepayment.in_flight_bound.to_i,
+            last_possible_send_at: (last_possible_send_at.iso8601 if past_gate),
+            lookup_started_at: (lookup_started_at.iso8601 if past_gate) }.compact)
         NeverFulfilledResolution.evaluate!(capture, trigger: "adjudication") if capture
         Result.new(refund: refund, outcome: code)
       end
@@ -118,7 +140,15 @@ module Commerce
     end
 
     def due_at
-      refund.failure_code.present? ? submitted_at + BuyerRepayment.in_flight_bound : Time.current
+      refund.failure_code.present? ? last_possible_send_at : Time.current
+    end
+
+    # After this, no send of this row by any release can still land (see
+    # the class comment): the older release's replay window from the row's
+    # creation, plus the in-flight bound; never earlier than the recorded
+    # submission plus the bound.
+    def last_possible_send_at
+      [refund.created_at + RefundCreator::PROVIDER_REPLAY_WINDOW, submitted_at].max + BuyerRepayment.in_flight_bound
     end
 
     # When the last local gate let it go: its submission audit, else the

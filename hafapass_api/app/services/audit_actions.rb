@@ -234,7 +234,9 @@ class AuditActions
         "repayment_operation.adopted" => "Linked an earlier automatic refund to the payment's return workflow.",
         "reconciliation_exception.reopened" => "Reopened a payment's return to its buyer after money came back.",
         "never_fulfilled_capture.buyer_overpaid" => "Recorded that a buyer was repaid more than an unfulfilled payment.",
-        "webhook_event.replayed" => "Applied a stored Stripe notice to the payment it describes."
+        "webhook_event.replayed" => "Applied a stored Stripe notice to the payment it describes.",
+        "never_fulfilled_capture.sale_effects_held" => "Recorded a refund or lost dispute without changing a sale it is not proven to belong to.",
+        "never_fulfilled_capture.sale_effects_released" => "Applied or closed the held sale changes of a refund or lost dispute."
       }
 
     # A paid late completion used a promo code past max_uses (see

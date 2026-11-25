@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
-# The 7bcd97c2 refund worker, the release A1-R1 overlaps with during a
-# Render zero-downtime deploy (design §10.3). Its RefundCreator and
-# LateCaptureRefund are loaded verbatim under Legacy7bcd97c2; every other
+# The 7bcd97c2 refund and payout writers, the release A1-R1 overlaps with
+# during a Render zero-downtime deploy (design §10.3). Its RefundCreator,
+# LateCaptureRefund, PayoutCreator, PayoutReconciler and Settlements::Finalizer
+# are loaded verbatim under Legacy7bcd97c2; every other
 # constant resolves to the current application, which matches 7bcd97c2 for
 # what those two classes call. Loaded on first use only.
 module Legacy7bcd97c2
@@ -12,7 +13,13 @@ module Legacy7bcd97c2
     end
   end
 
-  FILES = %w[late_capture_refund refund_creator].freeze
+  module Settlements
+    def self.const_missing(name)
+      ::Settlements.const_get(name)
+    end
+  end
+
+  FILES = %w[late_capture_refund refund_creator payout_creator payout_reconciler settlements_finalizer].freeze
 
   def self.load!
     return if @loaded
@@ -26,6 +33,21 @@ module Legacy7bcd97c2
       klass.define_singleton_method(:const_missing) { |name| ::Commerce.const_get(name) }
     end
     @loaded = true
+  end
+
+  def self.payout_creator
+    load!
+    PayoutCreator
+  end
+
+  def self.payout_reconciler
+    load!
+    PayoutReconciler
+  end
+
+  def self.settlements_finalizer
+    load!
+    Settlements::Finalizer
   end
 
   def self.refund_creator

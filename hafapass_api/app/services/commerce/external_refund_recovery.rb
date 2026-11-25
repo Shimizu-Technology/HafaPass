@@ -20,7 +20,10 @@ module Commerce
       # Serialize identity lookup and reservation: different callback IDs may
       # describe the same provider operation concurrently.
       Refund.transaction do
-        payment.order.event.organization.lock!
+        # FOR NO KEY UPDATE, like every refund writer (docs/LOCKING.md): an
+        # ordinary completion holds the event and then needs the organization
+        # FK KEY SHARE for its audit, which FOR UPDATE would refuse.
+        payment.order.event.organization.lock!("FOR NO KEY UPDATE")
         payment.order.event.lock!
         payment.order.lock!
         refund = RefundCreator.find_provider_operation(payment: payment, provider_refund: object)
@@ -63,7 +66,10 @@ module Commerce
       end
 
       Refund.transaction do
-        payment.order.event.organization.lock!
+        # FOR NO KEY UPDATE, like every refund writer (docs/LOCKING.md): an
+        # ordinary completion holds the event and then needs the organization
+        # FK KEY SHARE for its audit, which FOR UPDATE would refuse.
+        payment.order.event.organization.lock!("FOR NO KEY UPDATE")
         payment.order.event.lock!
         payment.order.lock!
         existing = Refund.find_by(provider: "stripe", provider_refund_id: id)
@@ -118,16 +124,26 @@ module Commerce
         RefundCreator.find_provider_operation(payment: payment, provider_refund: operation).present?
       end
       (known + external).each { |operation| ingest!(payment: payment, provider_refund: operation) }
-      booked = payment.refunds.succeeded.sum(:amount_cents)
-      payment.reconciliation_exceptions.open.where(code: RECOVERABLE_CODES).find_each do |candidate|
-        if candidate.code == "refund_aggregate_requires_reconciliation"
-          next unless candidate.actual_amount_cents && candidate.actual_amount_cents <= booked
-        else
-          observations = issue_observations(candidate, payment)
-          next if observations.empty? || !observations.all? { |observation| reconciled_observation?(payment, observation, operations) }
-        end
+      # Resolve what the verified operations settled, then re-evaluate the
+      # capture, all under the refund prefix: ingestion evaluated it while
+      # these holds were still open (A1-R1 review finding 5).
+      order = payment.order
+      Refund.transaction do
+        order.event.organization.lock!("FOR NO KEY UPDATE")
+        order.event.lock!
+        order.lock!
+        booked = payment.refunds.succeeded.sum(:amount_cents)
+        payment.reconciliation_exceptions.open.where(code: RECOVERABLE_CODES).order(:id).lock.each do |candidate|
+          if candidate.code == "refund_aggregate_requires_reconciliation"
+            next unless candidate.actual_amount_cents && candidate.actual_amount_cents <= booked
+          else
+            observations = issue_observations(candidate, payment)
+            next if observations.empty? || !observations.all? { |observation| reconciled_observation?(payment, observation, operations) }
+          end
 
-        candidate.resolve!
+          candidate.resolve!
+        end
+        NeverFulfilledResolution.evaluate_payment!(payment.id, trigger: "aggregate_recovered")
       end
       issue.reload
     end

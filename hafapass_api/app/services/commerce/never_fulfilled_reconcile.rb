@@ -113,6 +113,7 @@ module Commerce
           BuyerReturnPostings.record_recorded_movements!(capture, backfills: assessment.backfills)
           resolve_superseded_quarantine!(capture)
           NeverFulfilledResolution.evaluate!(capture, trigger: "reconcile")
+          SaleEffectHold.release_later!(order)
         when "post"
           capture = UnfulfilledCapture.find_by!(payment_id: payment.id)
           BuyerReturnPostings.record_recorded_movements!(capture, backfills: assessment.backfills)
@@ -185,10 +186,9 @@ module Commerce
       return ["late_capture_refund_on_another_payment"] if refund_key && refund_key.payment_id != payment.id
 
       capture_at = if receipt
-        object = receipt.payload.to_h.dig("data", "object").to_h
-        unless receipt.event_type == "payment_intent.succeeded" && object["id"] == payment.provider_payment_id
-          return ["receipt_names_another_payment"]
-        end
+        receipt_problem = signed_capture_problem(receipt)
+        return [receipt_problem] if receipt_problem
+
         receipt.created_at
       elsif refund_key
         return ["late_capture_refund_before_exception"] if refund_key.created_at < exception.created_at
@@ -221,6 +221,35 @@ module Commerce
 
       [nil, { exception: exception, receipt: receipt, refund_key: refund_key, release_audit_id: release.id,
               exception_id: exception.id, capture_evidence_at: capture_at }]
+    end
+
+    # The signed payment_intent.succeeded receipt must name this exact
+    # PaymentIntent and prove the capture itself: succeeded, the exact amount
+    # and currency, the payment's mode and connected account, and a provider
+    # time no later than HåfaPass stored it (the capture window to the
+    # exception is checked separately). An anonymized or partial payload
+    # proves nothing. Any mismatch quarantines before a row is written.
+    RECEIPT_CLOCK_SKEW = 5.minutes
+
+    def signed_capture_problem(receipt)
+      payload = receipt.payload.to_h
+      object = payload.dig("data", "object").to_h
+      return "receipt_names_another_payment" unless receipt.event_type == "payment_intent.succeeded" &&
+        object["id"].present? && object["id"] == payment.provider_payment_id
+      return "receipt_not_succeeded" unless object["status"] == "succeeded"
+
+      amount = object["amount_received"]
+      return "receipt_amount_mismatch" unless amount.is_a?(Integer) && amount == payment.amount_cents
+      return "receipt_currency_mismatch" unless object["currency"].to_s.casecmp?(payment.currency.to_s)
+      return "receipt_mode_mismatch" unless %w[test live].include?(payment.provider_environment) &&
+        payload["livemode"] == (payment.provider_environment == "live")
+      return "receipt_account_mismatch" unless payload["account"].presence == payment.provider_account_id.presence
+
+      provider_at = receipt.provider_created_at
+      return "receipt_time_unknown" unless provider_at
+      return "receipt_time_inconsistent" if provider_at > receipt.created_at + RECEIPT_CLOCK_SKEW
+
+      nil
     end
 
     def release_audit(exception)
@@ -339,7 +368,7 @@ module Commerce
         end
         next unless superseded
 
-        issue.resolve!
+        issue.resolve_with_evidence!
         AuditLogger.record!(action: "reconciliation_exception.resolved", auditable: issue,
           organization: order.event.organization, event: order.event, outcome: "succeeded",
           deduplication_key: "reconciliation_exception:#{issue.id}:resolved",

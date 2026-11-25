@@ -362,6 +362,8 @@ entries are described above and defined in the registry's audience variants.
 | `reconciliation_exception.reopened` | yes | orders | A | yes | yes | — | — | Reopened a payment's return to its buyer after money came back. |
 | `never_fulfilled_capture.buyer_overpaid` | yes | orders | A | yes | yes | — | — | Recorded that a buyer was repaid more than an unfulfilled payment. |
 | `webhook_event.replayed` | yes | orders | A | yes | yes | — | — | Applied a stored Stripe notice to the payment it describes. |
+| `never_fulfilled_capture.sale_effects_held` | yes | orders | A | yes | yes | — | — | Recorded a refund or lost dispute without changing a sale it is not proven to belong to. |
+| `never_fulfilled_capture.sale_effects_released` | yes | orders | A | yes | yes | — | — | Applied or closed the held sale changes of a refund or lost dispute. |
 | `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |

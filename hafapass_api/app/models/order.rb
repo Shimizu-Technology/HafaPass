@@ -104,17 +104,17 @@ class Order < ApplicationRecord
   end
 
   # A dispute on the payment that fulfilled the order blocks admission. One on
-  # a payment-scope never-fulfilled capture (a distinct second payment) never
-  # touches the sale. A legacy order with no fulfilling payment keeps the
-  # order-wide rule.
+  # any other payment (a payment-scope never-fulfilled capture, or a second
+  # payment not classified yet) never touches the sale: ownership is
+  # positive (A1-R1 review finding 1). A legacy order with no fulfilling
+  # payment keeps the conservative order-wide rule.
   def ticket_access_blocked?
     candidates = disputes.loaded? ? disputes.select { |dispute| dispute.open? || dispute.lost? } :
       disputes.where(status: [:open, :lost]).to_a
     return false if candidates.empty?
-    return true if fulfilled_by_payment_id.nil? || candidates.any? { |dispute| dispute.payment_id == fulfilled_by_payment_id }
+    return true if fulfilled_by_payment_id.nil?
 
-    isolated = isolated_payment_ids
-    candidates.any? { |dispute| isolated.exclude?(dispute.payment_id) }
+    candidates.any? { |dispute| dispute.payment_id.nil? || dispute.payment_id == fulfilled_by_payment_id }
   end
 
   # Payment-scope never-fulfilled captures on this order. Their refunds and
@@ -224,14 +224,15 @@ class Order < ApplicationRecord
     [total_cents - committed_refunds, 0].max
   end
 
-  # Refunds against the sale: everything except refunds of a payment-scope
-  # never-fulfilled capture.
+  # Refunds against the sale. With a recorded fulfilling payment, only its
+  # refunds (and legacy rows with no payment): another payment's refund
+  # returned that payment's money, never the sale's. Without one, every
+  # refund counts, which keeps the sale's remaining balance conservative.
   def sale_refunds(statuses)
     list = refunds.loaded? ? refunds.select { |refund| statuses.include?(refund.status) } : refunds.where(status: statuses).to_a
-    return list if list.empty? || fulfilled_by_payment_id.nil? || list.all? { |refund| refund.payment_id == fulfilled_by_payment_id }
+    return list if fulfilled_by_payment_id.nil?
 
-    isolated = isolated_payment_ids
-    list.reject { |refund| isolated.include?(refund.payment_id) }
+    list.select { |refund| refund.payment_id.nil? || refund.payment_id == fulfilled_by_payment_id }
   end
 
   private

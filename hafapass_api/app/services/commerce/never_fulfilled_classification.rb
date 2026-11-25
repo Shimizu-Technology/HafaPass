@@ -100,6 +100,9 @@ module Commerce
       BuyerReturnPostings.record_recorded_movements!(capture)
       # The capture may already be settled (a full loss before capture, E4).
       NeverFulfilledResolution.evaluate!(capture, trigger: "classification")
+      # A refund or loss recorded on this payment before classification held
+      # its sale effects; the job (organization first) closes or replays them.
+      SaleEffectHold.release_later!(order)
       Result.new(capture: capture)
     end
 

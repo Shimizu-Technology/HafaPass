@@ -193,7 +193,10 @@ class RefundReconciliationActions
     if @record.provider_refund_id.present? && provider.id != @record.provider_refund_id
       raise ActionError, "Stripe returned a different refund; finance review is required"
     end
-    result = Commerce::RefundCreator.reconcile_refund!(refund: @record, provider_refund: provider)
+    # Found by this row's provider ID, or (for a fenced payment) by its own
+    # key alone, so the identity is exact; an amount and date match is not.
+    exact = @record.provider_refund_id.present? || Commerce::BuyerRepayment.fenced_payment?(@record.payment)
+    result = Commerce::RefundCreator.reconcile_refund!(refund: @record, provider_refund: provider, identity_verified: exact)
     audit!("refund_reconciliation.resynced", @record, { provider_refund_id: provider.id, provider_status: provider.status })
     result
   end
@@ -202,6 +205,12 @@ class RefundReconciliationActions
     if refund.provider_refund_id.present?
       StripeService.retrieve_refund(refund.provider_refund_id, payment: refund.payment,
         call_budget: @stripe_call_budget)
+    elsif Commerce::BuyerRepayment.fenced_payment?(refund.payment)
+      # A fenced payment's pending refund is found only by its own key. A
+      # Stripe refund without that key is someone else's movement and is
+      # recorded on its own (Verify), never bound by amount and date.
+      StripeService.find_refund(refund.payment.provider_payment_id,
+        idempotency_key: refund.idempotency_key, payment: refund.payment, call_budget: @stripe_call_budget)
     else
       StripeService.find_refund(refund.payment.provider_payment_id,
         idempotency_key: refund.idempotency_key, payment: refund.payment,

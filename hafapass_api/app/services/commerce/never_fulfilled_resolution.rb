@@ -92,7 +92,7 @@ module Commerce
     end
 
     def resolve!(issue, availability)
-      issue.resolve!
+      issue.resolve_with_evidence!
       postings = ledger.postings
       refunds = postings.select { |posting| posting.source_type == "Refund" }
       losses = postings.select { |posting| posting.kind == "dispute_loss" }

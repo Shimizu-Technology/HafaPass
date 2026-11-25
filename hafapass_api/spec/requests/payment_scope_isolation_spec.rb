@@ -214,6 +214,17 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
     expect(evidence_a).to be_status_verified
     expect(order.fee_components.where(kind: "processing", estimated: false).pluck(:amount_cents)).to eq([92])
     expect(evidence_a.fee_component.metadata).to include("payment_id" => payment_a.id)
-    expect(ReconciliationException.open.where(payment: payment_b, code: StripeProcessingFees::REVIEW_CODE).count).to eq(1)
+    # HåfaPass bears B's processing (P1 snapshot "platform"): the verified
+    # facts stay visible as deferred evidence for A2, and neither an open
+    # review item nor the missing-fee count holds A's organizer (finding 2).
+    expect(UnfulfilledCapture.find_by!(payment: payment_b).processing_bearer).to eq("platform")
+    expect(ReconciliationException.open.where(payment: payment_b, code: StripeProcessingFees::REVIEW_CODE)).to be_empty
+    # Only B's deferred facts are excluded: A's fixture lacks the platform
+    # account snapshot, which keeps it counted.
+    expect(StripeProcessingFees.missing_count([order.id])).to eq(1)
+    Payment.where(id: payment_a.id).update_all(provider_platform_account_id: "acct_platform_fixture")
+    expect(StripeProcessingFees.missing_count([order.id])).to eq(0)
+    expect(StripeFeeEvidence.where(payment: payment_b, status: :review_required,
+      last_error_code: "payment_scope_processing_deferred").count).to eq(1)
   end
 end

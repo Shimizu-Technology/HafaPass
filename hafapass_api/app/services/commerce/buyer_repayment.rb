@@ -122,8 +122,17 @@ module Commerce
         return false if payment.provider_payment_id.blank?
 
         exceptions.where(payment_id: nil, code: ORPHAN_CODES).joins(:webhook_event)
-          .where("webhook_events.payload -> 'data' -> 'object' ->> 'payment_intent' = ?", payment.provider_payment_id)
-          .exists?
+          .merge(StripeWebhookProcessor.naming_intent(payment.provider_payment_id)).exists?
+      end
+
+      # The payment an unbound orphan notice names, by its stored identity.
+      def orphan_payment(issue)
+        receipt = issue.webhook_event
+        return unless receipt
+
+        intent = receipt.provider_payment_intent_id.presence ||
+          receipt.payload.to_h.dig("data", "object", "payment_intent")
+        Payment.find_by(provider: "stripe", provider_payment_id: intent) if intent.present?
       end
 
       # Called by RefundCreator#reserve_refund! for an outbound refund of a

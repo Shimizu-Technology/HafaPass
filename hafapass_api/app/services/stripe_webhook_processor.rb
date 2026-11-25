@@ -26,15 +26,39 @@ class StripeWebhookProcessor
     new(event: Stripe::Event.construct_from(receipt.payload), payload: receipt.payload).send(:replay!, receipt, payment)
   end
 
-  # Receipts whose open orphan exception may describe this payment.
+  # Receipts whose open orphan exception may describe this payment: by the
+  # identity stored with the receipt (kept when retention or a privacy
+  # request clears the payload), else by the payload of an older receipt.
   def self.replayable_receipts(payment)
     return WebhookEvent.none if payment.provider_payment_id.blank?
 
     orphans = ReconciliationException.open.where(code: ORPHAN_CODES)
       .where("reconciliation_exceptions.payment_id IS NULL OR reconciliation_exceptions.payment_id = ?", payment.id)
     WebhookEvent.where(id: orphans.select(:webhook_event_id), event_type: REPLAYABLE_TYPES)
-      .where("webhook_events.payload -> 'data' -> 'object' ->> 'payment_intent' = ?", payment.provider_payment_id)
-      .order(:id)
+      .merge(naming_intent(payment.provider_payment_id)).order(:id)
+  end
+
+  def self.naming_intent(intent_id)
+    WebhookEvent.where(provider_payment_intent_id: intent_id)
+      .or(WebhookEvent.where(provider_payment_intent_id: nil)
+        .where("webhook_events.payload -> 'data' -> 'object' ->> 'payment_intent' = ?", intent_id))
+  end
+
+  # The provider identity a signed refund or dispute notice carries, stored
+  # outside its payload (A1-R1 review finding 5).
+  def self.provider_identity(event_type, payload)
+    return {} unless REPLAYABLE_TYPES.include?(event_type)
+
+    object = payload.to_h.dig("data", "object").to_h
+    intent = object["payment_intent"]
+    intent = intent["id"] if intent.is_a?(Hash)
+    amount = object["amount_refunded"] if event_type == "charge.refunded"
+    amount ||= object["amount"]
+    { provider_payment_intent_id: intent.presence&.to_s, provider_object_id: object["id"].presence&.to_s,
+      provider_livemode: payload.to_h.key?("livemode") ? payload["livemode"] == true : nil,
+      provider_account_id: payload.to_h["account"].presence&.to_s,
+      provider_amount_cents: amount.is_a?(Integer) ? amount : nil,
+      provider_currency: object["currency"].presence&.to_s&.downcase }
   end
 
   def initialize(event:, payload:)
@@ -65,10 +89,17 @@ class StripeWebhookProcessor
         .where("payment_id IS NULL OR payment_id = ?", payment.id).order(:id).to_a
       next :nothing unless receipt.processed? && orphans.any? && REPLAYABLE_TYPES.include?(receipt.event_type)
 
-      object = event.data.object
-      unless replay_context_matches?(payment, object)
+      # A payload that retention or a privacy request cleared has no object.
+      object = event.respond_to?(:data) ? event.data&.object : nil
+      unless object && replay_context_matches?(payment, object)
+        # The stored identity still names this payment (its payload may have
+        # been cleared): the orphan stays open, now on this payment and
+        # order, so it holds them until finance records it from Stripe.
+        bind = stored_identity_matches?(receipt, payment)
         orphans.each do |orphan|
-          orphan.update!(details: orphan.details.to_h.merge("replay_blocked" => "payment_context_mismatch"))
+          attributes = { details: orphan.details.to_h.merge("replay_blocked" => "payment_context_mismatch") }
+          attributes.merge!(payment: payment, order: payment.order) if bind && orphan.payment_id.nil?
+          orphan.update!(attributes)
         end
         next :payment_context_mismatch
       end
@@ -111,13 +142,20 @@ class StripeWebhookProcessor
       payload["account"].presence == payment.provider_account_id.presence
   end
 
+  def stored_identity_matches?(receipt, payment)
+    receipt.provider_payment_intent_id.present? && receipt.provider_payment_intent_id == payment.provider_payment_id &&
+      receipt.provider_livemode == (payment.provider_environment == "live") &&
+      receipt.provider_account_id.presence == payment.provider_account_id.presence
+  end
+
   def store_receipt!
     WebhookEvent.create!(
       provider: "stripe",
       provider_event_id: event.id,
       event_type: event.type,
       payload: payload,
-      provider_created_at: event.respond_to?(:created) && event.created ? Time.zone.at(event.created.to_i) : nil
+      provider_created_at: event.respond_to?(:created) && event.created ? Time.zone.at(event.created.to_i) : nil,
+      **self.class.provider_identity(event.type, payload.respond_to?(:to_unsafe_h) ? payload.to_unsafe_h : payload.to_h.deep_stringify_keys)
     )
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
     WebhookEvent.find_by!(provider: "stripe", provider_event_id: event.id)
@@ -517,7 +555,7 @@ class StripeWebhookProcessor
       before_data = dispute.attributes.slice("status", "reason", "closed_at") unless new_dispute
       provider_status = value(object, :status).to_s
       if dispute.persisted? && (dispute.won? || dispute.lost?)
-        cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
+        apply_dispute_loss_to_sale!(dispute) if dispute.lost? && !dispute.loss_reversed_at
         if dispute.lost? && late_win?(provider_status)
           reverse_dispute_loss!(receipt, payment, dispute, provider_status)
         elsif dispute.won? && provider_status == "lost"
@@ -557,7 +595,7 @@ class StripeWebhookProcessor
       dispute.save!
       StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{provider_id}:#{provider_status}") if status != :open
       Commerce::BuyerReturnPostings.record_dispute_loss!(dispute) if dispute.lost?
-      cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
+      apply_dispute_loss_to_sale!(dispute) if dispute.lost?
       action = if status == :open
         event.type == "charge.dispute.created" ? "dispute.opened" : "dispute.updated"
       else
@@ -666,24 +704,21 @@ class StripeWebhookProcessor
         webhook_event_id: receipt.id, provider_created_at: receipt.provider_created_at&.utc&.iso8601 })
   end
 
-  # A dispute on a payment-scope never-fulfilled capture (a distinct second
-  # payment) is recorded, but never cancels the sale's tickets.
-  def isolated_dispute?(dispute)
-    UnfulfilledCapture.isolated_payment?(dispute.payment_id)
-  end
+  # A lost dispute cancels the order's tickets only when its payment owns the
+  # sale (A1-R1 review finding 1). One on a payment-scope never-fulfilled
+  # capture never touches the sale. One on a payment whose ownership is not
+  # proven (a second payment before classification, a legacy order without
+  # completion evidence) is recorded and held for ownership evidence. The
+  # database refuses the cancellation for every writer, old or new.
+  def apply_dispute_loss_to_sale!(dispute)
+    return if UnfulfilledCapture.isolated_payment?(dispute.payment_id)
 
-  def cancel_disputed_tickets!(order, dispute)
-    seen_pass_parent_ids = Set.new
-    order.tickets.includes(:ticket_type, :pricing_tier, :inventory_retention).order(:id).lock.each do |ticket|
-      next if ticket.cancelled?
-
-      pass_parent_id = Commerce::FinancialReversalInventory.pass_group_parent_id(ticket)
-      next if pass_parent_id && !seen_pass_parent_ids.add?(pass_parent_id)
-
-      Commerce::FinancialReversalInventory.call(ticket: ticket, dispute: dispute, reason: "payment_dispute_lost")
+    if Commerce::SaleEffectHold.owner?(dispute.payment_id)
+      Commerce::SaleEffectHold.cancel_disputed_tickets!(dispute.order, dispute)
+    else
+      Commerce::SaleEffectHold.hold!(dispute,
+        reason: dispute.order.fulfilled_by_payment_id ? "not_fulfilling_payment" : "ownership_unproven")
     end
-    order.event.notify_waitlist_if_available
-    dispute
   end
 
   def normalized_event_data(object)

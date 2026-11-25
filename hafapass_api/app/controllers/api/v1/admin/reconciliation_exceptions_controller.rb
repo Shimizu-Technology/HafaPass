@@ -37,6 +37,17 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
     .merge("card_present_result_unknown" => "verified_no_ledger_change",
       Commerce::EarlyFraudWarningRefund::CODE => "reviewed_no_action").freeze
   EVIDENCE_NOTE_MINIMUM = 20
+  EVIDENCE_HOLD_MESSAGE = "This hold closes only when its evidence is recorded; a note cannot close it."
+  EVIDENCE_HOLD_MESSAGES = {
+    "unfulfilled_second_capture" => "This second payment closes when it is classified and fully returned to the buyer.",
+    "never_fulfilled_ownership_ambiguous" => "Which payment fulfilled this order is not proven. " \
+      "It stays held until completion evidence identifies it; a note cannot close it.",
+    "never_fulfilled_classification_quarantined" => "This payment's provider evidence did not prove the capture. " \
+      "It closes when reconcile records positive evidence; a note cannot close it.",
+    "never_fulfilled_sale_effects_held" => "A refund or lost dispute on a payment that is not proven to own this sale. " \
+      "It closes when the payment is classified or its ownership is proven; a note cannot close it.",
+    "never_fulfilled_repayment_reopened" => "Money came back after this payment was repaid. It closes when the buyer is repaid again."
+  }.freeze
 
   before_action -> { response.headers["Cache-Control"] = "no-store" }
   before_action :set_issue, only: [:show, :resolve, :refund_buyer]
@@ -263,6 +274,17 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   # What a note-only resolution needs: {} (allowed), { confirmation: flag }
   # (allowed with that flag and an evidence note) or { blocked: message }.
   def resolution_rule(issue)
+    # Evidence holds close only when their evidence is recorded (the
+    # repayment finishes, the payment is classified, ownership is proven or
+    # the provider evidence is replayed). A note never closes them, and the
+    # database refuses it too (FinancialIntegrity::EVIDENCE_HOLD_CODES).
+    return { blocked: EVIDENCE_HOLD_MESSAGES.fetch(issue.code, EVIDENCE_HOLD_MESSAGE) } if issue.evidence_hold?
+    # Provider evidence that names a fenced payment stays until it is
+    # recorded: Verify the refund (Stripe lookup) or let replay apply it.
+    if Commerce::BuyerRepayment::ORPHAN_CODES.include?(issue.code) && orphan_names_fenced_payment?(issue)
+      return { blocked: "Stripe reported a refund or dispute for a payment HåfaPass must return. " \
+        "Use Verify to record it from Stripe; a note cannot close it." }
+    end
     capture = classified_capture(issue)
     if capture && Commerce::NeverFulfilledResolution.resolvable_codes(capture).include?(issue.code)
       return {} if Commerce::NeverFulfilledResolution.resolvable_now?(capture)
@@ -273,7 +295,7 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
       end
 
       owed = availability.owed_cents
-      { blocked: "The buyer is still owed #{format('$%<dollars>d.%<cents>02d', dollars: owed / 100, cents: owed % 100)}. " \
+      return { blocked: "The buyer is still owed #{format('$%<dollars>d.%<cents>02d', dollars: owed / 100, cents: owed % 100)}. " \
         "Use Refund buyer; the exception resolves when the repayment finishes." }
     end
     if Commerce::LateCaptureRefund::CODES.include?(issue.code) && issue.payment
@@ -294,6 +316,11 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
 
     flag = CONFIRMATION_BY_CODE[issue.code]
     flag ? { confirmation: flag } : {}
+  end
+
+  def orphan_names_fenced_payment?(issue)
+    payment = issue.payment || Commerce::BuyerRepayment.orphan_payment(issue)
+    payment.present? && Commerce::BuyerRepayment.fenced_payment?(payment)
   end
 
   def confirmed?(flag)

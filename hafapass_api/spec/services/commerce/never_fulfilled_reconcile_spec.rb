@@ -34,7 +34,7 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
 
   # A late capture recorded by the pre-A1 lifecycle: released order, signed
   # receipt, exception within the window, no tickets. Options remove proofs.
-  def historical_late_capture(receipt: true, refund_key: false, release: true, items: [[1200, 160, 0, 0]])
+  def historical_late_capture(receipt: true, refund_key: false, release: true, items: [[1200, 160, 0, 0]], receipt_changes: {})
     total = items.flatten.sum
     order = create(:order, event: event, status: :expired, completed_at: nil, subtotal_cents: total, service_fee_cents: 0,
       total_cents: total)
@@ -48,8 +48,13 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
     stamp!(payment, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
     webhook = if receipt
       travel_to(captured_at) do
+        object = { "id" => payment.provider_payment_id, "status" => "succeeded", "amount_received" => total, "currency" => "usd" }
+        payload = { "livemode" => payment.provider_environment == "live", "account" => payment.provider_account_id,
+          "data" => { "object" => object.merge(receipt_changes.fetch(:object, {})) } }.merge(receipt_changes.fetch(:payload, {}))
+        payload = receipt_changes[:anonymized] ? {} : payload
         WebhookEvent.create!(provider: "stripe", provider_event_id: "evt_hist_#{payment.id}", event_type: "payment_intent.succeeded",
-          status: :processed, payload: { "data" => { "object" => { "id" => payment.provider_payment_id } } })
+          status: :processed, payload: payload,
+          provider_created_at: receipt_changes.fetch(:provider_created_at, captured_at - 1.second))
       end
     end
     issue = travel_to(captured_at + 1.second) do
@@ -118,6 +123,30 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
       .not_to(change { [UnfulfilledCapture.count, BuyerReturnPosting.count, ReconciliationException.count] })
   end
 
+  # A1-R1 review finding 5: the signed receipt proves the capture only with
+  # its exact amount, currency, mode, account and time; any mismatch, or a
+  # payload retention already cleared, quarantines before anything is written.
+  it "quarantines a signed receipt that does not prove this exact capture, before writing" do
+    cases = {
+      "receipt_amount_mismatch" => { object: { "amount_received" => 1359 } },
+      "receipt_currency_mismatch" => { object: { "currency" => "eur" } },
+      "receipt_not_succeeded" => { object: { "status" => "processing" } },
+      "receipt_mode_mismatch" => { payload: { "livemode" => true } },
+      "receipt_account_mismatch" => { payload: { "account" => "acct_someone_else" } },
+      "receipt_time_inconsistent" => { provider_created_at: captured_at + 1.day },
+      "receipt_time_unknown" => { provider_created_at: nil },
+      "receipt_names_another_payment" => { anonymized: true }
+    }
+    payments = cases.transform_values { |changes| historical_late_capture(receipt_changes: changes)[1] }
+    install_cutovers!
+
+    report = described_class.call(dry_run: false)
+    reasons = report.assessments.to_h { |item| [item.payment_id, [item.disposition, item.reason]] }
+    cases.each_key { |reason| expect(reasons.fetch(payments.fetch(reason).id)).to eq(["ambiguous", reason]) }
+    expect(UnfulfilledCapture.count + BuyerReturnPosting.count).to eq(0)
+    expect(ReconciliationException.where(code: described_class::AMBIGUOUS_CODE).count).to eq(cases.size)
+  end
+
   it "accepts the late-capture refund key as lifecycle evidence when no receipt is linked" do
     _order, payment, = historical_late_capture(receipt: false, refund_key: true)
     install_cutovers!
@@ -166,9 +195,11 @@ RSpec.describe Commerce::NeverFulfilledReconcile do
   end
 
   it "writes nothing but a restatement item when the event's results are published" do
-    _order, payment, = historical_late_capture
+    # Finalized before the late capture was recorded (the database refuses a
+    # finalization while the capture's hold is open).
     Settlement.new(event: event, organization: event.organization, status: :finalized, version: 1, source_digest: "hist",
       calculated_at: 1.day.ago, finalized_at: 1.day.ago).save!(validate: false)
+    _order, payment, = historical_late_capture
     install_cutovers!
 
     report = described_class.call(dry_run: false)

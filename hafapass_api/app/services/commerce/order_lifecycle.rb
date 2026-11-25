@@ -485,6 +485,7 @@ module Commerce
             organization: order.event.organization, event: order.event, outcome: "succeeded",
             deduplication_key: "order:#{order.id}:fulfilling_payment_recovered",
             metadata: { payment_id: candidate.id, completion_audit_id: audit.id })
+          SaleEffectHold.release_later!(order)
           return candidate.id
         end
 

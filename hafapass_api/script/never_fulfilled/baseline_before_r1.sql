@@ -26,6 +26,17 @@ FROM payouts py WHERE py.status IN (0, 1, 5) AND py.event_id IN (
     'pass_all_included_nights_cancelled'))
 GROUP BY py.status ORDER BY py.status;
 
+-- Every payout transition ever audited on those events, by action, so the
+-- post-R1 evidence compares history and not only what is blocked now.
+SELECT 'payout_transitions_on_late_capture_events' AS section, py.event_id, a.action, count(*) AS transitions,
+  sum(py.amount_cents) AS cents
+FROM audit_logs a JOIN payouts py ON a.auditable_type = 'Payout' AND a.auditable_id = py.id
+WHERE a.action LIKE 'payout.%' AND py.event_id IN (
+  SELECT o.event_id FROM orders o JOIN reconciliation_exceptions re ON re.order_id = o.id
+  WHERE re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry',
+    'pass_all_included_nights_cancelled'))
+GROUP BY py.event_id, a.action ORDER BY py.event_id, a.action;
+
 -- refunds.status 0 = pending.
 SELECT 'refunds_provider_result_unknown' AS section, count(*) AS refunds,
   count(*) FILTER (WHERE idempotency_key LIKE 'late-capture:payment:%') AS late_capture_key

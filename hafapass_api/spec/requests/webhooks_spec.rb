@@ -852,11 +852,21 @@ RSpec.describe "Stripe webhooks", type: :request do
         expect(RefundReconciliationQueue.new(event_id: checkout.order.event_id).entries).to include(include(type: "exception"))
         next
       end
+      # The second payment's refund is recorded on that payment, but it does
+      # not own the sale (the first payment fulfilled it), so the sale's
+      # balance, items and status are untouched and its sale effects wait
+      # for ownership evidence (A1-R1 review finding 1).
       expect(second_payment.reload.refunds.succeeded.sum(:amount_cents)).to eq(750)
-      expect(checkout.order.reload.refunded_cents).to eq(1250)
+      expect(second_payment).to be_partially_refunded
+      expect(checkout.order.reload.fulfilled_by_payment_id).to eq(checkout.payment.id)
+      expect(checkout.order.refunded_cents).to eq(500)
       expect(checkout.order.refunds.succeeded.sum(:amount_cents)).to eq(1250)
-      expect(checkout.order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(1250)
-      expect(checkout.order.reconciliation_exceptions.pluck(:code).uniq).to eq(["stripe_fee_adjustment_review_required"])
+      expect(checkout.order.refunds.joins(:refund_items).sum("refund_items.amount_cents")).to eq(500)
+      expect(checkout.order.reconciliation_exceptions.pluck(:code).uniq)
+        .to contain_exactly("stripe_fee_adjustment_review_required", "never_fulfilled_sale_effects_held")
+      hold = checkout.order.reconciliation_exceptions.find_by!(code: "never_fulfilled_sale_effects_held")
+      expect(hold.details).to include("source_type" => "Refund", "payment_id" => second_payment.id,
+        "reason" => "not_fulfilling_payment")
     end
   end
 
