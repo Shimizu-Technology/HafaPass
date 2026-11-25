@@ -99,7 +99,10 @@ module Settlements
     end
 
     def succeeded_refunds
-      @succeeded_refunds ||= Refund.succeeded.where(order_id: order_ids).order(:id).to_a
+      # A payment-scope never-fulfilled capture (a distinct second payment on a
+      # fulfilled order) is not part of the sale; its refunds and disputes are
+      # never the organizer's (design §4.3). A2 books them per payment.
+      @succeeded_refunds ||= Refund.succeeded.where(order_id: order_ids).excluding_isolated_payments.order(:id).to_a
     end
 
     def refund_items
@@ -180,7 +183,7 @@ module Settlements
     end
 
     def lost_disputes
-      @lost_disputes ||= Dispute.lost.where(order_id: order_ids).order(:id).to_a
+      @lost_disputes ||= Dispute.lost.where(order_id: order_ids).excluding_isolated_payments.order(:id).to_a
         .reject { |dispute| never_fulfilled_order_ids.include?(dispute.order_id) }
     end
 

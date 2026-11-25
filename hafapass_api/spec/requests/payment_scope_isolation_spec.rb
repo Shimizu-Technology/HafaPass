@@ -87,6 +87,9 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
     order, payment_a, payment_b = sale_with_second_capture
     expect(order.promoter_commission_entries.earned.count).to eq(1)
     before = sale_snapshot(order)
+    settlement_keys = %i[gross_cents refund_cents net_cents platform_fee_cents organizer_proceeds_cents adjustment_cents
+      payable_cents source_digest]
+    settlement_before = Settlements::Calculator.call(event).attributes.slice(*settlement_keys)
     expect(before).to include(status: "completed", refunded_cents: 0, refundable_cents: order.total_cents,
       blocked: false, buyer_status: "paid", admission: [nil, nil])
 
@@ -109,6 +112,8 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
     expect(order.tickets.reload).to all(be_issued)
     expect(EventCancellationRefunds.balance_cents(order)).to eq(payment_a.amount_cents)
     expect(provider_refunds).to be_empty
+    # The organizer's settlement is the sale's alone: no refund, no chargeback.
+    expect(Settlements::Calculator.call(event).attributes.slice(*settlement_keys)).to eq(settlement_before)
 
     # A's own refund still works on A's own balance, and reverses A's commission.
     refund_a = Commerce::RefundCreator.call(order: order, reason: "requested_by_customer", requested_by: create(:user, :admin))
