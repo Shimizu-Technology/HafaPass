@@ -39,12 +39,14 @@ class AddSaleOwnershipAndPayoutEvidenceGuards < ActiveRecord::Migration[8.1]
         DROP FUNCTION IF EXISTS hafapass_refund_identity_fence();
         DROP FUNCTION IF EXISTS hafapass_sale_owner_payment(bigint);
         DROP FUNCTION IF EXISTS hafapass_live_or_legacy(text, jsonb);
+        DROP FUNCTION IF EXISTS hafapass_settlement_reader_required(bigint);
       SQL
       # The payout fence keeps working; restore the tranche 4 definition.
       execute FinancialIntegrity::REPAYMENT_SQL.split("CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence()").then { |parts|
         "CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence()#{parts.last}"
       }
       execute "DROP FUNCTION IF EXISTS hafapass_payout_block_start(bigint)"
+      execute "DROP FUNCTION IF EXISTS hafapass_settlement_reader_required(bigint)"
     end
   end
 end

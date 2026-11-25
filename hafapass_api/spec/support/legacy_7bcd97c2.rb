@@ -2,8 +2,9 @@
 
 # The 7bcd97c2 refund and payout writers, the release A1-R1 overlaps with
 # during a Render zero-downtime deploy (design §10.3). Its RefundCreator,
-# LateCaptureRefund, PayoutCreator, PayoutReconciler and Settlements::Finalizer
-# are loaded verbatim under Legacy7bcd97c2; every other
+# LateCaptureRefund, PayoutCreator, PayoutReconciler, OrganizationPayoutBalance,
+# Settlements::Calculator and Settlements::Finalizer are loaded verbatim under
+# Legacy7bcd97c2 (so the old writers use the old readers); every other
 # constant resolves to the current application, which matches 7bcd97c2 for
 # what those two classes call. Loaded on first use only.
 module Legacy7bcd97c2
@@ -19,7 +20,8 @@ module Legacy7bcd97c2
     end
   end
 
-  FILES = %w[late_capture_refund refund_creator payout_creator payout_reconciler settlements_finalizer].freeze
+  FILES = %w[late_capture_refund refund_creator settlements_calculator organization_payout_balance payout_creator
+    payout_reconciler settlements_finalizer].freeze
 
   def self.load!
     return if @loaded
@@ -32,6 +34,9 @@ module Legacy7bcd97c2
     [Commerce::RefundCreator, Commerce::LateCaptureRefund].each do |klass|
       klass.define_singleton_method(:const_missing) { |name| ::Commerce.const_get(name) }
     end
+    [Settlements::Calculator, Settlements::Finalizer].each do |klass|
+      klass.define_singleton_method(:const_missing) { |name| ::Settlements.const_get(name) }
+    end
     @loaded = true
   end
 
@@ -43,6 +48,11 @@ module Legacy7bcd97c2
   def self.payout_reconciler
     load!
     PayoutReconciler
+  end
+
+  def self.settlements_calculator
+    load!
+    Settlements::Calculator
   end
 
   def self.settlements_finalizer

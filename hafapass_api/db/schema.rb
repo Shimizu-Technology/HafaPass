@@ -4096,6 +4096,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130200) do
               WHERE o.event_id = target_event))
     $$;
 
+    -- An event whose never-fulfilled order is in a status the 7bcd97c2
+    -- settlement reader counts as a sale (completed, refunded or partially
+    -- refunded). That reader would pay the organizer its proceeds, so only a
+    -- reader that excludes them (this release's Settlements::Finalizer and
+    -- PayoutCreator, which name themselves in hafapass.settlement_reader)
+    -- may finalize its statement or create a payout on it. This keeps the
+    -- fence across a rollback until the A2 readers (A1-R1 review finding 2).
+    CREATE OR REPLACE FUNCTION hafapass_settlement_reader_required(target_event bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM orders o WHERE o.event_id = target_event AND o.never_fulfilled_at IS NOT NULL
+          AND o.status IN (1, 2, 4))
+        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM 'nfc-a1r1'
+    $$;
+
     -- P10 strict for every payout writer, old or new. Refused on an event
     -- with an open blocking item: creating a payout as pending, processing
     -- or paid; releasing a held payout; submitting a pending one; and
@@ -4108,6 +4122,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130200) do
     DECLARE
       block_start timestamp;
     BEGIN
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
       IF NEW.status NOT IN (0, 1, 2) OR
           (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
         RETURN NEW;
@@ -4150,6 +4168,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_130200) do
     BEGIN
       IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
         RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
       END IF;
       RETURN NEW;
     END;

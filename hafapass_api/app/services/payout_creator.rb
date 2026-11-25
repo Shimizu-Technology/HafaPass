@@ -212,22 +212,26 @@ class PayoutCreator
       withholding = BackupWithholding.for_payout(organization: settlement.organization,
         amount_cents: amount, actor: actor, override_reason: withholding_override_reason)
 
-      payout = settlement.payouts.create!(
-        organization: settlement.organization,
-        event: settlement.event,
-        connected_account: account,
-        provider: account.provider,
-        idempotency_key: idempotency_key,
-        amount_cents: amount,
-        currency: settlement.currency,
-        status: :pending,
-        payee_snapshot: account.safe_payout_details,
-        payee_approval_digest: account.provider == "manual" ? account.bank_destination_digest :
-          (account.provider == "check" ? account.readiness_state_digest : nil),
-        tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
-        tax_approval_digest: account.readiness_state_digest,
-        **withholding
-      )
+      # This release's reader leaves never-fulfilled orders out; the database
+      # lets only such a reader create a payout on an event that has one.
+      payout = FinancialIntegrity.with_settlement_reader do
+        settlement.payouts.create!(
+          organization: settlement.organization,
+          event: settlement.event,
+          connected_account: account,
+          provider: account.provider,
+          idempotency_key: idempotency_key,
+          amount_cents: amount,
+          currency: settlement.currency,
+          status: :pending,
+          payee_snapshot: account.safe_payout_details,
+          payee_approval_digest: account.provider == "manual" ? account.bank_destination_digest :
+            (account.provider == "check" ? account.readiness_state_digest : nil),
+          tax_information_snapshot: Payout.tax_snapshot(tax), tax_information_tin: tax&.tin,
+          tax_approval_digest: account.readiness_state_digest,
+          **withholding
+        )
+      end
       PayoutLineAllocator.record!(payout)
       AuditLogger.record!(action: "payout.created", auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event, outcome: "requested",

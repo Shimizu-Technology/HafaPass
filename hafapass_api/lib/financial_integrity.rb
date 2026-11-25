@@ -475,6 +475,8 @@ module FinancialIntegrity
   PAYOUT_PENDING_STATUS = 0
   PAYOUT_PROCESSING_STATUS = 1
   PAYOUT_PAID_STATUS = 2
+  # The settlement reader that leaves never-fulfilled orders out (finding 2).
+  SETTLEMENT_READER = "nfc-a1r1"
   SETTLEMENT_FINALIZED_STATUS = 1
   OPERATION_STATES = %w[reserved submitting unknown succeeded failed_terminal].freeze
 
@@ -755,6 +757,20 @@ module FinancialIntegrity
               WHERE o.event_id = target_event))
     $$;
 
+    -- An event whose never-fulfilled order is in a status the 7bcd97c2
+    -- settlement reader counts as a sale (completed, refunded or partially
+    -- refunded). That reader would pay the organizer its proceeds, so only a
+    -- reader that excludes them (this release's Settlements::Finalizer and
+    -- PayoutCreator, which name themselves in hafapass.settlement_reader)
+    -- may finalize its statement or create a payout on it. This keeps the
+    -- fence across a rollback until the A2 readers (A1-R1 review finding 2).
+    CREATE OR REPLACE FUNCTION hafapass_settlement_reader_required(target_event bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM orders o WHERE o.event_id = target_event AND o.never_fulfilled_at IS NOT NULL
+          AND o.status IN (1, 2, 4))
+        AND current_setting('hafapass.settlement_reader', true) IS DISTINCT FROM '#{SETTLEMENT_READER}'
+    $$;
+
     -- P10 strict for every payout writer, old or new. Refused on an event
     -- with an open blocking item: creating a payout as pending, processing
     -- or paid; releasing a held payout; submitting a pending one; and
@@ -767,6 +783,10 @@ module FinancialIntegrity
     DECLARE
       block_start timestamp;
     BEGIN
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
       IF NEW.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}) OR
           (TG_OP = 'UPDATE' AND NEW.status = OLD.status) THEN
         RETURN NEW;
@@ -809,6 +829,10 @@ module FinancialIntegrity
     BEGIN
       IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
         RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
       END IF;
       RETURN NEW;
     END;
@@ -858,7 +882,7 @@ module FinancialIntegrity
   # Names an exception (or refund) as backed by evidence for the rest of the
   # caller's transaction, so its database guard lets the write through.
   def self.with_evidence(kind, id)
-    raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity].include?(kind.to_s)
+    raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity settlement_reader].include?(kind.to_s)
 
     connection = ActiveRecord::Base.connection
     raise ArgumentError, "evidence needs an open transaction" unless connection.transaction_open?
@@ -867,6 +891,10 @@ module FinancialIntegrity
     yield
   ensure
     connection&.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT set_config(?, '', true)", "hafapass.#{kind}"])) if connection&.transaction_open?
+  end
+
+  def self.with_settlement_reader(&)
+    with_evidence(:settlement_reader, SETTLEMENT_READER, &)
   end
 
   SQL = (FOUNDATION_SQL + RETURNS_SQL + REPAYMENT_SQL + EVIDENCE_SQL).freeze

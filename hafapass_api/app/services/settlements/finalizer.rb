@@ -61,13 +61,17 @@ module Settlements
         settlement = event.settlements.find_by(source_digest: result.attributes[:source_digest])
         next if settlement
 
-        settlement = event.settlements.create!(
-          result.attributes.merge(
-            version: event.settlements.maximum(:version).to_i + 1,
-            status: :finalized,
-            finalized_at: Time.current
+        # This reader leaves never-fulfilled orders out; the database lets
+        # only such a reader finalize an event that has one (finding 2).
+        settlement = FinancialIntegrity.with_settlement_reader do
+          event.settlements.create!(
+            result.attributes.merge(
+              version: event.settlements.maximum(:version).to_i + 1,
+              status: :finalized,
+              finalized_at: Time.current
+            )
           )
-        )
+        end
         result.items.each { |item| settlement.settlement_items.create!(item) }
         AuditLogger.record!(
           action: "settlement.finalized",
