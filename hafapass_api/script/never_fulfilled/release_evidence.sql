@@ -23,7 +23,7 @@ WHERE NOT t.tgisinternal AND t.tgname IN (
   'refund_items_sale_ownership', 'promoter_commission_entries_sale_ownership',
   'ticket_inventory_retentions_sale_ownership', 'tickets_dispute_sale_ownership', 'audit_logs_payout_submission_fence',
   'settlements_finalization_fence', 'reconciliation_exceptions_evidence_hold', 'refunds_identity_fence',
-  'orders_sale_refund_aggregate', 'webhook_events_keep_identity')
+  'orders_sale_refund_aggregate', 'webhook_events_keep_identity', 'reconciliation_exceptions_hold_start')
 ORDER BY t.tgname;
 
 SELECT 'unvalidated_constraints' AS section, conrelid::regclass::text AS table_name, conname

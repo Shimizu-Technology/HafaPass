@@ -2751,7 +2751,8 @@
       "status": "system",
       "updated_at": "system",
       "webhook_event_id": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "hold_started_at": "system"
     },
     "referral_attributions": {
       "id": "system",

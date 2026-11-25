@@ -7,6 +7,10 @@ class ReconciliationException < ApplicationRecord
 
   enum :status, { open: 0, resolved: 1 }
 
+  # Stamped by the database on insert from the payment's overlap capture
+  # (hafapass_exception_hold_start) and never changed.
+  attr_readonly :hold_started_at
+
   validates :code, presence: true
   validates :expected_amount_cents, :actual_amount_cents,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true

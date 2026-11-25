@@ -60,6 +60,9 @@ RSpec.describe "never_fulfilled:release_evidence" do
     expect(latest).to include("section=triggers\ttgname=orders_sale_refund_aggregate", "section=triggers\ttgname=webhook_events_keep_identity",
       "overlap_captures: (none)", "orphan_receipts_without_identity: (none)", "paid_under_hold: (none)")
     expect(latest).to match(/section=cutovers\tkey=a1_overlap_guards/) if FinancialCutover.exists?(key: "a1_overlap_guards")
+    # A1-R1 boundary guards (hold start stamped on the exception).
+    expect(latest).to include("section=triggers\ttgname=reconciliation_exceptions_hold_start")
+    expect(latest).to match(/section=cutovers\tkey=a1_boundary_guards/) if FinancialCutover.exists?(key: "a1_boundary_guards")
     expect(counts.call).to eq(before)
   end
 

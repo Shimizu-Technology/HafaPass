@@ -35,10 +35,14 @@ RSpec.describe "Never-fulfilled payout evidence holds" do
 
   # An open never-fulfilled item the refund queue does not cover: a second
   # capture on a legacy order whose fulfilling payment is not proven.
+  # The captures are recorded at the (travelled) application time: the
+  # exception is written while the second capture is still unclassified, so
+  # the database keeps that capture's hold start on it (§6.9), and the
+  # database's own clock does not travel.
   def open_block!(target)
     order = create(:order, event: target, status: :completed, total_cents: 1360, subtotal_cents: 1360, service_fee_cents: 0)
-    create(:payment, :succeeded, order: order, amount_cents: 1360)
-    payment = create(:payment, :succeeded, order: order, amount_cents: 1360)
+    create(:payment, :succeeded, order: order, amount_cents: 1360, capture_recorded_at: Time.current)
+    payment = create(:payment, :succeeded, order: order, amount_cents: 1360, capture_recorded_at: Time.current)
     ReconciliationException.create!(order: order, payment: payment,
       code: Commerce::NeverFulfilledClassification::OWNERSHIP_AMBIGUOUS_CODE, details: { reason: "no_completion_evidence" })
   end
@@ -209,6 +213,88 @@ RSpec.describe "Never-fulfilled payout evidence holds" do
     Legacy7bcd97c2.payout_reconciler.call(payout: other.reload, actor: admin, status: "paid", provider_payout_id: "bank-f3-other",
       evidence: evidence(Time.current))
     expect(other.reload).to be_status_paid
+  end
+
+  # A1-R1 boundary fix 2 (§6.9): the hold an overlap capture opens starts at
+  # that capture and keeps that start when discovery classifies or
+  # quarantines it. A payout submitted before the capture and transferred in
+  # the gap between capture and discovery is refused before discovery and,
+  # with the same transfer time and confirmation, after it, by this release
+  # and by the database; a transfer that left before the capture is still
+  # recorded. Database clocks are real here (no time travel): the capture
+  # time is stamped by the database.
+  %i[quarantine classify].each do |discovery|
+    it "keeps the capture's hold start through discovery (#{discovery}) for the same during-gap transfer" do
+      sale, _item, a = sell!(event)
+      sale.update!(fulfilled_by_payment_id: a.id)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      payout = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "f2-gap-#{discovery}")
+      expect(payout).to be_status_processing
+      sleep 0.02
+      pre_hold = Time.current
+      sleep 0.02
+      b = create(:payment, order: sale, amount_cents: sale.total_cents, status: :pending)
+      if discovery == :classify
+        payload = { "id" => "evt_f2_#{b.id}", "type" => "payment_intent.succeeded", "livemode" => false,
+          "data" => { "object" => { "id" => b.provider_payment_id, "status" => "succeeded", "amount_received" => b.amount_cents,
+            "currency" => "usd" } } }
+        receipt = WebhookEvent.create!(provider: "stripe", provider_event_id: payload["id"], event_type: "payment_intent.succeeded",
+          payload: payload, provider_created_at: 1.second.ago, status: :processed, attempts: 1, processed_at: Time.current)
+        receipt.create_payment_event!(payment: b, event_type: "payment_intent.succeeded", amount_cents: b.amount_cents,
+          currency: "usd", provider_created_at: receipt.provider_created_at, data: {})
+      end
+      # 7bcd97c2 acknowledges B on the fulfilled sale: no exception.
+      b.update!(status: :succeeded, succeeded_at: Time.current)
+      captured_at = b.reload.capture_recorded_at
+      sleep 0.02
+      during_gap = Time.current
+      sleep 0.02
+      expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to be_within(0.001).of(captured_at)
+
+      attempts = lambda do
+        expect do
+          PayoutReconciler.call(payout: payout.reload, actor: admin, status: "paid", provider_payout_id: "bank-f2-#{discovery}",
+            evidence: evidence(during_gap, sent_before_hold_confirmed: true))
+        end.to raise_error(PayoutReconciler::ReconciliationError, /sent before the hold/)
+        expect do
+          ActiveRecord::Base.transaction(requires_new: true) do
+            FinancialIntegrity.with_payout_transfer(payout.id) do
+              Payout.where(id: payout.id).update_all(status: Payout.statuses.fetch("paid"), paid_at: during_gap)
+            end
+          end
+        end.to raise_error(ActiveRecord::StatementInvalid, /verified transfer evidence from before the hold/)
+        expect do
+          ActiveRecord::Base.transaction(requires_new: true) do
+            Legacy7bcd97c2.payout_reconciler.call(payout: payout.reload, actor: admin, status: "paid",
+              provider_payout_id: "bank-f2-old-#{discovery}", evidence: evidence(during_gap, sent_before_hold_confirmed: true))
+          end
+        end.to raise_error(ActiveRecord::StatementInvalid, /Repayment fence/)
+        expect(payout.reload).to be_status_processing
+      end
+      attempts.call
+
+      Commerce::NeverFulfilledReconcile.discover_overlap_captures!
+
+      if discovery == :classify
+        expect(UnfulfilledCapture.find_by!(payment: b).capture_scope).to eq("payment")
+      else
+        expect(ReconciliationException.find_by!(payment: b, code: Commerce::NeverFulfilledClassification::QUARANTINE_CODE)
+          .details).to include("reason" => "capture_receipt_missing")
+      end
+      issues = ReconciliationException.where(payment: b)
+      expect(issues).to be_present
+      expect(issues.map(&:created_at)).to all(be > during_gap)
+      expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to be_within(0.001).of(captured_at)
+      attempts.call
+      expect(issues.map(&:hold_started_at)).to all(be_within(0.001).of(captured_at))
+
+      # The transfer that left before B's capture is still recorded.
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "paid", provider_payout_id: "bank-f2-#{discovery}",
+        evidence: evidence(pre_hold, sent_before_hold_confirmed: true))
+      expect(payout.reload).to have_attributes(status: "paid", provider_payout_id: "bank-f2-#{discovery}")
+      audit = AuditLog.where(auditable: payout, action: "payout.reconciled").sole
+      expect(Time.iso8601(audit.metadata.fetch("never_fulfilled_hold_started_at"))).to be_within(0.001).of(captured_at)
+    end
   end
 
   # The in-flight outcome stays recordable (processing), and a held payout

@@ -19,9 +19,14 @@ class PayoutReconciler
       raise ReconciliationError, "A withholding override only applies when recording payment"
     end
     Payout.transaction do
-      # Match payout reservation's organization-first locking, so releasing a
-      # reservation and reserving a new payout cannot use competing snapshots.
-      payout.organization.lock!
+      # Match payout reservation's organization -> event -> payout locking, so
+      # releasing a reservation and reserving a new payout cannot use
+      # competing snapshots, and the hold read below sees any capture on the
+      # event that committed first (every capture holds the event row until
+      # it commits). NO KEY UPDATE on the organization so a capture holding
+      # the event can still insert its audit row (organization FK KEY SHARE).
+      payout.organization.lock!("FOR NO KEY UPDATE")
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       payout.connected_account.lock! if status == "paid"
       if payout.failure_code == "provider_result_conflict"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2165,6 +2165,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_140000) do
     t.datetime "updated_at", null: false
     t.bigint "webhook_event_id"
     t.datetime "retention_anonymized_at"
+    t.datetime "hold_started_at"
     t.index "((details ->> 'warning_id'::text))", name: "index_reconciliation_exceptions_on_early_fraud_warning_id", unique: true, where: "(((code)::text = 'early_fraud_warning'::text) AND (details ? 'warning_id'::text))"
     t.index ["order_id"], name: "index_reconciliation_exceptions_on_order_id"
     t.index ["payment_id"], name: "index_reconciliation_exceptions_on_payment_id"
@@ -4396,6 +4397,185 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_140000) do
       FOR EACH ROW WHEN (OLD.payload IS DISTINCT FROM NEW.payload
         AND OLD.event_type IN ('payment_intent.succeeded', 'refund.created', 'refund.updated', 'refund.failed', 'charge.refund.updated', 'charge.refunded', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed'))
       EXECUTE FUNCTION hafapass_keep_receipt_identity();
+    CREATE OR REPLACE FUNCTION hafapass_unclassified_capture(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT p.provider = 'stripe' AND p.status IN (1, 4, 5) AND p.capture_recorded_at IS NOT NULL
+          AND p.provider_environment IN ('test', 'live') AND p.provider_payment_id IS NOT NULL
+          AND NOT starts_with(p.provider_payment_id, 'sim_') AND p.provider_payload->>'simulated' IS DISTINCT FROM 'true'
+          AND CASE
+            -- Another payment's order-scope capture marked the order. Every
+            -- further capture on it is another order-scope capture
+            -- (OrderLifecycle), whatever the order's status since; there is
+            -- no sale for a test capture to compete with.
+            WHEN o.never_fulfilled_at IS NOT NULL THEN true
+            -- Payment.live_or_legacy_capture's mode rule: a test capture never
+            -- competes with a live one for the same sale.
+            WHEN o.fulfilled_by_payment_id IS NOT NULL THEN o.fulfilled_by_payment_id <> p.id
+              AND EXISTS (SELECT 1 FROM payments f WHERE f.id = o.fulfilled_by_payment_id
+                AND hafapass_live_or_legacy(f.provider_environment, f.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+            ELSE (o.completed_at IS NOT NULL OR o.status IN (1, 2, 4))
+              AND EXISTS (SELECT 1 FROM payments other WHERE other.order_id = o.id AND other.id <> p.id
+                AND other.status IN (1, 4, 5)
+                AND hafapass_live_or_legacy(other.provider_environment, other.provider_payload)
+                  = hafapass_live_or_legacy(p.provider_environment, p.provider_payload))
+              -- An item on another capture already holds this order.
+              AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions held JOIN payments other ON other.id = held.payment_id
+                WHERE other.order_id = o.id AND other.id <> p.id AND held.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement'))
+          END
+          AND NOT EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = p.id
+            AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement'))
+        FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target), false)
+    $$;
+
+    -- When an unclassified overlap capture began to overlap, or NULL when the
+    -- payment is not one: the later of its own capture and the order's first
+    -- other capture (every overlap needs another captured payment on the
+    -- order: the fulfilling one, the marking one or a competing one). Both
+    -- times are database-stamped once (payments_capture_recorded_at).
+    CREATE OR REPLACE FUNCTION hafapass_overlap_hold_start(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT GREATEST(p.capture_recorded_at, (SELECT MIN(other.capture_recorded_at) FROM payments other
+          WHERE other.order_id = p.order_id AND other.id <> p.id AND other.status IN (1, 4, 5)))
+        FROM payments p WHERE p.id = target AND hafapass_unclassified_capture(p.id)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) AS started
+          FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT hafapass_overlap_hold_start(p.id) FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (1, 4, 5)
+      ) blocks
+    $$;
+
+    -- Stamped on insert by the database (whatever value a writer supplies)
+    -- and never changed: the payment's own overlap start, or the start of a
+    -- blocking item still open on the same payment, whichever is earlier.
+    -- The new row is not yet visible here, so the first classifying exception
+    -- still sees the overlap it is about to end, and the items discovery
+    -- writes after it (a quarantine, a repayment wait) keep the same start
+    -- for as long as the payment's hold stays open. Once every item on the
+    -- payment is closed, a later item starts at its own time.
+    CREATE OR REPLACE FUNCTION hafapass_exception_hold_start() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' THEN
+        IF NEW.hold_started_at IS DISTINCT FROM OLD.hold_started_at THEN
+          RAISE EXCEPTION 'An exception''s hold start is recorded once, from its capture' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      NEW.hold_started_at := CASE WHEN NEW.payment_id IS NOT NULL AND NEW.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+        THEN LEAST(hafapass_overlap_hold_start(NEW.payment_id),
+          (SELECT MIN(LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at))) FROM reconciliation_exceptions re
+            WHERE re.payment_id = NEW.payment_id AND re.status = 0
+              AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held'))) END;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS reconciliation_exceptions_hold_start ON reconciliation_exceptions;
+    CREATE TRIGGER reconciliation_exceptions_hold_start BEFORE INSERT OR UPDATE OF hold_started_at ON reconciliation_exceptions
+      FOR EACH ROW EXECUTE FUNCTION hafapass_exception_hold_start();
+
+    -- The event row every capture holds until it commits (docs/LOCKING.md
+    -- rank 2). Already held by this release's payout writers; NOWAIT for an
+    -- older writer that holds the payout (rank 3) and would otherwise wait
+    -- in reverse order. A row lock taken in this block's subtransaction is
+    -- kept when the block returns.
+    CREATE OR REPLACE FUNCTION hafapass_lock_payout_event(target_event bigint) RETURNS void
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM 1 FROM events WHERE id = target_event FOR NO KEY UPDATE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+      RAISE EXCEPTION 'Repayment fence: event % has a sale or capture in progress; retry this payout step', target_event
+        USING ERRCODE = '55P03';
+    END;
+    $$;
+
+    -- 20261126140000's fence, after the event lock (finding 3).
+    CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      block_start timestamp;
+      submitted_before boolean;
+    BEGIN
+      IF TG_OP = 'UPDATE' AND (NEW.status = OLD.status
+          OR NEW.status NOT IN (0, 1, 2)) THEN
+        RETURN NEW;
+      END IF;
+      -- Lock in one statement; every later statement reads a fresh snapshot.
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF TG_OP = 'INSERT' AND hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s payouts need the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.status NOT IN (0, 1, 2) THEN
+        RETURN NEW;
+      END IF;
+      block_start := hafapass_payout_block_start(NEW.event_id);
+      IF block_start IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' THEN
+        submitted_before := EXISTS (SELECT 1 FROM audit_logs a
+          WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested'
+            AND a.occurred_at < block_start);
+        IF NEW.status = 1 AND OLD.status = 0 AND submitted_before THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2
+            AND OLD.status IN (0, 1, 5)
+            AND submitted_before AND NEW.paid_at IS NOT NULL AND NEW.paid_at < block_start
+            AND current_setting('hafapass.payout_transfer', true) IS NOT DISTINCT FROM NEW.id::text THEN
+          RETURN NEW;
+        END IF;
+        IF NEW.status = 2 THEN
+          RAISE EXCEPTION 'Repayment fence: payout % needs verified transfer evidence from before the hold', NEW.id
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_submission_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      target_event bigint;
+    BEGIN
+      SELECT event_id INTO target_event FROM payouts WHERE id = NEW.auditable_id;
+      PERFORM hafapass_lock_payout_event(target_event);
+      IF hafapass_payout_block_start(target_event) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_settlement_finalization_fence() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF hafapass_payout_block_start(NEW.event_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'Repayment fence: a buyer repayment on this event is unresolved' USING ERRCODE = '23514';
+      END IF;
+      IF hafapass_settlement_reader_required(NEW.event_id) THEN
+        RAISE EXCEPTION 'Repayment fence: this event''s statement needs the never-fulfilled settlement reader'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
   SQL
 
 end

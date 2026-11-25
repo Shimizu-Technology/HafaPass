@@ -39,8 +39,16 @@ class PayoutCreator
 
   attr_reader :settlement, :actor, :idempotency_key, :requested_amount_cents, :request, :withholding_override_reason
 
+  # Organization -> event -> payout (docs/LOCKING.md). The event row is the
+  # lock every capture holds until it commits, so the hold check below and
+  # the database's submission fence see any capture that committed first,
+  # and a capture that starts later waits for this authorization. NO KEY
+  # UPDATE on the organization, like the other payout paths that lock an
+  # event: a capture holding the event may still insert its audit row
+  # (organization FK KEY SHARE). The gateway call runs after these locks.
   def submit_payout!(payout)
-    payout.organization.with_lock do
+    payout.organization.with_lock("FOR NO KEY UPDATE") do
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
         raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
@@ -95,7 +103,9 @@ class PayoutCreator
 
   def record_observed_submission!(payout, **attributes)
     Payout.transaction do
-      payout.organization.lock!
+      # The same organization -> event -> payout order as the submission.
+      payout.organization.lock!("FOR NO KEY UPDATE")
+      payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       provider_result = attributes.dup
       withholding_review = false
