@@ -841,6 +841,7 @@ module Api
             buyer_fee_percent: event.buyer_fee_percent,
             transfers_enabled: event.transfers_available?,
             assigned_seating: event.assigned_seating?,
+            online_door_card_enabled: event.online_door_card_enabled? && !event.live_money_proof_candidate?,
             policy_hold: event.policy_hold_summary,
             sales_status: event.sales_status(context: (@sales_context ||= Event.sales_context)),
             supported_locales: event.supported_locales,

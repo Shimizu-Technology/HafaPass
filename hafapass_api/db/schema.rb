@@ -812,6 +812,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.integer "preview_token_version", default: 0, null: false
     t.datetime "organizer_sales_suspended_at"
     t.text "organizer_sales_suspension_reason"
+    t.boolean "online_door_card_enabled", default: false, null: false
     t.index "lower(translate((venue_city)::text, 'åàáâäãāéèêëēíìîïīóòôöõōúùûüūñÅÀÁÂÄÃĀÉÈÊËĒÍÌÎÏĪÓÒÔÖÕŌÚÙÛÜŪÑ'::text, 'aaaaaaaeeeeeiiiiioooooouuuuunaaaaaaaeeeeeiiiiioooooouuuuun'::text))", name: "index_events_on_folded_venue_city"
     t.index ["live_money_proof_candidate"], name: "index_events_on_live_money_proof_candidate"
     t.index ["organization_id"], name: "index_events_on_organization_id"
@@ -1674,10 +1675,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.string "provider_account_id"
     t.string "provider_platform_account_id"
     t.datetime "retention_anonymized_at"
+    t.string "stripe_checkout_session_id"
+    t.text "stripe_checkout_url"
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payments_on_retention_anonymized_at"
+    t.index ["stripe_checkout_session_id"], name: "index_payments_on_stripe_checkout_session_id", unique: true, where: "(stripe_checkout_session_id IS NOT NULL)"
     t.check_constraint "amount_cents >= 0", name: "payments_amount_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payments_currency_length"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payments_status_valid"

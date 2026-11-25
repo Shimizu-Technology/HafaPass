@@ -1,4 +1,10 @@
 class Order < ApplicationRecord
+  ONLINE_DOOR_CARD_METHODS = %w[door_card_link door_card_keyed].freeze
+
+  def online_door_card?
+    ONLINE_DOOR_CARD_METHODS.include?(payment_method)
+  end
+
   after_create :audit_buyer_agreement
 
   def audit_buyer_agreement

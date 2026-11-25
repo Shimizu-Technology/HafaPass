@@ -150,8 +150,8 @@ describe('uncertain box office sale', () => {
 })
 
 it.each([
-  [false, true, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
-  [false, false, "Card payments at the door aren't available on HåfaPass yet. Use cash. Never record a card payment manually."],
+  [false, true, "Clover reader payments are unavailable. Use cash. Never record a card payment manually."],
+  [false, false, "Clover reader payments are unavailable. Use cash. Never record a card payment manually."],
   [true, false, 'Card sales stay disabled until a Bank of Hawaii Clover merchant and terminal are verified by HåfaPass. Never record a card sale manually.'],
 ])('explains disabled card sales for capability %s and merchant %s', async (enabled, ready, message) => {
   window.sessionStorage.clear()
@@ -170,13 +170,13 @@ it.each(['door_cash', 'door_card'])('does not suggest cash while a saved %s sale
     payload: { payment_method: paymentMethod, line_items: [{ ticket_type_id: 7, quantity: 1 }] },
   }))
   const first = mountBoxOffice()
-  const unavailable = await screen.findByText(/Card payments at the door aren't available/)
+  const unavailable = await screen.findByText(/Clover reader payments are unavailable/)
   expect(unavailable).not.toHaveTextContent('Use cash')
   expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
   expect(screen.getByRole('button', { name: /Retry saved sale/ })).toBeInTheDocument()
   first.unmount()
   mountBoxOffice()
-  expect(await screen.findByText(/Card payments at the door aren't available/)).not.toHaveTextContent('Use cash')
+  expect(await screen.findByText(/Clover reader payments are unavailable/)).not.toHaveTextContent('Use cash')
   expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled()
 })
 

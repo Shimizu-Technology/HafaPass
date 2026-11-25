@@ -18,6 +18,10 @@ module Commerce
     end
 
     def call
+      if @order.online_door_card?
+        raise RecoveryError, "This payment is managed by the event box office."
+      end
+
       card_policy_blocked = false
       expired = false
       snapshot = OrderLifecycle.with_order_lock!(@order) do

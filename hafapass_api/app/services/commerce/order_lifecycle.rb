@@ -27,13 +27,8 @@ module Commerce
       # normally when the inventory is still free; otherwise release it and
       # refund the buyer automatically (LateCaptureRefundJob).
       #
-      # event_context_locked: only Commerce::OrderCreator passes true, when it
-      # completes an order it created inside the same transaction. That
-      # transaction already holds this order's event and every included night
-      # (the same set lock_event_context! derives from the order's pass ticket
-      # types), plus the organization when a waitlist offer is claimed, so
-      # re-deriving and re-acquiring them is skipped. Every later lock is taken
-      # exactly as before.
+      # The creator and hosted-checkout webhook already hold the event context
+      # when passing event_context_locked. Every later lock is still acquired.
       def complete!(order, payment: nil, webhook_event: nil, provider_amount_cents: nil, provider_currency: nil, wallet_type: nil,
         late_completion: false, event_context_locked: false)
         if event_context_locked && !Order.connection.transaction_open?
@@ -70,7 +65,9 @@ module Commerce
             next
           end
 
-          unless order.pending?
+          reopen_expired = late_completion && webhook_event && order.online_door_card? && order.expired? &&
+            payment && !ReconciliationException.where(payment: payment, code: LateCaptureRefund::CODES).exists?
+          unless order.pending? || reopen_expired
             mark_payment_succeeded!(payment)
             # One late capture, one exception and one refund job: a second
             # notice for the same payment (the expiry job's own check, then
@@ -100,8 +97,13 @@ module Commerce
           seat_session = order.seat_hold_session
           seat_session&.lock!
           seat_hold_invalid = seat_session && (!seat_session.status_claimed? || seat_session.expires_at <= Time.current)
-          unusable = holds.empty? || seat_hold_invalid || (holds + catalog_holds).any? { |hold| !hold.active? }
-          if !holds.empty? && pass_nights_exhausted?(holds)
+          inventory_valid = if reopen_expired
+            catalog_holds.empty? && holds.all? { |hold| hold.expired? && hold.release_reason == "hold_expired" }
+          else
+            (holds + catalog_holds).all?(&:active?)
+          end
+          unusable = holds.empty? || seat_hold_invalid || !inventory_valid
+          if !reopen_expired && !holds.empty? && pass_nights_exhausted?(holds)
             release_locked_order!(order, reason: "pass_all_included_nights_cancelled", expired: false,
               claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
             if payment.present?
@@ -117,18 +119,22 @@ module Commerce
             end
             next
           end
-          lapsed = (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
+          lapsed = reopen_expired || (holds + catalog_holds).any? { |hold| hold.expires_at <= Time.current }
           completed_late = lapsed && !unusable && late_completion && payment.present? &&
             late_capacity_available?(order, holds, catalog_holds, claimed_offer, seat_session)
-          if unusable || (lapsed && !completed_late)
-            release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
-              claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
+          admission_ended = order.online_door_card? && door_admission_ended?(order.event, holds)
+          if unusable || admission_ended || (lapsed && !completed_late)
+            if order.pending?
+              release_locked_order!(order, reason: "payment_succeeded_after_hold_expiry", expired: true,
+                claimed_offer: claimed_offer, holds: holds, catalog_holds: catalog_holds)
+            end
             mark_payment_succeeded!(payment)
             ReconciliationException.create!(
               order: order,
               payment: payment,
               webhook_event: webhook_event,
-              code: "late_payment_success_after_hold_expiry"
+              code: "late_payment_success_after_hold_expiry",
+              details: admission_ended ? { reason: "admission_ended" } : {}
             )
             LateCaptureRefundJob.perform_later(payment.id) if payment
             next
@@ -139,7 +145,11 @@ module Commerce
             if hold.pricing_tier
               hold.pricing_tier.increment!(:quantity_sold, hold.quantity)
             end
-            hold.consume!
+            if reopen_expired
+              hold.update!(status: :consumed, consumed_at: Time.current, released_at: nil, release_reason: nil)
+            else
+              hold.consume!
+            end
           end
 
           catalog_holds.each do |hold|
@@ -154,7 +164,8 @@ module Commerce
           finalize_waitlist_offer!(claimed_offer)
           record_promoter_commission!(order)
           mark_payment_succeeded!(payment)
-          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, wallet_type: wallet_type)
+          order.update!(status: :completed, completed_at: Time.current, expires_at: nil, expired_at: nil, wallet_type: wallet_type)
+          PublicEventCache.bump_after_commit! if completed_late
           AuditLogger.record!(action: "order.completed", auditable: order,
             organization: order.event.organization, event: order.event, outcome: "succeeded",
             deduplication_key: "order:#{order.id}:completed",
@@ -192,7 +203,7 @@ module Commerce
         end
       end
 
-      def cancel!(order, reason: "buyer_cancelled")
+      def cancel!(order, reason: "buyer_cancelled", closed_checkout_session_id: nil)
         payments_to_cancel = []
         Passes::Locking.with_lock_retry do
           payments_to_cancel = []
@@ -203,19 +214,24 @@ module Commerce
 
             holds, catalog_holds = lock_order_holds!(order)
             payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
+            if reason == "box_office_cancelled" &&
+                payments_to_cancel.any? { |payment| payment.stripe_checkout_session_id != closed_checkout_session_id }
+              raise InvalidTransition, "The Stripe checkout changed. Reload to cancel it."
+            end
+
             release_locked_order!(order, reason: reason, claimed_offer: lock_claimed_waitlist_offer!(order),
               holds: holds, catalog_holds: catalog_holds)
-            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: Time.current)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], stripe_checkout_url: nil, updated_at: Time.current)
           end
         end
         cancel_provider_payments!(order, payments_to_cancel)
       end
 
-      def expire!(order, at: Time.current)
+      def expire!(order, at: Time.current, provider_expired: false)
         # Ask the provider before releasing: a payment that already succeeded
         # (for example, its webhook is delayed) must be fulfilled or refunded,
         # never cancelled underneath the buyer.
-        if (late = succeeded_provider_payment(order, at: at))
+        if !order.online_door_card? && (late = succeeded_provider_payment(order, at: at))
           payment, intent = late
           complete!(order, payment: payment, provider_amount_cents: intent.amount_received,
             provider_currency: intent.currency, late_completion: true)
@@ -230,13 +246,13 @@ module Commerce
           Order.transaction do
             lock_event_context!(order)
             order.lock!
-            return false unless order.pending? && order.expires_at.present? && order.expires_at <= at
+            return false unless order.pending? && order.expires_at.present? && (provider_expired || order.expires_at <= at)
 
             holds, catalog_holds = lock_order_holds!(order)
             payments_to_cancel = order.payments.pending.where(provider: "stripe").order(:id).lock.to_a
             release_locked_order!(order, reason: "hold_expired", expired: true, at: at,
               claimed_offer: lock_claimed_waitlist_offer!(order), holds: holds, catalog_holds: catalog_holds)
-            order.payments.pending.update_all(status: Payment.statuses[:cancelled], updated_at: at)
+            order.payments.pending.update_all(status: Payment.statuses[:cancelled], stripe_checkout_url: nil, updated_at: at)
             expired_now = true
           end
         end
@@ -273,7 +289,8 @@ module Commerce
 
         now = Time.current
         types_free = holds.group_by(&:ticket_type).all? do |ticket_type, type_holds|
-          ticket_type.available_quantity >= type_holds.sum(&:quantity)
+          available = order.online_door_card? ? ticket_type.door_available_quantity : ticket_type.available_quantity
+          available >= type_holds.sum(&:quantity)
         end
         tiers_free = holds.select(&:pricing_tier).group_by(&:pricing_tier).all? do |tier, tier_holds|
           next true unless tier.quantity_based?
@@ -288,6 +305,19 @@ module Commerce
       def pass_nights_exhausted?(holds)
         holds.map(&:ticket_type).uniq(&:id).any? do |ticket_type|
           ticket_type.pass? && !ticket_type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES).exists?
+        end
+      end
+
+      def door_admission_ended?(event, holds, at: Time.current)
+        return true if event.completed? || event.effective_ends_at <= at
+
+        holds.map(&:ticket_type).uniq(&:id).any? do |type|
+          if type.pass?
+            !type.included_events.where.not(status: Event::INELIGIBLE_PASS_NIGHT_STATUSES + [:completed])
+              .where("COALESCE(events.ends_at, events.starts_at) > ?", at).exists?
+          else
+            (event.ends_at || event.starts_at) <= at
+          end
         end
       end
 
@@ -381,6 +411,11 @@ module Commerce
           expired_at: expired ? at : nil,
           expires_at: nil
         )
+        if order.online_door_card?
+          order.payments.where.not(stripe_checkout_session_id: nil).each do |payment|
+            ExpireDoorCheckoutSessionJob.perform_later(payment.id)
+          end
+        end
         AuditLogger.record!(action: "order.#{expired ? 'expired' : 'cancelled'}", auditable: order,
           organization: order.event.organization, event: order.event, outcome: "succeeded",
           deduplication_key: "order:#{order.id}:#{order.status}",
@@ -566,7 +601,7 @@ module Commerce
 
       def cancel_provider_payments!(order, payments)
         payments.each do |payment|
-          next if payment.provider_payment_id.blank?
+          next if payment.provider_payment_id.blank? || order.online_door_card?
 
           Timeout.timeout(30.seconds) do
             StripeService.cancel_payment_intent(

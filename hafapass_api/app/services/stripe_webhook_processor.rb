@@ -51,6 +51,8 @@ class StripeWebhookProcessor
     case event.type
     when "payment_intent.succeeded"
       process_success!(receipt, payment, object)
+    when "checkout.session.expired"
+      process_door_session_expiry!(receipt, payment, object)
     when "charge.updated"
       StripeProcessingFees.request!(payment, recheck: true) if payment
     when "payment_intent.processing"
@@ -84,7 +86,7 @@ class StripeWebhookProcessor
     mode_matches = context_known && incoming_mode == (payment.provider_environment == "live")
     # Old local fixtures predate context snapshots. Production always requires
     # explicit mode evidence; no test event may grant production admission.
-    mode_matches = true if !Rails.env.production? && !payload.key?("livemode")
+    mode_matches = true if !payment.order.online_door_card? && !Rails.env.production? && !payload.key?("livemode")
     if mode_matches && incoming_account == payment.provider_account_id
       if payload.key?("livemode") || Rails.env.production?
         begin
@@ -103,6 +105,13 @@ class StripeWebhookProcessor
   end
 
   def find_payment(object)
+    if event.type == "checkout.session.expired"
+      session_id = value(object, :id)
+      return if session_id.blank?
+
+      return Payment.find_by(provider: "stripe", stripe_checkout_session_id: session_id) || find_door_payment(object)
+    end
+
     provider_payment_id = if event.type.start_with?("payment_intent.")
       value(object, :id)
     else
@@ -111,7 +120,24 @@ class StripeWebhookProcessor
     return if provider_payment_id.blank?
 
     Payment.find_by(provider: "stripe", provider_payment_id: provider_payment_id) ||
-      backfill_legacy_payment(provider_payment_id)
+      (find_door_payment(object) if event.type.start_with?("payment_intent.")) || backfill_legacy_payment(provider_payment_id)
+  end
+
+  def find_door_payment(object)
+    metadata = value(object, :metadata)
+    id = nested_value(metadata, :hafapass_door_payment).to_s
+    return unless id.match?(/\A[1-9][0-9]{0,18}\z/)
+
+    payment = Payment.find_by(provider: "stripe", id: id)
+    payment if payment && door_metadata_matches?(payment, metadata)
+  end
+
+  def door_metadata_matches?(payment, metadata)
+    order = payment.order
+    order.online_door_card? && order.source == "box_office" &&
+      nested_value(metadata, :hafapass_door_payment).to_s == payment.id.to_s &&
+      order.checkout_key_digest.present? &&
+      nested_value(metadata, :hafapass_door_checkout) == order.checkout_key_digest
   end
 
   def backfill_legacy_payment(provider_payment_id)
@@ -150,6 +176,8 @@ class StripeWebhookProcessor
       return
     end
 
+    return process_door_success!(receipt, payment, object) if payment.order.online_door_card?
+
     amount = value(object, :amount_received) || value(object, :amount)
     currency = value(object, :currency)
     # This signed event proves the capture. When its amount and currency match
@@ -169,11 +197,61 @@ class StripeWebhookProcessor
     )
   end
 
+  def process_door_session_expiry!(receipt, payment, object)
+    return unless payment&.order&.online_door_card? && value(object, :status) == "expired"
+
+    session_id = value(object, :id)
+    return unless session_id.to_s.match?(/\Acs_#{payment.provider_environment}_[a-zA-Z0-9]+\z/)
+
+    verified = payment.with_lock do
+      if payment.stripe_checkout_session_id.nil?
+        # Stripe can expire a Session before the creating request saved its
+        # response. The signed metadata matches this exact local reservation.
+        payment.update!(stripe_checkout_session_id: session_id)
+      end
+      payment.stripe_checkout_session_id == session_id
+    end
+    unless verified
+      ReconciliationException.create!(order: payment.order, payment: payment, webhook_event: receipt, code: "payment_context_mismatch")
+      return
+    end
+
+    Commerce::OrderLifecycle.expire!(payment.order, provider_expired: true)
+  end
+
+  def process_door_success!(receipt, payment, object)
+    order = payment.order
+    intent_id = value(object, :id)
+    amount = value(object, :amount_received)
+    currency = value(object, :currency)
+    unless door_metadata_matches?(payment, value(object, :metadata)) && intent_id.to_s.match?(/\Api_[a-zA-Z0-9]+\z/) &&
+        value(object, :status) == "succeeded" && amount == payment.amount_cents && currency == payment.currency
+      ReconciliationException.create!(order: order, payment: payment, webhook_event: receipt, code: "payment_context_mismatch")
+      return
+    end
+
+    Commerce::OrderLifecycle.with_order_lock!(order) do
+      payment.lock!
+      if payment.provider_payment_id.present? && payment.provider_payment_id != intent_id
+        ReconciliationException.create!(order: order, payment: payment, webhook_event: receipt, code: "payment_context_mismatch")
+        next
+      end
+
+      payment.update!(provider_payment_id: intent_id, stripe_checkout_url: nil, failure_code: nil, failure_message: nil)
+      order.update!(stripe_payment_intent_id: intent_id)
+      if order.pending? && !order.event.reload.published?
+        Commerce::OrderLifecycle.expire!(order, provider_expired: true)
+      end
+      Commerce::OrderLifecycle.complete!(order, payment: payment, webhook_event: receipt,
+        provider_amount_cents: amount, provider_currency: currency, late_completion: true, event_context_locked: true)
+    end
+  end
+
   def process_failure!(payment, object)
     return unless payment
 
     error = value(object, :last_payment_error)
-    if value(object, :status) == "requires_payment_method"
+    if payment.order.online_door_card? || value(object, :status) == "requires_payment_method"
       record_pending_provider_state!(payment, "requires_payment_method", error: error)
       return
     end
@@ -203,7 +281,7 @@ class StripeWebhookProcessor
   end
 
   def process_cancellation!(payment)
-    return unless payment
+    return unless payment && !payment.order.online_door_card?
 
     Commerce::OrderLifecycle.fail!(payment.order, payment: payment, reason: "payment_cancelled")
   end

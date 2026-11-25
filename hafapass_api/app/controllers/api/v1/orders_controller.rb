@@ -209,6 +209,10 @@ class Api::V1::OrdersController < ApplicationController
   private :proof_authorization_for
 
   def cancel
+    if @order.online_door_card?
+      return render json: { error: "Ask the event box office to cancel this payment." }, status: :unprocessable_content
+    end
+
     Commerce::OrderLifecycle.cancel!(@order)
     render json: { status: "cancelled" }, status: :ok
   rescue Commerce::OrderLifecycle::InvalidTransition => e

@@ -153,7 +153,7 @@ class DataRetention
     update_unheld(deliveries, recipient: replacement, metadata: {},
       outbound_payload: {}, outbound_wire_body: nil, wire_body_digest: nil, last_error: nil,
       retention_anonymized_at: Time.current, updated_at: Time.current)
-    update_unheld(Payment.where(order_id: order.id), provider_payload: {}, failure_message: nil, updated_at: Time.current)
+    update_unheld(Payment.where(order_id: order.id), provider_payload: {}, failure_message: nil, stripe_checkout_url: nil, updated_at: Time.current)
     refunds = Refund.where(order_id: order.id)
     refunds = refunds.where(requested_by_id: [nil, privacy_user_id]) if privacy_user_id
     update_unheld(refunds, provider_payload: {}, reason: nil, failure_code: nil,
