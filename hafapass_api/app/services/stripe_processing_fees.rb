@@ -7,6 +7,11 @@ class StripeProcessingFees
   class EvidenceError < StandardError; end
   PENDING_CODE = "stripe_processing_fee_pending"
   REVIEW_CODE = "stripe_processing_fee_review_required"
+  # A payment-scope never-fulfilled capture's verified fee is kept on its own
+  # evidence row. Main's finance readers attribute every order-level
+  # processing component to the fulfilled sale, so no FeeComponent is written
+  # until the per-payment readers (A2) can attribute it to this payment.
+  PAYMENT_SCOPE_DEFERRED_CODE = "payment_scope_processing_deferred"
 
   def self.external_capture?(payment)
     payment&.provider == "stripe" && payment.provider_environment != "simulate" && payment.provider_payment_id.present? &&
@@ -85,7 +90,7 @@ class StripeProcessingFees
             if evidence.evidence_digest && evidence.evidence_digest != digest
               raise EvidenceError, "provider_fee_evidence_changed"
             end
-            unless evidence.fee_component
+            unless evidence.fee_component || UnfulfilledCapture.isolated_payment?(payment.id)
               if payment.order.fee_components.where(kind: "processing", estimated: false).exists?
                 raise EvidenceError, "legacy_processing_cost_requires_mapping"
               end
@@ -94,6 +99,14 @@ class StripeProcessingFees
                 metadata: { provider: "stripe", payment_id: payment.id, context_digest: evidence.context_digest,
                   provider_charge_id: facts[:provider_charge_id], fee_details: facts[:fee_details] })
               evidence.fee_component = component
+            end
+            if UnfulfilledCapture.isolated_payment?(payment.id) && evidence.fee_component.nil?
+              evidence.assign_attributes(facts)
+              evidence.update!(status: :review_required, evidence_digest: digest, attempts: evidence.attempts + 1,
+                next_attempt_at: nil, last_error_code: PAYMENT_SCOPE_DEFERRED_CODE)
+              payment.reconciliation_exceptions.open.where(code: PENDING_CODE).find_each(&:resolve!)
+              payment.reconciliation_exceptions.find_or_create_by!(order: payment.order, code: REVIEW_CODE, status: :open)
+              next
             end
             evidence.assign_attributes(facts)
             evidence.update!(status: :verified, evidence_digest: digest, verified_at: evidence.verified_at || Time.current,

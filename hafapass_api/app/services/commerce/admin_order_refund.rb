@@ -40,7 +40,7 @@ module Commerce
     end
 
     def self.captured_payments(order)
-      order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+      order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
     end
     private_class_method :captured_payments
 
@@ -129,7 +129,7 @@ module Commerce
     def refuse_amount_that_completes_order!(amount)
       return if amount.nil? || order.refunds.exists?(idempotency_key: refund_key)
 
-      returned = order.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      returned = order.refunds.where(status: [:pending, :succeeded]).excluding_isolated_payments.sum(:amount_cents)
       return unless amount + returned == order.total_cents
 
       raise fail_with("That amount refunds the whole order, which cancels its unscanned tickets. Choose Everything left instead.")

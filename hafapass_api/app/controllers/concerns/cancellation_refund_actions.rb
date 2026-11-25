@@ -68,7 +68,7 @@ module CancellationRefundActions
     @event.organization.with_lock do
       item.order.with_lock do
         item.with_lock do
-          payments = item.order.payments.where(status: [:succeeded, :partially_refunded])
+          payments = item.order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures
           payments = payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
           payment = payments.order(:id).first
           unless item.order.payment_method == "door_card" && payment && !%w[stripe door_cash].include?(payment.provider)

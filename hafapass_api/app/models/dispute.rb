@@ -4,6 +4,10 @@ class Dispute < ApplicationRecord
   belongs_to :order
   belongs_to :payment, optional: true
 
+  # Rows on the order's sale, never those on a payment-scope never-fulfilled
+  # capture (UnfulfilledCapture.isolated_payment_sql).
+  scope :excluding_isolated_payments, -> { where("NOT #{UnfulfilledCapture.isolated_payment_sql('disputes.payment_id')}") }
+
   enum :status, { open: 0, won: 1, lost: 2 }
 
   validates :provider, :provider_dispute_id, :currency, :opened_at, presence: true

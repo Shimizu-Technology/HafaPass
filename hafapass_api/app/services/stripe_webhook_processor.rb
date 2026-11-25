@@ -435,7 +435,7 @@ class StripeWebhookProcessor
       new_dispute = dispute.new_record?
       before_data = dispute.attributes.slice("status", "reason", "closed_at") unless new_dispute
       if dispute.persisted? && (dispute.won? || dispute.lost?)
-        cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
+        cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
         next
       end
 
@@ -466,7 +466,7 @@ class StripeWebhookProcessor
       )
       dispute.save!
       StripeProcessingFees.require_adjustment_review!(payment, reference: "dispute:#{provider_id}:#{provider_status}") if status != :open
-      cancel_disputed_tickets!(payment.order, dispute) if dispute.lost?
+      cancel_disputed_tickets!(payment.order, dispute) if dispute.lost? && !isolated_dispute?(dispute)
       action = if status == :open
         event.type == "charge.dispute.created" ? "dispute.opened" : "dispute.updated"
       else
@@ -523,6 +523,12 @@ class StripeWebhookProcessor
     return if warning_id.blank?
 
     ReconciliationException.where(code: "early_fraud_warning").where("details ->> 'warning_id' = ?", warning_id).order(:id).first
+  end
+
+  # A dispute on a payment-scope never-fulfilled capture (a distinct second
+  # payment) is recorded, but never cancels the sale's tickets.
+  def isolated_dispute?(dispute)
+    UnfulfilledCapture.isolated_payment?(dispute.payment_id)
   end
 
   def cancel_disputed_tickets!(order, dispute)

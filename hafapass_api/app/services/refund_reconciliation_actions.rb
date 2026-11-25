@@ -221,7 +221,7 @@ class RefundReconciliationActions
       order.with_lock do
         item.with_lock do
           raise ActionError, "This return has already been resolved" unless item.needs_manual?
-          payments = order.payments.where(status: [:succeeded, :partially_refunded])
+          payments = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures
           payments = payments.merge(Payment.live_or_legacy_capture) if Rails.env.production?
           payment = payments.order(:id).first
           amount = EventCancellationRefunds.balance_cents(order)

@@ -57,13 +57,22 @@ module Commerce
     PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to refund this order."
     FREE_PAID_OUT_MESSAGE = "This event has already been paid out. Contact HåfaPass support to cancel these tickets."
     DISPUTE_MESSAGE = "Contact support about the payment dispute before continuing."
+    # A distinct second payment on a fulfilled order (payment-scope
+    # never-fulfilled capture). The order-wide refund path never sends money
+    # for it; its per-payment repayment is a later A1 tranche.
+    ISOLATED_PAYMENT_MESSAGE = "This payment is a second payment on a fulfilled order. " \
+      "HåfaPass returns it to the buyer separately; contact support."
 
     # What can still be returned on one captured payment: the smaller of the
     # order's and the payment's remaining balance, with pending refunds counted.
+    # A payment-scope never-fulfilled capture is limited by its own ledger only,
+    # and never counts toward the sale's balance.
     def self.remaining_cents(order:, payment:)
       payment_remaining = payment.amount_cents - payment.refunds.where(status: [:pending, :succeeded]).sum(:amount_cents)
+      return payment_remaining if UnfulfilledCapture.isolated_payment?(payment.id)
+
       order_remaining = if Payment.live_or_legacy_capture.where(id: payment.id).exists?
-        live_payments = order.payments.merge(Payment.live_or_legacy_capture)
+        live_payments = order.payments.merge(Payment.live_or_legacy_capture).excluding_isolated_captures
         live_refunds = order.refunds.where(payment_id: live_payments.select(:id), status: [:pending, :succeeded]).sum(:amount_cents)
         [[order.total_cents, live_payments.sum(:amount_cents)].min - live_refunds, 0].max
       else
@@ -171,7 +180,11 @@ module Commerce
         order.lock!
         existing = order.refunds.find_by(idempotency_key: idempotency_key)
         next validate_replay!(existing) if existing
-        unless order.completed? || order.partially_refunded? || refundable_late_capture?
+        isolated = captured_payment.present? && UnfulfilledCapture.isolated_payment?(captured_payment.id)
+        # Money already returned by the provider on an isolated payment is
+        # always recorded, whatever the sale's own status is now.
+        raise RefundError, ISOLATED_PAYMENT_MESSAGE if isolated && (provider_refund.nil? || !tickets.nil?)
+        unless isolated || order.completed? || order.partially_refunded? || refundable_late_capture?
           raise RefundError, "Only completed or partially refunded orders can be refunded"
         end
         # Checked under the organization and event locks that payout creation
@@ -184,7 +197,7 @@ module Commerce
         raise RefundError, DISPUTE_MESSAGE if organizer_ticket_selection? && order.ticket_access_blocked?
 
         selected_tickets = lock_selected_tickets!
-        captured = order.payments.where(status: [:succeeded, :partially_refunded]).order(:id).to_a
+        captured = order.payments.where(status: [:succeeded, :partially_refunded]).excluding_isolated_captures.order(:id).to_a
         if captured_payment.nil? && captured.many?
           raise RefundError, "Multiple captured payments require finance reconciliation before a refund"
         end
@@ -561,10 +574,14 @@ module Commerce
         end
 
         refund.update!(status: :succeeded, succeeded_at: Time.current, failure_code: nil, failure_message: nil)
+        if UnfulfilledCapture.isolated_payment?(refund.payment_id)
+          finalize_isolated_payment_refund!(refund, provider_refund)
+          next
+        end
         allocate_items!(refund)
         record_promoter_commission_reversal!(refund)
 
-        succeeded_refunds = refund.order.refunds.succeeded
+        succeeded_refunds = refund.order.refunds.succeeded.excluding_isolated_payments
         if Payment.live_or_legacy_capture.where(id: refund.payment_id).exists?
           succeeded_refunds = succeeded_refunds.where(payment_id: refund.order.payments.merge(Payment.live_or_legacy_capture).select(:id))
         end
@@ -615,6 +632,15 @@ module Commerce
         refund.order.event.notify_waitlist_if_available
       end
       refund.reload
+    end
+
+    # Payment-only finalization (design §4.3): the refund and the payment's own
+    # refund status. No order status, RefundItem, ticket, inventory, promo,
+    # waitlist or commission change, and no ticket-cancellation email.
+    def finalize_isolated_payment_refund!(refund, provider_refund)
+      update_payment_refund_status!(refund.payment, refund.payment.refunds.succeeded.sum(:amount_cents))
+      audit_refund!(refund, "succeeded", outcome: "succeeded", source: "provider", observation: provider_refund)
+      StripeProcessingFees.require_adjustment_review!(refund.payment, reference: "refund:#{refund.provider_refund_id}")
     end
 
     def tickets_remain_after_refund?(refund)
