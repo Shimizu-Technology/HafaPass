@@ -22,15 +22,19 @@ class UnfulfilledCapture < ApplicationRecord
   belongs_to :order
   belongs_to :payment
 
+  # A payment-scope capture is a distinct second payment on a fulfilled order.
+  # It is isolated from the sale (design §4.3): its refunds, disputes and fees
+  # never act on the order.
   scope :payment_scope, -> { where(capture_scope: "payment") }
 
-  # SQL that is true when `column` names a payment-scope capture: a distinct
-  # second payment on a fulfilled order. Such a payment is isolated from the
-  # sale (design §4.3): its refunds, disputes and fees never act on the order.
-  # NOT of it keeps rows whose payment_id is NULL.
-  def self.isolated_payment_sql(column)
-    "EXISTS (SELECT 1 FROM never_fulfilled_captures nfc_iso WHERE nfc_iso.payment_id = #{column} " \
-      "AND nfc_iso.capture_scope = 'payment')"
+  # Rows of `relation` (payments, refunds or disputes) that belong to the sale.
+  # payment_id is NOT NULL here, so the NOT IN subquery is NULL-safe; rows
+  # with no payment_id are kept.
+  def self.excluding_isolated(relation, column)
+    isolated = payment_scope.select(:payment_id)
+    return relation.where.not(column => isolated) if column == :id
+
+    relation.where(column => nil).or(relation.where.not(column => isolated))
   end
 
   def self.isolated_payment?(payment_id)

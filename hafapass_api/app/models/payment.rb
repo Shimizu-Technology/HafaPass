@@ -39,8 +39,8 @@ class Payment < ApplicationRecord
   attr_readonly :capture_recorded_at
 
   # Captures that belong to the order's sale: everything except a payment-scope
-  # never-fulfilled capture (UnfulfilledCapture.isolated_payment_sql).
-  scope :excluding_isolated_captures, -> { where("NOT #{UnfulfilledCapture.isolated_payment_sql('payments.id')}") }
+  # never-fulfilled capture (UnfulfilledCapture.excluding_isolated).
+  scope :excluding_isolated_captures, -> { UnfulfilledCapture.excluding_isolated(self, :id) }
 
   def refunded_cents
     refunds.succeeded.sum(:amount_cents)
