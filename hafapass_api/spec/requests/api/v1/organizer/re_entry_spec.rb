@@ -450,8 +450,8 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       expect(day_rows[0]["Entries"]).to eq("2")
       expect(day_rows[0]["Exits"]).to eq("2")
       expect(day_rows[0]["Re-entries"]).to eq("1")
-      expect(day_rows[0]["Peak headcount"]).to eq("2")
-      expect(day_rows[0]["Peak headcount time"]).to eq("9:15 AM")
+      expect(day_rows[0]["Peak tickets inside"]).to eq("2")
+      expect(day_rows[0]["Peak tickets inside time"]).to eq("9:15 AM")
     end
 
     it "keeps multi-night pass child tickets independent per night with per-day headcount on the pass event" do
@@ -540,6 +540,151 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       report = Admissions::ReEntryReport.call(event: mixed_event)
       expect(report[:current_headcount]).to eq(2)
       expect(report[:entries]).to eq(2)
+      expect(report[:peak_headcount]).to eq(2)
+
+      # Attendance CSV includes source event title and ID when rows share the same date
+      get "/api/v1/organizer/events/#{mixed_event.id}/reports/export.csv", params: { report_type: "attendance" }, headers: headers
+      expect(response).to have_http_status(:ok)
+      csv = CSV.parse(response.body.delete_prefix("\uFEFF"), headers: true)
+      day_rows = csv.select { |row| row["Day"].present? }
+      expect(day_rows.map { |r| [r["Source event"], r["Source event ID"], r["Day"]] }).to eq([
+        ["Copa Mixed Event", mixed_event.id.to_s, "2027-01-30"],
+        ["Copa Night 1", day1_event.id.to_s, "2027-01-30"]
+      ])
+    end
+
+    it "keeps parent live headcount active at 06:30 during a 22:00-07:00 overnight pass night while enforcing per-event cutoff" do
+      night1 = create(:event, :published, organizer_profile: profile, title: "Overnight Pass Night 1",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan", re_entry_cutoff_time: "06:00",
+        starts_at: Time.zone.parse("2027-01-30T22:00:00+10:00"), ends_at: Time.zone.parse("2027-01-31T07:00:00+10:00"))
+      night2 = create(:event, :published, organizer_profile: profile, title: "Overnight Pass Night 2",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-31T22:00:00+10:00"), ends_at: Time.zone.parse("2027-02-01T07:00:00+10:00"))
+      pass_event = create(:event, :published, organizer_profile: profile, title: "Overnight Weekend Pass",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-30T22:00:00+10:00"), ends_at: Time.zone.parse("2027-02-01T07:00:00+10:00"))
+      pass_type = create(:ticket_type, event: pass_event, name: "2-Night Pass")
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: night1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: night2, position: 1)
+
+      order1 = create(:order, event: pass_event, buyer_name: "Night Owl One")
+      parent1 = create(:ticket, event: pass_event, order: order1, ticket_type: pass_type, attendee_name: "Night Owl One")
+      n1_ticket1 = Passes::Issuance.call(order: order1, parent_ticket: parent1).find { |t| t.event_id == night1.id }
+
+      order2 = create(:order, event: pass_event, buyer_name: "Night Owl Two")
+      parent2 = create(:ticket, event: pass_event, order: order2, ticket_type: pass_type, attendee_name: "Night Owl Two")
+      n1_ticket2 = Passes::Issuance.call(order: order2, parent_ticket: parent2).find { |t| t.event_id == night1.id }
+
+      # Both enter at 23:00 on Jan 30; holder 2 exits at 05:30 on Jan 31
+      travel_to(Time.zone.parse("2027-01-30T23:00:00+10:00"))
+      n1_device = create(:scanner_device, organization: organization, event: night1, user: owner, name: "Night 1 Gate",
+        authorization_expires_at: night1.ends_at + 12.hours)
+      n1_manifest = Admissions::ManifestBuilder.call(event: night1, actor: owner)
+      Admissions::Reconciler.call(device: n1_device, actor: owner, actions: [
+        { action_uuid: "on-admit-1", kind: "admit", source: "online", sequence: 1, manifest_version: n1_manifest.version,
+          occurred_at: Time.current.iso8601(6), ticket_id: n1_ticket1.id, credential_hash: Digest::SHA256.hexdigest(n1_ticket1.scan_credential) },
+        { action_uuid: "on-admit-2", kind: "admit", source: "online", sequence: 2, manifest_version: n1_manifest.version,
+          occurred_at: (Time.current + 1.minute).iso8601(6), ticket_id: n1_ticket2.id, credential_hash: Digest::SHA256.hexdigest(n1_ticket2.scan_credential) }
+      ])
+
+      travel_to(Time.zone.parse("2027-01-31T05:30:00+10:00"))
+      Admissions::Reconciler.call(device: n1_device, actor: owner, actions: [
+        { action_uuid: "on-exit-2", kind: "exit", source: "online", sequence: 3, manifest_version: n1_manifest.version,
+          occurred_at: Time.current.iso8601(6), ticket_id: n1_ticket2.id, credential_hash: Digest::SHA256.hexdigest(n1_ticket2.scan_credential) }
+      ])
+
+      # At 06:30 on Jan 31 (past parent's 05:00 rollover, still inside Night 1's 22:00-07:00 session):
+      travel_to(Time.zone.parse("2027-01-31T06:30:00+10:00"))
+      Admissions::Counts.expire_headcount_cache!(pass_event)
+      expect(Admissions::Counts.call(event: night1)[:live_headcount]).to eq(1)
+      expect(Admissions::Counts.call(event: pass_event)[:live_headcount]).to eq(1)
+      expect(Admissions::ReEntryReport.call(event: pass_event)[:current_headcount]).to eq(1)
+
+      # Night 1's 06:00 cutoff still blocks re-entry on Night 1 at 06:30
+      blocked = Admissions::Reconciler.call(device: n1_device, actor: owner, actions: [
+        { action_uuid: "on-reenter-2", kind: "admit", source: "online", sequence: 4, manifest_version: n1_manifest.version,
+          occurred_at: Time.current.iso8601(6), ticket_id: n1_ticket2.id, credential_hash: Digest::SHA256.hexdigest(n1_ticket2.scan_credential) }
+      ])
+      expect(blocked.first.action).to have_attributes(result: "rejected", reason_code: "re_entry_cutoff_passed")
+
+      # After Night 1's post-session window ends (07:00 + 6h = 13:00), both roll over to 0
+      travel_to(Time.zone.parse("2027-01-31T14:00:00+10:00"))
+      Admissions::Counts.expire_headcount_cache!(pass_event)
+      expect(Admissions::Counts.call(event: night1)[:live_headcount]).to eq(0)
+      expect(Admissions::Counts.call(event: pass_event)[:live_headcount]).to eq(0)
+      expect(Admissions::ReEntryReport.call(event: pass_event)[:current_headcount]).to eq(0)
+    end
+
+    it "computes combined peak from actual timestamped overlap without overcounting non-overlapping or prior-day occupancy" do
+      night1 = create(:event, :published, organizer_profile: profile, title: "Overlap Night 1",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-30T08:00:00+10:00"), ends_at: Time.zone.parse("2027-01-30T20:00:00+10:00"))
+      night2 = create(:event, :published, organizer_profile: profile, title: "Overlap Night 2",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-31T08:00:00+10:00"), ends_at: Time.zone.parse("2027-01-31T20:00:00+10:00"))
+      mixed_event = create(:event, :published, organizer_profile: profile, title: "Overlap Mixed Event",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-30T08:00:00+10:00"), ends_at: Time.zone.parse("2027-01-31T20:00:00+10:00"))
+      pass_type = create(:ticket_type, event: mixed_event, name: "2-Night Pass")
+      ga_type = create(:ticket_type, event: mixed_event, name: "Single GA")
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: night1, position: 0)
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: night2, position: 1)
+
+      pass_order = create(:order, event: mixed_event, buyer_name: "Pass Holder")
+      parent = create(:ticket, event: mixed_event, order: pass_order, ticket_type: pass_type, attendee_name: "Pass Holder")
+      children = Passes::Issuance.call(order: pass_order, parent_ticket: parent)
+      n1_child = children.find { |c| c.event_id == night1.id }
+      n2_child = children.find { |c| c.event_id == night2.id }
+
+      ga_order = create(:order, event: mixed_event, buyer_name: "GA Holder")
+      ga_ticket = create(:ticket, event: mixed_event, order: ga_order, ticket_type: ga_type, attendee_name: "GA Holder")
+
+      # Non-overlapping first: GA enters at 09:00, exits at 09:10; Night 1 pass enters at 09:20 -> peak is 1
+      travel_to(Time.zone.parse("2027-01-30T09:00:00+10:00"))
+      mixed_dev = create(:scanner_device, organization: organization, event: mixed_event, user: owner, name: "Main Gate")
+      n1_dev = create(:scanner_device, organization: organization, event: night1, user: owner, name: "Night 1 Gate")
+      mixed_manifest = Admissions::ManifestBuilder.call(event: mixed_event, actor: owner)
+      n1_manifest = Admissions::ManifestBuilder.call(event: night1, actor: owner)
+      Admissions::Reconciler.call(device: mixed_dev, actor: owner, actions: [{
+        action_uuid: "ov-ga-1", kind: "admit", source: "online", sequence: 1,
+        manifest_version: mixed_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: ga_ticket.id, credential_hash: Digest::SHA256.hexdigest(ga_ticket.scan_credential)
+      }])
+      travel_to(Time.zone.parse("2027-01-30T09:10:00+10:00"))
+      Admissions::Reconciler.call(device: mixed_dev, actor: owner, actions: [{
+        action_uuid: "ov-ga-exit", kind: "exit", source: "online", sequence: 2,
+        manifest_version: mixed_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: ga_ticket.id, credential_hash: Digest::SHA256.hexdigest(ga_ticket.scan_credential)
+      }])
+      travel_to(Time.zone.parse("2027-01-30T09:20:00+10:00"))
+      Admissions::Reconciler.call(device: n1_dev, actor: owner, actions: [{
+        action_uuid: "ov-n1-1", kind: "admit", source: "online", sequence: 1,
+        manifest_version: n1_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: n1_child.id, credential_hash: Digest::SHA256.hexdigest(n1_child.scan_credential)
+      }])
+      expect(Admissions::ReEntryReport.call(event: mixed_event)).to include(current_headcount: 1, peak_headcount: 1)
+
+      # GA re-enters at 10:05 while Night 1 pass is STILL inside -> combined overlap peak becomes 2 at 10:05 AM!
+      travel_to(Time.zone.parse("2027-01-30T10:05:00+10:00"))
+      Admissions::Reconciler.call(device: mixed_dev, actor: owner, actions: [{
+        action_uuid: "ov-ga-2", kind: "admit", source: "online", sequence: 3,
+        manifest_version: mixed_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: ga_ticket.id, credential_hash: Digest::SHA256.hexdigest(ga_ticket.scan_credential)
+      }])
+      report_day1 = Admissions::ReEntryReport.call(event: mixed_event)
+      expect(report_day1).to include(current_headcount: 2, peak_headcount: 2, peak_headcount_label: "10:05 AM")
+
+      # Day 2 (neither Day 1 ticket scanned out): Night 2 pass enters at 10:00 -> prior-day rollover prevents inflating peak to 3!
+      travel_to(Time.zone.parse("2027-01-31T10:00:00+10:00"))
+      n2_dev = create(:scanner_device, organization: organization, event: night2, user: owner, name: "Night 2 Gate")
+      n2_manifest = Admissions::ManifestBuilder.call(event: night2, actor: owner)
+      Admissions::Reconciler.call(device: n2_dev, actor: owner, actions: [{
+        action_uuid: "ov-n2-1", kind: "admit", source: "online", sequence: 1,
+        manifest_version: n2_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: n2_child.id, credential_hash: Digest::SHA256.hexdigest(n2_child.scan_credential)
+      }])
+      report_day2 = Admissions::ReEntryReport.call(event: mixed_event)
+      expect(report_day2).to include(current_headcount: 1, peak_headcount: 2, peak_headcount_label: "10:05 AM")
     end
 
     it "keeps overnight events (20:00-02:00) on one service day across midnight for anti-passback, exits, cooldown, cap, cutoff, and live headcount" do

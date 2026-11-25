@@ -12,8 +12,8 @@ class EventReportExport
   ATTENDANCE_COLUMNS = [
     "Ticket type", "Expected", "Checked in", "Not checked in", "Check-in rate (%)",
     "30-minute window", "Local time", "Time zone", "Check-ins in window",
-    "Day", "Entries", "Exits", "Re-entries", "Overrides", "Current headcount",
-    "Peak headcount", "Peak headcount time"
+    "Source event", "Source event ID", "Day", "Entries", "Exits", "Re-entries", "Overrides", "Tickets inside",
+    "Peak tickets inside", "Peak tickets inside time"
   ].freeze
   DEMOGRAPHICS_COLUMNS = [
     "Question", "Asked per", "Answer", "Count", "Share of respondents (%)", "Respondents", "Blank or unanswered"
@@ -53,7 +53,8 @@ class EventReportExport
       end +
       re_entry_days.map do |day|
         [nil, nil, nil, nil, nil, nil, nil, attendance[:timezone], nil,
-          day[:day], day[:entries], day[:exits], day[:re_entries], day[:overrides],
+          day[:event_title].present? ? SpreadsheetExport.safe_value(day[:event_title]) : nil,
+          day[:event_id], day[:day], day[:entries], day[:exits], day[:re_entries], day[:overrides],
           day[:current_headcount], day[:peak_headcount], day[:peak_headcount_label]]
       end
   end

@@ -144,11 +144,17 @@ module Admissions
       pass_rows = by_day.select { |entry| entry[:event_id].present? && entry[:event_id] != @event.id }
       return 0 if pass_rows.empty?
 
-      today_rows = pass_rows.select { |entry| entry[:day] == current_service_day }
-      return today_rows.sum { |entry| entry[:headcount].to_i } if today_rows.any?
-      return 0 if pass_rows.last[:day] < current_service_day
-
-      pass_rows.last[:headcount].to_i
+      pass_rows.group_by { |entry| entry[:event_id] }.sum do |_event_id, event_rows|
+        event_day = event_rows.first[:current_service_day] || current_service_day
+        today_rows = event_rows.select { |entry| entry[:day] == event_day }
+        if today_rows.any?
+          today_rows.sum { |entry| entry[:headcount].to_i }
+        elsif event_rows.last[:day] < event_day
+          0
+        else
+          event_rows.last[:headcount].to_i
+        end
+      end
     end
 
     def cached_headcount_by_day(current_service_day)
@@ -165,6 +171,7 @@ module Admissions
           label: entry[:label],
           event_id: entry[:event_id],
           event_title: entry[:event_title],
+          current_service_day: entry[:current_service_day],
           entries: entry[:entries],
           exits: entry[:exits],
           re_entries: entry[:re_entries],
