@@ -3,9 +3,11 @@
 // answers the request. To add a feature, create `./<feature>.js` exporting
 // `handle(ctx)` and add ONE import + ONE list entry below (see ../README.md).
 import * as boxOfficePrint from './box-office-print'
+import * as monitoring from './monitoring'
 import * as baseline from './baseline'
 
 export const DEMO_HANDLERS = [
   boxOfficePrint,
+  monitoring,
   baseline,
 ]

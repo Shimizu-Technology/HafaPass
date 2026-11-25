@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react'
 import { scrubTelemetry } from './utils/telemetryPrivacy'
+import { monitoringAreaForPath } from './utils/monitoringArea'
 
 export function initializeMonitoring() {
   if (import.meta.env.VITE_HAFAPASS_DEMO_DATA === '1') return
@@ -19,6 +20,8 @@ export function initializeMonitoring() {
       const message = event.exception?.values?.[0]?.value || ''
       if (message.includes('ResizeObserver')) return null
       if (message.includes('chrome-extension://')) return null
+      const area = monitoringAreaForPath(globalThis.location?.pathname)
+      if (area) event.tags = { ...event.tags, area }
       return scrubTelemetry(event)
     },
     beforeBreadcrumb: breadcrumb => scrubTelemetry(breadcrumb),

@@ -32,6 +32,9 @@ Rails.application.routes.draw do
       end
       get "health", to: "health#show"
       get "readiness", to: "health#readiness"
+      # Read-only sales and health summary for the morning brief; a scoped
+      # bearer token (OPS_SUMMARY_TOKEN), never a user session.
+      get "ops/summary", to: "ops/summaries#show"
       get "config", to: "config#show"
       get "marketing/unsubscribe/:token", to: "marketing_unsubscribes#show", as: :marketing_unsubscribe
       post "marketing/unsubscribe/:token", to: "marketing_unsubscribes#create"
@@ -325,6 +328,8 @@ Rails.application.routes.draw do
         resource :settings, only: [:show, :update]
         get "settings/fee_change_preview", to: "settings#fee_change_preview"
         resources :operations, only: [:index]
+        get "monitoring", to: "monitoring#show"
+        post "monitoring/test_alert", to: "monitoring#test_alert"
         resource :dashboard, only: [:show], controller: "dashboard"
         resources :events, only: [:index, :update] do
           member do

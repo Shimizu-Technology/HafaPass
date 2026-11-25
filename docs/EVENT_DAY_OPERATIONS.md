@@ -43,7 +43,8 @@ The named event-day lead must complete these steps while every device is online:
 4. Test one dedicated test ticket on every camera/browser combination. Native `BarcodeDetector` is used where supported; the bundled ZXing reader is the fallback. Verify manual credential entry and attendee lookup.
 5. Download and print the emergency door list. Store it with the event lead, not in a public area.
 6. If accepting cash, prepare the cash-control process and staff sign-off. If accepting cards, confirm the UI says the Bank of Hawaii Clover account is `verified` and `payment_ready`; otherwise card must remain disabled.
-7. Run the three-device conflict drill below. Do not open doors if signatures, device authorization, queue sync, counts, or the fallback list fail.
+7. Confirm alerts reach the platform owner's phone: Admin → Monitoring & alerts shows Stripe webhooks healthy and Sentry configured, and the scanner and box-office alert rules in [Monitoring setup](MONITORING_SETUP.md) have been tested. A scanner or box-office alert on event day means switch to the offline manifest and emergency list first, then diagnose.
+8. Run the three-device conflict drill below. Do not open doors if signatures, device authorization, queue sync, counts, or the fallback list fail.
 
 ## Three-device offline drill
 

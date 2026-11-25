@@ -15,6 +15,13 @@ class ApplicationController < ActionController::API
   before_action :enforce_launch_capability
   around_action :with_audit_context
 
+  # Before every callback, so an exception raised by any of them is tagged too.
+  def process_action(*)
+    area = MonitoringArea.for_controller(controller_path)
+    Sentry.set_tags(area: area) if area
+    super
+  end
+
   def append_info_to_payload(payload)
     super
     payload[:request_id] = request.request_id

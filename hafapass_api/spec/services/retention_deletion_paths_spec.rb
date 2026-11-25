@@ -6,7 +6,8 @@ RSpec.describe "Deletion path inventory" do
   PATHS = {
     "jobs/runtime_retention_job.rb" => [
       [/RuntimeThrottleBucket.*\.delete_all/, 1, "exempt: expired rate-limit bucket"],
-      [/RuntimeExecution.*\.delete_all/, 1, "exempt: expired runtime metrics"]
+      [/RuntimeExecution.*\.delete_all/, 1, "exempt: expired runtime metrics"],
+      [/WebhookRejectionCount.*\.delete_all/, 1, "exempt: expired rejected-webhook counters (no payload, no personal data)"]
     ],
     "jobs/data_retention_purge_job.rb" => [
       [/record\.destroy!/, 1, "guarded under record lock by RetentionGuard"]

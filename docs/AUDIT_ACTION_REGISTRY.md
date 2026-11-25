@@ -251,6 +251,7 @@ entries are described above and defined in the registry's audience variants.
 | `message_delivery.replayed` | yes | messaging | A | no | no | — | — | Replayed a message delivery. |
 | `message_provider_event.external_confirmed` | yes | messaging | A | no | no | — | — | Confirmed an external email receipt using reviewed evidence. |
 | `message_provider_event.external_source_confirmed` | yes | messaging | A | no | no | — | — | Confirmed an external email receipt from signed application provenance. |
+| `monitoring.test_alert_sent` | yes | platform | A | no | no | — | — | Sent a labelled test alert to error monitoring. |
 | `operations.synthetic_data_purged` | yes | platform | A | no | no | — | — | Purged synthetic platform data. |
 | `order.agreement_accepted` | yes | orders | O/F | yes | yes | `policy_version`, `accepted_at` | `event_title`, `order_reference`, `amount_cents`, `currency` | Accepted the buyer agreement. |
 | `order.cancelled` | yes | orders | O/F | yes | yes | `status` | `refund_id`, `amount_cents`, `currency`, `event_title`, `order_reference` | Cancelled an order. |
