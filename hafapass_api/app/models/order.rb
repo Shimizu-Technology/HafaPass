@@ -46,6 +46,10 @@ class Order < ApplicationRecord
   has_one :acquisition_attribution, dependent: :restrict_with_error
   has_many :marketplace_funnel_events, dependent: :restrict_with_error
   has_one :seat_hold_session, dependent: :restrict_with_error
+  has_many :unfulfilled_captures, dependent: :restrict_with_error
+  # Set once by the completion transaction; the database rejects another
+  # order's payment, a classified payment and any later change.
+  belongs_to :fulfilled_by_payment, class_name: "Payment", optional: true
 
   enum :status, { pending: 0, completed: 1, refunded: 2, cancelled: 3, partially_refunded: 4, expired: 5 }
   enum :fee_policy_snapshot, { buyer_pays: 0, organizer_absorbs: 1, split_fees: 2 }, prefix: :fee

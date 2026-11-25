@@ -3,6 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20261124164200_index_online_door_checkout_sessions")
 require Rails.root.join("db/migrate/20261124200200_index_re_entry_fields")
+require Rails.root.join("db/migrate/20261126100100_index_fulfillment_ownership")
 
 RSpec.describe "Resumable concurrent index migrations", :non_transactional do
   self.use_transactional_tests = false
@@ -155,6 +156,44 @@ RSpec.describe "Resumable concurrent index migrations", :non_transactional do
         p1.destroy!
         p2.destroy!
         order.destroy!
+        event.destroy!
+      end
+    end
+  end
+
+  describe IndexFulfillmentOwnership do
+    # index_payments_on_id_and_order_id backs two composite foreign keys, so it
+    # cannot be dropped here; the migration must skip it while valid.
+    let(:index_name) { "index_orders_on_fulfilled_by_payment_id" }
+
+    after do
+      ActiveRecord::Migration.suppress_messages { described_class.new.migrate(:up) }
+    end
+
+    it "skips the valid payment identity index and rebuilds an invalid fulfilling-payment index" do
+      drop_index_if_present(index_name)
+      event = create(:event)
+      first = create(:order, event: event)
+      second = create(:order, event: event)
+      begin
+        # Interrupted build: a same-named unique index on a duplicated column fails and stays invalid.
+        expect do
+          conn.execute("CREATE UNIQUE INDEX CONCURRENTLY #{index_name} ON orders (event_id)")
+        end.to raise_error(ActiveRecord::RecordNotUnique)
+        expect(index_validity(index_name)).to be(false)
+        expect(index_validity("index_payments_on_id_and_order_id")).to be(true)
+
+        expect do
+          ActiveRecord::Migration.suppress_messages { described_class.new.migrate(:up) }
+        end.not_to raise_error
+
+        expect(index_validity(index_name)).to be(true)
+        definition = conn.select_value("SELECT pg_get_indexdef('#{index_name}'::regclass)")
+        expect(definition).to include("(fulfilled_by_payment_id)", "WHERE (fulfilled_by_payment_id IS NOT NULL)")
+        expect(definition).not_to include("UNIQUE")
+      ensure
+        second.destroy!
+        first.destroy!
         event.destroy!
       end
     end

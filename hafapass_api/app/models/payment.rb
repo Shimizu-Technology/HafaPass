@@ -9,6 +9,7 @@ class Payment < ApplicationRecord
   has_many :payment_events, dependent: :restrict_with_error
   has_many :refunds, dependent: :restrict_with_error
   has_many :card_present_payment_attempts, dependent: :restrict_with_error
+  has_one :unfulfilled_capture, dependent: :restrict_with_error
 
   enum :status, { pending: 0, succeeded: 1, failed: 2, cancelled: 3, partially_refunded: 4, refunded: 5 }
 
@@ -31,6 +32,11 @@ class Payment < ApplicationRecord
   validates :provider_environment, inclusion: { in: %w[simulate test live] }, allow_nil: true
 
   attr_readonly :provider_environment, :provider_platform_account_id, :provider_account_id, :order_id, :provider, :idempotency_key, :amount_cents, :currency
+  # Database-stamped when the payment is first captured, then immutable
+  # (lib/financial_integrity.rb). Writers never supply it. Unlike succeeded_at,
+  # which the legacy webhook backfill copies from order.completed_at, it is
+  # the time HåfaPass actually recorded the capture.
+  attr_readonly :capture_recorded_at
 
   def refunded_cents
     refunds.succeeded.sum(:amount_cents)

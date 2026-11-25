@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_100400) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -895,6 +895,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.check_constraint "char_length(currency::text) = 3", name: "fee_components_currency_length"
   end
 
+  create_table "financial_cutovers", force: :cascade do |t|
+    t.string "key", null: false
+    t.datetime "recorded_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["key"], name: "index_financial_cutovers_on_key", unique: true
+  end
+
   create_table "guest_list_entries", force: :cascade do |t|
     t.string "added_by"
     t.datetime "created_at", null: false
@@ -1334,6 +1340,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.index ["retention_anonymized_at"], name: "index_message_provider_events_on_retention_anonymized_at"
   end
 
+  create_table "never_fulfilled_captures", force: :cascade do |t|
+    t.bigint "order_id", null: false
+    t.bigint "payment_id", null: false
+    t.string "capture_scope", null: false
+    t.string "code", null: false
+    t.integer "captured_cents", null: false
+    t.string "currency", null: false
+    t.integer "proceeds_cents", null: false
+    t.integer "fee_cents", null: false
+    t.integer "organizer_fee_cents", null: false
+    t.integer "tax_cents", null: false
+    t.datetime "capture_recorded_at", null: false
+    t.string "processing_bearer", null: false
+    t.string "dispute_fee_bearer", null: false
+    t.string "allocation_policy", null: false
+    t.string "policy_version", null: false
+    t.string "provenance", null: false
+    t.jsonb "provenance_evidence", default: {}, null: false
+    t.datetime "created_at", default: -> { "timezone('UTC'::text, clock_timestamp())" }, null: false
+    t.index ["order_id"], name: "index_never_fulfilled_captures_on_order_id"
+    t.index ["payment_id"], name: "index_never_fulfilled_captures_on_payment_id", unique: true
+    t.check_constraint "(proceeds_cents + fee_cents + organizer_fee_cents + tax_cents) = captured_cents", name: "never_fulfilled_captures_components_sum"
+    t.check_constraint "(processing_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text])) AND (dispute_fee_bearer::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "never_fulfilled_captures_bearers_valid"
+    t.check_constraint "allocation_policy::text = ANY (ARRAY['item_record'::character varying::text, 'cumulative_pro_rata'::character varying::text])", name: "never_fulfilled_captures_allocation_policy_valid"
+    t.check_constraint "capture_scope::text = 'order'::text OR fee_cents = 0 AND organizer_fee_cents = 0 AND tax_cents = 0", name: "never_fulfilled_captures_payment_scope_principal"
+    t.check_constraint "capture_scope::text = ANY (ARRAY['order'::character varying::text, 'payment'::character varying::text])", name: "never_fulfilled_captures_scope_valid"
+    t.check_constraint "captured_cents > 0", name: "never_fulfilled_captures_captured_positive"
+    t.check_constraint "char_length(currency::text) = 3", name: "never_fulfilled_captures_currency_length"
+    t.check_constraint "code::text = ANY (ARRAY['late_payment_success_after_inventory_release'::character varying::text, 'late_payment_success_after_hold_expiry'::character varying::text, 'pass_all_included_nights_cancelled'::character varying::text, 'unfulfilled_second_capture'::character varying::text, 'event_not_eligible'::character varying::text])", name: "never_fulfilled_captures_code_valid"
+    t.check_constraint "proceeds_cents >= 0 AND fee_cents >= 0 AND organizer_fee_cents >= 0 AND tax_cents >= 0", name: "never_fulfilled_captures_components_nonnegative"
+    t.check_constraint "provenance::text = 'lifecycle'::text OR provenance_evidence <> '{}'::jsonb", name: "never_fulfilled_captures_backfill_evidence"
+    t.check_constraint "provenance::text = ANY (ARRAY['lifecycle'::character varying::text, 'backfill'::character varying::text])", name: "never_fulfilled_captures_provenance_valid"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.bigint "catalog_item_id"
     t.datetime "created_at", null: false
@@ -1421,12 +1461,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.string "checkout_ip_digest"
     t.bigint "sold_by_id"
     t.datetime "platform_opt_in_at"
+    t.datetime "never_fulfilled_at"
+    t.bigint "fulfilled_by_payment_id"
     t.index "lower((buyer_email)::text), event_id, created_at DESC, id DESC", name: "index_orders_on_event_and_consent_email"
     t.index "lower(btrim((buyer_email)::text))", name: "index_orders_on_normalized_guest_buyer_email", where: "(user_id IS NULL)"
     t.index ["cash_sale_key"], name: "index_orders_on_cash_sale_key", unique: true
     t.index ["checkout_key_digest"], name: "index_orders_on_checkout_key_digest", unique: true
     t.index ["event_id", "checkout_ip_digest"], name: "index_orders_on_event_id_and_checkout_ip_digest", where: "(checkout_ip_digest IS NOT NULL)"
     t.index ["event_id"], name: "index_orders_on_event_id"
+    t.index ["fulfilled_by_payment_id"], name: "index_orders_on_fulfilled_by_payment_id", where: "(fulfilled_by_payment_id IS NOT NULL)"
     t.index ["payment_method"], name: "index_orders_on_payment_method"
     t.index ["promo_code_id"], name: "index_orders_on_promo_code_id"
     t.index ["reference"], name: "index_orders_on_reference", unique: true
@@ -1441,6 +1484,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.check_constraint "discount_cents >= 0", name: "orders_discount_nonnegative"
     t.check_constraint "fee_policy_snapshot = ANY (ARRAY[0, 1, 2])", name: "orders_fee_policy_snapshot_valid"
     t.check_constraint "guest_access_version > 0", name: "orders_guest_access_version_positive"
+    t.check_constraint "never_fulfilled_at IS NULL OR completed_at IS NULL AND (status <> ALL (ARRAY[0, 1]))", name: "orders_never_fulfilled_not_completed"
+    t.check_constraint "never_fulfilled_at IS NULL OR fulfilled_by_payment_id IS NULL", name: "orders_fulfilled_xor_never_fulfilled"
     t.check_constraint "organizer_fee_cents >= 0", name: "orders_organizer_fee_nonnegative"
     t.check_constraint "processing_fee_bearer_snapshot IS NULL OR (processing_fee_bearer_snapshot::text = ANY (ARRAY['platform'::character varying::text, 'organizer'::character varying::text]))", name: "orders_processing_fee_bearer_snapshot_valid"
     t.check_constraint "refund_amount_cents <= total_cents", name: "orders_refund_within_total"
@@ -1687,6 +1732,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     t.datetime "retention_anonymized_at"
     t.string "stripe_checkout_session_id"
     t.text "stripe_checkout_url"
+    t.datetime "capture_recorded_at"
+    t.index ["id", "order_id"], name: "index_payments_on_id_and_order_id", unique: true
     t.index ["idempotency_key"], name: "index_payments_on_idempotency_key", unique: true
     t.index ["order_id"], name: "index_payments_on_order_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_unique_provider_payment", unique: true, where: "(provider_payment_id IS NOT NULL)"
@@ -3152,11 +3199,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
   add_foreign_key "message_deliveries", "tickets", on_delete: :restrict
   add_foreign_key "message_deliveries", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "message_provider_events", "message_deliveries", on_delete: :nullify
+  add_foreign_key "never_fulfilled_captures", "orders"
+  add_foreign_key "never_fulfilled_captures", "payments", column: ["payment_id", "order_id"], primary_key: ["id", "order_id"], name: "fk_never_fulfilled_captures_same_order_payment"
   add_foreign_key "order_items", "catalog_items", on_delete: :restrict
   add_foreign_key "order_items", "orders", on_delete: :restrict
   add_foreign_key "order_items", "pricing_tiers", on_delete: :restrict
   add_foreign_key "order_items", "ticket_types", on_delete: :restrict
   add_foreign_key "orders", "events"
+  add_foreign_key "orders", "payments", column: ["fulfilled_by_payment_id", "id"], primary_key: ["id", "order_id"], name: "fk_orders_fulfilled_by_same_order_payment"
   add_foreign_key "orders", "promo_codes"
   add_foreign_key "orders", "users"
   add_foreign_key "orders", "users", column: "sold_by_id"
@@ -3335,6 +3385,208 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_213000) do
     $$;
     CREATE OR REPLACE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_protect_audit_log_truncate();
+  SQL
+
+  execute <<~SQL
+    CREATE OR REPLACE FUNCTION hafapass_payment_capture_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      captured boolean := NEW.status IN (1, 4, 5);
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.capture_recorded_at IS NOT NULL THEN
+        IF NEW.capture_recorded_at IS DISTINCT FROM OLD.capture_recorded_at THEN
+          RAISE EXCEPTION 'A payment''s capture recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF captured AND (TG_OP = 'INSERT' OR OLD.status NOT IN (1, 4, 5)) THEN
+        NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, timezone('UTC', clock_timestamp()));
+      ELSIF NEW.capture_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A capture recording time is written only when the payment is first captured'
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payments_capture_recorded_at ON payments;
+    CREATE TRIGGER payments_capture_recorded_at BEFORE INSERT OR UPDATE OF status, capture_recorded_at ON payments
+      FOR EACH ROW EXECUTE FUNCTION hafapass_payment_capture_recorded_at();
+    CREATE OR REPLACE FUNCTION hafapass_append_only() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION '% rows are append-only', TG_TABLE_NAME USING ERRCODE = '23514';
+    END;
+    $$;
+    -- Only the confirmed synthetic-data purge may empty these tables, with the
+    -- same transaction-scoped opt-in it sets for audit_logs.
+    CREATE OR REPLACE FUNCTION hafapass_append_only_truncate() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF current_setting('hafapass.audit_truncate', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION '% cannot be truncated', TG_TABLE_NAME USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_append_only ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_append_only BEFORE UPDATE OR DELETE ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER never_fulfilled_captures_no_truncate BEFORE TRUNCATE ON never_fulfilled_captures
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    DROP TRIGGER IF EXISTS financial_cutovers_append_only ON financial_cutovers;
+    CREATE TRIGGER financial_cutovers_append_only BEFORE UPDATE OR DELETE ON financial_cutovers
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    CREATE OR REPLACE TRIGGER financial_cutovers_no_truncate BEFORE TRUNCATE ON financial_cutovers
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    CREATE OR REPLACE FUNCTION hafapass_check_never_fulfilled_capture() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      ord orders%ROWTYPE;
+      pay payments%ROWTYPE;
+      cutover timestamp;
+    BEGIN
+      SELECT * INTO ord FROM orders WHERE id = NEW.order_id FOR UPDATE;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Classified order does not exist' USING ERRCODE = '23503';
+      END IF;
+      SELECT * INTO pay FROM payments WHERE id = NEW.payment_id FOR SHARE;
+      IF NOT FOUND OR pay.order_id <> NEW.order_id THEN
+        RAISE EXCEPTION 'A classified payment must belong to the classified order' USING ERRCODE = '23503';
+      END IF;
+      IF pay.status NOT IN (1, 4, 5) THEN
+        RAISE EXCEPTION 'Only a captured payment can be classified' USING ERRCODE = '23514';
+      END IF;
+      IF pay.amount_cents <> NEW.captured_cents OR lower(pay.currency) <> lower(NEW.currency) THEN
+        RAISE EXCEPTION 'A classification must match its payment''s amount and currency' USING ERRCODE = '23514';
+      END IF;
+
+      IF pay.capture_recorded_at IS NOT NULL THEN
+        NEW.capture_recorded_at := COALESCE(NEW.capture_recorded_at, pay.capture_recorded_at);
+        IF NEW.capture_recorded_at <> pay.capture_recorded_at THEN
+          RAISE EXCEPTION 'A classification must use its payment''s recorded capture time' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        SELECT recorded_at INTO cutover FROM financial_cutovers WHERE key = 'a1_capture_recording';
+        IF NEW.provenance <> 'backfill' OR NEW.capture_recorded_at IS NULL OR cutover IS NULL
+            OR NEW.capture_recorded_at > cutover THEN
+          RAISE EXCEPTION 'A capture recorded before A1 needs a backfilled time with evidence, no later than the cutover'
+            USING ERRCODE = '23514';
+        END IF;
+      END IF;
+
+      IF NEW.capture_scope = 'order' THEN
+        IF ord.completed_at IS NOT NULL OR ord.status IN (0, 1) OR ord.fulfilled_by_payment_id IS NOT NULL
+            OR EXISTS (SELECT 1 FROM audit_logs WHERE action = 'order.completed'
+              AND deduplication_key = 'order:' || ord.id || ':completed') THEN
+          RAISE EXCEPTION 'A pending or fulfilled order cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM tickets WHERE order_id = NEW.order_id AND status <> 2) THEN
+          RAISE EXCEPTION 'An order with active tickets cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+      ELSE
+        IF ord.fulfilled_by_payment_id IS NULL THEN
+          RAISE EXCEPTION 'A second capture needs the order''s verified fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+        IF ord.fulfilled_by_payment_id = NEW.payment_id THEN
+          RAISE EXCEPTION 'The fulfilling payment cannot be classified as never fulfilled' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_check ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_check BEFORE INSERT ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_never_fulfilled_capture();
+
+    -- The order marker is derived from its first order-scope row, never written directly.
+    CREATE OR REPLACE FUNCTION hafapass_mark_never_fulfilled_order() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.capture_scope = 'order' THEN
+        UPDATE orders SET never_fulfilled_at = NEW.created_at WHERE id = NEW.order_id AND never_fulfilled_at IS NULL;
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS never_fulfilled_captures_mark_order ON never_fulfilled_captures;
+    CREATE TRIGGER never_fulfilled_captures_mark_order AFTER INSERT ON never_fulfilled_captures
+      FOR EACH ROW EXECUTE FUNCTION hafapass_mark_never_fulfilled_order();
+    CREATE OR REPLACE FUNCTION hafapass_guard_order_fulfillment() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      payment_status integer;
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.never_fulfilled_at IS NOT NULL OR NEW.fulfilled_by_payment_id IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s fulfilment is recorded by its lifecycle, not at creation' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+
+      IF NEW.never_fulfilled_at IS DISTINCT FROM OLD.never_fulfilled_at THEN
+        IF OLD.never_fulfilled_at IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s never-fulfilled marker is set once' USING ERRCODE = '23514';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE order_id = NEW.id AND capture_scope = 'order'
+            AND created_at = NEW.never_fulfilled_at) THEN
+          RAISE EXCEPTION 'The never-fulfilled marker comes only from an order-scope classification' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+
+      IF NEW.fulfilled_by_payment_id IS DISTINCT FROM OLD.fulfilled_by_payment_id THEN
+        IF OLD.fulfilled_by_payment_id IS NOT NULL THEN
+          RAISE EXCEPTION 'An order''s fulfilling payment is set once' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status NOT IN (1, 2, 4) THEN
+          RAISE EXCEPTION 'Only a fulfilled order records its fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+        SELECT status INTO payment_status FROM payments
+          WHERE id = NEW.fulfilled_by_payment_id AND order_id = NEW.id FOR KEY SHARE;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'The fulfilling payment must belong to this order' USING ERRCODE = '23503';
+        END IF;
+        IF payment_status NOT IN (1, 4, 5) THEN
+          RAISE EXCEPTION 'The fulfilling payment must be captured' USING ERRCODE = '23514';
+        END IF;
+        IF EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE payment_id = NEW.fulfilled_by_payment_id
+            OR (order_id = NEW.id AND capture_scope = 'order')) THEN
+          RAISE EXCEPTION 'A never-fulfilled payment or order cannot record a fulfilling payment' USING ERRCODE = '23514';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS orders_fulfillment_guard ON orders;
+    CREATE TRIGGER orders_fulfillment_guard BEFORE INSERT OR UPDATE OF never_fulfilled_at, fulfilled_by_payment_id ON orders
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_order_fulfillment();
+    CREATE OR REPLACE FUNCTION hafapass_guard_ticket_issuance() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status = 2 THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'UPDATE' AND OLD.status <> 2 AND OLD.order_id = NEW.order_id THEN
+        RETURN NEW;
+      END IF;
+      IF TG_OP = 'INSERT' THEN
+        PERFORM 1 FROM orders WHERE id = NEW.order_id FOR KEY SHARE;
+      ELSE
+        BEGIN
+          PERFORM 1 FROM orders WHERE id = NEW.order_id FOR KEY SHARE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+          RAISE EXCEPTION 'Lock the order before reactivating or reassigning a ticket' USING ERRCODE = '55P03';
+        END;
+      END IF;
+      IF EXISTS (SELECT 1 FROM orders WHERE id = NEW.order_id AND never_fulfilled_at IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM never_fulfilled_captures WHERE order_id = NEW.order_id AND capture_scope = 'order') THEN
+        RAISE EXCEPTION 'Tickets cannot be issued on a never-fulfilled order' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS tickets_issuance_guard ON tickets;
+    CREATE TRIGGER tickets_issuance_guard BEFORE INSERT OR UPDATE OF order_id, status ON tickets
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_ticket_issuance();
   SQL
 
 end

@@ -380,6 +380,13 @@
         "metadata"
       ]
     },
+    "financial_cutovers": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "recorded_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "guest_list_entries": {
       "category": "organizer PII",
       "period": "7_years_after_year_end",
@@ -557,6 +564,13 @@
         "payload",
         "processing_error"
       ]
+    },
+    "never_fulfilled_captures": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "created_at",
+      "action": "keep",
+      "pii_columns": []
     },
     "order_items": {
       "category": "financial record",
@@ -1833,6 +1847,11 @@
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
+    "financial_cutovers": {
+      "id": "system",
+      "key": "system",
+      "recorded_at": "system"
+    },
     "guest_list_entries": {
       "id": "system",
       "added_by": "non-personal",
@@ -2132,6 +2151,27 @@
       "updated_at": "system",
       "retention_anonymized_at": "system"
     },
+    "never_fulfilled_captures": {
+      "id": "system",
+      "order_id": "system",
+      "payment_id": "system",
+      "capture_scope": "system",
+      "code": "system",
+      "captured_cents": "financial",
+      "currency": "financial",
+      "proceeds_cents": "financial",
+      "fee_cents": "financial",
+      "organizer_fee_cents": "financial",
+      "tax_cents": "financial",
+      "capture_recorded_at": "system",
+      "processing_bearer": "financial",
+      "dispute_fee_bearer": "financial",
+      "allocation_policy": "financial",
+      "policy_version": "system",
+      "provenance": "system",
+      "provenance_evidence": "system",
+      "created_at": "system"
+    },
     "order_items": {
       "id": "system",
       "catalog_item_id": "system",
@@ -2203,7 +2243,9 @@
       "locale": "non-personal",
       "marketing_opt_in": "pii",
       "retention_anonymized_at": "non-personal",
-      "platform_opt_in_at": "pii"
+      "platform_opt_in_at": "pii",
+      "never_fulfilled_at": "non-personal",
+      "fulfilled_by_payment_id": "non-personal"
     },
     "organization_invitation_dispatches": {
       "id": "system",
@@ -2386,7 +2428,8 @@
       "provider_environment": "system",
       "provider_account_id": "system",
       "provider_platform_account_id": "system",
-      "retention_anonymized_at": "system"
+      "retention_anonymized_at": "system",
+      "capture_recorded_at": "system"
     },
     "payout_check_adjustments": {
       "id": "system",
