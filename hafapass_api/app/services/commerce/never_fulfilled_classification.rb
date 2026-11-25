@@ -113,7 +113,8 @@ module Commerce
 
       case provider_evidence["source"]
       when "signed_webhook"
-        "provider_identity_unverified" unless provider_evidence["event_type"] == "payment_intent.succeeded" &&
+        event_type = provider_evidence["event_type"]
+        "provider_identity_unverified" unless event_type == "payment_intent.succeeded" &&
           provider_evidence["webhook_event_id"].present?
       when "provider_lookup"
         "provider_identity_unverified" unless provider_evidence["livemode"] == (payment.provider_environment == "live")

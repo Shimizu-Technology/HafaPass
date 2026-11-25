@@ -218,6 +218,14 @@ class AuditActions
         "order.admin_refund_requested" => "Requested an administrator refund for an order."
       }
 
+    # Never-fulfilled capture classification (docs/design/never-fulfilled-captures.md §4.6).
+    define registry, area: "orders", audience: %w[admin_only],
+      tenant: true, event_required: true,
+      snapshots: %w[], metadata: %w[], actions: {
+        "never_fulfilled_capture.classified" => "Recorded a captured payment that HåfaPass did not fulfil.",
+        "order.fulfilling_payment_recovered" => "Recorded which payment fulfilled a legacy order."
+      }
+
     # A paid late completion used a promo code past max_uses (see
     # OrderLifecycle#finalize_promo!). Platform review only.
     define registry, area: "promotions", audience: %w[admin_only],

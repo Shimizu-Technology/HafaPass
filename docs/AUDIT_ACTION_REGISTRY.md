@@ -348,6 +348,8 @@ entries are described above and defined in the registry's audience variants.
 | `reconciliation_exception.resolved` | yes | refunds | A | yes | yes | — | — | Resolved a payment reconciliation exception. |
 | `order.fraud_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested a fraud refund after a Stripe early fraud warning. |
 | `order.admin_refund_requested` | yes | refunds | A | yes | yes | — | — | Requested an administrator refund for an order. |
+| `never_fulfilled_capture.classified` | yes | orders | A | yes | yes | — | — | Recorded a captured payment that HåfaPass did not fulfil. |
+| `order.fulfilling_payment_recovered` | yes | orders | A | yes | yes | — | — | Recorded which payment fulfilled a legacy order. |
 | `refund.external_observed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a terminal external refund observation. |
 | `refund.failed` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a failed refund. |
 | `refund.pending` | yes | refunds | O/F | yes | yes | `status`, `failure_code` | `order_id`, `payment_id`, `amount_cents`, `currency`, `manual_record`, `event_title`, `order_reference` | Recorded a pending provider refund. |
