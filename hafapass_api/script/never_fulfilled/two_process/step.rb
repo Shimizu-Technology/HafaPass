@@ -288,6 +288,64 @@ when "setup"
   r12_event.update_columns(status: Event.statuses.fetch("completed"))
   S.save!(orphan_payment: orphan_payment.id, r10_order: r10_order.id, r10_a: r10_a.id, r10_b: r10_b.id, **r12)
 
+  # Boundary fix 1: A's late capture marks its order (this release), and a
+  # $5.00 refund on A moves it to partially refunded; B waits for the old
+  # release's capture.
+  r14_profile = F.create(:organizer_profile, :verified)
+  r14_event = F.create(:event, :published, organization: r14_profile.organization, organizer_profile: r14_profile)
+  r14_type = F.create(:ticket_type, event: r14_event, price_cents: 1200, quantity_available: 20, quantity_sold: 0)
+  r14 = Commerce::OrderCreator.call(event: r14_event, line_items: [{ ticket_type_id: r14_type.id, quantity: 1 }],
+    buyer_email: "rehearsal.marked@example.com", buyer_name: "Marked Buyer")
+  S.webhook!("payment_intent.payment_failed", { id: r14.payment.provider_payment_id, amount: r14.payment.amount_cents,
+    currency: "usd" }, id: "evt_reh_r14_a_failed", livemode: false)
+  S.capture!(r14.payment, id: "evt_reh_r14_a")
+  S.refund_notice!(r14.payment, "re_reh_r14_a_part", 500, id: "evt_reh_r14_a_part")
+  r14_b = F.second_payment!(r14.order, r14.payment, "pi_reh_r14_b", amount_cents: r14.order.total_cents)
+  S.save!(r14_event: r14_event.id, r14_order: r14.order.id, r14_a: r14.payment.id, r14_b: r14_b.id)
+
+  # Boundary fix 2: a payout submitted (and its transfer made) before B's
+  # capture on a fulfilled sale.
+  r15_profile = F.create(:organizer_profile, :verified)
+  r15_event = F.create(:event, :completed, organization: r15_profile.organization, organizer_profile: r15_profile)
+  r15_order, _item, r15_a = F.record_card_sale!(r15_event, ticket_type: F.create(:ticket_type, event: r15_event, price_cents: 2000),
+    quantity: 5, processing_fee_cents: 100)
+  r15_order.update!(fulfilled_by_payment_id: r15_a.id)
+  F.approved_bank_account!(r15_event.organization, actor: r15_profile.user, admin: admin)
+  r15_sent = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: r15_event, actor: admin), actor: admin,
+    idempotency_key: "reh-r15-sent", amount_cents: 2000)
+  sleep 0.05
+  r15_pre_hold = Time.current
+  sleep 0.05
+  r15_b = F.second_payment!(r15_order, r15_a, "pi_reh_r15_b", amount_cents: r15_order.total_cents)
+  S.save!(r15_event: r15_event.id, r15_order: r15_order.id, r15_b: r15_b.id, r15_sent: r15_sent.id,
+    r15_pre_hold: r15_pre_hold.utc.iso8601(6))
+
+  # Boundary fix 3: payout writers and captures on one event. r16 for the
+  # capture-first race (a pending and a sent payout, B1), an unrelated event
+  # of the same organizer, and r16b for the payout-first race (B2).
+  r16_profile = F.create(:organizer_profile, :verified)
+  r16 = { }
+  %w[r16 r16_other r16b].each do |key|
+    target = F.create(:event, :completed, organization: r16_profile.organization, organizer_profile: r16_profile)
+    order, _item, a = F.record_card_sale!(target, ticket_type: F.create(:ticket_type, event: target, price_cents: 2000),
+      quantity: 5, processing_fee_cents: 100)
+    order.update!(fulfilled_by_payment_id: a.id)
+    r16["#{key}_event"] = target.id
+    r16["#{key}_order"] = order.id
+    r16["#{key}_b"] = F.second_payment!(order, a, "pi_reh_#{key}_b", amount_cents: order.total_cents).id
+  end
+  F.approved_bank_account!(r16_profile.organization, actor: r16_profile.user, admin: admin)
+  reserve = lambda do |key, idempotency|
+    PayoutCreator.new(settlement: Settlements::Finalizer.call(event: Event.find(r16["#{key}_event"]), actor: admin), actor: admin,
+      idempotency_key: idempotency, amount_cents: 2000).send(:reserve!).first.id
+  end
+  r16["r16_pending"] = reserve.call("r16", "reh-r16-pending")
+  r16["r16_sent"] = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: Event.find(r16["r16_event"]), actor: admin),
+    actor: admin, idempotency_key: "reh-r16-sent", amount_cents: 2000).id
+  r16["r16_other_pending"] = reserve.call("r16_other", "reh-r16-other")
+  r16["r16b_pending"] = reserve.call("r16b", "reh-r16b-pending")
+  S.save!(**r16)
+
   S.save!(cpa_event: cpa_event.id, admin: admin.id, late_event: late_event.id, iso_event: iso_event.id, l1_payment: p1.id, l1_order: l1.id, l2_payment: p2.id,
     l3_payment: p3.id, l3_refund: r3.id, l4_payment: p4.id, l4_refund: r4.id,
     iso_order: iso_order.id, iso_a: iso_a.id, iso_b: iso_b.id, pend_order: pend_order.id, pend_a: pend_a.id, pend_b: pend_b.id,
@@ -621,6 +679,154 @@ when "r12_new_post_late_return"
     owed_cents: Commerce::BuyerReturnLedger.for(capture).owed_cents,
     holds: ReconciliationException.where(payment_id: p1.id).pluck(:code, :status), verify_after: S.verify_counts })
 
+when "r14_old_capture_b", "r14_new_redeliver"
+  # 7bcd97c2 receives B's success on the partially refunded marked order;
+  # this release later receives the redelivery (twice).
+  b = S.find(Payment, "r14_b")
+  (new_release ? 2 : 1).times do |delivery|
+    S.attempt(step, "payment_intent.succeeded on B (delivery #{delivery + 1})") { S.capture!(b, id: "evt_reh_r14_b") }
+  end
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r14_b"), b: b.reload.slice(:status, :capture_recorded_at),
+    order: b.order.slice(:status, :never_fulfilled_at, :refund_amount_cents),
+    exceptions: ReconciliationException.where(payment_id: b.id).order(:id).pluck(:code, :status),
+    hold_started_at: (ReconciliationException.where(payment_id: b.id).order(:id).pluck(:hold_started_at).map { |t| t&.utc&.iso8601(6) } if new_release),
+    classification: S.classification(b),
+    block_started_at: (Commerce::NeverFulfilledPayoutHold.block_started_at(b.order.event)&.utc&.iso8601(6) if new_release),
+    money: S.money(b.order) })
+
+when "r14_check_held"
+  event = S.find(Event, "r14_event")
+  b = S.find(Payment, "r14_b")
+  b_start = ActiveRecord::Base.connection.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_overlap_hold_start(?)", b.id]))
+  Rehearsal.outcome!(step, action: "state", value: { block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6),
+    b_hold_start: b_start && ActiveRecord::Type::DateTime.new.cast(b_start).utc.iso8601(6),
+    b_capture_recorded_at: b.capture_recorded_at&.utc&.iso8601(6), verify: S.verify_counts })
+  S.save!(r14_hold_before: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6))
+  event.update_columns(status: Event.statuses.fetch("completed"))
+
+when "r14_old_finalize", "r14_new_finalize"
+  Settlements::Finalizer.define_singleton_method(:open_money_blocker) { |_event| nil } unless new_release
+  S.attempt(step, "Settlements::Finalizer.call (marked order with B)") do
+    Settlements::Finalizer.call(event: S.find(Event, "r14_event"), actor: S.find(User, "admin"))
+  end
+
+when "r14_new_repay_a"
+  # A is repaid in full; A's own hold closes, B's stays.
+  a = S.find(Payment, "r14_a")
+  S.attempt(step, "refund.created for the rest of A") { S.refund_notice!(a, "re_reh_r14_a_rest", a.amount_cents - 500, id: "evt_reh_r14_a_rest") }
+  Rehearsal.outcome!(step, action: "state", value: {
+    holds: ReconciliationException.where(payment_id: [a.id, S.state.fetch("r14_b")], code: FinancialIntegrity::PAYOUT_BLOCKING_CODES)
+      .order(:id).pluck(:payment_id, :code, :status),
+    blocked: Commerce::NeverFulfilledPayoutHold.blocked?(a.order.event),
+    block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(a.order.event)&.utc&.iso8601(6),
+    owed_b: Commerce::BuyerRepayment.availability(UnfulfilledCapture.find_by!(payment_id: S.state.fetch("r14_b"))).owed_cents,
+    money: S.money(a.order) })
+
+when "r15_old_capture_b"
+  b = S.find(Payment, "r15_b")
+  S.attempt(step, "payment_intent.succeeded on B (fulfilled sale)") { S.capture!(b, id: "evt_reh_r15_b") }
+  Rehearsal.outcome!(step, action: "state", value: { receipt: S.receipt("evt_reh_r15_b"), b: b.reload.slice(:status, :capture_recorded_at),
+    exceptions: ReconciliationException.where(payment_id: b.id).count })
+
+when "r15_paid_gap"
+  # The same during-gap transfer (after B's capture, before discovery), in
+  # each release, before and after discovery (REHEARSAL_KEY).
+  payout = S.find(Payout, "r15_sent")
+  b = S.find(Payment, "r15_b")
+  unless S.state["r15_gap"]
+    sleep 0.05
+    S.save!(r15_gap: (b.capture_recorded_at + ((Time.current - b.capture_recorded_at) / 2)).utc.iso8601(6))
+  end
+  gap = Time.iso8601(S.state.fetch("r15_gap"))
+  S.attempt(step, "PayoutReconciler.call paid (#{ENV.fetch('REHEARSAL_KEY')} discovery, transfer #{gap.utc.iso8601(6)})") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-r15-gap",
+      evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: gap.utc.iso8601(6),
+        approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+  end
+  Rehearsal.outcome!(step, action: "state", value: { payout: payout.reload.slice(:status, :paid_at),
+    block_started_at: (Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event)&.utc&.iso8601(6) if new_release),
+    b_capture_recorded_at: b.capture_recorded_at.utc.iso8601(6) })
+
+when "r15_new_discover"
+  event = S.find(Event, "r15_event")
+  before = Commerce::NeverFulfilledPayoutHold.block_started_at(event)
+  S.attempt(step, "RefundReconciliationJob.perform_now (scheduled discovery)") { RefundReconciliationJob.perform_now }
+  b = S.find(Payment, "r15_b")
+  Rehearsal.outcome!(step, action: "state", value: { before: before&.utc&.iso8601(6),
+    after: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6), classification: S.classification(b),
+    exceptions: ReconciliationException.where(payment_id: b.id).order(:id).map { |e| [e.code, e.created_at.utc.iso8601(6), e.hold_started_at&.utc&.iso8601(6)] } })
+
+when "r15_new_paid_pre_hold"
+  payout = S.find(Payout, "r15_sent")
+  pre = Time.iso8601(S.state.fetch("r15_pre_hold"))
+  S.attempt(step, "PayoutReconciler.call paid (pre-hold transfer #{pre.utc.iso8601(6)})") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-r15-pre",
+      evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: pre.utc.iso8601(6),
+        approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+  end
+  Rehearsal.outcome!(step, action: "state", value: { payout: payout.reload.slice(:status, :paid_at, :provider_payout_id),
+    audit_hold: AuditLog.where(auditable: payout, action: "payout.reconciled").pluck(Arel.sql("metadata ->> 'never_fulfilled_hold_started_at'")) })
+
+when "r16_old_capture"
+  # 7bcd97c2 captures B on a fulfilled sale (REHEARSAL_KEY r16 or r16b); with
+  # REHEARSAL_PAUSE=capture it stops inside the open capture transaction.
+  key = ENV.fetch("REHEARSAL_KEY")
+  b = S.find(Payment, "#{key}_b")
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  S.attempt(step, "payment_intent.succeeded on B (#{key})") { S.capture!(b, id: "evt_reh_#{key}_b") }
+  Rehearsal.outcome!(step, action: "state", value: { seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2),
+    b: b.reload.slice(:status, :capture_recorded_at), committed_at: Time.now.utc.iso8601(6) })
+
+when "r16_submit"
+  # Submission authorization and gateway call (REHEARSAL_KEY names the
+  # payout), timed; then the gateway outcome, as each release records it.
+  payout = S.find(Payout, ENV.fetch("REHEARSAL_KEY"))
+  creator = PayoutCreator.new(settlement: payout.settlement, actor: S.find(User, "admin"), idempotency_key: payout.idempotency_key)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  result = S.attempt(step, "PayoutCreator#submit_payout! (#{ENV.fetch('REHEARSAL_KEY')})") { creator.send(:submit_payout!, payout) }
+  seconds = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)
+  if result
+    S.attempt(step, "record submission outcome (#{ENV.fetch('REHEARSAL_KEY')})") do
+      creator.send(:record_submission_outcome!, payout, provider_payout_id: result.provider_payout_id, status: result.status,
+        initiated_at: Time.current, paid_at: nil)
+      payout.reload
+    end
+  end
+  Rehearsal.outcome!(step, action: "state", value: { seconds: seconds, payout: payout.reload.slice(:status),
+    submission_audit_at: AuditLog.where(auditable: payout, action: "payout.submission_requested").pick(:occurred_at)&.utc&.iso8601(6) })
+
+when "r16_paid_during"
+  # Paid recording with a transfer time after B1's (uncommitted) capture.
+  payout = S.find(Payout, "r16_sent")
+  confirmed_at = Time.current
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  S.attempt(step, "PayoutReconciler.call paid (transfer #{confirmed_at.utc.iso8601(6)}, capture in flight)") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.find(User, "admin"), status: "paid", provider_payout_id: "bank-reh-r16-#{Rehearsal::ROLE}",
+      evidence: { reference: "Bank record", reason: "Transfer confirmed", confirmed_at: confirmed_at.utc.iso8601(6),
+        approved_tax_payee_confirmed: true, approved_payee_confirmed: true, sent_before_hold_confirmed: true })
+  end
+  Rehearsal.outcome!(step, action: "state", value: { seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2),
+    payout: payout.reload.slice(:status, :paid_at) })
+
+when "r16_state"
+  rows = %w[r16 r16_other r16b].to_h do |key|
+    event = S.find(Event, "#{key}_event")
+    b = S.find(Payment, "#{key}_b")
+    [key, { block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6),
+      b: b.slice(:status, :capture_recorded_at), payouts: event.payouts.order(:id).pluck(:id, :status),
+      submissions: AuditLog.where(auditable_type: "Payout", auditable_id: event.payouts.select(:id), action: "payout.submission_requested")
+        .order(:id).pluck(:auditable_id, :occurred_at) }]
+  end
+  Rehearsal.outcome!(step, action: "state", value: rows)
+
+when "r16_discover"
+  S.attempt(step, "RefundReconciliationJob.perform_now (scheduled discovery)") { RefundReconciliationJob.perform_now }
+  Rehearsal.outcome!(step, action: "state", value: %w[r16 r16b].to_h { |key|
+    b = S.find(Payment, "#{key}_b")
+    [key, { classification: S.classification(b), holds: ReconciliationException.where(payment_id: b.id).pluck(:code, :hold_started_at)
+      .map { |code, at| [code, at&.utc&.iso8601(6)] }, block_started_at: Commerce::NeverFulfilledPayoutHold.block_started_at(b.order.event)&.utc&.iso8601(6) }]
+  })
+
 when "verify_task"
   output = `bin/rails never_fulfilled:verify 2>&1`
   Rehearsal.outcome!(step, action: "never_fulfilled:verify", value: output.lines.map(&:strip))
@@ -668,6 +874,71 @@ when "assertions"
     ["pi_reh_orphan", [[S.state.fetch("orphan_payment"), "open"]]])
   check.call("upgrade: orphan cleared before the upgrade is reported for finance", S.verify_counts[:orphans_without_identity], 1)
   check.call("verify: no overlap captures or unposted movements left", S.verify_counts.slice(:overlap, :unposted), { overlap: [], unposted: [] })
+  # Boundary fixes (§6.9). Outcomes by step and process, from outcomes.jsonl.
+  rows = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
+  pick = ->(role, name, action = nil) { rows.select { |row| row["role"] == role && row["step"] == name && (action.nil? || row["action"].start_with?(action)) } }
+  r14_old = pick.call("old", "r14_old_capture_b", "state").last["value"]
+  check.call("fix1: 7bcd97c2 acknowledged B on the partially refunded marked order without an exception",
+    [r14_old.dig("receipt", "status"), r14_old.dig("b", "status"), r14_old["exceptions"], r14_old.dig("order", "status")],
+    ["processed", "succeeded", [], "partially_refunded"])
+  held = pick.call("new", "r14_check_held", "state").last["value"]
+  check.call("fix1: held from B's capture before discovery, and counted by verify",
+    [held["b_hold_start"] == held["b_capture_recorded_at"], held["block_started_at"] <= held["b_capture_recorded_at"],
+      held.dig("verify", "overlap"), held.dig("verify", "pending").map { |row| row[0..1] }],
+    [true, true, [S.state.fetch("r14_b")], [[S.state.fetch("r14_b"), "discover"]]])
+  check.call("fix1: both finalizers refused while B holds the event",
+    (pick.call("old", "r14_old_finalize") + pick.call("new", "r14_new_finalize")).map { |row| row["result"] }, %w[refused refused refused])
+  b14 = S.find(Payment, "r14_b")
+  b14_issue = ReconciliationException.where(payment_id: b14.id).order(:id).first
+  check.call("fix1: redelivery classified B in order scope from the old receipt, once",
+    [S.classification(b14)&.values_at(:scope, :code, :provenance, :webhook_event_id), UnfulfilledCapture.where(payment_id: b14.id).count,
+      ReconciliationException.where(payment_id: b14.id).count],
+    [["order", "late_payment_success_after_inventory_release", "lifecycle", WebhookEvent.find_by!(provider_event_id: "evt_reh_r14_b").id], 1, 1])
+  check.call("fix1: B's hold keeps B's capture as its start", b14_issue.hold_started_at&.utc&.iso8601(6), b14.capture_recorded_at.utc.iso8601(6))
+  repaid = pick.call("new", "r14_new_repay_a", "state").last["value"]
+  check.call("fix1: A repaid and closed, B still owed and holding the event from its own capture",
+    [repaid["holds"].map { |row| row[2] }, repaid["blocked"], repaid["block_started_at"], repaid["owed_b"], repaid.dig("money", "status"),
+      repaid.dig("money", "tickets")],
+    [%w[resolved open], true, b14.capture_recorded_at.utc.iso8601(6), b14.amount_cents, "refunded", []])
+  gaps = pick.call("new", "r15_paid_gap", "PayoutReconciler") + pick.call("old", "r15_paid_gap", "PayoutReconciler")
+  check.call("fix2: the same during-gap transfer refused before and after discovery, in both releases",
+    gaps.map { |row| [row["role"], row["action"][/(before|after)/], row["result"]] }.sort,
+    [%w[new after refused], %w[new before refused], %w[old after refused], %w[old before refused]])
+  discovered = pick.call("new", "r15_new_discover", "state").last["value"]
+  check.call("fix2: discovery keeps the hold start at B's capture",
+    [discovered["before"] == discovered["after"], discovered["exceptions"].map(&:last).uniq == [discovered["before"]],
+      discovered.dig("classification", "scope")], [true, true, "payment"])
+  r15 = S.find(Payout, "r15_sent")
+  check.call("fix2: the pre-hold transfer is recorded paid, with the original hold start in its audit",
+    [r15.status, r15.paid_at.utc.iso8601(6), AuditLog.where(auditable: r15, action: "payout.reconciled").pluck(Arel.sql("metadata ->> 'never_fulfilled_hold_started_at'"))],
+    ["paid", S.state.fetch("r15_pre_hold"), [discovered["before"]]])
+  old_submit = pick.call("old", "r16_submit", "PayoutCreator#submit_payout! (r16_pending)").sole
+  old_paid = pick.call("old", "r16_paid_during", "PayoutReconciler").sole
+  check.call("fix3: 7bcd97c2's submission and paid recording refused at once during the capture",
+    [old_submit.values_at("result", "error"), old_paid.values_at("result", "error"),
+      [old_submit, old_paid].all? { |row| row["message"].include?("in progress") }],
+    [%w[refused ActiveRecord::LockWaitTimeout], %w[refused ActiveRecord::LockWaitTimeout], true])
+  new_submit = pick.call("new", "r16_submit", "state").select { |row| row["value"]["payout"]["status"] != "processing" }
+  new_rows = pick.call("new", "r16_submit", "PayoutCreator#submit_payout! (r16_pending)").sole
+  new_paid = pick.call("new", "r16_paid_during")
+  check.call("fix3: this release's submission and paid recording waited for the capture, then refused",
+    [new_rows.values_at("result", "error"), new_submit.map { |row| row["value"]["seconds"] >= 1.0 },
+      new_paid.find { |row| row["action"].start_with?("PayoutReconciler") }.values_at("result", "error"),
+      new_paid.find { |row| row["action"] == "state" }["value"]["seconds"] >= 1.0],
+    [%w[refused PayoutCreator::PayoutError], [true], %w[refused PayoutReconciler::ReconciliationError], true])
+  r16_state = pick.call("new", "r16_state", "state").last["value"]
+  check.call("fix3: unrelated event's payout submitted during the capture; B1's event payouts unchanged",
+    [r16_state.dig("r16_other", "payouts").map(&:last), r16_state.dig("r16", "payouts").map(&:last)],
+    [["processing"], %w[pending processing]])
+  first = pick.call("old", "r16_old_capture", "state").select { |row| row["value"]["b"]["status"] == "succeeded" }.last["value"]
+  b2 = S.find(Payment, "r16b_b")
+  b2_audit = AuditLog.where(auditable_type: "Payout", auditable_id: S.state.fetch("r16b_pending"), action: "payout.submission_requested").sole
+  check.call("fix3: payout first: 7bcd97c2's capture waited for its submission, which is recorded as pre-hold",
+    [first["seconds"] >= 1.0, b2.capture_recorded_at > b2_audit.occurred_at, S.find(Payout, "r16b_pending").status],
+    [true, true, "processing"])
+  check.call("fix3: the held payout on B1's event never reached the gateway", File.readlines(File.join(Rehearsal::DIR, "calls.jsonl"))
+    .map { |line| JSON.parse(line) }.select { |call| call["kind"] == "payout_submit" }.map { |call| call["payout_id"] }
+    .include?(S.state.fetch("r16_pending")), false)
   baseline, upgraded = %w[baseline upgraded].map { |tag| JSON.parse(File.read(File.join(Rehearsal::DIR, "exports_#{tag}.json"))) }
   check.call("upgrade: CPA rows identical before and after the migration", upgraded["cpa"], baseline["cpa"])
   check.call("upgrade: BPT rows identical before and after the migration", upgraded["bpt"], baseline["bpt"])

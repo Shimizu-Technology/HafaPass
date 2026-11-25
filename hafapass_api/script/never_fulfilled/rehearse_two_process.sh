@@ -7,7 +7,8 @@
 # with data that release wrote, and is upgraded by this branch's migrations
 # (as bin/release-migrate does). The old process is paused inside its
 # stubbed calls (after its last refund gate, at its lookup before the gate,
-# at the payout gateway) and while holding an order lock, while the new
+# at the payout gateway, inside its capture transaction, right after its
+# payout submission audit) and while holding an order lock, while the new
 # process acts. The assertions step checks the saved postconditions
 # (assertions.txt); any FAIL makes the script exit nonzero.
 #
@@ -181,6 +182,64 @@ release order_lock
 wait "$old_pid" || true
 wait "$new_pid"
 reset_pause order_lock
+run new verify_task
+
+# Boundary fix 1: 7bcd97c2 acknowledges B on a partially refunded order that
+# A's late capture marked; this release holds from B's capture, the old
+# finalizer is refused, redelivery classifies B in order scope, and B stays
+# held after A is repaid.
+run old r14_old_capture_b
+run new r14_check_held
+run old r14_old_finalize
+run new r14_new_finalize
+run new r14_new_redeliver
+run new r14_new_repay_a
+run new r14_new_finalize
+
+# Boundary fix 2: the same during-gap transfer in both releases, before and
+# after the scheduled job discovers B; then the pre-hold transfer.
+run old r15_old_capture_b
+run new r15_paid_gap REHEARSAL_KEY=before
+run old r15_paid_gap REHEARSAL_KEY=before
+run new r15_new_discover
+run new r15_paid_gap REHEARSAL_KEY=after
+run old r15_paid_gap REHEARSAL_KEY=after
+run new r15_new_paid_pre_hold
+
+# Boundary fix 3, capture first: 7bcd97c2's capture of B1 is paused inside
+# its transaction. Its own submission and paid writers are refused at once;
+# this release submits an unrelated event's payout, and its submission and
+# paid recording on B1's event wait, then read the capture.
+run old r16_old_capture REHEARSAL_PAUSE=capture REHEARSAL_KEY=r16 &
+old_pid=$!
+wait_for capture
+run old r16_submit REHEARSAL_KEY=r16_pending
+run old r16_paid_during
+run new r16_submit REHEARSAL_KEY=r16_other_pending
+run new r16_submit REHEARSAL_KEY=r16_pending &
+new_submit_pid=$!
+run new r16_paid_during &
+new_paid_pid=$!
+sleep 2
+release capture
+wait "$old_pid"
+wait "$new_submit_pid"
+wait "$new_paid_pid"
+reset_pause capture
+# Payout first: 7bcd97c2's submission is paused right after its
+# authorization audit; its capture of B2 waits for it.
+run old r16_submit REHEARSAL_PAUSE=submission_audit REHEARSAL_KEY=r16b_pending &
+old_pid=$!
+wait_for submission_audit
+run old r16_old_capture REHEARSAL_KEY=r16b &
+capture_pid=$!
+sleep 2
+release submission_audit
+wait "$old_pid"
+wait "$capture_pid"
+reset_pause submission_audit
+run new r16_state
+run new r16_discover
 run new verify_task
 
 # Readers on a fully returned never-fulfilled order in an ordinary event.

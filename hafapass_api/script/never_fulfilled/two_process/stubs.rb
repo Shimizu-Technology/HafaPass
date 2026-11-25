@@ -123,3 +123,24 @@ EmailService.singleton_class.prepend(Module.new do
 
   def send_order_confirmation_async(*, **) = nil
 end)
+
+# Boundary-fix pause points (both releases have these methods). "capture":
+# inside a capture's open transaction, after the payment update, before its
+# commit (OrderLifecycle#mark_payment_succeeded! requests the fee lookup
+# there). "submission_audit": inside a payout submission's transaction, right
+# after its authorization audit row.
+StripeProcessingFees.singleton_class.prepend(Module.new do
+  def request!(payment, **options)
+    result = super
+    Rehearsal.pause("capture") if Payment.connection.transaction_open?
+    result
+  end
+end)
+
+AuditLogger.singleton_class.prepend(Module.new do
+  def record!(**attributes)
+    result = super
+    Rehearsal.pause("submission_audit") if attributes[:action] == "payout.submission_requested"
+    result
+  end
+end)
