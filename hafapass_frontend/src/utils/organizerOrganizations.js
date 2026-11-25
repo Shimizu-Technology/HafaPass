@@ -95,3 +95,12 @@ export const useCanViewOrganizationSeries = (authContext, enabled) =>
 
 export const useCanViewOrganizationActivity = (authContext, enabled) =>
   useSelectedOrganizationPermission(authContext, enabled, canViewOrganizationActivity)
+
+// The selected organization from the shared lookup, without starting one.
+// Returns null until the navigation (or another page) has loaded the list.
+export function useCachedSelectedOrganization(authContext) {
+  const current = useSyncExternalStore(subscribe, getCache)
+  const organizationId = useSyncExternalStore(subscribeStoredOrganization, storedOrganization)
+  if (!authContext || current.authContext !== authContext || !current.organizations) return null
+  return selectedOrganization(current.organizations, organizationId)
+}

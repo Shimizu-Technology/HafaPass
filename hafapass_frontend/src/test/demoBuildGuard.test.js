@@ -23,7 +23,7 @@ const DEMO_STRINGS = [
   'HAFAPASS_DEMO_FIXTURE_SENTINEL', 'HAFAPASS_DEMO_STAFF_SENTINEL', 'HAFAPASS_DEMO_PAYOUT_SENTINEL',
   'HAFAPASS_DEMO_CPA_EXPORT_SENTINEL', 'HAFAPASS_DEMO_RE_ENTRY_SENTINEL', 'Isla Demo Sports League', 'demo_staff_user',
   'demo-staff-token', '[demo-api]', 'Demo preview · fictional data', 'x-hafapass-demo', 'Copa de Marianas 2027 (demo)',
-  'Isla Demo Open (demo)',
+  'Isla Demo Open (demo)', 'Island Cup spectator day (demo)',
 ]
 
 function listFiles(directory) {
