@@ -11,11 +11,17 @@
 #     a later-supplied confirmation/effective date, never by current mutable
 #     status, and never by mutable columns such as `updated_at`:
 #     * Custodial captures: `agent_captures` only sees live/legacy USD Stripe
-#       captures with `payments.created_at < month_end`, and order custodial
-#       booking time is `GREATEST(COALESCE(orders.completed_at, orders.created_at),
-#       agent_cap.first_capture_created_at)`. A capture backfilled in a later
-#       month leaves closed months unchanged and enters custody in the capture's
-#       creation month labelled `"Stripe capture backfill relates to <Mon YYYY>"`.
+#       captures whose recording time is `< month_end`. For fulfilled orders
+#       (`orders.completed_at IS NOT NULL`), custodial booking time is
+#       `GREATEST(orders.completed_at, agent_cap.first_capture_created_at)`
+#       (backfilled captures enter custody in their creation month labelled
+#       `"Stripe capture backfill relates to <Mon YYYY>"`). For never-fulfilled
+#       late captures (`orders.completed_at IS NULL`, e.g. expired/cancelled
+#       door or online checkouts that captured late and auto-refunded),
+#       custodial booking time is the capture recording time
+#       `GREATEST(COALESCE(payments.succeeded_at, payments.created_at),
+#       payments.created_at)`, leaving the earlier reservation month untouched
+#       and labelling the capture month `"Late capture relates to <Mon YYYY>"`.
 #     * Paid payouts: `COALESCE(paid_audit.created_at, payouts.paid_at)` across
 #       all live (non-simulated) USD payouts. Audit joins rely on fields that
 #       survive `DataRetention.anonymize!` (`action`, `auditable_id`,
@@ -235,11 +241,29 @@ class CpaMonthlyReport
     time.in_time_zone(GUAM_TIMEZONE).strftime("%b %Y")
   end
 
+  CAPTURE_RECORDED_AT_SQL = <<~SQL.squish.freeze
+    CASE
+      WHEN orders.completed_at IS NOT NULL THEN payments.created_at
+      ELSE GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)
+    END
+  SQL
+
   def agent_captures
-    @agent_captures ||= Payment.live_or_legacy_capture.where(provider: "stripe", currency: "usd")
-      .where("payments.created_at < ?", month_end)
-      .where("LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'")
-      .where("provider_payload->>'simulated' IS DISTINCT FROM 'true' AND provider_payload->>'livemode' IS DISTINCT FROM 'false'")
+    @agent_captures ||= Payment.live_or_legacy_capture
+      .joins(:order)
+      .where(provider: "stripe", currency: "usd")
+      .where("(#{CAPTURE_RECORDED_AT_SQL}) < ?", month_end)
+      .where("LEFT(COALESCE(payments.provider_payment_id, ''), 4) <> 'sim_'")
+      .where("payments.provider_payload->>'simulated' IS DISTINCT FROM 'true' AND payments.provider_payload->>'livemode' IS DISTINCT FROM 'false'")
+  end
+
+  # Never-fulfilled orders (no completed_at) that captured on Stripe at any
+  # time. They are custodial from their capture's recording month only, so an
+  # earlier month must not pull them into the non-custodial bridge either.
+  def never_fulfilled_capture_order_ids
+    Order.where(completed_at: nil)
+      .where(id: Payment.live_or_legacy_capture.where(provider: "stripe", currency: "usd").select(:order_id))
+      .select(:id)
   end
 
   def nonlive_stripe_order_ids
@@ -252,36 +276,51 @@ class CpaMonthlyReport
       .select(:order_id)
   end
 
-  # Real (non-test, non-simulated) USD completed/refunded orders matching
-  # production Settlements::Calculator eligibility across all environments.
+  # Real (non-test, non-simulated) USD orders matching Settlements::Calculator
+  # eligibility, plus never-fulfilled expired/cancelled orders that actually
+  # recorded a live Stripe capture (so closed months stay immutable both before
+  # and after a late-capture auto-refund flips order.status to refunded).
   def real_usd_orders
     @real_usd_orders ||= begin
-      base = Order.excluding_test_payments
+      completed_base = Order.excluding_test_payments
         .where(status: [:completed, :partially_refunded, :refunded], currency: "usd")
-      base.where.not(id: nonlive_stripe_order_ids).or(base.where(id: agent_captures.select(:order_id)))
+        .where.not(id: nonlive_stripe_order_ids)
+      captured_base = Order.excluding_test_payments
+        .where(status: [:completed, :partially_refunded, :refunded, :expired, :cancelled], currency: "usd")
+        .where(id: agent_captures.select(:order_id))
+      completed_base.or(captured_base)
     end
   end
 
   # Earliest live/legacy non-simulated USD Stripe capture recorded on or before
-  # month_end. A capture backfilled in a later month (e.g. StripeWebhookProcessor
-  # #backfill_legacy_payment) is invisible to earlier closed months and enters
-  # custodial liability in the month the capture row was created.
+  # month_end. A backfilled capture or a never-fulfilled late capture recorded
+  # in a later month is invisible to earlier closed months and enters custodial
+  # liability in the month the capture was recorded.
   def agent_capture_join_sql
     succeeded_statuses = Payment.statuses.values_at("succeeded", "partially_refunded", "refunded")
     ActiveRecord::Base.sanitize_sql_array([
       <<~SQL.squish,
         INNER JOIN (
-          SELECT order_id, MIN(created_at) AS first_capture_created_at
+          SELECT
+            payments.order_id,
+            MIN(payments.created_at) AS first_capture_created_at,
+            MIN(GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)) AS first_capture_recorded_at
           FROM payments
-          WHERE provider = 'stripe'
-            AND currency = 'usd'
-            AND status IN (?)
-            AND (provider_environment = 'live' OR (provider_environment IS NULL AND provider_payload->>'livemode' IS DISTINCT FROM 'false' AND provider_payload->>'simulated' IS DISTINCT FROM 'true'))
-            AND LEFT(COALESCE(provider_payment_id, ''), 4) <> 'sim_'
-            AND provider_payload->>'simulated' IS DISTINCT FROM 'true'
-            AND provider_payload->>'livemode' IS DISTINCT FROM 'false'
-            AND created_at < ?
-          GROUP BY order_id
+          INNER JOIN orders cap_orders ON cap_orders.id = payments.order_id
+          WHERE payments.provider = 'stripe'
+            AND payments.currency = 'usd'
+            AND payments.status IN (?)
+            AND (payments.provider_environment = 'live' OR (payments.provider_environment IS NULL AND payments.provider_payload->>'livemode' IS DISTINCT FROM 'false' AND payments.provider_payload->>'simulated' IS DISTINCT FROM 'true'))
+            AND LEFT(COALESCE(payments.provider_payment_id, ''), 4) <> 'sim_'
+            AND payments.provider_payload->>'simulated' IS DISTINCT FROM 'true'
+            AND payments.provider_payload->>'livemode' IS DISTINCT FROM 'false'
+            AND (
+              CASE
+                WHEN cap_orders.completed_at IS NOT NULL THEN payments.created_at
+                ELSE GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)
+              END
+            ) < ?
+          GROUP BY payments.order_id
         ) agent_cap ON agent_cap.order_id = orders.id
       SQL
       succeeded_statuses,
@@ -293,7 +332,14 @@ class CpaMonthlyReport
     @agent_orders ||= real_usd_orders.where(id: agent_captures.select(:order_id))
   end
 
-  ORDER_CUSTODIAL_AT_SQL = "GREATEST(COALESCE(orders.completed_at, orders.created_at), agent_cap.first_capture_created_at)"
+  ORDER_CUSTODIAL_AT_SQL = <<~SQL.squish.freeze
+    CASE
+      WHEN orders.completed_at IS NOT NULL THEN
+        GREATEST(orders.completed_at, agent_cap.first_capture_created_at)
+      ELSE
+        GREATEST(COALESCE(agent_cap.first_capture_recorded_at, orders.created_at), agent_cap.first_capture_created_at)
+    END
+  SQL
 
   def orders_before
     @orders_before ||= agent_orders.joins(agent_capture_join_sql)
@@ -618,13 +664,19 @@ class CpaMonthlyReport
     proceeds_month = OrderItem.joins(:order).where(order_id: orders_in_month.select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
 
-    # Label late Stripe capture backfills (capture created in this month for an earlier order)
+    # Label late Stripe capture backfills and never-fulfilled late captures recorded
+    # in this month for an order created/completed in an earlier closed month.
     orders_in_month
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_start)
-      .pluck("orders.event_id", Arel.sql("COALESCE(orders.completed_at, orders.created_at)"))
-      .each do |event_id, order_at|
-        label = format_guam_month(order_at)
-        prior_period_event_labels[event_id] << "Stripe capture backfill relates to #{label}" if label
+      .pluck("orders.event_id", "orders.completed_at", "orders.created_at")
+      .each do |event_id, completed_at, created_at|
+        if completed_at.present?
+          label = format_guam_month(completed_at)
+          prior_period_event_labels[event_id] << "Stripe capture backfill relates to #{label}" if label
+        else
+          label = format_guam_month(created_at)
+          prior_period_event_labels[event_id] << "Late capture relates to #{label}" if label
+        end
       end
 
     refunded_proceeds_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
@@ -859,10 +911,11 @@ class CpaMonthlyReport
       end
     end
 
-    # Label processing fees recorded in this month for orders completed earlier
-    base.where("#{recorded_at_expr} >= ?", month_start)
-      .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_start)
-      .pluck("orders.event_id", Arel.sql("COALESCE(orders.completed_at, orders.created_at)"))
+    # Label processing fees recorded in this month for captures booked in an earlier month
+    base.joins(agent_capture_join_sql)
+      .where("#{recorded_at_expr} >= ?", month_start)
+      .where("(#{ORDER_CUSTODIAL_AT_SQL}) < ?", month_start)
+      .pluck("orders.event_id", Arel.sql(ORDER_CUSTODIAL_AT_SQL))
       .each do |event_id, order_at|
         label = format_guam_month(order_at)
         prior_period_labels[event_id] << "Processing fee relates to #{label}" if label
@@ -934,6 +987,7 @@ class CpaMonthlyReport
     non_custodial_orders = real_usd_orders
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_end)
       .where.not(id: agent_orders.select(:id))
+      .where.not(id: never_fulfilled_capture_order_ids)
       .where.not(id: cash_order_ids)
 
     bridge = Hash.new(0)
@@ -951,6 +1005,7 @@ class CpaMonthlyReport
     non_custodial_real_orders = real_usd_orders
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_end)
       .where.not(id: agent_orders.select(:id))
+      .where.not(id: never_fulfilled_capture_order_ids)
     FeeComponent.joins(:order)
       .where(order_id: non_custodial_real_orders.select(:id), kind: "processing", estimated: false)
       .where("fee_components.created_at < ?", month_end)

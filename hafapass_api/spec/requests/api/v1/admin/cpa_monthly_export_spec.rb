@@ -1215,6 +1215,142 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
     )
     expect(alerts["summary"]).to include("Reversed payout(s) missing reversal audit evidence ($90.00)")
   end
+
+  it "keeps closed January byte-identical when a late door-card capture and auto-refund occur in February, and dates cross-month capture and refund by recording month" do
+    org = create(:organization)
+    profile = create(:organizer_profile, organization: org)
+    same_month_event = create(:event, :published, organization: org, organizer_profile: profile,
+      online_door_card_enabled: true, max_capacity: 1)
+    cross_month_event = create(:event, :published, organization: org, organizer_profile: profile,
+      online_door_card_enabled: true, max_capacity: 1)
+    tt1 = create(:ticket_type, event: same_month_event, price_cents: 1_200, quantity_available: 1)
+    tt2 = create(:ticket_type, event: cross_month_event, price_cents: 1_200, quantity_available: 1)
+
+    jan_reserve = Time.zone.parse("2027-01-31T23:00:00+10:00")
+    jan_expire = Time.zone.parse("2027-01-31T23:40:00+10:00")
+    feb_capture = Time.zone.parse("2027-02-01T00:30:00+10:00")
+    feb_late_capture = Time.zone.parse("2027-02-28T23:00:00+10:00")
+    mar_refund = Time.zone.parse("2027-03-01T01:00:00+10:00")
+
+    create_expired_door_order = lambda do |target_event, target_tt, suffix|
+      order = nil
+      payment = nil
+      travel_to(jan_reserve) do
+        order = create(:order,
+          event: target_event, status: :pending, completed_at: nil, expires_at: jan_reserve + 35.minutes,
+          currency: "usd", payment_method: "door_card_link", source: "box_office",
+          subtotal_cents: 1_200, discount_cents: 0, service_fee_cents: 160, organizer_fee_cents: 0,
+          total_cents: 1_360, processing_fee_bearer_snapshot: "platform")
+        item = create(:order_item,
+          order: order, ticket_type: target_tt, quantity: 1, unit_price_cents: 1_200,
+          subtotal_cents: 1_200, discount_cents: 0, fee_cents: 160, organizer_fee_cents: 0,
+          organizer_proceeds_cents: 1_200)
+        create(:fee_component, order: order, kind: "platform", estimated: false, amount_cents: 160, created_at: jan_reserve)
+        create(:inventory_hold, order: order, order_item: item, ticket_type: target_tt, quantity: 1, expires_at: jan_reserve + 35.minutes)
+        payment = create(:payment,
+          order: order, provider: "stripe", provider_environment: "live",
+          provider_platform_account_id: "acct_LivePlatform",
+          stripe_checkout_session_id: "cs_live_Door#{suffix}",
+          provider_payment_id: "pi_live_Door#{suffix}",
+          amount_cents: 1_360, currency: "usd", status: :pending, succeeded_at: nil, created_at: jan_reserve)
+      end
+      travel_to(jan_expire) do
+        Commerce::OrderLifecycle.expire!(order, provider_expired: true)
+        # Sell out the released slot so the late capture cannot fulfill and must auto-refund.
+        target_tt.update!(quantity_sold: 1)
+      end
+      [order.reload, payment.reload]
+    end
+
+    order1, payment1 = create_expired_door_order.call(same_month_event, tt1, "SameFeb")
+    order2, payment2 = create_expired_door_order.call(cross_month_event, tt2, "CrossMar")
+
+    # Snapshot closed January BEFORE any February capture arrives
+    fetch_csv(year: 2027, month: 1)
+    jan_body_before = response.body.dup
+    expect(CSV.parse(jan_body_before, headers: true).size).to eq(1) # total row only ($0.00)
+
+    # February 1: late capture for event 1 + automatic refund in the SAME month (February)
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_live_SameFeb", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment1.provider_payment_id)
+    )
+    travel_to(feb_capture) do
+      Commerce::OrderLifecycle.complete!(order1, payment: payment1, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      expect(order1.reload).to be_expired
+      expect(order1.completed_at).to be_nil
+      expect(order1.tickets).to be_empty
+      expect(payment1.reload).to be_succeeded
+      Commerce::LateCaptureRefund.call(payment: payment1)
+      expect(order1.reload).to be_refunded
+      expect(order1.completed_at).to be_nil
+    end
+
+    # February 28: late capture for event 2 (NOT refunded yet in February!)
+    travel_to(feb_late_capture) do
+      Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true)
+      expect(order2.reload).to be_expired
+      expect(order2.completed_at).to be_nil
+      expect(payment2.reload).to be_succeeded
+    end
+
+    # Snapshot closed February BEFORE the March 1 refund runs
+    fetch_csv(year: 2027, month: 2)
+    feb_body_before_mar_refund = response.body.dup
+
+    # March 1: auto-refund succeeds for event 2
+    allow(StripeService).to receive(:refund_payment).and_return(
+      OpenStruct.new(id: "re_live_CrossMar", status: "succeeded", amount: 1_360, currency: "usd", payment_intent: payment2.provider_payment_id)
+    )
+    travel_to(mar_refund) do
+      Commerce::LateCaptureRefund.call(payment: payment2)
+      expect(order2.reload).to be_refunded
+      expect(order2.completed_at).to be_nil
+    end
+
+    # Regenerating closed January MUST stay byte-identical (no $12.00 proceeds or $1.60 fees added)
+    fetch_csv(year: 2027, month: 1)
+    expect(response.body).to eq(jan_body_before)
+
+    # Regenerating closed February MUST stay byte-identical after the March 1 refund!
+    feb_csv = fetch_csv(year: 2027, month: 2)
+    expect(response.body).to eq(feb_body_before_mar_refund)
+
+    feb_by_event = feb_csv.select { |r| r["row_type"] == "event" }.index_by { |r| r["event_id"] }
+    expect(feb_by_event.fetch(same_month_event.id.to_s).to_h).to include(
+      "opening_custodial_liability" => "0.00",
+      "proceeds_collected" => "12.00",
+      "proceeds_refunded" => "12.00",
+      "closing_custodial_liability" => "0.00",
+      "fee_revenue_gross" => "1.60",
+      "fee_refunds" => "1.60",
+      "fee_revenue_net" => "0.00"
+    )
+    expect(feb_by_event.fetch(same_month_event.id.to_s)["prior_period_note"]).to include("Late capture relates to Jan 2027")
+
+    expect(feb_by_event.fetch(cross_month_event.id.to_s).to_h).to include(
+      "opening_custodial_liability" => "0.00",
+      "proceeds_collected" => "12.00",
+      "proceeds_refunded" => "0.00",
+      "closing_custodial_liability" => "12.00",
+      "fee_revenue_gross" => "1.60",
+      "fee_refunds" => "0.00",
+      "fee_revenue_net" => "1.60"
+    )
+    expect(feb_by_event.fetch(cross_month_event.id.to_s)["prior_period_note"]).to include("Late capture relates to Jan 2027")
+
+    # March books the cross-month auto-refund cleanly and brings custodial liability back to $0.00
+    mar_csv = fetch_csv(year: 2027, month: 3)
+    mar_event = mar_csv.find { |r| r["row_type"] == "event" && r["event_id"] == cross_month_event.id.to_s }.to_h
+    expect(mar_event).to include(
+      "opening_custodial_liability" => "12.00",
+      "proceeds_collected" => "0.00",
+      "proceeds_refunded" => "12.00",
+      "closing_custodial_liability" => "0.00",
+      "fee_revenue_gross" => "0.00",
+      "fee_refunds" => "1.60",
+      "fee_revenue_net" => "-1.60"
+    )
+  end
 end
 
 # Follow-up #2 (CodeRabbit r4680406308): non-transactional snapshot isolation
