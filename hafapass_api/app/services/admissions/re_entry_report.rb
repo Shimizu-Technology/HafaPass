@@ -42,7 +42,8 @@ module Admissions
 
     def call_multi_night_pass(pass_nights)
       pass_parent_ids = @event.tickets.joins(:ticket_type).where(parent_ticket_id: nil, ticket_types: { is_pass: true }).pluck(:id)
-      by_day = pass_nights.flat_map do |night|
+      direct_days = sql_days(@event, ticket_ids: nil, event_title: @event.title, zone: @zone)
+      by_day = direct_days + pass_nights.flat_map do |night|
         night_zone = night.event_time_zone
         night_ticket_ids = pass_parent_ids.empty? ? [] : Ticket.where(event_id: night.id, parent_ticket_id: pass_parent_ids).pluck(:id)
         days = night_ticket_ids.empty? ? [] : sql_days(night, ticket_ids: night_ticket_ids, event_title: night.title, zone: night_zone)
@@ -225,9 +226,9 @@ module Admissions
 
     def aggregate_overall(by_day)
       current_day = @event.occupancy_day_for(Time.current).iso8601
-      today_row = by_day.find { |d| d[:day] == current_day }
-      current_headcount = if today_row
-        today_row[:current_headcount]
+      today_rows = by_day.select { |d| d[:day] == current_day }
+      current_headcount = if today_rows.any?
+        today_rows.sum { |d| d[:current_headcount].to_i }
       elsif by_day.any? && by_day.last[:day] < current_day
         0
       else

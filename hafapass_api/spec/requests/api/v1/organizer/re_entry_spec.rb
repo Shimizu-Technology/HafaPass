@@ -501,6 +501,47 @@ RSpec.describe "Event re-entry, live headcount, lead override, and reports", typ
       ])
     end
 
+    it "counts direct GA tickets alongside multi-night pass nights in live headcount and re-entry reports" do
+      day1_event = create(:event, :published, organizer_profile: profile, title: "Copa Night 1",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-30T08:00:00+10:00"), ends_at: Time.zone.parse("2027-01-30T20:00:00+10:00"))
+      mixed_event = create(:event, :published, organizer_profile: profile, title: "Copa Mixed Event",
+        timezone: "Pacific/Guam", re_entry_mode: "exit_scan",
+        starts_at: Time.zone.parse("2027-01-30T08:00:00+10:00"), ends_at: Time.zone.parse("2027-01-31T20:00:00+10:00"))
+      pass_type = create(:ticket_type, event: mixed_event, name: "2-Day Pass")
+      ga_type = create(:ticket_type, event: mixed_event, name: "Single GA")
+      TicketTypeIncludedEvent.create!(ticket_type: pass_type, included_event: day1_event, position: 0)
+
+      pass_order = create(:order, event: mixed_event, buyer_name: "Pass Holder")
+      parent = create(:ticket, event: mixed_event, order: pass_order, ticket_type: pass_type, attendee_name: "Pass Holder")
+      day1_child = Passes::Issuance.call(order: pass_order, parent_ticket: parent).sole
+      ga_order = create(:order, event: mixed_event, buyer_name: "GA Holder")
+      ga_ticket = create(:ticket, event: mixed_event, order: ga_order, ticket_type: ga_type, attendee_name: "GA Holder")
+
+      travel_to(Time.zone.parse("2027-01-30T10:00:00+10:00"))
+      mixed_device = create(:scanner_device, organization: organization, event: mixed_event, user: owner, name: "Main Gate")
+      mixed_manifest = Admissions::ManifestBuilder.call(event: mixed_event, actor: owner)
+      Admissions::Reconciler.call(device: mixed_device, actor: owner, actions: [{
+        action_uuid: "mixed-ga-1", kind: "admit", source: "online", sequence: 1,
+        manifest_version: mixed_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: ga_ticket.id, credential_hash: Digest::SHA256.hexdigest(ga_ticket.scan_credential)
+      }])
+      expect(Admissions::Counts.call(event: mixed_event)[:live_headcount]).to eq(1)
+
+      d1_device = create(:scanner_device, organization: organization, event: day1_event, user: owner, name: "Night 1 Gate")
+      d1_manifest = Admissions::ManifestBuilder.call(event: day1_event, actor: owner)
+      Admissions::Reconciler.call(device: d1_device, actor: owner, actions: [{
+        action_uuid: "mixed-pass-1", kind: "admit", source: "online", sequence: 1,
+        manifest_version: d1_manifest.version, occurred_at: Time.current.iso8601(6),
+        ticket_id: day1_child.id, credential_hash: Digest::SHA256.hexdigest(day1_child.scan_credential)
+      }])
+      Admissions::Counts.expire_headcount_cache!(mixed_event)
+      expect(Admissions::Counts.call(event: mixed_event)[:live_headcount]).to eq(2)
+      report = Admissions::ReEntryReport.call(event: mixed_event)
+      expect(report[:current_headcount]).to eq(2)
+      expect(report[:entries]).to eq(2)
+    end
+
     it "keeps overnight events (20:00-02:00) on one service day across midnight for anti-passback, exits, cooldown, cap, cutoff, and live headcount" do
       night_event = create(:event, :published,
         organizer_profile: profile,

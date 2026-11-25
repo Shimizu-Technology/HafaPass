@@ -43,7 +43,7 @@ module Admissions
 
       by_day = cached_headcount_by_day(current_service_day)
       live_headcount = if multi_night_pass_breakdown?(by_day)
-        resolve_pass_live_headcount(by_day, current_service_day: current_service_day, fallback: row.fetch(:currently_inside))
+        row.fetch(:currently_inside) + resolve_pass_live_headcount(by_day, current_service_day: current_service_day)
       else
         row.fetch(:currently_inside)
       end
@@ -140,14 +140,15 @@ module Admissions
       by_day.any? { |entry| entry[:event_id].present? && entry[:event_id] != @event.id }
     end
 
-    def resolve_pass_live_headcount(by_day, current_service_day:, fallback:)
-      return fallback if by_day.empty?
+    def resolve_pass_live_headcount(by_day, current_service_day:)
+      pass_rows = by_day.select { |entry| entry[:event_id].present? && entry[:event_id] != @event.id }
+      return 0 if pass_rows.empty?
 
-      today_entry = by_day.find { |entry| entry[:day] == current_service_day }
-      return today_entry[:headcount] if today_entry
-      return 0 if by_day.last[:day] < current_service_day
+      today_rows = pass_rows.select { |entry| entry[:day] == current_service_day }
+      return today_rows.sum { |entry| entry[:headcount].to_i } if today_rows.any?
+      return 0 if pass_rows.last[:day] < current_service_day
 
-      by_day.last[:headcount]
+      pass_rows.last[:headcount].to_i
     end
 
     def cached_headcount_by_day(current_service_day)
