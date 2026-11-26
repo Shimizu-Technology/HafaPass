@@ -30,9 +30,11 @@
 #   verified_at=2026-11-26T00:40:00Z (ISO8601 with offset)
 #   evidence=<the read-only query and its zero result>
 #
-# and the candidate must hold its exports (at least one CSV; header-only
-# files qualify), every one with no data rows. The output says
-# comparison=verified_zero_baseline, never that a comparison ran.
+# and the candidate must hold the real exporters' pair for every month it
+# exported (hafapass-cpa-monthly-YYYY-MM.csv with its one all-zero total
+# row, hafapass-bpt-events-YYYY-MM.csv with its header only; any other CSV,
+# a second row, a nonzero amount or a missing half is rejected). The output
+# says comparison=verified_zero_baseline, never that a comparison ran.
 # Exit status 2 for unusable input (missing or empty inventory, an invalid
 # or conflicting zero-baseline record).
 require "csv"
@@ -58,6 +60,40 @@ def unusable(message)
   warn "compare_exports: #{message}"
   puts "unexpected_differences=unusable_input"
   exit 2
+end
+
+# The verified zero baseline's export pair, recognized by its exporter's
+# leading header columns (CpaMonthlyReport::HEADER and
+# Api::V1::Admin::TaxReportsController::BPT_EVENT_HEADER).
+ZERO_KINDS = {
+  "cpa" => %w[row_type month organization_id event_id],
+  "bpt" => %w[month organization_id event_id gross_service_fees]
+}.freeze
+# CPA total-row cells that are labels, not amounts or counts: checked for
+# their exact zero-activity value (the nonprofit note carries a row count,
+# so only its zero form passes), or (the rate and the policy note) free.
+ZERO_CPA_LABELS = { "row_type" => "total", "currency" => "USD", "reconciliation_exception_flag" => "no",
+  "drt_exemption_verified" => "not_tracked",
+  "nonprofit_exemption_note" => "0 W-9 nonprofit row(s) (current at export time); DRT exemption not tracked" }.freeze
+ZERO_CPA_FREE = %w[month estimated_bpt_rate_pct classified_allocation_policy].freeze
+ZERO_VALUE = /\A-?0+(?:\.0+)?\z/
+
+def zero_cpa_problems(header, rows, period)
+  return ["#{rows.length} rows (expected exactly one total row)"] unless rows.length == 1
+
+  row = header.zip(rows.first).to_h
+  problems = []
+  problems << "month #{row['month'].inspect} (expected #{period})" unless row["month"] == period
+  ZERO_CPA_LABELS.each do |column, value|
+    problems << "#{column}=#{row[column].inspect} (expected #{value})" unless row[column] == value
+  end
+  row.each do |column, value|
+    next if ZERO_CPA_LABELS.key?(column) || ZERO_CPA_FREE.include?(column)
+    next if value.to_s.empty? || value.to_s.match?(ZERO_VALUE)
+
+    problems << "#{column}=#{value} (unexpected: the baseline recorded no activity)"
+  end
+  problems
 end
 
 def duplicates(header, rows)
@@ -91,22 +127,45 @@ if File.exist?(zero_marker)
 
   puts "comparison=verified_zero_baseline reference=#{record['reference']} verified_at=#{record['verified_at']} " \
     "(no baseline rows existed, so no row comparison ran)"
-  # CodeRabbit 4704013222: zero activity is shown by the candidate's own
-  # exports having no data rows (header-only files qualify); a candidate run
-  # that exported nothing is no evidence of it.
+  # CodeRabbit 4704013222 and A2 recheck finding 3 (7664e143): zero activity
+  # is shown by the candidate's own export pair for each month, as the real
+  # exporters write it: the CPA monthly export with its one mandatory total
+  # row, every monetary and quantity value zero, and the BPT events export
+  # with its header only. Both kinds are required for every month, so a
+  # header-only BPT file alone, or a candidate run that exported nothing,
+  # is no evidence of zero activity.
   candidate_paths = Dir[File.join(candidate_dir, "*.csv")].sort
   if candidate_paths.empty?
-    unusable("candidate directory #{candidate_dir} has no CSV exports; export the candidate (header-only files are " \
-      "fine) before accepting a verified zero baseline")
+    unusable("candidate directory #{candidate_dir} has no CSV exports; export the candidate's CPA monthly and BPT " \
+      "events files before accepting a verified zero baseline")
   end
-  rows_found = 0
+  exports = Hash.new { |hash, period| hash[period] = {} }
   candidate_paths.each do |path|
-    _header, rows = load(path)
-    rows_found += rows.length
-    puts "#{File.basename(path)}: #{rows.length} data rows#{' (unexpected: the baseline recorded none)' if rows.any?}"
+    name = File.basename(path)
+    header, rows = load(path)
+    kind = ZERO_KINDS.find { |_kind, prefix| header.first(prefix.length) == prefix }&.first
+    period = name[/(\d{4}-\d{2})\.csv\z/, 1]
+    unusable("#{name} is neither a CPA monthly nor a BPT events export") unless kind
+    unusable("#{name} has no YYYY-MM month in its file name") unless period
+    unusable("two #{kind} exports for #{period} (#{exports[period][kind][:name]}, #{name})") if exports[period].key?(kind)
+    exports[period][kind] = { name: name, header: header, rows: rows }
   end
-  puts "unexpected_differences=#{rows_found}"
-  exit(rows_found.zero? ? 0 : 1)
+  exports.each do |period, kinds|
+    missing = ZERO_KINDS.keys - kinds.keys
+    unusable("#{period} needs both the CPA monthly and the BPT events export; missing #{missing.join(' and ')}") if missing.any?
+  end
+  activity = 0
+  exports.sort.each do |period, kinds|
+    cpa = kinds.fetch("cpa")
+    problems = zero_cpa_problems(cpa[:header], cpa[:rows], period)
+    activity += problems.length
+    puts "#{cpa[:name]}: #{problems.empty? ? 'one all-zero total row' : problems.join('; ')}"
+    bpt = kinds.fetch("bpt")
+    activity += bpt[:rows].length
+    puts "#{bpt[:name]}: #{bpt[:rows].length} data rows#{' (unexpected: the baseline recorded none)' if bpt[:rows].any?}"
+  end
+  puts "unexpected_differences=#{activity}"
+  exit(activity.zero? ? 0 : 1)
 end
 unusable("baseline directory #{baseline_dir} has no CSV exports (record #{ZERO_MARKER} if there was no activity)") if baseline_paths.empty?
 

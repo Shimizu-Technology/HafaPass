@@ -128,7 +128,7 @@ end)
 # inside a capture's open transaction, after the payment update, before its
 # commit (OrderLifecycle#mark_payment_succeeded! requests the fee lookup
 # there). "submission_audit": inside a payout submission's transaction, right
-# after its authorization audit row.
+# after its authorization audit row. "reversal_audit": see below.
 StripeProcessingFees.singleton_class.prepend(Module.new do
   def request!(payment, **options)
     result = super
@@ -141,6 +141,11 @@ AuditLogger.singleton_class.prepend(Module.new do
   def record!(**attributes)
     result = super
     Rehearsal.pause("submission_audit") if attributes[:action] == "payout.submission_requested"
+    # "reversal_audit": inside a payout reversal's transaction, after its
+    # reconciled audit row and before its commit (A2 recheck finding 1).
+    if attributes[:action] == "payout.reconciled" && attributes[:after_data].to_h.stringify_keys["status"] == "reversed"
+      Rehearsal.pause("reversal_audit")
+    end
     result
   end
 end)

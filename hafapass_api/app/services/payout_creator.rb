@@ -8,7 +8,7 @@ class PayoutCreator
   # event's hold or statement change began, or without its custody row.
   PAID_FENCE_REFUSAL = /Repayment fence|Payout entry fence|Payout custody fence/
 
-  PAID_REFUSED_REASON = "provider_paid_refused_by_fence"
+  PAID_REFUSED_REASON = FinancialIntegrity::PAYOUT_PAID_REFUSED_REASON
   ACCEPTED_AFTER_FENCE_MESSAGE = "The provider accepted this transfer after its hold or statement change; it has " \
     "been sent. Do not send it again. Finance reconciles it as an accepted transfer."
 

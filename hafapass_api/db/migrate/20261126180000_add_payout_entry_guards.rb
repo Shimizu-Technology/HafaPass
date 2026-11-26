@@ -23,6 +23,10 @@ require_relative "../../lib/financial_integrity"
 #     proof: reconciliation_exceptions.proof_checked_at, and hold_started_at
 #     when it failed then); a reversed payout defeats the proof until its
 #     verified return is recorded;
+#   - a payout on such an event becomes reversed (by any writer, A1
+#     included) only when the same transaction records its exact verified
+#     return, and an accepted transfer only after finance recorded the
+#     acceptance (payouts_reversal_return_check, checked at commit);
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
@@ -52,6 +56,8 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
   # The cutover row is append-only and stays; a re-run keeps its first time.
   def down
     safety_assured do
+      execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts"
+      execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts"
       execute "DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations"
       execute "DROP TRIGGER IF EXISTS payout_custody_determinations_check ON payout_custody_determinations"
       execute "DROP TRIGGER IF EXISTS payouts_require_custody ON payouts"
@@ -63,7 +69,7 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       # OPERATIONAL_SQL above restored the A2 operational P4 proof and hold
       # start; this release's final proof helpers go with the rest.
       %w[hafapass_overpaid_hold_start(bigint) hafapass_overpaid_proof_lost_at(bigint,timestamp)
-        hafapass_payout_return_verified(bigint)
+        hafapass_payout_return_verified(bigint) hafapass_check_payout_reversal()
         hafapass_overpaid_proof_anchor(bigint) hafapass_overpaid_proof_facts(bigint)
         hafapass_require_inserted_payout_custody()
         hafapass_check_custody_commit() hafapass_check_custody_determination() hafapass_require_payout_custody()

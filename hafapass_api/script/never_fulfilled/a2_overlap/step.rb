@@ -256,6 +256,23 @@ when "u_a1_data"
   ReconciliationException.open.where(payment_id: p4_c.id, code: "stripe_fee_adjustment_review_required").find_each(&:resolve!)
   S.save!(p4: p4.id, p4_order: p4_order.id, p4_c: p4_c.id, p4_capture: p4_capture.id)
 
+  # A2 recheck finding 1 (7664e143): an affected event in its own
+  # organization (a live sale and a repaid classified capture, no payouts
+  # yet). This release approves a version with the capture's $0 line and
+  # pays $10 from it; A1 then reverses that transfer with its generic
+  # confirmation during the overlap.
+  rev_owner = S.create(:user, :organizer, clerk_id: "clerk_a2_rev_owner", email: "rehearsal.a2.rev@example.com")
+  rev_organization = S.create(:organization, name: "Rehearsal A2 Reversal Organization")
+  rev_profile = S.create(:organizer_profile, :verified, user: rev_owner, organization: rev_organization)
+  S.approved_bank_account!(rev_organization, actor: rev_owner, admin: admin, last_four: "7777")
+  rev = S.completed_event!(rev_organization, rev_profile, "Rehearsal A2 Reversal")
+  rev_type = S.create(:ticket_type, event: rev, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+  _rev_sale, _rev_item, rev_payment = S.record_card_sale!(rev, ticket_type: rev_type, quantity: 5, processing_fee_cents: 100)
+  Payment.where(id: rev_payment.id).update_all(provider_environment: "live", provider_payment_id: "pi_live_a2_rev_sale")
+  rev_order, rev_c, = S.classified_capture(items: [[1200, 160, 0, 0]], event: rev, intent: "pi_a2_rev_c")
+  S.verified_processing!(rev_order, rev_c, 69)
+  S.save!(rev: rev.id, rev_organization: rev_organization.id)
+
   Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
@@ -548,6 +565,97 @@ when "n_p4_paid"
   S.record_paid(step, "payout_p4_pre", cutoff - 0.000001, "transfer just before the cutoff", sent_before_hold_confirmed: true)
   Rehearsal.outcome!(step, action: "p4 payouts", value: S.payouts("p4"))
 
+# ---- A2 recheck finding 1 (7664e143): A1's reversal during the overlap ----
+when "n_rev_paid"
+  rev = S.find(Event, "rev")
+  S.submitted(rev, "rev_paid", 1000)
+  S.record_paid(step, "payout_rev_paid", Time.current, "A2 paid on a version with the $0 line")
+  payout = S.find(Payout, "payout_rev_paid")
+  # The version a fresh payout would be approved on (the paid payout is on
+  # the statement now).
+  S.save!(rev_available_before: OrganizationPayoutBalance.available_cents(rev.organization),
+    rev_fresh_settlement: Settlements::Finalizer.call(event: rev, actor: S.admin).id)
+  Rehearsal.outcome!(step, action: "rev paid", value: { payout: S.payouts("rev"),
+    version_reader: payout.settlement.finalized_reader, version_restated_at: PayoutEntryGuard.restated_at(payout.settlement),
+    available_cents: S.state.fetch("rev_available_before") })
+
+when "o_rev_a1_reverse"
+  raise "A1's reversal runs in the previous release" if S.new_release?
+
+  # A1's generic reversal (no return evidence). With
+  # REHEARSAL_PAUSE=reversal_audit it stops after its audit row, before its
+  # commit, holding the organization, event and payout.
+  payout = S.find(Payout, "payout_rev_paid")
+  S.attempt(step, "A1 PayoutReconciler reversed payout_rev_paid (generic confirmation)") do
+    PayoutReconciler.call(payout: payout, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current)).reload
+  end
+  Rehearsal.outcome!(step, action: "rev after A1 reversal", value: { status: payout.reload.status,
+    available_cents: OrganizationPayoutBalance.available_cents(payout.organization) })
+
+when "n_rev_reserve_race"
+  # While A1's reversal is open: a fresh payout for the amount the reversal
+  # would release (the reviewer's $69 -> $79). It waits for A1's locks.
+  rev = S.find(Event, "rev")
+  amount = S.state.fetch("rev_available_before") + 1000
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  S.attempt(step, "PayoutCreator.call rev for #{amount} (would need the released $10)") do
+    PayoutCreator.call(settlement: S.find(Settlement, "rev_fresh_settlement"), actor: S.admin,
+      idempotency_key: "a2-rev-race", amount_cents: amount)
+  end
+  Rehearsal.outcome!(step, action: "rev race waited", value: { seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2) })
+
+when "n_rev_after"
+  rev = S.find(Event, "rev")
+  payout = S.find(Payout, "payout_rev_paid")
+  before = S.state.fetch("rev_available_before")
+  available = -> { OrganizationPayoutBalance.available_cents(rev.organization) }
+  Rehearsal.outcome!(step, action: "rev after the A1 attempt", value: { status: payout.reload.status, available_cents: available.call })
+  # Approved on a version finalized now, as the reviewer's reproduction did.
+  S.attempt(step, "PayoutCreator.call rev for #{before + 1000} after the A1 attempt") do
+    PayoutCreator.call(settlement: Settlements::Finalizer.call(event: rev, actor: S.admin), actor: S.admin,
+      idempotency_key: "a2-rev-fresh", amount_cents: before + 1000)
+  end
+  S.attempt(step, "A2 PayoutReconciler reversed payout_rev_paid (generic confirmation)") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current))
+  end
+  exact = { "return_reference" => "RET-A2-REV", "returned_amount_cents" => payout.disbursement_cents,
+    "returned_at" => Time.current.utc.iso8601(6), "sent_at" => payout.paid_at.utc.iso8601(6) }
+  raw = lambda do |label, metadata, immediate: false|
+    S.attempt(step, "raw SQL reversal (#{label})") do
+      ActiveRecord::Base.transaction do
+        Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+        if metadata
+          AuditLog.create!(auditable: payout, organization: payout.organization, action: "payout.reconciled", occurred_at: Time.current,
+            before_data: { "status" => "paid" }, after_data: { "status" => "reversed" }, metadata: metadata)
+        end
+        if immediate
+          ActiveRecord::Base.connection.execute("SET CONSTRAINTS payouts_reversal_return_check IMMEDIATE")
+          raise ActiveRecord::Rollback
+        end
+      end
+      immediate ? "accepted, rolled back" : payout.reload.status
+    end
+  end
+  raw.call("no audit", nil)
+  raw.call("generic audit", { "reconciliation" => { "reference" => "Bank" } })
+  raw.call("return key without the exact return", { "verified_return" => { "return_reference" => "RET-A2-REV" } })
+  raw.call("return of the wrong amount", { "verified_return" => exact.merge("returned_amount_cents" => 1) })
+  raw.call("exact return in the same transaction", { "verified_return" => exact }, immediate: true)
+  Rehearsal.outcome!(step, action: "rev after the refused writers", value: { status: payout.reload.status, available_cents: available.call })
+  S.attempt(step, "A2 PayoutReconciler reversed payout_rev_paid (bank's exact return)") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current, return_reference: "RET-A2-REV", returned_amount_cents: payout.disbursement_cents,
+        returned_at: Time.current.utc.iso8601(6))).reload
+  end
+  released = available.call
+  Rehearsal.outcome!(step, action: "rev after the verified return", value: { status: payout.reload.status, available_cents: released })
+  S.attempt(step, "reserve rev for #{released} after the verified return") do
+    PayoutCreator.new(settlement: Settlements::Finalizer.call(event: rev, actor: S.admin), actor: S.admin,
+      idempotency_key: "a2-rev-after-return", amount_cents: released).send(:reserve!).first
+  end
+
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
   calls = File.readlines(File.join(Rehearsal::DIR, "calls.jsonl")).map { |line| JSON.parse(line) }.select { |c| c["kind"] == "payout_submit" }
@@ -714,6 +822,48 @@ when "assertions"
     ok.call("new", "n_p4_paid", "PayoutReconciler paid payout_p4_pre (transfer just before the cutoff)") && pre.status_paid? &&
       pre.paid_at.utc.iso8601(6) == (Time.iso8601(start) - 0.000001).utc.iso8601(6) &&
       PayoutCustodyDetermination.exists?(payout_id: pre.id, basis: "recorded_at_paid"))
+
+  # A2 recheck finding 1 (7664e143): A1's generic reversal during the overlap.
+  rev_paid = find_outcome.call("new", "n_rev_paid", "rev paid")&.fetch("value").to_h
+  before = S.state.fetch("rev_available_before")
+  check.call("reversal: the $10 payout was paid from an A2 version with the capture's $0 line (available #{before})",
+    rev_paid["version_reader"] == "nfc-a2" && rev_paid["version_restated_at"].nil? &&
+      ok.call("new", "n_rev_paid", "PayoutReconciler paid payout_rev_paid (A2 paid on a version with the $0 line)"))
+  check.call("reversal: A1's generic reversal is refused by the database at commit",
+    refused.call("old", "o_rev_a1_reverse", "A1 PayoutReconciler reversed payout_rev_paid (generic confirmation)",
+      /Payout reversal fence: payout #{id.call('payout_rev_paid')}/))
+  after_a1 = find_outcome.call("new", "n_rev_after", "rev after the A1 attempt")&.fetch("value").to_h
+  check.call("reversal: after A1's attempt the payout is still paid and available stays #{before}",
+    after_a1 == { "status" => "paid", "available_cents" => before } &&
+      find_outcome.call("old", "o_rev_a1_reverse", "rev after A1 reversal")&.dig("value", "status") == "paid")
+  race = find_outcome.call("new", "n_rev_reserve_race", "rev race waited")&.fetch("value").to_h
+  check.call("reversal: a fresh A2 payout for #{before + 1000} during A1's open reversal waited (>= 1 s) and was refused",
+    race["seconds"].to_f >= 1.0 && refused.call("new", "n_rev_reserve_race",
+      "PayoutCreator.call rev for #{before + 1000} (would need the released $10)", /available balance/))
+  check.call("reversal: the same fresh payout after A1's attempt is refused", refused.call("new", "n_rev_after",
+    "PayoutCreator.call rev for #{before + 1000} after the A1 attempt", /available balance/))
+  check.call("reversal: A2's generic reversal is refused", refused.call("new", "n_rev_after",
+    "A2 PayoutReconciler reversed payout_rev_paid (generic confirmation)", /return evidence/))
+  ["no audit", "generic audit", "return key without the exact return", "return of the wrong amount"].each do |label|
+    check.call("reversal: raw SQL (#{label}) refused at commit", refused.call("new", "n_rev_after", "raw SQL reversal (#{label})",
+      /Payout reversal fence/))
+  end
+  exact_raw = find_outcome.call("new", "n_rev_after", "raw SQL reversal (exact return in the same transaction)")
+  check.call("reversal: raw SQL with the exact return in the same transaction passes the fence",
+    exact_raw&.fetch("result") == "ok" && exact_raw["value"] == "accepted, rolled back")
+  check.call("reversal: still paid and #{before} available after every refused writer",
+    find_outcome.call("new", "n_rev_after", "rev after the refused writers")&.fetch("value") == { "status" => "paid", "available_cents" => before })
+  returned = find_outcome.call("new", "n_rev_after", "rev after the verified return")&.fetch("value").to_h
+  check.call("reversal: the bank's exact return through A2 reverses it and releases exactly $10 (#{before} -> #{before + 1000})",
+    ok.call("new", "n_rev_after", "A2 PayoutReconciler reversed payout_rev_paid (bank's exact return)") &&
+      returned == { "status" => "reversed", "available_cents" => before + 1000 } &&
+      AuditLog.where(auditable_type: "Payout", auditable_id: id.call("payout_rev_paid"), action: "payout.reconciled")
+        .where("after_data->>'status' = 'reversed'").sole.metadata.key?("verified_return"))
+  check.call("reversal: the released amount can then be reserved", ok.call("new", "n_rev_after",
+    "reserve rev for #{before + 1000} after the verified return"))
+  rev_event = S.find(Event, "rev").id
+  check.call("gateway: one submission on the reversal event (the paid $10)",
+    calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == rev_event } == 1)
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

@@ -115,6 +115,88 @@ RSpec.describe "Admin payout reversal return evidence", type: :request do
     expect(platform_only?(payment)).to be(true)
   end
 
+  # A2 recheck finding 1 (7664e143): the database enforces the same boundary
+  # for every writer (A1 during the overlap or after a code rollback, raw
+  # SQL), on a version that already has the capture's $0 line (where the P4
+  # proof does not look). Deferred to commit, so the exact return the same
+  # transaction records counts; SET CONSTRAINTS ... IMMEDIATE runs that
+  # commit-time check inside the spec's transaction.
+  def commit_check!
+    ActiveRecord::Base.connection.execute("SET CONSTRAINTS payouts_reversal_return_check, " \
+      "payouts_reversal_return_check_on_insert IMMEDIATE")
+  end
+
+  def raw_reversal(payout, metadata = nil, action: "payout.reconciled")
+    ActiveRecord::Base.transaction(requires_new: true) do
+      Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
+      if metadata
+        AuditLog.create!(auditable: payout, organization: payout.organization, action: action, occurred_at: Time.current,
+          before_data: { "status" => "paid" }, after_data: { "status" => "reversed" }, metadata: metadata)
+      end
+      commit_check!
+      raise ActiveRecord::Rollback
+    end
+    :accepted
+  rescue ActiveRecord::StatementInvalid => e
+    e.message[/Payout reversal fence[^\n]*/] || raise
+  end
+
+  it "refuses every unverified reversal on an affected event at commit, even on a version with the $0 line" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5, processing_fee_cents: 100)
+    order, payment, = classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    component = create(:fee_component, order: order, order_item: order.order_items.first, kind: "processing",
+      amount_cents: 69, estimated: false, provider_reference: "txn_rev_db_#{SecureRandom.hex(4)}")
+    create(:stripe_fee_evidence, :verified, payment: payment, fee_component: component,
+      provider_balance_transaction_id: component.provider_reference)
+    sent = payout!(Settlements::Finalizer.call(event: event, actor: admin), "rev-db")
+    expect(PayoutEntryGuard.restated_at(sent.settlement)).to be_nil
+    reconcile!(sent, "paid", provider_payout_id: "BANK-REV-DB")
+    expect(response).to have_http_status(:ok)
+    sent.reload
+    available = OrganizationPayoutBalance.available_cents(organization)
+    exact = { "return_reference" => "RET-DB-1", "returned_amount_cents" => sent.disbursement_cents,
+      "returned_at" => Time.current.utc.iso8601(6), "sent_at" => sent.paid_at.utc.iso8601(6) }
+    fence = /\APayout reversal fence: payout #{sent.id} is on an event with a never-fulfilled capture/
+
+    # The old release's generic reversal (what A1 writes), raw SQL, a return
+    # key alone, the wrong amount, a blank reference or a different action.
+    expect(raw_reversal(sent)).to match(fence)
+    expect(raw_reversal(sent, { "reconciliation" => { "reference" => "Bank", "reason" => "Returned" } })).to match(fence)
+    expect(raw_reversal(sent, { "verified_return" => { "return_reference" => "RET-DB-1" } })).to match(fence)
+    expect(raw_reversal(sent, { "verified_return" => exact.merge("returned_amount_cents" => sent.disbursement_cents - 1) }))
+      .to match(fence)
+    expect(raw_reversal(sent, { "verified_return" => exact.merge("return_reference" => " ") })).to match(fence)
+    expect(raw_reversal(sent, { "verified_return" => exact.merge("returned_at" => "soon") })).to match(fence)
+    expect(raw_reversal(sent, { "verified_return" => exact }, action: "payout.reversed")).to match(fence)
+    # A reversal inserted directly is checked the same way.
+    expect do
+      ActiveRecord::Base.transaction(requires_new: true) do
+        FinancialIntegrity.with_settlement_reader do
+          Payout.insert_all!([sent.attributes.except("id", "created_at", "updated_at")
+            .merge("status" => Payout.statuses[:reversed], "idempotency_key" => "rev-db-insert", "provider_payout_id" => nil)])
+        end
+        commit_check!
+      end
+    end.to raise_error(ActiveRecord::StatementInvalid, /Payout reversal fence/)
+    expect(sent.reload).to be_status_paid
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(available)
+    expect do
+      PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin, idempotency_key: "rev-db-fresh", amount_cents: available + 1000)
+    end.to raise_error(PayoutCreator::PayoutError, /available balance/)
+
+    # The exact return written in the same transaction passes.
+    expect(raw_reversal(sent, { "verified_return" => exact })).to eq(:accepted)
+    expect(sent.reload).to be_status_paid
+
+    # A2's own path, with the bank's return, through the commit-time check.
+    reconcile!(sent, "reversed", provider_payout_id: "BANK-REV-DB", return_reference: "RET-DB-1",
+      returned_amount_cents: sent.disbursement_cents, returned_at: Time.current.utc.iso8601(6))
+    expect(response).to have_http_status(:ok)
+    expect { commit_check! }.not_to raise_error
+    expect(sent.reload).to be_status_reversed
+    expect(OrganizationPayoutBalance.available_cents(organization)).to eq(available + 1000)
+  end
+
   it "keeps the existing reversal on an event without a classified capture, verifying evidence when given" do
     record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
     version = Settlements::Finalizer.call(event: event, actor: admin)
@@ -122,7 +204,12 @@ RSpec.describe "Admin payout reversal return evidence", type: :request do
     reconcile!(plain, "paid", provider_payout_id: "BANK-PLAIN-1")
     reconcile!(plain, "reversed", provider_payout_id: "BANK-PLAIN-1")
     expect(response).to have_http_status(:ok)
+    expect { commit_check! }.not_to raise_error
     expect(plain.reload).to be_status_reversed
+    # Raw SQL on an ordinary event is unaffected too.
+    other = payout!(Settlements::Finalizer.call(event: event, actor: admin), "plain-rev-raw")
+    reconcile!(other, "paid", provider_payout_id: "BANK-PLAIN-RAW")
+    expect(raw_reversal(other.reload)).to eq(:accepted)
     expect(AuditLog.where(auditable: plain, action: "payout.reconciled").order(:id).last.metadata).not_to have_key("verified_return")
 
     evidenced = payout!(Settlements::Finalizer.call(event: event, actor: admin), "plain-rev-2")

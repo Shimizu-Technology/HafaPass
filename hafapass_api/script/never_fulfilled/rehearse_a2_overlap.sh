@@ -124,6 +124,20 @@ run new n_affected
 run new n_p4_anchor
 run old o_p4_episode
 run new n_p4_paid
+# A2 recheck finding 1: A1 reverses a paid transfer on an affected event,
+# paused before its commit while this release asks for the released amount.
+run new n_rev_paid
+run old o_rev_a1_reverse REHEARSAL_PAUSE=reversal_audit &
+old_pid=$!
+wait_for reversal_audit
+run new n_rev_reserve_race &
+new_pid=$!
+sleep 2
+release reversal_audit
+wait "$old_pid"
+wait "$new_pid"
+reset_pause reversal_audit
+run new n_rev_after
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary

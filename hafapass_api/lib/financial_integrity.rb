@@ -1621,6 +1621,9 @@ module FinancialIntegrity
   PAYOUT_ENTRY_CUTOVER = "a2_payout_entry"
   CUSTODY_DERIVED_BASIS = "derived_history"
   CUSTODY_PAID_BASIS = "recorded_at_paid"
+  # PayoutCreator::PAID_REFUSED_REASON: the provider accepted a transfer
+  # after a payout fence refused to record it paid.
+  PAYOUT_PAID_REFUSED_REASON = "provider_paid_refused_by_fence"
   PAYOUT_ENTRY_SQL = <<~SQL.freeze
     CREATE OR REPLACE FUNCTION hafapass_event_has_classified_capture(target_event bigint) RETURNS boolean
     LANGUAGE sql STABLE AS $$
@@ -1667,12 +1670,70 @@ module FinancialIntegrity
     -- the provider accepted after a fence refused it, verified_return
     -- otherwise). A reversal recorded without it, by any release or raw SQL,
     -- still defeats the P4 proof.
+    -- A2 recheck finding 1 (7664e143): the return is verified only when it
+    -- is exact: a return reference, a returned_at time, and the full amount
+    -- that left (the payout's disbursement), not merely the key's presence.
     CREATE OR REPLACE FUNCTION hafapass_payout_return_verified(target_payout bigint) RETURNS boolean
     LANGUAGE sql STABLE AS $$
-      SELECT EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = target_payout
-        AND a.action = 'payout.reconciled' AND a.after_data->>'status' = 'reversed'
-        AND (a.metadata ? 'accepted_transfer_return' OR a.metadata ? 'verified_return'))
+      SELECT EXISTS (SELECT 1 FROM audit_logs a JOIN payouts po ON po.id = a.auditable_id,
+          LATERAL (SELECT COALESCE(a.metadata->'verified_return', a.metadata->'accepted_transfer_return') AS r) v
+        WHERE a.auditable_type = 'Payout' AND a.auditable_id = target_payout
+          AND a.action = 'payout.reconciled' AND a.after_data->>'status' = 'reversed'
+          AND jsonb_typeof(v.r) = 'object'
+          AND length(btrim(COALESCE(v.r->>'return_reference', ''))) > 0
+          AND COALESCE(v.r->>'returned_at', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+          AND COALESCE(v.r->>'returned_amount_cents', '') ~ '^[1-9][0-9]{0,11}$'
+          AND (v.r->>'returned_amount_cents')::bigint = po.amount_cents - po.withheld_cents - po.carried_withholding_cents)
     $$;
+
+    -- A2 recheck finding 1 (7664e143): the reversal boundary for every
+    -- writer, A1 during the overlap or after a code rollback included. On an
+    -- event with a never-fulfilled capture a payout becomes reversed (its
+    -- amount released to be paid again) only when its transaction also
+    -- records the exact verified return above, and, for a transfer the
+    -- provider accepted after a fence refused it, only after finance recorded
+    -- that acceptance (so CPA books the outgoing transfer and its return,
+    -- each once; finding 2). Checked when the transaction commits, so the
+    -- proof the same transaction writes after the status change counts. It
+    -- first takes the event row the way the other payout fences do (already
+    -- held by both releases' reconcilers, NOWAIT for any other writer, so it
+    -- never waits in reverse order behind a capture); a capture that
+    -- committed first is then visible, and one that has not yet started
+    -- waits for this commit and is fenced by the P4 proof (the reversed
+    -- payout's version lacks its $0 line). Ordinary events are unaffected.
+    CREATE OR REPLACE FUNCTION hafapass_check_payout_reversal() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = #{PAYOUT_REVERSED_STATUS}) THEN
+        RETURN NULL;
+      END IF;
+      PERFORM hafapass_lock_payout_event(NEW.event_id);
+      IF NOT hafapass_event_has_classified_capture(NEW.event_id) THEN
+        RETURN NULL;
+      END IF;
+      IF NOT hafapass_payout_return_verified(NEW.id) THEN
+        RAISE EXCEPTION 'Payout reversal fence: payout % is on an event with a never-fulfilled capture; record its reversal from the current release with the bank''s exact return evidence', NEW.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id
+            AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = '#{PAYOUT_PAID_REFUSED_REASON}')
+          AND NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id
+            AND a.action = 'payout.accepted_transfer_recorded') THEN
+        RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', NEW.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts;
+    CREATE CONSTRAINT TRIGGER payouts_reversal_return_check AFTER UPDATE OF status ON payouts
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+      WHEN (NEW.status = #{PAYOUT_REVERSED_STATUS} AND OLD.status IS DISTINCT FROM #{PAYOUT_REVERSED_STATUS})
+      EXECUTE FUNCTION hafapass_check_payout_reversal();
+    DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts;
+    CREATE CONSTRAINT TRIGGER payouts_reversal_return_check_on_insert AFTER INSERT ON payouts
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.status = #{PAYOUT_REVERSED_STATUS})
+      EXECUTE FUNCTION hafapass_check_payout_reversal();
 
     CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_facts(target bigint)
       RETURNS TABLE (started timestamp, defeating boolean)

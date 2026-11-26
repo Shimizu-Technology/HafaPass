@@ -92,6 +92,13 @@ class PayoutReconciler
       if accepted
         raise ReconciliationError, ACCEPTED_NOT_PAID_MESSAGE if status == "paid"
         raise ReconciliationError, ACCEPTED_NOT_FAILED_MESSAGE if status == "failed"
+        # A2 recheck finding 2 (7664e143): the outgoing transfer is booked
+        # (CPA payouts made) by finance's acceptance record and its return
+        # (payout reversals) by this reversal. A return reported before the
+        # acceptance is recorded waits for it, so both postings exist once.
+        unless AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").exists?
+          raise ReconciliationError, ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE
+        end
 
         return_evidence = verified_return!(payout, normalized, external_id)
       elsif status == "reversed" && (RETURN_KEYS.any? { |key| normalized.key?(key) } || (classified = classified_event?(payout)))
@@ -300,6 +307,8 @@ class PayoutReconciler
     "accepted transfer; it is never recorded as an ordinary paid payout."
   ACCEPTED_NOT_FAILED_MESSAGE = "The provider accepted this transfer, so the money left. If the bank returned it, record it " \
     "reversed with the return evidence; it is never recorded as failed."
+  ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE = "Record this payout as an accepted transfer first, then record its " \
+    "return. The transfer that left and the money that came back are each booked once."
   RETURN_KEYS = %w[return_reference returned_amount_cents returned_at].freeze
 
   # The exact return of a transfer that left: the bank's return reference,
