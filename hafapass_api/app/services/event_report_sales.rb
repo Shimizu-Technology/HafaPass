@@ -24,10 +24,11 @@ class EventReportSales
   def call
     @orders.preload(:order_items, :refunds, tickets: :pricing_tier).find_in_batches do |orders|
       items = orders.flat_map(&:order_items)
-      refunds = RefundItem.joins(:refund).where(order_item_id: items.map(&:id),
-        refunds: { status: Refund.statuses[:succeeded] }).group_by(&:order_item_id)
-      selected = RefundTicket.active.joins(:refund).where(refunds: { order_id: orders.map(&:id), status: Refund.statuses[:succeeded] })
-        .pluck(:ticket_id, :amount_cents).to_h
+      # Only the sale's own refunds (Refund.on_sale): payment B's refunds on
+      # an order payment A fulfilled never reduce A's tier rows.
+      @sale_refund_ids = Refund.succeeded.on_sale.where(order_id: orders.map(&:id)).pluck(:id).to_set
+      refunds = RefundItem.where(order_item_id: items.map(&:id), refund_id: @sale_refund_ids.to_a).group_by(&:order_item_id)
+      selected = RefundTicket.active.where(refund_id: @sale_refund_ids.to_a).pluck(:ticket_id, :amount_cents).to_h
       checks = @event.tickets.where(parent_ticket_id: orders.flat_map { |order| order.tickets.map(&:id) }, status: :checked_in)
         .pluck(:parent_ticket_id).to_set
       orders.each { |order| add_order(order, refunds, selected, checks) }
@@ -162,7 +163,8 @@ class EventReportSales
     subtotal = order.subtotal_cents - items.sum(&:subtotal_cents)
     discount = order.discount_cents - items.sum(&:discount_cents)
     fees = order.total_cents - order.subtotal_cents + order.discount_cents - items.sum { |item| item.fee_cents + item.tax_cents }
-    refunded = order.refunds.select(&:succeeded?).sum(&:amount_cents) - items.sum { |item| refunds.fetch(item.id, []).sum(&:amount_cents) }
+    sale_refunds = order.refunds.select { |refund| @sale_refund_ids.include?(refund.id) }
+    refunded = sale_refunds.sum(&:amount_cents) - items.sum { |item| refunds.fetch(item.id, []).sum(&:amount_cents) }
     money = [subtotal, discount, fees, 0, refunded, 0].map { |cents| [cents, 0].max }
 
     indices.select { |index| type_included?(tickets[index].ticket_type_id) }.group_by do |index|

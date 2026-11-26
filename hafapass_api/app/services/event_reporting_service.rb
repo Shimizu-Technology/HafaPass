@@ -9,11 +9,17 @@ class EventReportingService
     total.positive? ? (100.0 * count / total).round(1) : 0.0
   end
 
+  # Admissible tickets on sales. A classified (never-fulfilled) order is not a
+  # sale, and only a dispute or refund on the order's own sale (Dispute and
+  # Refund.on_sale) affects its tickets: payment B's dispute on an order
+  # payment A fulfilled never removes A's attendance
+  # (Commerce::ClassifiedOrganizerView).
   def self.active_tickets(event, tickets = event.tickets.joins(:order))
     orders = Order.where(event_id: event.organization.events.select(:id))
-      .excluding_test_payments.where(status: ACTIVE_ORDER_STATUSES)
-      .where.not(id: Dispute.where(status: [:open, :lost]).select(:order_id))
-    invalid_tickets = RefundTicket.active.joins(:refund).where(refunds: { status: [:pending, :succeeded] }).select(:ticket_id)
+      .excluding_test_payments.excluding_never_fulfilled.where(status: ACTIVE_ORDER_STATUSES)
+      .where.not(id: Dispute.on_sale.where(status: [:open, :lost]).select(:order_id))
+    sale_refunds = Refund.on_sale.where(status: [:pending, :succeeded]).select(:id)
+    invalid_tickets = RefundTicket.active.where(refund_id: sale_refunds).select(:ticket_id)
     invalid_parents = Ticket.where(status: [:cancelled, :transferred])
       .or(Ticket.where(id: invalid_tickets))
       .or(Ticket.where(id: TicketInventoryRetention.select(:ticket_id)))
@@ -97,8 +103,10 @@ class EventReportingService
     end
   end
 
+  # Sales only: a classified (never-fulfilled) order is not a sale, whatever
+  # its status after a return (the same rule as Commerce::LedgerTotals).
   def sales_orders
-    orders = self.class.filter_channel(event.orders.excluding_test_payments, @channel)
+    orders = self.class.filter_channel(event.orders.excluding_test_payments.excluding_never_fulfilled, @channel)
     orders.where(status: SETTLED_ORDER_STATUSES)
   end
 
