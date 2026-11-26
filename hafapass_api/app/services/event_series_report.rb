@@ -149,12 +149,15 @@ class EventSeriesReport
     @payouts = organization.payouts.where(event_id: event_ids).group(:event_id, :status).sum(:amount_cents)
     @sales = item_sales(event_ids)
     @refunded_proceeds = refunded_proceeds(event_ids)
-    @buyer_fees = Order.excluding_test_payments
+    @buyer_fees = Order.excluding_test_payments.excluding_never_fulfilled
       .where(event_id: event_ids, status: SETTLED_ORDER_STATUSES)
       .group(:event_id)
       .sum(:service_fee_cents)
 
-    @settled_orders = Order.excluding_test_payments
+    # Classified (never-fulfilled) orders are not sales
+    # (Commerce::ClassifiedOrganizerView), and a payment-scope capture's
+    # refunds never reduce its fulfilled order's proceeds.
+    @settled_orders = Order.excluding_test_payments.excluding_never_fulfilled
       .where(event_id: event_ids, status: SETTLED_ORDER_STATUSES)
       .order(:id)
       .to_a
@@ -169,7 +172,7 @@ class EventSeriesReport
     @order_items_by_id = @order_items.index_by(&:id)
     @order_items_by_order_id = @order_items.group_by(&:order_id)
 
-    @succeeded_refunds = Refund.succeeded.where(order_id: @settled_order_ids).order(:id).to_a
+    @succeeded_refunds = Refund.succeeded.on_sale.where(order_id: @settled_order_ids).order(:id).to_a
     @succeeded_refunds_by_order_id = @succeeded_refunds.group_by(&:order_id)
     @refund_items = RefundItem.where(refund_id: @succeeded_refunds.map(&:id)).order(:id).to_a
     @refund_items_by_order_item_id = @refund_items.group_by(&:order_item_id)
@@ -207,7 +210,7 @@ class EventSeriesReport
 
     OrderItem.joins(:order)
       .where(orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
-      .merge(Order.excluding_test_payments)
+      .merge(Order.excluding_test_payments.excluding_never_fulfilled)
       .group("orders.event_id")
       .pluck(Arel.sql("orders.event_id, SUM(order_items.subtotal_cents), SUM(order_items.discount_cents)"))
       .to_h { |event_id, subtotal, discount| [event_id, [subtotal.to_i, discount.to_i]] }
@@ -216,9 +219,9 @@ class EventSeriesReport
   def refunded_proceeds(event_ids)
     return {} if event_ids.empty?
 
-    RefundItem.joins(refund: :order)
-      .where(refunds: { status: Refund.statuses[:succeeded] }, orders: { event_id: event_ids, status: SETTLED_ORDER_STATUSES })
-      .merge(Order.excluding_test_payments)
+    sale_refunds = Refund.succeeded.on_sale.where(order_id: Order.excluding_test_payments.excluding_never_fulfilled
+      .where(event_id: event_ids, status: SETTLED_ORDER_STATUSES).select(:id))
+    RefundItem.joins(refund: :order).where(refund_id: sale_refunds.select(:id))
       .group("orders.event_id")
       .sum(:organizer_proceeds_cents)
   end

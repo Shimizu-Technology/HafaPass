@@ -405,7 +405,9 @@ module Api
 
         def stats
           tickets = @event.tickets
-          orders = @event.orders.excluding_test_payments.where(status: [:completed, :partially_refunded, :refunded])
+          # Classified (never-fulfilled) orders are not sales.
+          orders = @event.orders.excluding_test_payments.excluding_never_fulfilled
+            .where(status: [:completed, :partially_refunded, :refunded])
           financials = Commerce::LedgerTotals.call(orders)
 
           total_tickets_sold = tickets.where(parent_ticket_id: nil).where.not(status: :cancelled).count

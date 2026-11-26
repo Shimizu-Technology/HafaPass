@@ -200,7 +200,34 @@ class PayoutStatement
   end
 
   def other_adjustment_items
-    adjustment_items - cash_items
+    adjustment_items - cash_items - never_fulfilled_items - linked_adjustment_items
+  end
+
+  # The $0 "Payment received, order unfulfilled" lines (design §8.3).
+  def never_fulfilled_items
+    @never_fulfilled_items ||= adjustment_items.select do |item|
+      metadata(item)[:adjustment_kind] == Commerce::ClassifiedOrganizerView::INFO_ADJUSTMENT_KIND
+    end
+  end
+
+  # Adjustments linked to a payment returned to the buyer: shown at $0, as
+  # the calculator counts them, with the reason finance recorded.
+  def linked_adjustment_items
+    @linked_adjustment_items ||= adjustment_items.select { |item| metadata(item)[:never_fulfilled_linked] }
+  end
+
+  # Live return status for each $0 line, read from the buyer ledger now. It
+  # is never part of the stored statement or its digest.
+  def never_fulfilled_lines
+    @never_fulfilled_lines ||= begin
+      captures = UnfulfilledCapture.where(payment_id: never_fulfilled_items.flat_map { |item| metadata(item)[:payment_ids] })
+        .to_a.index_by(&:payment_id)
+      never_fulfilled_items.map do |item|
+        status = Commerce::ClassifiedOrganizerView.return_status(captures.values_at(*metadata(item)[:payment_ids]).compact)
+        line(item[:description], item[:amount_cents], "#{status[:label]}. Not part of your proceeds.")
+          .merge(return_status: status[:status])
+      end
+    end
   end
 
   def door_cash_cents = -sum(cash_items)
@@ -222,7 +249,8 @@ class PayoutStatement
       (line("Discounts and promo codes", -discount_cents) if discount_cents.positive?),
       (line("HåfaPass fees you covered", -organizer_fee_cents,
         "On tickets where you chose to pay the HåfaPass fee instead of the buyer.") if organizer_fee_cents.nonzero?),
-      (line("Refunds", -refunded_proceeds_cents, refund_note) if refund_items.any?)
+      (line("Refunds", -refunded_proceeds_cents, refund_note) if refund_items.any?),
+      *never_fulfilled_lines
     ].compact
     { key: "proceeds", title: "Ticket sales", lines: lines, total_label: "Your ticket proceeds",
       total_cents: lines.sum { |entry| entry[:amount_cents] } }
@@ -235,7 +263,10 @@ class PayoutStatement
         "You already have this cash, so it is not part of the bank transfer.") if cash_items.any?),
       (line("Chargebacks", -dispute_cents,
         "Card payments a buyer's bank took back after a dispute was lost.") if dispute_cents.nonzero?),
-      *other_adjustment_items.map { |item| line(adjustment_label(item), item[:amount_cents], item[:description]) }
+      *other_adjustment_items.map { |item| line(adjustment_label(item), item[:amount_cents], item[:description]) },
+      *linked_adjustment_items.map do |item|
+        line("Adjustment on a payment returned to a buyer (not counted)", item[:amount_cents], item[:description])
+      end
     ].compact
     { key: "deductions", title: "Costs and adjustments", lines: lines, total_label: "Net proceeds",
       total_cents: proceeds_section[:total_cents] + lines.sum { |entry| entry[:amount_cents] } }
@@ -444,6 +475,10 @@ class PayoutStatement
 
     notes = []
     notes << "Buyers paid #{money(buyer_paid_fees_cents)} in HåfaPass fees on top of ticket prices. That was never part of your proceeds." if buyer_paid_fees_cents.positive?
+    if never_fulfilled_items.any?
+      notes << "A payment that arrived after its order was released is the buyer's money. HåfaPass returns it to " \
+        "the buyer, and it is never part of your proceeds or payout."
+    end
     if door_cash_cents.positive?
       notes << "Door cash (#{money(door_cash_cents)}) stays with you and is not included in any bank transfer."
     end

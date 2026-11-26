@@ -176,7 +176,8 @@ module Commerce
     # current_integrity_alerts). Each is { code:, payment_id:, event_id:,
     # amount_cents:, ... }.
     def alerts
-      @alerts ||= (ambiguity_alerts + unclassified_alerts + pending_correction_alerts + processing_alerts)
+      @alerts ||= (ambiguity_alerts + unclassified_alerts + pending_correction_alerts + processing_alerts +
+        linked_adjustment_alerts)
         .sort_by { |alert| [alert[:event_id].to_i, alert[:payment_id].to_i, alert[:code]] }
     end
 
@@ -283,28 +284,66 @@ module Commerce
     # alerted. A component on a fulfilled order (payment scope) that is not
     # linked to the classified payment belongs to the sale.
     def processing_components
-      @processing_components ||= begin
-        by_order = captures.group_by(&:order_id)
-        by_payment = captures.index_by(&:payment_id)
-        rows = FeeComponent.where(order_id: by_order.keys, kind: "processing", estimated: false)
-          .joins("LEFT JOIN stripe_fee_evidences fee_evidence ON fee_evidence.fee_component_id = fee_components.id")
-          .order(:id)
-          .pluck(:id, :order_id, :amount_cents, :created_at, Arel.sql("fee_evidence.payment_id"))
-        captured_counts = Payment.where(order_id: by_order.keys, status: Payment::CAPTURED_STATUSES)
-          .group(:order_id).count
-        rows.filter_map do |id, order_id, amount, recorded_at, evidence_payment_id|
-          order_captures = by_order.fetch(order_id)
-          order_scope = order_captures.any? { |capture| capture.capture_scope == "order" }
-          capture = if evidence_payment_id
-            by_payment[evidence_payment_id]
-          elsif order_scope && captured_counts[order_id] == 1 && order_captures.one?
-            order_captures.first
-          end
-          next if capture.nil? && !order_scope
+      @processing_components ||= self.class.attribute_processing(captures) + dated_deferred_processing
+    end
 
-          { id: id, order_id: order_id, amount_cents: amount.to_i, recorded_at: recorded_at, capture: capture,
-            method: evidence_payment_id ? "verified_evidence" : "sole_capture" }
+    # Verified processing facts on a platform-borne payment-scope capture
+    # that A1 keeps without a fee component (§4.6 item 8). Booked only once
+    # the database has stamped their recording time (facts_recorded_at,
+    # migration 20261126170000); undated rows stay alerted until
+    # stripe_fee_evidence:stamp_facts dates them. Organizer-borne ones keep
+    # their review hold and are never booked here.
+    def deferred_processing_evidence
+      @deferred_processing_evidence ||= begin
+        scope_captures = captures.select { |capture| capture.capture_scope == "payment" }.index_by(&:payment_id)
+        StripeFeeEvidence.where(payment_id: scope_captures.keys, fee_component_id: nil,
+          last_error_code: StripeProcessingFees::PAYMENT_SCOPE_DEFERRED_CODE).where.not(evidence_digest: nil)
+          .order(:payment_id).pluck(:id, :payment_id, :fee_cents, :facts_recorded_at).map do |id, payment_id, fee, recorded_at|
+            { evidence_id: id, capture: scope_captures.fetch(payment_id), amount_cents: fee.to_i, recorded_at: recorded_at }
+          end
+      end
+    end
+
+    def dated_deferred_processing
+      deferred_processing_evidence.select { |row| row[:recorded_at] && row[:capture].processing_bearer == "platform" }
+        .map do |row|
+          { id: nil, stripe_fee_evidence_id: row[:evidence_id], order_id: row[:capture].order_id,
+            amount_cents: row[:amount_cents], recorded_at: row[:recorded_at], capture: row[:capture],
+            method: "deferred_evidence" }
         end
+    end
+
+    # The one attribution rule for actual processing on orders with a
+    # classified capture, shared with the operational readers
+    # (Settlements::Calculator, Commerce::PlatformRevenue). `captures` respond
+    # to order_id, payment_id and capture_scope. Returns one row per component
+    # the classified captures own: { id:, order_id:, amount_cents:,
+    # recorded_at:, capture: (nil when unattributed), method: }. A component
+    # on a fulfilled order (payment scope) that is not linked to a classified
+    # payment belongs to the sale and is not returned.
+    def self.attribute_processing(captures)
+      return [] if captures.empty?
+
+      by_order = captures.group_by(&:order_id)
+      by_payment = captures.index_by(&:payment_id)
+      rows = FeeComponent.where(order_id: by_order.keys, kind: "processing", estimated: false)
+        .joins("LEFT JOIN stripe_fee_evidences fee_evidence ON fee_evidence.fee_component_id = fee_components.id")
+        .order(:id)
+        .pluck(:id, :order_id, :amount_cents, :created_at, Arel.sql("fee_evidence.payment_id"))
+      captured_counts = Payment.where(order_id: by_order.keys, status: Payment::CAPTURED_STATUSES)
+        .group(:order_id).count
+      rows.filter_map do |id, order_id, amount, recorded_at, evidence_payment_id|
+        order_captures = by_order.fetch(order_id)
+        order_scope = order_captures.any? { |capture| capture.capture_scope == "order" }
+        capture = if evidence_payment_id
+          by_payment[evidence_payment_id]
+        elsif order_scope && captured_counts[order_id] == 1 && order_captures.one?
+          order_captures.first
+        end
+        next if capture.nil? && !order_scope
+
+        { id: id, order_id: order_id, amount_cents: amount.to_i, recorded_at: recorded_at, capture: capture,
+          method: evidence_payment_id ? "verified_evidence" : "sole_capture" }
       end
     end
 
@@ -336,17 +375,30 @@ module Commerce
           order_id: component[:order_id], fee_component_id: component[:id], amount_cents: component[:amount_cents] }
       end
       # Verified facts on a payment-scope capture kept without a component
-      # (A1 §4.6 item 8). They have no durable recording time yet, so they are
-      # listed, never booked in a period.
-      scope_captures = captures.select { |capture| capture.capture_scope == "payment" }.index_by(&:payment_id)
-      deferred = StripeFeeEvidence.where(payment_id: scope_captures.keys, fee_component_id: nil,
-        last_error_code: StripeProcessingFees::PAYMENT_SCOPE_DEFERRED_CODE).where.not(evidence_digest: nil)
-        .order(:payment_id).pluck(:payment_id, :fee_cents).map do |payment_id, fee_cents|
-          capture = scope_captures.fetch(payment_id)
-          { code: "processing_deferred", event_id: capture.event_id, payment_id: payment_id,
-            processing_bearer: capture.processing_bearer, amount_cents: fee_cents.to_i }
+      # (A1 §4.6 item 8) that cannot be booked yet: no durable recording time
+      # (rows from before facts_recorded_at), or an organizer-borne snapshot
+      # still under review.
+      deferred = deferred_processing_evidence
+        .reject { |row| row[:recorded_at] && row[:capture].processing_bearer == "platform" }.map do |row|
+          capture = row[:capture]
+          { code: "processing_deferred", event_id: capture.event_id, payment_id: capture.payment_id,
+            processing_bearer: capture.processing_bearer, amount_cents: row[:amount_cents],
+            facts_recorded_at: row[:recorded_at] }
         end
       unattributed + deferred
+    end
+
+    # Cash balance adjustments linked to classified money. No reader books
+    # them as organizer custody, organizer payable or bridge
+    # (ClassifiedOrganizerView); finance dispositions each one.
+    def linked_adjustment_alerts
+      ClassifiedOrganizerView.linked_cash_adjustments(BalanceAdjustment.where(status: [:posted, :reversed]))
+        .order(:id).pluck(:id, :event_id, :organization_id, :order_id, :dispute_id, :kind, :amount_cents)
+        .map do |id, event_id, organization_id, order_id, dispute_id, kind, amount|
+          { code: ClassifiedOrganizerView::LINKED_ADJUSTMENT_ALERT, event_id: event_id, payment_id: nil,
+            organization_id: organization_id, balance_adjustment_id: id, order_id: order_id, dispute_id: dispute_id,
+            kind: kind, amount_cents: amount.to_i }
+        end
     end
 
     def ambiguity_alerts

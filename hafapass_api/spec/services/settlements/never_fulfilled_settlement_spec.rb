@@ -64,10 +64,11 @@ RSpec.describe "Never-fulfilled capture settlement" do
     expect(ledger(capture)).to have_attributes(owed_cents: 0, excess_cents: 0)
     expect(issue.reload).to be_resolved
     # Before the fix the order's $12.00 proceeds minus the refund's share
-    # ($7.59) were payable on top of the sale. Its processing stays
-    # HåfaPass's (never-fulfilled bearer rule), so nothing else changes.
+    # ($7.59) were payable on top of the sale. Its processing is HåfaPass's
+    # (snapshot bearer "platform"), a platform cost outside every organizer
+    # figure (A2), so nothing else changes.
     expect(statement(event)).to eq(sale_only)
-    expect(Settlements::Calculator.call(event).attributes[:platform_processing_fee_cents]).to eq(69)
+    expect(Settlements::Calculator.call(event).attributes[:platform_processing_fee_cents]).to eq(0)
     expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(false)
 
     # The 7bcd97c2 reader disagrees after a rollback: it counts the order's

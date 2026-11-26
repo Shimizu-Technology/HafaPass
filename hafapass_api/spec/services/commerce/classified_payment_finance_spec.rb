@@ -201,19 +201,30 @@ RSpec.describe Commerce::ClassifiedPaymentFinance do
         code: "unfulfilled_second_capture", captured_cents: 1500, currency: "usd", proceeds_cents: 1500, fee_cents: 0,
         organizer_fee_cents: 0, tax_cents: 0, processing_bearer: "platform", dispute_fee_bearer: "platform",
         allocation_policy: "item_record", policy_version: "nfc-v2.1", provenance: "lifecycle")
-      StripeFeeEvidence.create!(payment: payment_b, context_digest: "ctx_b", status: :review_required, fee_cents: 74,
-        evidence_digest: "digest_b", last_error_code: StripeProcessingFees::PAYMENT_SCOPE_DEFERRED_CODE)
+      evidence = StripeFeeEvidence.create!(payment: payment_b, context_digest: "ctx_b", status: :review_required,
+        fee_cents: 74, evidence_digest: "digest_b", last_error_code: StripeProcessingFees::PAYMENT_SCOPE_DEFERRED_CODE)
       ingest_provider_refund!(payment_b, 700)
       lose_dispute!(payment_b, "dp_cpf_b", amount: 1500)
       now = Time.current.in_time_zone(guam)
       projection = project(month(now.year, now.month))
       totals = projection.for_event(event.id)
 
+      # A2: the database dated B's verified facts when they were recorded
+      # (facts_recorded_at), so the platform-borne $0.74 is booked in its
+      # month; A's $0.69 stays with A's sale.
+      expect(evidence.reload.facts_recorded_at).to be_present
       expect(flows(totals)).to eq(owed: [0, 1500, 1500, 0], second_capture_principal: [0, 1500, 1500, 0])
-      expect([totals.excess_cents, totals.processing_platform_cents, totals.processing_organizer_cents]).to eq([700, 0, 0])
-      expect(projection.alerts).to eq([{ code: "processing_deferred", event_id: event.id, payment_id: payment_b.id,
-        processing_bearer: "platform", amount_cents: 74 }])
+      expect([totals.excess_cents, totals.processing_platform_cents, totals.processing_organizer_cents]).to eq([700, 74, 0])
+      expect(projection.alerts).to eq([])
       expect(order.reload).to have_attributes(status: "completed", refund_amount_cents: 0)
+
+      # A row recorded before the column existed has no date: alerted, not
+      # booked, until stripe_fee_evidence:stamp_facts dates it.
+      stamp!(evidence, :facts_recorded_at, nil, trigger: "stripe_fee_evidences_facts_recorded_at")
+      undated = project(month(now.year, now.month))
+      expect(undated.for_event(event.id).processing_platform_cents).to eq(0)
+      expect(undated.alerts).to eq([{ code: "processing_deferred", event_id: event.id, payment_id: payment_b.id,
+        processing_bearer: "platform", amount_cents: 74, facts_recorded_at: nil }])
     end
   end
 

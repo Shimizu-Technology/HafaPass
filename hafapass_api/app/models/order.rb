@@ -67,6 +67,13 @@ class Order < ApplicationRecord
     end
   }
 
+  # Orders that are sales: everything except an order-scope never-fulfilled
+  # order (the database marker, set from its first order-scope
+  # classification). Organizer sales, proceeds and exports use it
+  # (Commerce::ClassifiedOrganizerView); a payment-scope capture leaves its
+  # fulfilled order in, and its own refunds and disputes are isolated.
+  scope :excluding_never_fulfilled, -> { where(never_fulfilled_at: nil) }
+
   def test_payment?
     payments.any? { |payment| payment.provider == "stripe" && payment.provider_environment == "test" }
   end

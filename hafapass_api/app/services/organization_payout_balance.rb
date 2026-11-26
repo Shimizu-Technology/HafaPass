@@ -9,10 +9,18 @@ class OrganizationPayoutBalance
     # new/uncatalogued codes. RefundSafety's narrower list governs buyer refund
     # attempts; it is not the event closeout or organization payout policy.
     # The one exception is a proven platform-only over-return (P4): it alerts
-    # finance and never holds the organizer.
-    open = ReconciliationException.open.where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE)
+    # finance and never holds the organizer. An unproven one holds.
+    open = Commerce::NeverFulfilledPayoutHold.holding_exceptions
     return 0 if open.where(order_id: order_ids).exists? ||
       open.joins(:payment).where(payments: { order_id: order_ids }).exists?
+
+    # A pending refund or open dispute on classified money (either scope) is
+    # HåfaPass's buyer liability, never an organizer debit. It is a control:
+    # while one is unresolved, nothing is released (P10 strict), and it is
+    # left out of every debit below.
+    view = Commerce::ClassifiedOrganizerView
+    return 0 if view.classified_refunds(Refund.pending.where(order_id: order_ids)).exists? ||
+      view.classified_disputes(Dispute.open.where(order_id: order_ids)).exists?
 
     return 0 if StripeProcessingFees.missing_count(order_ids).positive?
 
@@ -34,14 +42,17 @@ class OrganizationPayoutBalance
       # Pending refunds and open disputes are deducted below for every event.
       # Only add the remaining recovery debit here to avoid reserving it twice.
       event_order_ids = event.orders.select(:id)
-      already_reserved = Refund.pending.where(order_id: event_order_ids).sum(:amount_cents) +
-        Dispute.open.where(order_id: event_order_ids).sum(:amount_cents)
+      already_reserved = view.organizer_refunds(Refund.pending.where(order_id: event_order_ids)).sum(:amount_cents) +
+        view.organizer_disputes(Dispute.open.where(order_id: event_order_ids)).sum(:amount_cents)
       entitlement_cents -= [recovery - already_reserved, 0].max
     end
-    organization_adjustments = organization.balance_adjustments.effective.where(event_id: nil).sum(:amount_cents)
+    # Organization-level adjustments linked to classified money are not the
+    # organizer's (the calculator leaves event-level ones out the same way).
+    organization_adjustments = view.organizer_adjustments(organization.balance_adjustments.effective.where(event_id: nil))
+      .sum(:amount_cents)
     entitlement_cents += [organization_adjustments, 0].min
-    unresolved_refunds = Refund.pending.where(order_id: order_ids).sum(:amount_cents)
-    unresolved_disputes = Dispute.open.where(order_id: order_ids).sum(:amount_cents)
+    unresolved_refunds = view.organizer_refunds(Refund.pending.where(order_id: order_ids)).sum(:amount_cents)
+    unresolved_disputes = view.organizer_disputes(Dispute.open.where(order_id: order_ids)).sum(:amount_cents)
     committed_cents = organization.payouts.where(status: [:pending, :processing, :held, :paid]).sum(:amount_cents)
     [entitlement_cents - unresolved_refunds - unresolved_disputes - committed_cents, 0].max
   end

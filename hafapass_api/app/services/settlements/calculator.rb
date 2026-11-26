@@ -29,12 +29,17 @@ module Settlements
       # split by charged amount: HåfaPass covers the ticket share (which earns
       # its fee) and the organizer bears the share for add-ons and donations.
       # Legacy (NULL) and "organizer" orders keep the full original deduction.
-      processing_fees = processing_fee_components.sum { |component| processing_split(component).last }
+      # Organizer-borne processing on classified captures (snapshot bearer
+      # "organizer") is charged as its own item; platform-borne processing
+      # on them is a HåfaPass cost and stays out of every organizer figure.
+      processing_fees = processing_fee_components.sum { |component| processing_split(component).last } +
+        classified_organizer_processing.sum { |row| row[:amount_cents] }
       platform_processing_fees = processing_fee_components.sum { |component| processing_split(component).first }
       dispute_losses = lost_disputes.sum(&:amount_cents)
       reserve_effect = posted_adjustments.select { |adjustment| reserve_kind?(adjustment) }.sum(&:amount_cents)
       reserves = [-reserve_effect, 0].max
-      adjustment_total = posted_adjustments.select { |adjustment| general_adjustment?(adjustment) }.sum(&:amount_cents)
+      adjustment_total = posted_adjustments.select { |adjustment| general_adjustment?(adjustment) && !linked_adjustment?(adjustment) }
+        .sum(&:amount_cents)
       # Door cash stays with the organizer. It is earned revenue, but it is
       # not platform-held money available for a second payment to them.
       cash_retained = cash_proceeds - cash_refunded_proceeds
@@ -67,7 +72,9 @@ module Settlements
 
     # Read-only per-order view of the same processing split, for organizer
     # exports: { order_id => [platform_cents, organizer_cents] }. It does not
-    # feed the statement or its digest.
+    # feed the statement or its digest. Classified captures' processing is
+    # not any order's sale cost, so it is not listed (the statement carries
+    # an organizer-borne one as its own item).
     def processing_by_order
       processing_fee_components.each_with_object(Hash.new { |hash, key| hash[key] = [0, 0] }) do |component, totals|
         platform, organizer = processing_split(component)
@@ -153,15 +160,41 @@ module Settlements
       @platform_fee_components ||= FeeComponent.where(order_id: sale_order_ids, kind: "platform").order(:id).to_a
     end
 
+    # Processing on the event's sales. A component the classified captures
+    # own (any processing on an order-scope classified order, or one whose
+    # fee evidence names a classified payment, such as payment B's on A's
+    # order) is read through classified_processing instead.
     def processing_fee_components
-      @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false).order(:id).to_a
+      @processing_fee_components ||= FeeComponent.where(order_id: order_ids, kind: "processing", estimated: false)
+        .where.not(id: classified_processing.map { |row| row[:id] }).order(:id).to_a
     end
 
-    # Captures HåfaPass never fulfilled (late capture on a released order,
-    # auto-refunded, no tickets). The organizer never received these sales, so
-    # nothing on them is charged to the organizer: no lost dispute, and no
-    # Stripe processing unless Commerce::NeverFulfilledCapture says the
-    # organizer bears it. Same evidence as the CPA export.
+    # Every classification on the event's orders (both scopes, any order
+    # status), in id order. Production settles real money only, as for the
+    # sales above.
+    def classified_captures
+      @classified_captures ||= UnfulfilledCapture.where(order_id: event.orders.excluding_test_payments.select(:id))
+        .order(:id).to_a
+    end
+
+    def classified_processing
+      @classified_processing ||= Commerce::ClassifiedPaymentFinance.attribute_processing(classified_captures)
+    end
+
+    def classified_organizer_processing
+      @classified_organizer_processing ||= begin
+        by_order = classified_captures.group_by(&:order_id)
+        classified_processing.select do |row|
+          Commerce::ClassifiedOrganizerView.processing_bearer(row, by_order) == "organizer"
+        end
+      end
+    end
+
+    # Unclassified legacy captures (the pre-A1 exception-window rule, no
+    # classification row yet) keep their published treatment: no lost
+    # dispute and no processing charged to the organizer. A2 preflight
+    # requires none to remain (never_fulfilled:verify); classified orders
+    # are not sales at all (sale_orders above).
     def never_fulfilled_order_ids
       @never_fulfilled_order_ids ||= Set.new(Commerce::NeverFulfilledCapture.order_ids_among(order_ids)) |
         orders.select(&:never_fulfilled?).map(&:id)
@@ -220,9 +253,62 @@ module Settlements
       !reserve_kind?(adjustment)
     end
 
+    # A cash adjustment linked to classified money is not the organizer's
+    # (Commerce::ClassifiedOrganizerView). Reserves are organizer controls
+    # and stay as booked.
+    def linked_adjustment?(adjustment)
+      linked_adjustment_ids.include?(adjustment.id)
+    end
+
+    def linked_adjustment_ids
+      @linked_adjustment_ids ||= Set.new(
+        Commerce::ClassifiedOrganizerView.linked_cash_adjustments(event.balance_adjustments).pluck(:id)
+      )
+    end
+
     def statement_items
       sale_items + platform_fee_items + refund_statement_items + processing_items + dispute_items + adjustment_items +
-        payout_items + cash_custody_items
+        payout_items + cash_custody_items + never_fulfilled_items + classified_processing_items
+    end
+
+    # One $0 line per order-scope classified order (all its captures) and per
+    # payment-scope capture (design §8.3, P8). The metadata is fixed at
+    # classification, so later refunds, disputes and processing evidence
+    # never change the digest; PayoutStatement shows the live return status.
+    def never_fulfilled_items
+      order_lines = classified_captures.select(&:order_scope?).group_by(&:order_id).values
+      (order_lines + classified_captures.select(&:payment_scope?).map { |capture| [capture] }).map do |captures|
+        source = captures.min_by(&:id)
+        statement_item(
+          kind: "adjustment",
+          amount_cents: 0,
+          source: source,
+          description: Commerce::ClassifiedOrganizerView::INFO_DESCRIPTION,
+          occurred_at: captures.map(&:capture_recorded_at).min,
+          metadata: { adjustment_kind: Commerce::ClassifiedOrganizerView::INFO_ADJUSTMENT_KIND, order_id: source.order_id,
+            capture_scope: source.capture_scope, payment_ids: captures.map(&:payment_id).sort,
+            captured_cents: captures.sum(&:captured_cents) }
+        )
+      end
+    end
+
+    # Only under an "organizer" bearer snapshot: changing who bears the cost
+    # changes what the organizer is charged, so it is part of the digest.
+    def classified_processing_items
+      components = FeeComponent.where(id: classified_organizer_processing.map { |row| row[:id] }).index_by(&:id)
+      classified_organizer_processing.map do |row|
+        component = components.fetch(row[:id])
+        statement_item(
+          kind: "processing_fee",
+          amount_cents: -row[:amount_cents],
+          source: component,
+          description: "Card processing on a payment returned to the buyer",
+          occurred_at: component.created_at,
+          metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
+            processing_fee_bearer: "organizer", never_fulfilled_capture: true,
+            payment_id: row[:capture]&.payment_id }
+        )
+      end
     end
 
     def cash_custody_items
@@ -352,13 +438,16 @@ module Settlements
 
     def adjustment_items
       posted_adjustments.map do |adjustment|
+        linked = linked_adjustment?(adjustment)
+        metadata = { adjustment_kind: adjustment.kind }
+        metadata.merge!(never_fulfilled_linked: true, recorded_amount_cents: adjustment.amount_cents) if linked
         statement_item(
           kind: reserve_kind?(adjustment) ? "reserve" : "adjustment",
-          amount_cents: adjustment.amount_cents,
+          amount_cents: linked ? 0 : adjustment.amount_cents,
           source: adjustment,
           description: adjustment.reason,
           occurred_at: adjustment.effective_at,
-          metadata: { adjustment_kind: adjustment.kind }
+          metadata: metadata
         )
       end
     end

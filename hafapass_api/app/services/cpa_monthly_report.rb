@@ -817,13 +817,15 @@ class CpaMonthlyReport
 
   # Posted/reversed USD adjustments through month_end by recording time,
   # scoped by immutable payment custody (independent of mutable dispute status).
+  # A cash adjustment linked to classified money is neither custody nor
+  # bridge (Commerce::ClassifiedOrganizerView); it is alerted.
   def in_scope_adjustments
     @in_scope_adjustments ||= begin
       order_ok = all_recorded_adjustments.where(order_id: nil)
         .or(all_recorded_adjustments.where(order_id: agent_orders.select(:id)))
       dispute_ok = all_recorded_adjustments.where(dispute_id: nil)
         .or(all_recorded_adjustments.where(dispute_id: agent_disputes_base.select(:id)))
-      order_ok.where(id: dispute_ok.select(:id))
+      Commerce::ClassifiedOrganizerView.organizer_adjustments(order_ok.where(id: dispute_ok.select(:id)))
     end
   end
 
@@ -1357,7 +1359,7 @@ class CpaMonthlyReport
 
     # Event-level settlement adjustments excluded from custodial scope (e.g.,
     # manual_debit / manual_credit linked to a Clover order or non-agent dispute).
-    bridge_adjustments = all_recorded_adjustments
+    bridge_adjustments = Commerce::ClassifiedOrganizerView.organizer_adjustments(all_recorded_adjustments)
       .where.not(event_id: nil)
       .where.not(kind: %w[reserve_hold reserve_release])
       .where.not(id: in_scope_adjustments.select(:id))

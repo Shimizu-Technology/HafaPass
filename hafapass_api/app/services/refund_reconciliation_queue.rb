@@ -18,7 +18,10 @@ class RefundReconciliationQueue
 
     # Provider observations are verification work, not another buyer liability.
     # The existing cancellation/refund/dispute rows retain the recorded exposure.
-    new(event_id: event.id).entries.reject { |entry| entry[:type] == "exception" }
+    # Refunds and disputes on classified (never-fulfilled) money are HåfaPass's
+    # buyer liability, never a debit against the organizer's paid-out balance;
+    # their exceptions hold the event instead (Commerce::ClassifiedOrganizerView).
+    new(event_id: event.id).entries.reject { |entry| entry[:type] == "exception" || entry[:classified_payment] }
       .sum { |entry| entry[:amount_cents] }
   end
 
@@ -75,14 +78,21 @@ class RefundReconciliationQueue
     responses.select! { |response| response.order.payments.any? { |payment| live_payment_ids.include?(payment.id) } } if live_payment_ids
     disputes = Dispute.open.where(order_id: ids).includes(includes).to_a
     disputes.select! { |dispute| live_payment_ids.include?(dispute.payment_id) } if live_payment_ids
+    @classified_payment_ids = UnfulfilledCapture.where(order_id: ids).pluck(:payment_id).to_set
+    @classified_order_ids = UnfulfilledCapture.where(order_id: ids, capture_scope: "order").pluck(:order_id).to_set
 
     rows = cancellation.filter_map do |item|
       order = item.order
       applicable_refunds = live_payment_ids ? order.refunds.select { |refund| live_payment_ids.include?(refund.payment_id) } : order.refunds
       applicable_disputes = live_payment_ids ? order.disputes.select { |dispute| live_payment_ids.include?(dispute.payment_id) } : order.disputes
+      # Classified money is returned only by the repayment workflow and is
+      # never part of a cancellation refund (EventCancellationRefunds).
+      applicable_refunds = applicable_refunds.reject { |refund| classified_movement?(refund) }
+      applicable_disputes = applicable_disputes.reject { |dispute| classified_movement?(dispute) }
       pending = applicable_refunds.any?(&:pending?)
       open_dispute = applicable_disputes.any?(&:open?)
       captured = order.payments.select { |payment| (!live_payment_ids || live_payment_ids.include?(payment.id)) &&
+        !@classified_payment_ids.include?(payment.id) && !@classified_order_ids.include?(order.id) &&
         (payment.succeeded? || payment.partially_refunded? || payment.refunded?) }
         .sum(&:amount_cents)
       reserved = applicable_refunds.select { |refund| refund.pending? || refund.succeeded? }.sum(&:amount_cents)
@@ -103,6 +113,7 @@ class RefundReconciliationQueue
 
       rows << row(refund, "refund", refund.status, amount,
         refund.failure_message.presence || refund.reason.presence || "Stripe refund", nil)
+        .merge(classified_payment: classified_movement?(refund))
     end
     responses.each do |response|
       next if cancellation_order_ids.include?(response.order_id)
@@ -117,6 +128,7 @@ class RefundReconciliationQueue
 
       rows << row(dispute, "dispute", "dispute_open", dispute.amount_cents,
         dispute.reason.presence || "Payment dispute is open", nil)
+        .merge(classified_payment: classified_movement?(dispute))
     end
     issues = ReconciliationException.open.where(order_id: ids,
       code: Commerce::ExternalRefundRecovery::RECOVERABLE_CODES).includes(includes, :payment).to_a
@@ -155,6 +167,10 @@ class RefundReconciliationQueue
     end
     attach_unable_reasons(rows)
     rows
+  end
+
+  def classified_movement?(record)
+    @classified_payment_ids.include?(record.payment_id) || @classified_order_ids.include?(record.order_id)
   end
 
   def provider_verification_amounts(issue)

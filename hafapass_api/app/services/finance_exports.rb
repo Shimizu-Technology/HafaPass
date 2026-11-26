@@ -43,25 +43,28 @@ module FinanceExports
   end
 
   # Yields one row hash (amounts in cents) per settled order, event by event,
-  # loading orders in batches.
+  # loading orders in batches. A classified (never-fulfilled) order is not a
+  # sale and has no row; the statement CSV carries its $0 line. A
+  # payment-scope capture's refunds stay off its fulfilled order's row.
   def each_order_row(events)
     return enum_for(:each_order_row, events) unless block_given?
 
     events.each do |event|
       processing = Settlements::Calculator.new(event).processing_by_order
       timezone = ActiveSupport::TimeZone[event.timezone.to_s] || Time.zone
-      event.orders.excluding_test_payments.where(status: SETTLED_ORDER_STATUSES)
-        .includes(:order_items, refunds: :refund_items)
+      orders = event.orders.excluding_test_payments.excluding_never_fulfilled.where(status: SETTLED_ORDER_STATUSES)
+      isolated = UnfulfilledCapture.payment_scope.where(order_id: orders.select(:id)).pluck(:payment_id).to_set
+      orders.includes(:order_items, refunds: :refund_items)
         .find_each(batch_size: BATCH_SIZE) do |order|
-        yield order_row(event, order, processing.fetch(order.id, [0, 0]), timezone)
+        yield order_row(event, order, processing.fetch(order.id, [0, 0]), timezone, isolated_payment_ids: isolated)
       end
     end
   end
 
-  def order_row(event, order, processing, timezone)
+  def order_row(event, order, processing, timezone, isolated_payment_ids: Set.new)
     platform_processing, organizer_processing = processing
     items = order.order_items
-    succeeded = order.refunds.select(&:succeeded?)
+    succeeded = order.sale_refunds(%w[succeeded]).reject { |refund| isolated_payment_ids.include?(refund.payment_id) }
     proceeds = items.sum(&:organizer_proceeds_cents)
     refunded_proceeds = succeeded.flat_map(&:refund_items).sum(&:organizer_proceeds_cents)
     {

@@ -178,13 +178,18 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       auto_refund!(payment, at: guam("2027-03-01T01:00:00"))
 
       attributes = Settlements::Calculator.call(event).attributes
-      expect(attributes).to include(processing_fee_cents: 0, platform_processing_fee_cents: 69, negative_balance_cents: 0,
+      # A2: platform-borne processing on a classified capture is a HåfaPass
+      # cost (CPA informational processing), not part of the organizer's
+      # figures, so later fee evidence never changes an approved statement.
+      expect(attributes).to include(processing_fee_cents: 0, platform_processing_fee_cents: 0, negative_balance_cents: 0,
         payable_cents: 0, organizer_proceeds_cents: 0)
 
       statement = PayoutStatement.call(event: event)
       expect(statement[:closing][:total_cents]).to eq(0)
       expect(statement[:reconciles]).to be(true)
-      expect(statement[:totals][:processing_covered_by_hafapass_cents]).to eq(69)
+      expect(statement[:totals][:processing_covered_by_hafapass_cents]).to eq(0)
+      expect(statement[:sections].first[:lines].last).to include(label: "Payment received, order unfulfilled",
+        amount_cents: 0, return_status: "returned")
 
       mar = event_row(fetch_csv(3))
       expect(mar).to include("closing_custodial_liability" => "0.00", "closing_organizer_deficits" => "0.00")
@@ -196,13 +201,14 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
     # A2: the CPA export follows the bearer snapshotted on the classification
     # row, so flipping the switch later restates nothing (§1). Classifying
     # with the switch on snapshots "organizer", and the organizer is charged.
-    # Settlements::Calculator still reads the live switch until its own A2
-    # slice (design §8.10.3).
+    # Settlements::Calculator follows the same snapshot (A2 operational
+    # readers): the organizer-borne capture's $0.69 is its own statement item.
     it "follows the processing bearer snapshotted at classification", repayment_submitter: :active do
       _order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-27T09:00:00"),
         captured_at: guam("2027-02-28T22:00:00"))
       auto_refund!(payment, at: guam("2027-03-01T01:00:00"))
       expect(UnfulfilledCapture.find_by!(payment_id: payment.id).processing_bearer).to eq("platform")
+      platform_event = event
       stub_const("Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING", true)
       expect(event_row(fetch_csv(2))).to include("organizer_processing_deducted" => "0.00",
         "stripe_processing_costs_informational" => "0.69", "closing_organizer_deficits" => "0.00")
@@ -218,6 +224,11 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       stub_const("Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING", false)
       expect(event_row(fetch_csv(2), other_event)).to include("organizer_processing_deducted" => "0.69",
         "stripe_processing_costs_informational" => "0.69", "closing_organizer_deficits" => "0.69")
+      expect(Settlements::Calculator.call(platform_event).attributes).to include(processing_fee_cents: 0,
+        platform_processing_fee_cents: 0)
+      other = Settlements::Calculator.call(other_event)
+      expect(other.attributes).to include(processing_fee_cents: 69, platform_processing_fee_cents: 0)
+      expect(other.items.select { |item| item[:kind] == "processing_fee" }.map { |item| item[:amount_cents] }).to eq([-69])
     end
   end
 
