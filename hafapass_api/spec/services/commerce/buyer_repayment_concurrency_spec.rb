@@ -31,7 +31,7 @@ RSpec.describe "Buyer repayment races", :non_transactional do
   before do
     clean_test_data
     allow(StripeService).to receive(:refund_payment) do |intent_id, amount_cents:, idempotency_key:, **|
-      posts << [amount_cents, idempotency_key]
+      posts << [Thread.current[:release], amount_cents, idempotency_key]
       OpenStruct.new(id: "re_race_#{SecureRandom.hex(3)}", status: "succeeded", amount: amount_cents, currency: "usd",
         payment_intent: intent_id, metadata: { "hafapass_refund_key" => idempotency_key })
     end
@@ -112,7 +112,7 @@ RSpec.describe "Buyer repayment races", :non_transactional do
 
     expect(outcome[:holder]).to eq(:committed)
     expect(outcome.values_at(0, 1)).to contain_exactly(:succeeded, :refund_unknown).or contain_exactly(:succeeded, :succeeded)
-    expect(Array.new(posts.size) { posts.pop }).to eq([[1360, "late-capture:payment:#{payment.id}:op:1"]])
+    expect(Array.new(posts.size) { posts.pop }).to eq([[:r2, 1360, "late-capture:payment:#{payment.id}:op:1"]])
     expect(capture.repayment_operations.pluck(:sequence, :state, :submission_count)).to eq([[1, "succeeded", 1]])
   end
 
@@ -122,9 +122,11 @@ RSpec.describe "Buyer repayment races", :non_transactional do
     outcome = race(lock_organization(order), [[:r1, -> { attempt(payment.id) }], [:r2, -> { attempt(payment.id) }]])
 
     expect(outcome[:holder]).to eq(:committed)
-    expect(outcome[0]).to eq(:repayment_inactive).or eq(:refund_unknown).or eq(:nothing_owed)
+    # If R2 finishes before R1 rechecks the refund, R1 can return the same
+    # succeeded refund. The provider call below identifies the actual sender.
+    expect([:repayment_inactive, :refund_unknown, :nothing_owed, :succeeded]).to include(outcome[0])
     expect(outcome[1]).to eq(:succeeded)
-    expect(Array.new(posts.size) { posts.pop }).to eq([[1360, "late-capture:payment:#{payment.id}:op:1"]])
+    expect(Array.new(posts.size) { posts.pop }).to eq([[:r2, 1360, "late-capture:payment:#{payment.id}:op:1"]])
     expect(capture.repayment_operations.pluck(:state, :submission_count)).to eq([["succeeded", 1]])
   end
 
@@ -143,7 +145,7 @@ RSpec.describe "Buyer repayment races", :non_transactional do
     ])
 
     expect(outcome).to include(holder: :committed, 0 => :refused, 1 => :succeeded)
-    expect(Array.new(posts.size) { posts.pop }).to eq([[1360, "late-capture:payment:#{payment.id}:op:1"]])
+    expect(Array.new(posts.size) { posts.pop }).to eq([[:r2, 1360, "late-capture:payment:#{payment.id}:op:1"]])
     expect(capture.repayment_operations.count).to eq(1)
     expect(payment.refunds.count).to eq(1)
   end
@@ -160,7 +162,7 @@ RSpec.describe "Buyer repayment races", :non_transactional do
     outcome = race(lock_organization(order), [[:r2, -> { attempt(payment.id) }], [:r2, -> { attempt(payment.id) }]])
 
     expect(outcome[:holder]).to eq(:committed)
-    expect(Array.new(posts.size) { posts.pop }).to eq([[1360, "late-capture:payment:#{payment.id}:op:1"]])
+    expect(Array.new(posts.size) { posts.pop }).to eq([[:r2, 1360, "late-capture:payment:#{payment.id}:op:1"]])
     expect(capture.repayment_operations.pluck(:state, :submission_count)).to eq([["succeeded", 1]])
   end
 end
