@@ -135,6 +135,7 @@ RSpec.describe EventLifecycle do
       Settlements::Finalizer.call(event: ended, actor: actor)
       expect { archive! }.to raise_error(described_class::TransitionError, /payout for this event is still in progress/)
 
+      PayoutCustody.record!(payout, basis: "recorded_at_paid")
       payout.update_columns(status: Payout.statuses[:paid], paid_at: Time.current, provider_payout_id: "po_fixture_final")
       expect { archive! }.to raise_error(described_class::TransitionError, /changed after statement version/)
       Settlements::Finalizer.call(event: ended, actor: actor)
