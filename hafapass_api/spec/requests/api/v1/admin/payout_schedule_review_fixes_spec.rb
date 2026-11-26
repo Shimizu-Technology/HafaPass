@@ -72,7 +72,13 @@ RSpec.describe "Admin payout schedule review fixes", type: :request do
     travel_to(guam(2027, 2, 1, 9)) do
       hold = PayoutReserves.hold!(event: event, actor: admin)
       expect(hold.reserve_release_on).to eq(Date.new(2027, 3, 1))
-      pay_first_transfer!
+      payout = pay_first_transfer!
+      # R2-2: recording paid froze the funded custody in the same transaction.
+      # The fixture's card sale is a Stripe test-mode payment, never custody.
+      determination = payout.reload.custody_determination
+      expect(determination).to have_attributes(determination: "non_custodial", basis: "recorded_at_paid",
+        settlement_id: payout.settlement_id, funded_order_item_ids: [@item.id], qualifying_payment_ids: [])
+      expect(determination.evidence["lines"].sole).to include("custody" => "none", "reason" => "no_stripe_agent_capture")
     end
     # The event's end time is corrected three weeks later after the fact.
     event.update_columns(ends_at: guam(2027, 2, 20, 18), starts_at: guam(2027, 2, 20, 9))
