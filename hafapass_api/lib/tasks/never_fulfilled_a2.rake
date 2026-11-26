@@ -25,7 +25,11 @@
 #              sent transfers (paid) and what remains;
 #   payout     each pending, processing or held payout on those events: its
 #              approved version, restatement time, whether it is current,
-#              and the finance action the guards leave open.
+#              its provider acceptance (none, audit_only, marked,
+#              acknowledged), whether finance must escalate (yes, if_sent,
+#              if_sent_after, no) and the finance action the guards leave
+#              open. A payout submitted only after the change is never
+#              reported unsent: the bank is checked first.
 #
 # The runbook runs it before the migration too (A2 recheck finding 3,
 # 8132fe22), on the A1 schema. The schema line says which schema it read
@@ -138,16 +142,66 @@ namespace :never_fulfilled do
       # so the gate needs none (finance escalates any it names).
       refused_audits = AuditLog.where(auditable_type: "Payout", action: "payout.provider_result_conflict")
         .where("metadata->>'conflict_reason' = ?", FinancialIntegrity::PAYOUT_PAID_REFUSED_REASON)
-      # Before the migration no payout has the marker column, so every such
-      # audit is evidence-only.
-      with_audit = Payout.where(id: refused_audits.select(:auditable_id))
-      evidence_only = (a2 ? with_audit.where(provider_accepted_at: nil) : with_audit).order(:id).pluck(:id)
-      accepted = Payout.where.not(provider_accepted_at: nil) if a2
-      line.call("accepted", marked: accepted&.count || 0,
-        acknowledged: accepted&.where&.not(accepted_transfer_recorded_at: nil)&.count || 0,
-        locally_observed: accepted&.where(provider_accepted_basis: "locally_observed")&.count || 0,
+      # CodeRabbit 4707205566: each A2 payout column is probed on its own,
+      # not through the full schema gate, so a partially applied schema
+      # (the marker column present, another A2 object missing) still counts
+      # a marked payout as marked. Without the marker column (before the
+      # migration) every such audit is evidence-only.
+      marker_column = column.call("payouts", "provider_accepted_at")
+      acknowledged_column = column.call("payouts", "accepted_transfer_recorded_at")
+      basis_column = column.call("payouts", "provider_accepted_basis")
+      audited_ids = Payout.where(id: refused_audits.select(:auditable_id)).order(:id).pluck(:id).to_set
+      marked_ids = marker_column ? Payout.where("payouts.provider_accepted_at IS NOT NULL").pluck(:id).to_set : Set.new
+      acknowledged_ids = marker_column && acknowledged_column ?
+        Payout.where("payouts.provider_accepted_at IS NOT NULL AND payouts.accepted_transfer_recorded_at IS NOT NULL").pluck(:id).to_set : Set.new
+      evidence_only = (audited_ids - marked_ids).sort
+      line.call("accepted", marked: marked_ids.size,
+        acknowledged: acknowledged_column ? acknowledged_ids.size : later,
+        locally_observed: marker_column && basis_column ?
+          Payout.where("payouts.provider_accepted_at IS NOT NULL AND payouts.provider_accepted_basis = 'locally_observed'").count : later,
         evidence_only: evidence_only.size, evidence_only_payout_ids: evidence_only.empty? ? "none" : evidence_only.join(","),
         gate_evidence_only_zero: evidence_only.empty? ? "PASS" : "FAIL (escalate each to finance)")
+
+      # The finance action for an in-flight payout on an affected event.
+      # CodeRabbit 4707205572: an accepted transfer is checked first; the
+      # version rules below apply only to payouts the provider never
+      # accepted. CodeRabbit 4707205586: a payout whose only submissions
+      # are after the change may still have left (a manual transfer finance
+      # sends later), so it is never reported unsent; the prior-send
+      # exception is unavailable and finance checks the bank first. Only a
+      # payout never submitted at all is reported unsent.
+      acceptance_of = lambda do |payout|
+        if acknowledged_ids.include?(payout.id) then "acknowledged"
+        elsif marked_ids.include?(payout.id) then "marked"
+        elsif audited_ids.include?(payout.id) then "audit_only"
+        else "none"
+        end
+      end
+      cutoff_label = ->(time) { time ? time.utc.iso8601(6) : "the change" }
+      payout_action = lambda do |payout, acceptance:, stale:, submitted:, submitted_before:, cutoff:|
+        case acceptance
+        when "audit_only"
+          ["accepted (audit trail only): do not send, fail, reverse or reissue; it stays committed; escalate to finance " \
+            "for an approved disposition", "yes"]
+        when "marked"
+          ["accepted transfer: it left; do not send, fail or reissue; record accepted_transfer, then reverse only with " \
+            "the bank's exact return", "no"]
+        when "acknowledged"
+          ["accepted transfer (recorded): it stays committed; reverse only with the bank's exact return", "no"]
+        else
+          if !stale then ["current", "no"]
+          elsif !submitted && (payout.status_pending? || payout.held_from_status == "pending")
+            ["not sent: fail and reissue on a new version", "no"]
+          elsif submitted_before
+            ["record paid only with transfer evidence before #{cutoff_label.call(cutoff)}; if the bank confirms it never " \
+              "left, fail and reissue; if it left after then, keep it committed and escalate to finance", "if_sent_after"]
+          else
+            ["submitted after #{cutoff_label.call(cutoff)} (or not on record): the prior-send exception is unavailable; " \
+              "check the bank first; if it left, keep it committed and escalate to finance; only if the bank confirms it " \
+              "never left, fail and reissue", "if_sent"]
+          end
+        end
+      end
 
       if a2
         paid = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
@@ -179,12 +233,21 @@ namespace :never_fulfilled do
             over_committed: later, organization_available_cents: later)
           in_flight.each do |payout|
             submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").exists?
+            acceptance = acceptance_of.call(payout)
+            # The restatement time is computed after the migration, so a
+            # submission cannot be placed before or after it yet.
+            action, escalate = if acceptance == "none" && submitted
+              ["record paid only with transfer evidence before the restatement (its time after the migration); if the " \
+                "bank confirms it never left, fail and reissue; if it left after the restatement, keep it committed and " \
+                "escalate to finance", "if_sent_after"]
+            else
+              payout_action.call(payout, acceptance: acceptance, stale: true, submitted: submitted, submitted_before: false,
+                cutoff: nil)
+            end
             line.call("payout", event_id: event.id, payout_id: payout.id, status: payout.status,
               held_from: payout.held_from_status || "-", amount_cents: payout.amount_cents,
               settlement_version: payout.settlement.version, settlement_reader: "pre_a2", restated_at: later,
-              current: false, submitted: submitted,
-              action: submitted ? "record paid only with transfer evidence before the restatement (its time after the migration); else fail and reissue" :
-                "not sent: fail and reissue on a new version")
+              current: false, submitted: submitted, acceptance: acceptance, escalate: escalate, action: action)
           end
           next
         end
@@ -205,15 +268,14 @@ namespace :never_fulfilled do
           restated_at = stale&.fetch(:restated_at)
           submissions = AuditLog.where(auditable: payout, action: "payout.submission_requested")
           submitted_before = restated_at ? submissions.where("occurred_at < ?", restated_at).exists? : submissions.exists?
-          action = if stale.nil? then "current"
-          elsif submitted_before then "record paid only with transfer evidence before #{restated_at&.utc&.iso8601(6) || 'the change'}; else fail and reissue"
-          else "not sent: fail and reissue on a new version"
-          end
+          acceptance = acceptance_of.call(payout)
+          action, escalate = payout_action.call(payout, acceptance: acceptance, stale: !stale.nil?,
+            submitted: submissions.exists?, submitted_before: submitted_before, cutoff: restated_at)
           line.call("payout", event_id: event.id, payout_id: payout.id, status: payout.status,
             held_from: payout.held_from_status || "-", amount_cents: payout.amount_cents,
             settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader || "none",
             restated_at: restated_at&.utc&.iso8601(6) || "none", current: stale.nil?, submitted: submissions.exists?,
-            action: action)
+            acceptance: acceptance, escalate: escalate, action: action)
         end
       end
       raise ActiveRecord::Rollback

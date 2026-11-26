@@ -27,8 +27,14 @@ class PayoutReturnProof < ApplicationRecord
   # return and cannot back a second payout. Punctuation is kept: "RET-42"
   # and "RET42" may be different bank references. The proof table is new in
   # this unreleased migration, so no stored digest predates this form.
+  # CodeRabbit 4707205476: normalized again after the separators are removed
+  # and the case is folded, so a combining mark a separator kept apart
+  # ("RET-E \u0301" + "42") composes with its letter as in "RET-É42". The
+  # result is stable: canonical_reference(canonical_reference(x)) ==
+  # canonical_reference(x).
   def self.canonical_reference(reference)
-    reference.to_s.unicode_normalize(:nfkc).gsub(/[[:space:]\p{Cf}]/, "").upcase
+    strip = ->(text) { text.gsub(/[[:space:]\p{Cf}]/, "") }
+    strip.call(strip.call(reference.to_s.unicode_normalize(:nfkc)).upcase.unicode_normalize(:nfkc))
   end
 
   def self.reference_digest(reference)

@@ -218,6 +218,106 @@ describe('AdminPayoutsPage', () => {
     }), expect.anything()))
   })
 
+  // CodeRabbit 4707205487: the list says what a reversal needs; on an event
+  // with a never-fulfilled capture the dialog asks for the bank's exact return.
+  const classifiedPaid = {
+    ...payout, status: 'paid', provider_payout_id: 'BOG-TRX-991', paid_at: '2026-10-02T00:00:00Z', allowed_outcomes: ['reversed'],
+    reversal: { available: true, return_evidence_required: true, amount_cents: 4200, earliest_returned_at: '2026-10-02T00:00:00.000000Z',
+      keeps_transfer_id: true, transfer_id: 'BOG-TRX-991', transfer_sent_at_allowed: false, transfer_sent_at_from: null },
+  }
+
+  it('records a reversal on a classified event only with the full exact return, keeping the transfer ID', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [classifiedPaid] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('radio', { name: /Reversed/ })).toBeChecked()
+    const evidence = within(dialog).getByRole('group', { name: 'Bank return evidence (required)' })
+    expect(evidence).toHaveTextContent('exact return of the $42.00 that left')
+    expect(within(dialog).getByLabelText(/Transfer ID/)).toBeDisabled()
+    expect(within(dialog).getByLabelText(/Transfer ID/)).toHaveValue('BOG-TRX-991')
+    await user.type(within(dialog).getByLabelText('Confirmation reference'), 'Statement 2026-10-09 line 2')
+    await user.type(within(dialog).getByLabelText('How you confirmed it'), 'Bank returned the transfer in full')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    expect(within(evidence).getByText('Enter the return reference the bank gave for this transfer.')).toBeInTheDocument()
+    expect(within(evidence).getByText('Enter the amount the bank returned, in dollars and cents.')).toBeInTheDocument()
+    expect(within(evidence).getByLabelText('Bank return reference')).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(within(evidence).getByLabelText('Bank return reference'), 'RET-0042')
+    await user.type(within(evidence).getByLabelText('Amount the bank returned (USD)'), '41.99')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    expect(within(evidence).getByText(/must have returned the full \$42\.00 that left/)).toBeInTheDocument()
+    expect(apiClient.patch).not.toHaveBeenCalled()
+
+    await user.clear(within(evidence).getByLabelText('Amount the bank returned (USD)'))
+    await user.type(within(evidence).getByLabelText('Amount the bank returned (USD)'), '42.00')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', {
+      status: 'reversed',
+      evidence: expect.objectContaining({ return_reference: 'RET-0042', returned_amount_cents: 4200, returned_at: expect.stringMatching(/Z$/) }),
+    }, expect.anything()))
+    expect(apiClient.patch.mock.calls[0][1].evidence).not.toHaveProperty('transfer_sent_at')
+  })
+
+  it('asks for the real transfer ID when the payout holds only the request placeholder', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...payout, reversal: { ...classifiedPaid.reversal, keeps_transfer_id: false, transfer_id: null } }] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('radio', { name: /Reversed/ }))
+    expect(within(dialog).getByLabelText(/Transfer ID \(required\)/)).toBeEnabled()
+    await user.type(within(dialog).getByLabelText('Confirmation reference'), 'ref')
+    await user.type(within(dialog).getByLabelText('How you confirmed it'), 'reason')
+    await user.type(within(dialog).getByLabelText('Bank return reference'), 'RET-0043')
+    await user.type(within(dialog).getByLabelText('Amount the bank returned (USD)'), '42')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    expect(within(dialog).getByText('Enter the real bank or provider ID of the transfer that came back.')).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText(/Transfer ID/), 'BOG-TRX-992')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      status: 'reversed', provider_payout_id: 'BOG-TRX-992',
+      evidence: expect.objectContaining({ return_reference: 'RET-0043', returned_amount_cents: 4200 }),
+    }), expect.anything()))
+  })
+
+  it('keeps the ordinary reversal on other events without return fields', async () => {
+    const user = userEvent.setup()
+    respond({ payouts: [{ ...classifiedPaid, reversal: { available: true, return_evidence_required: false } }] })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByRole('group', { name: 'Bank return evidence (required)' })).not.toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText('Confirmation reference'), 'ref')
+    await user.type(within(dialog).getByLabelText('How you confirmed it'), 'Bank returned it')
+    await user.click(within(dialog).getByRole('button', { name: 'Record as reversed' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalled())
+    expect(apiClient.patch.mock.calls[0][1].evidence).not.toHaveProperty('return_reference')
+  })
+
+  // CodeRabbit 4707205465: an accepted transfer never shows a send
+  // instruction, and no impossible outcome is offered.
+  it('tells finance not to send an accepted transfer and offers no outcome it would refuse', async () => {
+    const reason = 'Record this payout as an accepted transfer first, then record its return.'
+    respond({ payouts: [
+      { ...payout, status: 'held', provider_payout_id: 'BOG-ACC-1', provider_accepted: true, provider_acceptance_evidence_only: false,
+        allowed_outcomes: [], dispatch: null, reversal: { available: false, return_evidence_required: true, unavailable_reason: reason } },
+      { ...payout, id: 13, provider_accepted: true, provider_acceptance_evidence_only: true, allowed_outcomes: [], reversal: null,
+        dispatch: { actionable: false, placeholder: true, reasons: ['accepted'], messages: ['The provider accepted this transfer, so the money already left. Do not send it again.'] } },
+    ] })
+    renderAt('/admin/payouts')
+    expect(await screen.findByText('The provider accepted this transfer, so the money left. Do not send it again.')).toBeInTheDocument()
+    expect(screen.getByText(reason)).toBeInTheDocument()
+    expect(screen.getByText(/so the money already left\. Do not send it again\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Approval is current/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record outcome/ })).not.toBeInTheDocument()
+    expect(screen.getAllByText('No outcome here')).toHaveLength(2)
+  })
+
   it('shows a server rejection inside the dialog without closing it', async () => {
     const user = userEvent.setup()
     apiClient.patch.mockRejectedValue({ response: { status: 422, data: { error: 'Confirmation time must be after the payout request and not in the future' } } })

@@ -161,8 +161,18 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
         @statement_items_by_event[payout.event_id] =
           PayoutEntryGuard.affected?(payout.event) ? Settlements::Calculator.call(payout.event).items : nil
       end
-      PayoutEntryGuard.dispatch(payout, items: items, liability: liability)
+      PayoutEntryGuard.dispatch(payout, items: items, liability: liability, accepted: accepted)
     end
+    classified = (@classified_by_event ||= {}).fetch(payout.event_id) do
+      @classified_by_event[payout.event_id] = PayoutReconciler.classified_event?(payout)
+    end
+    # CodeRabbit 4707205487: what a reversal needs, so the outcome form asks
+    # for the bank's exact return where the reconciler requires it, and
+    # never offers a reversal it always refuses.
+    reversal = PayoutReconciler.reversal_evidence(payout, classified: classified, accepted: accepted,
+      evidence_only: evidence_only)
+    allowed = evidence_only ? [] : (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) }
+    allowed -= %w[reversed] unless reversal&.dig(:available)
     payout.attributes.slice(
       "id", "provider", "provider_payout_id", "amount_cents", "currency", "status", "failure_code",
       "failure_message", "initiated_at", "paid_at", "created_at", "withheld_cents", "withholding_reason",
@@ -198,10 +208,9 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       # whether a reversal on an event with a never-fulfilled capture still
       # lacks it (its event stays held until finance attaches the return).
       return_proof: payout.return_proof&.evidence_json,
-      return_evidence_required: payout.status_reversed? && payout.return_proof.nil? &&
-        PayoutReconciler.classified_event?(payout),
-      allowed_outcomes: evidence_only ? [] :
-        (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) },
+      return_evidence_required: payout.status_reversed? && payout.return_proof.nil? && classified,
+      reversal: reversal,
+      allowed_outcomes: allowed,
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {
         audit_id: conflict.id, occurred_at: conflict.occurred_at, recorded_before: conflict.before_data,

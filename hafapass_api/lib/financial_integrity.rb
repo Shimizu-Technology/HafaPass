@@ -1636,6 +1636,15 @@ module FinancialIntegrity
   CUSTODY_PAID_BASIS = "recorded_at_paid"
   # PayoutCreator::PAID_REFUSED_REASON: the provider accepted a transfer
   # after a payout fence refused to record it paid.
+  # payouts_provider_accepted_basis_valid (20261126180000, validated by
+  # 20261126180100): the acceptance marker and its basis are set together,
+  # with an allowed basis, or both NULL. CodeRabbit 4707205528: the basis is
+  # named NOT NULL in the populated branch, so a timestamp without a basis
+  # evaluates FALSE (a CHECK accepts UNKNOWN).
+  PAYOUT_ACCEPTED_BASIS_CHECK = "provider_accepted_basis IS NOT NULL AND provider_accepted_at IS NOT NULL " \
+    "AND provider_accepted_basis IN ('provider_reported', 'locally_observed') " \
+    "OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL"
+
   PAYOUT_PAID_REFUSED_REASON = "provider_paid_refused_by_fence"
   PAYOUT_ENTRY_SQL = <<~SQL.freeze
     CREATE OR REPLACE FUNCTION hafapass_event_has_classified_capture(target_event bigint) RETURNS boolean
@@ -2463,6 +2472,16 @@ module FinancialIntegrity
         RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; it is never deleted', OLD.id
           USING ERRCODE = '23514';
       END IF;
+      -- CodeRabbit 4707205557: this guard also runs on the first marker
+      -- write (OLD has none). No release writes a marker on such a payout
+      -- (PayoutCreator records a paid refusal only when no acceptance is
+      -- known), and a marker written now would be a new acceptance time
+      -- chosen after the fact, possibly with another transfer identifier.
+      -- Its audit stays the record; finance's approved disposition decides.
+      IF NEW.provider_accepted_at IS NOT NULL OR NEW.provider_accepted_basis IS NOT NULL THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; no acceptance marker is added to it (escalate to finance for an approved disposition)', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
       IF NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
           OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
           OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
@@ -2483,7 +2502,7 @@ module FinancialIntegrity
     $$;
     DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard ON payouts;
     CREATE TRIGGER payouts_audited_acceptance_guard BEFORE UPDATE ON payouts
-      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL AND NEW.provider_accepted_at IS NULL)
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL)
       EXECUTE FUNCTION hafapass_guard_audited_acceptance();
     DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard_on_delete ON payouts;
     CREATE TRIGGER payouts_audited_acceptance_guard_on_delete BEFORE DELETE ON payouts

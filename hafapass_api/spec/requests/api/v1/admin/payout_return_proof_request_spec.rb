@@ -162,12 +162,17 @@ RSpec.describe "Admin payout return proof", type: :request do
       reconcile!(payout, "paid", conflict_audit_id: conflict.id, sent_before_cancellation_confirmed: true,
         cancellation_payout_reason: "Sent before the hold")
       expect(response.parsed_body["error"]).to eq(PayoutReconciler::ACCEPTED_NOT_PAID_MESSAGE)
-      expect(listing(payout)).to include("provider_accepted" => true, "allowed_outcomes" => ["reversed"])
+      # CodeRabbit 4707205487: no reversal is offered before the acceptance
+      # is recorded (the reconciler refuses it), and then only with the
+      # bank's exact return.
+      expect(listing(payout)).to include("provider_accepted" => true, "allowed_outcomes" => [])
 
       # Finance records the acceptance (cash out, once), then the exact return.
       acceptance = { conflict_audit_id: conflict.id, confirmed_at: Time.current.utc.iso8601(6) }
       reconcile!(payout, "accepted_transfer", **acceptance)
       expect(response).to have_http_status(:ok)
+      expect(listing(payout)).to include("allowed_outcomes" => ["reversed"],
+        "reversal" => include("available" => true, "return_evidence_required" => true, "keeps_transfer_id" => true))
       expect(payout.reload).to be_status_held
       report, row = cpa_row
       expect(report[:accepted_transfers].map { |entry| entry[:payout_id] }).to eq([payout.id])
@@ -667,8 +672,11 @@ RSpec.describe "Admin payout return proof", type: :request do
     expect(held.reload.provider_accepted_at).to be_present
     AuditLog.redact!(AuditLog.where(auditable: held), { ip_address: nil, before_data: {}, after_data: {}, metadata: {},
       retention_anonymized_at: Time.current, updated_at: Time.current })
+    # CodeRabbit 4707205487: "reversed" is offered once finance records the
+    # accepted transfer (the reconciler refuses it before then).
     expect(listing(held)).to include("provider_accepted" => true, "provider_acceptance_evidence_only" => false,
-      "provider_accepted_basis" => "locally_observed", "allowed_outcomes" => ["reversed"])
+      "provider_accepted_basis" => "locally_observed", "allowed_outcomes" => [],
+      "reversal" => include("available" => false, "unavailable_reason" => PayoutReconciler::ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE))
   end
 
   it "fixes a payout's settlement version once its custody is determined (4704933000)" do

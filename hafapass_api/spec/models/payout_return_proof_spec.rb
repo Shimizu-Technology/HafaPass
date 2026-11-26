@@ -18,6 +18,17 @@ RSpec.describe PayoutReturnProof do
       expect(digests.uniq.size).to eq(5)
     end
 
+    # CodeRabbit 4707205476: normalized again once separators are removed,
+    # so a combining accent a space kept apart from its letter composes.
+    it "composes an accent that a separator kept apart, and stays stable" do
+      composed = described_class.canonical_reference("RET-\u00C942")
+      expect(described_class.canonical_reference("RET-E \u030142")).to eq(composed)
+      expect(described_class.canonical_reference("ret-e\u200B\u0301 42")).to eq(composed)
+      expect(described_class.reference_digest("RET-E \u030142")).to eq(Digest::SHA256.hexdigest("RET-\u00C942"))
+      expect(described_class.canonical_reference(composed)).to eq(composed)
+      expect(described_class.reference_digest("RET-42")).not_to eq(described_class.reference_digest("RET42"))
+    end
+
     it "refuses a reference with no visible character" do
       ["", "   ", "​ "].each do |reference|
         expect { described_class.reference_digest(reference) }.to raise_error(ArgumentError, /visible character/)

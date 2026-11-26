@@ -39,6 +39,7 @@ const nowForInput = () => {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 const placeholderReference = value => !value || value.startsWith('sim_') || value.startsWith('manual_po_')
+const dollarsToCents = value => /^\d+(?:\.\d{1,2})?$/.test(value.trim()) ? Math.round(Number(value.trim()) * 100) : null
 
 function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const titleId = useId()
@@ -76,6 +77,15 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   const [recordedCheckAmount, setRecordedCheckAmount] = useState(payout.confirmed_check_amount_cents ?? payout.disbursement_cents)
   const [adjustmentNotice, setAdjustmentNotice] = useState('')
   const [legacyPayeeConfirmed, setLegacyPayeeConfirmed] = useState(false)
+  // A reversal the API says needs the bank's exact return (an event with a
+  // never-fulfilled capture, or a transfer the provider accepted).
+  const reversal = payout.reversal
+  const returnRequired = outcome === 'reversed' && reversal?.return_evidence_required === true
+  const [returnReference, setReturnReference] = useState('')
+  const [returnedAmount, setReturnedAmount] = useState('')
+  const [returnedAt, setReturnedAt] = useState(nowForInput)
+  const [transferSentAt, setTransferSentAt] = useState('')
+  const lockTransferId = keepsTransferId || (returnRequired && reversal.keeps_transfer_id)
   const describePayee = payee => !payee ? '' : isBank ? [payee.account_holder_name, payee.bank_name, payee.masked_account].filter(Boolean).join(' · ') : `${payee.payee_name}${payee.delivery_method === 'pickup' ? ` · Pickup${payee.pickup_note ? ` — ${payee.pickup_note}` : ''}` : ` · Mail to ${payee.mailing_address}`}${payee.memo ? ` · Memo: ${payee.memo}` : ''}`
 
   const checkCents = () => /^\d+(?:\.\d{1,2})?$/.test(actualCheckAmount.trim())
@@ -104,6 +114,21 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     const found = {}
     const confirmed = new Date(confirmedAt)
     if (outcome === 'paid' && placeholderReference(transferId.trim())) found.transfer = isCheck ? 'Enter the check number.' : 'Enter the real bank or provider transfer ID.'
+    if (returnRequired) {
+      if (!lockTransferId && placeholderReference(transferId.trim())) found.transfer = isCheck ? 'Enter the number of the check that came back.' : 'Enter the real bank or provider ID of the transfer that came back.'
+      if (!returnReference.trim()) found.returnReference = 'Enter the return reference the bank gave for this transfer.'
+      const cents = dollarsToCents(returnedAmount)
+      if (cents === null) found.returnedAmount = 'Enter the amount the bank returned, in dollars and cents.'
+      else if (cents !== reversal.amount_cents) found.returnedAmount = `The bank must have returned the full ${money(reversal.amount_cents, payout.currency)} that left. For a partial return, keep the payout as recorded and escalate to finance.`
+      const sentAt = transferSentAt ? new Date(transferSentAt) : null
+      if (sentAt && Number.isNaN(sentAt.getTime())) found.transferSentAt = 'Enter when the bank sent the transfer, or leave it blank.'
+      else if (sentAt && ((reversal.transfer_sent_at_from && sentAt < new Date(reversal.transfer_sent_at_from)) || sentAt > new Date(reversal.earliest_returned_at))) found.transferSentAt = `The bank's transfer time must be between the submission (${formatDateTime(reversal.transfer_sent_at_from)}) and ${formatDateTime(reversal.earliest_returned_at)}.`
+      const returned = new Date(returnedAt)
+      const earliest = sentAt && !found.transferSentAt ? sentAt : new Date(reversal.earliest_returned_at)
+      if (Number.isNaN(returned.getTime())) found.returnedAt = 'Enter when the money came back.'
+      else if (returned > new Date()) found.returnedAt = 'The return time cannot be in the future.'
+      else if (returned < earliest) found.returnedAt = `The return must be after the transfer left (${formatDateTime(earliest)}).`
+    }
     if (!reference.trim()) found.reference = withholdingOnly ? 'Enter the withholding record reference.' : 'Enter the confirmation reference, such as the bank statement line.'
     if (Number.isNaN(confirmed.getTime())) found.confirmedAt = 'Enter when the outcome was confirmed.'
     else if (confirmed > new Date()) found.confirmedAt = 'The confirmation time cannot be in the future.'
@@ -135,9 +160,15 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         ...(outcome === 'paid' && needsCancellationConfirmation ? { sent_before_cancellation_confirmed: true, cancellation_payout_reason: cancellationReason.trim() } : {}),
         ...(outcome === 'paid' && withholdingOverride.trim() ? { withholding_override_reason: withholdingOverride.trim() } : {}) }
       if (outcome === 'paid' && isCheck) evidence.actual_check_amount_cents = checkCents()
+      if (returnRequired) {
+        evidence.return_reference = returnReference.trim()
+        evidence.returned_amount_cents = dollarsToCents(returnedAmount)
+        evidence.returned_at = new Date(returnedAt).toISOString()
+        if (reversal.transfer_sent_at_allowed && transferSentAt) evidence.transfer_sent_at = new Date(transferSentAt).toISOString()
+      }
       if (payout.conflict) evidence.conflict_audit_id = payout.conflict.audit_id
       const body = { status: outcome, evidence }
-      if (transferId.trim() && !keepsTransferId) body.provider_payout_id = transferId.trim()
+      if (transferId.trim() && !keepsTransferId && !(returnRequired && placeholderReference(transferId.trim()))) body.provider_payout_id = transferId.trim()
       await apiClient.patch(`/admin/payouts/${payout.id}`, body, request.config)
       if (request.current()) onSaved(`Payout #${payout.id} recorded as ${OUTCOMES[outcome].label.toLowerCase()}.`)
     } catch (failure) {
@@ -219,10 +250,11 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-neutral-900">
-              {withholdingOnly ? 'Withholding-only reference' : isCheck ? 'Check number' : 'Transfer ID'} {outcome === 'paid' ? '(required)' : '(optional)'}
-              <input value={transferId} disabled={keepsTransferId || withholdingOnly} onChange={event => setTransferId(event.target.value)} maxLength={255} aria-invalid={!!errors.transfer} aria-describedby={errors.transfer ? 'reconcile-transfer-error' : undefined} className={`input mt-1 ${errors.transfer ? 'input-error' : ''}`} />
+              {withholdingOnly ? 'Withholding-only reference' : isCheck ? 'Check number' : 'Transfer ID'} {outcome === 'paid' || (returnRequired && !lockTransferId) ? '(required)' : '(optional)'}
+              <input value={transferId} disabled={lockTransferId || withholdingOnly} onChange={event => setTransferId(event.target.value)} maxLength={255} aria-invalid={!!errors.transfer} aria-describedby={errors.transfer ? 'reconcile-transfer-error' : undefined} className={`input mt-1 ${errors.transfer ? 'input-error' : ''}`} />
             </label>
-            {keepsTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original {withholdingOnly ? 'withholding-only reference' : isCheck ? 'check number' : 'transfer ID'}.</p>}
+            {lockTransferId && <p className="mt-1 text-sm text-content-muted">A reversal keeps the original {withholdingOnly ? 'withholding-only reference' : isCheck ? 'check number' : 'transfer ID'}.</p>}
+            {returnRequired && !lockTransferId && <p className="mt-1 text-sm text-content-muted">Enter the ID of the transfer that left, as the bank shows it, not the request placeholder.</p>}
             {fieldError('transfer')}
           </div>
           <div>
@@ -247,6 +279,39 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             {fieldError('reason')}
           </div>
         </div>
+        {returnRequired && <fieldset className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <legend className="px-1 font-semibold">Bank return evidence (required)</legend>
+          <p>{payout.provider_accepted ? 'The provider accepted this transfer, so the money left.' : 'This event has a buyer payment that was never fulfilled.'} A reversal is recorded only with the bank’s exact return of the {money(reversal.amount_cents, payout.currency)} that left. If the transfer never left, record it failed instead.</p>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="block font-medium">Bank return reference
+                <input value={returnReference} onChange={event => setReturnReference(event.target.value)} maxLength={255} autoComplete="off" aria-invalid={!!errors.returnReference} aria-describedby={errors.returnReference ? 'reconcile-returnReference-error' : undefined} className={`input mt-1 ${errors.returnReference ? 'input-error' : ''}`} />
+              </label>
+              {fieldError('returnReference')}
+            </div>
+            <div>
+              <label className="block font-medium">Amount the bank returned (USD)
+                <input type="text" inputMode="decimal" value={returnedAmount} onChange={event => setReturnedAmount(event.target.value)} placeholder={(reversal.amount_cents / 100).toFixed(2)} aria-invalid={!!errors.returnedAmount} aria-describedby={`reconcile-returnedAmount-hint${errors.returnedAmount ? ' reconcile-returnedAmount-error' : ''}`} className={`input mt-1 ${errors.returnedAmount ? 'input-error' : ''}`} />
+              </label>
+              <p id="reconcile-returnedAmount-hint" className="mt-1 text-amber-900">Must be the full {money(reversal.amount_cents, payout.currency)} that left.</p>
+              {fieldError('returnedAmount')}
+            </div>
+            <div>
+              <label className="block font-medium">Returned at
+                <input type="datetime-local" value={returnedAt} onChange={event => setReturnedAt(event.target.value)} aria-invalid={!!errors.returnedAt} aria-describedby={`reconcile-returnedAt-hint${errors.returnedAt ? ' reconcile-returnedAt-error' : ''}`} className={`input mt-1 ${errors.returnedAt ? 'input-error' : ''}`} />
+              </label>
+              <p id="reconcile-returnedAt-hint" className="mt-1 text-amber-900">After the transfer left ({formatDateTime(reversal.earliest_returned_at)}).</p>
+              {fieldError('returnedAt')}
+            </div>
+            {reversal.transfer_sent_at_allowed && <div className="sm:col-span-2">
+              <label className="block font-medium">When the bank sent the transfer (optional)
+                <input type="datetime-local" value={transferSentAt} onChange={event => setTransferSentAt(event.target.value)} aria-invalid={!!errors.transferSentAt} aria-describedby={errors.transferSentAt ? 'reconcile-transferSentAt-error' : undefined} className={`input mt-1 ${errors.transferSentAt ? 'input-error' : ''}`} />
+              </label>
+              <p className="mt-1 text-amber-900">Only if the bank shows an earlier send time than {formatDateTime(reversal.earliest_returned_at)}, when HåfaPass saw the provider’s result.</p>
+              {fieldError('transferSentAt')}
+            </div>}
+          </div>
+        </fieldset>}
         {isCheck && outcome === 'paid' && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
           <label className="block font-medium">{withholdingOnly ? 'Actual amount sent to payee (USD)' : 'Actual amount written on the check (USD)'}<input type="number" min="0" step="0.01" value={actualCheckAmount} onChange={event => setActualCheckAmount(event.target.value)} className="input mt-1" /></label>
           {fieldError('actualCheckAmount')}
@@ -503,6 +568,8 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
                   {payout.dispatch && !payout.dispatch.actionable && <span role="status" className="mt-1 block rounded-md bg-red-50 p-2 font-semibold text-red-800 [overflow-wrap:anywhere]">{payout.dispatch.messages.join(' ')}</span>}
                   {payout.dispatch?.actionable && payout.dispatch.placeholder && <span className="mt-1 block text-content-muted">Approval is current. {payout.provider === 'check' ? 'Write the check' : 'Send the transfer'} to the approved payee, then record it here.</span>}
                   {payout.failure_message && <span className="block text-red-700">{payout.failure_message}</span>}
+                  {payout.provider_accepted && !payout.dispatch && (payout.provider_acceptance_evidence_only || !payout.failure_message) && <span role="status" className="mt-1 block rounded-md bg-red-50 p-2 font-semibold text-red-800 [overflow-wrap:anywhere]">{payout.provider_acceptance_evidence_only ? 'The provider’s acceptance is shown only in the audit trail. Do not send this transfer. Escalate to finance for an approved disposition.' : 'The provider accepted this transfer, so the money left. Do not send it again.'}</span>}
+                  {payout.reversal?.unavailable_reason && <span role="status" className="mt-1 block rounded-md bg-amber-50 p-2 text-amber-950 [overflow-wrap:anywhere]">{payout.reversal.unavailable_reason}</span>}
                   {payout.status === 'held' && payout.amount_cents > payout.hold_available_cents && <span className="block text-red-700">Amount exceeds current net payable; record a failed outcome and reissue.</span>}
                   {payout.last_reconciliation && <span className="block text-content-muted [overflow-wrap:anywhere]">Recorded by {payout.last_reconciliation.recorded_by || 'system'} · {payout.last_reconciliation.reference}</span>}
                 </span></td>
@@ -510,7 +577,7 @@ function PayoutsList({ identity, resourcePath, filters, setFilter, onNotice }) {
                   {payout.status === 'held' && <button type="button" onClick={() => setReleasing(payout)} className="btn-secondary !px-4 !py-2 text-sm">Release hold<span className="sr-only"> for payout #{payout.id}</span></button>}
                   {payout.allowed_outcomes.length > 0
                     ? <button type="button" onClick={() => setReconciling(payout)} className="btn-secondary !px-4 !py-2 text-sm">Record outcome<span className="sr-only"> for payout #{payout.id}</span></button>
-                    : <span className="text-xs text-content-muted">Final</span>}
+                    : <span className="text-xs text-content-muted">{['failed', 'reversed'].includes(payout.status) ? 'Final' : 'No outcome here'}</span>}
                 </td>
               </tr>
             ))}

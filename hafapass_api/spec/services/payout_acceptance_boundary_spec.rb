@@ -363,6 +363,31 @@ RSpec.describe "Provider acceptance boundaries (A2)" do
       expect(payout.reload).to have_attributes(status: "held", provider_payout_id: "BANK-EVIDENCE-ONLY", amount_cents: 1000)
     end
 
+    # CodeRabbit 4707205557: the guard also runs on the first marker write,
+    # so no writer turns it into a marked acceptance (a new acceptance time
+    # chosen after the fact), with or without a new transfer identifier. An
+    # ordinary in-flight conflict without that audit still takes its first
+    # marker (PayoutCreator's own write).
+    it "never gains a first acceptance marker, nor a replaced identity with it" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      ordinary = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+        idempotency_key: "eo-ordinary-marker", amount_cents: 1000)
+      payout = evidence_only!
+      guard = /payout #{payout.id} has a provider acceptance recorded only in its audit trail; no acceptance marker is added/
+      marker = { provider_accepted_at: Time.current, provider_accepted_basis: "locally_observed" }
+      expect(raw(payout, **marker)).to match(guard)
+      expect(raw(payout, **marker, provider_payout_id: "OTHER-EO-MARK")).to match(guard)
+      expect(raw(payout, **marker, provider_accepted_basis: "provider_reported", status: Payout.statuses[:held],
+        held_from_status: "processing")).to match(guard)
+      expect(payout.reload).to have_attributes(provider_accepted_at: nil, provider_accepted_basis: nil,
+        provider_payout_id: "BANK-EVIDENCE-ONLY", status: "processing")
+      expect(PayoutCreator.evidence_only_acceptance?(payout)).to be(true)
+      expect(conflict(payout).metadata["conflict_reason"]).to eq(PayoutCreator::PAID_REFUSED_REASON)
+
+      Payout.where(id: ordinary.id).update_all(provider_payout_id: "BANK-ORDINARY-MARK", failure_code: "provider_result_conflict")
+      expect(raw(ordinary.reload, **marker)).to eq(:accepted)
+    end
+
     # On a pending payout too: never submitted (the resend), only held.
     it "keeps a pending one unsent" do
       record_card_sale!(event, ticket_type: ticket_type, quantity: 5)

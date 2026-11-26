@@ -1839,7 +1839,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     t.datetime "recorded_at", null: false
     t.index ["payout_id"], name: "index_payout_return_proofs_on_payout_id", unique: true
     t.index ["return_reference_digest"], name: "index_payout_return_proofs_on_return_reference_digest", unique: true
-    t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying, 'accepted_transfer_return'::character varying, 'attached_return'::character varying]::text[])", name: "payout_return_proofs_kind_valid"
+    t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying::text, 'accepted_transfer_return'::character varying::text, 'attached_return'::character varying::text])", name: "payout_return_proofs_kind_valid"
   end
 
   create_table "payouts", force: :cascade do |t|
@@ -1882,13 +1882,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payouts_on_retention_anonymized_at"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
-    t.check_constraint "(provider_accepted_basis::text = ANY (ARRAY['provider_reported'::character varying, 'locally_observed'::character varying]::text[])) AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL", name: "payouts_provider_accepted_basis_valid"
     t.check_constraint "(withheld_cents + carried_withholding_cents) <= amount_cents", name: "payouts_total_withholding_within_gross"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "carried_withholding_cents >= 0", name: "payouts_carried_withholding_nonnegative"
     t.check_constraint "char_length(currency::text) = 3", name: "payouts_currency_length"
     t.check_constraint "jsonb_typeof(payee_snapshot) = 'object'::text", name: "payouts_payee_snapshot_object"
     t.check_constraint "jsonb_typeof(tax_information_snapshot) = 'object'::text", name: "payouts_tax_snapshot_object"
+    t.check_constraint "provider_accepted_basis IS NOT NULL AND provider_accepted_at IS NOT NULL AND (provider_accepted_basis::text = ANY (ARRAY['provider_reported'::character varying::text, 'locally_observed'::character varying::text])) OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL", name: "payouts_provider_accepted_basis_valid"
     t.check_constraint "status = ANY (ARRAY[0, 1, 2, 3, 4, 5])", name: "payouts_status_valid"
     t.check_constraint "under_withheld_cents >= 0", name: "payouts_under_withheld_nonnegative"
     t.check_constraint "withheld_cents >= 0 AND withheld_cents < amount_cents", name: "payouts_withholding_valid"
@@ -5612,6 +5612,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
         RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; it is never deleted', OLD.id
           USING ERRCODE = '23514';
       END IF;
+      -- CodeRabbit 4707205557: this guard also runs on the first marker
+      -- write (OLD has none). No release writes a marker on such a payout
+      -- (PayoutCreator records a paid refusal only when no acceptance is
+      -- known), and a marker written now would be a new acceptance time
+      -- chosen after the fact, possibly with another transfer identifier.
+      -- Its audit stays the record; finance's approved disposition decides.
+      IF NEW.provider_accepted_at IS NOT NULL OR NEW.provider_accepted_basis IS NOT NULL THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; no acceptance marker is added to it (escalate to finance for an approved disposition)', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
       IF NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
           OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
           OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
@@ -5632,7 +5642,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
     $$;
     DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard ON payouts;
     CREATE TRIGGER payouts_audited_acceptance_guard BEFORE UPDATE ON payouts
-      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL AND NEW.provider_accepted_at IS NULL)
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL)
       EXECUTE FUNCTION hafapass_guard_audited_acceptance();
     DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard_on_delete ON payouts;
     CREATE TRIGGER payouts_audited_acceptance_guard_on_delete BEFORE DELETE ON payouts

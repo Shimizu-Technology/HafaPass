@@ -64,8 +64,7 @@ class PayoutReconciler
 
       if payout.status == status
         previous = AuditLog.where(auditable: payout, action: "payout.reconciled").order(:id).last
-        same_evidence = previous&.metadata&.fetch("reconciliation", nil) == normalized
-        return payout if same_evidence && payout.provider_payout_id == external_id
+        return payout if same_evidence?(previous, normalized) && payout.provider_payout_id == external_id
 
         raise ReconciliationError, "This payout outcome was already recorded with different evidence"
       end
@@ -256,7 +255,7 @@ class PayoutReconciler
       AuditLogger.record!(action: "payout.reconciled", auditable: payout, actor: actor,
         organization: payout.organization, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "under_withheld_cents"),
-        metadata: { reconciliation: normalized,
+        metadata: { reconciliation: normalized, evidence_fingerprint: evidence_fingerprint(normalized),
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
@@ -330,12 +329,43 @@ class PayoutReconciler
     return unless payout.provider == "manual"
 
     account_number = payout.connected_account.bank_account_number
-    fields = [external_id, *normalized.values.grep(String).excluding(normalized["confirmed_at"], normalized["returned_at"])]
+    # CodeRabbit 4707205517: the parsed timestamps (by key) are times, not
+    # account numbers; the identifier and every free-text field are scanned.
+    fields = [external_id, *normalized.except(*TIMESTAMP_KEYS).values.grep(String)]
     return unless account_number.present? && fields.any? { |value| value.to_s.gsub(/\D/, "").include?(account_number) }
 
     raise ReconciliationError, "Leave full bank account numbers out of payout evidence"
   end
   private_class_method :reject_account_number!
+
+  TIMESTAMP_KEYS = %w[confirmed_at returned_at transfer_sent_at].freeze
+
+  # CodeRabbit 4707205504: an identical retry is recognized by a keyed
+  # fingerprint of the full normalized evidence, stored beside the sanitized
+  # audit copy (AuditSanitizer truncates text to 500 characters and masks
+  # digit runs, so a long reason or reference never compared equal, and two
+  # reasons sharing that prefix must not either). HMAC-SHA256 under a key
+  # derived from secret_key_base, written in letters only (a-p) so the
+  # sanitizer's digit masks never alter it, and no evidence text can be
+  # recovered or confirmed from it. An audit written before the fingerprint
+  # (A1's payout.reconciled) keeps the exact-copy comparison, which a
+  # truncated or masked copy never satisfies, so it never accepts changed
+  # evidence. Retention's anonymization removes both: a later retry is then
+  # refused, as before.
+  def self.evidence_fingerprint(normalized)
+    key = Rails.application.key_generator.generate_key("hafapass/payout-evidence-fingerprint", 32)
+    OpenSSL::HMAC.hexdigest("SHA256", key, JSON.generate(normalized.sort.to_h)).tr("0-9a-f", "a-p")
+  end
+
+  def self.same_evidence?(audit, normalized)
+    metadata = audit&.metadata
+    return false unless metadata.is_a?(Hash)
+    return ActiveSupport::SecurityUtils.secure_compare(metadata["evidence_fingerprint"], evidence_fingerprint(normalized)) if
+      metadata["evidence_fingerprint"].is_a?(String)
+
+    metadata["reconciliation"] == normalized
+  end
+  private_class_method :same_evidence?
 
   # CodeRabbit 4703321670: the no-send outcome for a transfer the provider
   # accepted after the payout fence refused to record it paid
@@ -476,6 +506,49 @@ class PayoutReconciler
   PLACEHOLDER_REVERSAL_MESSAGE = "This reversal was recorded without a real transfer identifier, so the bank's return " \
     "cannot be tied to it. Its event stays held; escalate to finance to establish which transfer left."
 
+  # CodeRabbit 4707205487: what the admin outcome form needs to record a
+  # reversal this reconciler accepts (Api::V1::Admin::PayoutsController),
+  # or nil when no reversal can be recorded here. A reversal on an event
+  # with a never-fulfilled capture, or of a transfer the provider accepted,
+  # needs the bank's exact return: its reference, the full amount that left
+  # (amount_cents), when it came back (no earlier than earliest_returned_at,
+  # not in the future) and the transfer identifier of the money that left
+  # (the stored one when keeps_transfer_id, else finance enters the real
+  # one: a placeholder names nothing the bank could return). Other events
+  # keep the generic reversal (return_evidence_required false). The listing
+  # never offers a reversal these rules always refuse: with nothing that
+  # left to return (a withholding-only or zero-net payout), an accepted
+  # transfer finance has not yet acknowledged, or an accepted transfer
+  # whose stored identifier is a placeholder; unavailable_reason says why.
+  def self.reversal_evidence(payout, classified:, accepted:, evidence_only:)
+    return nil if evidence_only || !payout.may_reconcile_to?("reversed")
+
+    required = accepted || classified
+    return { available: true, return_evidence_required: false } unless required
+
+    stored = payout.provider_payout_id
+    stored_real = stored.present? && !stored.start_with?(*PLACEHOLDER_PREFIXES)
+    keeps = accepted || keeps_identifier?(payout)
+    amount = payout.confirmed_check_amount_cents
+    reason = if amount <= 0 then NOTHING_LEFT_TO_RETURN_MESSAGE
+    elsif accepted && payout.accepted_transfer_recorded_at.nil? then ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE
+    elsif keeps && !stored_real then PLACEHOLDER_REVERSAL_MESSAGE
+    end
+    return { available: false, return_evidence_required: true, unavailable_reason: reason } if reason
+
+    earliest = accepted ? payout.provider_accepted_at : payout_sent_at(payout)
+    { available: true, return_evidence_required: true, amount_cents: amount,
+      earliest_returned_at: earliest.utc.iso8601(6), keeps_transfer_id: keeps,
+      transfer_id: keeps ? stored : nil,
+      # The bank's own, earlier transfer time is accepted only on the return
+      # of an accepted transfer whose time is this release's observation.
+      transfer_sent_at_allowed: accepted && payout.provider_accepted_basis == "locally_observed",
+      transfer_sent_at_from: accepted ? submission_requested_at(payout)&.utc&.iso8601(6) : nil }
+  end
+
+  NOTHING_LEFT_TO_RETURN_MESSAGE = "No money left the bank on this withholding-only payout, so there is no bank " \
+    "return to record here. Escalate to finance if the withholding itself must be undone."
+
   def self.classified_event?(payout)
     ActiveRecord::Base.connection.select_value(
       ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_event_has_classified_capture(?)", payout.event_id])
@@ -526,8 +599,7 @@ class PayoutReconciler
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       reject_account_number!(payout, external_id, normalized)
       if PayoutReturnProof.exists?(payout_id: payout.id)
-        if previous && previous.metadata&.fetch("reconciliation", nil) == normalized &&
-            previous.metadata["provider_payout_id"] == external_id
+        if previous && same_evidence?(previous, normalized) && previous.metadata["provider_payout_id"] == external_id
           return payout
         end
 
@@ -552,8 +624,8 @@ class PayoutReconciler
       state = payout.attributes.slice("status", "provider_payout_id", "paid_at", "amount_cents")
       AuditLogger.record!(action: RETURN_EVIDENCE_ACTION, auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event, before_data: state, after_data: state,
-        metadata: { reconciliation: normalized, provider_payout_id: external_id,
-          (accepted ? :accepted_transfer_return : :verified_return) => returned,
+        metadata: { reconciliation: normalized, evidence_fingerprint: evidence_fingerprint(normalized),
+          provider_payout_id: external_id, (accepted ? :accepted_transfer_return : :verified_return) => returned,
           reversal_audit_id: reversal&.id, amount_left_cents: payout.confirmed_check_amount_cents },
         outcome: "succeeded", request: request)
       record_return_proof!(payout, "attached_return", returned)
@@ -581,9 +653,11 @@ class PayoutReconciler
       # CodeRabbit 4705527061: an identical retry returns the recorded
       # acceptance whatever happened since (a verified return reverses the
       # payout and clears its conflict); different evidence stays refused.
+      # CodeRabbit 4707205504: compared by the evidence fingerprint, never by
+      # the sanitized (truncated) audit text.
       previous = AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").order(:id).last
       if previous || payout.accepted_transfer_recorded_at
-        return payout if previous&.metadata&.fetch("reconciliation", nil) == normalized && external_id == payout.provider_payout_id
+        return payout if same_evidence?(previous, normalized) && external_id == payout.provider_payout_id
 
         raise ReconciliationError, "This payout outcome was already recorded with different evidence"
       end
@@ -622,7 +696,7 @@ class PayoutReconciler
         organization: payout.organization, event: payout.event, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id, reconciliation: normalized,
-          conflict_audit_id: conflict&.id,
+          evidence_fingerprint: evidence_fingerprint(normalized), conflict_audit_id: conflict&.id,
           provider_accepted_at: payout.provider_accepted_at.utc.iso8601(6), provider_accepted_basis: payout.provider_accepted_basis,
           **(conflict ? {} : { acknowledged_marker: { provider_accepted_at: payout.provider_accepted_at.utc.iso8601(6) } }),
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),

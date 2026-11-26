@@ -200,6 +200,8 @@ module PayoutEntryGuard
 
   DISPATCH_PROVIDERS = %w[manual legacy_manual check].freeze
   DISPATCH_REASONS = {
+    "accepted" => "The provider accepted this transfer, so the money already left. Do not send it again. Finance " \
+      "reconciles it as an accepted transfer (or escalates it when its acceptance is shown only in the audit trail).",
     "statement_changed" => "The approved statement changed after this payout was approved. Do not send this transfer. " \
       "If it was already sent, record it with its transfer time; otherwise record it failed and reissue it on the current statement.",
     "hold" => "A buyer repayment on this event is unresolved. Do not send this transfer until it is resolved.",
@@ -260,11 +262,16 @@ module PayoutEntryGuard
   # before the transfer is actionable. Nil for payouts with nothing to send.
   # The placeholder is never money: only a real transfer reference shows the
   # money left (the UI offers "send" only for a placeholder).
-  def dispatch(payout, items: nil, liability: nil)
+  # CodeRabbit 4707205465: a transfer the provider accepted (its durable
+  # marker, or only its paid-refusal conflict audit) already left. It is
+  # never actionable, whatever the other guards say, and says so first.
+  def dispatch(payout, items: nil, liability: nil, accepted: nil)
     return unless payout.status_processing? && DISPATCH_PROVIDERS.include?(payout.provider)
 
     placeholder = placeholder?(payout.provider_payout_id)
+    accepted = PayoutCreator.provider_accepted?(payout) if accepted.nil?
     reasons = blockers(payout, items: items, liability: liability).map { |blocker| blocker[:reason] }
+    reasons.unshift("accepted") if accepted
     { actionable: reasons.empty?, placeholder: placeholder,
       reasons: reasons, messages: reasons.map { |reason| DISPATCH_REASONS.fetch(reason) } }
   end

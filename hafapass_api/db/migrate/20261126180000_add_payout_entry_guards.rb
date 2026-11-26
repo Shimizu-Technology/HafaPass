@@ -71,8 +71,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
     # Set with the marker, fixed after it.
     add_column :payouts, :provider_accepted_basis, :string
     add_column :payouts, :accepted_transfer_recorded_at, :datetime
-    add_check_constraint :payouts, "provider_accepted_basis IN ('provider_reported', 'locally_observed') " \
-      "AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL",
+    # CodeRabbit 4707205528: both set (basis explicitly NOT NULL, so a
+    # timestamp without a basis is FALSE, not UNKNOWN) or both NULL.
+    add_check_constraint :payouts, FinancialIntegrity::PAYOUT_ACCEPTED_BASIS_CHECK,
       name: "payouts_provider_accepted_basis_valid", validate: false
     # No personal data: the reference is kept only as its SHA-256 digest.
     create_table :payout_return_proofs do |t|

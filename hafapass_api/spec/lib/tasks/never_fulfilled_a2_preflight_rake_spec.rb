@@ -65,6 +65,88 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     expect(rows.fetch(pending.id.to_s)).to include("submitted" => "false", "action" => "not sent: fail and reissue on a new version")
   end
 
+  # CodeRabbit 4707205586 / 4707205572: a payout whose only submission is
+  # after the restatement may have left (finance sends a manual transfer
+  # after the placeholder), so it is never reported unsent; an accepted
+  # transfer gets its own action before any version rule.
+  it "never reports a post-cutoff submission unsent, and gives accepted transfers their own action" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 10)
+    late = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-late", amount_cents: 1000)
+    audit_only = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-audit-only", amount_cents: 1000)
+    marked = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-marked", amount_cents: 1000)
+    unsent = PayoutCreator.new(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-unsent", amount_cents: 1000).send(:reserve!).first
+    submitted_at = AuditLog.where(auditable: late, action: "payout.submission_requested").sole.occurred_at
+    order, payment, = classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    component = create(:fee_component, order: order, order_item: order.order_items.first, kind: "processing",
+      amount_cents: 69, estimated: false, provider_reference: "txn_pfl_#{SecureRandom.hex(4)}")
+    create(:stripe_fee_evidence, :verified, payment: payment, fee_component: component,
+      provider_balance_transaction_id: component.provider_reference)
+    # The capture was recorded before the late payout's submission (an
+    # overlap capture classified afterwards), so its restatement predates it.
+    stamp!(payment, :capture_recorded_at, submitted_at - 1.hour, trigger: "payments_capture_recorded_at")
+    connection = ActiveRecord::Base.connection
+    connection.execute("ALTER TABLE never_fulfilled_captures DISABLE TRIGGER never_fulfilled_captures_append_only")
+    UnfulfilledCapture.where(payment_id: payment.id).update_all(capture_recorded_at: submitted_at - 1.hour)
+    connection.execute("ALTER TABLE never_fulfilled_captures ENABLE TRIGGER never_fulfilled_captures_append_only")
+    # The provider then reports marked's transfer paid: refused by the
+    # restatement, kept as its accepted transfer (the durable marker).
+    PayoutCreator.new(settlement: marked.settlement, actor: admin, idempotency_key: marked.idempotency_key)
+      .send(:record_submission_outcome!, marked.reload, status: :paid, provider_payout_id: "BANK-PF-MARKED",
+        initiated_at: Time.current)
+    expect(marked.reload.provider_accepted_at).to be_present
+    Payout.where(id: audit_only.id).update_all(failure_code: "provider_result_conflict")
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: audit_only.reload, actor: admin,
+      organization: organization, event: event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+
+    output = run_task
+    rows = lines(output, "payout").index_by { |row| row["payout_id"] }
+    late_row = rows.fetch(late.id.to_s)
+    expect(late_row).to include("current" => "false", "submitted" => "true", "acceptance" => "none", "escalate" => "if_sent")
+    expect(Time.iso8601(late_row["restated_at"])).to be < submitted_at
+    expect(late_row["action"]).to start_with("submitted after #{late_row['restated_at']}")
+      .and include("prior-send exception is unavailable", "check the bank first", "if it left, keep it committed and escalate")
+    expect(rows.fetch(late.id.to_s)["action"]).not_to include("not sent")
+    expect(rows.fetch(audit_only.id.to_s)).to include("acceptance" => "audit_only", "escalate" => "yes",
+      "action" => a_string_starting_with("accepted (audit trail only): do not send, fail, reverse or reissue"))
+    expect(rows.fetch(marked.id.to_s)).to include("acceptance" => "marked", "escalate" => "no",
+      "action" => a_string_starting_with("accepted transfer: it left; do not send, fail or reissue; record accepted_transfer"))
+    expect(rows.fetch(unsent.id.to_s)).to include("submitted" => "false", "acceptance" => "none",
+      "action" => "not sent: fail and reissue on a new version")
+    expect(lines(output, "accepted").sole).to include("marked" => "1", "acknowledged" => "0", "evidence_only" => "1",
+      "evidence_only_payout_ids" => audit_only.id.to_s)
+  end
+
+  # CodeRabbit 4707205566: the marker column is probed on its own, so a
+  # partially applied schema (the custody table missing) still counts a
+  # marked payout with a paid-refusal audit as marked, not evidence-only.
+  it "counts a marked acceptance as marked when another A2 object is missing" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    allow(PayoutGateway).to receive(:submit) do |_payout|
+      EventCancellationRefunds.hold_payouts!(event, actor: admin)
+      PayoutGateway::Result.new(provider_payout_id: "BANK-PF-PARTIAL", status: :paid)
+    end
+    allow(EmailService).to receive(:send_refund_notification_async)
+    payout = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-partial", amount_cents: 1000)
+    expect(payout.reload.provider_accepted_at).to be_present
+    output = nil
+    ActiveRecord::Base.transaction(requires_new: true) do
+      ActiveRecord::Base.connection.execute("ALTER TABLE payout_custody_determinations RENAME TO spec_partial_custody")
+      ActiveRecord::Base.connection.clear_cache!
+      output = run_task
+      raise ActiveRecord::Rollback
+    end
+    ActiveRecord::Base.connection.clear_cache!
+    expect(lines(output, "schema").sole).to include("state" => "pre_a2", "missing" => "payout_custody_determinations")
+    expect(lines(output, "accepted").sole).to include("marked" => "1", "evidence_only" => "0",
+      "evidence_only_payout_ids" => "none", "gate_evidence_only_zero" => "PASS")
+  end
+
   # CodeRabbit 4703321691: a disabled trigger keeps its pg_trigger row.
   # CodeRabbit 4704013181 (runbook step 8): a never-sent payout on a version
   # without the capture's $0 line defeats the P4 proof of an open
@@ -93,7 +175,8 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     # Submitted (a manual placeholder) before the restatement: only the bank
     # can say whether it left.
     expect(lines(output, "payout").sole).to include("payout_id" => stale.id.to_s, "submitted" => "true",
-      "action" => a_string_ending_with("else fail and reissue"))
+      "acceptance" => "none", "escalate" => "if_sent_after",
+      "action" => a_string_including("if the bank confirms it never left, fail and reissue; if it left after then, keep it committed and escalate"))
     expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
     expect { Settlements::Finalizer.call(event: event, actor: admin) }
       .to raise_error(Settlements::Finalizer::FinalizationError, /Resolve open reconciliation exceptions/)
@@ -196,9 +279,12 @@ RSpec.describe "never_fulfilled:a2_preflight" do
       "organization_available_cents" => "after_migration")
     rows = lines(output, "payout").index_by { |row| row["payout_id"] }
     expect(rows.fetch(sent.id.to_s)).to include("current" => "false", "submitted" => "true", "restated_at" => "after_migration",
-      "settlement_reader" => "pre_a2", "action" => a_string_starting_with("record paid only with transfer evidence before"))
+      "settlement_reader" => "pre_a2", "acceptance" => "none", "escalate" => "if_sent_after",
+      "action" => a_string_starting_with("record paid only with transfer evidence before"))
+    # CodeRabbit 4707205572: its paid-refusal audit (no marker column yet)
+    # makes it an audit-only acceptance: escalated, never failed or reissued.
     expect(rows.fetch(pending.id.to_s)).to include("current" => "false", "submitted" => "false",
-      "action" => "not sent: fail and reissue on a new version")
+      "acceptance" => "audit_only", "escalate" => "yes", "action" => a_string_starting_with("accepted (audit trail only)"))
 
     # After the migration (the real schema again) the same data reads with
     # the A2 reader and every guard is inspected.

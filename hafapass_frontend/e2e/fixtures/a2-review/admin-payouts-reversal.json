@@ -1,0 +1,375 @@
+{
+  "payouts": [
+    {
+      "id": 4,
+      "provider": "manual",
+      "provider_payout_id": "FICTBANK-ACC-0101",
+      "amount_cents": 1000,
+      "currency": "usd",
+      "status": "held",
+      "failure_code": "provider_result_conflict",
+      "failure_message": "The provider accepted this transfer after its hold or statement change; it has been sent. Do not send it again. Finance reconciles it as an accepted transfer.",
+      "initiated_at": "2026-11-26T11:16:31.449Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T11:16:31.428Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 1000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 3,
+        "name": "Fictional Reef Runners"
+      },
+      "event": {
+        "id": 3,
+        "title": "Fictional Reef Run 5K",
+        "slug": "fictional-reef-run-5k"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 4,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T11:16:31.327Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 3,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T11:16:31.330633Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": "processing",
+      "hold_available_cents": 9940,
+      "dispatch": null,
+      "current_payee": null,
+      "provider_accepted": true,
+      "provider_accepted_basis": "locally_observed",
+      "provider_acceptance_evidence_only": false,
+      "return_proof": null,
+      "return_evidence_required": false,
+      "reversal": {
+        "available": false,
+        "return_evidence_required": true,
+        "unavailable_reason": "Record this payout as an accepted transfer first, then record its return. The transfer that left and the money that came back are each booked once."
+      },
+      "allowed_outcomes": [],
+      "conflict_audit_id": 47,
+      "conflict": {
+        "audit_id": 47,
+        "occurred_at": "2026-11-26T11:16:31.454Z",
+        "recorded_before": {
+          "status": "held",
+          "paid_at": null,
+          "provider_payout_id": null
+        },
+        "provider_result": {
+          "status": "paid",
+          "provider_payout_id": "FICTBANK-ACC-0101"
+        }
+      },
+      "last_reconciliation": null
+    },
+    {
+      "id": 3,
+      "provider": "manual",
+      "provider_payout_id": "FICTBANK-TRX-0077",
+      "amount_cents": 1000,
+      "currency": "usd",
+      "status": "paid",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T11:16:31.282Z",
+      "paid_at": "2026-11-26T11:16:31.289Z",
+      "created_at": "2026-11-26T11:16:31.267Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 1000,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 2,
+        "name": "Fictional Lagoon Swim Club"
+      },
+      "event": {
+        "id": 2,
+        "title": "Fictional Lagoon Swim Meet",
+        "slug": "fictional-lagoon-swim-meet"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 3,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T11:16:31.188Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 2,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T11:16:31.190225Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": null,
+      "current_payee": null,
+      "provider_accepted": false,
+      "provider_accepted_basis": null,
+      "provider_acceptance_evidence_only": false,
+      "return_proof": null,
+      "return_evidence_required": false,
+      "reversal": {
+        "available": true,
+        "return_evidence_required": false
+      },
+      "allowed_outcomes": [
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": {
+        "recorded_at": "2026-11-26T11:16:31.305Z",
+        "recorded_by": "user2@example.com",
+        "reference": "Fictional bank statement line 4",
+        "reason": "Bank confirms the outcome"
+      }
+    },
+    {
+      "id": 2,
+      "provider": "manual",
+      "provider_payout_id": "manual_po_2",
+      "amount_cents": 1500,
+      "currency": "usd",
+      "status": "processing",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T11:16:31.093Z",
+      "paid_at": null,
+      "created_at": "2026-11-26T11:16:31.074Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 1500,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 1,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 1,
+        "title": "Island Open Fictional Championship 2027 — Spectator Day",
+        "slug": "island-open-fictional-championship-2027-spectator-day"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 2,
+        "version": 2
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T11:16:29.112Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 1,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T11:16:29.135490Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": {
+        "actionable": false,
+        "placeholder": true,
+        "reasons": [
+          "statement_changed"
+        ],
+        "messages": [
+          "The approved statement changed after this payout was approved. Do not send this transfer. If it was already sent, record it with its transfer time; otherwise record it failed and reissue it on the current statement."
+        ]
+      },
+      "current_payee": null,
+      "provider_accepted": false,
+      "provider_accepted_basis": null,
+      "provider_acceptance_evidence_only": false,
+      "return_proof": null,
+      "return_evidence_required": false,
+      "reversal": {
+        "available": true,
+        "return_evidence_required": true,
+        "amount_cents": 1500,
+        "earliest_returned_at": "2026-11-26T11:16:31.093736Z",
+        "keeps_transfer_id": false,
+        "transfer_id": null,
+        "transfer_sent_at_allowed": false,
+        "transfer_sent_at_from": null
+      },
+      "allowed_outcomes": [
+        "paid",
+        "failed",
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": null
+    },
+    {
+      "id": 1,
+      "provider": "manual",
+      "provider_payout_id": "FICTBANK-TRX-0042",
+      "amount_cents": 4200,
+      "currency": "usd",
+      "status": "paid",
+      "failure_code": null,
+      "failure_message": null,
+      "initiated_at": "2026-11-26T11:16:30.705Z",
+      "paid_at": "2026-11-26T11:16:30.730Z",
+      "created_at": "2026-11-26T11:16:30.599Z",
+      "withheld_cents": 0,
+      "withholding_reason": null,
+      "withholding_override_reason": null,
+      "disbursement_cents": 4200,
+      "confirmed_check_amount_cents": null,
+      "check_amount_adjustment_cents": 0,
+      "under_withheld_cents": 0,
+      "carried_withholding_cents": 0,
+      "organization": {
+        "id": 1,
+        "name": "Fictional Harbor Sports Club"
+      },
+      "event": {
+        "id": 1,
+        "title": "Island Open Fictional Championship 2027 — Spectator Day",
+        "slug": "island-open-fictional-championship-2027-spectator-day"
+      },
+      "event_cancelled": false,
+      "settlement": {
+        "id": 1,
+        "version": 1
+      },
+      "payee": {
+        "bank_name": "Example Island Bank",
+        "masked_account": "•••• 4321",
+        "account_holder_name": "Fictional Sports Club"
+      },
+      "payee_changed": false,
+      "tax_approval_changed": false,
+      "tax_information_snapshot": {
+        "tin_type": "ein",
+        "legal_name": "Island Events LLC",
+        "masked_tin": "***-**-5678",
+        "signer_name": "Alex Owner",
+        "certified_at": "2026-11-26T11:16:29.112Z",
+        "business_name": null,
+        "tin_last_four": "5678",
+        "mailing_address": "PO Box 1, Hagåtña, GU 96910",
+        "exempt_payee_code": null,
+        "tax_classification": "llc_c",
+        "tax_information_id": 1,
+        "certification_version": "w9-2026-10-v1",
+        "tax_information_updated_at": "2026-11-26T11:16:29.135490Z"
+      },
+      "outstanding_buyer_balance_cents": 0,
+      "cancellation_refunds_unresolved": false,
+      "held_from_status": null,
+      "hold_available_cents": null,
+      "dispatch": null,
+      "current_payee": null,
+      "provider_accepted": false,
+      "provider_accepted_basis": null,
+      "provider_acceptance_evidence_only": false,
+      "return_proof": null,
+      "return_evidence_required": false,
+      "reversal": {
+        "available": true,
+        "return_evidence_required": true,
+        "amount_cents": 4200,
+        "earliest_returned_at": "2026-11-26T11:16:30.730177Z",
+        "keeps_transfer_id": true,
+        "transfer_id": "FICTBANK-TRX-0042",
+        "transfer_sent_at_allowed": false,
+        "transfer_sent_at_from": null
+      },
+      "allowed_outcomes": [
+        "reversed"
+      ],
+      "conflict_audit_id": null,
+      "conflict": null,
+      "last_reconciliation": {
+        "recorded_at": "2026-11-26T11:16:31.011Z",
+        "recorded_by": "user2@example.com",
+        "reference": "Fictional bank statement line 4",
+        "reason": "Bank confirms the outcome"
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "per_page": 25,
+    "total_count": 4,
+    "total_pages": 1
+  },
+  "status_counts": {
+    "pending": 0,
+    "processing": 1,
+    "paid": 2,
+    "failed": 0,
+    "reversed": 0,
+    "held": 1
+  },
+  "context": null
+}

@@ -870,6 +870,25 @@ when "n_acc_stale"
     end
     "accepted, rolled back"
   end
+  # CodeRabbit 4707205595: the same update with both the acceptance and the
+  # return named as the reconciler names them, so only the order rule (the
+  # stamp must already be on OLD) can refuse it.
+  S.attempt(step, "raw SQL stamp and reverse in one update (both contexts, exact proof)") do
+    Payout.transaction do
+      FinancialIntegrity.with_payout_acceptance(payout.id) do
+        FinancialIntegrity.with_payout_return(payout.id) do
+          PayoutReturnProof.create!(payout: payout, kind: "accepted_transfer_return",
+            returned_amount_cents: payout.confirmed_check_amount_cents, returned_at: Time.current,
+            sent_at: payout.provider_accepted_at, return_reference_digest: PayoutReturnProof.reference_digest("RET-RAW-STALE-CTX"))
+          Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed], failure_code: nil,
+            accepted_transfer_recorded_at: Time.current)
+        end
+      end
+      ActiveRecord::Base.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      raise ActiveRecord::Rollback
+    end
+    "accepted, rolled back"
+  end
   S.attempt(step, "raw SQL acknowledgement stamp outside the reconciler") do
     Payout.transaction do
       Payout.where(id: payout.id).update_all(accepted_transfer_recorded_at: Time.current)
@@ -922,10 +941,20 @@ when "n_acc_stale_return"
   # 4706251665: the marker is only this release's observation; the bank's
   # own transfer time (finance's evidence) lies between the submission
   # request and it, and the return came back before the observation.
+  # CodeRabbit 4707205606: the fixture's times are strictly ordered at the
+  # stored (microsecond) precision, submitted < bank_sent < returned_at <
+  # observed, or the step stops before any reconciler call.
   observed = payout.reload.provider_accepted_at
   submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").minimum(:occurred_at)
-  bank_sent = submitted + ((observed - submitted) / 2)
-  returned_at = bank_sent + ((observed - bank_sent) / 2)
+  span_us = ((observed.to_r - submitted.to_r) * 1_000_000).floor
+  raise "fixture chronology: observed #{observed.utc.iso8601(6)} is not 3us after submitted #{submitted.utc.iso8601(6)}" if span_us < 3
+  bank_sent = Time.zone.at(submitted.to_r + Rational(span_us / 3, 1_000_000))
+  returned_at = Time.zone.at(submitted.to_r + Rational(2 * span_us / 3, 1_000_000))
+  stored = ->(time) { time.utc.iso8601(6) }
+  unless stored.(submitted) < stored.(bank_sent) && stored.(bank_sent) < stored.(returned_at) &&
+      stored.(returned_at) < stored.(observed)
+    raise "fixture chronology not strictly ordered: #{[submitted, bank_sent, returned_at, observed].map(&stored).join(' < ')}"
+  end
   returned = { conflict_audit_id: conflict.id, return_reference: "RET A2 STALE 1", returned_amount_cents: payout.disbursement_cents,
     returned_at: returned_at.utc.iso8601(6) }
   S.attempt(step, "A2 reversed payout_acc_stale without the bank's transfer time") do
@@ -1479,8 +1508,12 @@ when "assertions"
     find_outcome.call("new", "n_acc_stale", "PayoutCreator.call acc_stale same key")&.fetch("value") == stale_id)
   check.call("acc_stale: a fresh key for $10.00 is refused",
     refused.call("new", "n_acc_stale", "PayoutCreator.call acc_stale fresh key for $10.00"))
-  check.call("acc_stale: one update stamping the acknowledgement and reversing is refused",
-    refused.call("new", "n_acc_stale", "raw SQL stamp and reverse in one update (exact proof)", /Accepted transfer fence: payout #{stale_id}/))
+  check.call("acc_stale: one update stamping the acknowledgement and reversing is refused (unauthorized stamp)",
+    refused.call("new", "n_acc_stale", "raw SQL stamp and reverse in one update (exact proof)",
+      /Accepted transfer fence: payout #{stale_id} records finance's acceptance only from the current release's reconciler/))
+  check.call("acc_stale: with both contexts named, the same update is refused for the missing prior acknowledgement",
+    refused.call("new", "n_acc_stale", "raw SQL stamp and reverse in one update (both contexts, exact proof)",
+      /Accepted transfer fence: payout #{stale_id} is a transfer the provider accepted; record the accepted transfer before its return/))
   check.call("acc_stale: an acknowledgement stamp outside the reconciler is refused",
     refused.call("new", "n_acc_stale", "raw SQL acknowledgement stamp outside the reconciler",
       /only from the current release's reconciler/))
@@ -1648,8 +1681,14 @@ when "assertions"
   check.call("pre-migration preflight: every in-flight payout on an affected event, not current, with its submission and action",
     in_flight.call(pre).any? && in_flight.call(pre) == in_flight.call(post) &&
       section.call(pre, "payout").all? { |row| row["current"] == "false" && row["restated_at"] == "after_migration" &&
-        row["action"] == (row["submitted"] == "true" ? "record paid only with transfer evidence before the restatement (its time after the migration); else fail and reissue" :
-          "not sent: fail and reissue on a new version") })
+        row["acceptance"] == "none" &&
+        # CodeRabbit 4707205586: a submitted one is failed only if the bank
+        # confirms it never left; one that left after the cutoff is escalated.
+        [row["action"], row["escalate"]] == (row["submitted"] == "true" ?
+          ["record paid only with transfer evidence before the restatement (its time after the migration); if the bank " \
+            "confirms it never left, fail and reissue; if it left after the restatement, keep it committed and escalate to finance",
+            "if_sent_after"] :
+          ["not sent: fail and reissue on a new version", "no"]) })
   check.call("pre-migration preflight: events need finalizing, A2 figures after the migration",
     section.call(pre, "event").any? && section.call(pre, "event").all? { |row| row["needs_finalizing"] == "yes" &&
       row["current_payable_cents"] == "after_migration" && row["over_committed"] == "after_migration" } &&
