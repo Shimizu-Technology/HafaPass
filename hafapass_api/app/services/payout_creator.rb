@@ -62,7 +62,7 @@ class PayoutCreator
             organization: payout.organization, event: payout.event, outcome: "requested",
             deduplication_key: "payout:#{payout.id}:submission_requested",
             metadata: { amount_cents: payout.amount_cents, currency: payout.currency,
-              settlement_id: payout.settlement_id, settlement_reader_digest: payout.settlement.reader_digest,
+              settlement_id: payout.settlement_id, settlement_version: payout.settlement.version,
               settlement_reader: FinancialIntegrity::SETTLEMENT_READER }, request: request)
         end
       end

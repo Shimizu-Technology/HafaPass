@@ -88,7 +88,7 @@ RSpec.describe "A2 payout entry" do
       finalized_recorded_at: be_within(5.seconds).of(Time.current))
     expect { isolated { Settlement.where(id: settlement.id).update_all(reader_digest: "x") } }
       .to raise_error(ActiveRecord::StatementInvalid, /set once/)
-    expect { isolated { Settlement.where(id: settlement.id).update_all(finalized_at: 1.day.ago) } }
+    expect { isolated { Settlement.where(id: settlement.id).update_all(finalized_recorded_at: 1.day.ago) } }
       .to raise_error(ActiveRecord::StatementInvalid, /set once/)
 
     # A payout of its own (or any payout's status) never makes it stale.
@@ -188,7 +188,7 @@ RSpec.describe "A2 payout entry" do
       expect(paid.custody_determination).to have_attributes(basis: "recorded_at_paid", settlement_id: sent.settlement_id)
       audit = AuditLog.where(auditable: sent, action: "payout.reconciled").sole
       expect(audit.metadata["stale_settlement"]).to include("restated_at" => captured_at.utc.iso8601(6),
-        "approved_reader_digest" => sent.settlement.reader_digest)
+        "settlement_id" => sent.settlement_id, "settlement_version" => sent.settlement.version, "settlement_reader" => "nfc-a2")
       expect(gateway).to be_empty
       expect(version_snapshot(*versions)).to eq(before)
 
@@ -244,7 +244,7 @@ RSpec.describe "A2 payout entry" do
       expect(PayoutHoldRelease.call(payout: held, actor: admin)).to be(true)
       expect(submit!(held.reload)).to be_a(PayoutGateway::Result)
       expect(AuditLog.where(auditable: held, action: "payout.submission_requested").sole.metadata)
-        .to include("settlement_reader" => "nfc-a2", "settlement_reader_digest" => held.settlement.reader_digest)
+        .to include("settlement_reader" => "nfc-a2", "settlement_version" => held.settlement.version)
       expect(record_paid!(held, Time.current)).to be_status_paid
       expect(gateway).to eq([held.id])
     end

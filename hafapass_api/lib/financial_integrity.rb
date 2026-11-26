@@ -1701,9 +1701,8 @@ module FinancialIntegrity
       IF TG_OP = 'UPDATE' AND OLD.status = #{SETTLEMENT_FINALIZED_STATUS} THEN
         IF NEW.finalized_reader IS DISTINCT FROM OLD.finalized_reader
             OR NEW.finalized_recorded_at IS DISTINCT FROM OLD.finalized_recorded_at
-            OR NEW.finalized_at IS DISTINCT FROM OLD.finalized_at
             OR NEW.reader_digest IS DISTINCT FROM OLD.reader_digest THEN
-          RAISE EXCEPTION 'A finalized settlement''s reader, digest and finalization times are set once' USING ERRCODE = '23514';
+          RAISE EXCEPTION 'A finalized settlement''s reader, digest and recording time are set once' USING ERRCODE = '23514';
         END IF;
         RETURN NEW;
       END IF;

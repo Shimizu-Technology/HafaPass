@@ -199,8 +199,10 @@ class PayoutReconciler
           outstanding_buyer_balance_cents: status == "paid" ? outstanding_buyer_cents : nil,
           buyer_refunds_unresolved: status == "paid" ? liability[:unresolved] || queue.any? : nil,
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
-          **(stale || restated_at ? { stale_settlement: { approved_reader_digest: payout.settlement.reader_digest,
-            current_reader_digest: stale&.fetch(:current_digest), restated_at: restated_at&.utc&.iso8601(6) } } : {}) },
+          # The version, not its digests: audit redaction masks long digit runs.
+          **(stale || restated_at ? { stale_settlement: { settlement_id: payout.settlement_id,
+            settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader,
+            restated_at: restated_at&.utc&.iso8601(6) } } : {}) },
         request: request)
     end
     payout
