@@ -43,7 +43,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     evidence = params[:evidence]
     PayoutReconciler.call(payout: payout, actor: current_user, status: params[:status].to_s,
       provider_payout_id: params[:provider_payout_id],
-      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :stale_disposition_reason, :stale_disposition_reference, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents, :return_reference, :returned_amount_cents, :returned_at).to_h : nil,
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason, :conflict_audit_id, :approved_payee_confirmed, :approved_tax_payee_confirmed, :legacy_payee_name, :legacy_evidence_note, :legacy_payee_confirmed, :sent_before_cancellation_confirmed, :sent_before_hold_confirmed, :sent_before_restatement_confirmed, :stale_disposition_reason, :stale_disposition_reference, :cancellation_payout_reason, :withholding_override_reason, :actual_check_amount_cents, :return_reference, :returned_amount_cents, :returned_at, :transfer_sent_at).to_h : nil,
       request: request
     )
     render json: payout.attributes.slice(
