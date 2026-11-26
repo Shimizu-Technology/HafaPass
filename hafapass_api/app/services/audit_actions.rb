@@ -415,6 +415,7 @@ class AuditActions
         "payout.check_amount_adjusted" => "Adjusted a payout check amount.",
         "payout.reconciled" => "Reconciled a payout.",
         "payout.stale_statement_disposition" => "Recorded a finance disposition for a payout whose statement changed.",
+        "payout.accepted_transfer_recorded" => "Recorded a transfer the provider accepted after the payout's hold or statement change.",
         "payout.backup_withholding_overridden" => "Overrode payout backup withholding.",
         "payout.backup_withholding_recalculated" => "Recalculated payout backup withholding."
       }

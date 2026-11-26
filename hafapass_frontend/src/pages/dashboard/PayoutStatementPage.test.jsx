@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { setAuthTokenGetter } from '../../api/client'
 import { saveBlob } from '../../utils/download'
-import { statusSummary } from '../../utils/payoutStatement'
+import { inProgressDetail, statusSummary } from '../../utils/payoutStatement'
 import PayoutStatementPage from './PayoutStatementPage'
 import { coveredRefund, finalNegative, payoutReceipt, reserveHeld, salesOpen, waitingForPayout } from '../../demo/fixtures/payoutStatements'
 
@@ -102,6 +102,19 @@ describe('PayoutStatementPage', () => {
   it('describes sales-open and waiting states', () => {
     expect(statusSummary(salesOpen)).toBe('Sales are still open, so these numbers will change until the event ends.')
     expect(statusSummary(waitingForPayout)).toBe('The event has ended. HåfaPass sends your bank transfer within 2–3 business days, by Feb 3, 2027.')
+  })
+
+  it('says a transfer is on its way only once it has actually been sent', () => {
+    const transfer = { id: 1, status: 'processing', status_label: 'Approved, not sent yet', dispatched: false, amount_cents: 2000 }
+    const waiting = { ...waitingForPayout, totals: { ...waitingForPayout.totals, in_progress_cents: 2000 }, transfers: [transfer] }
+    expect(statusSummary(waiting)).toBe('HåfaPass is preparing a transfer of $20.00 to your bank account. It has not been sent yet.')
+    expect(inProgressDetail(waiting)).toBe('$20.00 being prepared, not sent yet')
+    const held = { ...waiting, transfers: [{ ...transfer, status: 'held', status_label: 'On hold' }] }
+    expect(statusSummary(held)).toBe('A transfer of $20.00 is on hold. HåfaPass has not sent it.')
+    const sent = { ...waiting, transfers: [{ ...transfer, status_label: 'Being sent', dispatched: true }] }
+    expect(statusSummary(sent)).toBe('A transfer of $20.00 is on its way to your bank account.')
+    expect(inProgressDetail(sent)).toBe('$20.00 on the way')
+    expect(inProgressDetail(waitingForPayout)).toBeNull()
   })
 
   it('tells door staff that finances are not part of their role', async () => {

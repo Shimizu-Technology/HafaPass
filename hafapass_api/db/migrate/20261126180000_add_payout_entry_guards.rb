@@ -13,6 +13,11 @@ require_relative "../../lib/financial_integrity"
 #     restated (hafapass_settlement_restated_at);
 #   - paid needs the payout's frozen custody determination in the same
 #     transaction; historical determinations need the authorized derivation;
+#   - a payout inserted already paid commits only with its determination;
+#   - the P4 platform-only proof needs positive funding lineage (every payout
+#     that moved or may move money is on a version with the capture's $0
+#     line), and its hold starts at a cutoff that never moves later while the
+#     proof fails (anchored at the last fence pass on the event);
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
@@ -42,11 +47,16 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       execute "DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations"
       execute "DROP TRIGGER IF EXISTS payout_custody_determinations_check ON payout_custody_determinations"
       execute "DROP TRIGGER IF EXISTS payouts_require_custody ON payouts"
+      execute "DROP TRIGGER IF EXISTS payouts_require_custody_on_insert ON payouts"
       execute "DROP TRIGGER IF EXISTS settlements_finalization_stamp ON settlements"
       execute FinancialIntegrity::BOUNDARY_SQL
       execute FinancialIntegrity::OPERATIONAL_SQL
       execute FinancialIntegrity::A1_READER_REQUIRED_SQL
-      %w[hafapass_check_custody_commit() hafapass_check_custody_determination() hafapass_require_payout_custody()
+      # OPERATIONAL_SQL above restored the A2 operational P4 proof and hold
+      # start; this release's final proof helpers go with the rest.
+      %w[hafapass_overpaid_proof_anchor(bigint) hafapass_overpaid_proof_facts(bigint)
+        hafapass_require_inserted_payout_custody()
+        hafapass_check_custody_commit() hafapass_check_custody_determination() hafapass_require_payout_custody()
         hafapass_stamp_settlement_finalization() hafapass_settlement_restated_at(bigint)
         hafapass_event_has_classified_capture(bigint)].each do |function|
         execute "DROP FUNCTION IF EXISTS #{function}"

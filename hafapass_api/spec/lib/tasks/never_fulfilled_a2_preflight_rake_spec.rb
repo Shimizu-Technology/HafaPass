@@ -64,4 +64,55 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     expect(rows.fetch(sent.id.to_s)["action"]).to start_with("record paid only with transfer evidence before")
     expect(rows.fetch(pending.id.to_s)).to include("submitted" => "false", "action" => "not sent: fail and reissue on a new version")
   end
+
+  # CodeRabbit 4703321691: a disabled trigger keeps its pg_trigger row.
+  it "fails the guard gate when a required trigger exists but is disabled" do
+    ActiveRecord::Base.connection.execute("INSERT INTO financial_cutovers (key) VALUES " \
+      "('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING")
+    expect(lines(run_task, "guards").sole).to include("payouts_require_custody" => "true", "gate_guards" => "PASS")
+    ActiveRecord::Base.connection.execute("ALTER TABLE payouts DISABLE TRIGGER payouts_require_custody")
+    expect(lines(run_task, "guards").sole).to include("payouts_require_custody" => "false", "gate_guards" => "FAIL")
+  end
+
+  # CodeRabbit 4703321693: the task reads one repeatable-read snapshot. Every
+  # statement commits on its own here, as on production, and another session
+  # classifies and commits a capture after the statement was computed.
+  describe "snapshot", :non_transactional do
+    self.use_transactional_tests = false
+
+    def clean!
+      raise "Isolated test database required" unless ActiveRecord::Base.connection_db_config.database.end_with?("_test")
+
+      ActiveRecord::Base.connection.execute(<<~SQL)
+        TRUNCATE TABLE audit_logs, audit_write_failures, organizations, users, organizer_profiles, events, site_settings,
+          webhook_events, checkout_attempts
+        RESTART IDENTITY CASCADE
+      SQL
+    end
+
+    # The outer setup commits here too, so everything is removed afterwards.
+    after { clean! }
+
+    it "counts only what its own snapshot saw when a capture is classified mid-run" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 2)
+      classified_capture(items: [[1200, 160, 0, 0]], event: event)
+      interleaved = false
+      allow(Settlements::Calculator).to receive(:call).and_wrap_original do |original, *args|
+        result = original.call(*args)
+        unless interleaved
+          interleaved = true
+          Thread.new do
+            ActiveRecord::Base.connection_pool.with_connection { classified_capture(items: [[500, 0, 0, 0]], event: event) }
+          end.join
+        end
+        result
+      end
+
+      output = run_task
+      expect(interleaved).to be(true)
+      expect(UnfulfilledCapture.joins(:order).where(orders: { event_id: event.id }).count).to eq(2)
+      expect(lines(output, "snapshot").sole).to include("isolation" => "repeatable_read", "read_only" => "on")
+      expect(lines(output, "event").sole).to include("classified_captures" => "1")
+    end
+  end
 end

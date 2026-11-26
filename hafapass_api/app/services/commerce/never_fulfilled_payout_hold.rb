@@ -54,6 +54,23 @@ module Commerce
       value && ActiveRecord::Type::DateTime.new.cast(value)
     end
 
+    # CodeRabbit 4703321645: a verified Stripe fee on an organizer-borne
+    # payment-scope capture has no fee component (A1 §4.6 item 8), so no
+    # statement line charges it yet. Its open review exception already
+    # blocks finalization (Settlements::Finalizer); a payout on a version
+    # finalized earlier is also held here, at creation, submission and
+    # release, until finance books the exact cost and closes the review.
+    # HåfaPass-borne (the default snapshot) opens no review and holds nothing.
+    ORGANIZER_PROCESSING_MESSAGE = "Card processing on a payment returned to a buyer is waiting for review before " \
+      "it can be charged on this statement; resolve it in Refund issues before paying out"
+
+    def self.organizer_processing_held?(event)
+      ReconciliationException.open.where(code: StripeProcessingFees::REVIEW_CODE)
+        .where(payment_id: UnfulfilledCapture.payment_scope.where(processing_bearer: "organizer")
+          .where(order_id: event.orders.select(:id)).select(:payment_id))
+        .exists?
+    end
+
     # Whether this payout's submission was authorized before `time`.
     def self.submitted_before?(payout, time)
       AuditLog.where(auditable: payout, action: "payout.submission_requested").where("occurred_at < ?", time).exists?

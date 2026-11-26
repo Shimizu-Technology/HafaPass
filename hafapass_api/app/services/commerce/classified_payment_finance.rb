@@ -330,21 +330,45 @@ module Commerce
         .joins("LEFT JOIN stripe_fee_evidences fee_evidence ON fee_evidence.fee_component_id = fee_components.id")
         .order(:id)
         .pluck(:id, :order_id, :amount_cents, :created_at, Arel.sql("fee_evidence.payment_id"))
-      captured_counts = Payment.where(order_id: by_order.keys, status: Payment::CAPTURED_STATUSES)
-        .group(:order_id).count
+      # Captured payments per order by their durable capture time, earliest
+      # first. A capture from before A1 has no recording time and counts as
+      # captured before every recorded one.
+      captured_by_order = Payment.where(order_id: by_order.keys, status: Payment::CAPTURED_STATUSES)
+        .pluck(:order_id, :id, :capture_recorded_at)
+        .group_by(&:first)
+        .transform_values do |list|
+          list.map { |_order, payment_id, at| [payment_id, at] }
+            .sort_by { |payment_id, at| [at ? 1 : 0, at.to_f, payment_id] }
+        end
       rows.filter_map do |id, order_id, amount, recorded_at, evidence_payment_id|
         order_captures = by_order.fetch(order_id)
         order_scope = order_captures.any? { |capture| capture.capture_scope == "order" }
         capture = if evidence_payment_id
           by_payment[evidence_payment_id]
-        elsif order_scope && captured_counts[order_id] == 1 && order_captures.one?
-          order_captures.first
+        elsif order_scope
+          sole_capture_as_of(captured_by_order.fetch(order_id, []), recorded_at, by_payment)
         end
         next if capture.nil? && !order_scope
 
         { id: id, order_id: order_id, amount_cents: amount.to_i, recorded_at: recorded_at, capture: capture,
           method: evidence_payment_id ? "verified_evidence" : "sole_capture" }
       end
+    end
+
+    # The sole-capture rule as of the component's own recording time, so a
+    # later capture never takes back processing an earlier period booked
+    # (CodeRabbit 4703321628): the order's earliest captured payment owns an
+    # unlinked component when no other payment on the order was captured at
+    # or before the component was recorded. Two captures at or before it (or
+    # two from before A1, which have no recording time) leave it
+    # unattributed and alerted. Payments captured later cannot have produced
+    # it, and their recording times are database-stamped once.
+    def self.sole_capture_as_of(captured, component_recorded_at, by_payment)
+      first, second = captured
+      return nil if first.nil?
+      return nil if second && (second.last.nil? || second.last <= component_recorded_at)
+
+      by_payment[first.first]
     end
 
     # { capture_id => [platform in period, organizer in period, organizer before period] }

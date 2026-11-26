@@ -3,6 +3,15 @@
 class PayoutCreator
   class PayoutError < StandardError; end
 
+  # The database's payout fences (repayment hold, restated statement,
+  # custody) refuse paid for a transfer the provider accepted after the
+  # event's hold or statement change began, or without its custody row.
+  PAID_FENCE_REFUSAL = /Repayment fence|Payout entry fence|Payout custody fence/
+
+  PAID_REFUSED_REASON = "provider_paid_refused_by_fence"
+  ACCEPTED_AFTER_FENCE_MESSAGE = "The provider accepted this transfer after its hold or statement change; it has " \
+    "been sent. Do not send it again. Finance reconciles it as an accepted transfer."
+
   def self.call(**)
     new(**).call
   end
@@ -52,6 +61,9 @@ class PayoutCreator
       payout.with_lock do
         raise PayoutError, "Payout was held before submission" unless payout.status_pending?
         raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
+        if Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(payout.event)
+          raise PayoutError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE
+        end
         # A2 payout entry: submit only against the payout's own approved
         # version while it is the current statement.
         raise PayoutError, PayoutEntryGuard::STALE_MESSAGE if PayoutEntryGuard.stale?(payout)
@@ -111,7 +123,46 @@ class PayoutCreator
     Payout.transaction do
       PayoutEntryGuard.with_reader { record_observed_submission_locked!(payout, **attributes) }
     end
+  rescue ActiveRecord::StatementInvalid => e
+    raise unless attributes[:status].to_s == "paid" && PAID_FENCE_REFUSAL.match?(e.message)
+
+    record_refused_paid!(payout.reload, attributes, e)
   end
+
+
+  # CodeRabbit 4703321670: the provider already accepted the transfer, so the
+  # acceptance must not disappear with the rolled-back paid write. It is kept
+  # as a conflict that finance must review: in flight, with the provider's
+  # reference, never sent again (the idempotency key returns this payout).
+  # Paid stays the database fences' decision; a transfer accepted after the
+  # cutoff is recorded by PayoutReconciler's accepted-transfer outcome, never
+  # as an ordinary paid payout.
+  def record_refused_paid!(payout, attributes, error)
+    Payout.transaction do
+      PayoutEntryGuard.with_reader do
+        payout.organization.lock!("FOR NO KEY UPDATE")
+        payout.event.lock!("FOR NO KEY UPDATE")
+        payout.lock!
+        before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
+        updates = { provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
+          initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
+          failure_message: ACCEPTED_AFTER_FENCE_MESSAGE }
+        updates[:status] = :processing if payout.status_pending?
+        payout.update!(updates)
+        AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: actor,
+          organization: payout.organization, event: payout.event, before_data: before_data,
+          after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),
+          metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id,
+            failure_code: "provider_result_conflict", conflict_reason: PAID_REFUSED_REASON,
+            refusal: error.message[/(?:Repayment|Payout entry|Payout custody) fence[^\n]*/].to_s[0, 300],
+            provider_result: attributes.slice(:status, :provider_payout_id, :failure_code) },
+          source: "provider", outcome: "unknown",
+          deduplication_key: "payout:#{payout.id}:paid_refused:#{attributes[:provider_payout_id]}", request: request)
+      end
+    end
+    payout
+  end
+
 
   # A provider outcome is a fact about a request already sent; it is
   # recorded under this release's reader, and the database's payout fence
@@ -208,6 +259,9 @@ class PayoutCreator
         raise PayoutError, "Resolve outstanding refund liabilities before paying out this event"
       end
       raise PayoutError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(settlement.event)
+      if Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(settlement.event)
+        raise PayoutError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE
+      end
       current_digest = Settlements::Calculator.call(settlement.event).attributes[:source_digest]
       if current_digest != settlement.source_digest
         raise PayoutError, "Financial activity changed; finalize a new settlement before paying out"

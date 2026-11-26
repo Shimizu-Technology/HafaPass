@@ -177,6 +177,15 @@ module Settlements
         .order(:id).to_a
     end
 
+    # Every classification on the event's orders, test mode included: the $0
+    # information lines only (CodeRabbit 4703321685). The database's
+    # restatement rule (hafapass_settlement_restated_at) and the P4 proof
+    # read the same population, so a test-mode classified order never makes
+    # a version built from live sales look restated. No money comes from it.
+    def info_line_captures
+      @info_line_captures ||= UnfulfilledCapture.where(order_id: event.orders.select(:id)).order(:id).to_a
+    end
+
     def classified_processing
       @classified_processing ||= Commerce::ClassifiedPaymentFinance.attribute_processing(classified_captures)
     end
@@ -276,8 +285,8 @@ module Settlements
     # classification, so later refunds, disputes and processing evidence
     # never change the digest; PayoutStatement shows the live return status.
     def never_fulfilled_items
-      order_lines = classified_captures.select(&:order_scope?).group_by(&:order_id).values
-      (order_lines + classified_captures.select(&:payment_scope?).map { |capture| [capture] }).map do |captures|
+      order_lines = info_line_captures.select(&:order_scope?).group_by(&:order_id).values
+      (order_lines + info_line_captures.select(&:payment_scope?).map { |capture| [capture] }).map do |captures|
         source = captures.min_by(&:id)
         statement_item(
           kind: "adjustment",
@@ -302,7 +311,7 @@ module Settlements
           kind: "processing_fee",
           amount_cents: -row[:amount_cents],
           source: component,
-          description: "Card processing on a payment returned to the buyer",
+          description: "Card processing on an unfulfilled payment",
           occurred_at: component.created_at,
           metadata: { order_id: component.order_id, provider_reference: component.provider_reference,
             processing_fee_bearer: "organizer", never_fulfilled_capture: true,

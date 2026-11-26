@@ -104,17 +104,50 @@ RSpec.describe "Shared sale custody across CPA and BPT readers", type: :request 
     expect(bpt_csv(1)).to eq(january_bpt)
   end
 
-  it "selects the annual organizer payouts by paid time, never by the event's current captures" do
-    settlement = create(:settlement, event: event, organization: organization)
+  # The annual organizer view keeps its Stripe-custody payout population,
+  # read from each payout's frozen custody (PayoutCustody.bpt_payouts), never
+  # from the event's current captures, and never every USD payout.
+  it "counts only Stripe-custody payouts in the annual organizer view, frozen against later captures" do
     account = create(:connected_account, organization: organization, provider: "manual", with_readiness_approval: false)
-    create(:payout, event: event, organization: organization, settlement: settlement, connected_account: account,
-      status: :paid, paid_at: at(2027, 1, 20, 10), amount_cents: 700)
-    create(:payout, event: event, organization: organization, settlement: settlement, connected_account: account,
-      status: :paid, paid_at: at(2027, 1, 21, 10), amount_cents: 300, provider_payout_id: "sim_po_rehearsal")
-    expect(organizer_row).to include(net_paid_cents: 700)
+    payout = lambda do |target, paid_at, amount, owner: organization, via: account, **extra|
+      create(:payout, event: target, organization: owner, connected_account: via, status: :paid, paid_at: paid_at,
+        amount_cents: amount, settlement: create(:settlement, event: target, organization: owner), **extra)
+    end
+    # Stripe custody: a live sale before the payout.
+    sale!(completed_at: at(2027, 1, 5, 10), captured_at: at(2027, 1, 5, 10))
+    payout.call(event, at(2027, 1, 20, 10), 700)
+    payout.call(event, at(2027, 1, 21, 10), 300, provider_payout_id: "sim_po_rehearsal").tap do |simulated|
+      simulated.update_columns(status: Payout.statuses[:reversed])
+    end
+    # A Clover-only event of the same organization: never in this view.
+    clover_event = create(:event, organization: organization, organizer_profile: profile)
+    clover = create(:order, :completed, event: clover_event, completed_at: at(2027, 1, 6, 10), currency: "usd")
+    create(:payment, :succeeded, order: clover, provider: "boh_clover", provider_environment: nil,
+      provider_payment_id: "clover_#{SecureRandom.hex(4)}", amount_cents: clover.total_cents)
+    payout.call(clover_event, at(2027, 1, 22, 10), 400)
+    # A payout on an event with no sale yet; its Stripe sale comes later.
+    later_event = create(:event, organization: organization, organizer_profile: profile)
+    early = payout.call(later_event, at(2027, 1, 23, 10), 200)
+    # An unrelated organization's Stripe-custody payout.
+    other = create(:organization)
+    other_event = create(:event, organization: other, organizer_profile: create(:organizer_profile, organization: other))
+    other_order = create(:order, :completed, event: other_event, completed_at: at(2027, 1, 7, 10), currency: "usd")
+    create(:payment, :succeeded, order: other_order, provider: "stripe", provider_environment: "live",
+      provider_payment_id: "pi_live_other_#{SecureRandom.hex(4)}", amount_cents: other_order.total_cents,
+      created_at: at(2027, 1, 7, 10), succeeded_at: at(2027, 1, 7, 10))
+    payout.call(other_event, at(2027, 1, 24, 10), 900, owner: other,
+      via: create(:connected_account, organization: other, provider: "manual", with_readiness_approval: false))
 
-    # A capture recorded later on the event does not change it.
-    sale!(completed_at: at(2027, 2, 2, 10), captured_at: at(2027, 2, 2, 10))
     expect(organizer_row).to include(net_paid_cents: 700)
+    expect(TaxReports.new(2027).organizers.find { |row| row[:organization_id] == other.id }).to include(net_paid_cents: 900)
+
+    # A Stripe capture recorded later on the early payout's event adds nothing.
+    order = create(:order, :completed, event: later_event, completed_at: at(2027, 2, 2, 10), currency: "usd")
+    late = create(:payment, :succeeded, order: order, provider: "stripe", provider_environment: "live",
+      provider_payment_id: "pi_live_late_#{SecureRandom.hex(4)}", amount_cents: order.total_cents,
+      created_at: at(2027, 2, 2, 10), succeeded_at: at(2027, 2, 2, 10))
+    stamp!(late, :capture_recorded_at, at(2027, 2, 2, 10), trigger: "payments_capture_recorded_at")
+    expect(organizer_row).to include(net_paid_cents: 700)
+    expect(PayoutCustody.bpt_payouts(Payout.where(id: early.id))).to be_empty
   end
 end

@@ -28,6 +28,9 @@ class PayoutHoldRelease
             raise ReleaseError, "Resolve outstanding buyer refund liabilities before releasing this payout"
           end
           raise ReleaseError, Commerce::NeverFulfilledPayoutHold::MESSAGE if Commerce::NeverFulfilledPayoutHold.blocked?(payout.event)
+          if Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(payout.event)
+            raise ReleaseError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE
+          end
 
           current = Settlements::Calculator.call(payout.event)
           # A2 payout entry: the payout's own approved version must still be

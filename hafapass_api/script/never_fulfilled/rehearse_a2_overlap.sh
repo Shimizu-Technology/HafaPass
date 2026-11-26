@@ -127,7 +127,7 @@ run old o_a1_ordinary
 task derive_dry_run.txt payout_custody:derive
 run new n_derive
 run new n_baseline
-task derive_baseline.txt payout_custody:derive DRY_RUN=0 AUTHORIZED_BY="rehearsal finance FIN-A2" \
+task derive_baseline.txt payout_custody:derive DRY_RUN=0 AUTHORIZED_BY="FIN-A2" \
   PUBLISHED_BASELINE="$REHEARSAL_DIR/published_baseline.csv"
 task custody_verify.txt payout_custody:verify
 run new exports EXPORT_TAG=before_r22_capture
@@ -142,7 +142,12 @@ compare() { # out baseline candidate
   ruby "$api_dir/script/never_fulfilled/compare_exports.rb" "$REHEARSAL_DIR/exports/$2" "$REHEARSAL_DIR/exports/$3" \
     >"$REHEARSAL_DIR/$1" 2>&1 || true
 }
-compare compare_upgrade.txt baseline upgraded
+# The upgrade changes no export (CodeRabbit 4703321706): this comparison is
+# a gate, so a difference in a pre-existing column stops the rehearsal before
+# its summary. The r22 comparisons are expected to differ and stay reports.
+ruby "$api_dir/script/never_fulfilled/compare_exports.rb" "$REHEARSAL_DIR/exports/baseline" \
+  "$REHEARSAL_DIR/exports/upgraded" >"$REHEARSAL_DIR/compare_upgrade.txt" 2>&1 \
+  || { cat "$REHEARSAL_DIR/compare_upgrade.txt"; echo "upgrade export comparison failed" >&2; exit 1; }
 compare compare_r22_candidate.txt before_r22_capture after_r22_capture
 compare compare_r22_a1.txt a1_before_r22_capture a1_after_r22_capture
 

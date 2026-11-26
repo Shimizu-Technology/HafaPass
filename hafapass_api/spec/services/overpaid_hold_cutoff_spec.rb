@@ -123,6 +123,31 @@ RSpec.describe "P4 hold cutoff after the proof fails", :non_transactional do
     expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to eq(lost_at)
   end
 
+  # CodeRabbit 4703321681 and the lead's monotonic-cutoff brief: a fact that
+  # defeated the proof and then resolved, while a later one still defeats
+  # it, must not move the cutoff later.
+  it "keeps the first loss as the cutoff when the first defeating fact resolves while a later one still holds" do
+    order, payment, _overpaid, (pre, at, _post) = proven_overpaid_event!
+    sleep 0.02
+    dispute = Dispute.create!(order: payment.order, payment: payment, provider: "stripe", amount_cents: 1360, currency: "usd",
+      provider_dispute_id: "dp_p4_mono_#{SecureRandom.hex(3)}", status: :open, opened_at: Time.current, reason: "fraudulent")
+    first_loss = dispute.reload.created_at
+    sleep 0.05
+    between = Time.current
+    sleep 0.05
+    debit = organization.balance_adjustments.create!(event: event, order: order, kind: "manual_debit", amount_cents: -500,
+      currency: "usd", status: :posted, reason: "Fictional linked debit", effective_at: Time.current, created_by_user: admin)
+    expect(debit.reload.created_at).to be > between
+    expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to eq(first_loss)
+
+    # The dispute is won: no loss, so it no longer defeats the proof.
+    Dispute.where(id: dispute.id).update_all(status: Dispute.statuses[:won], closed_at: Time.current)
+    expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
+    expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to eq(first_loss)
+    expect(database_paid?(at, between)).to be(false)
+    expect(database_paid?(pre, first_loss - 0.000001)).to be(true)
+  end
+
   it "starts the hold at a linked adjustment (the review's case) and refuses a transfer sent after it" do
     order, _payment, _overpaid, (pre, at, post) = proven_overpaid_event!
     sleep 0.02

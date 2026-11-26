@@ -122,7 +122,8 @@
     {
       "id": 13,
       "status": "processing",
-      "status_label": "Being sent",
+      "status_label": "Approved, not sent yet",
+      "dispatched": false,
       "method": "bank_transfer",
       "amount_cents": 2000,
       "withheld_cents": 0,

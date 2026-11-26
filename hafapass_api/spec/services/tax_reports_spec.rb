@@ -13,6 +13,8 @@ RSpec.describe TaxReports do
       organizer_proceeds_cents: gross - 150, organizer_fee_cents: 50)
     # Captured at the sale (custody is booked no earlier than the capture).
     payment = create(:payment, :succeeded, order: order, provider_environment: environment, succeeded_at: at, created_at: at)
+    # Recorded at the sale too, as a capture before its payouts is.
+    stamp!(payment, :capture_recorded_at, at, trigger: "payments_capture_recorded_at") if payment.reload.capture_recorded_at
     # Completion records the fulfilling payment; a later capture is not the sale's.
     order.update!(fulfilled_by_payment_id: payment.id)
     create(:fee_component, order: order, kind: "platform", amount_cents: fee, estimated: true)
@@ -77,10 +79,9 @@ RSpec.describe TaxReports do
     test_event = create(:event, organization: organization, organizer_profile: profile)
     test_order = create(:order, :completed, event: test_event, completed_at: Time.utc(2026, 1, 1))
     create(:payment, :succeeded, order: test_order, provider_environment: "test")
-    # A test-mode event's payout is the gateway's simulated transfer.
     create(:payout, event: test_event, organization: organization,
       settlement: create(:settlement, event: test_event, organization: organization), connected_account: account,
-      amount_cents: 999, status: :paid, paid_at: Time.utc(2026, 1, 3), provider_payout_id: "sim_po_test_event")
+      amount_cents: 999, status: :paid, paid_at: Time.utc(2026, 1, 3))
     expect(described_class.new(2026).organizers.sole[:net_paid_cents]).to eq(1700)
     paid.update!(status: :reversed)
     expect(described_class.new(2026).organizers).to be_empty
@@ -135,7 +136,8 @@ RSpec.describe TaxReports do
       item_kind: :add_on, name: "Add-on", unit_price_cents: 1000, subtotal_cents: 1000, fee_cents: 0)
     create(:order_item, order: order, ticket_type: nil, catalog_item: create(:catalog_item, :donation, event: event),
       item_kind: :donation, name: "Donation", unit_price_cents: 500, subtotal_cents: 500, fee_cents: 0)
-    payment = create(:payment, :succeeded, order: order, provider_environment: "live")
+    payment = create(:payment, :succeeded, order: order, provider_environment: "live", created_at: at, succeeded_at: at)
+    stamp!(payment, :capture_recorded_at, at, trigger: "payments_capture_recorded_at")
     create(:fee_component, order: order, kind: "platform", amount_cents: 225)
     returned = create(:refund, order: order, payment: payment, succeeded_at: at, amount_cents: 900)
     create(:refund_item, refund: returned, order_item: ticket, amount_cents: 500,

@@ -341,6 +341,10 @@ class PayoutStatement
       id: record.id,
       status: record.status,
       status_label: transfer_status_label(record),
+      # Money has left only for a paid payout, or one in flight with a real
+      # provider or bank reference. The manual gateway's placeholder means
+      # finance has not sent the bank transfer yet.
+      dispatched: record.status_paid? || (record.status_processing? && !PayoutEntryGuard.placeholder?(record.provider_payout_id)),
       method: record.provider == "check" ? "check" : "bank_transfer",
       amount_cents: record.amount_cents,
       withheld_cents: record.withheld_cents,
@@ -370,6 +374,8 @@ class PayoutStatement
   end
 
   def transfer_status_label(record)
+    return "Approved, not sent yet" if record.status_processing? && PayoutEntryGuard.placeholder?(record.provider_payout_id)
+
     {
       "paid" => "Sent",
       "pending" => "Being prepared",

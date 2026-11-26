@@ -376,8 +376,8 @@ when "n_plain"
 when "n_derive"
   PayoutCustody.derive_history!(dry_run: true).then { |rows| Rehearsal.outcome!(step, action: "derive dry run", value: rows) }
   S.attempt(step, "derive without authority") { PayoutCustody.derive_history!(dry_run: false) }
-  S.attempt(step, "derive with authority") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "rehearsal finance FIN-A2") }
-  S.attempt(step, "derive again") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "rehearsal finance FIN-A2") }
+  S.attempt(step, "derive with authority") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-A2") }
+  S.attempt(step, "derive again") { PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-A2") }
 
 when "n_ordinary"
   # Review finding 1: A2 approves and submits three payouts on the current
@@ -559,7 +559,7 @@ when "assertions"
   check.call("custody: zero undetermined paid payouts after the authorized derive", PayoutCustody.undetermined(paid).none?)
   r22 = PayoutCustodyDetermination.find_by(payout_id: id.call("payout_r22_paid"))
   check.call("R2-2: the non-custodial payout is frozen non_custodial (derived history)", r22&.determination == "non_custodial" &&
-    r22.basis == "derived_history" && r22.evidence["authorized_by"] == "rehearsal finance FIN-A2")
+    r22.basis == "derived_history" && r22.evidence["authorized_by"] == "FIN-A2")
   check.call("R2-2: the later live capture is not in its determination", !r22&.qualifying_payment_ids&.include?(id.call("r22_later_payment")))
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")

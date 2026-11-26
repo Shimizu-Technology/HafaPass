@@ -41,6 +41,10 @@ for (const width of [390, 1280]) {
       await expect(page.getByText('Adjustment on a payment returned to a buyer (not counted)')).toBeVisible()
       await expect(page.getByText(/kept on the statement at \$0 so the organizer can see it was not counted/)).toBeVisible()
       await expect(page.getByText(/is the buyer's money\. HåfaPass returns it to the buyer/)).toBeVisible()
+      // The manual transfer finance has approved but not sent is not "on its way".
+      await expect(page.getByText('HåfaPass is preparing a transfer of $20.00 to your bank account. It has not been sent yet.')).toBeVisible()
+      await expect(page.getByText('$20.00 being prepared, not sent yet')).toBeVisible()
+      await expect(page.getByText(/on its way/)).toHaveCount(0)
       const result = await new AxeBuilder({ page }).include('#payout-statement, main').analyze()
       expect(result.violations.filter(item => ['serious', 'critical'].includes(item.impact))).toEqual([])
       await noOverflow(page, width)

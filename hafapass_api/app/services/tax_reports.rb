@@ -250,14 +250,16 @@ class TaxReports
     @classified[range] ||= Commerce::ClassifiedPaymentFinance.new(range)
   end
 
-  # Payments made to each payee in the year (the annual organizer view), as
-  # CpaMonthlyReport and AnnualPayeeReport count them: every real paid USD
-  # payout by its paid time, never selected by the event's current captures
-  # (a later capture could otherwise add an old payout). BPT detail's
-  # organizer_payouts is the separate frozen-custody rule (PayoutCustody).
+  # The annual organizer view's payouts: the organizer's agent-model receipts
+  # paid out of HåfaPass's Stripe custody, the population it has always had
+  # (payouts on events with live Stripe sales, before A2). That custody
+  # requirement now reads each payout's frozen determination, the BPT
+  # detail rule (PayoutCustody.bpt_payouts), never the event's current
+  # captures, so a later Stripe capture adds no earlier payout and a Clover
+  # or test-only event's payout stays out. Every payout to a payee whatever
+  # its custody is AnnualPayeeReport's, not this view's.
   def paid_payouts(range = period)
-    Payout.status_paid.where(paid_at: range, currency: "usd")
-      .where("LEFT(COALESCE(payouts.provider_payout_id, ''), 4) <> 'sim_'")
+    PayoutCustody.bpt_payouts(Payout.status_paid.where(paid_at: range, currency: "usd"))
   end
 
   def fees(orders)

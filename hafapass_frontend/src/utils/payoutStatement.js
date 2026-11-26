@@ -17,6 +17,27 @@ export function signedMoney(cents, currency = 'USD') {
   return `${value < 0 ? '−' : ''}${formatMoneyCents(Math.abs(value), currency)}`
 }
 
+const IN_FLIGHT = ['pending', 'processing', 'held']
+
+// "On its way" only once money has actually left: a transfer with a real
+// provider or bank reference (the API's `dispatched`). A manual bank
+// transfer that finance has approved but not sent, or one on hold, says so.
+function inFlightSummary(transfers, amount) {
+  const inFlight = transfers.filter(transfer => IN_FLIGHT.includes(transfer.status))
+  if (inFlight.some(transfer => transfer.dispatched)) return `A transfer of ${amount} is on its way to your bank account.`
+  if (inFlight.every(transfer => transfer.status === 'held')) return `A transfer of ${amount} is on hold. HåfaPass has not sent it.`
+  return `HåfaPass is preparing a transfer of ${amount} to your bank account. It has not been sent yet.`
+}
+
+// The note under "Sent to you" while a transfer is in flight.
+export function inProgressDetail(data) {
+  const { totals, transfers = [] } = data
+  if (!(totals.in_progress_cents > 0)) return null
+  const amount = formatMoneyCents(totals.in_progress_cents, data.currency)
+  const sent = transfers.some(transfer => IN_FLIGHT.includes(transfer.status) && transfer.dispatched)
+  return sent ? `${amount} on the way` : `${amount} being prepared, not sent yet`
+}
+
 export function statusSummary(data) {
   const { status, totals, schedule, transfers = [] } = data
   const money = cents => formatMoneyCents(cents, data.currency)
@@ -25,9 +46,7 @@ export function statusSummary(data) {
     case 'sales_open':
       return 'Sales are still open, so these numbers will change until the event ends.'
     case 'waiting_for_payout':
-      if (transfers.some(transfer => ['pending', 'processing', 'held'].includes(transfer.status))) {
-        return `A transfer of ${money(totals.in_progress_cents)} is on its way to your bank account.`
-      }
+      if (transfers.some(transfer => IN_FLIGHT.includes(transfer.status))) return inFlightSummary(transfers, money(totals.in_progress_cents))
       if (schedule.reserve_released) return `Your reserve was released. HåfaPass is sending the remaining ${money(totals.still_to_come_cents)}.`
       return schedule.transfer_expected_by
         ? `The event has ended. HåfaPass sends your bank transfer within 2–3 business days, by ${formatDay(schedule.transfer_expected_by)}.`

@@ -7,7 +7,7 @@ import NoAccessNotice from '../../components/NoAccessNotice'
 import { useOrganizerIdentity, useOrganizerPageVisit, useOrganizerRequests } from '../../hooks/useOrganizerContext'
 import { formatMoneyCents } from '../../utils/money'
 import { saveBlob } from '../../utils/download'
-import { formatDay, reconcileWarning, signedMoney, statusSummary, stillToComeDetail } from '../../utils/payoutStatement'
+import { formatDay, inProgressDetail, reconcileWarning, signedMoney, statusSummary, stillToComeDetail } from '../../utils/payoutStatement'
 
 // Organizer-facing payout statement for one event (and optionally one
 // payout). Every amount comes from the API, which builds the lines from the
@@ -122,7 +122,7 @@ function PayoutStatementSession({ eventId, path, identity }) {
 
       <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Figure label="Net proceeds" value={signedMoney(totals.net_proceeds_cents, currency)} detail="After refunds, card processing and door cash" />
-        <Figure label="Sent to you" value={money(totals.transferred_cents)} detail={totals.in_progress_cents > 0 ? `${money(totals.in_progress_cents)} on the way` : totals.reserve_held_cents > 0 ? `${money(totals.reserve_held_cents)} held in reserve` : null} />
+        <Figure label="Sent to you" value={money(totals.transferred_cents)} detail={inProgressDetail(data) || (totals.reserve_held_cents > 0 ? `${money(totals.reserve_held_cents)} held in reserve` : null)} />
         <Figure label={totals.still_to_come_cents < 0 ? 'You owe' : 'Still to come'} value={money(Math.abs(totals.still_to_come_cents))} highlight
           detail={stillToComeDetail(data)} />
       </dl>

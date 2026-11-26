@@ -241,7 +241,7 @@ RSpec.describe "Classified operational readers" do
       result = Settlements::Calculator.call(event)
       processing = result.items.select { |item| item[:kind] == "processing_fee" }
       expect(processing.map { |item| [item[:amount_cents], item[:description]] })
-        .to contain_exactly([-100, "Actual payment processing cost"], [-69, "Card processing on a payment returned to the buyer"])
+        .to contain_exactly([-100, "Actual payment processing cost"], [-69, "Card processing on an unfulfilled payment"])
       expect(result.attributes).to include(processing_fee_cents: 169, organizer_proceeds_cents: 10_000)
     end
   end
@@ -287,6 +287,29 @@ RSpec.describe "Classified operational readers" do
       expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(false)
       expect(Settlements::Finalizer.call(event: event, actor: admin)).to have_attributes(payable_cents: 9900)
       expect(OrganizationPayoutBalance.available_cents(organization)).to eq(9900)
+    end
+
+    # CodeRabbit 4703321667: the proof needs positive funding lineage. A paid
+    # payout approved on a version without the capture's $0 line may have
+    # funded the organizer from it, so the over-return holds.
+    it "holds an over-return when a payout that moved money was approved on a version without the capture's line" do
+      ordinary_sale!
+      approved_bank_account!(organization, actor: profile.user, admin: admin)
+      create_paid_payout!
+      _order, payment, capture, = classified_order!
+      ingest_provider_refund!(payment, 1360, id: "re_ops_lineage")
+      lose_dispute!(payment, "dp_ops_lineage", amount: 1360)
+      Commerce::NeverFulfilledResolution.evaluate!(capture.reload, trigger: "spec")
+      overpaid = ReconciliationException.open.find_by!(payment: payment, code: "never_fulfilled_buyer_overpaid")
+
+      expect(Commerce::NeverFulfilledPayoutHold.proven_platform_only_overpaid).to be_empty
+      expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
+      expect(Commerce::NeverFulfilledPayoutHold.block_started_at(event)).to eq(overpaid.reload.created_at)
+
+      # The same payout failed (no money moved): nothing it funded remains.
+      Payout.where(event: event).update_all(status: Payout.statuses[:failed])
+      expect(Commerce::NeverFulfilledPayoutHold.proven_platform_only_overpaid).to contain_exactly(overpaid)
+      expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(false)
     end
 
     it "keeps controls and the fulfilled order's own adjustment, and books linked cash adjustments nowhere" do
@@ -339,6 +362,104 @@ RSpec.describe "Classified operational readers" do
       create_paid_payout!
       event.update_columns(status: Event.statuses[:cancelled])
       expect(RefundReconciliationQueue.recovery_amount_for_event(event.reload)).to eq(250)
+    end
+
+    # CodeRabbit 4703321641: payment B's newer failed refund must not take the
+    # sale's refundable balance before it is left out of recovery.
+    it "keeps the sale's own failed refund in cancellation recovery beside a newer failed refund on payment B" do
+      sale_order, = ordinary_sale!
+      payment_a = sale_order.payments.first
+      full = sale_order.reload.refundable_cents
+      sale_failed = create(:refund, order: sale_order, payment: payment_a, amount_cents: full, status: :failed,
+        idempotency_key: "ops-sale-failed-#{SecureRandom.hex(3)}", created_at: 2.minutes.ago)
+      payment_b, = second_capture!(sale_order, payment_a)
+      b_failed = before_repayment_fence do
+        create(:refund, order: sale_order, payment: payment_b, amount_cents: 1000, status: :failed,
+          idempotency_key: "ops-b-failed-#{SecureRandom.hex(3)}", created_at: 1.minute.ago)
+      end
+
+      entries = RefundReconciliationQueue.new(event_id: event.id).entries.select { |entry| entry[:type] == "refund" }
+      expect(entries.to_h { |entry| [entry[:id], [entry[:amount_cents], entry[:classified_payment]]] })
+        .to eq(sale_failed.id => [full, false], b_failed.id => [1000, true])
+      create_paid_payout!
+      event.update_columns(status: Event.statuses[:cancelled])
+      expect(RefundReconciliationQueue.recovery_amount_for_event(event.reload)).to eq(full)
+    end
+  end
+
+  # CodeRabbit 4703321645: an organizer-borne verified fee on payment B with
+  # no fee component is held, never silently left off the payable.
+  describe "organizer-borne processing on payment B held for review" do
+    def held_fee!(payment_b, bearer:)
+      UnfulfilledCapture.where(payment_id: payment_b.id).then do |relation|
+        ActiveRecord::Base.connection.execute("ALTER TABLE never_fulfilled_captures DISABLE TRIGGER never_fulfilled_captures_append_only")
+        relation.update_all(processing_bearer: bearer)
+      ensure
+        ActiveRecord::Base.connection.execute("ALTER TABLE never_fulfilled_captures ENABLE TRIGGER never_fulfilled_captures_append_only")
+      end
+      StripeFeeEvidence.create!(payment: payment_b, context_digest: "ctx_held_#{SecureRandom.hex(3)}", status: :review_required,
+        provider_charge_id: "ch_held", provider_balance_transaction_id: "txn_held_#{SecureRandom.hex(3)}",
+        evidence_digest: "digest_held_#{SecureRandom.hex(3)}", currency: "usd", fee_cents: 74,
+        last_error_code: StripeProcessingFees::PAYMENT_SCOPE_DEFERRED_CODE)
+      return if bearer == "platform"
+
+      ReconciliationException.create!(order: payment_b.order, payment: payment_b, code: StripeProcessingFees::REVIEW_CODE)
+    end
+
+    it "blocks finalization and every payout entry until finance books the exact cost, and holds nothing when HåfaPass bears it" do
+      sale_order, = ordinary_sale!
+      approved_bank_account!(organization, actor: profile.user, admin: admin)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      sale_order.update!(fulfilled_by_payment_id: sale_order.payments.first.id)
+      payment_b = create(:payment, order: sale_order, provider_payment_id: "pi_ops_held_#{SecureRandom.hex(3)}",
+        amount_cents: 1500, status: :succeeded, succeeded_at: Time.current)
+      UnfulfilledCapture.create!(order: sale_order, payment: payment_b, capture_scope: "payment",
+        code: "unfulfilled_second_capture", captured_cents: 1500, currency: "usd", proceeds_cents: 1500, fee_cents: 0,
+        organizer_fee_cents: 0, tax_cents: 0, processing_bearer: "organizer", dispute_fee_bearer: "platform",
+        allocation_policy: "item_record", policy_version: Commerce::NeverFulfilledClassification::POLICY_VERSION,
+        provenance: "lifecycle")
+      held_fee!(payment_b, bearer: "organizer")
+
+      expect(Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(event)).to be(true)
+      # Not charged on any statement line yet, so nothing may be paid.
+      expect(figures(event)[:processing_fee_cents]).to eq(100)
+      expect { Settlements::Finalizer.call(event: event, actor: admin) }.to raise_error(Settlements::Finalizer::FinalizationError)
+      expect { PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "held-fee", amount_cents: 500) }
+        .to raise_error(PayoutCreator::PayoutError, Commerce::NeverFulfilledPayoutHold::ORGANIZER_PROCESSING_MESSAGE)
+      expect(Payout.where(event: event)).to be_empty
+
+      # HåfaPass-borne (the default): no review, nothing held by it.
+      ReconciliationException.where(payment: payment_b, code: StripeProcessingFees::REVIEW_CODE).delete_all
+      StripeFeeEvidence.where(payment: payment_b).delete_all
+      held_fee!(payment_b, bearer: "platform")
+      expect(Commerce::NeverFulfilledPayoutHold.organizer_processing_held?(event)).to be(false)
+    end
+  end
+
+  # CodeRabbit 4703321685: in production the statement's money leaves a
+  # test-mode classified order out, but its $0 line is written, so the
+  # database's restatement rule (every classification) and the statement read
+  # one population.
+  describe "production mode population" do
+    it "gives a test-mode classified order its $0 line beside live sales, so the version is not restated" do
+      _sale_order, _item, sale_payment = ordinary_sale!
+      Payment.where(id: sale_payment.id).update_all(provider_environment: "live",
+        provider_payment_id: "pi_live_ops_#{SecureRandom.hex(3)}")
+      _order, payment, capture, issue = classified_order!
+      ingest_provider_refund!(payment, 1360, id: "re_ops_testmode")
+      expect(issue.reload).to be_resolved
+      allow(Rails.env).to receive(:production?).and_return(true)
+
+      settlement = Settlements::Finalizer.call(event: event, actor: admin).reload
+      info = settlement.settlement_items.select { |item| item.metadata["adjustment_kind"] == "never_fulfilled_capture" }
+      expect(info.map { |item| [item.amount_cents, item.metadata["payment_ids"]] }).to eq([[0, [payment.id]]])
+      expect(settlement.payable_cents).to eq(figures(event)[:payable_cents])
+      expect(ActiveRecord::Base.connection.select_value(
+        ActiveRecord::Base.sanitize_sql_array(["SELECT hafapass_settlement_restated_at(?)", settlement.id])
+      )).to be_nil
+      expect(PayoutEntryGuard.stale?(build(:payout, event: event, settlement: settlement, organization: organization)))
+        .to be(false)
+      expect(capture.reload.order.never_fulfilled?).to be(true)
     end
   end
 

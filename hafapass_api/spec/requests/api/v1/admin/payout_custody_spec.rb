@@ -116,6 +116,8 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       expect(determination).to have_attributes(determination: "stripe_custody", qualifying_payment_ids: [payment.id])
       january = bpt_body(1)
       expect(payouts_cell(january)).to eq("10.00")
+      # Snapshot before the classification (CodeRabbit 4703321709).
+      frozen = determination.reload.attributes
 
       second = create(:payment, order: order, provider: "stripe", provider_environment: "live",
         provider_payment_id: "pi_live_second_#{SecureRandom.hex(4)}", amount_cents: 1200, currency: "usd",
@@ -127,7 +129,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         policy_version: Commerce::NeverFulfilledClassification::POLICY_VERSION, provenance: "lifecycle")
 
       expect(bpt_body(1)).to eq(january)
-      expect(PayoutCustodyDetermination.find_by!(payout_id: payout.id).attributes).to eq(determination.reload.attributes)
+      expect(PayoutCustodyDetermination.find_by!(payout_id: payout.id).attributes).to eq(frozen)
     end
 
     it "decides by the funded version's finalization, never by a backdated paid_at or the paid audit" do
@@ -175,7 +177,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
 
       # No baseline: reported, nothing frozen, the payout stays alerted on
       # the conservative read (its capture succeeded before the payout).
-      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")).to eq([
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-1")).to eq([
         { payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }
       ])
       expect(PayoutCustodyDetermination.count).to eq(0)
@@ -185,7 +187,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         payout_id: payout.id, event_id: event.id }])
 
       published = PayoutCustody.published_baseline("payout_id,included,source\n#{payout.id},true,BPT 2027-01 as filed\n")
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1", published: published)
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-1", published: published)
       row = PayoutCustodyDetermination.find_by!(payout_id: payout.id)
       expect(row).to have_attributes(determination: "ambiguous", basis: "derived_history", conservative_inclusion: true)
       expect(row.evidence["lines"].sole).to include("custody" => "unknown", "reason" => "pre_a1_capture_time_unproven")
@@ -193,10 +195,51 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       expect(bpt_body(1)).to eq(january)
       expect(TaxReports.new(2027).payout_custody_alerts).to eq([{ code: "payout_custody_ambiguous", payout_id: payout.id,
         event_id: event.id, conservative_inclusion: true }])
-      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1", published: published)).to eq([])
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-1", published: published)).to eq([])
       expect { row.update!(determination: "stripe_custody") }.to raise_error(ActiveRecord::ReadOnlyRecord)
       expect { PayoutCustodyDetermination.where(id: row.id).update_all(determination: "stripe_custody") }
         .to raise_error(ActiveRecord::StatementInvalid)
+    end
+
+    # CodeRabbit 4703321661: the immutable row keeps a finance reference,
+    # never a person's name.
+    it "refuses a write authorized by anything but a structured finance reference" do
+      _order, item, = sale!(at: at(2027, 1, 5, 10))
+      payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      ["Pat Example", "finance ticket FIN-1", "fin-1", "FIN-"].each do |authority|
+        expect { PayoutCustody.derive_history!(dry_run: false, authorized_by: authority) }
+          .to raise_error(ArgumentError, /finance ticket reference/)
+      end
+      expect(PayoutCustodyDetermination.count).to eq(0)
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-2026-11-001")
+      expect(payout.reload.custody_determination.evidence["authorized_by"]).to eq("FIN-2026-11-001")
+    end
+
+    # CodeRabbit 4703321638: the write reports the row it saved, not its
+    # earlier preview, when another derivation froze the row first.
+    it "reports the saved determination when another derivation froze it between the preview and the write" do
+      _order, item, = sale!(at: at(2027, 1, 5, 10))
+      payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
+      paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
+      calls = 0
+      allow(PayoutCustody).to receive(:determine).and_wrap_original do |original, *args, **options|
+        result = original.call(*args, **options)
+        calls += 1
+        if calls == 1
+          FinancialIntegrity.with_evidence(:custody_derivation, payout.id) do
+            PayoutCustodyDetermination.insert_all([{ payout_id: payout.id, settlement_id: payout.settlement_id,
+              determination: "ambiguous", basis: "derived_history", conservative_inclusion: true,
+              evidence: { authorized_by: "FIN-7", published_baseline: { included: true, source: "BPT 2027-01" } } }],
+              unique_by: :payout_id, record_timestamps: false)
+          end
+        end
+        result
+      end
+
+      rows = PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-8")
+      expect(rows).to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: true }])
+      expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true)
     end
 
     it "refuses an incomplete or duplicated baseline" do
@@ -221,7 +264,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       # The late sale's own row shows; the Clover payout is not in it.
       january = bpt_body(1)
       expect(payouts_cell(january)).to eq("0.00")
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-3")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-3")
       expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial", qualifying_payment_ids: [])
       expect(bpt_body(1)).to eq(january)
     end
@@ -234,10 +277,10 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       january = bpt_body(1)
       expect(payouts_cell(january)).to eq("5.00")
 
-      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-4"))
+      expect(PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-4"))
         .to eq([{ payout_id: payout.id, determination: "ambiguous", conservative_inclusion: nil, skipped: "needs_published_baseline" }])
       expect(bpt_body(1)).to eq(january)
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-4",
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-4",
         published: { payout.id => { included: true, source: "BPT 2027-01 as filed" } })
       expect(payout.reload.custody_determination).to have_attributes(determination: "ambiguous", conservative_inclusion: true,
         funded_order_item_ids: [])
@@ -253,7 +296,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       payout.payout_line_allocations.create!(order_item_id: clover_item.id, amount_cents: 1000)
       paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
 
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-5")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-5")
       expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial",
         funded_order_item_ids: [clover_item.id], qualifying_payment_ids: [])
       expect(payout.custody_determination.evidence).to include("funding_source" => "saved_allocations")
@@ -277,7 +320,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
         organizer_fee_cents: 0, tax_cents: 0, processing_bearer: "platform", dispute_fee_bearer: "platform",
         allocation_policy: "item_record", policy_version: Commerce::NeverFulfilledClassification::POLICY_VERSION,
         provenance: "lifecycle")
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-6")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-6")
       expect(payout.reload.custody_determination).to have_attributes(determination: "non_custodial", qualifying_payment_ids: [])
       expect(payouts_cell(bpt_body(1))).to be_nil
     end
@@ -291,7 +334,7 @@ RSpec.describe "Frozen payout custody (R2-2)", type: :request do
       payout = payout_on!([item], finalized_at: at(2027, 1, 10, 10))
       paid_before_payout_entry!(payout, paid_at: at(2027, 1, 20, 10))
 
-      PayoutCustody.derive_history!(dry_run: false, authorized_by: "finance ticket FIN-1")
+      PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-1")
       expect(payout.reload.custody_determination).to have_attributes(determination: "stripe_custody",
         qualifying_payment_ids: [payment.id])
       expect(payout.custody_determination.evidence["lines"].sole).to include("reason" => "completion_audit")

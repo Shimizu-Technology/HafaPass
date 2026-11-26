@@ -4794,6 +4794,97 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
           AND si.metadata->'payment_ids' @> jsonb_build_array(c.payment_id))
     $$;
 
+    -- P4 proof, final form (CodeRabbit 4703321667, 4703321674, 4703321681).
+    -- Every fact that can defeat the platform-only proof for one classified
+    -- payment, whatever its state now, with the immutable time it began and
+    -- whether it defeats the proof now. The A2 operational form
+    -- (20261126170000) also required that no custody determination named
+    -- the payment, which is always true for a classified one (custody never
+    -- qualifies it); proof now also needs positive funding lineage: every
+    -- payout on the event that moved or may move money (pending, processing,
+    -- paid, held) was approved on a statement version that accounts for the
+    -- payment with its $0 line. A version without that line may have funded
+    -- the organizer from it, so the over-return then holds.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_facts(target bigint)
+      RETURNS TABLE (started timestamp, defeating boolean)
+    LANGUAGE sql STABLE AS $$
+      SELECT f.started, f.defeating FROM never_fulfilled_captures c JOIN orders o ON o.id = c.order_id, LATERAL (
+        SELECT r.created_at, (r.status = 0 OR (r.status = 1
+            AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'refund' AND p.source_type = 'Refund'
+              AND p.source_id = r.id)))
+          FROM refunds r WHERE r.payment_id = target
+        UNION ALL
+        SELECT d.created_at, (d.status = 0 OR (d.status = 2 AND d.amount_cents > 0
+            AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'dispute_loss'
+              AND p.source_type = 'Dispute' AND p.source_id = d.id)))
+          FROM disputes d WHERE d.payment_id = target
+        UNION ALL
+        SELECT d.loss_reversed_at, (d.status = 2 AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p
+            WHERE p.kind = 'dispute_loss_reversal' AND p.source_type = 'Dispute' AND p.source_id = d.id))
+          FROM disputes d WHERE d.payment_id = target AND d.loss_reversed_at IS NOT NULL
+        UNION ALL
+        SELECT p.recorded_at, true FROM buyer_return_postings p WHERE p.never_fulfilled_capture_id = c.id
+          AND p.recognition_state <> 'recognized'
+        UNION ALL
+        SELECT op.created_at, op.state NOT IN ('succeeded', 'failed_terminal') FROM repayment_operations op
+          WHERE op.never_fulfilled_capture_id = c.id
+        UNION ALL
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)), re.status = 0
+          FROM reconciliation_exceptions re WHERE re.payment_id = target AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+        UNION ALL
+        SELECT a.created_at, true FROM balance_adjustments a WHERE (c.capture_scope = 'order' AND a.order_id = c.order_id)
+          OR a.dispute_id IN (SELECT d.id FROM disputes d WHERE d.payment_id = target
+            OR (c.capture_scope = 'order' AND d.order_id = c.order_id))
+        UNION ALL
+        SELECT pcd.determined_at, true FROM payout_custody_determinations pcd WHERE target = ANY (pcd.qualifying_payment_ids)
+        UNION ALL
+        SELECT po.created_at,
+            po.status IN (0, 1, 2, 5)
+          FROM payouts po WHERE po.event_id = o.event_id
+            AND NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.settlement_id = po.settlement_id
+              AND si.kind = 'adjustment' AND si.metadata->>'adjustment_kind' = 'never_fulfilled_capture'
+              AND si.metadata->'payment_ids' @> jsonb_build_array(target))
+      ) f (started, defeating)
+      WHERE c.payment_id = target
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_platform_only(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM never_fulfilled_captures c WHERE c.payment_id = target)
+        AND NOT EXISTS (SELECT 1 FROM hafapass_overpaid_proof_facts(target) f WHERE f.defeating)
+    $$;
+
+    -- The latest moment the proof is known to have held on the payment's
+    -- event: a payout submission authorized, or a statement version
+    -- finalized, through this release's fences (both refuse while it fails;
+    -- hafapass_payout_block_start). NULL when there is none.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_anchor(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT GREATEST(
+        (SELECT MAX(LEAST(a.occurred_at, a.created_at)) FROM audit_logs a JOIN payouts po ON po.id = a.auditable_id
+          WHERE a.auditable_type = 'Payout' AND a.action = 'payout.submission_requested' AND po.event_id = o.event_id
+            AND a.occurred_at >= (SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = 'a2_payout_entry')),
+        (SELECT MAX(s.finalized_recorded_at) FROM settlements s WHERE s.event_id = o.event_id))
+      FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = target
+    $$;
+
+    -- When the proof stopped holding, monotonic for the whole failure: the
+    -- earliest start of any defeating fact recorded after the anchor, in any
+    -- state now, so a fact that resolves while another still defeats the
+    -- proof never moves the cutoff later (a pending refund that becomes an
+    -- unrecognized posting, for instance). While the proof fails no fence
+    -- passes, so the anchor stays put and facts only accumulate. A fact
+    -- that began at or before the anchor and defeats the proof now (one the
+    -- passing fence did not see) starts the hold at the anchor itself.
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_proof_lost_at(target bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      WITH anchor AS (SELECT COALESCE(hafapass_overpaid_proof_anchor(target), '-infinity'::timestamp) AS at)
+      SELECT LEAST(
+        (SELECT anchor.at FROM anchor WHERE anchor.at > '-infinity'::timestamp AND EXISTS (
+          SELECT 1 FROM hafapass_overpaid_proof_facts(target) f WHERE f.defeating AND f.started <= anchor.at)),
+        (SELECT MIN(f.started) FROM hafapass_overpaid_proof_facts(target) f, anchor WHERE f.started > anchor.at))
+    $$;
+
     CREATE OR REPLACE FUNCTION hafapass_payout_repayment_fence() RETURNS trigger
     LANGUAGE plpgsql AS $$
     DECLARE
@@ -4930,6 +5021,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     CREATE TRIGGER payouts_require_custody BEFORE UPDATE OF status ON payouts
       FOR EACH ROW WHEN (NEW.status = 2 AND OLD.status IS DISTINCT FROM 2)
       EXECUTE FUNCTION hafapass_require_payout_custody();
+
+    -- A payout inserted already paid (CodeRabbit 4703321688) has no earlier
+    -- unpaid state in which this release writes its custody row, so it is
+    -- checked when its transaction commits: it commits only with its
+    -- determination for its own version, which for a paid payout is only
+    -- the authorized historical derivation. Payouts inserted before this
+    -- migration are unaffected. The application never inserts paid.
+    CREATE OR REPLACE FUNCTION hafapass_require_inserted_payout_custody() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = 2)
+          AND NOT EXISTS (SELECT 1 FROM payout_custody_determinations d
+            WHERE d.payout_id = NEW.id AND d.settlement_id = (SELECT p.settlement_id FROM payouts p WHERE p.id = NEW.id)) THEN
+        RAISE EXCEPTION 'Payout custody fence: payout % was inserted paid without a custody determination; record it paid from the current release', NEW.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_require_custody_on_insert ON payouts;
+    CREATE CONSTRAINT TRIGGER payouts_require_custody_on_insert AFTER INSERT ON payouts
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.status = 2)
+      EXECUTE FUNCTION hafapass_require_inserted_payout_custody();
 
     CREATE OR REPLACE FUNCTION hafapass_check_custody_determination() RETURNS trigger
     LANGUAGE plpgsql AS $$

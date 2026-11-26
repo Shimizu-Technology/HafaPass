@@ -12,9 +12,15 @@ class PayoutReconciler
 
   def self.call(payout:, actor:, status:, evidence:, provider_payout_id: nil, request: nil)
     raise ReconciliationError, "Administrator access is required" unless actor&.persisted? && actor.admin?
-    raise ReconciliationError, "Status must be paid, failed, or reversed" unless %w[paid failed reversed].include?(status)
+    unless (%w[paid failed reversed] + [ACCEPTED_TRANSFER]).include?(status)
+      raise ReconciliationError, "Status must be paid, failed, or reversed"
+    end
 
     normalized = normalize_evidence!(evidence)
+    if status == ACCEPTED_TRANSFER
+      return record_accepted_transfer!(payout: payout, actor: actor, normalized: normalized,
+        provider_payout_id: provider_payout_id, request: request)
+    end
     if status != "paid" && normalized["withholding_override_reason"].present?
       raise ReconciliationError, "A withholding override only applies when recording payment"
     end
@@ -233,6 +239,65 @@ class PayoutReconciler
   rescue ActiveRecord::RecordInvalid => e
     raise ReconciliationError, e.record.errors.full_messages.to_sentence
   end
+
+  # CodeRabbit 4703321670: the no-send outcome for a transfer the provider
+  # accepted after the payout fence refused to record it paid
+  # (PayoutCreator#record_refused_paid!). Finance confirms, with audited
+  # evidence, that the money left. Nothing is submitted, the payout stays in
+  # flight (its amount stays committed, so it is never sent or reserved
+  # again) and it is not an ordinary paid payout: paid remains the database
+  # fences' decision, and no confirmation authorizes a transfer after the
+  # hold or statement change. Does not depend on the transfer time.
+  ACCEPTED_TRANSFER = "accepted_transfer"
+  ACCEPTED_TRANSFER_MESSAGE = "Sent by the provider after this payout's hold or statement change and recorded by " \
+    "finance as an accepted transfer. Do not send it again; it is not recorded as an ordinary paid payout."
+
+  def self.record_accepted_transfer!(payout:, actor:, normalized:, provider_payout_id:, request:)
+    Payout.transaction do
+      payout.organization.lock!("FOR NO KEY UPDATE")
+      payout.event.lock!("FOR NO KEY UPDATE")
+      payout.lock!
+      conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+      unless payout.status_processing? && payout.failure_code == "provider_result_conflict" &&
+          conflict&.metadata&.dig("conflict_reason") == PayoutCreator::PAID_REFUSED_REASON
+        raise ReconciliationError, "Only a transfer the provider accepted after the payout fence refused it is recorded this way"
+      end
+      unless normalized["conflict_audit_id"] == conflict.id
+        raise ReconciliationError.new("Review and acknowledge the latest provider conflict audit before recording an outcome",
+          conflict_audit_id: conflict.id)
+      end
+      external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
+      if external_id.blank? || external_id != payout.provider_payout_id
+        raise ReconciliationError, "Keep the provider's accepted transfer identifier"
+      end
+      confirmed_at = Time.iso8601(normalized.fetch("confirmed_at"))
+      if confirmed_at < payout.created_at || confirmed_at > Time.current
+        raise ReconciliationError, "Confirmation time must be after the payout request and not in the future"
+      end
+
+      previous = AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").order(:id).last
+      if previous
+        return payout if previous.metadata&.fetch("reconciliation", nil) == normalized
+
+        raise ReconciliationError, "This payout outcome was already recorded with different evidence"
+      end
+
+      hold_started_at = Commerce::NeverFulfilledPayoutHold.block_started_at(payout.event)
+      entry = PayoutEntryGuard.paid_cutoff(payout)
+      before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message")
+      payout.update!(failure_message: ACCEPTED_TRANSFER_MESSAGE)
+      AuditLogger.record!(action: "payout.accepted_transfer_recorded", auditable: payout, actor: actor,
+        organization: payout.organization, event: payout.event, before_data: before_data,
+        after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message"),
+        metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id, reconciliation: normalized,
+          conflict_audit_id: conflict.id,
+          **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
+          **(entry ? { statement_cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6) } : {}) },
+        outcome: "succeeded", request: request)
+    end
+    payout
+  end
+  private_class_method :record_accepted_transfer!
 
   def self.normalize_evidence!(evidence)
     raise ReconciliationError, "Provider or bank confirmation evidence is required" unless evidence.is_a?(Hash)

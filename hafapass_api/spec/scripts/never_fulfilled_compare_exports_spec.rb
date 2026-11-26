@@ -36,4 +36,67 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
       expect(output).to include("HEADER CHANGED")
     end
   end
+
+  # CodeRabbit 4703321699 and 4703321701: no false success.
+  it "refuses a missing or empty baseline instead of reporting zero differences" do
+    Dir.mktmpdir do |dir|
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      File.write(File.join(candidate, "cpa-2027-01.csv"), "row_type,organization_id,event_id,gross\nevent,1,10,5.00\n")
+
+      output, status = run(File.join(dir, "mistyped"), candidate)
+      expect(status.exitstatus).to eq(2)
+      expect(output).to include("does not exist", "unexpected_differences=unusable_input")
+
+      empty = File.join(dir, "empty").tap { |path| Dir.mkdir(path) }
+      output, status = run(empty, candidate)
+      expect(status.exitstatus).to eq(2)
+      expect(output).to include("has no CSV exports")
+      expect(output).not_to include("unexpected_differences=0")
+      output, status = run(empty, File.join(dir, "nowhere"))
+      expect(status.exitstatus).to eq(2)
+    end
+  end
+
+  it "fails on a duplicate key, even when the first row is unchanged" do
+    Dir.mktmpdir do |dir|
+      baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      File.write(File.join(baseline, "bpt-2027-01.csv"), "row_type,organization_id,event_id,gross\nevent,1,10,5.00\n")
+      File.write(File.join(candidate, "bpt-2027-01.csv"),
+        "row_type,organization_id,event_id,gross\nevent,1,10,5.00\nevent,1,10,9.99\n")
+
+      output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(1)
+      expect(output).to include("event/1/10 DUPLICATE KEY in candidate", "unexpected_differences=1")
+    end
+  end
+
+  it "accepts only an authorized zero baseline when there was no activity, and says no comparison ran" do
+    Dir.mktmpdir do |dir|
+      baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      marker = File.join(baseline, "VERIFIED_ZERO_BASELINE")
+      File.write(File.join(candidate, "cpa-2027-01.csv"), "row_type,organization_id,event_id,gross\n")
+
+      File.write(marker, "reference=Pat Example\nverified_at=2026-11-26T00:40:00Z\nevidence=count 0\n")
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([2, a_string_including("structured finance reference")])
+
+      File.write(marker, "reference=FIN-2026-11-001\nverified_at=2026-11-26T00:40:00Z\n" \
+        "evidence=SELECT count(*) FROM payments WHERE provider_environment = 'live' -> 0\n")
+      output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(0)
+      expect(output).to include("comparison=verified_zero_baseline reference=FIN-2026-11-001", "no row comparison ran",
+        "cpa-2027-01.csv: 0 data rows", "unexpected_differences=0")
+
+      File.write(File.join(candidate, "cpa-2027-01.csv"), "row_type,organization_id,event_id,gross\nevent,1,10,5.00\n")
+      output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(1)
+      expect(output).to include("1 data rows (unexpected: the baseline recorded none)", "unexpected_differences=1")
+
+      File.write(File.join(baseline, "cpa-2027-01.csv"), "row_type,organization_id,event_id,gross\n")
+      _output, status = run(baseline, candidate)
+      expect(status.exitstatus).to eq(2)
+    end
+  end
 end

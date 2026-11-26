@@ -14,8 +14,10 @@ RSpec.describe "Admin tax reporting", type: :request do
     order = create(:order, :completed, event: event, completed_at: Time.utc(2026, 10, 2))
     create(:order_item, order: order)
     # Captured at the sale (custody is booked no earlier than the capture).
-    create(:payment, :succeeded, order: order, provider_environment: "live", created_at: Time.utc(2026, 10, 2),
+    payment = create(:payment, :succeeded, order: order, provider_environment: "live", created_at: Time.utc(2026, 10, 2),
       succeeded_at: Time.utc(2026, 10, 2))
+    # Recorded at the sale, before its payout (the organizer view's custody).
+    stamp!(payment, :capture_recorded_at, Time.utc(2026, 10, 2), trigger: "payments_capture_recorded_at")
     create(:fee_component, order: order, amount_cents: 225)
     account = create(:connected_account, organization: organization)
     create(:payout, organization: organization, event: event,

@@ -106,14 +106,19 @@ class RefundReconciliationQueue
     remaining_by_order = {}
     refunds.sort_by { |refund| [-refund.created_at.to_i, -refund.id] }.each do |refund|
       next if cancellation_order_ids.include?(refund.order_id) || retry_parent_ids.include?(refund.id)
+      # A refund on classified money is not a return of the sale
+      # (Order#sale_refunds), so it never takes the sale's refundable balance:
+      # it keeps its own recorded amount and leaves the balance for the sale's
+      # own failed refunds, which stay in the cancellation recovery total.
+      classified = classified_movement?(refund)
       remaining = remaining_by_order.fetch(refund.order_id) { refund.order.refundable_cents }
-      amount = refund.pending? ? refund.amount_cents : [refund.amount_cents, remaining].min
+      amount = refund.pending? || classified ? refund.amount_cents : [refund.amount_cents, remaining].min
       next if amount.zero?
-      remaining_by_order[refund.order_id] = [remaining - amount, 0].max unless refund.pending?
+      remaining_by_order[refund.order_id] = [remaining - amount, 0].max unless refund.pending? || classified
 
       rows << row(refund, "refund", refund.status, amount,
         refund.failure_message.presence || refund.reason.presence || "Stripe refund", nil)
-        .merge(classified_payment: classified_movement?(refund))
+        .merge(classified_payment: classified)
     end
     responses.each do |response|
       next if cancellation_order_ids.include?(response.order_id)

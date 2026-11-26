@@ -27,6 +27,20 @@ RSpec.describe PayoutStatement do
     statement[:sections].flat_map { |section| section[:lines] }.find { |entry| entry[:label] == label }
   end
 
+  # A manual bank transfer finance approved but has not sent is not "being
+  # sent"; one with a real reference, or paid, has left.
+  it "labels an approved manual transfer not sent yet, and marks only real dispatches" do
+    record_card_sale!(event, ticket_type: adult, quantity: 3)
+    approved_bank_account!(organization, actor: profile.user, admin: admin)
+    allow(PayoutGateway).to receive(:submit) { |payout| PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing) }
+    payout = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "statement-dispatch", amount_cents: 1000)
+    transfer = -> { build_statement[:transfers].sole.slice(:status, :status_label, :dispatched) }
+    expect(transfer.call).to eq(status: "processing", status_label: "Approved, not sent yet", dispatched: false)
+    payout.update_columns(provider_payout_id: "bank-ref-123")
+    expect(transfer.call).to eq(status: "processing", status_label: "Being sent", dispatched: true)
+  end
+
   it "breaks gross sales down by ticket and shows who paid each fee" do
     record_card_sale!(event, ticket_type: adult, quantity: 3, buyer_fee_cents: 100, processing_fee_cents: 180)
     record_card_sale!(event, ticket_type: child, quantity: 2, buyer_fee_cents: 0, organizer_fee_cents: 160,

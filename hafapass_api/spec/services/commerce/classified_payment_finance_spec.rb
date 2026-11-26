@@ -248,6 +248,38 @@ RSpec.describe Commerce::ClassifiedPaymentFinance do
         order_id: order_c.id, fee_component_id: unattributed.id, amount_cents: 71 }])
       expect(project(month(now.prev_month.year, now.prev_month.month)).by_event).to be_empty
     end
+
+    # CodeRabbit 4703321628: a February sole capture keeps its unlinked
+    # processing when another payment on the same order captures in March.
+    it "keeps a sole capture's processing in its own period when a later capture arrives on the order" do
+      order, _payment, capture = live_capture(items: [[1200, 160, 0, 0]])
+      captured_at!(capture, at(2027, 2, 10, 9))
+      component = create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 69)
+      component.update_columns(created_at: at(2027, 2, 10, 9, 5))
+      february = -> { project(month(2027, 2)).then { |p| [p.for_event(event.id).processing_platform_cents, p.alerts] } }
+      saved = february.call
+      expect(saved).to eq([69, []])
+
+      later = create(:payment, order: order, provider_environment: "live", provider_payment_id: "pi_live_cpf_mar",
+        amount_cents: 1360, status: :succeeded, succeeded_at: Time.current)
+      later_capture = UnfulfilledCapture.create!(order: order, payment: later, capture_scope: "order",
+        code: "late_payment_success_after_hold_expiry", captured_cents: 1360, currency: "usd", proceeds_cents: 1200,
+        fee_cents: 160, organizer_fee_cents: 0, tax_cents: 0, processing_bearer: "platform", dispute_fee_bearer: "platform",
+        allocation_policy: "item_record", policy_version: Commerce::NeverFulfilledClassification::POLICY_VERSION,
+        provenance: "lifecycle").reload
+      captured_at!(later_capture, at(2027, 3, 3, 12))
+
+      expect(february.call).to eq(saved)
+      expect(project(month(2027, 3)).for_event(event.id).processing_platform_cents).to eq(0)
+      expect(described_class.attribute_processing([capture.reload, later_capture.reload]).sole[:capture]).to eq(capture)
+
+      # A component recorded after both captures is genuinely ambiguous.
+      ambiguous = create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 70)
+      ambiguous.update_columns(created_at: at(2027, 3, 4))
+      expect(project(month(2027, 3)).alerts.map { |alert| alert.slice(:code, :fee_component_id) })
+        .to eq([{ code: "processing_unattributed", fee_component_id: ambiguous.id }])
+      expect(february.call.first).to eq(69)
+    end
   end
 
   describe "pre-cutover history and ambiguity" do

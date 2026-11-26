@@ -130,6 +130,9 @@ class PayoutCustody
     end
 
     PAID_BASIS = FinancialIntegrity::CUSTODY_PAID_BASIS
+    # The authorization kept in a historical determination: a finance ticket
+    # reference (FIN-2026-11-001), never a person.
+    AUTHORIZATION_REFERENCE = /\A[A-Z]{2,10}-[A-Z0-9][A-Z0-9-]{0,40}\z/
     DERIVED_BASIS = FinancialIntegrity::CUSTODY_DERIVED_BASIS
 
     # Writes the payout's determination once and returns it. Safe to call
@@ -146,7 +149,13 @@ class PayoutCustody
         determine(payout, bound_at: database_now)
       else
         determine(payout).tap do |row|
-          row[:evidence][:authorized_by] = authorized_by.to_s
+          # A structured finance reference, never a person's name
+          # (CodeRabbit 4703321661): the row is immutable and classified as
+          # holding no personal data (config/data_retention.yml).
+          reference = authorized_by.to_s.strip
+          raise ArgumentError, "a historical determination needs a finance ticket reference" unless reference.match?(AUTHORIZATION_REFERENCE)
+
+          row[:evidence][:authorized_by] = reference
           if row[:determination] == "ambiguous"
             raise ArgumentError, "an ambiguous historical payout needs its published baseline" unless published
 
@@ -174,6 +183,9 @@ class PayoutCustody
     # ambiguous payout without one is reported and left undetermined.
     def derive_history!(dry_run: true, payout_ids: nil, authorized_by: nil, published: {})
       raise ArgumentError, "a derivation write needs AUTHORIZED_BY" if !dry_run && authorized_by.to_s.strip.empty?
+      if !dry_run && !authorized_by.to_s.strip.match?(AUTHORIZATION_REFERENCE)
+        raise ArgumentError, "AUTHORIZED_BY must be a finance ticket reference such as FIN-2026-11-001, never a name"
+      end
 
       cutover = FinancialCutover.recorded_at(FinancialIntegrity::PAYOUT_ENTRY_CUTOVER)
       scope = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
@@ -189,10 +201,13 @@ class PayoutCustody
         end
         next row.merge(skipped: "needs_published_baseline") if attributes[:determination] == "ambiguous" && baseline.nil?
 
-        unless dry_run
-          Payout.transaction { record!(payout, basis: DERIVED_BASIS, authorized_by: authorized_by, published: baseline) }
-        end
-        row
+        next row if dry_run
+
+        # Report what was saved (CodeRabbit 4703321638): another derivation
+        # may have frozen the row first, or the evidence moved since the
+        # preview above.
+        saved = Payout.transaction { record!(payout, basis: DERIVED_BASIS, authorized_by: authorized_by, published: baseline) }
+        { payout_id: payout.id, determination: saved.determination, conservative_inclusion: saved.conservative_inclusion }
       end
     end
 
