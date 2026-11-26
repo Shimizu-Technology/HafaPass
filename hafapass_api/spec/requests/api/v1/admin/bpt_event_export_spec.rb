@@ -188,11 +188,13 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
         provider_lookup: { provider_object_id: payment1.provider_payment_id, livemode: payment1.provider_environment == "live" })
       Commerce::LateCaptureRefund.call(payment: payment1)
     end
+    align_recording_times!(payment1)
 
     travel_to(feb_late_capture) do
       Commerce::OrderLifecycle.complete!(order2, payment: payment2, provider_amount_cents: 1_360, provider_currency: "usd", late_completion: true,
         provider_lookup: { provider_object_id: payment2.provider_payment_id, livemode: payment2.provider_environment == "live" })
     end
+    align_recording_times!(payment2)
 
     get path, params: { year: 2027, month: 2 }, headers: auth_headers(admin)
     expect(response).to have_http_status(:ok)
@@ -204,6 +206,7 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
     travel_to(mar_refund) do
       Commerce::LateCaptureRefund.call(payment: payment2)
     end
+    align_recording_times!(payment2)
 
     # Closed January remains empty and byte-identical
     get path, params: { year: 2027, month: 1 }, headers: auth_headers(admin)
@@ -219,14 +222,19 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
       "gross_service_fees" => "1.60",
       "refunded_service_fees" => "1.60",
       "net_service_fees" => "0.00",
-      "ticket_face_value_collected_as_agent" => "12.00"
+      "ticket_face_value_collected_as_agent" => "0.00"
     )
     expect(feb_by_event.fetch(cross_month_event.id.to_s).to_h).to include(
       "gross_service_fees" => "1.60",
       "refunded_service_fees" => "0.00",
       "net_service_fees" => "1.60",
-      "ticket_face_value_collected_as_agent" => "12.00"
+      "ticket_face_value_collected_as_agent" => "0.00"
     )
+
+    # A2: both captures are classified, so their fee share comes from the
+    # snapshot at capture recording and their refunds from postings, and a
+    # never-fulfilled order's face value is not an organizer sale (§8.4).
+    expect(UnfulfilledCapture.where(payment: [payment1, payment2]).count).to eq(2)
 
     # March records the cross-month refund
     get path, params: { year: 2027, month: 3 }, headers: auth_headers(admin)

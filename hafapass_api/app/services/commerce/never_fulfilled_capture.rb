@@ -50,6 +50,14 @@ module Commerce
     DISPUTE_FEE_BEARER = :platform
     ALLOCATION_POLICY = :item_record
 
+    # P2 (design §1): BPT and CPA treatment of the fee and tax share of a lost
+    # dispute on a classified capture. :fee_refund (v1 working default,
+    # pending CPA) reverses it through fee refunds in the posting's
+    # recognition month, as for a refund; a late win reverses that reversal
+    # in its own month. :retained keeps it as fee revenue. Ordinary lost
+    # disputes on fulfilled sales keep today's rule (no fee reversal).
+    LOST_DISPUTE_FEE_SHARE = :fee_refund
+
     CAPTURED_PAYMENT_STATUSES = %w[succeeded partially_refunded refunded].freeze
 
     module_function

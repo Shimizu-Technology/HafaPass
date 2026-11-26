@@ -99,9 +99,24 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
     expect(payment.order.completed_at).to be_nil
   end
 
+  # A lost dispute recorded at `at`. On a classified payment it is posted
+  # through the real writer (A2 readers book classified returns only from
+  # postings; a fixture that skips the writer is an unposted movement).
   def lose_dispute!(order, payment, at:, amount_cents: 1_360)
-    Dispute.create!(order: order, payment: payment, provider: "stripe", provider_dispute_id: "dp_lost_#{order.id}",
+    dispute = Dispute.create!(order: order, payment: payment, provider: "stripe", provider_dispute_id: "dp_lost_#{order.id}",
       amount_cents: amount_cents, currency: "usd", status: :lost, opened_at: at - 1.day, closed_at: at)
+    if UnfulfilledCapture.exists?(payment_id: payment.id)
+      Order.transaction { Commerce::BuyerReturnPostings.record_dispute_loss!(dispute) }
+      align_recording_times!(payment)
+    end
+    dispute
+  end
+
+  def expect_gross_bridge(row)
+    expect(cents(row, "closing_buyer_owed_gross")).to eq(
+      cents(row, "closing_buyer_refunds_owed") - cents(row, "closing_buyer_refunds_owed_unclassified_legacy") +
+        cents(row, "closing_buyer_owed_second_capture_principal") + cents(row, "closing_buyer_owed_fee_tax_share")
+    )
   end
 
   describe "R3-1: a capture and its exception straddling Guam midnight" do
@@ -141,12 +156,17 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       expect_roll_forward(mar)
     end
 
-    it "ignores a late-capture exception added long after the capture, so closed months stay as booked" do
+    it "classifies by table, so a re-stamped late-capture exception no longer changes the month (A2)" do
       order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-10T10:00:00"),
         captured_at: guam("2027-02-10T11:00:00"), processing_cents: 0)
+      feb = event_row(fetch_csv(2))
       ReconciliationException.where(payment: payment).update_all(created_at: guam("2027-03-15T09:00:00"))
       expect(Commerce::NeverFulfilledCapture.order_ids_among([order.id])).to be_empty
-      expect(event_row(fetch_csv(2))).to include("buyer_refund_captures" => "0.00")
+      expect(UnfulfilledCapture.find_by!(payment_id: payment.id)).to be_order_scope
+      expect(event_row(fetch_csv(2))).to eq(feb)
+      expect(feb).to include("buyer_refund_captures" => "12.00", "buyer_owed_captures_gross" => "13.60",
+        "proceeds_collected" => "0.00", "closing_buyer_owed_fee_tax_share" => "1.60")
+      expect_gross_bridge(feb)
     end
   end
 
@@ -173,14 +193,31 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       expect(cpa_unpaid).to eq(unpaid_balance(attributes))
     end
 
-    it "keeps the bearer rule in one switch that both readers follow", repayment_submitter: :active do
+    # A2: the CPA export follows the bearer snapshotted on the classification
+    # row, so flipping the switch later restates nothing (§1). Classifying
+    # with the switch on snapshots "organizer", and the organizer is charged.
+    # Settlements::Calculator still reads the live switch until its own A2
+    # slice (design §8.10.3).
+    it "follows the processing bearer snapshotted at classification", repayment_submitter: :active do
       _order, payment = never_fulfilled_capture!(reserved_at: guam("2027-02-27T09:00:00"),
         captured_at: guam("2027-02-28T22:00:00"))
       auto_refund!(payment, at: guam("2027-03-01T01:00:00"))
+      expect(UnfulfilledCapture.find_by!(payment_id: payment.id).processing_bearer).to eq("platform")
       stub_const("Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING", true)
+      expect(event_row(fetch_csv(2))).to include("organizer_processing_deducted" => "0.00",
+        "stripe_processing_costs_informational" => "0.69", "closing_organizer_deficits" => "0.00")
 
-      expect(Settlements::Calculator.call(event).attributes).to include(processing_fee_cents: 69, negative_balance_cents: 69)
-      expect(event_row(fetch_csv(2))).to include("organizer_processing_deducted" => "0.69", "closing_organizer_deficits" => "0.69")
+      other_event = create(:event, :published, organization: org, organizer_profile: profile, online_door_card_enabled: true)
+      other_type = create(:ticket_type, event: other_event, price_cents: 1_200, quantity_available: 1)
+      stub_const("Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING", true)
+      allow(self).to receive(:event).and_return(other_event)
+      allow(self).to receive(:ticket_type).and_return(other_type)
+      _order, other_payment = never_fulfilled_capture!(reserved_at: guam("2027-02-27T09:00:00"),
+        captured_at: guam("2027-02-28T22:00:00"))
+      expect(UnfulfilledCapture.find_by!(payment_id: other_payment.id).processing_bearer).to eq("organizer")
+      stub_const("Commerce::NeverFulfilledCapture::ORGANIZER_BEARS_PROCESSING", false)
+      expect(event_row(fetch_csv(2), other_event)).to include("organizer_processing_deducted" => "0.69",
+        "stripe_processing_costs_informational" => "0.69", "closing_organizer_deficits" => "0.69")
     end
   end
 
@@ -203,8 +240,11 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
       )
       expect_roll_forward(feb)
 
-      # The automatic refund still goes through in March: the buyer is repaid twice.
-      auto_refund!(payment, at: guam("2027-03-02T09:00:00"))
+      # A1 no longer submits a repayment once the loss repaid the buyer, but a
+      # refund made directly in Stripe is still recorded as gross evidence in
+      # March: the buyer is repaid twice and the excess is HåfaPass's loss.
+      travel_to(guam("2027-03-02T09:00:00")) { ingest_provider_refund!(payment, 1_360) }
+      align_recording_times!(payment)
       expect(event_row(fetch_csv(2))).to eq(feb)
 
       mar = event_row(fetch_csv(3))
@@ -216,10 +256,15 @@ RSpec.describe "Never-fulfilled capture accounting across the CPA export and pay
         "opening_buyer_refunds_owed" => "0.00",
         "buyer_refunds_paid" => "0.00",
         "closing_buyer_refunds_owed" => "0.00",
-        "reconciliation_exception_flag" => "yes"
+        "reconciliation_exception_flag" => "yes",
+        "buyer_owed_returned_gross" => "0.00",
+        "buyer_overpaid_in_month_gross" => "13.60",
+        "buyer_overpaid_cumulative_gross" => "13.60",
+        "fee_refunds" => "0.00"
       )
-      expect(mar["reconciliation_exception_note"]).to include("returned to the buyer twice", "$12.00 ticket share cumulative")
+      expect(mar["reconciliation_exception_note"]).to include("beyond what was owed", "$13.60 gross cumulative")
       expect_roll_forward(mar)
+      expect_gross_bridge(mar)
 
       attributes = Settlements::Calculator.call(event).attributes
       expect(attributes).to include(adjustment_cents: 0, negative_balance_cents: 0, payable_cents: 0)

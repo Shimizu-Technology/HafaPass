@@ -169,7 +169,11 @@ RSpec.describe "Admin monthly CPA custodial & BPT export", type: :request do
       "buyer_owed_returned_gross" => "0.00",
       "closing_buyer_owed_gross" => "0.00",
       "buyer_overpaid_in_month_gross" => "0.00",
-      "buyer_overpaid_cumulative_gross" => "0.00"
+      "buyer_overpaid_cumulative_gross" => "0.00",
+      "closing_buyer_owed_second_capture_principal" => "0.00",
+      "closing_buyer_owed_fee_tax_share" => "0.00",
+      "closing_buyer_refunds_owed_unclassified_legacy" => "0.00",
+      "classified_allocation_policy" => ""
     })
     expect(oct_total).to include(
       "row_type" => "total",

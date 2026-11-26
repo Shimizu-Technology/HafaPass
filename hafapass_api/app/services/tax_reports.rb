@@ -1,6 +1,20 @@
 # frozen_string_literal: true
 
 # Cash-basis preparation aid, not a filed return. Dates are Guam calendar dates.
+#
+# Classified (never-fulfilled) payments (design §8.2, A2): an order-scope
+# classified order is never an organizer sale, so the organizer view leaves it
+# out entirely. Its HåfaPass fee share is recognized from the capture's
+# snapshot K at its capture recording time and reversed by its return
+# postings (signed, P2 for lost disputes), and its attributed actual
+# processing is a platform (or snapshot-organizer) cost, all from
+# Commerce::ClassifiedPaymentFinance. RefundItems are never read for a
+# classified payment, and a payment-scope second capture's refunds, losses
+# and processing never reach the fulfilled sale's rows.
+#
+# Every ordinary refund is recognized at GREATEST(refund recording time,
+# the order's collection time) (§5.3), so no month returns fees or proceeds
+# before the sale that collected them.
 class TaxReports
   NOTE = "HåfaPass's gross receipts are its service fees; ticket proceeds belong to organizers (agent model). Confirm with your accountant."
   GUAM_TIMEZONE = "Pacific/Guam"
@@ -12,7 +26,9 @@ class TaxReports
   end
 
   def as_json(*)
-    { year: year, timezone: GUAM_TIMEZONE, currency: "usd", organizers: organizers, months: months, note: NOTE }
+    { year: year, timezone: GUAM_TIMEZONE, currency: "usd", organizers: organizers, months: months, note: NOTE,
+      classified_payment_policy: CpaMonthlyReport::CLASSIFIED_POLICY_NOTE,
+      classified_payment_alerts: classified(period).alerts }
   end
 
   def organizers
@@ -88,11 +104,13 @@ class TaxReports
       range = month_period(month)
       collected = collected_orders(range)
       refunds = period_refunds(range)
-      collected_fees = fees(collected).sum(:amount_cents)
-      returned_fees = refunded_fees(refunds)
+      totals = classified(range).by_event.values
+      collected_fees = fees(collected).sum(:amount_cents) + totals.sum { |event| event.fee_share_flow.added }
+      returned_fees = refunded_fees(refunds) + totals.sum(&:fee_refund_cents)
+      processing = ordinary_processing(collected).sum(:amount_cents) +
+        totals.sum { |event| event.processing_platform_cents + event.processing_organizer_cents }
       { month: month, fees_collected_cents: collected_fees, fees_refunded_cents: returned_fees,
-        gross_receipts_cents: collected_fees - returned_fees,
-        card_processing_costs_cents: FeeComponent.where(order_id: collected.select(:id), kind: "processing", estimated: false).sum(:amount_cents) }
+        gross_receipts_cents: collected_fees - returned_fees, card_processing_costs_cents: processing }
     end
   end
 
@@ -106,15 +124,20 @@ class TaxReports
       .where("provider_payload->>'simulated' IS DISTINCT FROM 'true' AND provider_payload->>'livemode' IS DISTINCT FROM 'false'")
     agent_orders = live_orders(captures)
     collected = collected_orders(range, orders: agent_orders, captures: captures)
-    refunds = period_refunds(range, orders: agent_orders)
+    refunds = period_refunds(range, orders: agent_orders, captures: captures)
     refunds = refunds.where(payment_id: nil).or(refunds.where(payment_id: captures.select(:id)))
     orders = collected.select(:id)
+    classified_events = classified(range).by_event
 
     gross_fees = fees(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
     returned_fees = RefundItem.joins(refund: :order).where(refund_id: refunds.select(:id))
       .group("orders.event_id").sum("refund_items.fee_cents + refund_items.organizer_fee_cents")
-    processing = FeeComponent.joins(:order).where(order_id: orders, kind: "processing", estimated: false)
-      .group("orders.event_id").sum(:amount_cents)
+    processing = ordinary_processing(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
+    classified_events.each do |event_id, totals|
+      gross_fees[event_id] = gross_fees.fetch(event_id, 0) + totals.fee_share_flow.added
+      returned_fees[event_id] = returned_fees.fetch(event_id, 0) + totals.fee_refund_cents
+      processing[event_id] = processing.fetch(event_id, 0) + totals.processing_platform_cents + totals.processing_organizer_cents
+    end
     ticket_proceeds = OrderItem.item_ticket.joins(:order).where(order_id: orders)
       .group("orders.event_id").sum("order_items.subtotal_cents - order_items.discount_cents")
     payouts = paid_payouts(range, orders: agent_orders)
@@ -163,20 +186,49 @@ class TaxReports
       .where(id: captured.select(:order_id))
   end
 
-  def collected_orders(range = period, orders: live_orders, captures: Payment.live_or_legacy_capture)
+  COLLECTED_AT_SQL = "CASE WHEN orders.completed_at IS NOT NULL THEN orders.completed_at " \
+    "ELSE COALESCE(order_captures.first_capture_recorded_at, orders.created_at) END"
+  REFUND_RECORDED_AT_SQL = "COALESCE(refunds.succeeded_at, refunds.created_at)"
+  # §5.3: an ordinary refund is recognized no earlier than its order's
+  # collection, the same rule CpaMonthlyReport applies to its buckets.
+  REFUND_RECOGNIZED_AT_SQL = "GREATEST(#{REFUND_RECORDED_AT_SQL}, #{COLLECTED_AT_SQL})".freeze
+
+  def order_captures_join_sql(captures)
     capture_times = captures.group(:order_id).select(
       "order_id, MIN(GREATEST(COALESCE(payments.succeeded_at, payments.created_at), payments.created_at)) AS first_capture_recorded_at"
     )
-    collected_at_sql = "CASE WHEN orders.completed_at IS NOT NULL THEN orders.completed_at " \
-      "ELSE COALESCE(order_captures.first_capture_recorded_at, orders.created_at) END"
-
-    orders
-      .joins("INNER JOIN (#{capture_times.to_sql}) order_captures ON order_captures.order_id = orders.id")
-      .where("(#{collected_at_sql}) >= ? AND (#{collected_at_sql}) < ?", range.begin, range.end)
+    "INNER JOIN (#{capture_times.to_sql}) order_captures ON order_captures.order_id = orders.id"
   end
 
-  def period_refunds(range = period, orders: live_orders)
-    Refund.succeeded.where(order_id: orders.select(:id)).where("COALESCE(refunds.succeeded_at, refunds.created_at) >= ? AND COALESCE(refunds.succeeded_at, refunds.created_at) < ?", range.begin, range.end)
+  # Ordinary (organizer) sales only: an order-scope classified order is read
+  # from Commerce::ClassifiedPaymentFinance.
+  def collected_orders(range = period, orders: live_orders, captures: Payment.live_or_legacy_capture)
+    orders
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_ORDER_SQL}")
+      .joins(order_captures_join_sql(captures))
+      .where("(#{COLLECTED_AT_SQL}) >= ? AND (#{COLLECTED_AT_SQL}) < ?", range.begin, range.end)
+  end
+
+  # Ordinary refunds recognized in the range. A refund on a classified
+  # payment or order is its posting, never a RefundItem.
+  def period_refunds(range = period, orders: live_orders, captures: Payment.live_or_legacy_capture)
+    Refund.succeeded.where(order_id: orders.select(:id))
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_REFUND_SQL}")
+      .joins(:order).joins(order_captures_join_sql(captures))
+      .where("#{REFUND_RECOGNIZED_AT_SQL} >= ? AND #{REFUND_RECOGNIZED_AT_SQL} < ?", range.begin, range.end)
+  end
+
+  # Actual processing on ordinary collected orders, without components a
+  # classified payment owns (a second capture's processing on a fulfilled
+  # order included).
+  def ordinary_processing(collected)
+    FeeComponent.where(order_id: collected.select(:id), kind: "processing", estimated: false)
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_COMPONENT_SQL}")
+  end
+
+  def classified(range)
+    @classified ||= {}
+    @classified[range] ||= Commerce::ClassifiedPaymentFinance.new(range)
   end
 
   def paid_payouts(range = period, orders: live_orders)

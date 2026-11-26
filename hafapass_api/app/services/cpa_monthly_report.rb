@@ -123,12 +123,26 @@ class CpaMonthlyReport
     closing_buyer_owed_gross
     buyer_overpaid_in_month_gross
     buyer_overpaid_cumulative_gross
+    closing_buyer_owed_second_capture_principal
+    closing_buyer_owed_fee_tax_share
+    closing_buyer_refunds_owed_unclassified_legacy
+    classified_allocation_policy
   ].freeze
 
   # Gross buyer liability on classified payments (design §8.5, P3), appended
   # after `currency` so existing positional consumers keep their columns.
   # From Commerce::ClassifiedPaymentFinance: captures at their recording time,
   # returns at their recognition time, signed.
+  #
+  # The three bridge columns after them make the gross-to-ticket-share bridge
+  # exact on every row (§8.5):
+  #   closing_buyer_owed_gross = closing_buyer_refunds_owed
+  #     - closing_buyer_refunds_owed_unclassified_legacy
+  #     + closing_buyer_owed_second_capture_principal
+  #     + closing_buyer_owed_fee_tax_share
+  # The unclassified-legacy part is ticket share still booked by the pre-A2
+  # exception-window rule for a capture with no classification row (alerted;
+  # the A2 preflight requires none). It has no gross evidence.
   GROSS_BUYER_KEYS = %i[
     opening_buyer_owed_gross_cents
     buyer_owed_captures_gross_cents
@@ -136,7 +150,20 @@ class CpaMonthlyReport
     closing_buyer_owed_gross_cents
     buyer_overpaid_in_month_gross_cents
     buyer_overpaid_cumulative_gross_cents
+    closing_buyer_owed_second_capture_principal_cents
+    closing_buyer_owed_fee_tax_share_cents
+    closing_buyer_refunds_owed_unclassified_legacy_cents
   ].freeze
+
+  # Working policy for classified payments, pending CPA sign-off (design §1
+  # P2, P3, P9, §5.5). Shown in the report and the CPA guide.
+  CLASSIFIED_POLICY_NOTE = "Classified (never-fulfilled) payments are buyer liabilities, never organizer custody. " \
+    "Returns split by the allocation policy snapshotted on each capture (column classified_allocation_policy; " \
+    "working default item_record, pending CPA sign-off). On the documented mixed-cart example ($12.00 ticket with " \
+    "a $1.60 fee plus a $12.00 add-on, $13.60 refunded), item_record reverses $1.60 of fee revenue and " \
+    "cumulative_pro_rata $0.85: a $0.75 difference in fee_refunds and the BPT base, opposite in buyer_refunds_paid, " \
+    "none at full return. Gross owed and every repayment amount are the same under both. A lost dispute's fee share " \
+    "is reversed through fee_refunds (working default, pending CPA); a late dispute win reverses it in its own month."
 
   SUMMED_KEYS = %i[
     opening_custodial_liability_cents
@@ -256,6 +283,7 @@ class CpaMonthlyReport
       period: period,
       timezone: GUAM_TIMEZONE,
       currency: "usd",
+      classified_payment_policy: CLASSIFIED_POLICY_NOTE,
       bpt_rate_bps: bpt_rate_bps,
       bpt_rate_pct: bpt_rate_pct,
       bpt_rate_note: bpt_rate_note,
@@ -279,17 +307,28 @@ class CpaMonthlyReport
     @classified_finance ||= Commerce::ClassifiedPaymentFinance.new(month_start...month_end)
   end
 
-  def gross_buyer_values(totals)
-    return GROSS_BUYER_KEYS.index_with(0) unless totals
+  def gross_buyer_values(totals, legacy_closing_cents = 0)
+    values = GROSS_BUYER_KEYS.index_with(0).merge(closing_buyer_refunds_owed_unclassified_legacy_cents: legacy_closing_cents)
+    return values unless totals
 
-    {
+    values.merge(
       opening_buyer_owed_gross_cents: totals.owed.opening,
       buyer_owed_captures_gross_cents: totals.owed.added,
       buyer_owed_returned_gross_cents: totals.owed.returned,
       closing_buyer_owed_gross_cents: totals.owed.closing,
       buyer_overpaid_in_month_gross_cents: totals.excess_cents,
-      buyer_overpaid_cumulative_gross_cents: totals.excess_cumulative_cents
-    }
+      buyer_overpaid_cumulative_gross_cents: totals.excess_cumulative_cents,
+      closing_buyer_owed_second_capture_principal_cents: totals.shares[:second_capture_principal].closing,
+      closing_buyer_owed_fee_tax_share_cents: totals.fee_tax_closing_cents
+    )
+  end
+
+  # Recognition before every return-like bucket (design §5.3, P11): a
+  # movement is booked no earlier than the custody booking of the order it
+  # reverses, so no month shows a return before its capture. A NULL movement
+  # time stays NULL (GREATEST would otherwise ignore it and book it).
+  def self.recognized_at_sql(movement_sql, booked_sql)
+    "(CASE WHEN (#{movement_sql}) IS NULL THEN NULL ELSE GREATEST(#{movement_sql}, #{booked_sql}) END)".freeze
   end
 
   def format_guam_month(time)
@@ -321,6 +360,12 @@ class CpaMonthlyReport
     Order.where(completed_at: nil)
       .where(id: Payment.live_or_legacy_capture.where(provider: "stripe", currency: "usd").select(:order_id))
       .select(:id)
+  end
+
+  # Order-scope classified orders (by table, any time): never custody, never
+  # in the bridge.
+  def classified_order_ids
+    UnfulfilledCapture.where(capture_scope: "order").select(:order_id)
   end
 
   def nonlive_stripe_order_ids
@@ -404,6 +449,19 @@ class CpaMonthlyReport
     )
   end
 
+  # Classification is by table (A2): an order with an order-scope
+  # never_fulfilled_captures row is read from Commerce::ClassifiedPaymentFinance.
+  CLASSIFIED_ORDER_SQL = Commerce::ClassifiedPaymentFinance::CLASSIFIED_ORDER_SQL
+
+  # A capture the pre-A2 exception-window rule calls never-fulfilled but that
+  # has no classification row (pre-A1 history before reconcile, or a capture
+  # the lifecycle quarantined). It keeps the published pre-A2 ticket-share
+  # treatment, stays out of organizer custody and out of the gross columns,
+  # and is alerted (unclassified_late_capture) until reconcile classifies it.
+  def legacy_unclassified_sql
+    @legacy_unclassified_sql ||= "(#{unfulfilled_capture_sql} AND NOT #{CLASSIFIED_ORDER_SQL})"
+  end
+
   LIVE_AGENT_CAPTURE_SQL = <<~SQL.squish.freeze
     nf_pay.provider = 'stripe' AND nf_pay.currency = 'usd'
     AND (nf_pay.provider_environment = 'live' OR (nf_pay.provider_environment IS NULL
@@ -415,7 +473,7 @@ class CpaMonthlyReport
   SQL
 
   def fulfilled_custody_sql
-    @fulfilled_custody_sql ||= "NOT #{unfulfilled_capture_sql}"
+    @fulfilled_custody_sql ||= "NOT #{unfulfilled_capture_sql} AND NOT #{CLASSIFIED_ORDER_SQL}"
   end
 
   ORDER_CUSTODIAL_AT_SQL = <<~SQL.squish.freeze
@@ -437,21 +495,33 @@ class CpaMonthlyReport
       .where("#{ORDER_CUSTODIAL_AT_SQL} >= ? AND #{ORDER_CUSTODIAL_AT_SQL} < ?", month_start, month_end)
   end
 
+  # Ordinary (sale) refunds. A refund on a classified payment (either scope)
+  # or on an order-scope classified order is read from its posting instead,
+  # never from RefundItems or refunds.amount_cents.
   def agent_refunds
     @agent_refunds ||= begin
       base = Refund.succeeded.where(order_id: agent_orders.select(:id))
+        .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_REFUND_SQL}")
       base.where(payment_id: nil).or(base.where(payment_id: agent_captures.select(:id)))
     end
   end
 
+  # An ordinary refund's recording time stays the pre-A2 expression (the
+  # success time RefundCreator writes in the same transaction), recognized no
+  # earlier than its order's custody booking (§5.3).
+  REFUND_RECORDED_AT_SQL = "COALESCE(refunds.succeeded_at, refunds.created_at)"
+
+  def recognized_refunds
+    agent_refunds.joins(:order).joins(agent_capture_join_sql)
+  end
+
   def refunds_before
-    @refunds_before ||= agent_refunds.where("COALESCE(refunds.succeeded_at, refunds.created_at) < ?", month_start)
+    @refunds_before ||= recognized_refunds.where("#{REFUND_RECOGNIZED_AT_SQL} < ?", month_start)
   end
 
   def refunds_in_month
-    @refunds_in_month ||= agent_refunds.where(
-      "COALESCE(refunds.succeeded_at, refunds.created_at) >= ? AND COALESCE(refunds.succeeded_at, refunds.created_at) < ?",
-      month_start, month_end
+    @refunds_in_month ||= recognized_refunds.where(
+      "#{REFUND_RECOGNIZED_AT_SQL} >= ? AND #{REFUND_RECOGNIZED_AT_SQL} < ?", month_start, month_end
     )
   end
 
@@ -465,14 +535,21 @@ class CpaMonthlyReport
     end
   end
 
+  # Ordinary lost disputes. A loss on a classified payment (either scope) or
+  # an order-scope classified order clears the buyer balance through its
+  # posting; it never reaches chargebacks or the bridge.
   def lost_disputes_base
     @lost_disputes_base ||= agent_disputes_base.lost
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_DISPUTE_SQL}")
   end
 
   DISPUTE_LOST_AT_SQL = "COALESCE(dispute_lost_audit.created_at, disputes.closed_at)"
   PAID_RECORDED_AT_SQL = "COALESCE(paid_audit.created_at, payouts.paid_at)"
   REVERSAL_RECORDED_AT_SQL = "rev_audit.created_at"
   ADJUSTMENT_RECORDED_AT_SQL = "balance_adjustments.created_at"
+  REFUND_RECOGNIZED_AT_SQL = recognized_at_sql(REFUND_RECORDED_AT_SQL, ORDER_CUSTODIAL_AT_SQL)
+  DISPUTE_RECOGNIZED_AT_SQL = recognized_at_sql(DISPUTE_LOST_AT_SQL, ORDER_CUSTODIAL_AT_SQL)
+  PROCESSING_RECOGNIZED_AT_SQL = recognized_at_sql("fee_components.created_at", ORDER_CUSTODIAL_AT_SQL)
 
   def dispute_lost_audit_join_sql
     <<~SQL.squish
@@ -488,14 +565,17 @@ class CpaMonthlyReport
     SQL
   end
 
+  def recognized_disputes
+    lost_disputes_base.joins(:order).joins(dispute_lost_audit_join_sql).joins(agent_capture_join_sql)
+  end
+
   def disputes_before
-    @disputes_before ||= lost_disputes_base.joins(dispute_lost_audit_join_sql)
-      .where("#{DISPUTE_LOST_AT_SQL} < ?", month_start)
+    @disputes_before ||= recognized_disputes.where("#{DISPUTE_RECOGNIZED_AT_SQL} < ?", month_start)
   end
 
   def disputes_in_month
-    @disputes_in_month ||= lost_disputes_base.joins(dispute_lost_audit_join_sql)
-      .where("#{DISPUTE_LOST_AT_SQL} >= ? AND #{DISPUTE_LOST_AT_SQL} < ?", month_start, month_end)
+    @disputes_in_month ||= recognized_disputes
+      .where("#{DISPUTE_RECOGNIZED_AT_SQL} >= ? AND #{DISPUTE_RECOGNIZED_AT_SQL} < ?", month_start, month_end)
   end
 
   # All live (non-simulated) USD payouts across EVERY event/organization —
@@ -757,14 +837,18 @@ class CpaMonthlyReport
       .group("orders.event_id").sum(:organizer_proceeds_cents)
     proceeds_month = OrderItem.joins(:order).where(order_id: orders_in_month.where(fulfilled_custody_sql).select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
-    buyer_owed_before = OrderItem.joins(:order).where(order_id: orders_before.where(unfulfilled_capture_sql).select(:id))
+    # Unclassified legacy captures only; classified ones come from the
+    # projection below.
+    buyer_owed_before = OrderItem.joins(:order).where(order_id: orders_before.where(legacy_unclassified_sql).select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
-    buyer_owed_month = OrderItem.joins(:order).where(order_id: orders_in_month.where(unfulfilled_capture_sql).select(:id))
+    buyer_owed_month = OrderItem.joins(:order).where(order_id: orders_in_month.where(legacy_unclassified_sql).select(:id))
       .group("orders.event_id").sum(:organizer_proceeds_cents)
 
     # Label late Stripe capture backfills and never-fulfilled late captures recorded
     # in this month for an order created/completed in an earlier closed month.
+    # Classified captures are labelled from their own recording time below.
     orders_in_month
+      .where("NOT #{CLASSIFIED_ORDER_SQL}")
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_start)
       .pluck("orders.event_id", "orders.completed_at", "orders.created_at")
       .each do |event_id, completed_at, created_at|
@@ -776,6 +860,12 @@ class CpaMonthlyReport
           prior_period_event_labels[event_id] << "Late capture relates to #{label}" if label
         end
       end
+    classified_finance.by_event.each do |event_id, totals|
+      totals.late_capture_relates_to.each do |created_at|
+        label = format_guam_month(created_at)
+        prior_period_event_labels[event_id] << "Late capture relates to #{label}" if label
+      end
+    end
 
     refunded_proceeds_before = RefundItem.joins(refund: :order).where(refund_id: refunds_before.select(:id))
       .where(fulfilled_custody_sql)
@@ -812,7 +902,10 @@ class CpaMonthlyReport
     payouts_gross_before, payouts_gross_month, withholding_paid_month = paid_payouts_by_event(prior_period_event_labels)
     reversals_before, reversals_month, withholding_reversed_month = payout_reversals_by_event(prior_period_event_labels)
 
+    # A classified capture's fee share is booked from its snapshot K at its
+    # capture recording time (the projection), not from its fee component.
     fee_gross_month = FeeComponent.joins(:order).where(order_id: orders_in_month.select(:id), kind: "platform")
+      .where("NOT #{CLASSIFIED_ORDER_SQL}")
       .group("orders.event_id").sum(:amount_cents)
     fee_refunds_month = RefundItem.joins(refund: :order).where(refund_id: refunds_in_month.select(:id))
       .group("orders.event_id").sum("refund_items.fee_cents + refund_items.organizer_fee_cents")
@@ -851,6 +944,14 @@ class CpaMonthlyReport
       org_id = event.organization_id
       proc_before_org, proc_month_org, proc_month_total = processing.fetch(event_id, [0, 0, 0])
       adj = event_adjustments.fetch(event_id, empty_adjustments)
+      classified = classified_finance.for_event(event_id)
+      if classified
+        # Attributed actual processing on classified payments, borne as each
+        # capture's snapshotted bearer says.
+        proc_before_org += classified.processing_organizer_opening_cents
+        proc_month_org += classified.processing_organizer_cents
+        proc_month_total += classified.processing_organizer_cents + classified.processing_platform_cents
+      end
 
       opening = proceeds_before.fetch(event_id, 0) -
         refunded_proceeds_before.fetch(event_id, 0) -
@@ -872,6 +973,16 @@ class CpaMonthlyReport
       buyer_opening = buyer_owed_before.fetch(event_id, 0) - buyer_refunded_before.fetch(event_id, 0)
       buyer_captured = buyer_owed_month.fetch(event_id, 0)
       buyer_paid = buyer_refunded_month.fetch(event_id, 0)
+      legacy_buyer_closing = buyer_opening + buyer_captured - buyer_paid
+      if classified
+        # Ticket share of classified order-scope captures (signed: a late win
+        # is a negative payment in its own month). Payment-scope principal is
+        # gross only (closing_buyer_owed_second_capture_principal).
+        ticket = classified.shares[:ticket_proceeds]
+        buyer_opening += ticket.opening
+        buyer_captured += ticket.added
+        buyer_paid += ticket.returned
+      end
       buyer_closing = buyer_opening + buyer_captured - buyer_paid
 
       reserve_held = adj[:reserve_held_month]
@@ -892,14 +1003,24 @@ class CpaMonthlyReport
           "$#{FinanceExports.money(overpaid_cumulative)} ticket share cumulative " \
           "($#{FinanceExports.money(overpaid_month)} in month), a HåfaPass loss outside organizer custody"
       end
+      if classified && !classified.excess_cumulative_cents.zero?
+        exception_notes << "Classified payment returned to the buyer beyond what was owed: " \
+          "$#{FinanceExports.money(classified.excess_cumulative_cents)} gross cumulative " \
+          "($#{FinanceExports.money(classified.excess_cents)} in month), a HåfaPass loss outside organizer custody"
+      end
       has_exception = exception_notes.any?
 
       bridge_cents = settlement_bridge_by_event.fetch(event_id, 0)
 
       fee_gross = fee_gross_month.fetch(event_id, 0)
       fee_refund = fee_refunds_month.fetch(event_id, 0)
+      if classified
+        # Fee share at capture recording, returned (signed) from postings, P2.
+        fee_gross += classified.fee_share_flow.added
+        fee_refund += classified.fee_refund_cents
+      end
       fee_net = fee_gross - fee_refund
-      gross_buyer = gross_buyer_values(classified_finance.for_event(event_id))
+      gross_buyer = gross_buyer_values(classified, legacy_buyer_closing)
 
       active_values = gross_buyer.values + [
         opening, collected, refunded, chargebacks, proc_month_org, other_adj,
@@ -950,7 +1071,8 @@ class CpaMonthlyReport
         bpt_base_fee_revenue_estimate_cents: fee_net,
         estimated_bpt_rate_pct: bpt_rate_pct,
         estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(fee_net),
-        **gross_buyer
+        **gross_buyer,
+        classified_allocation_policy: classified ? classified.policies.sort.join("; ") : ""
       }
     end
 
@@ -967,7 +1089,7 @@ class CpaMonthlyReport
   # excess is a HåfaPass loss, flagged as a reconciliation exception.
   # Returns per-event [cleared_before, cleared_month, overpaid_before, overpaid_month].
   def buyer_returns_by_event
-    order_rows = agent_orders.where(unfulfilled_capture_sql).pluck(:id, :event_id, :total_cents)
+    order_rows = agent_orders.where(legacy_unclassified_sql).pluck(:id, :event_id, :total_cents)
     results = Array.new(4) { Hash.new(0) }
     return results if order_rows.empty?
 
@@ -1016,24 +1138,31 @@ class CpaMonthlyReport
   #   - Non-platform bearer (organizer / legacy nil): 100% organizer (pure SQL)
   #   - Platform bearer, ticket-only order: 100% platform (pure SQL)
   #   - Platform bearer, mixed ticket + add-on/donation order: pro-rata via Commerce::MoneyAllocator
+  #
+  # Recognized at GREATEST(fee_components.created_at, order custody booked)
+  # (§5.3), so processing never precedes the capture it costs. Processing on
+  # classified payments (order-scope orders, and components whose evidence
+  # names a classified payment) is booked from the projection in #build_rows.
   def processing_totals_by_event_sql(prior_period_labels)
-    recorded_at_expr = "fee_components.created_at"
+    recorded_at_expr = PROCESSING_RECOGNIZED_AT_SQL
     quoted_start = ActiveRecord::Base.connection.quote(month_start)
     in_month_expr = "#{recorded_at_expr} >= #{quoted_start}"
 
-    base = FeeComponent.joins(:order)
+    base = FeeComponent.joins(:order).joins(agent_capture_join_sql)
       .where(order_id: agent_orders.select(:id), kind: "processing", estimated: false)
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_COMPONENT_SQL}")
       .where("#{recorded_at_expr} < ?", month_end)
 
     totals = Hash.new { |hash, key| hash[key] = [0, 0, 0] }
 
-    # 0. Never-fulfilled captures have no organizer proceeds to deduct from, so
-    #    their processing cost is HåfaPass's (informational total only). The
-    #    bearer rule is shared with Settlements::Calculator and awaits
-    #    Leon/CPA confirmation (Commerce::NeverFulfilledCapture).
+    # 0. Unclassified legacy never-fulfilled captures have no organizer
+    #    proceeds to deduct from, so their processing cost is HåfaPass's
+    #    (informational total only), under the pre-A2 live switch
+    #    (Commerce::NeverFulfilledCapture). Classified captures follow their
+    #    snapshotted bearer instead.
     all_processing = base
     unless Commerce::NeverFulfilledCapture.organizer_bears_processing?
-      base.where(unfulfilled_capture_sql)
+      base.where(legacy_unclassified_sql)
         .where("#{recorded_at_expr} >= ?", month_start)
         .group("orders.event_id")
         .sum("fee_components.amount_cents")
@@ -1107,7 +1236,7 @@ class CpaMonthlyReport
     end
 
     # Label processing fees recorded in this month for captures booked in an earlier month
-    all_processing.joins(agent_capture_join_sql)
+    all_processing
       .where("#{recorded_at_expr} >= ?", month_start)
       .where("(#{ORDER_CUSTODIAL_AT_SQL}) < ?", month_start)
       .pluck("orders.event_id", Arel.sql(ORDER_CUSTODIAL_AT_SQL))
@@ -1183,6 +1312,7 @@ class CpaMonthlyReport
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_end)
       .where.not(id: agent_orders.select(:id))
       .where.not(id: never_fulfilled_capture_order_ids)
+      .where.not(id: classified_order_ids)
       .where.not(id: cash_order_ids)
 
     bridge = Hash.new(0)
@@ -1192,6 +1322,7 @@ class CpaMonthlyReport
 
     RefundItem.joins(refund: :order)
       .where(refunds: { status: Refund.statuses[:succeeded], order_id: non_custodial_orders.select(:id) })
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_REFUND_SQL}")
       .where("COALESCE(refunds.succeeded_at, refunds.created_at) < ?", month_end)
       .group("orders.event_id").sum("refund_items.organizer_proceeds_cents")
       .each { |event_id, cents| bridge[event_id] -= cents }
@@ -1201,8 +1332,10 @@ class CpaMonthlyReport
       .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_end)
       .where.not(id: agent_orders.select(:id))
       .where.not(id: never_fulfilled_capture_order_ids)
+      .where.not(id: classified_order_ids)
     FeeComponent.joins(:order)
       .where(order_id: non_custodial_real_orders.select(:id), kind: "processing", estimated: false)
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_COMPONENT_SQL}")
       .where("fee_components.created_at < ?", month_end)
       .where("orders.processing_fee_bearer_snapshot IS DISTINCT FROM 'platform'")
       .group("orders.event_id").sum("fee_components.amount_cents")
@@ -1210,10 +1343,15 @@ class CpaMonthlyReport
 
     # Non-custodial lost disputes: lost disputes on non-custodial real orders, plus
     # any lost disputes on agent orders whose payment_id is NOT a live Stripe capture.
+    # A loss on a classified payment or order is buyer money (its posting),
+    # never bridge activity, and a bridge order's loss is booked no earlier
+    # than the order itself (§5.3).
     Dispute.lost.joins(:order).joins(dispute_lost_audit_join_sql)
       .where(order_id: real_usd_orders.select(:id), currency: "usd")
       .where("#{DISPUTE_LOST_AT_SQL} < ?", month_end)
-      .where.not(id: lost_disputes_base.select(:id))
+      .where("COALESCE(orders.completed_at, orders.created_at) < ?", month_end)
+      .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_DISPUTE_SQL}")
+      .where.not(id: agent_disputes_base.lost.select(:id))
       .group("orders.event_id").sum(:amount_cents)
       .each { |event_id, cents| bridge[event_id] -= cents }
 
@@ -1293,7 +1431,8 @@ class CpaMonthlyReport
         bpt_base_fee_revenue_estimate_cents: 0,
         estimated_bpt_rate_pct: bpt_rate_pct,
         estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(0),
-        **gross_buyer_values(nil)
+        **gross_buyer_values(nil),
+        classified_allocation_policy: ""
       }
     end
   end
@@ -1335,7 +1474,8 @@ class CpaMonthlyReport
       reconciliation_exception_note: total_exception_notes.join("; "),
       prior_period_note: prior_period_rows.empty? ? "" : "#{prior_period_rows.size} row(s) with prior-period movements",
       estimated_bpt_rate_pct: bpt_rate_pct,
-      estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(bpt_base)
+      estimated_bpt_on_fee_revenue_estimate_cents: estimate_bpt_cents(bpt_base),
+      classified_allocation_policy: rows.flat_map { |row| row[:classified_allocation_policy].to_s.split("; ") }.uniq.sort.join("; ")
     )
   end
 
@@ -1396,7 +1536,8 @@ class CpaMonthlyReport
       rate_cell,
       bpt_cell,
       "USD",
-      *GROSS_BUYER_KEYS.map { |key| FinanceExports.money(row.fetch(key, 0)) }
+      *GROSS_BUYER_KEYS.map { |key| FinanceExports.money(row.fetch(key, 0)) },
+      row[:classified_allocation_policy].to_s
     ]
   end
 end

@@ -304,16 +304,21 @@ RSpec.describe Commerce::ClassifiedPaymentFinance do
       refund_at!(payment, 100, at(2027, 3, 2))
       gross = CpaMonthlyReport::GROSS_BUYER_KEYS
 
-      expect(CpaMonthlyReport::HEADER.last(7)).to eq(%w[currency opening_buyer_owed_gross buyer_owed_captures_gross
-        buyer_owed_returned_gross closing_buyer_owed_gross buyer_overpaid_in_month_gross buyer_overpaid_cumulative_gross])
+      expect(CpaMonthlyReport::HEADER.last(11)).to eq(%w[currency opening_buyer_owed_gross buyer_owed_captures_gross
+        buyer_owed_returned_gross closing_buyer_owed_gross buyer_overpaid_in_month_gross buyer_overpaid_cumulative_gross
+        closing_buyer_owed_second_capture_principal closing_buyer_owed_fee_tax_share
+        closing_buyer_refunds_owed_unclassified_legacy classified_allocation_policy])
+      feb_fee = capture.buyer_return_postings.in_sequence.first.fee_cents
       feb = CpaMonthlyReport.new(2027, 2)
       mar = CpaMonthlyReport.new(2027, 3)
       feb_row = feb.report[:rows].find { |row| row[:event_id] == event.id }
       mar_row = mar.report[:rows].find { |row| row[:event_id] == event.id }
-      expect(feb_row.values_at(*gross)).to eq([0, 1360, 500, 860, 0, 0])
-      expect(mar_row.values_at(*gross)).to eq([860, 0, 860, 0, 100, 100])
+      expect(feb_row.values_at(*gross)).to eq([0, 1360, 500, 860, 0, 0, 0, 160 - feb_fee, 0])
+      expect(mar_row.values_at(*gross)).to eq([860, 0, 860, 0, 100, 100, 0, 0, 0])
+      expect(feb_row[:closing_buyer_refunds_owed_cents]).to eq(860 - (160 - feb_fee))
       expect(feb.report[:totals].values_at(*gross)).to eq(feb_row.values_at(*gross))
-      expect(feb.csv_rows.to_a.first.last(7)).to eq(%w[USD 0.00 13.60 5.00 8.60 0.00 0.00])
+      expect(feb.csv_rows.to_a.first.last(11)).to eq(["USD", "0.00", "13.60", "5.00", "8.60", "0.00", "0.00", "0.00",
+        FinanceExports.money(160 - feb_fee), "0.00", "item_record #{Commerce::NeverFulfilledClassification::POLICY_VERSION}"])
       expect(mar.report[:current_integrity_alerts]).to include(has_alerts: false, classified_payment_alerts: [])
     end
   end

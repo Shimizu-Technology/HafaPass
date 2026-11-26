@@ -44,6 +44,41 @@ module Commerce
       FinancialIntegrity::SALE_EFFECTS_HELD_CODE
     ].freeze
 
+    # SQL shared by every CPA/BPT reader so the ordinary (fulfilled-sale)
+    # buckets leave out exactly what this projection books. Classification is
+    # by table (never_fulfilled_captures), never by the late-capture
+    # exception window.
+    #
+    # True for an orders row with an order-scope classification.
+    def self.classified_order_sql(order_id_sql = "orders.id")
+      "EXISTS (SELECT 1 FROM never_fulfilled_captures nfc_order WHERE nfc_order.order_id = #{order_id_sql} " \
+        "AND nfc_order.capture_scope = 'order')"
+    end
+
+    # True for a refunds or disputes row that belongs to a classified payment
+    # (either scope) or to an order-scope classified order. Such a movement is
+    # read from buyer_return_postings, never from RefundItems or the row's own
+    # amount, and never reaches organizer custody. NULL-safe (EXISTS only).
+    def self.classified_movement_sql(table)
+      "(EXISTS (SELECT 1 FROM never_fulfilled_captures nfc_move WHERE nfc_move.payment_id = #{table}.payment_id) " \
+        "OR #{classified_order_sql("#{table}.order_id")})"
+    end
+
+    # True for a fee_components row this projection owns: any actual
+    # processing on an order-scope classified order (attributed or alerted),
+    # and a component whose fee evidence names a classified payment.
+    def self.classified_component_sql(table = "fee_components")
+      "(#{classified_order_sql("#{table}.order_id")} OR EXISTS (SELECT 1 FROM stripe_fee_evidences nfc_fee " \
+        "INNER JOIN never_fulfilled_captures nfc_fee_capture ON nfc_fee_capture.payment_id = nfc_fee.payment_id " \
+        "WHERE nfc_fee.fee_component_id = #{table}.id))"
+    end
+
+    # Frozen forms for the readers (code-built SQL, no input).
+    CLASSIFIED_ORDER_SQL = classified_order_sql.freeze
+    CLASSIFIED_REFUND_SQL = classified_movement_sql("refunds").freeze
+    CLASSIFIED_DISPUTE_SQL = classified_movement_sql("disputes").freeze
+    CLASSIFIED_COMPONENT_SQL = classified_component_sql.freeze
+
     # opening + added - returned = closing, per period.
     Flow = Struct.new(:opening, :added, :returned) do
       def self.zero
@@ -70,10 +105,35 @@ module Commerce
     #     owed, a HåfaPass loss outside organizer custody (P4)
     #   processing_platform_cents / processing_organizer_cents: attributed
     #     actual processing recognized in the period
+    #   processing_organizer_opening_cents: organizer-borne attributed
+    #     processing recognized before the period (an organizer debit already
+    #     in the opening custody balance)
+    #   dispute_fee_share_returned_cents: the fee and organizer-fee share of
+    #     lost disputes and their late-win reversals in the period (signed),
+    #     part of shares[:fee] and shares[:organizer_fee] returned; readers
+    #     apply LOST_DISPUTE_FEE_SHARE (P2) to it
+    #   late_capture_relates_to: order creation times of captures booked in
+    #     the period whose order was created in an earlier period
+    #   policies: distinct "allocation_policy policy_version" of the captures
     Totals = Struct.new(:event_id, :organization_id, :owed, :shares, :returned_gross_cents, :excess_cents,
-      :excess_cumulative_cents, :processing_platform_cents, :processing_organizer_cents, :capture_ids) do
+      :excess_cumulative_cents, :processing_platform_cents, :processing_organizer_cents, :capture_ids,
+      :processing_organizer_opening_cents, :dispute_fee_share_returned_cents, :late_capture_relates_to, :policies) do
       def self.zero(event_id, organization_id)
-        new(event_id, organization_id, Flow.zero, SHARES.index_with { Flow.zero }, 0, 0, 0, 0, 0, [])
+        new(event_id, organization_id, Flow.zero, SHARES.index_with { Flow.zero }, 0, 0, 0, 0, 0, [], 0, 0, [], [])
+      end
+
+      # Fee share (HåfaPass fee revenue) returned in the period that readers
+      # book as fee refunds under P2. :fee_refund (default) reverses the whole
+      # returned fee share; :retained keeps a lost dispute's fee share as
+      # revenue (the loss is a HåfaPass cost, never an organizer debit).
+      def fee_refund_cents(policy = Commerce::NeverFulfilledCapture::LOST_DISPUTE_FEE_SHARE)
+        returned = fee_share_flow.returned
+        policy == :retained ? returned - dispute_fee_share_returned_cents : returned
+      end
+
+      # Tax and fee share still owed at the period's close (bridge column).
+      def fee_tax_closing_cents
+        fee_share_flow.closing + shares[:tax].closing
       end
 
       def fee_share_flow
@@ -87,7 +147,8 @@ module Commerce
 
       def active?
         [owed.opening, owed.added, owed.returned, owed.closing, returned_gross_cents, excess_cents,
-          excess_cumulative_cents, processing_platform_cents, processing_organizer_cents].any? { |cents| !cents.zero? }
+          excess_cumulative_cents, processing_platform_cents, processing_organizer_cents,
+          processing_organizer_opening_cents].any? { |cents| !cents.zero? }
       end
     end
 
@@ -136,12 +197,14 @@ module Commerce
         .where(payment_id: payments.select(:id))
         .where("never_fulfilled_captures.capture_recorded_at < ?", period_end)
         .pluck(:id, :payment_id, :order_id, "orders.event_id", :capture_scope, :captured_cents, :proceeds_cents,
-          :fee_cents, :organizer_fee_cents, :tax_cents, :capture_recorded_at, :processing_bearer)
+          :fee_cents, :organizer_fee_cents, :tax_cents, :capture_recorded_at, :processing_bearer,
+          "orders.created_at", :allocation_policy, :policy_version)
         .map { |row| CaptureRow.new(*row) }
     end
 
     CaptureRow = Struct.new(:id, :payment_id, :order_id, :event_id, :capture_scope, :captured_cents, :proceeds_cents,
-      :fee_cents, :organizer_fee_cents, :tax_cents, :capture_recorded_at, :processing_bearer) do
+      :fee_cents, :organizer_fee_cents, :tax_cents, :capture_recorded_at, :processing_bearer, :order_created_at,
+      :allocation_policy, :policy_version) do
       def shares
         principal = capture_scope == "payment" ? :second_capture_principal : :ticket_proceeds
         { principal => proceeds_cents, fee: fee_cents, organizer_fee: organizer_fee_cents, tax: tax_cents }
@@ -157,13 +220,18 @@ module Commerce
       captures.each_with_object({}) do |capture, result|
         totals = result[capture.event_id] ||= Totals.zero(capture.event_id, organizations[capture.event_id])
         totals.capture_ids << capture.id
+        totals.policies |= ["#{capture.allocation_policy} #{capture.policy_version}"]
         slot = capture.capture_recorded_at < period_start ? :opening : :added
         totals.owed[slot] += capture.captured_cents
         capture.shares.each { |share, cents| totals.shares[share][slot] += cents }
-        apply_returns!(totals, capture, returns.fetch(capture.id, {}))
-        platform, organizer = processing.fetch(capture.id, [0, 0])
+        if slot == :added && capture.order_created_at < period_start
+          totals.late_capture_relates_to << capture.order_created_at
+        end
+        apply_returns!(totals, capture, returns.fetch(capture.id, []))
+        platform, organizer, organizer_opening = processing.fetch(capture.id, [0, 0, 0])
         totals.processing_platform_cents += platform
         totals.processing_organizer_cents += organizer
+        totals.processing_organizer_opening_cents += organizer_opening
       end.select { |_event_id, totals| totals.active? }
     end
 
@@ -172,7 +240,7 @@ module Commerce
     # the period is a negative return there and earlier periods are untouched.
     def apply_returns!(totals, capture, sums)
       principal = capture.shares.keys.first
-      sums.each do |before, (gross, applied, excess, proceeds, fee, organizer_fee, tax)|
+      sums.each do |before, dispute, (gross, applied, excess, proceeds, fee, organizer_fee, tax)|
         target, sign = before ? [:opening, -1] : [:returned, 1]
         totals.owed[target] += sign * applied
         { principal => proceeds, fee: fee, organizer_fee: organizer_fee, tax: tax }.each do |share, cents|
@@ -183,21 +251,24 @@ module Commerce
 
         totals.returned_gross_cents += gross
         totals.excess_cents += excess
+        totals.dispute_fee_share_returned_cents += fee + organizer_fee if dispute
       end
     end
 
-    # { capture_id => { before_period? => [gross, applied, excess, proceeds, fee, organizer_fee, tax] } }
+    DISPUTE_KINDS_SQL = "buyer_return_postings.kind IN ('dispute_loss', 'dispute_loss_reversal')"
+
+    # { capture_id => [[before_period?, dispute?, [gross, applied, excess, proceeds, fee, organizer_fee, tax]], ...] }
     def posting_sums
       before_sql = ActiveRecord::Base.sanitize_sql_array(["buyer_return_postings.recognized_at < ?", period_start])
       BuyerReturnPosting.recognized
         .where(never_fulfilled_capture_id: captures.map(&:id))
         .where("buyer_return_postings.recognized_at < ?", period_end)
-        .group(:never_fulfilled_capture_id, Arel.sql(before_sql))
-        .pluck(:never_fulfilled_capture_id, Arel.sql(before_sql),
+        .group(:never_fulfilled_capture_id, Arel.sql(before_sql), Arel.sql(DISPUTE_KINDS_SQL))
+        .pluck(:never_fulfilled_capture_id, Arel.sql(before_sql), Arel.sql(DISPUTE_KINDS_SQL),
           *%w[gross_cents applied_cents excess_cents proceeds_cents fee_cents organizer_fee_cents tax_cents]
             .map { |column| Arel.sql("SUM(buyer_return_postings.#{column})") })
-        .each_with_object(Hash.new { |hash, key| hash[key] = {} }) do |(capture_id, before, *sums), result|
-          result[capture_id][before] = sums.map(&:to_i)
+        .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(capture_id, before, dispute, *sums), result|
+          result[capture_id] << [before, dispute, sums.map(&:to_i)]
         end
     end
 
@@ -237,15 +308,23 @@ module Commerce
       end
     end
 
+    # { capture_id => [platform in period, organizer in period, organizer before period] }
     def processing_by_capture
-      processing_components.each_with_object(Hash.new { |hash, key| hash[key] = [0, 0] }) do |component, result|
+      processing_components.each_with_object(Hash.new { |hash, key| hash[key] = [0, 0, 0] }) do |component, result|
         capture = component[:capture]
         next unless capture
 
         recognized_at = [component[:recorded_at], capture.capture_recorded_at].max
-        next unless range.cover?(recognized_at)
+        next if recognized_at >= period_end
 
-        slot = capture.processing_bearer == "organizer" ? 1 : 0
+        organizer = capture.processing_bearer == "organizer"
+        slot = if recognized_at < period_start
+          next unless organizer
+
+          2
+        else
+          organizer ? 1 : 0
+        end
         result[capture.id][slot] += component[:amount_cents]
       end
     end
