@@ -161,7 +161,12 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
         @statement_items_by_event[payout.event_id] =
           PayoutEntryGuard.affected?(payout.event) ? Settlements::Calculator.call(payout.event).items : nil
       end
-      PayoutEntryGuard.dispatch(payout, items: items, liability: liability, accepted: accepted)
+      uncommitted_acceptance = (@uncommitted_acceptance_by_org ||= {}).fetch(payout.organization_id) do
+        @uncommitted_acceptance_by_org[payout.organization_id] =
+          PayoutCreator.uncommitted_evidence_only_acceptance?(payout.organization)
+      end
+      PayoutEntryGuard.dispatch(payout, items: items, liability: liability, accepted: accepted,
+        uncommitted_acceptance: uncommitted_acceptance)
     end
     classified = (@classified_by_event ||= {}).fetch(payout.event_id) do
       @classified_by_event[payout.event_id] = PayoutReconciler.classified_event?(payout)

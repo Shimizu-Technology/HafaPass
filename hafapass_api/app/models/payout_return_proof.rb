@@ -34,7 +34,8 @@ class PayoutReturnProof < ApplicationRecord
   # canonical_reference(x).
   def self.canonical_reference(reference)
     strip = ->(text) { text.gsub(/[[:space:]\p{Cf}]/, "") }
-    strip.call(strip.call(reference.to_s.unicode_normalize(:nfkc)).upcase.unicode_normalize(:nfkc))
+    stripped = strip.call(reference.to_s.unicode_normalize(:nfkc))
+    strip.call(stripped.unicode_normalize(:nfkc).upcase.unicode_normalize(:nfkc))
   end
 
   def self.reference_digest(reference)

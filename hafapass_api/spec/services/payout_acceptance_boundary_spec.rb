@@ -554,10 +554,12 @@ RSpec.describe "Provider acceptance boundaries (A2)" do
       settlement = Settlements::Finalizer.call(event: event, actor: admin)
       control = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "eo-org-ctl", amount_cents: 1000)
       expect(control.reload).to be_status_processing
+      expect(PayoutEntryGuard.dispatch(control)).to include(actionable: true, placeholder: true)
       expect(@calls).to eq(2)
       pending = reserve_pending!(Settlements::Finalizer.call(event: event, actor: admin), "eo-org-pending")
       paid_refusal_audit!(first)
       expect(PayoutCreator.uncommitted_evidence_only_acceptance?(organization)).to be(true)
+      expect(PayoutEntryGuard.dispatch(control)).to include(actionable: false, reasons: ["uncommitted_acceptance"])
       expect(a1_authorization(pending)).to match(/this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is submitted/)
       expect { submit!(pending) }.to raise_error(PayoutCreator::PayoutError, PayoutCreator::EVIDENCE_ONLY_SUBMISSION_MESSAGE)
       expect(@calls).to eq(2)

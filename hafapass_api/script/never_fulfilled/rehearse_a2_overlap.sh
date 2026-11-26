@@ -50,18 +50,33 @@ touch "$REHEARSAL_DIR/calls.jsonl" "$REHEARSAL_DIR/outcomes.jsonl"
 
 export RAILS_ENV=test DATABASE_URL="$url" REHEARSAL_DIR LANG=${LANG:-en_US.UTF-8} LC_ALL=${LC_ALL:-en_US.UTF-8}
 cleanup() {
+  local pid
+  local runners
+  runners=$(jobs -pr)
+  for pid in $runners; do
+    kill "$pid" 2>/dev/null || true
+  done
+  for pid in $runners; do
+    wait "$pid" 2>/dev/null || true
+  done
   if [[ ${KEEP_DB:-0} != 1 ]]; then
     (cd "$api_dir" && bin/rails db:drop >/dev/null 2>&1) || true
   fi
 }
 trap cleanup EXIT
 
-run() { # role step [env...]
+run_step() { # role step [env...]
   local role=$1 step=$2 dir
   shift 2
   dir=$([[ $role == old ]] && echo "$old_api" || echo "$api_dir")
   echo "== $role $step"
-  (cd "$dir" && env REHEARSAL_ROLE="$role" "$@" bin/rails runner "$step_rb" "$step") >>"$REHEARSAL_DIR/runner.log" 2>&1
+  cd "$dir"
+  exec env REHEARSAL_ROLE="$role" "$@" bin/rails runner "$step_rb" "$step" >>"$REHEARSAL_DIR/runner.log" 2>&1
+}
+run() ( run_step "$@" )
+start_runner() {
+  (run_step "$@") &
+  runner_pid=$!
 }
 task() { # output rake-task [env...]
   local out=$1
@@ -115,11 +130,11 @@ run old o_a1_actions
 
 # Capture first: A1's capture of B is paused inside its transaction; this
 # release's paid recording waits on the event, then reads it.
-run old x_old_capture REHEARSAL_KEY=race REHEARSAL_PAUSE=capture &
-old_pid=$!
+start_runner old x_old_capture REHEARSAL_KEY=race REHEARSAL_PAUSE=capture
+old_pid=$runner_pid
 wait_for capture
-run new x_new_paid_race_pre &
-new_pid=$!
+start_runner new x_new_paid_race_pre
+new_pid=$runner_pid
 sleep 2
 release capture
 wait "$old_pid"
@@ -128,11 +143,11 @@ reset_pause capture
 run new x_new_paid_race_gap
 # Payout first: this release's submission is paused after its
 # authorization; A1's capture of B waits for it.
-run new x_new_submit_race2 REHEARSAL_PAUSE=submission_audit &
-new_pid=$!
+start_runner new x_new_submit_race2 REHEARSAL_PAUSE=submission_audit
+new_pid=$runner_pid
 wait_for submission_audit
-run old x_old_capture REHEARSAL_KEY=race2 &
-old_pid=$!
+start_runner old x_old_capture REHEARSAL_KEY=race2
+old_pid=$runner_pid
 sleep 2
 release submission_audit
 wait "$new_pid"
@@ -148,11 +163,11 @@ run new n_p4_paid
 # A2 recheck finding 1: A1 reverses a paid transfer on an affected event,
 # paused before its commit while this release asks for the released amount.
 run new n_rev_paid
-run old o_rev_a1_reverse REHEARSAL_PAUSE=reversal_audit &
-old_pid=$!
+start_runner old o_rev_a1_reverse REHEARSAL_PAUSE=reversal_audit
+old_pid=$runner_pid
 wait_for reversal_audit
-run new n_rev_reserve_race &
-new_pid=$!
+start_runner new n_rev_reserve_race
+new_pid=$runner_pid
 wait_for rev_reserve
 wait_blocked rev_reserve reversal_audit rev_reserve_blocking.txt
 release reversal_audit
@@ -190,11 +205,11 @@ run old o_sub_reserve
 run new n_sub_evidence
 run old o_sub_a1
 run new n_sub_a2
-run new n_sub_lock_hold REHEARSAL_PAUSE=sub_lock_evidence &
-new_pid=$!
+start_runner new n_sub_lock_hold REHEARSAL_PAUSE=sub_lock_evidence
+new_pid=$runner_pid
 wait_for sub_lock_evidence
-run old o_sub_lock_submit &
-old_pid=$!
+start_runner old o_sub_lock_submit
+old_pid=$runner_pid
 wait_for sub_lock_submit
 wait_blocked sub_lock_submit sub_lock_evidence sub_lock_blocking.txt
 release sub_lock_evidence

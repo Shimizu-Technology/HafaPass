@@ -80,6 +80,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
   // A reversal the API says needs the bank's exact return (an event with a
   // never-fulfilled capture, or a transfer the provider accepted).
   const reversal = payout.reversal
+  const returnAmountCents = isCheck ? recordedCheckAmount : reversal?.amount_cents
   const returnRequired = outcome === 'reversed' && reversal?.return_evidence_required === true
   const [returnReference, setReturnReference] = useState('')
   const [returnedAmount, setReturnedAmount] = useState('')
@@ -101,9 +102,9 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
     if (!request) return
     setBusy(true); setErrors({})
     try {
-      await apiClient.post(`/admin/payouts/${payout.id}/check_amount_adjustment`,
+      const { data } = await apiClient.post(`/admin/payouts/${payout.id}/check_amount_adjustment`,
         { actual_check_amount_cents: cents, reason: checkAdjustmentReason.trim() }, request.config)
-      if (request.current()) { setRecordedCheckAmount(cents); setAdjustmentNotice('Audited check amount adjustment recorded. You can now reconcile this check.') }
+      if (request.current()) { setRecordedCheckAmount(data.check_amount_cents); setAdjustmentNotice('Audited check amount adjustment recorded. You can now reconcile this check.') }
     } catch (failure) {
       if (request.current() && !request.handleError(failure)) setErrors({ form: errorMessage(failure, 'The adjustment was not recorded.') })
     } finally { request.release(); setBusy(false) }
@@ -119,7 +120,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
       if (!returnReference.trim()) found.returnReference = 'Enter the return reference the bank gave for this transfer.'
       const cents = dollarsToCents(returnedAmount)
       if (cents === null) found.returnedAmount = 'Enter the amount the bank returned, in dollars and cents.'
-      else if (cents !== reversal.amount_cents) found.returnedAmount = `The bank must have returned the full ${money(reversal.amount_cents, payout.currency)} that left. For a partial return, keep the payout as recorded and escalate to finance.`
+      else if (cents !== returnAmountCents) found.returnedAmount = `The bank must have returned the full ${money(returnAmountCents, payout.currency)} that left. For a partial return, keep the payout as recorded and escalate to finance.`
       const sentAt = transferSentAt ? new Date(transferSentAt) : null
       if (sentAt && Number.isNaN(sentAt.getTime())) found.transferSentAt = 'Enter when the bank sent the transfer, or leave it blank.'
       else if (sentAt && ((reversal.transfer_sent_at_from && sentAt < new Date(reversal.transfer_sent_at_from)) || sentAt > new Date(reversal.earliest_returned_at))) found.transferSentAt = `The bank's transfer time must be between the submission (${formatDateTime(reversal.transfer_sent_at_from)}) and ${formatDateTime(reversal.earliest_returned_at)}.`
@@ -281,7 +282,7 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
         </div>
         {returnRequired && <fieldset className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
           <legend className="px-1 font-semibold">Bank return evidence (required)</legend>
-          <p>{payout.provider_accepted ? 'The provider accepted this transfer, so the money left.' : 'This event has a buyer payment that was never fulfilled.'} A reversal is recorded only with the bank’s exact return of the {money(reversal.amount_cents, payout.currency)} that left. If the transfer never left, record it failed instead.</p>
+          <p>{payout.provider_accepted ? 'The provider accepted this transfer, so the money left.' : 'This event has a buyer payment that was never fulfilled.'} A reversal is recorded only with the bank’s exact return of the {money(returnAmountCents, payout.currency)} that left. If the transfer never left, record it failed instead.</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className="block font-medium">Bank return reference
@@ -291,9 +292,9 @@ function ReconcileDialog({ payout, beginRequest, onClose, onSaved }) {
             </div>
             <div>
               <label className="block font-medium">Amount the bank returned (USD)
-                <input type="text" inputMode="decimal" value={returnedAmount} onChange={event => setReturnedAmount(event.target.value)} placeholder={(reversal.amount_cents / 100).toFixed(2)} aria-invalid={!!errors.returnedAmount} aria-describedby={`reconcile-returnedAmount-hint${errors.returnedAmount ? ' reconcile-returnedAmount-error' : ''}`} className={`input mt-1 ${errors.returnedAmount ? 'input-error' : ''}`} />
+                <input type="text" inputMode="decimal" value={returnedAmount} onChange={event => setReturnedAmount(event.target.value)} placeholder={(returnAmountCents / 100).toFixed(2)} aria-invalid={!!errors.returnedAmount} aria-describedby={`reconcile-returnedAmount-hint${errors.returnedAmount ? ' reconcile-returnedAmount-error' : ''}`} className={`input mt-1 ${errors.returnedAmount ? 'input-error' : ''}`} />
               </label>
-              <p id="reconcile-returnedAmount-hint" className="mt-1 text-amber-900">Must be the full {money(reversal.amount_cents, payout.currency)} that left.</p>
+              <p id="reconcile-returnedAmount-hint" className="mt-1 text-amber-900">Must be the full {money(returnAmountCents, payout.currency)} that left.</p>
               {fieldError('returnedAmount')}
             </div>
             <div>

@@ -178,7 +178,7 @@ namespace :never_fulfilled do
         end
       end
       cutoff_label = ->(time) { time ? time.utc.iso8601(6) : "the change" }
-      payout_action = lambda do |payout, acceptance:, stale:, submitted:, submitted_before:, cutoff:, undated: false|
+      payout_action = lambda do |payout, acceptance:, blocked:, submitted:, submitted_before:, cutoff:, undated: false, confirmations: []|
         case acceptance
         when "audit_only"
           ["accepted (audit trail only): do not send, fail, reverse or reissue; it stays committed; escalate to finance " \
@@ -189,16 +189,18 @@ namespace :never_fulfilled do
         when "acknowledged"
           ["accepted transfer (recorded): it stays committed; reverse only with the bank's exact return", "no"]
         else
-          if !stale then ["current", "no"]
+          if !blocked then ["current", "no"]
           elsif !submitted && (payout.status_pending? || payout.held_from_status == "pending")
             ["not sent: fail and reissue on a new version", "no"]
           elsif undated && cutoff.nil? && submitted
             ["statement changed at an unproven time: check the bank first; if it left, keep it committed and " \
-              "record an audited finance disposition; only if the bank confirms it never left, fail and reissue", "if_sent"]
+              "record an audited finance disposition with #{confirmations.join(' and ')}; only if the bank confirms " \
+              "it never left, fail and reissue", "if_sent"]
           elsif submitted_before
             disposition = undated ? " An undated statement change also requires an audited finance disposition." : ""
-            ["record paid only with transfer evidence before #{cutoff_label.call(cutoff)}; if the bank confirms it never " \
-              "left, fail and reissue; if it left after then, keep it committed and escalate to finance.#{disposition}", "if_sent_after"]
+            ["record paid only with transfer evidence before #{cutoff_label.call(cutoff)} and #{confirmations.join(' and ')}; " \
+              "if the bank confirms it never left, fail and reissue; if it left at or after then, keep it committed and " \
+              "escalate to finance.#{disposition}", "if_sent_after"]
           else
             ["submitted after #{cutoff_label.call(cutoff)} (or not on record): the prior-send exception is unavailable; " \
               "check the bank first; if it left, keep it committed and escalate to finance; only if the bank confirms it " \
@@ -245,7 +247,7 @@ namespace :never_fulfilled do
                 "bank confirms it never left, fail and reissue; if it left after the restatement, keep it committed and " \
                 "escalate to finance", "if_sent_after"]
             else
-              payout_action.call(payout, acceptance: acceptance, stale: true, submitted: submitted, submitted_before: false,
+              payout_action.call(payout, acceptance: acceptance, blocked: true, submitted: submitted, submitted_before: false,
                 cutoff: nil)
             end
             line.call("payout", event_id: event.id, payout_id: payout.id, status: payout.status,
@@ -268,21 +270,31 @@ namespace :never_fulfilled do
           over_committed: reserved + sent > payable ? "yes (keep held; finance reviews)" : "no",
           organization_available_cents: OrganizationPayoutBalance.available_cents(event.organization))
         in_flight.each do |payout|
-          stale = PayoutEntryGuard.staleness(payout, items: calculation.items)
-          cutoff = PayoutEntryGuard.paid_cutoff(payout, items: calculation.items)
-          restated_at = cutoff&.fetch(:restated_at)
-          paid_cutoff_at = cutoff&.fetch(:cutoff_at)
-          undated = cutoff && (paid_cutoff_at.nil? || cutoff.fetch(:unproven).any?)
+          blockers = PayoutEntryGuard.blockers(payout, items: calculation.items, approvals: false,
+            liability: { unresolved: false }).index_by { |blocker| blocker[:reason] }
+          entry = blockers.dig("statement_changed", :entry)
+          restated_at = entry&.fetch(:restated_at)
+          statement_cutoff = entry&.fetch(:cutoff_at)
+          hold_cutoff = blockers.dig("hold", :started_at)
+          review_cutoff = blockers.dig("organizer_processing", :started_at)
+          paid_cutoff_at = [statement_cutoff, hold_cutoff, review_cutoff].compact.min
+          undated = entry && entry.fetch(:unproven).any?
+          confirmations = []
+          confirmations << "sent_before_hold_confirmed" if hold_cutoff || review_cutoff
+          if entry && !(hold_cutoff && statement_cutoff && hold_cutoff <= statement_cutoff)
+            confirmations << "sent_before_restatement_confirmed"
+          end
           submissions = AuditLog.where(auditable: payout, action: "payout.submission_requested")
           submitted_before = paid_cutoff_at && submissions.where("occurred_at < ?", paid_cutoff_at).exists?
           acceptance = acceptance_of.call(payout)
-          action, escalate = payout_action.call(payout, acceptance: acceptance, stale: stale.present? || cutoff.present?,
-            submitted: submissions.exists?, submitted_before: submitted_before, cutoff: paid_cutoff_at, undated: undated)
+          action, escalate = payout_action.call(payout, acceptance: acceptance, blocked: blockers.any?,
+            submitted: submissions.exists?, submitted_before: submitted_before, cutoff: paid_cutoff_at, undated: undated,
+            confirmations: confirmations)
           line.call("payout", event_id: event.id, payout_id: payout.id, status: payout.status,
             held_from: payout.held_from_status || "-", amount_cents: payout.amount_cents,
             settlement_version: payout.settlement.version, settlement_reader: payout.settlement.finalized_reader || "none",
             restated_at: restated_at&.utc&.iso8601(6) || "none", paid_cutoff_at: paid_cutoff_at&.utc&.iso8601(6) || "none",
-            current: stale.nil? && cutoff.nil?, submitted: submissions.exists?,
+            current: entry.nil?, submitted: submissions.exists?,
             acceptance: acceptance, escalate: escalate, action: action)
         end
       end

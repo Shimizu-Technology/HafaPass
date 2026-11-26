@@ -88,8 +88,21 @@ for (const width of [390, 1280]) {
       expect(patches).toEqual([])
 
       await evidence.getByLabel('Amount the bank returned (USD)').fill('42.00')
+      const earliest = Date.parse(classifiedPaid.reversal.earliest_returned_at)
+      const validTime = Math.ceil(earliest / 60_000) * 60_000
+      const returnInput = evidence.getByLabel('Returned at')
+      const localInput = epoch => page.evaluate(ms => {
+        const local = new Date(ms)
+        return new Date(ms - local.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+      }, epoch)
+      await returnInput.fill(await localInput(validTime - 60_000))
+      await dialog.getByRole('button', { name: 'Record as reversed' }).click()
+      await expect(evidence.getByText(/The return must be after the transfer left/)).toBeVisible()
+      expect(patches).toEqual([])
+
+      await returnInput.fill(await localInput(validTime))
       await snap(page, `a2-reversal-filled-${width}`)
-      await page.keyboard.press('Enter')
+      await dialog.getByRole('button', { name: 'Record as reversed' }).click()
       await expect(page.getByRole('status').filter({ hasText: `Payout #${classifiedPaid.id} recorded as reversed.` })).toBeVisible()
       expect(patches).toHaveLength(1)
       expect(patches[0].url).toMatch(new RegExp(`/api/v1/admin/payouts/${classifiedPaid.id}$`))
@@ -97,7 +110,7 @@ for (const width of [390, 1280]) {
         reference: 'Fictional bank statement 2026-11-26 line 9', return_reference: 'RET-FICT-0042', returned_amount_cents: 4200,
       } })
       expect(patches[0].body).not.toHaveProperty('provider_payout_id')
-      expect(Date.parse(patches[0].body.evidence.returned_at)).toBeGreaterThanOrEqual(Date.parse(classifiedPaid.reversal.earliest_returned_at) - 60_000)
+      expect(patches[0].body.evidence.returned_at).toBe(new Date(validTime).toISOString())
     })
 
     test('asks for the real transfer ID on a placeholder; keeps the ordinary reversal; never offers the impossible', async ({ page }) => {

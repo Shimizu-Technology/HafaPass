@@ -44,6 +44,7 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     classified_capture(items: [[1200, 160, 0, 0]], event: event)
     submitted_at = AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at
     cutoff_at = submitted_at - 1.minute
+    allow(Commerce::NeverFulfilledPayoutHold).to receive(:block_started_at).and_return(nil)
     allow(PayoutEntryGuard).to receive(:paid_cutoff).and_return(
       { cutoff_at: cutoff_at, restated_at: nil, unproven: [] })
 
@@ -56,6 +57,24 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     row = lines(run_task, "payout").sole
     expect(row).to include("paid_cutoff_at" => "none", "escalate" => "if_sent")
     expect(row.fetch("action")).to include("audited finance disposition")
+  end
+
+  it "uses the earlier event hold for the prior-send exception" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    payout = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pf-paid-hold-cutoff", amount_cents: 1000)
+    classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    submitted_at = AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at
+    hold_at = submitted_at + 1.minute
+    restated_at = submitted_at + 2.minutes
+    allow(Commerce::NeverFulfilledPayoutHold).to receive(:block_started_at).with(event).and_return(hold_at)
+    allow(PayoutEntryGuard).to receive(:paid_cutoff).and_return(
+      { cutoff_at: restated_at, restated_at: restated_at, unproven: [] })
+
+    row = lines(run_task, "payout").sole
+    expect(row).to include("paid_cutoff_at" => hold_at.utc.iso8601(6), "escalate" => "if_sent_after")
+    expect(row.fetch("action")).to include("before #{hold_at.utc.iso8601(6)} and sent_before_hold_confirmed")
+    expect(row.fetch("action")).not_to include("sent_before_restatement_confirmed")
   end
 
   it "lists stale in-flight payouts and their action, the payable audit and the gates, and writes nothing" do
@@ -197,7 +216,7 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     # can say whether it left.
     expect(lines(output, "payout").sole).to include("payout_id" => stale.id.to_s, "submitted" => "true",
       "acceptance" => "none", "escalate" => "if_sent_after",
-      "action" => a_string_including("if the bank confirms it never left, fail and reissue; if it left after then, keep it committed and escalate"))
+      "action" => a_string_including("if the bank confirms it never left, fail and reissue; if it left at or after then, keep it committed and escalate"))
     expect(Commerce::NeverFulfilledPayoutHold.blocked?(event)).to be(true)
     expect { Settlements::Finalizer.call(event: event, actor: admin) }
       .to raise_error(Settlements::Finalizer::FinalizationError, /Resolve open reconciliation exceptions/)

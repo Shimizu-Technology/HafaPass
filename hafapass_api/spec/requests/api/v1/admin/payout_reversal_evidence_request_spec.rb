@@ -14,11 +14,19 @@ require "rails_helper"
 #              suffix is refused;
 #   4707205517 a parsed timestamp is not an account number.
 RSpec.describe "Admin payout reversal evidence", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
   let(:admin) { create(:user, :admin) }
   let(:profile) { create(:organizer_profile, :verified) }
   let(:organization) { profile.organization }
   let(:event) { create(:event, :completed, organization: organization, organizer_profile: profile) }
   let(:ticket_type) { create(:ticket_type, event: event, price_cents: 2000) }
+
+  around(:each, :fixed_payout_timeline) do |example|
+    travel_to(6.minutes.ago.change(usec: 0))
+    example.run
+  ensure
+    travel_back
+  end
 
   before do
     allow(StripeService).to receive(:verify_payment_context!)
@@ -270,22 +278,27 @@ RSpec.describe "Admin payout reversal evidence", type: :request do
 
   # 4707205517: the bank's transfer time is excluded by key, like the
   # confirmation and return times; the same digits in free text are not.
-  it "accepts a valid bank transfer time whose digits match the account number, and still refuses them in text" do
+  it "accepts a valid bank transfer time whose digits match the account number, and still refuses them in text",
+    :fixed_payout_timeline do
     record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    submitted = Time.current + 1.minute
+    bank_sent = submitted + 1.minute
+    returned_at = submitted + 2.minutes
+    observed = submitted + 3.minutes
     allow(PayoutGateway).to receive(:submit) do |_payout|
       EventCancellationRefunds.hold_payouts!(event, actor: admin)
-      sleep 0.05
+      travel_to(observed)
       PayoutGateway::Result.new(provider_payout_id: "BANK-TS-1", status: :paid)
     end
+    travel_to(submitted)
     payout = payout!("ts-account")
+    travel_to(observed + 1.minute)
     conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
     reconcile!(payout, "accepted_transfer", provider_payout_id: "BANK-TS-1", conflict_audit_id: conflict.id)
     expect(response).to have_http_status(:ok)
-    observed = payout.reload.provider_accepted_at
-    submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at
-    bank_sent = (submitted + ((observed - submitted) / 3)).utc.floor(6)
-    returned_at = (bank_sent + ((observed - bank_sent) / 2)).utc.floor(6)
-    digits = bank_sent.iso8601(6).gsub(/\D/, "")[0, 10]
+    expect(payout.reload.provider_accepted_at).to eq(observed)
+    expect(AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at).to eq(submitted)
+    digits = bank_sent.utc.iso8601(6).gsub(/\D/, "")[0, 10]
     allow_any_instance_of(ConnectedAccount).to receive(:bank_account_number).and_return(digits)
     returned = { conflict_audit_id: conflict.id, return_reference: "RET-TS-1", returned_amount_cents: 1000,
       returned_at: returned_at.iso8601(6) }

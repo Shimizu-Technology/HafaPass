@@ -34,5 +34,12 @@ RSpec.describe PayoutReturnProof do
         expect { described_class.reference_digest(reference) }.to raise_error(ArgumentError, /visible character/)
       end
     end
+
+    it "composes separated combining marks before uppercasing" do
+      joined = "RET-\u03B1\u0345\u030142"
+      separated = "RET-\u03B1 \u0345 \u030142"
+      expect(described_class.canonical_reference(separated)).to eq(described_class.canonical_reference(joined))
+      expect(described_class.reference_digest(separated)).to eq(described_class.reference_digest(joined))
+    end
   end
 end

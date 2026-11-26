@@ -604,7 +604,7 @@ class PayoutReconciler
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       reject_account_number!(payout, external_id, normalized)
       if PayoutReturnProof.exists?(payout_id: payout.id)
-        if previous && same_evidence?(previous, normalized) && previous.metadata["provider_payout_id"] == external_id
+        if previous && same_evidence?(previous, normalized) && payout.provider_payout_id == external_id
           return payout
         end
 

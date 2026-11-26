@@ -381,11 +381,11 @@ RSpec.describe "Admin payout return proof", type: :request do
     def reversed_then_classified!
       record_card_sale!(event, ticket_type: ticket_type, quantity: 5, processing_fee_cents: 100)
       sent = payout!("legacy-rev-1")
-      reconcile!(sent, "paid", provider_payout_id: "BANK-LEG-1")
+      reconcile!(sent, "paid", provider_payout_id: "BANK-123456789")
       expect(response).to have_http_status(:ok)
-      reconcile!(sent, "reversed", provider_payout_id: "BANK-LEG-1", reason: "Bank returned the transfer")
+      reconcile!(sent, "reversed", provider_payout_id: "BANK-123456789", reason: "Bank returned the transfer")
       expect(response).to have_http_status(:ok)
-      expect(sent.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-LEG-1")
+      expect(sent.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-123456789")
       expect(sent.paid_at).to be_present
       expect(sent.return_proof).to be_nil
       [sent, over_returned_capture!]
@@ -428,7 +428,7 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(PayoutReturnProof.where(payout: sent).count).to eq(1)
       attached = AuditLog.where(auditable: sent, action: PayoutReconciler::RETURN_EVIDENCE_ACTION).sole
       expect(attached.actor_user).to eq(admin)
-      expect(attached.metadata).to include("reversal_audit_id" => reversal.id, "provider_payout_id" => "BANK-LEG-1",
+      expect(attached.metadata).to include("reversal_audit_id" => reversal.id, "provider_payout_id" => "BANK-[redacted]",
         "verified_return" => include("return_reference" => "RET-LEG-1", "returned_amount_cents" => 1000))
       expect(AuditLog.where(auditable: sent, action: "payout.reconciled").order(:id).last).to eq(reversal)
       expect(platform_only?(payment)).to be(true)

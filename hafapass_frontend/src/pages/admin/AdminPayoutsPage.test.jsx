@@ -384,6 +384,35 @@ describe('AdminPayoutsPage', () => {
     }), expect.anything()))
   })
 
+  it('uses the confirmed amount after adjusting a check and switching to reversal in the same dialog', async () => {
+    const user = userEvent.setup()
+    apiClient.post.mockResolvedValue({ data: { check_amount_cents: 4199 } })
+    apiClient.patch.mockResolvedValue({ data: {} })
+    respond({ payouts: [{ ...payout, provider: 'check', disbursement_cents: 4200, confirmed_check_amount_cents: 4200,
+      payee: { payee_name: 'Ambros Inc.', delivery_method: 'pickup' },
+      allowed_outcomes: ['paid', 'failed', 'reversed'],
+      reversal: { ...classifiedPaid.reversal, keeps_transfer_id: false, transfer_id: null } }] })
+    renderAt('/admin/payouts')
+    await user.click(await screen.findByRole('button', { name: 'Record outcome for payout #12' }))
+    const dialog = within(screen.getByRole('dialog'))
+    await user.type(dialog.getByLabelText(/Check number/), '1042')
+    await user.type(dialog.getByLabelText(/Actual amount written on the check/), '41.99')
+    await user.type(dialog.getByLabelText('Check amount adjustment reason'), 'Check register differs by one cent')
+    await user.click(dialog.getByRole('button', { name: 'Record audited adjustment' }))
+    expect(await dialog.findByText(/Audited check amount adjustment recorded/)).toBeInTheDocument()
+    await user.click(dialog.getByRole('radio', { name: /Reversed/ }))
+    await user.type(dialog.getByLabelText(/Reference/, { selector: 'input' }), 'register 7')
+    await user.type(dialog.getByLabelText('How you confirmed it'), 'Bank returned the adjusted check in full')
+    const evidence = dialog.getByRole('group', { name: 'Bank return evidence (required)' })
+    expect(evidence).toHaveTextContent('exact return of the $41.99 that left')
+    await user.type(within(evidence).getByLabelText('Bank return reference'), 'RET-1042')
+    await user.type(within(evidence).getByLabelText('Amount the bank returned (USD)'), '41.99')
+    await user.click(dialog.getByRole('button', { name: 'Record as reversed' }))
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/admin/payouts/12', expect.objectContaining({
+      status: 'reversed', evidence: expect.objectContaining({ returned_amount_cents: 4199 }),
+    }), expect.anything()))
+  })
+
   it('requires confirmation for a changed W-9 approval before recording paid', async () => {
     const user = userEvent.setup()
     apiClient.patch.mockResolvedValue({ data: {} })
