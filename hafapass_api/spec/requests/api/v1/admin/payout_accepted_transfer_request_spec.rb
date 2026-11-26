@@ -72,7 +72,8 @@ RSpec.describe "Admin accepted transfer after a statement change", type: :reques
     expect(conflict.metadata).to include("conflict_reason" => PayoutCreator::PAID_REFUSED_REASON,
       "entry_blocker" => "statement_changed", "amount_cents" => 1000, "disbursement_cents" => payout.disbursement_cents,
       "provider_result" => include("status" => "paid", "provider_payout_id" => "BANK-ACCEPT-1"))
-    expect(Time.iso8601(conflict.metadata["provider_paid_at"])).to be_within(5.seconds).of(Time.current)
+    expect(Time.iso8601(conflict.metadata["observed_paid_at"])).to be_within(5.seconds).of(Time.current)
+    expect(payout.provider_accepted_basis).to eq("locally_observed")
     expect(AuditLog.where(auditable: payout, action: "payout.paid")).to be_empty
 
     # No resend under the same key; no new money under a fresh one.
@@ -137,7 +138,8 @@ RSpec.describe "Admin accepted transfer after a statement change", type: :reques
     expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-ACCEPT-1", paid_at: nil)
     reversal = AuditLog.where(auditable: payout, action: "payout.reconciled").sole
     expect(reversal.metadata["accepted_transfer_return"]).to include("return_reference" => "RET-0001",
-      "returned_amount_cents" => payout.disbursement_cents, "accepted_at" => conflict.metadata["provider_paid_at"])
+      "returned_amount_cents" => payout.disbursement_cents, "accepted_at" => conflict.metadata["observed_paid_at"],
+      "accepted_basis" => "locally_observed", "sent_at" => conflict.metadata["observed_paid_at"])
     report = cpa
     expect(report[:accepted_transfers].map { |entry| entry[:payout_id] }).to eq([payout.id])
     expect(report[:rows].find { |entry| entry[:event_id] == event.id })

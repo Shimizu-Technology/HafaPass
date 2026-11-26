@@ -3,7 +3,16 @@
 class PayoutGateway
   class PayoutError < StandardError; end
 
-  Result = Data.define(:provider_payout_id, :status)
+  # paid_at: when the provider says the transfer was paid, if its result
+  # reports it (CodeRabbit 4706251665). No adapter here reports one: the
+  # simulation and the manual gateway leave it nil, so a paid result is
+  # dated by when this release observed it and is recorded as that
+  # (PayoutCreator, provider_accepted_basis), never as the provider's time.
+  Result = Data.define(:provider_payout_id, :status, :paid_at) do
+    def initialize(provider_payout_id:, status:, paid_at: nil)
+      super
+    end
+  end
 
   def self.submit(payout)
     raise PayoutError, "Payout submission is disabled in staging" if Rails.env.staging?

@@ -128,7 +128,12 @@ RSpec.describe "Admin payout return proof", type: :request do
       conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").sole
       expect(conflict.metadata).to include("conflict_reason" => PayoutCreator::PAID_REFUSED_REASON,
         "entry_blocker" => "cancellation_hold", "disbursement_cents" => payout.disbursement_cents)
-      expect(conflict.metadata["provider_paid_at"]).to be_present
+      # CodeRabbit 4706251665: the stub reports no paid time, so the marker
+      # is this release's observation, recorded as one.
+      expect(conflict.metadata).to include("provider_accepted_basis" => "locally_observed")
+      expect(conflict.metadata["observed_paid_at"]).to be_present
+      expect(conflict.metadata).not_to have_key("provider_paid_at")
+      expect(payout.provider_accepted_basis).to eq("locally_observed")
       expect(PayoutCreator.provider_accepted?(payout)).to be(true)
 
       # Its amount stays committed (and the open conflict freezes the
@@ -171,7 +176,7 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(response).to have_http_status(:ok)
       expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-HELD-1", paid_at: nil)
       expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return",
-        returned_amount_cents: payout.disbursement_cents, sent_at: Time.iso8601(conflict.metadata["provider_paid_at"]))
+        returned_amount_cents: payout.disbursement_cents, sent_at: Time.iso8601(conflict.metadata["observed_paid_at"]))
       _, row = cpa_row
       expect(row).to include(organizer_payouts_made_cents: 1000, payout_reversals_cents: 1000)
       expect(available).to eq(before_payout)
@@ -184,8 +189,12 @@ RSpec.describe "Admin payout return proof", type: :request do
         expect(response).to have_http_status(:ok)
         expect(response.parsed_body).to include("id" => payout.id, "status" => "reversed")
       end.not_to(change { AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").count })
-      reconcile!(payout, "accepted_transfer", **acceptance, reason: "A different confirmation")
-      expect(response.parsed_body["error"]).to eq("This payout outcome was already recorded with different evidence")
+      # CodeRabbit 4706251739: the refused retry writes no acceptance audit.
+      expect do
+        reconcile!(payout, "accepted_transfer", **acceptance, reason: "A different confirmation")
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("This payout outcome was already recorded with different evidence")
+      end.not_to(change { AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").count })
       _, row = cpa_row
       expect(row).to include(organizer_payouts_made_cents: 1000, payout_reversals_cents: 1000)
       expect(available).to eq(before_payout)
@@ -220,7 +229,9 @@ RSpec.describe "Admin payout return proof", type: :request do
       EventCancellationRefunds.hold_payouts!(event, actor: admin)
       expect(payout.reload).to have_attributes(status: "held", held_from_status: "processing")
       provider_paid_at = 20.minutes.ago
-      provider_result!(payout, status: :paid, provider_payout_id: "BANK-LATE-1", paid_at: provider_paid_at)
+      provider_result!(payout, status: :paid, provider_payout_id: "BANK-LATE-1", paid_at: provider_paid_at,
+        provider_reported_paid_at: provider_paid_at)
+      expect(payout.reload).to have_attributes(provider_accepted_basis: "provider_reported")
       conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
         .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON).sole
       expect(conflict.occurred_at).to be > provider_paid_at + 15.minutes
@@ -444,11 +455,22 @@ RSpec.describe "Admin payout return proof", type: :request do
     # CodeRabbit 4705527043 and 4705527049.
     it "never ties a return to a reversal recorded on a placeholder identifier" do
       record_card_sale!(event, ticket_type: ticket_type, quantity: 5, processing_fee_cents: 100)
-      placeholder = create(:payout, organization: organization, event: event, connected_account: payout!("ph-seed").connected_account,
+      # CodeRabbit 4706251749: the placeholder reversal is the event's only
+      # payout, on the approved account, so it alone defeats the proof.
+      placeholder = create(:payout, organization: organization, event: event, connected_account: organization.connected_accounts.sole,
         amount_cents: 1000, settlement: Settlements::Finalizer.call(event: event, actor: admin), status: :reversed,
         provider_payout_id: "manual_po_legacy_reversal", created_at: 1.hour.ago, initiated_at: 1.hour.ago)
+      expect(event.payouts.pluck(:id)).to eq([placeholder.id])
       payment = over_returned_capture!
+      expect(event.payouts.pluck(:id)).to eq([placeholder.id])
       expect(platform_only?(payment)).to be(false)
+      # The only fact defeating the proof is that reversal (its creation time).
+      defeating = -> {
+        ActiveRecord::Base.connection.select_values(ActiveRecord::Base.sanitize_sql_array(
+          ["SELECT started FROM hafapass_overpaid_proof_facts(?) WHERE defeating", payment.id]))
+          .map { |started| Time.zone.parse(started.to_s).to_i }
+      }
+      expect(defeating.call).to eq([placeholder.reload.created_at.to_i])
       expect(listing(placeholder)).to include("return_evidence_required" => true)
 
       exact = { return_reference: "RET-PH-1", returned_amount_cents: 1000, returned_at: Time.current.utc.iso8601(6) }
@@ -461,6 +483,7 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(return_verified?(placeholder)).to be(false)
       # Unknown funds stay with the organizer: the event stays held.
       expect(platform_only?(payment)).to be(false)
+      expect(defeating.call).to eq([placeholder.created_at.to_i])
       expect(placeholder.reload).to have_attributes(status: "reversed", provider_payout_id: "manual_po_legacy_reversal")
     end
 
@@ -508,8 +531,11 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(response).to have_http_status(:ok)
       expect(PayoutReturnProof.where(return_reference_digest: digest).pluck(:payout_id)).to eq([first.id])
 
-      # Another payout cannot use that return, in any case or spacing.
-      ["RET-SHARED-1", " ret-shared-1 ", "Ret-Shared-1"].each do |reference|
+      # Another payout cannot use that return, in any case or spacing
+      # (CodeRabbit 4706251644: internal and non-ASCII spacing and
+      # full-width forms too).
+      ["RET-SHARED-1", " ret-shared-1 ", "Ret-Shared-1", "RET-SHARED -1", "R E T-SHARED-1", "RET\u00A0-SHARED-1",
+        "ＲＥＴ－ＳＨＡＲＥＤ－１"].each do |reference|
         reconcile!(second, "reversed", provider_payout_id: "BANK-REF-B", **exact, return_reference: reference)
         expect(response).to have_http_status(:unprocessable_entity)
         expect(response.parsed_body["error"]).to eq(PayoutReconciler::RETURN_REFERENCE_USED_MESSAGE)
@@ -537,6 +563,35 @@ RSpec.describe "Admin payout return proof", type: :request do
       expect(response).to have_http_status(:ok)
       expect(PayoutReturnProof.where(payout: [first, second, legacy]).pluck(:return_reference_digest).uniq.size).to eq(3)
     end
+  end
+
+  # CodeRabbit 4706251688: the list reads the durable marker first, and
+  # offers no outcome for an acceptance shown only by its audit.
+  it "offers no outcome for an acceptance shown only by its audit" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    payout = payout!("listing-evidence-only")
+    Payout.where(id: payout.id).update_all(provider_payout_id: "BANK-LIST-EO", failure_code: "provider_result_conflict")
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout.reload, actor: admin,
+      organization: organization, event: event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+    expect(listing(payout)).to include("provider_accepted" => true, "provider_acceptance_evidence_only" => true,
+      "provider_accepted_basis" => nil, "allowed_outcomes" => [])
+    reconcile!(payout, "accepted_transfer", conflict_audit_id: AuditLog.where(auditable: payout).order(:id).last.id)
+    expect(response.parsed_body["error"]).to eq(PayoutReconciler::EVIDENCE_ONLY_ACCEPTANCE_MESSAGE)
+  end
+
+  it "lists an acceptance from its durable marker after its audits are redacted" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    allow(PayoutGateway).to receive(:submit) do |_payout|
+      EventCancellationRefunds.hold_payouts!(event, actor: admin)
+      PayoutGateway::Result.new(provider_payout_id: "BANK-LIST-MK", status: :paid)
+    end
+    held = payout!("listing-marker-held")
+    expect(held.reload.provider_accepted_at).to be_present
+    AuditLog.redact!(AuditLog.where(auditable: held), { ip_address: nil, before_data: {}, after_data: {}, metadata: {},
+      retention_anonymized_at: Time.current, updated_at: Time.current })
+    expect(listing(held)).to include("provider_accepted" => true, "provider_acceptance_evidence_only" => false,
+      "provider_accepted_basis" => "locally_observed", "allowed_outcomes" => ["reversed"])
   end
 
   it "fixes a payout's settlement version once its custody is determined (4704933000)" do

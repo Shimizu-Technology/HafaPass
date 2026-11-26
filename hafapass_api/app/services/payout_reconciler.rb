@@ -35,6 +35,7 @@ class PayoutReconciler
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       payout.connected_account.lock! if status == "paid"
+      refuse_evidence_only_acceptance!(payout)
       acknowledge_conflict!(payout, normalized) if payout.failure_code == "provider_result_conflict"
       unless provider_payout_id.nil? || provider_payout_id.is_a?(String)
         raise ReconciliationError, "Transfer identifier must be text"
@@ -77,6 +78,9 @@ class PayoutReconciler
       # return evidence; until then its reservation stays committed, so no
       # payout key, new or reused, can send the amount again.
       accepted = PayoutCreator.provider_accepted?(payout)
+      if normalized.key?("transfer_sent_at") && !(accepted && status == "reversed")
+        raise ReconciliationError, TRANSFER_SENT_AT_MESSAGE
+      end
       if accepted
         raise ReconciliationError, ACCEPTED_NOT_PAID_MESSAGE if status == "paid"
         raise ReconciliationError, ACCEPTED_NOT_FAILED_MESSAGE if status == "failed"
@@ -84,9 +88,9 @@ class PayoutReconciler
         # (CPA payouts made) by finance's acceptance record and its return
         # (payout reversals) by this reversal. A return reported before the
         # acceptance is recorded waits for it, so both postings exist once.
-        unless AuditLog.where(auditable: payout, action: "payout.accepted_transfer_recorded").exists?
-          raise ReconciliationError, ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE
-        end
+        # CodeRabbit 4706251703: the durable acceptance stamp, recorded by an
+        # earlier write (the database checks the row's previous value).
+        raise ReconciliationError, ACCEPTED_RETURN_BEFORE_ACCEPTANCE_MESSAGE if payout.accepted_transfer_recorded_at.nil?
 
         return_evidence = verified_return!(payout, normalized, external_id)
       elsif status == "reversed" && (RETURN_KEYS.any? { |key| normalized.key?(key) } || (classified = classified_event?(payout)))
@@ -360,26 +364,32 @@ class PayoutReconciler
   end
   private_class_method :keeps_identifier?
 
-  # When the provider accepted a transfer after a fence or hold refused it:
-  # the time it reported the payment (provider_paid_at, recorded with the
-  # conflict), else, for a conflict recorded without it, the conflict's own
-  # recording time (CodeRabbit 4704932978). The earliest such conflict.
-  def self.provider_accepted_at(payout)
-    # The durable marker the database checks the return against.
-    return payout.provider_accepted_at if payout.provider_accepted_at
+  # CodeRabbit 4706251688: an acceptance with no durable marker
+  # (PayoutCreator.evidence_only_acceptance?) is never acknowledged, failed,
+  # paid or reversed here: it has no marker time to compare a return with,
+  # and the database refuses the acknowledgement stamp without the marker.
+  # It stays committed for finance to escalate. The listing offers no
+  # outcome for it, and the A2 preflight counts it.
+  EVIDENCE_ONLY_ACCEPTANCE_MESSAGE = "This payout's provider acceptance is shown only in its audit trail, without the " \
+    "durable acceptance marker. It stays committed and is never sent again. Escalate to finance for an approved " \
+    "disposition; no outcome is recorded here."
 
-    AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
-      .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON)
-      .pluck(:occurred_at, Arel.sql("metadata->>'provider_paid_at'"))
-      .map do |occurred_at, provider_paid_at|
-        begin
-          provider_paid_at.present? ? Time.iso8601(provider_paid_at) : occurred_at
-        rescue ArgumentError
-          occurred_at
-        end
-      end.min
+  def self.refuse_evidence_only_acceptance!(payout)
+    raise ReconciliationError, EVIDENCE_ONLY_ACCEPTANCE_MESSAGE if PayoutCreator.evidence_only_acceptance?(payout)
   end
-  private_class_method :provider_accepted_at
+  private_class_method :refuse_evidence_only_acceptance!
+
+  # When this payout's submission was requested (before the gateway call):
+  # the earliest a transfer it sent can have left.
+  def self.submission_requested_at(payout)
+    AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.submission_requested").minimum(:occurred_at)
+  end
+  private_class_method :submission_requested_at
+
+  TRANSFER_SENT_AT_MESSAGE = "The bank's transfer time is given only with the return of an accepted transfer whose " \
+    "paid time this release observed (the provider did not report one)"
+  TRANSFER_SENT_AT_RANGE_MESSAGE = "The bank's transfer time must be no earlier than this payout's submission request and " \
+    "no later than when this release observed the provider's paid result"
 
   # The durable proof of the exact return (PayoutReturnProof), written in
   # the reversal's own transaction (or, for a reversal already recorded,
@@ -389,7 +399,7 @@ class PayoutReconciler
       PayoutReturnProof.create!(payout: payout, kind: kind,
         returned_amount_cents: evidence.fetch("returned_amount_cents"),
         returned_at: Time.iso8601(evidence.fetch("returned_at")),
-        sent_at: Time.iso8601(evidence["accepted_at"] || evidence.fetch("sent_at")),
+        sent_at: Time.iso8601(evidence.fetch("sent_at")),
         return_reference_digest: PayoutReturnProof.reference_digest(evidence.fetch("return_reference")))
     end
   end
@@ -401,9 +411,14 @@ class PayoutReconciler
   # 4704932964), and when it came back (after the transfer left and not in
   # the future), on the same transfer identifier when the stored one is a
   # real transfer (keeps_identifier?). For an accepted transfer the transfer
-  # left when the provider reported it paid (provider_accepted_at); for
-  # another reversal, when it was recorded paid, else submitted. Anything
-  # less keeps the reservation.
+  # left at its durable marker (provider_accepted_at). CodeRabbit
+  # 4706251665: when that marker is only this release's observation of the
+  # paid result (provider_accepted_basis locally_observed), finance may show
+  # the bank's own, earlier transfer time (transfer_sent_at), between the
+  # submission request and the observation; the return is compared with it
+  # and the proof records it. A provider-reported time is not replaced. For
+  # another reversal, the transfer left when it was recorded paid, else
+  # submitted. Anything less keeps the reservation.
   def self.verified_return!(payout, normalized, external_id, sent_at: nil,
     incomplete_message: ACCEPTED_RETURN_REQUIRED_MESSAGE)
     accepted = sent_at.nil?
@@ -421,14 +436,29 @@ class PayoutReconciler
     unless normalized["returned_amount_cents"] == amount_left
       raise ReconciliationError, "The returned amount must be the full #{amount_left} cents that left"
     end
-    sent_at = provider_accepted_at(payout) if accepted
+    sent_at = payout.provider_accepted_at if accepted
+    if normalized.key?("transfer_sent_at")
+      raise ReconciliationError, TRANSFER_SENT_AT_MESSAGE unless accepted && payout.provider_accepted_basis == "locally_observed"
+
+      transfer_sent_at = Time.iso8601(normalized["transfer_sent_at"])
+      submitted_at = submission_requested_at(payout)
+      unless submitted_at && transfer_sent_at >= submitted_at && transfer_sent_at <= sent_at
+        raise ReconciliationError, TRANSFER_SENT_AT_RANGE_MESSAGE
+      end
+
+      sent_at = transfer_sent_at
+    end
     returned_at = Time.iso8601(normalized["returned_at"])
     if sent_at.nil? || returned_at < sent_at || returned_at > Time.current
       raise ReconciliationError, accepted ? "The return time must be after the provider accepted the transfer and not in the future" :
         "The return time must be after the transfer left and not in the future"
     end
 
-    normalized.slice(*RETURN_KEYS).merge((accepted ? "accepted_at" : "sent_at") => sent_at.utc.iso8601(6))
+    evidence = normalized.slice(*RETURN_KEYS, "transfer_sent_at").merge("sent_at" => sent_at.utc.iso8601(6))
+    return evidence unless accepted
+
+    evidence.merge("accepted_at" => payout.provider_accepted_at.utc.iso8601(6),
+      "accepted_basis" => payout.provider_accepted_basis)
   end
   private_class_method :verified_return!
 
@@ -481,7 +511,7 @@ class PayoutReconciler
     end
 
     normalized = normalize_evidence!(evidence)
-    extra = normalized.keys - %w[reference reason confirmed_at] - RETURN_KEYS
+    extra = normalized.keys - %w[reference reason confirmed_at transfer_sent_at] - RETURN_KEYS
     raise ReconciliationError, "Only the bank's return evidence is attached to a recorded reversal" if extra.any?
 
     Payout.transaction do
@@ -489,6 +519,8 @@ class PayoutReconciler
       payout.event.lock!("FOR NO KEY UPDATE")
       payout.lock!
       raise ReconciliationError, "Return evidence is attached only to a payout already recorded reversed" unless payout.status_reversed?
+
+      refuse_evidence_only_acceptance!(payout)
 
       previous = AuditLog.where(auditable: payout, action: RETURN_EVIDENCE_ACTION).order(:id).last
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
@@ -541,6 +573,9 @@ class PayoutReconciler
       unless provider_payout_id.nil? || provider_payout_id.is_a?(String)
         raise ReconciliationError, "Transfer identifier must be text"
       end
+      raise ReconciliationError, TRANSFER_SENT_AT_MESSAGE if normalized.key?("transfer_sent_at")
+
+      refuse_evidence_only_acceptance!(payout)
       external_id = provider_payout_id.to_s.strip.presence || payout.provider_payout_id
       reject_account_number!(payout, external_id, normalized)
       # CodeRabbit 4705527061: an identical retry returns the recorded
@@ -553,12 +588,12 @@ class PayoutReconciler
         raise ReconciliationError, "This payout outcome was already recorded with different evidence"
       end
 
-      conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
       # CodeRabbit 4704932928: also a transfer accepted while (or before) a
       # cancellation hold held it; it stays held, committed, until returned.
-      # CodeRabbit 4705527035: the durable marker, also without its audit.
-      accepted = payout.provider_accepted_at.present? ||
-        conflict&.metadata&.dig("conflict_reason") == PayoutCreator::PAID_REFUSED_REASON
+      # CodeRabbit 4705527035: the durable marker, also without its audit;
+      # 4706251688: only the marker (an evidence-only acceptance was refused
+      # above).
+      accepted = payout.provider_accepted_at.present?
       unless (payout.status_processing? || payout.status_held?) && payout.failure_code == "provider_result_conflict" && accepted
         raise ReconciliationError, "Only a transfer the provider accepted after the payout fence refused it is recorded this way"
       end
@@ -576,12 +611,19 @@ class PayoutReconciler
       before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message")
       # The database stamps the acceptance record's time once
       # (payouts_accepted_transfer_guard); a return is reversed only after it.
-      payout.update!(failure_message: ACCEPTED_TRANSFER_MESSAGE, accepted_transfer_recorded_at: Time.current)
+      # CodeRabbit 4706251703: only this audited path, naming the payout,
+      # may set it (hafapass.payout_acceptance); the audit below is written
+      # in the same transaction (not fail-open), so the stamp never commits
+      # without it.
+      FinancialIntegrity.with_payout_acceptance(payout.id) do
+        payout.update!(failure_message: ACCEPTED_TRANSFER_MESSAGE, accepted_transfer_recorded_at: Time.current)
+      end
       AuditLogger.record!(action: "payout.accepted_transfer_recorded", auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event, before_data: before_data,
         after_data: payout.attributes.slice("status", "provider_payout_id", "paid_at", "failure_message"),
         metadata: { amount_cents: payout.amount_cents, settlement_id: payout.settlement_id, reconciliation: normalized,
           conflict_audit_id: conflict&.id,
+          provider_accepted_at: payout.provider_accepted_at.utc.iso8601(6), provider_accepted_basis: payout.provider_accepted_basis,
           **(conflict ? {} : { acknowledged_marker: { provider_accepted_at: payout.provider_accepted_at.utc.iso8601(6) } }),
           **(hold_started_at ? { never_fulfilled_hold_started_at: hold_started_at.utc.iso8601(6) } : {}),
           **(entry ? { statement_cutoff_at: entry[:cutoff_at]&.utc&.iso8601(6) } : {}) },
@@ -671,6 +713,11 @@ class PayoutReconciler
       unless (1..255).cover?(text.length) && BackupWithholding.safe_text?(text)
         raise ReconciliationError, "Return reference must be 1 to 255 characters"
       end
+      # CodeRabbit 4706251644: compared in its canonical form, which must
+      # keep a visible character (an invisible-only reference names nothing).
+      if PayoutReturnProof.canonical_reference(text).empty?
+        raise ReconciliationError, "Return reference must include a visible character"
+      end
 
       normalized["return_reference"] = text
     end
@@ -685,6 +732,12 @@ class PayoutReconciler
       raise ArgumentError unless returned.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
 
       normalized["returned_at"] = Time.iso8601(returned).utc.iso8601(6)
+    end
+    if values.key?("transfer_sent_at")
+      sent = values["transfer_sent_at"].to_s
+      raise ArgumentError unless sent.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i)
+
+      normalized["transfer_sent_at"] = Time.iso8601(sent).utc.iso8601(6)
     end
     if values.key?("withholding_override_reason")
       normalized["withholding_override_reason"] = values["withholding_override_reason"].to_s.strip

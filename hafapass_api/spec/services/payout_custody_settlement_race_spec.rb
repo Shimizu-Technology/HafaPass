@@ -31,6 +31,21 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
     def release! = @go << true
   end
 
+  # CodeRabbit 4706251787: every worker an example started has exited, and
+  # returned its connection, before the cleanup's TRUNCATE runs, even when
+  # an expectation failed first. Each pause is released (a waiting worker
+  # then finishes or hits its lock_timeout), then each thread is joined
+  # without a deadline: a deadline does not stop a worker, so cleanup would
+  # still race it. Workers are bounded by their own pause and lock timeouts.
+  def pause
+    CustodyRacePause.new.tap { |created| @pauses << created }
+  end
+
+  def join_workers!
+    @pauses.each(&:release!)
+    @workers.each(&:join)
+  end
+
   def clean_test_data
     unless Rails.env.test? && ActiveRecord::Base.connection_db_config.database.end_with?("_test")
       raise "Isolated test database required"
@@ -46,6 +61,8 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
   let(:admin) { create(:user, :admin) }
 
   before do
+    @workers = []
+    @pauses = []
     clean_test_data
     allow(PayoutGateway).to receive(:submit) do |payout|
       PayoutGateway::Result.new(provider_payout_id: "manual_po_#{payout.id}", status: :processing)
@@ -55,7 +72,10 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
     allow(Sentry).to receive(:capture_exception)
   end
 
-  after { clean_test_data }
+  after do
+    join_workers!
+    clean_test_data
+  end
 
   def worker(&work)
     pid = Queue.new
@@ -73,6 +93,7 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
     rescue StandardError => error
       result << error
     end
+    @workers << thread
     [thread, pid.pop(timeout: RACE_DEADLINE) || raise("worker never started"), result]
   end
 
@@ -141,7 +162,7 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
 
     it "determination first: the version change waits for it, then sees it and is refused" do
       payout, funded, other = historical_paid!
-      pause = CustodyRacePause.new
+      pause = self.pause
       derived, derive_pid, derive_result = worker { derive!(payout.id, funded, pause) }
       pause.reached
       moved, move_pid, move_result = worker { move!(payout.id, other) }
@@ -157,7 +178,7 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
 
     it "version change first: the determination waits for it, then reads the new version and is refused" do
       payout, funded, other = historical_paid!
-      pause = CustodyRacePause.new
+      pause = self.pause
       moved, move_pid, move_result = worker { move!(payout.id, other, pause) }
       pause.reached
       derived, derive_pid, derive_result = worker { derive!(payout.id, funded) }
@@ -184,7 +205,7 @@ RSpec.describe "Payout custody and return proof races (A2)", :non_transactional 
     end
     first, second = paid
     expect(first.organization_id).not_to eq(second.organization_id)
-    pause = CustodyRacePause.new
+    pause = self.pause
     allow(PayoutReturnProof).to receive(:create!).and_wrap_original do |original, **attributes|
       original.call(**attributes).tap { |proof| pause.hit! if proof.payout_id == first.id }
     end

@@ -14,6 +14,9 @@
 #              resume (unclassified/unposted, overlap captures, receipts
 #              without identity, postings pending correction, repayment
 #              operations or refunds with an unknown result);
+#   accepted   transfers the provider accepted after a fence refused them
+#              (durable marker, finance's acknowledgement, observed-only
+#              times) and any acceptance shown only by its audit (gate: 0);
 #   custody    paid payouts with no frozen determination (zero after the
 #              authorized payout_custody:derive), and ambiguous ones;
 #   event      each event with a classified capture: its latest finalized
@@ -90,6 +93,19 @@ namespace :never_fulfilled do
       line.call("holds", **ReconciliationException.open.where(code: FinancialIntegrity::PAYOUT_BLOCKING_CODES +
         [FinancialIntegrity::OVERPAID_CODE]).group(:code).count.sort.to_h,
         overpaid_proven: Commerce::NeverFulfilledPayoutHold.proven_platform_only_overpaid.count)
+
+      # Accepted transfers (CodeRabbit 4706251688): every acceptance carries
+      # its durable marker. One shown only by its conflict audit has no time
+      # to compare a return with; the reconciler records no outcome for it,
+      # so the gate needs none (finance escalates any it names).
+      refused_audits = AuditLog.where(auditable_type: "Payout", action: "payout.provider_result_conflict")
+        .where("metadata->>'conflict_reason' = ?", FinancialIntegrity::PAYOUT_PAID_REFUSED_REASON)
+      evidence_only = Payout.where(provider_accepted_at: nil, id: refused_audits.select(:auditable_id)).order(:id).pluck(:id)
+      accepted = Payout.where.not(provider_accepted_at: nil)
+      line.call("accepted", marked: accepted.count, acknowledged: accepted.where.not(accepted_transfer_recorded_at: nil).count,
+        locally_observed: accepted.where(provider_accepted_basis: "locally_observed").count,
+        evidence_only: evidence_only.size, evidence_only_payout_ids: evidence_only.empty? ? "none" : evidence_only.join(","),
+        gate_evidence_only_zero: evidence_only.empty? ? "PASS" : "FAIL (escalate each to finance)")
 
       paid = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
       undetermined = PayoutCustody.undetermined(paid).count

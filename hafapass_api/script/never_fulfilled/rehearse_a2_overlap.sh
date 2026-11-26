@@ -164,6 +164,13 @@ run old o_acc_a1 ACC_PHASE=before_ack
 run new n_acc_ack
 run old o_acc_a1 ACC_PHASE=after_ack
 run new n_acc_return
+# CodeRabbit a292e277 (4706251677): a paid result on a pending payout after a
+# stale hold cutoff; A1's outcomes, same-key replay and raw downgrades from
+# the A1 process; then the acknowledgement and the bank's exact return,
+# dated by the bank's own transfer time (4706251665).
+run new n_acc_stale
+run old o_acc_stale_a1
+run new n_acc_stale_return
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary

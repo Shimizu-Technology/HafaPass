@@ -138,6 +138,30 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
     end
   end
 
+  # CodeRabbit 4706251726: a zero-byte (or blank-line) CSV has no header, so
+  # two of them once compared as 0/0 identical rows and exited 0.
+  it "refuses a headerless CSV in a like-for-like comparison, on either side" do
+    Dir.mktmpdir do |dir|
+      baseline = File.join(dir, "baseline").tap { |path| Dir.mkdir(path) }
+      candidate = File.join(dir, "candidate").tap { |path| Dir.mkdir(path) }
+      ["", "\n"].each do |empty|
+        File.write(File.join(baseline, "cpa-2027-01.csv"), empty)
+        File.write(File.join(candidate, "cpa-2027-01.csv"), empty)
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([2, a_string_including("no header row (empty file)",
+          "unexpected_differences=unusable_input")])
+        expect(output).not_to include("unexpected_differences=0")
+      end
+      body = "row_type,organization_id,event_id,organizer_payouts_made\nevent,1,10,100.00\n"
+      File.write(File.join(baseline, "cpa-2027-01.csv"), body)
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([2, a_string_including("cpa-2027-01.csv is not a well-formed export: no header row")])
+      File.write(File.join(candidate, "cpa-2027-01.csv"), body)
+      output, status = run(baseline, candidate)
+      expect([status.exitstatus, output]).to match([0, a_string_including("unexpected_differences=0")])
+    end
+  end
+
   # A2 recheck finding 3 (7664e143): the verified zero baseline is checked
   # against the export pair the real exporters write on a database with no
   # activity (the authenticated admin endpoints): the CPA monthly export's
@@ -225,6 +249,19 @@ RSpec.describe "script/never_fulfilled/compare_exports.rb" do
           "cpa-monthly-#{period}.csv is not named as the cpa exporter names it (hafapass-cpa-monthly-YYYY-MM.csv)")])
         File.delete(File.join(candidate, "cpa-monthly-#{period}.csv"))
         restore.call
+
+        # CodeRabbit 4706251726: a zero-byte file under either exporter's
+        # name is no export (the real BPT zero export still has its header).
+        [cpa, bpt].each do |path|
+          File.binwrite(path, "")
+          output, status = run(baseline, candidate)
+          expect([status.exitstatus, output]).to match([2, a_string_including(
+            "#{File.basename(path)} is not a well-formed export: no header row (empty file)",
+            "unexpected_differences=unusable_input")])
+          restore.call
+        end
+        output, status = run(baseline, candidate)
+        expect([status.exitstatus, output]).to match([0, a_string_including("unexpected_differences=0")])
 
         # Content: a nonzero amount, a flag or note, a wrong or second row, a
         # wrong month, the incomplete-export marker, or any BPT row.

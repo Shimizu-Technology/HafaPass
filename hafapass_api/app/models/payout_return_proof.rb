@@ -19,10 +19,23 @@ class PayoutReturnProof < ApplicationRecord
 
   # The bank's return reference identifies one return (CodeRabbit
   # 4705527020): a unique index on the digest lets it back at most one
-  # payout's proof, in every organization. Compared without case or spacing
-  # differences, so "ret 0042" cannot back a second payout as "RET 0042".
+  # payout's proof, in every organization. CodeRabbit 4706251644: the digest
+  # is of its canonical form, compatibility-normalized (NFKC, so a
+  # full-width "ＲＥＴ１２３" is "RET123"), with every whitespace and
+  # invisible format character removed wherever it occurs and upcased. So
+  # "ret 0042", "RET0042", "RET\u00A00042" and "R E T 0 0 4 2" are one
+  # return and cannot back a second payout. Punctuation is kept: "RET-42"
+  # and "RET42" may be different bank references. The proof table is new in
+  # this unreleased migration, so no stored digest predates this form.
+  def self.canonical_reference(reference)
+    reference.to_s.unicode_normalize(:nfkc).gsub(/[[:space:]\p{Cf}]/, "").upcase
+  end
+
   def self.reference_digest(reference)
-    Digest::SHA256.hexdigest(reference.to_s.strip.gsub(/\s+/, " ").upcase)
+    canonical = canonical_reference(reference)
+    raise ArgumentError, "A return reference needs a visible character" if canonical.empty?
+
+    Digest::SHA256.hexdigest(canonical)
   end
 
   def readonly?

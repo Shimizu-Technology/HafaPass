@@ -2578,6 +2578,7 @@
       "under_withheld_cents": "financial",
       "carried_withholding_cents": "financial",
       "provider_accepted_at": "system",
+      "provider_accepted_basis": "system",
       "accepted_transfer_recorded_at": "system"
     },
     "pilot_closeout_reviews": {

@@ -40,7 +40,7 @@ require_relative "../../lib/financial_integrity"
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
-# Additive: six nullable columns, one new table, functions and triggers, and the
+# Additive: seven nullable columns, one new table, functions and triggers, and the
 # a2_payout_entry cutover row. No existing row changes. Non-affected events
 # keep every A1 behaviour except that paid needs the custody row, which
 # only this release writes (an A1 paid recording fails closed and is
@@ -59,7 +59,15 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
     # (the provider's paid time) and finance's acceptance record, both set
     # once and guarded by payouts_accepted_transfer_guard for every writer.
     add_column :payouts, :provider_accepted_at, :datetime
+    # CodeRabbit 4706251665: whether that time is the provider's own report
+    # of when it paid (provider_reported) or only when this release observed
+    # the paid result (locally_observed, an upper bound on when it left).
+    # Set with the marker, fixed after it.
+    add_column :payouts, :provider_accepted_basis, :string
     add_column :payouts, :accepted_transfer_recorded_at, :datetime
+    add_check_constraint :payouts, "provider_accepted_basis IN ('provider_reported', 'locally_observed') " \
+      "AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL",
+      name: "payouts_provider_accepted_basis_valid", validate: false
     # No personal data: the reference is kept only as its SHA-256 digest.
     create_table :payout_return_proofs do |t|
       t.references :payout, null: false, foreign_key: true, index: { unique: true }
@@ -119,7 +127,9 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       %w[hafapass_check_payout_return_proof() hafapass_check_payout_return_proof_commit()
         hafapass_payout_amount_left(bigint)].each { |function| execute "DROP FUNCTION IF EXISTS #{function}" }
     end
+    remove_check_constraint :payouts, name: "payouts_provider_accepted_basis_valid", if_exists: true
     remove_column :payouts, :accepted_transfer_recorded_at, if_exists: true
+    remove_column :payouts, :provider_accepted_basis, if_exists: true
     remove_column :payouts, :provider_accepted_at, if_exists: true
     remove_column :reconciliation_exceptions, :proof_checked_at
     remove_column :settlements, :reader_digest

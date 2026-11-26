@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_180100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1873,6 +1873,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.integer "under_withheld_cents", default: 0, null: false
     t.integer "carried_withholding_cents", default: 0, null: false
     t.datetime "provider_accepted_at"
+    t.string "provider_accepted_basis"
     t.datetime "accepted_transfer_recorded_at"
     t.index ["connected_account_id"], name: "index_payouts_on_connected_account_id"
     t.index ["event_id"], name: "index_payouts_on_event_id"
@@ -1881,6 +1882,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.index ["provider", "provider_payout_id"], name: "idx_payouts_unique_provider_id", unique: true, where: "(provider_payout_id IS NOT NULL)"
     t.index ["retention_anonymized_at"], name: "index_payouts_on_retention_anonymized_at"
     t.index ["settlement_id"], name: "index_payouts_on_settlement_id"
+    t.check_constraint "(provider_accepted_basis::text = ANY (ARRAY['provider_reported'::character varying::text, 'locally_observed'::character varying::text])) AND provider_accepted_at IS NOT NULL OR provider_accepted_basis IS NULL AND provider_accepted_at IS NULL", name: "payouts_provider_accepted_basis_valid"
     t.check_constraint "(withheld_cents + carried_withholding_cents) <= amount_cents", name: "payouts_total_withholding_within_gross"
     t.check_constraint "amount_cents > 0", name: "payouts_amount_positive"
     t.check_constraint "carried_withholding_cents >= 0", name: "payouts_carried_withholding_nonnegative"
@@ -4955,43 +4957,55 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     -- (payouts.provider_accepted_at, hafapass_guard_accepted_transfer), on
     -- any event, is reversed only after finance recorded the acceptance and
     -- with the durable proof of its exact return: the accepted-transfer
-    -- kind, the full amount that left, sent at the provider's paid time.
+    -- kind, the full amount that left, sent at its marker (or, for an
+    -- observed marker, at the bank's earlier transfer time, see below).
     CREATE OR REPLACE FUNCTION hafapass_check_payout_reversal() RETURNS trigger
     LANGUAGE plpgsql AS $$
     DECLARE
       accepted_at timestamp;
+      accepted_basis text;
       acceptance_recorded_at timestamp;
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.id AND p.status = 4) THEN
         RETURN NULL;
       END IF;
       PERFORM hafapass_lock_payout_event(NEW.event_id);
-      SELECT p.provider_accepted_at, p.accepted_transfer_recorded_at INTO accepted_at, acceptance_recorded_at
+      SELECT p.provider_accepted_at, p.provider_accepted_basis, p.accepted_transfer_recorded_at
+        INTO accepted_at, accepted_basis, acceptance_recorded_at
         FROM payouts p WHERE p.id = NEW.id;
       IF accepted_at IS NOT NULL THEN
         IF acceptance_recorded_at IS NULL THEN
           RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', NEW.id
             USING ERRCODE = '23514';
         END IF;
+        -- Sent at the marker, or (CodeRabbit 4706251665) for a marker this
+        -- release only observed, at the bank's transfer time finance showed:
+        -- before the observation and not before the submission request.
         IF NOT EXISTS (SELECT 1 FROM payout_return_proofs r WHERE r.payout_id = NEW.id AND r.kind = 'accepted_transfer_return'
-            AND r.sent_at = accepted_at AND r.returned_amount_cents = hafapass_payout_amount_left(NEW.id)) THEN
+            AND r.returned_amount_cents = hafapass_payout_amount_left(NEW.id)
+            AND (r.sent_at = accepted_at OR (accepted_basis = 'locally_observed' AND r.sent_at < accepted_at
+              AND r.sent_at >= (SELECT MIN(a.occurred_at) FROM audit_logs a WHERE a.auditable_type = 'Payout'
+                AND a.auditable_id = NEW.id AND a.action = 'payout.submission_requested')))) THEN
           RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record its return from the current release with the bank''s exact return evidence', NEW.id
             USING ERRCODE = '23514';
         END IF;
         RETURN NULL;
+      END IF;
+      -- CodeRabbit 4706251688: an acceptance shown only by its conflict audit
+      -- (no marker; no release writes one, and the A2 preflight counts them)
+      -- has no time to compare a return with. On any event it is never
+      -- reversed; finance escalates it for an approved disposition, as the
+      -- current reconciler requires.
+      IF EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id
+            AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = 'provider_paid_refused_by_fence') THEN
+        RAISE EXCEPTION 'Payout reversal fence: payout % has a provider acceptance recorded only in its audit trail; escalate it for an approved disposition', NEW.id
+          USING ERRCODE = '23514';
       END IF;
       IF NOT hafapass_event_has_classified_capture(NEW.event_id) THEN
         RETURN NULL;
       END IF;
       IF NOT hafapass_payout_return_verified(NEW.id) THEN
         RAISE EXCEPTION 'Payout reversal fence: payout % is on an event with a never-fulfilled capture; record its reversal from the current release with the bank''s exact return evidence', NEW.id
-          USING ERRCODE = '23514';
-      END IF;
-      IF EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id
-            AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = 'provider_paid_refused_by_fence')
-          AND NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = NEW.id
-            AND a.action = 'payout.accepted_transfer_recorded') THEN
-        RAISE EXCEPTION 'Payout reversal fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', NEW.id
           USING ERRCODE = '23514';
       END IF;
       RETURN NULL;
@@ -5206,6 +5220,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
         RAISE EXCEPTION 'Payout entry fence: payouts on this event need the current settlement reader; retry from the current release'
           USING ERRCODE = '23514';
       END IF;
+      -- CodeRabbit 4706251677: a pending payout moved to processing with the
+      -- provider's acceptance marker records money that already left; it
+      -- authorizes no transfer and frees nothing (the marker keeps it
+      -- committed: hafapass_guard_accepted_transfer, which runs before this
+      -- trigger, checked its identifier, conflict and basis). Refusing it
+      -- after a hold or restatement cutoff that predates the submission
+      -- would only roll the acceptance back, so it is never refused here.
+      IF TG_OP = 'UPDATE' AND OLD.status = 0 AND NEW.status = 1
+          AND OLD.provider_accepted_at IS NULL AND NEW.provider_accepted_at IS NOT NULL THEN
+        RETURN NEW;
+      END IF;
       IF NEW.status NOT IN (0, 1, 2) THEN
         RETURN NEW;
       END IF;
@@ -5399,7 +5424,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     -- writer and every event (A1 during the overlap or after a code
     -- rollback, raw SQL). A transfer the provider accepted after a fence,
     -- guard or hold refused it (PayoutCreator#record_refused_paid_locked!)
-    -- carries payouts.provider_accepted_at, the provider's paid time: a
+    -- carries payouts.provider_accepted_at, the provider's reported paid time
+    -- or, when its result reported none, when this release observed it
+    -- (provider_accepted_basis says which; CodeRabbit 4706251665): a
     -- durable, non-personal marker that audit redaction never touches. From
     -- then on its money is out with the organizer, so its reservation stays
     -- committed: it stays processing or held (held from processing, under
@@ -5424,7 +5451,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
           USING ERRCODE = '23514';
       END IF;
       IF OLD.provider_accepted_at IS NULL THEN
-        IF NEW.provider_accepted_at IS NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL
+        IF NEW.provider_accepted_at IS NULL OR NEW.provider_accepted_basis IS NULL OR NEW.accepted_transfer_recorded_at IS NOT NULL
             OR NEW.status NOT IN (1, 5) OR NEW.provider_payout_id IS NULL
             OR NEW.failure_code IS DISTINCT FROM 'provider_result_conflict'
             OR (NEW.status = 5 AND NEW.held_from_status IS DISTINCT FROM 'processing') THEN
@@ -5434,6 +5461,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
         RETURN NEW;
       END IF;
       IF NEW.provider_accepted_at IS DISTINCT FROM OLD.provider_accepted_at
+          OR NEW.provider_accepted_basis IS DISTINCT FROM OLD.provider_accepted_basis
           OR NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
           OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
           OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
@@ -5446,7 +5474,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
         RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; its acceptance, transfer identifier, amounts and version are fixed', OLD.id
           USING ERRCODE = '23514';
       END IF;
+      -- CodeRabbit 4706251703: finance's acknowledgement is stamped only by
+      -- the current release's audited path, which names the payout
+      -- (FinancialIntegrity.with_payout_acceptance, PayoutReconciler).
       IF OLD.accepted_transfer_recorded_at IS NULL AND NEW.accepted_transfer_recorded_at IS NOT NULL THEN
+        IF current_setting('hafapass.payout_acceptance', true) IS DISTINCT FROM NEW.id::text THEN
+          RAISE EXCEPTION 'Accepted transfer fence: payout % records finance''s acceptance only from the current release''s reconciler', OLD.id
+            USING ERRCODE = '23514';
+        END IF;
         NEW.accepted_transfer_recorded_at := timezone('UTC', clock_timestamp());
       END IF;
       IF OLD.status = 4 THEN
@@ -5455,8 +5490,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
         END IF;
         RETURN NEW;
       END IF;
+      -- CodeRabbit 4706251703: the acceptance recorded by an earlier write
+      -- (OLD), so one update cannot stamp it and reverse together.
       IF NEW.status = 4 THEN
-        IF NEW.accepted_transfer_recorded_at IS NULL THEN
+        IF OLD.accepted_transfer_recorded_at IS NULL THEN
           RAISE EXCEPTION 'Accepted transfer fence: payout % is a transfer the provider accepted; record the accepted transfer before its return', OLD.id
             USING ERRCODE = '23514';
         END IF;

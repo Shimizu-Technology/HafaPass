@@ -136,9 +136,14 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
     # Compared in memory (snapshot vs. details on file), once per payout.
     payee_changed = %w[check manual].include?(payout.provider) && !payout.payee_matches_approval?
     conflict = audits.reverse.find { |audit| audit.action == "payout.provider_result_conflict" }
-    accepted = audits.any? do |audit|
+    # The durable marker first (it outlives a fail-open or redacted conflict
+    # audit); an acceptance shown only by its audit offers no outcome
+    # (CodeRabbit 4706251688: finance escalates it).
+    accepted_audit = audits.any? do |audit|
       audit.action == "payout.provider_result_conflict" && audit.metadata.to_h["conflict_reason"] == PayoutCreator::PAID_REFUSED_REASON
     end
+    accepted = payout.provider_accepted_at.present? || accepted_audit
+    evidence_only = payout.provider_accepted_at.nil? && accepted_audit
     hold_available = if payout.status_held?
       current_payable = (@payable_cents_by_event ||= {}).fetch(payout.event_id) do
         @payable_cents_by_event[payout.event_id] = Settlements::Calculator.call(payout.event).attributes.fetch(:payable_cents)
@@ -187,13 +192,16 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       # A transfer the provider accepted after an entry guard refused it is
       # only ever reversed, with the bank's return evidence (PayoutReconciler).
       provider_accepted: accepted,
+      provider_accepted_basis: payout.provider_accepted_basis,
+      provider_acceptance_evidence_only: evidence_only,
       # The durable exact-return proof (non-personal; PayoutReturnProof), and
       # whether a reversal on an event with a never-fulfilled capture still
       # lacks it (its event stays held until finance attaches the return).
       return_proof: payout.return_proof&.evidence_json,
       return_evidence_required: payout.status_reversed? && payout.return_proof.nil? &&
         PayoutReconciler.classified_event?(payout),
-      allowed_outcomes: (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) },
+      allowed_outcomes: evidence_only ? [] :
+        (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {
         audit_id: conflict.id, occurred_at: conflict.occurred_at, recorded_before: conflict.before_data,

@@ -41,8 +41,9 @@
 # says comparison=verified_zero_baseline, never that a comparison ran.
 #
 # In both modes every CSV must be well formed (A2 recheck finding 3,
-# 758485ae): unique, non-blank header names and every row exactly as wide
-# as its header; otherwise it is unusable input (exit 2).
+# 758485ae; CodeRabbit 4706251726): a header row (a zero-byte file is not an
+# export), unique, non-blank header names and every row exactly as wide as
+# its header; otherwise it is unusable input (exit 2).
 #
 #   ruby script/never_fulfilled/compare_exports.rb --print-schemas
 # prints the versioned zero-baseline schemas as JSON.
@@ -127,12 +128,16 @@ if ARGV == ["--print-schemas"]
   exit 0
 end
 
-# Every CSV, in either mode: unique, non-blank header names and every row
-# exactly as wide as the header. A duplicate name would let one cell shadow
-# another wherever columns are read by name; a short or long row (or an
-# exporter's incomplete-export marker line) is not a complete export.
+# Every CSV, in either mode: a header row, unique, non-blank header names
+# and every row exactly as wide as the header. A duplicate name would let one
+# cell shadow another wherever columns are read by name; a short or long row
+# (or an exporter's incomplete-export marker line) is not a complete export.
+# CodeRabbit 4706251726: a zero-byte (or blank-line-only) file has no header,
+# so two of them would otherwise compare as 0/0 identical rows; every
+# exporter writes its header, even a header-only BPT file.
 def shape_problems(header, rows)
   problems = []
+  problems << "no header row (empty file)" if header.empty?
   duplicate = header.tally.select { |_name, count| count > 1 }.keys
   problems << "duplicate header #{duplicate.map(&:inspect).join(', ')}" if duplicate.any?
   problems << "blank header name" if header.any? { |name| name.to_s.strip.empty? }

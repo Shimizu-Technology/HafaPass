@@ -278,7 +278,11 @@ when "u_a1_data"
   # submits $10.00 on each, a cancellation hold commits during the gateway
   # call and the stubbed provider reports it paid; A1 then records its
   # generic failed (acc_fail) or reversed (acc_rev) outcome.
-  %w[acc_fail acc_rev].each_with_index do |key, index|
+  # CodeRabbit 4706251677 (a292e277): acc_stale, a third ordinary event,
+  # where the provider's paid result reaches a still-pending payout after a
+  # hold whose cutoff predates its submission (both the paid and the
+  # processing write are refused at that cutoff).
+  %w[acc_fail acc_rev acc_stale].each_with_index do |key, index|
     acc_owner = S.create(:user, :organizer, clerk_id: "clerk_a2_#{key}_owner", email: "rehearsal.a2.#{key.tr('_', '-')}@example.com")
     acc_organization = S.create(:organization, name: "Rehearsal A2 Accepted #{key}")
     acc_profile = S.create(:organizer_profile, :verified, user: acc_owner, organization: acc_organization)
@@ -777,6 +781,133 @@ when "n_acc_ack", "n_acc_return"
       proof: PayoutReturnProof.find_by(payout_id: payout.id)&.slice(:kind, :returned_amount_cents) })
   end
 
+# ---- CodeRabbit a292e277 (4706251677, 4706251665, 4706251703): a paid ----
+# ---- result on a pending payout after a stale cutoff, across versions ----
+when "n_acc_stale"
+  # The hold opens while the gateway call runs, dated an hour earlier (an
+  # exception's hold starts at its creation, as a backdated overlap capture's
+  # would), so the submission is after the cutoff; the stubbed provider then
+  # reports the transfer paid with no paid time of its own.
+  PayoutGateway.singleton_class.prepend(Module.new do
+    def submit(payout)
+      super
+      ReconciliationException.create!(order: payout.event.orders.order(:id).first, code: "unfulfilled_second_capture",
+        status: :open, details: {}, created_at: 1.hour.ago)
+      PayoutGateway::Result.new(provider_payout_id: "BANK-STALE-#{payout.id}", status: :paid)
+    end
+  end)
+  event = S.find(Event, "acc_stale")
+  settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+  before = OrganizationPayoutBalance.available_cents(event.organization)
+  payout = S.attempt(step, "PayoutCreator.call acc_stale (provider pays a pending payout after a stale cutoff)") do
+    PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-acc_stale", amount_cents: 1000)
+  end
+  S.save!("payout_acc_stale" => payout.id, "acc_stale_available_before" => before)
+  payout.reload
+  conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+  submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").minimum(:occurred_at)
+  Rehearsal.outcome!(step, action: "acc_stale accepted", value: { status: payout.status, failure_code: payout.failure_code,
+    provider_payout_id: payout.provider_payout_id, basis: payout.provider_accepted_basis,
+    provider_accepted_at: payout.provider_accepted_at&.utc&.iso8601(6), submitted_at: submitted&.utc&.iso8601(6),
+    cutoff: Commerce::NeverFulfilledPayoutHold.block_started_at(event)&.utc&.iso8601(6),
+    refusal: conflict&.metadata&.fetch("refusal", nil), conflict_basis: conflict&.metadata&.fetch("provider_accepted_basis", nil),
+    provider_paid_at_claimed: conflict&.metadata&.key?("provider_paid_at"),
+    available_cents: OrganizationPayoutBalance.available_cents(event.organization) })
+  S.attempt(step, "PayoutCreator.call acc_stale same key") do
+    PayoutCreator.call(settlement: payout.settlement, actor: S.admin, idempotency_key: "a2-acc_stale", amount_cents: 1000).id
+  end
+  S.attempt(step, "PayoutCreator.call acc_stale fresh key for $10.00") do
+    PayoutCreator.call(settlement: payout.settlement, actor: S.admin, idempotency_key: "a2-acc_stale-fresh", amount_cents: 1000)
+  end
+  # Raw SQL on the acknowledgement (4706251703): one update that stamps it
+  # and reverses, with the exact proof, and a stamp from outside the
+  # audited reconciler path.
+  S.attempt(step, "raw SQL stamp and reverse in one update (exact proof)") do
+    Payout.transaction do
+      FinancialIntegrity.with_payout_return(payout.id) do
+        PayoutReturnProof.create!(payout: payout, kind: "accepted_transfer_return", returned_amount_cents: payout.confirmed_check_amount_cents,
+          returned_at: Time.current, sent_at: payout.provider_accepted_at, return_reference_digest: PayoutReturnProof.reference_digest("RET-RAW-STALE"))
+      end
+      Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed], failure_code: nil,
+        accepted_transfer_recorded_at: Time.current)
+      ActiveRecord::Base.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      raise ActiveRecord::Rollback
+    end
+    "accepted, rolled back"
+  end
+  S.attempt(step, "raw SQL acknowledgement stamp outside the reconciler") do
+    Payout.transaction do
+      Payout.where(id: payout.id).update_all(accepted_transfer_recorded_at: Time.current)
+      raise ActiveRecord::Rollback
+    end
+    "accepted, rolled back"
+  end
+
+when "o_acc_stale_a1"
+  raise "A1's outcomes run in the previous release" if S.new_release?
+
+  payout = S.find(Payout, "payout_acc_stale")
+  conflict = AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict").order(:id).last
+  %w[failed reversed].each do |outcome|
+    S.attempt(step, "A1 PayoutReconciler #{outcome} payout_acc_stale") do
+      PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: outcome, provider_payout_id: payout.provider_payout_id,
+        evidence: S.evidence(Time.current, conflict_audit_id: conflict.id, reason: "Generic bank confirmation")).reload
+    end
+  end
+  S.attempt(step, "A1 PayoutCreator.call acc_stale same key") do
+    PayoutCreator.call(settlement: payout.settlement, actor: S.admin, idempotency_key: "a2-acc_stale", amount_cents: 1000).id
+  end
+  # Raw downgrades from the A1 process (A1 code after a rollback writes
+  # these columns straight to the row).
+  { "pending" => { status: Payout.statuses[:pending] },
+    "failed" => { status: Payout.statuses[:failed], failure_code: "reconciled_failure" },
+    "paid" => { status: Payout.statuses[:paid], paid_at: Time.current, failure_code: nil },
+    "reversed" => { status: Payout.statuses[:reversed], failure_code: nil },
+    "transfer identifier" => { provider_payout_id: "OTHER-STALE" } }.each do |label, columns|
+    S.attempt(step, "A1 raw SQL #{label} payout_acc_stale") do
+      Payout.transaction do
+        Payout.where(id: payout.id).update_all(columns.merge(updated_at: Time.current))
+        ActiveRecord::Base.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        raise ActiveRecord::Rollback
+      end
+      "accepted, rolled back"
+    end
+  end
+  payout.reload
+  Rehearsal.outcome!(step, action: "acc_stale after A1", value: { status: payout.status, failure_code: payout.failure_code,
+    provider_payout_id: payout.provider_payout_id })
+
+when "n_acc_stale_return"
+  payout = S.find(Payout, "payout_acc_stale")
+  conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+  S.attempt(step, "A2 PayoutReconciler accepted_transfer payout_acc_stale") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "accepted_transfer",
+      provider_payout_id: payout.provider_payout_id, evidence: S.evidence(Time.current, conflict_audit_id: conflict.id)).reload
+  end
+  # 4706251665: the marker is only this release's observation; the bank's
+  # own transfer time (finance's evidence) lies between the submission
+  # request and it, and the return came back before the observation.
+  observed = payout.reload.provider_accepted_at
+  submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").minimum(:occurred_at)
+  bank_sent = submitted + ((observed - submitted) / 2)
+  returned_at = bank_sent + ((observed - bank_sent) / 2)
+  returned = { conflict_audit_id: conflict.id, return_reference: "RET A2 STALE 1", returned_amount_cents: payout.disbursement_cents,
+    returned_at: returned_at.utc.iso8601(6) }
+  S.attempt(step, "A2 reversed payout_acc_stale without the bank's transfer time") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current, **returned)).reload
+  end
+  S.attempt(step, "A2 reversed payout_acc_stale with the bank's transfer time") do
+    PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      evidence: S.evidence(Time.current, **returned, transfer_sent_at: bank_sent.utc.iso8601(6))).reload
+  end
+  proof = PayoutReturnProof.find_by(payout_id: payout.id)
+  Rehearsal.outcome!(step, action: "acc_stale after the verified return", value: { status: payout.reload.status,
+    observed: observed.utc.iso8601(6), bank_sent: bank_sent.utc.iso8601(6), returned_at: returned_at.utc.iso8601(6),
+    proof_kind: proof&.kind, proof_sent_at: proof&.sent_at&.utc&.iso8601(6),
+    canonical_digest: proof&.return_reference_digest == Digest::SHA256.hexdigest("RETA2STALE1"),
+    acceptance_recorded: payout.accepted_transfer_recorded_at.present? })
+
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
   calls = File.readlines(File.join(Rehearsal::DIR, "calls.jsonl")).map { |line| JSON.parse(line) }.select { |c| c["kind"] == "payout_submit" }
@@ -1039,6 +1170,54 @@ when "assertions"
     check.call("gateway: one submission on the #{key} event (the accepted $10.00)",
       calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == event_id } == 1)
   end
+
+  # CodeRabbit a292e277: the pending acceptance after a stale cutoff.
+  stale = find_outcome.call("new", "n_acc_stale", "acc_stale accepted")&.fetch("value").to_h
+  stale_id = id.call("payout_acc_stale")
+  check.call("acc_stale: the submission came after the hold's cutoff (both fences refuse it)",
+    stale["cutoff"].present? && stale["submitted_at"].present? && Time.iso8601(stale["cutoff"]) < Time.iso8601(stale["submitted_at"]))
+  check.call("acc_stale: the provider's paid result committed as an accepted transfer on the pending row",
+    stale["status"] == "processing" && stale["failure_code"] == "provider_result_conflict" &&
+      stale["provider_payout_id"] == "BANK-STALE-#{stale_id}" && stale["provider_accepted_at"].present? &&
+      stale["refusal"].to_s.match?(/Repayment fence: payout #{stale_id} needs verified transfer evidence/))
+  check.call("acc_stale: the marker is recorded as this release's observation, never as the provider's time",
+    stale["basis"] == "locally_observed" && stale["conflict_basis"] == "locally_observed" && stale["provider_paid_at_claimed"] == false)
+  check.call("acc_stale: the same key returns the payout (A2) without a new submission",
+    find_outcome.call("new", "n_acc_stale", "PayoutCreator.call acc_stale same key")&.fetch("value") == stale_id)
+  check.call("acc_stale: a fresh key for $10.00 is refused",
+    refused.call("new", "n_acc_stale", "PayoutCreator.call acc_stale fresh key for $10.00"))
+  check.call("acc_stale: one update stamping the acknowledgement and reversing is refused",
+    refused.call("new", "n_acc_stale", "raw SQL stamp and reverse in one update (exact proof)", /Accepted transfer fence: payout #{stale_id}/))
+  check.call("acc_stale: an acknowledgement stamp outside the reconciler is refused",
+    refused.call("new", "n_acc_stale", "raw SQL acknowledgement stamp outside the reconciler",
+      /only from the current release's reconciler/))
+  %w[failed reversed].each do |outcome|
+    check.call("acc_stale: A1's #{outcome} refused by the database",
+      refused.call("old", "o_acc_stale_a1", "A1 PayoutReconciler #{outcome} payout_acc_stale", /(Accepted transfer|Payout reversal) fence: payout #{stale_id}/))
+  end
+  check.call("acc_stale: A1's same key returns the payout without a new submission",
+    find_outcome.call("old", "o_acc_stale_a1", "A1 PayoutCreator.call acc_stale same key")&.fetch("value") == stale_id)
+  ["pending", "failed", "paid", "reversed", "transfer identifier"].each do |label|
+    check.call("acc_stale: A1-process raw SQL #{label} refused",
+      refused.call("old", "o_acc_stale_a1", "A1 raw SQL #{label} payout_acc_stale", /Accepted transfer fence: payout #{stale_id}/))
+  end
+  after_stale_a1 = find_outcome.call("old", "o_acc_stale_a1", "acc_stale after A1")&.fetch("value").to_h
+  check.call("acc_stale: after A1 still processing under its conflict with its identity",
+    after_stale_a1 == { "status" => "processing", "failure_code" => "provider_result_conflict", "provider_payout_id" => "BANK-STALE-#{stale_id}" })
+  stale_return = find_outcome.call("new", "n_acc_stale_return", "acc_stale after the verified return")&.fetch("value").to_h
+  check.call("acc_stale: A2 records the acceptance", ok.call("new", "n_acc_stale_return", "A2 PayoutReconciler accepted_transfer payout_acc_stale") &&
+    stale_return["acceptance_recorded"] == true)
+  check.call("acc_stale: a return before the observation is refused without the bank's transfer time",
+    refused.call("new", "n_acc_stale_return", "A2 reversed payout_acc_stale without the bank's transfer time", /after the provider accepted/))
+  check.call("acc_stale: with the bank's earlier transfer time the exact return reverses it, proof sent at that time",
+    ok.call("new", "n_acc_stale_return", "A2 reversed payout_acc_stale with the bank's transfer time") &&
+      stale_return["status"] == "reversed" && stale_return["proof_kind"] == "accepted_transfer_return" &&
+      stale_return["proof_sent_at"] == stale_return["bank_sent"] &&
+      Time.iso8601(stale_return["returned_at"]) < Time.iso8601(stale_return["observed"]))
+  check.call("acc_stale: the return reference is stored by its canonical digest (spacing removed)", stale_return["canonical_digest"] == true)
+  stale_event = id.call("acc_stale")
+  check.call("gateway: one submission on the acc_stale event",
+    calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == stale_event } == 1)
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

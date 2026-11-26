@@ -52,6 +52,9 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
   def accepted_while_held!
     record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
     settlement = Settlements::Finalizer.call(event: event, actor: admin)
+    # The eligible balance before the payout, independent of its return
+    # (CodeRabbit 4706251771): an exact return restores exactly this.
+    @available_before_payout = available
     stub_gateway! do |_payout|
       EventCancellationRefunds.hold_payouts!(event, actor: admin)
       PayoutGateway::Result.new(provider_payout_id: "BANK-ACC-HELD", status: :paid)
@@ -124,6 +127,9 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
   end
 
   def every_freeing_writer_refused!(payout, acknowledged:)
+    # CodeRabbit 4706251759: the identifier as it was before any attempt.
+    transfer = payout.reload.provider_payout_id
+    expect(transfer).to be_present
     expect(a1_failed(payout)).to match(/never recorded paid, failed, pending or released/)
     expect(a1_paid(payout)).to match(/never recorded paid, failed, pending or released/)
     expect(a1_reversed(payout)).to match(acknowledged ? /record its return from the current release/ :
@@ -150,7 +156,7 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
       end
       expect(wrong_time).to match(/record its return from the current release/)
     end
-    expect(payout.reload).to have_attributes(failure_code: "provider_result_conflict", provider_payout_id: payout.provider_payout_id)
+    expect(payout.reload).to have_attributes(failure_code: "provider_result_conflict", provider_payout_id: transfer)
     expect(payout.status).to be_in(%w[processing held])
   end
 
@@ -193,18 +199,21 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
       expect(calls_after_acceptance).to eq(0)
 
       # The current release's exact verified return is the only way out.
-      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
+      transfer = payout.reload.provider_payout_id
+      PayoutReconciler.call(payout: payout.reload, actor: admin, status: "reversed", provider_payout_id: transfer,
         evidence: evidence(conflict_audit_id: conflict(payout).id, return_reference: "RET-ACC-#{state}",
           returned_amount_cents: payout.disbursement_cents, returned_at: Time.current.utc.iso8601(6)))
       expect { commit_check! }.not_to raise_error
-      expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: payout.provider_payout_id,
+      expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: transfer,
         accepted_transfer_recorded_at: recorded_at)
       expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return", sent_at: payout.provider_accepted_at)
       expect(raw(payout, status: Payout.statuses[:processing], failure_code: "provider_result_conflict")).to match(/stays reversed/)
       expect(raw(payout, provider_accepted_at: nil)).to match(/are fixed/)
       if state == :held
-        # The ordinary event's balance is back by exactly the $10.00.
-        expect(available).to be >= 1000
+        # The ordinary event's balance is back to exactly what it was before
+        # the payout: the $10.00 returned and the conflict's freeze lifted,
+        # nothing more.
+        expect(available).to eq(@available_before_payout)
         expect(fresh_payout!("acc-fresh-3", 1000)).to be_persisted
         expect(@calls).to eq(1)
       end
@@ -281,8 +290,10 @@ RSpec.describe "Accepted transfer fence (database, every writer)" do
     expect { commit_check! }.not_to raise_error
     expect(payout.reload).to be_status_reversed
     expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return", sent_at: payout.provider_accepted_at)
-    # The ordinary event's balance is back (the open conflict froze it).
-    expect(available).to be >= reserved_available + 1000
+    # The ordinary event's balance is back to exactly its value before the
+    # payout (the $10.00 returned and the open conflict's freeze lifted).
+    expect(available).to eq(@available_before_payout)
+    expect(@available_before_payout).to be >= reserved_available + 1000
     expect(cpa.call[:rows].find { |row| row[:event_id] == event.id }).to include(organizer_payouts_made_cents: 1000,
       payout_reversals_cents: 1000)
     # CodeRabbit 4705527061: the redacted acceptance can no longer be

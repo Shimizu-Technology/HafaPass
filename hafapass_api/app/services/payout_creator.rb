@@ -37,9 +37,26 @@ class PayoutCreator
   def self.provider_accepted?(payout)
     return true if payout.provider_accepted_at.present?
 
+    paid_refused_audit?(payout)
+  end
+
+  # CodeRabbit 4706251688: an acceptance shown only by its conflict audit,
+  # without the durable marker. No release writes one (the marker and the
+  # audit are written in one transaction, the audit fail-open after the
+  # marker), and the A2 preflight counts them (gate_evidence_only_zero).
+  # Should one exist, it stays committed (provider_accepted? is true: never
+  # paid, failed, released or resent) and PayoutReconciler records no
+  # outcome for it: there is no marker time to compare a return with, so
+  # finance escalates it for an approved disposition.
+  def self.evidence_only_acceptance?(payout)
+    payout.provider_accepted_at.nil? && paid_refused_audit?(payout)
+  end
+
+  def self.paid_refused_audit?(payout)
     AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict")
       .where("metadata->>'conflict_reason' = ?", PAID_REFUSED_REASON).exists?
   end
+  private_class_method :paid_refused_audit?
 
   def self.call(**)
     new(**).call
@@ -62,11 +79,16 @@ class PayoutCreator
     return payout unless reserved
 
     result = submit_payout!(payout)
+    # CodeRabbit 4706251665: when the provider's result reports when it paid,
+    # that is the paid time; otherwise only this observation is known.
+    observed_at = Time.current
+    paid = result.status.to_s == "paid"
     record_submission_outcome!(payout,
       provider_payout_id: result.provider_payout_id,
       status: result.status,
-      initiated_at: Time.current,
-      paid_at: result.status.to_s == "paid" ? Time.current : nil
+      initiated_at: observed_at,
+      paid_at: paid ? (result.paid_at || observed_at) : nil,
+      provider_reported_paid_at: paid ? result.paid_at : nil
     )
     payout
   rescue ActiveRecord::RecordInvalid => e
@@ -179,14 +201,29 @@ class PayoutCreator
   end
 
   # Under the organization -> event -> payout locks. The provider's
-  # reference, the amount and the time it reported the payment are kept in
-  # the row and the audit; the payout stays in flight (committed).
+  # reference, the amount and the acceptance time are kept in the row and
+  # the audit; the payout stays in flight (committed).
+  # CodeRabbit 4706251665: the marker is the provider's reported paid time
+  # when its result carries one (basis provider_reported). Otherwise it is
+  # when this release observed the paid result (locally_observed): the
+  # transfer left no later than that, and possibly earlier, so it is never
+  # recorded as the provider's time. A return is then compared with the
+  # bank's own transfer time when finance shows it (PayoutReconciler
+  # .verified_return!), between the submission request and this
+  # observation.
+  # CodeRabbit 4706251677: on a pending payout the move to processing
+  # carries the marker, which the payout fence admits whatever the hold or
+  # restatement cutoff (hafapass_payout_repayment_fence): recording money
+  # that left is never refused, so the acceptance commits with its refusal.
   def record_refused_paid_locked!(payout, attributes, refusal:, blocker: nil)
     before_data = payout.attributes.slice("status", "provider_payout_id", "paid_at")
-    provider_paid_at = Time.zone.at((attributes[:paid_at] || Time.current).to_time.utc.floor(6))
+    reported = attributes[:provider_reported_paid_at]
+    accepted_at = Time.zone.at((reported || attributes[:initiated_at] || Time.current).to_time.utc.floor(6))
+    basis = reported ? "provider_reported" : "locally_observed"
     updates = { provider_payout_id: attributes[:provider_payout_id] || payout.provider_payout_id,
       initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
-      failure_message: ACCEPTED_AFTER_FENCE_MESSAGE, provider_accepted_at: provider_paid_at }
+      failure_message: ACCEPTED_AFTER_FENCE_MESSAGE, provider_accepted_at: accepted_at,
+      provider_accepted_basis: basis }
     updates[:status] = :processing if payout.status_pending?
     # Held before the provider answered: the transfer left, so the hold now
     # covers an in-flight (submitted) payout, whose amounts are fixed.
@@ -199,7 +236,9 @@ class PayoutCreator
         settlement_id: payout.settlement_id,
         failure_code: "provider_result_conflict", conflict_reason: PAID_REFUSED_REASON, refusal: refusal,
         **(blocker ? { entry_blocker: blocker[:reason], entry_blocker_started_at: blocker[:started_at]&.utc&.iso8601(6) } : {}),
-        provider_paid_at: provider_paid_at.utc.iso8601(6),
+        # The provider's own paid time only when it reported one.
+        **(reported ? { provider_paid_at: accepted_at.utc.iso8601(6) } : { observed_paid_at: accepted_at.utc.iso8601(6) }),
+        provider_accepted_basis: basis,
         provider_result: attributes.slice(:status, :provider_payout_id, :failure_code) },
       source: "provider", outcome: "unknown",
       deduplication_key: "payout:#{payout.id}:paid_refused:#{attributes[:provider_payout_id]}", request: request)
@@ -208,12 +247,13 @@ class PayoutCreator
   # A provider outcome is a fact about a request already sent; it is
   # recorded under this release's reader, and the database's payout fence
   # still decides processing and paid on a held or restated version.
-  def record_observed_submission_locked!(payout, **attributes)
+  def record_observed_submission_locked!(payout, provider_reported_paid_at: nil, **attributes)
     # The same organization -> event -> payout order as the submission.
     payout.organization.lock!("FOR NO KEY UPDATE")
     payout.event.lock!("FOR NO KEY UPDATE")
     payout.lock!
     provider_result = attributes.dup
+    refused_attributes = attributes.merge(provider_reported_paid_at: provider_reported_paid_at)
     incoming = attributes[:status].to_s
     # Review finding 2 (e49e94d2): a paid result after an ordinary statement
     # change or while the processing review is open is the provider's
@@ -222,7 +262,7 @@ class PayoutCreator
       blocker = PayoutEntryGuard.blockers(payout, approvals: false)
         .find { |entry| PROVIDER_PAID_BLOCKERS.include?(entry[:reason]) }
       if blocker
-        return record_refused_paid_locked!(payout, attributes, blocker: blocker,
+        return record_refused_paid_locked!(payout, refused_attributes, blocker: blocker,
           refusal: "Payout entry guard: #{blocker[:reason]} began before the provider reported the transfer paid")
       end
     end
@@ -234,7 +274,7 @@ class PayoutCreator
     # that is not paid keeps the existing held handling below.
     if incoming == "paid" && payout.status_held? && !self.class.provider_accepted?(payout)
       held_at = AuditLog.where(auditable: payout, action: "payout.held_for_cancellation").maximum(:occurred_at)
-      return record_refused_paid_locked!(payout, attributes,
+      return record_refused_paid_locked!(payout, refused_attributes,
         blocker: { reason: "cancellation_hold", started_at: held_at },
         refusal: "Cancellation hold: the payout was held before the provider reported the transfer paid")
     end

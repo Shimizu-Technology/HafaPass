@@ -115,6 +115,21 @@ RSpec.describe "never_fulfilled:a2_preflight" do
     expect(lines(run_task, "event").sole).to include("needs_finalizing" => "no")
   end
 
+  # CodeRabbit 4706251688: every acceptance carries its durable marker; one
+  # shown only by its conflict audit fails the gate and is named.
+  it "counts accepted transfers and fails the gate on an acceptance shown only by its audit" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    payout = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "preflight-evidence-only", amount_cents: 1000)
+    expect(lines(run_task, "accepted").sole).to include("marked" => "0", "evidence_only" => "0",
+      "evidence_only_payout_ids" => "none", "gate_evidence_only_zero" => "PASS")
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: admin,
+      organization: organization, event: event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+    expect(lines(run_task, "accepted").sole).to include("evidence_only" => "1", "evidence_only_payout_ids" => payout.id.to_s,
+      "gate_evidence_only_zero" => "FAIL (escalate each to finance)")
+  end
+
   it "fails the guard gate when a required trigger exists but is disabled" do
     ActiveRecord::Base.connection.execute("INSERT INTO financial_cutovers (key) VALUES " \
       "('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING")
