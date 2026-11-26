@@ -87,7 +87,9 @@ Dir[File.join(baseline_dir, "*.csv")].sort.each do |baseline_path|
   new_by_key.each do |key, rows|
     allowed = expected.include?([name, key])
     unexpected += rows.length unless allowed
-    puts "#{name}: #{key} ADDED#{' (expected)' if allowed}"
+    rows.each do |fields|
+      puts "#{name}: #{key} ADDED#{' (expected)' if allowed}: " + new_header.zip(fields).map { |column, value| "#{column}=#{value}" }.join("; ")
+    end
   end
   puts "#{name}: #{same}/#{old_rows.length} rows byte-identical in the #{old_header.length} pre-existing columns; " \
     "appended columns: #{appended.empty? ? 'none' : appended.join(',')}"
