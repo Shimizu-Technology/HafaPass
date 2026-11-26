@@ -1812,8 +1812,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.datetime "determined_at", null: false
     t.index ["payout_id"], name: "index_payout_custody_determinations_on_payout_id", unique: true
     t.index ["settlement_id"], name: "index_payout_custody_determinations_on_settlement_id"
-    t.check_constraint "basis::text = ANY (ARRAY['recorded_at_paid'::character varying, 'derived_history'::character varying]::text[])", name: "payout_custody_determinations_basis_valid"
-    t.check_constraint "determination::text = ANY (ARRAY['stripe_custody'::character varying, 'non_custodial'::character varying, 'ambiguous'::character varying]::text[])", name: "payout_custody_determinations_determination_valid"
+    t.check_constraint "basis::text = ANY (ARRAY['recorded_at_paid'::character varying::text, 'derived_history'::character varying::text])", name: "payout_custody_determinations_basis_valid"
+    t.check_constraint "determination::text = ANY (ARRAY['stripe_custody'::character varying::text, 'non_custodial'::character varying::text, 'ambiguous'::character varying::text])", name: "payout_custody_determinations_determination_valid"
     t.check_constraint "jsonb_typeof(evidence) = 'object'::text", name: "payout_custody_determinations_evidence_object"
   end
 
