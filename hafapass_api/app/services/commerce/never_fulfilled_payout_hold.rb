@@ -15,14 +15,31 @@ module Commerce
   # audited confirmation. A payout first submitted after the hold opened
   # never can (the submission itself is refused).
   #
-  # never_fulfilled_buyer_overpaid is not a hold (P4): a proven platform-only
-  # over-return alerts and audits without holding the organizer. The hold is
-  # per event, so unrelated events' payouts are never held by it.
+  # never_fulfilled_buyer_overpaid is a hold only until its capture is proven
+  # platform-only (P4, §8.7): then it alerts and audits without holding the
+  # organizer. The proof is the database's own hafapass_overpaid_platform_only,
+  # which hafapass_payout_block_start also uses, so every reader and fence
+  # agrees. The hold is per event, so unrelated events' payouts are never
+  # held by it.
   module NeverFulfilledPayoutHold
     CODES = FinancialIntegrity::PAYOUT_BLOCKING_CODES
     MESSAGE = "A buyer repayment on this event is unresolved; resolve it in Refund issues before paying out"
     PAID_MESSAGE = "A buyer repayment on this event is unresolved. Only a transfer submitted and sent before " \
       "the hold opened can be recorded: confirm it was sent before the hold, with its transfer time."
+
+    OVERPAID_CODE = FinancialIntegrity::OVERPAID_CODE
+    PROVEN_SQL = "hafapass_overpaid_platform_only(reconciliation_exceptions.payment_id)"
+
+    # Open over-return exceptions that do not hold payouts or finalization.
+    def self.proven_platform_only_overpaid(relation = ReconciliationException.open)
+      relation.where(code: OVERPAID_CODE).where(PROVEN_SQL)
+    end
+
+    # Open exceptions that hold the organizer's payouts and statements: every
+    # open item except a proven platform-only over-return.
+    def self.holding_exceptions(relation = ReconciliationException.open)
+      relation.where("reconciliation_exceptions.code <> ? OR NOT #{PROVEN_SQL}", OVERPAID_CODE)
+    end
 
     def self.blocked?(event)
       block_started_at(event).present?

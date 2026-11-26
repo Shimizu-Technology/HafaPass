@@ -3169,7 +3169,8 @@
       "next_attempt_at": "system",
       "verified_at": "system",
       "created_at": "system",
-      "updated_at": "system"
+      "updated_at": "system",
+      "facts_recorded_at": "financial"
     },
     "support_notes": {
       "id": "system",

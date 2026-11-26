@@ -179,9 +179,10 @@ class Api::V1::Admin::ReconciliationExceptionsController < Api::V1::Admin::BaseC
   # Every organization whose payouts are frozen by open exceptions, with the
   # events whose statements cannot be finalized.
   def payout_blocks
-    # A proven platform-only over-return (P4) alerts without holding payouts.
-    counts = linked_scope.merge(ReconciliationException.open)
-      .where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE).where.not(events: { id: nil })
+    # A proven platform-only over-return (P4) alerts without holding payouts;
+    # an unproven one is listed as a hold.
+    counts = Commerce::NeverFulfilledPayoutHold.holding_exceptions(linked_scope.merge(ReconciliationException.open))
+      .where.not(events: { id: nil })
       .group("events.organization_id", "events.id").count
     events = Event.where(id: counts.keys.map(&:last)).includes(:organization).index_by(&:id)
     blocked = counts.group_by { |(organization_id, _), _| organization_id }.map do |organization_id, rows|

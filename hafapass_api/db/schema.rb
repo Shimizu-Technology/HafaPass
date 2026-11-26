@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_26_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_26_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2748,6 +2748,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_160000) do
     t.datetime "verified_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "facts_recorded_at"
     t.index ["context_digest", "provider_balance_transaction_id"], name: "idx_stripe_fee_provider_identity", unique: true, where: "(provider_balance_transaction_id IS NOT NULL)"
     t.index ["fee_component_id"], name: "index_stripe_fee_evidences_on_fee_component_id", unique: true
     t.index ["payment_id"], name: "index_stripe_fee_evidences_on_payment_id", unique: true
@@ -4636,6 +4637,87 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_160000) do
       FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
     CREATE OR REPLACE TRIGGER payout_custody_determinations_no_truncate BEFORE TRUNCATE ON payout_custody_determinations
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_platform_only(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT
+          NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = target AND r.status = 1
+            AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'refund' AND p.source_type = 'Refund'
+              AND p.source_id = r.id))
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = 2
+            AND d.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'dispute_loss'
+              AND p.source_type = 'Dispute' AND p.source_id = d.id))
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = 2
+            AND d.loss_reversed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p
+              WHERE p.kind = 'dispute_loss_reversal' AND p.source_type = 'Dispute' AND p.source_id = d.id))
+          AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.never_fulfilled_capture_id = c.id
+            AND p.recognition_state <> 'recognized')
+          AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = target AND r.status = 0)
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = 0)
+          AND NOT EXISTS (SELECT 1 FROM repayment_operations o WHERE o.never_fulfilled_capture_id = c.id
+            AND o.state NOT IN ('succeeded', 'failed_terminal'))
+          AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = target
+            AND re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held'))
+          AND NOT EXISTS (SELECT 1 FROM balance_adjustments a WHERE (c.capture_scope = 'order' AND a.order_id = c.order_id)
+            OR a.dispute_id IN (SELECT d.id FROM disputes d WHERE d.payment_id = target
+              OR (c.capture_scope = 'order' AND d.order_id = c.order_id)))
+          AND NOT EXISTS (SELECT 1 FROM payout_custody_determinations pcd WHERE target = ANY (pcd.qualifying_payment_ids))
+        FROM never_fulfilled_captures c WHERE c.payment_id = target), false)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) AS started
+          FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code IN ('late_payment_success_after_inventory_release', 'late_payment_success_after_hold_expiry', 'pass_all_included_nights_cancelled', 'unfulfilled_second_capture', 'never_fulfilled_ownership_ambiguous', 'never_fulfilled_classification_quarantined', 'never_fulfilled_return_quarantined', 'never_fulfilled_backfill_ambiguous', 'never_fulfilled_backfill_restatement', 'never_fulfilled_repayment_reopened', 'never_fulfilled_sale_effects_held')
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT hafapass_overlap_hold_start(p.id) FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (1, 4, 5)
+        UNION ALL
+        SELECT timezone('UTC', now()) FROM reconciliation_exceptions re
+          WHERE re.status = 0 AND re.code = 'never_fulfilled_buyer_overpaid'
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+            AND NOT hafapass_overpaid_platform_only(re.payment_id)
+      ) blocks
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_stamp_fee_facts_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.facts_recorded_at IS NOT NULL THEN
+          RAISE EXCEPTION 'A fee fact''s recording time is stamped by the database' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.evidence_digest IS NOT NULL THEN
+          NEW.facts_recorded_at := timezone('UTC', clock_timestamp());
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF OLD.facts_recorded_at IS NOT NULL THEN
+        IF NEW.facts_recorded_at IS DISTINCT FROM OLD.facts_recorded_at THEN
+          RAISE EXCEPTION 'A fee fact''s recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.evidence_digest IS NOT NULL AND (OLD.evidence_digest IS NULL
+          OR current_setting('hafapass.fee_facts_backfill', true) IS NOT DISTINCT FROM NEW.id::text) THEN
+        NEW.facts_recorded_at := timezone('UTC', clock_timestamp());
+      ELSIF NEW.facts_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A fee fact''s recording time is stamped by the database' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS stripe_fee_evidences_facts_recorded_at ON stripe_fee_evidences;
+    CREATE TRIGGER stripe_fee_evidences_facts_recorded_at BEFORE INSERT OR UPDATE ON stripe_fee_evidences
+      FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_fee_facts_recorded_at();
   SQL
 
 end

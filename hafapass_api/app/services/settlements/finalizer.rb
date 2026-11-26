@@ -22,8 +22,8 @@ module Settlements
       # The event-day closeout contract requires an empty reconciliation
       # queue, even when an item would not prevent a buyer refund attempt.
       # A proven platform-only over-return (P4) alerts finance without holding
-      # the organizer, so it never blocks finalization.
-      open = ReconciliationException.open.where.not(code: Commerce::NeverFulfilledResolution::OVERPAID_CODE)
+      # the organizer, so it never blocks finalization; an unproven one does.
+      open = Commerce::NeverFulfilledPayoutHold.holding_exceptions
       if event.orders.joins(:reconciliation_exceptions).merge(open).exists? ||
           open.joins(:payment).where(payments: { order_id: event.orders.select(:id) }).exists?
         return "Resolve open reconciliation exceptions"

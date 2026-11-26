@@ -1347,7 +1347,8 @@ module FinancialIntegrity
   # Names an exception (or refund) as backed by evidence for the rest of the
   # caller's transaction, so its database guard lets the write through.
   def self.with_evidence(kind, id)
-    raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity settlement_reader payout_transfer].include?(kind.to_s)
+    raise ArgumentError, "unknown evidence kind" unless %w[evidence_resolution refund_identity settlement_reader payout_transfer
+      fee_facts_backfill].include?(kind.to_s)
 
     connection = ActiveRecord::Base.connection
     raise ArgumentError, "evidence needs an open transaction" unless connection.transaction_open?
@@ -1405,6 +1406,117 @@ module FinancialIntegrity
       FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
   SQL
 
+  # A2 operational readers (migration 20261126170000, design §8.7,
+  # §8.10.9).
+  #
+  # (1) P4 proof. never_fulfilled_buyer_overpaid stops holding payouts only
+  #     when the over-returned capture is proven platform-only: classified,
+  #     every recorded return movement posted and recognized, nothing in
+  #     flight or unknown, no open evidence hold on it, no balance adjustment
+  #     linked to it, and no payout custody determination naming it. Any
+  #     other open overpaid exception is a hold in the same function the
+  #     payout, submission and finalization fences use, so the application
+  #     readers and the database agree. Its hold starts at the reading
+  #     transaction's time (now()), not the exception's: proof can fail
+  #     later (a linked adjustment, a new dispute), and a transfer already
+  #     submitted and sent before then can still be recorded as paid.
+  # (2) A durable recording time for verified processing facts
+  #     (stripe_fee_evidences.facts_recorded_at). The database stamps it the
+  #     first time an evidence row carries an evidence_digest and never
+  #     changes it, so the projection can book payment-scope processing that
+  #     has no fee component (A1 §4.6 item 8). Rows that already had facts
+  #     keep NULL until `stripe_fee_evidence:stamp_facts` stamps them at the
+  #     time it runs (hafapass.fee_facts_backfill names the row).
+  OPERATIONAL_SENTINEL_TRIGGER = %w[stripe_fee_evidences_facts_recorded_at stripe_fee_evidences].freeze
+  OVERPAID_CODE = "never_fulfilled_buyer_overpaid"
+  REFUND_PENDING_STATUS = 0
+  REFUND_SUCCEEDED_STATUS = 1
+  DISPUTE_OPEN_STATUS = 0
+  DISPUTE_LOST_STATUS = 2
+  OPERATIONAL_SQL = <<~SQL.freeze
+    CREATE OR REPLACE FUNCTION hafapass_overpaid_platform_only(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT COALESCE((
+        SELECT
+          NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = target AND r.status = #{REFUND_SUCCEEDED_STATUS}
+            AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'refund' AND p.source_type = 'Refund'
+              AND p.source_id = r.id))
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_LOST_STATUS}
+            AND d.amount_cents > 0 AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.kind = 'dispute_loss'
+              AND p.source_type = 'Dispute' AND p.source_id = d.id))
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_LOST_STATUS}
+            AND d.loss_reversed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p
+              WHERE p.kind = 'dispute_loss_reversal' AND p.source_type = 'Dispute' AND p.source_id = d.id))
+          AND NOT EXISTS (SELECT 1 FROM buyer_return_postings p WHERE p.never_fulfilled_capture_id = c.id
+            AND p.recognition_state <> 'recognized')
+          AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id = target AND r.status = #{REFUND_PENDING_STATUS})
+          AND NOT EXISTS (SELECT 1 FROM disputes d WHERE d.payment_id = target AND d.status = #{DISPUTE_OPEN_STATUS})
+          AND NOT EXISTS (SELECT 1 FROM repayment_operations o WHERE o.never_fulfilled_capture_id = c.id
+            AND o.state NOT IN ('succeeded', 'failed_terminal'))
+          AND NOT EXISTS (SELECT 1 FROM reconciliation_exceptions re WHERE re.payment_id = target
+            AND re.status = #{OPEN_EXCEPTION_STATUS} AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)}))
+          AND NOT EXISTS (SELECT 1 FROM balance_adjustments a WHERE (c.capture_scope = 'order' AND a.order_id = c.order_id)
+            OR a.dispute_id IN (SELECT d.id FROM disputes d WHERE d.payment_id = target
+              OR (c.capture_scope = 'order' AND d.order_id = c.order_id)))
+          AND NOT EXISTS (SELECT 1 FROM payout_custody_determinations pcd WHERE target = ANY (pcd.qualifying_payment_ids))
+        FROM never_fulfilled_captures c WHERE c.payment_id = target), false)
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_payout_block_start(target_event bigint) RETURNS timestamp
+    LANGUAGE sql STABLE AS $$
+      SELECT MIN(started) FROM (
+        SELECT LEAST(re.created_at, COALESCE(re.hold_started_at, re.created_at)) AS started
+          FROM reconciliation_exceptions re
+          WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code IN (#{sql_list(PAYOUT_BLOCKING_CODES)})
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+        UNION ALL
+        SELECT hafapass_overlap_hold_start(p.id) FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.event_id = target_event AND p.capture_recorded_at IS NOT NULL
+            AND p.status IN (#{CAPTURED_PAYMENT_STATUSES})
+        UNION ALL
+        SELECT timezone('UTC', now()) FROM reconciliation_exceptions re
+          WHERE re.status = #{OPEN_EXCEPTION_STATUS} AND re.code = '#{OVERPAID_CODE}'
+            AND (re.order_id IN (SELECT id FROM orders WHERE event_id = target_event)
+              OR re.payment_id IN (SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.event_id = target_event))
+            AND NOT hafapass_overpaid_platform_only(re.payment_id)
+      ) blocks
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_stamp_fee_facts_recorded_at() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.facts_recorded_at IS NOT NULL THEN
+          RAISE EXCEPTION 'A fee fact''s recording time is stamped by the database' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.evidence_digest IS NOT NULL THEN
+          NEW.facts_recorded_at := timezone('UTC', clock_timestamp());
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF OLD.facts_recorded_at IS NOT NULL THEN
+        IF NEW.facts_recorded_at IS DISTINCT FROM OLD.facts_recorded_at THEN
+          RAISE EXCEPTION 'A fee fact''s recording time is set once' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NEW.evidence_digest IS NOT NULL AND (OLD.evidence_digest IS NULL
+          OR current_setting('hafapass.fee_facts_backfill', true) IS NOT DISTINCT FROM NEW.id::text) THEN
+        NEW.facts_recorded_at := timezone('UTC', clock_timestamp());
+      ELSIF NEW.facts_recorded_at IS NOT NULL THEN
+        RAISE EXCEPTION 'A fee fact''s recording time is stamped by the database' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS stripe_fee_evidences_facts_recorded_at ON stripe_fee_evidences;
+    CREATE TRIGGER stripe_fee_evidences_facts_recorded_at BEFORE INSERT OR UPDATE ON stripe_fee_evidences
+      FOR EACH ROW EXECUTE FUNCTION hafapass_stamp_fee_facts_recorded_at();
+  SQL
+
   module SchemaDump
     private
 
@@ -1435,6 +1547,11 @@ module FinancialIntegrity
         end
       end
       sql += FinancialIntegrity::CUSTODY_SQL if @connection.data_source_exists?(CUSTODY_SENTINEL_TABLE)
+      operational_trigger, operational_table = OPERATIONAL_SENTINEL_TRIGGER
+      if @connection.select_value("SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '#{operational_trigger}' " \
+          "AND tgrelid = '#{operational_table}'::regclass)")
+        sql += FinancialIntegrity::OPERATIONAL_SQL
+      end
       stream.puts "  execute <<~SQL"
       sql.each_line { |line| stream.puts(line.strip.empty? ? "" : "    #{line}") }
       stream.puts "  SQL"
