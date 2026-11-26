@@ -230,6 +230,19 @@ RSpec.describe "Admin payout reversal evidence", type: :request do
       expect(PayoutReconciler.send(:same_evidence?, audit, intact)).to be(true)
     end
 
+    it "does not replay the sanitized URL from a legacy audit" do
+      ["https://bank.example/transfer?ref=abc", "https://operator:pass@bank.example/transfer",
+        "https://bank.example/transfer#line-four"].each do |reference|
+        original = { "reference" => reference }
+        recorded = AuditSanitizer.call(original)
+        audit = AuditLog.new(metadata: { "reconciliation" => recorded })
+
+        expect(recorded).to eq("reference" => "https://bank.example/transfer")
+        expect(PayoutReconciler.send(:same_evidence?, audit, recorded)).to be(false)
+        expect(PayoutReconciler.send(:same_evidence?, audit, original)).to be(false)
+      end
+    end
+
     it "does the same for the accepted-transfer acknowledgement" do
       record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
       allow(PayoutGateway).to receive(:submit) do |_payout|

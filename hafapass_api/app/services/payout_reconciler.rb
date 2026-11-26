@@ -349,10 +349,9 @@ class PayoutReconciler
   # sanitizer's digit masks never alter it, and no evidence text can be
   # recovered or confirmed from it. An audit written before the fingerprint
   # (A1's payout.reconciled) can replay only an intact exact copy.
-  # A legacy string at the sanitizer's length limit or with a redaction
-  # marker does not prove the original request. Anonymization removes both:
-  # a later retry is then
-  # refused, as before.
+  # Legacy text at the sanitizer's length limit, with a redaction marker,
+  # or containing a URL cannot prove the original request. Anonymization
+  # removes both stored forms, so later retries are refused.
   def self.evidence_fingerprint(normalized)
     key = Rails.application.key_generator.generate_key("hafapass/payout-evidence-fingerprint", 32)
     OpenSSL::HMAC.hexdigest("SHA256", key, JSON.generate(normalized.sort.to_h)).tr("0-9a-f", "a-p")
@@ -368,7 +367,7 @@ class PayoutReconciler
     return false unless recorded.is_a?(Hash) && recorded == normalized
 
     recorded.values.grep(String).none? do |value|
-      value.length >= AuditSanitizer::MAX_TEXT_LENGTH || value.include?(AuditSanitizer::REDACTED)
+      value.length >= AuditSanitizer::MAX_TEXT_LENGTH || value.include?(AuditSanitizer::REDACTED) || value.match?(%r{https?://}i)
     end
   end
   private_class_method :same_evidence?
