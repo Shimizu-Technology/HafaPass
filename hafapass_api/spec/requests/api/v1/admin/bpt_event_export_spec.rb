@@ -38,7 +38,9 @@ RSpec.describe "Admin monthly BPT event export", type: :request do
   it "uses Guam collection, refund and paid dates and keeps negative net fees visible" do
     order, capture = captured_order(event: event, at: september_end, fee: 225)
     line = create(:order_item, order: order, discount_cents: 200, organizer_proceeds_cents: 2200)
-    create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 81)
+    # Recorded with the capture: processing is recognized at GREATEST(its
+    # recording, the sale's booking), the CPA rule (CodeRabbit 4704932984).
+    create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 81, created_at: september_end)
     create(:fee_component, order: order, kind: "processing", amount_cents: 99)
     later_capture = create(:payment, :succeeded, order: order, provider_environment: "live")
     # A historical later capture (recorded before A1), which reconcile's

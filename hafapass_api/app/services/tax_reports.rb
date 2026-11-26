@@ -28,7 +28,8 @@ class TaxReports
   def as_json(*)
     { year: year, timezone: GUAM_TIMEZONE, currency: "usd", organizers: organizers, months: months, note: NOTE,
       classified_payment_policy: CpaMonthlyReport::CLASSIFIED_POLICY_NOTE,
-      classified_payment_alerts: classified(period).alerts, payout_custody_alerts: payout_custody_alerts }
+      classified_payment_alerts: classified(period).alerts, payout_custody_alerts: payout_custody_alerts,
+      payout_population_alerts: payout_population_alerts }
   end
 
   # Paid payouts this year whose BPT row uses the conservative rule instead
@@ -121,7 +122,7 @@ class TaxReports
       totals = classified(range).by_event.values
       collected_fees = fees(collected).sum(:amount_cents) + totals.sum { |event| event.fee_share_flow.added }
       returned_fees = refunded_fees(refunds) + totals.sum(&:fee_refund_cents)
-      processing = ordinary_processing(collected).sum(:amount_cents) +
+      processing = ordinary_processing(range).sum(:amount_cents) +
         totals.sum { |event| event.processing_platform_cents + event.processing_organizer_cents }
       { month: month, fees_collected_cents: collected_fees, fees_refunded_cents: returned_fees,
         gross_receipts_cents: collected_fees - returned_fees, card_processing_costs_cents: processing }
@@ -145,7 +146,7 @@ class TaxReports
     gross_fees = fees(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
     returned_fees = RefundItem.joins(refund: :order).where(refund_id: refunds.select(:id))
       .group("orders.event_id").sum("refund_items.fee_cents + refund_items.organizer_fee_cents")
-    processing = ordinary_processing(collected).joins(:order).group("orders.event_id").sum(:amount_cents)
+    processing = ordinary_processing(range, orders: agent_orders, captures: captures).group("orders.event_id").sum(:amount_cents)
     classified_events.each do |event_id, totals|
       gross_fees[event_id] = gross_fees.fetch(event_id, 0) + totals.fee_share_flow.added
       returned_fees[event_id] = returned_fees.fetch(event_id, 0) + totals.fee_refund_cents
@@ -242,12 +243,21 @@ class TaxReports
       .where("#{REFUND_RECOGNIZED_AT_SQL} >= ? AND #{REFUND_RECOGNIZED_AT_SQL} < ?", range.begin, range.end)
   end
 
-  # Actual processing on ordinary collected orders, without components a
-  # classified payment owns (a second capture's processing on a fulfilled
-  # order included).
-  def ordinary_processing(collected)
-    FeeComponent.where(order_id: collected.select(:id), kind: "processing", estimated: false)
+  # Actual processing on ordinary sales recognized in the range, without
+  # components a classified payment owns (a second capture's processing on a
+  # fulfilled order included). CodeRabbit 4704932984: recognized at
+  # GREATEST(the component's recording, the order's custody booking), the
+  # rule CpaMonthlyReport applies (§5.3), independently of the month the
+  # sale was collected: a January sale's processing recorded in February is
+  # February's cost in both, and a regenerated January is unchanged.
+  PROCESSING_RECOGNIZED_AT_SQL = "GREATEST(fee_components.created_at, #{COLLECTED_AT_SQL})".freeze
+
+  def ordinary_processing(range, orders: live_orders, captures: Payment.live_or_legacy_capture)
+    ordinary = orders.where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_ORDER_SQL}")
+    FeeComponent.joins(:order).joins(order_captures_join_sql(captures))
+      .where(order_id: ordinary.select(:id), kind: "processing", estimated: false)
       .where("NOT #{Commerce::ClassifiedPaymentFinance::CLASSIFIED_COMPONENT_SQL}")
+      .where("#{PROCESSING_RECOGNIZED_AT_SQL} >= ? AND #{PROCESSING_RECOGNIZED_AT_SQL} < ?", range.begin, range.end)
   end
 
   def classified(range)
@@ -292,13 +302,39 @@ class TaxReports
 
   # A capture recorded by the payout's paid recording. A capture with no
   # recording stamp predates A1: bounded by the A1 cutover, else its success.
+  # CodeRabbit 4704932992: a legacy capture with neither (a pre-trigger row
+  # whose order has no completed_at) has no provable time before the
+  # payout, so it is not affirmative support. Such a payout stays in the
+  # view only through its frozen determination (an authorized baseline or
+  # finance disposition via payout_custody:derive) and is otherwise left
+  # out and reported (payout_population_alerts); no period policy is
+  # assumed for it.
   CAPTURED_BY_PAID_SQL = <<~SQL.squish.freeze
     (payments.capture_recorded_at <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
       OR (payments.capture_recorded_at IS NULL AND (
         (SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = 'a1_capture_recording') <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
-        OR payments.succeeded_at <= #{PayoutCustody::PAID_RECORDED_AT_SQL}
-        OR payments.succeeded_at IS NULL)))
+        OR payments.succeeded_at <= #{PayoutCustody::PAID_RECORDED_AT_SQL})))
   SQL
+  UNTIMED_CAPTURE_SQL = <<~SQL.squish.freeze
+    (payments.capture_recorded_at IS NULL AND payments.succeeded_at IS NULL
+      AND COALESCE((SELECT fc.recorded_at FROM financial_cutovers fc WHERE fc.key = 'a1_capture_recording') >
+        #{PayoutCustody::PAID_RECORDED_AT_SQL}, true))
+  SQL
+
+  # Paid payouts in the year left out of the annual organizer view only
+  # because their event's capture has no provable time (CAPTURED_BY_PAID_SQL):
+  # finance freezes their determination from the published baseline or a
+  # disposition, or they stay out. Current at read.
+  def payout_population_alerts
+    included = paid_payouts.select(:id)
+    untimed = Payment.live_or_legacy_capture.where(order_id: payout_population_orders.select(:id))
+      .joins("INNER JOIN orders population_orders ON population_orders.id = payments.order_id")
+      .where("population_orders.event_id = payouts.event_id").where(UNTIMED_CAPTURE_SQL)
+    Payout.status_paid.where(paid_at: period, currency: "usd").where.not(id: included)
+      .joins(PayoutCustody::PAID_AUDIT_JOIN_SQL).where("EXISTS (#{untimed.select(1).to_sql})")
+      .order(:id).pluck(:id, :event_id)
+      .map { |id, event_id| { code: "payout_capture_time_unproven", payout_id: id, event_id: event_id } }
+  end
 
   # a0b25ffe's live_orders, kept exact for the annual payout population.
   def payout_population_orders

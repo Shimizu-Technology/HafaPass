@@ -83,9 +83,23 @@ for (const width of [390, 1280]) {
     test('admin payouts: the processing review and an unresolved refund withdraw "send"; the unaffected event keeps it', async ({ page }) => {
       await page.route('**/api/v1/admin/payouts**', route => json(route, guardedPayouts))
       await page.goto('/admin/payouts')
-      await expect(page.getByRole('status').filter({ hasText: 'Card processing on a payment returned to a buyer is waiting for review' })).toHaveCount(2)
-      await expect(page.getByRole('status').filter({ hasText: 'Buyer refunds on this event are unresolved' })).toHaveCount(1)
-      await expect(page.getByText(/Approval is current\. Send the transfer to the approved payee/)).toHaveCount(1)
+      // Scoped to each payout row (CodeRabbit 4704933018): every blocked
+      // payout carries its own warning and no send instruction; only the
+      // unaffected event's payout keeps it.
+      const row = title => page.locator('tbody tr').filter({ hasText: title })
+      const send = /Approval is current\. Send the transfer to the approved payee/
+      const review = 'Card processing on a payment returned to a buyer is waiting for review'
+      const island = row('Island Open Fictional Championship')
+      await expect(island.filter({ has: page.getByRole('status').filter({ hasText: review }) })).toHaveCount(2)
+      await expect(island.filter({ hasText: send })).toHaveCount(0)
+      const reef = row('Fictional Reef Run 5K')
+      await expect(reef).toHaveCount(1)
+      await expect(reef.getByRole('status').filter({ hasText: 'Buyer refunds on this event are unresolved' })).toHaveCount(1)
+      await expect(reef.getByText(send)).toHaveCount(0)
+      const lagoon = row('Fictional Lagoon Swim Meet')
+      await expect(lagoon.getByText(send)).toBeVisible()
+      await expect(lagoon.getByRole('status').filter({ hasText: 'Do not send' })).toHaveCount(0)
+      await expect(page.getByText(send)).toHaveCount(1)
       await noOverflow(page, width)
       await snap(page, `a2-admin-payouts-guards-${width}`)
     })

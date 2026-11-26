@@ -25,7 +25,7 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   def index
     scope = filtered_payouts
     counts = scope.unscope(:order).group(:status).count
-    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, :connected_account)
+    payouts, meta = admin_page(scope.includes(:organization, :event, :settlement, :connected_account, :return_proof)
       .order(created_at: :desc, id: :desc))
     audits = AuditLog.includes(:actor_user).where(auditable_type: "Payout", auditable_id: payouts.map(&:id),
       action: RECONCILIATION_ACTIONS).order(:id).group_by(&:auditable_id)
@@ -57,6 +57,24 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
   rescue ActiveRecord::RecordNotUnique
     message = payout&.provider == "check" ? "That check number is already recorded" : "That transfer identifier is already recorded"
     render json: { error: message }, status: :unprocessable_entity
+  end
+
+  # POST /api/v1/admin/payouts/:id/return_evidence: the bank's exact return
+  # for a payout already recorded reversed without it (PayoutReconciler).
+  def return_evidence
+    payout = Payout.find(params[:id])
+    evidence = params[:evidence]
+    PayoutReconciler.attach_return_evidence!(payout: payout, actor: current_user,
+      provider_payout_id: params[:provider_payout_id],
+      evidence: evidence.is_a?(ActionController::Parameters) ? evidence.permit(:reference, :confirmed_at, :reason,
+        :return_reference, :returned_amount_cents, :returned_at).to_h : nil,
+      request: request)
+    render json: payout.attributes.slice("id", "status", "provider_payout_id", "amount_cents", "paid_at")
+      .merge(return_proof: payout.reload.return_proof&.evidence_json)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Payout not found" }, status: :not_found
+  rescue PayoutReconciler::ReconciliationError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def check_amount_adjustment
@@ -169,6 +187,12 @@ class Api::V1::Admin::PayoutsController < Api::V1::Admin::BaseController
       # A transfer the provider accepted after an entry guard refused it is
       # only ever reversed, with the bank's return evidence (PayoutReconciler).
       provider_accepted: accepted,
+      # The durable exact-return proof (non-personal; PayoutReturnProof), and
+      # whether a reversal on an event with a never-fulfilled capture still
+      # lacks it (its event stays held until finance attaches the return).
+      return_proof: payout.return_proof&.evidence_json,
+      return_evidence_required: payout.status_reversed? && payout.return_proof.nil? &&
+        PayoutReconciler.classified_event?(payout),
       allowed_outcomes: (accepted ? %w[reversed] : %w[paid failed reversed]).select { |status| payout.may_reconcile_to?(status) },
       conflict_audit_id: payout.failure_code == "provider_result_conflict" ? conflict&.id : nil,
       conflict: payout.failure_code == "provider_result_conflict" && conflict ? {

@@ -748,6 +748,13 @@
       "action": "keep",
       "pii_columns": []
     },
+    "payout_return_proofs": {
+      "category": "financial record",
+      "period": "7_years_after_year_end",
+      "trigger": "recorded_at",
+      "action": "keep",
+      "pii_columns": []
+    },
     "payout_line_allocations": {
       "category": "financial record",
       "period": "7_years_after_year_end",
@@ -2520,6 +2527,16 @@
       "conservative_inclusion": "financial",
       "evidence": "system",
       "determined_at": "system"
+    },
+    "payout_return_proofs": {
+      "id": "system",
+      "payout_id": "system",
+      "kind": "system",
+      "returned_amount_cents": "financial",
+      "returned_at": "system",
+      "sent_at": "system",
+      "return_reference_digest": "non-personal",
+      "recorded_at": "system"
     },
     "payout_line_allocations": {
       "id": "system",

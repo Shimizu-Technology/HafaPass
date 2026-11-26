@@ -478,6 +478,7 @@ Rails.application.routes.draw do
         resources :payouts, only: [:index, :create, :update] do
           post :check_amount_adjustment, on: :member
           post :release_hold, on: :member
+          post :return_evidence, on: :member
         end
         # Bank-transfer schedule: what is due, the 10% reserve and its release.
         get "payout_schedule", to: "payout_schedules#index"

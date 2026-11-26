@@ -182,6 +182,9 @@ class PayoutCreator
       initiated_at: attributes[:initiated_at] || payout.initiated_at, failure_code: "provider_result_conflict",
       failure_message: ACCEPTED_AFTER_FENCE_MESSAGE }
     updates[:status] = :processing if payout.status_pending?
+    # Held before the provider answered: the transfer left, so the hold now
+    # covers an in-flight (submitted) payout, whose amounts are fixed.
+    updates[:held_from_status] = "processing" if payout.status_held? && payout.held_from_status == "pending"
     payout.update!(updates)
     AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: actor,
       organization: payout.organization, event: payout.event, before_data: before_data,
@@ -217,10 +220,22 @@ class PayoutCreator
           refusal: "Payout entry guard: #{blocker[:reason]} began before the provider reported the transfer paid")
       end
     end
+    # CodeRabbit 4704932928: a cancellation hold can commit while the
+    # gateway call runs (after the submission locks are released). The
+    # provider's paid result on the held payout is the same accepted
+    # transfer: kept held and committed, with its reference and paid time,
+    # never failed or released without the bank's exact return. A result
+    # that is not paid keeps the existing held handling below.
+    if incoming == "paid" && payout.status_held? && !self.class.provider_accepted?(payout)
+      held_at = AuditLog.where(auditable: payout, action: "payout.held_for_cancellation").maximum(:occurred_at)
+      return record_refused_paid_locked!(payout, attributes,
+        blocker: { reason: "cancellation_hold", started_at: held_at },
+        refusal: "Cancellation hold: the payout was held before the provider reported the transfer paid")
+    end
     # An accepted transfer's money left. A later provider result never
     # downgrades it (failed releases the reservation) nor makes it ordinary
     # paid; finance reconciles it (PayoutReconciler).
-    if self.class.provider_accepted?(payout) && payout.status_processing?
+    if self.class.provider_accepted?(payout) && (payout.status_processing? || payout.status_held?)
       return AuditLogger.record!(action: "payout.late_result_ignored", auditable: payout, actor: actor,
         organization: payout.organization, event: payout.event,
         before_data: payout.attributes.slice("status", "provider_payout_id", "paid_at"),

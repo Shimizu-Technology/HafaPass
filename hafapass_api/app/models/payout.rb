@@ -8,6 +8,7 @@ class Payout < ApplicationRecord
   has_many :payout_check_adjustments, dependent: :restrict_with_error
   has_many :payout_line_allocations, dependent: :restrict_with_error
   has_one :custody_determination, class_name: "PayoutCustodyDetermination", dependent: :restrict_with_error
+  has_one :return_proof, class_name: "PayoutReturnProof", dependent: :restrict_with_error
   encrypts :tax_information_tin
   self.filter_attributes += [:tax_information_tin]
 

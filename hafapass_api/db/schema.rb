@@ -1829,6 +1829,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     t.check_constraint "amount_cents >= 0", name: "payout_line_allocations_nonnegative"
   end
 
+  create_table "payout_return_proofs", force: :cascade do |t|
+    t.bigint "payout_id", null: false
+    t.string "kind", null: false
+    t.bigint "returned_amount_cents", null: false
+    t.datetime "returned_at", null: false
+    t.datetime "sent_at", null: false
+    t.string "return_reference_digest", null: false
+    t.datetime "recorded_at", null: false
+    t.index ["payout_id"], name: "index_payout_return_proofs_on_payout_id", unique: true
+    t.check_constraint "kind::text = ANY (ARRAY['verified_return'::character varying::text, 'accepted_transfer_return'::character varying::text, 'attached_return'::character varying::text])", name: "payout_return_proofs_kind_valid"
+  end
+
   create_table "payouts", force: :cascade do |t|
     t.integer "amount_cents", null: false
     t.bigint "connected_account_id", null: false
@@ -3345,6 +3357,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
   add_foreign_key "payout_custody_determinations", "payouts"
   add_foreign_key "payout_line_allocations", "order_items"
   add_foreign_key "payout_line_allocations", "payouts"
+  add_foreign_key "payout_return_proofs", "payouts"
   add_foreign_key "payouts", "connected_accounts", on_delete: :restrict
   add_foreign_key "payouts", "events", on_delete: :restrict
   add_foreign_key "payouts", "organizations", on_delete: :restrict
@@ -4808,27 +4821,105 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_26_180000) do
     -- the organizer from it, so the over-return then holds.
     -- CodeRabbit 4704013209: a reversed payout left money with the
     -- organizer until the bank's return is shown. Its reversal counts as
-    -- recovered funds only when PayoutReconciler recorded it with the exact
-    -- verified return (the bank's return reference, the full amount that
-    -- left, and when it came back: accepted_transfer_return for a transfer
-    -- the provider accepted after a fence refused it, verified_return
-    -- otherwise). A reversal recorded without it, by any release or raw SQL,
-    -- still defeats the P4 proof.
+    -- recovered funds only when PayoutReconciler recorded the exact verified
+    -- return (the bank's return reference, the full amount that left, and
+    -- when it came back) in its durable proof, payout_return_proofs, with
+    -- the reversal or attached to it later. A reversal recorded without it,
+    -- by any release or raw SQL, still defeats the P4 proof.
+    -- The amount that actually left for a payout: its disbursement plus any
+    -- audited check amount adjustment (Payout#confirmed_check_amount_cents;
+    -- a transfer has none, so it is the disbursement). CodeRabbit 4704932964.
+    CREATE OR REPLACE FUNCTION hafapass_payout_amount_left(target_payout bigint) RETURNS bigint
+    LANGUAGE sql STABLE AS $$
+      SELECT po.amount_cents - po.withheld_cents - po.carried_withholding_cents
+          + COALESCE((SELECT SUM(adj.amount_cents) FROM payout_check_adjustments adj WHERE adj.payout_id = po.id), 0)
+        FROM payouts po WHERE po.id = target_payout
+    $$;
+
+    -- CodeRabbit 4704933005: the durable, non-personal proof of an exact
+    -- verified return (payout_return_proofs), so the P4 proof and the
+    -- reversal fence never read audit payloads that retention anonymizes.
+    -- One row per payout, append-only, written only by this release's
+    -- reconciler (hafapass.payout_return names the payout) with the amount
+    -- that left, the return time (not before the transfer left, not after
+    -- the database clock) and a SHA-256 digest of the bank's return
+    -- reference (the reference text stays only in the audit). A row for the
+    -- reversal itself commits only with its payout reversed; a row attached
+    -- to a reversal already recorded (kind attached_return) needs the payout
+    -- reversed when it is written and changes nothing on the payout.
+    CREATE OR REPLACE FUNCTION hafapass_check_payout_return_proof() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    DECLARE
+      payout_status integer;
+    BEGIN
+      NEW.recorded_at := timezone('UTC', clock_timestamp());
+      IF current_setting('hafapass.payout_return', true) IS DISTINCT FROM NEW.payout_id::text THEN
+        RAISE EXCEPTION 'Payout return proof: record the return from the current release''s reconciler' USING ERRCODE = '23514';
+      END IF;
+      SELECT status INTO payout_status FROM payouts WHERE id = NEW.payout_id FOR NO KEY UPDATE;
+      IF NEW.returned_amount_cents IS DISTINCT FROM hafapass_payout_amount_left(NEW.payout_id) THEN
+        RAISE EXCEPTION 'Payout return proof: the returned amount must be the full amount that left' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.return_reference_digest !~ '^[0-9a-f]{64}$' OR NEW.returned_at IS NULL OR NEW.sent_at IS NULL
+          OR NEW.returned_at < NEW.sent_at OR NEW.returned_at > NEW.recorded_at THEN
+        RAISE EXCEPTION 'Payout return proof: an exact return needs its reference and a return time after the transfer left'
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.kind = 'attached_return' AND payout_status IS DISTINCT FROM 4 THEN
+        RAISE EXCEPTION 'Payout return proof: evidence is attached only to a reversal already recorded' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_return_proofs_check ON payout_return_proofs;
+    CREATE TRIGGER payout_return_proofs_check BEFORE INSERT ON payout_return_proofs
+      FOR EACH ROW EXECUTE FUNCTION hafapass_check_payout_return_proof();
+    DROP TRIGGER IF EXISTS payout_return_proofs_append_only ON payout_return_proofs;
+    CREATE TRIGGER payout_return_proofs_append_only BEFORE UPDATE OR DELETE ON payout_return_proofs
+      FOR EACH ROW EXECUTE FUNCTION hafapass_append_only();
+    DROP TRIGGER IF EXISTS payout_return_proofs_append_only_truncate ON payout_return_proofs;
+    CREATE TRIGGER payout_return_proofs_append_only_truncate BEFORE TRUNCATE ON payout_return_proofs
+      FOR EACH STATEMENT EXECUTE FUNCTION hafapass_append_only_truncate();
+
+    CREATE OR REPLACE FUNCTION hafapass_check_payout_return_proof_commit() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM payouts p WHERE p.id = NEW.payout_id AND p.status = 4) THEN
+        RAISE EXCEPTION 'Payout return proof: a return commits only with its payout reversed' USING ERRCODE = '23514';
+      END IF;
+      RETURN NULL;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payout_return_proofs_commit ON payout_return_proofs;
+    CREATE CONSTRAINT TRIGGER payout_return_proofs_commit AFTER INSERT ON payout_return_proofs
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION hafapass_check_payout_return_proof_commit();
+
     -- A2 recheck finding 1 (7664e143): the return is verified only when it
-    -- is exact: a return reference, a returned_at time, and the full amount
-    -- that left (the payout's disbursement), not merely the key's presence.
+    -- is exact. CodeRabbit 4704933005: read from the durable proof, never
+    -- from audit payloads; CodeRabbit 4704932964: the amount that left.
     CREATE OR REPLACE FUNCTION hafapass_payout_return_verified(target_payout bigint) RETURNS boolean
     LANGUAGE sql STABLE AS $$
-      SELECT EXISTS (SELECT 1 FROM audit_logs a JOIN payouts po ON po.id = a.auditable_id,
-          LATERAL (SELECT COALESCE(a.metadata->'verified_return', a.metadata->'accepted_transfer_return') AS r) v
-        WHERE a.auditable_type = 'Payout' AND a.auditable_id = target_payout
-          AND a.action = 'payout.reconciled' AND a.after_data->>'status' = 'reversed'
-          AND jsonb_typeof(v.r) = 'object'
-          AND length(btrim(COALESCE(v.r->>'return_reference', ''))) > 0
-          AND COALESCE(v.r->>'returned_at', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
-          AND COALESCE(v.r->>'returned_amount_cents', '') ~ '^[1-9][0-9]{0,11}$'
-          AND (v.r->>'returned_amount_cents')::bigint = po.amount_cents - po.withheld_cents - po.carried_withholding_cents)
+      SELECT EXISTS (SELECT 1 FROM payout_return_proofs r WHERE r.payout_id = target_payout
+        AND r.returned_amount_cents = hafapass_payout_amount_left(target_payout))
     $$;
+
+    -- CodeRabbit 4704933000: a payout's settlement version is fixed once a
+    -- custody determination names it (the determination is checked against
+    -- the payout's own version only when it is inserted). Same-value writes
+    -- and payouts without a determination are unaffected.
+    CREATE OR REPLACE FUNCTION hafapass_guard_payout_settlement() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.settlement_id IS DISTINCT FROM OLD.settlement_id
+          AND EXISTS (SELECT 1 FROM payout_custody_determinations d WHERE d.payout_id = OLD.id) THEN
+        RAISE EXCEPTION 'A payout''s settlement version is fixed once its custody is determined' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_settlement_guard ON payouts;
+    CREATE TRIGGER payouts_settlement_guard BEFORE UPDATE OF settlement_id ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_payout_settlement();
 
     -- A2 recheck finding 1 (7664e143): the reversal boundary for every
     -- writer, A1 during the overlap or after a code rollback included. On an

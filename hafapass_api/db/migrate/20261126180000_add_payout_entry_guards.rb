@@ -27,10 +27,15 @@ require_relative "../../lib/financial_integrity"
 #     included) only when the same transaction records its exact verified
 #     return, and an accepted transfer only after finance recorded the
 #     acceptance (payouts_reversal_return_check, checked at commit);
+#   - payout_return_proofs: the durable, non-personal proof of an exact
+#     verified return (amount that left, return time, digest of the bank's
+#     return reference), which the P4 proof and the reversal fence read
+#     instead of audit payloads that retention anonymizes; append-only, and
+#     a payout's settlement version is fixed once its custody is determined;
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
-# Additive: four nullable columns, functions and triggers, and the
+# Additive: four nullable columns, one new table, functions and triggers, and the
 # a2_payout_entry cutover row. No existing row changes. Non-affected events
 # keep every A1 behaviour except that paid needs the custody row, which
 # only this release writes (an A1 paid recording fails closed and is
@@ -45,6 +50,18 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
     # When the database checked an over-return exception's P4 proof at its
     # insert (hafapass_exception_hold_start); NULL on rows opened earlier.
     add_column :reconciliation_exceptions, :proof_checked_at, :datetime
+    # No personal data: the reference is kept only as its SHA-256 digest.
+    create_table :payout_return_proofs do |t|
+      t.references :payout, null: false, foreign_key: true, index: { unique: true }
+      t.string :kind, null: false
+      t.bigint :returned_amount_cents, null: false
+      t.datetime :returned_at, null: false
+      t.datetime :sent_at, null: false
+      t.string :return_reference_digest, null: false
+      t.datetime :recorded_at, null: false
+    end
+    add_check_constraint :payout_return_proofs,
+      "kind IN ('verified_return', 'accepted_transfer_return', 'attached_return')", name: "payout_return_proofs_kind_valid"
     safety_assured do
       execute "INSERT INTO financial_cutovers (key) VALUES ('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING"
       execute FinancialIntegrity::PAYOUT_ENTRY_SQL
@@ -56,6 +73,7 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
   # The cutover row is append-only and stays; a re-run keeps its first time.
   def down
     safety_assured do
+      execute "DROP TRIGGER IF EXISTS payouts_settlement_guard ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts"
       execute "DROP TRIGGER IF EXISTS payout_custody_determinations_commit ON payout_custody_determinations"
@@ -70,6 +88,7 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
       # start; this release's final proof helpers go with the rest.
       %w[hafapass_overpaid_hold_start(bigint) hafapass_overpaid_proof_lost_at(bigint,timestamp)
         hafapass_payout_return_verified(bigint) hafapass_check_payout_reversal()
+        hafapass_guard_payout_settlement()
         hafapass_overpaid_proof_anchor(bigint) hafapass_overpaid_proof_facts(bigint)
         hafapass_require_inserted_payout_custody()
         hafapass_check_custody_commit() hafapass_check_custody_determination() hafapass_require_payout_custody()
@@ -77,6 +96,11 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
         hafapass_event_has_classified_capture(bigint)].each do |function|
         execute "DROP FUNCTION IF EXISTS #{function}"
       end
+    end
+    drop_table :payout_return_proofs, if_exists: true
+    safety_assured do
+      %w[hafapass_check_payout_return_proof() hafapass_check_payout_return_proof_commit()
+        hafapass_payout_amount_left(bigint)].each { |function| execute "DROP FUNCTION IF EXISTS #{function}" }
     end
     remove_column :reconciliation_exceptions, :proof_checked_at
     remove_column :settlements, :reader_digest

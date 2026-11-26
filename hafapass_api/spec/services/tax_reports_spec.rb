@@ -31,7 +31,10 @@ RSpec.describe TaxReports do
   it "reports live collections, allocated refunds, actual processing and actually paid payouts" do
     at = Time.find_zone!("Pacific/Guam").local(2026, 10, 1)
     order = sale(at: at)
-    create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 80)
+    # Recorded with the sale: processing is recognized no earlier than its
+    # recording (CodeRabbit 4704932984), so a component recorded today would
+    # be today's cost.
+    create(:fee_component, order: order, kind: "processing", estimated: false, amount_cents: 80, created_at: at)
     create(:fee_component, order: order, kind: "processing", estimated: true, amount_cents: 999)
     %w[test simulate].each { |environment| refund(sale(at: at, environment: environment), at: at) }
     sale(at: at, environment: nil)
@@ -229,5 +232,60 @@ RSpec.describe TaxReports do
       expect(paid_by_event.fetch(clover_event.id, 0)).to eq(0)
       expect(PayoutCustody.bpt_payouts(Payout.where(id: clover_payout.id))).to be_empty
     end
+  end
+
+  # CodeRabbit 4704932984: ordinary processing is recognized at GREATEST(the
+  # component's recording, the order's custody booking), the CPA rule
+  # (design §5.3), independently of the sale's month, in the monthly and BPT
+  # views alike. Regenerating January never moves a February cost into it.
+  it "books a January sale's processing recorded in February in February, as the CPA does" do
+    zone = Time.find_zone!("Pacific/Guam")
+    january = zone.local(2026, 1, 15, 10)
+    february = zone.local(2026, 2, 10, 10)
+    late = sale(at: january)
+    create(:fee_component, order: late, kind: "processing", estimated: false, amount_cents: 80, created_at: february)
+    # Recorded before its sale was booked: recognized at the booking.
+    early = sale(at: january)
+    create(:fee_component, order: early, kind: "processing", estimated: false, amount_cents: 30, created_at: january - 5.days)
+
+    report = described_class.new(2026)
+    expect(report.months[0]).to include(card_processing_costs_cents: 30)
+    expect(report.months[1]).to include(card_processing_costs_cents: 80, fees_collected_cents: 0)
+    expect(report.months[0][:card_processing_costs_cents]).to eq(described_class.new(2026).months[0][:card_processing_costs_cents])
+    costs = ->(month) { report.bpt_event_rows(month).to_h { |row| [row[1], row[5]] } }
+    expect(costs.call(1)).to eq(event.id => 30)
+    expect(costs.call(2)).to eq(event.id => 80)
+    cpa = ->(month) { CpaMonthlyReport.new(2026, month).report[:rows].find { |row| row[:event_id] == event.id } }
+    expect(cpa.call(1)).to include(stripe_processing_costs_cents: 30)
+    expect(cpa.call(2)).to include(stripe_processing_costs_cents: 80)
+  end
+
+  # CodeRabbit 4704932992: a legacy capture with neither a recording stamp
+  # nor a success time is not affirmative support for a historical payout.
+  # Its payout leaves the annual view and is reported until finance freezes
+  # it from the published baseline (payout_custody:derive); no period policy
+  # is assumed.
+  it "reports a payout whose only support is an untimed legacy capture until finance freezes its baseline" do
+    at = Time.find_zone!("Pacific/Guam").local(2026, 10, 1)
+    order = sale(at: at)
+    payment = order.payments.sole
+    stamp!(payment, :capture_recorded_at, nil, trigger: "payments_capture_recorded_at")
+    Payment.where(id: payment.id).update_all(succeeded_at: nil)
+    account = create(:connected_account, organization: organization)
+    payout = create(:payout, event: event, organization: organization, connected_account: account,
+      settlement: create(:settlement, event: event, organization: organization), amount_cents: 1700, status: :paid,
+      paid_at: at + 1.day)
+
+    report = described_class.new(2026)
+    expect(report.organizers.sole).to include(net_paid_cents: 0)
+    expect(report.as_json[:payout_population_alerts]).to eq([{ code: "payout_capture_time_unproven",
+      payout_id: payout.id, event_id: event.id }])
+
+    published = PayoutCustody.published_baseline("payout_id,included,source\n#{payout.id},true,bpt-export:2026-10\n")
+    PayoutCustody.derive_history!(dry_run: false, authorized_by: "FIN-2026-11-001", published: published)
+    expect(PayoutCustodyDetermination.find_by!(payout_id: payout.id)).to have_attributes(conservative_inclusion: true)
+    report = described_class.new(2026)
+    expect(report.organizers.sole).to include(net_paid_cents: 1700)
+    expect(report.as_json[:payout_population_alerts]).to eq([])
   end
 end

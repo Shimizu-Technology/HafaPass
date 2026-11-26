@@ -137,7 +137,7 @@ RSpec.describe "Admin accepted transfer after a statement change", type: :reques
     expect(payout.reload).to have_attributes(status: "reversed", provider_payout_id: "BANK-ACCEPT-1", paid_at: nil)
     reversal = AuditLog.where(auditable: payout, action: "payout.reconciled").sole
     expect(reversal.metadata["accepted_transfer_return"]).to include("return_reference" => "RET-0001",
-      "returned_amount_cents" => payout.disbursement_cents, "accepted_at" => conflict.occurred_at.utc.iso8601(6))
+      "returned_amount_cents" => payout.disbursement_cents, "accepted_at" => conflict.metadata["provider_paid_at"])
     report = cpa
     expect(report[:accepted_transfers].map { |entry| entry[:payout_id] }).to eq([payout.id])
     expect(report[:rows].find { |entry| entry[:event_id] == event.id })
@@ -182,6 +182,7 @@ RSpec.describe "Admin accepted transfer after a statement change", type: :reques
         AuditLog.create!(auditable: payout, organization: organization, action: "payout.reconciled", occurred_at: Time.current,
           before_data: { "status" => "processing" }, after_data: { "status" => "reversed" },
           metadata: { "accepted_transfer_return" => returned.except(:conflict_audit_id).stringify_keys })
+        raw_return_proof!(payout, kind: "accepted_transfer_return", returned_at: Time.current, sent_at: conflict.occurred_at - 1)
         ActiveRecord::Base.connection.execute("SET CONSTRAINTS payouts_reversal_return_check IMMEDIATE")
       end
     end.to raise_error(ActiveRecord::StatementInvalid, /record the accepted transfer before its return/)

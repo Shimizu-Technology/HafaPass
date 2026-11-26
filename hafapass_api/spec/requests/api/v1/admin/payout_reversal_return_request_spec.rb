@@ -126,13 +126,17 @@ RSpec.describe "Admin payout reversal return evidence", type: :request do
       "payouts_reversal_return_check_on_insert IMMEDIATE")
   end
 
-  def raw_reversal(payout, metadata = nil, action: "payout.reconciled")
+  # CodeRabbit 4704933005: the fence reads the durable proof
+  # (payout_return_proofs), never audit metadata, so an exact audit alone no
+  # longer counts; `proof` writes the proof row as the current release does.
+  def raw_reversal(payout, metadata = nil, action: "payout.reconciled", proof: nil)
     ActiveRecord::Base.transaction(requires_new: true) do
       Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
       if metadata
         AuditLog.create!(auditable: payout, organization: payout.organization, action: action, occurred_at: Time.current,
           before_data: { "status" => "paid" }, after_data: { "status" => "reversed" }, metadata: metadata)
       end
+      raw_return_proof!(payout, **proof) if proof
       commit_check!
       raise ActiveRecord::Rollback
     end
@@ -184,8 +188,21 @@ RSpec.describe "Admin payout reversal return evidence", type: :request do
       PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin, idempotency_key: "rev-db-fresh", amount_cents: available + 1000)
     end.to raise_error(PayoutCreator::PayoutError, /available balance/)
 
-    # The exact return written in the same transaction passes.
-    expect(raw_reversal(sent, { "verified_return" => exact })).to eq(:accepted)
+    # The exact audit alone is not the durable proof; a proof row from a
+    # writer that does not name itself as the current reconciler is refused.
+    expect(raw_reversal(sent, { "verified_return" => exact })).to match(fence)
+    expect do
+      raw_reversal(sent, nil, proof: { returned_at: Time.current, sent_at: sent.paid_at, authorized: false })
+    end.to raise_error(ActiveRecord::StatementInvalid, /Payout return proof: record the return from the current release/)
+    expect do
+      raw_reversal(sent, nil, proof: { returned_at: Time.current, sent_at: sent.paid_at, amount: sent.disbursement_cents - 1 })
+    end.to raise_error(ActiveRecord::StatementInvalid, /full amount that left/)
+    expect do
+      raw_reversal(sent, nil, proof: { returned_at: sent.paid_at - 1, sent_at: sent.paid_at })
+    end.to raise_error(ActiveRecord::StatementInvalid, /return time after the transfer left/)
+    # The exact durable proof written in the same transaction passes.
+    expect(raw_reversal(sent, { "verified_return" => exact }, proof: { returned_at: Time.current, sent_at: sent.paid_at }))
+      .to eq(:accepted)
     expect(sent.reload).to be_status_paid
 
     # A2's own path, with the bank's return, through the commit-time check.

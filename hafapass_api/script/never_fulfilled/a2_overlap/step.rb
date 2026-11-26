@@ -622,13 +622,22 @@ when "n_rev_after"
   end
   exact = { "return_reference" => "RET-A2-REV", "returned_amount_cents" => payout.disbursement_cents,
     "returned_at" => Time.current.utc.iso8601(6), "sent_at" => payout.paid_at.utc.iso8601(6) }
-  raw = lambda do |label, metadata, immediate: false|
+  # CodeRabbit 4704933005: the fence reads the durable proof
+  # (payout_return_proofs), so the exact audit alone is refused; `proof`
+  # writes it the way the current reconciler does.
+  raw = lambda do |label, metadata, immediate: false, proof: false|
     S.attempt(step, "raw SQL reversal (#{label})") do
       ActiveRecord::Base.transaction do
         Payout.where(id: payout.id).update_all(status: Payout.statuses[:reversed])
         if metadata
           AuditLog.create!(auditable: payout, organization: payout.organization, action: "payout.reconciled", occurred_at: Time.current,
             before_data: { "status" => "paid" }, after_data: { "status" => "reversed" }, metadata: metadata)
+        end
+        if proof
+          FinancialIntegrity.with_payout_return(payout.id) do
+            PayoutReturnProof.create!(payout: payout, kind: "verified_return", returned_amount_cents: payout.disbursement_cents,
+              returned_at: Time.current, sent_at: payout.paid_at, return_reference_digest: PayoutReturnProof.reference_digest("RET-A2-REV"))
+          end
         end
         if immediate
           ActiveRecord::Base.connection.execute("SET CONSTRAINTS payouts_reversal_return_check IMMEDIATE")
@@ -642,7 +651,8 @@ when "n_rev_after"
   raw.call("generic audit", { "reconciliation" => { "reference" => "Bank" } })
   raw.call("return key without the exact return", { "verified_return" => { "return_reference" => "RET-A2-REV" } })
   raw.call("return of the wrong amount", { "verified_return" => exact.merge("returned_amount_cents" => 1) })
-  raw.call("exact return in the same transaction", { "verified_return" => exact }, immediate: true)
+  raw.call("exact audit without the durable proof", { "verified_return" => exact })
+  raw.call("exact return in the same transaction", { "verified_return" => exact }, immediate: true, proof: true)
   Rehearsal.outcome!(step, action: "rev after the refused writers", value: { status: payout.reload.status, available_cents: available.call })
   S.attempt(step, "A2 PayoutReconciler reversed payout_rev_paid (bank's exact return)") do
     PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "reversed", provider_payout_id: payout.provider_payout_id,
@@ -844,7 +854,8 @@ when "assertions"
     "PayoutCreator.call rev for #{before + 1000} after the A1 attempt", /available balance/))
   check.call("reversal: A2's generic reversal is refused", refused.call("new", "n_rev_after",
     "A2 PayoutReconciler reversed payout_rev_paid (generic confirmation)", /return evidence/))
-  ["no audit", "generic audit", "return key without the exact return", "return of the wrong amount"].each do |label|
+  ["no audit", "generic audit", "return key without the exact return", "return of the wrong amount",
+    "exact audit without the durable proof"].each do |label|
     check.call("reversal: raw SQL (#{label}) refused at commit", refused.call("new", "n_rev_after", "raw SQL reversal (#{label})",
       /Payout reversal fence/))
   end
@@ -858,7 +869,8 @@ when "assertions"
     ok.call("new", "n_rev_after", "A2 PayoutReconciler reversed payout_rev_paid (bank's exact return)") &&
       returned == { "status" => "reversed", "available_cents" => before + 1000 } &&
       AuditLog.where(auditable_type: "Payout", auditable_id: id.call("payout_rev_paid"), action: "payout.reconciled")
-        .where("after_data->>'status' = 'reversed'").sole.metadata.key?("verified_return"))
+        .where("after_data->>'status' = 'reversed'").sole.metadata.key?("verified_return") &&
+      PayoutReturnProof.where(payout_id: id.call("payout_rev_paid"), kind: "verified_return").exists?)
   check.call("reversal: the released amount can then be reserved", ok.call("new", "n_rev_after",
     "reserve rev for #{before + 1000} after the verified return"))
   rev_event = S.find(Event, "rev").id

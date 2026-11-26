@@ -682,7 +682,9 @@ class CpaMonthlyReport
     "AND accepted_a.auditable_id = payouts.id AND accepted_a.action = '#{ACCEPTED_TRANSFER_ACTION}')"
 
   def accepted_transfers_scope
-    live_usd_payouts.where(status: [:processing, :reversed], paid_at: nil)
+    # Held too: a transfer the provider accepted while a cancellation hold
+    # held it (CodeRabbit 4704932928) stays held until its return.
+    live_usd_payouts.where(status: [:processing, :held, :reversed], paid_at: nil)
       .joins(ACCEPTED_AUDIT_JOIN_SQL).where("accepted_audit.id IS NOT NULL")
       .where("accepted_audit.created_at < ?", month_end)
   end

@@ -89,6 +89,25 @@ module NeverFulfilledReturnHelpers
     connection.execute("ALTER TABLE refunds ENABLE TRIGGER refunds_repayment_fence")
   end
 
+  # A raw writer's durable return proof (payout_return_proofs), optionally
+  # naming itself as this release's reconciler the way PayoutReconciler
+  # does (hafapass.payout_return), inside the caller's transaction.
+  def raw_return_proof!(payout, returned_at:, sent_at:, amount: payout.confirmed_check_amount_cents,
+    kind: "verified_return", reference: "RET-RAW", authorized: true)
+    connection = ActiveRecord::Base.connection
+    connection.select_value(ActiveRecord::Base.sanitize_sql_array(["SELECT set_config('hafapass.payout_return', ?, true)",
+      authorized ? payout.id.to_s : ""]))
+    connection.execute(ActiveRecord::Base.sanitize_sql_array([
+      "INSERT INTO payout_return_proofs (payout_id, kind, returned_amount_cents, returned_at, sent_at, " \
+        "return_reference_digest, recorded_at) VALUES (?, ?, ?, ?, ?, ?, now())",
+      payout.id, kind, amount, returned_at.utc, sent_at.utc, PayoutReturnProof.reference_digest(reference)
+    ]))
+  ensure
+    # After a refused insert the transaction is aborted; its rollback
+    # discards the setting, so only a clean insert resets it.
+    connection.select_value("SELECT set_config('hafapass.payout_return', '', true)") if connection && !$ERROR_INFO
+  end
+
   def ingest_provider_refund!(payment, amount, id: "re_nfr_#{SecureRandom.hex(4)}", status: "succeeded")
     Commerce::ExternalRefundRecovery.ingest!(payment: payment, provider_refund: OpenStruct.new(id: id, amount: amount,
       currency: "usd", payment_intent: payment.provider_payment_id, status: status, metadata: {}))
