@@ -49,8 +49,9 @@ module LivePilotMetrics
       holds = event.inventory_holds
       deliveries = event.message_deliveries
       checkout_started = event.marketplace_funnel_events.where(stage: :checkout_started).count
-      purchases = orders.where(status: [:completed, :partially_refunded, :refunded]).count
-      online_purchases = orders.where(status: [:completed, :partially_refunded, :refunded])
+      # An order-scope never-fulfilled order is not a purchase (design §8.10.12).
+      purchases = orders.excluding_never_fulfilled.where(status: [:completed, :partially_refunded, :refunded]).count
+      online_purchases = orders.excluding_never_fulfilled.where(status: [:completed, :partially_refunded, :refunded])
         .where("source IS NULL OR source <> ?", "box_office").count
       payment_count = payments.where.not(status: :pending).count
       payment_failures = payments.where(status: [:failed, :cancelled]).count

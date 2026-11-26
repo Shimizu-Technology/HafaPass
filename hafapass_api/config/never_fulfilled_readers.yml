@@ -1,0 +1,82 @@
+# Never-fulfilled reader register (docs/design/never-fulfilled-captures.md
+# §8.1, §8.10.12). Every file under app/ that reads order or payment money
+# states (it matches partially_refunded, :refunded, "refunded" or
+# excluding_test_payments) is listed with how it treats a classified
+# (never-fulfilled) capture. spec/config/never_fulfilled_readers_spec.rb
+# fails on an unlisted matching file, a listed file that no longer exists,
+# and a classified_rule reader that stops naming the shared rule.
+#
+# Treatments:
+#   classified_rule  applies the classification by table (Order.
+#                    excluding_never_fulfilled, Refund/Dispute.on_sale,
+#                    Commerce::ClassifiedOrganizerView,
+#                    Commerce::ClassifiedPaymentFinance, UnfulfilledCapture);
+#   shared_reader    money comes only through a classified_rule reader
+#                    (Settlements::Calculator, Commerce::LedgerTotals, ...);
+#   writer_boundary  an A1 lifecycle, refund or cancellation writer whose
+#                    boundary is enforced by the database fences (§4.2, §6.2);
+#   platform_only    platform-wide money out or in, not organizer figures;
+#   not_money        status display, tickets, messaging or audit wording.
+#
+# Payout entry points (creation, held release, submission, paid) are not
+# listed: the database enforces them for every writer (PAYOUT_ENTRY_SQL;
+# spec/services/payout_entry_guard_spec.rb).
+readers:
+  app/controllers/api/v1/admin/dashboard_controller.rb: { treatment: shared_reader, note: "Commerce::LedgerTotals" }
+  app/controllers/api/v1/admin/events_controller.rb: { treatment: shared_reader, note: "Commerce::LedgerTotals; cancellation refund preview through EventCancellationRefunds" }
+  app/controllers/api/v1/admin/marketplace_controller.rb: { treatment: classified_rule, note: "attribution gross leaves never_fulfilled_at orders out" }
+  app/controllers/api/v1/me/event_referrals_controller.rb: { treatment: not_money, note: "buyer's own referral status" }
+  app/controllers/api/v1/me/orders_controller.rb: { treatment: not_money, note: "buyer's own order status" }
+  app/controllers/api/v1/orders_controller.rb: { treatment: not_money, note: "buyer order status" }
+  app/controllers/api/v1/organizer/box_office_card_sales_controller.rb: { treatment: not_money, note: "door card order status" }
+  app/controllers/api/v1/organizer/box_office_controller.rb: { treatment: not_money, note: "box office order status" }
+  app/controllers/api/v1/organizer/events_controller.rb: { treatment: classified_rule, note: "event stats" }
+  app/controllers/api/v1/organizer/orders_controller.rb: { treatment: not_money, note: "order list status and refund actions (RefundCreator fence)" }
+  app/controllers/concerns/cancellation_refund_actions.rb: { treatment: writer_boundary, note: "EventCancellationRefunds" }
+  app/jobs/event_cancellation_refund_job.rb: { treatment: writer_boundary, note: "EventCancellationRefunds" }
+  app/jobs/sweep_pending_stripe_fees_job.rb: { treatment: writer_boundary, note: "fee evidence requests; StripeProcessingFees owns attribution" }
+  app/models/audience_mailing.rb: { treatment: not_money, note: "audience segment by order status" }
+  app/models/event_cancellation_refund_run.rb: { treatment: writer_boundary, note: "cancellation run; automatic PayoutHoldRelease is fenced (M-09)" }
+  app/models/order.rb: { treatment: classified_rule, note: "defines excluding_never_fulfilled and sale_refunds" }
+  app/models/payment.rb: { treatment: classified_rule, note: "live agent capture scopes" }
+  app/services/admin_payout_due_list.rb: { treatment: shared_reader, note: "lists events with sales; amounts from Settlements::Calculator and OrganizationPayoutBalance" }
+  app/services/admissions/counts.rb: { treatment: not_money, note: "admission counts by ticket" }
+  app/services/audit_actions.rb: { treatment: not_money, note: "audit wording" }
+  app/services/audit_logger.rb: { treatment: not_money, note: "audit wording" }
+  app/services/commerce/admin_order_refund.rb: { treatment: writer_boundary, note: "RefundCreator and repayment fence" }
+  app/services/commerce/ledger_totals.rb: { treatment: classified_rule, note: "admin dashboard and event stats" }
+  app/services/commerce/never_fulfilled_capture.rb: { treatment: writer_boundary, note: "legacy exception-window rule (A3 removes)" }
+  app/services/commerce/never_fulfilled_classification.rb: { treatment: writer_boundary, note: "classification writer" }
+  app/services/commerce/never_fulfilled_reconcile.rb: { treatment: writer_boundary, note: "reconcile and backfill" }
+  app/services/commerce/order_lifecycle.rb: { treatment: writer_boundary, note: "capture lifecycle" }
+  app/services/commerce/organizer_refund_options.rb: { treatment: writer_boundary, note: "refund options; RefundCreator fence" }
+  app/services/commerce/platform_revenue.rb: { treatment: classified_rule, note: "separate classified block" }
+  app/services/commerce/refund_creator.rb: { treatment: writer_boundary, note: "refund writer; repayment fence" }
+  app/services/cpa_monthly_report.rb: { treatment: classified_rule, note: "CPA export" }
+  app/services/email_preferences.rb: { treatment: not_money, note: "messaging eligibility" }
+  app/services/email_service.rb: { treatment: not_money, note: "messaging" }
+  app/services/event_cancellation_refunds.rb: { treatment: writer_boundary, note: "excludes fenced payments (A1 §6.6 item 6)" }
+  app/services/event_reporting_service.rb: { treatment: not_money, note: "ticket-based attendance; classified orders have no tickets" }
+  app/services/event_sales_analytics.rb: { treatment: classified_rule, note: "sales analytics" }
+  app/services/event_series_report.rb: { treatment: classified_rule, note: "series report" }
+  app/services/event_series_report_export.rb: { treatment: shared_reader, note: "EventSeriesReport" }
+  app/services/finance_exports.rb: { treatment: classified_rule, note: "orders and statement CSV" }
+  app/services/fulfillment_resender.rb: { treatment: not_money, note: "ticket delivery" }
+  app/services/live_pilot_metrics/manager.rb: { treatment: classified_rule, note: "purchase counts leave never-fulfilled orders out" }
+  app/services/marketing_consent.rb: { treatment: not_money, note: "messaging consent" }
+  app/services/operations/daily_summary.rb: { treatment: platform_only, note: "completed_at window; refund total is platform-wide money out" }
+  app/services/operations/stripe_webhook_health.rb: { treatment: not_money, note: "webhook health" }
+  app/services/order_presenter.rb: { treatment: not_money, note: "order display" }
+  app/services/organization_finance_summary.rb: { treatment: classified_rule, note: "organizer finance summary" }
+  app/services/organizer_sales_query.rb: { treatment: not_money, note: "ticket-based sales list; classified orders have no tickets" }
+  app/services/organizer_ticket_sales_status.rb: { treatment: not_money, note: "ticket status labels" }
+  app/services/passes/sync_pass_holders.rb: { treatment: not_money, note: "pass holders by ticket" }
+  app/services/payout_custody.rb: { treatment: classified_rule, note: "frozen custody excludes classified captures" }
+  app/services/pilot_closeout.rb: { treatment: classified_rule, note: "pilot gross sales leave never-fulfilled orders out" }
+  app/services/receipt_pdf_generator.rb: { treatment: not_money, note: "buyer receipt" }
+  app/services/refund_reconciliation_actions.rb: { treatment: writer_boundary, note: "finance refund actions; RefundCreator fence" }
+  app/services/refund_reconciliation_queue.rb: { treatment: classified_rule, note: "owed from the ledger; classified rows flagged" }
+  app/services/settlements/calculator.rb: { treatment: classified_rule, note: "statement and $0 lines" }
+  app/services/stripe_processing_fees.rb: { treatment: classified_rule, note: "processing attribution" }
+  app/services/tax_reports.rb: { treatment: classified_rule, note: "BPT exports" }
+  app/services/wallet/pass_state.rb: { treatment: not_money, note: "wallet pass state" }

@@ -29,9 +29,10 @@ class Api::V1::Admin::MarketplaceController < Api::V1::Admin::BaseController
 
   private
 
+  # An order-scope never-fulfilled order is not a sale (design §8.10.12).
   def attribution_rows
     AcquisitionAttribution.group(:source, :medium, :campaign).joins(:order)
-      .where(orders: { status: [:completed, :partially_refunded, :refunded] })
+      .where(orders: { status: [:completed, :partially_refunded, :refunded], never_fulfilled_at: nil })
       .pluck(:source, :medium, :campaign, Arel.sql("COUNT(acquisition_attributions.id)"),
         Arel.sql("COALESCE(SUM(orders.total_cents), 0)"))
       .map { |source, medium, campaign, orders, gross_order_value|

@@ -101,7 +101,8 @@ class PilotCloseout
   def self.local_metrics(run)
     event = run.event
     orders = event.orders
-    settled_orders = orders.where(status: [:completed, :partially_refunded, :refunded])
+    # An order-scope never-fulfilled order is not a sale (design §8.10.12).
+    settled_orders = orders.excluding_never_fulfilled.where(status: [:completed, :partially_refunded, :refunded])
     order_ids = settled_orders.select(:id)
     order_items = OrderItem.where(order_id: order_ids)
     payments = Payment.joins(:order).where(orders: { event_id: event.id })
