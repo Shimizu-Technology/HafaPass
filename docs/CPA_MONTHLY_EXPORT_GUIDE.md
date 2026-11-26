@@ -148,6 +148,10 @@ These columns are added after `currency` so existing positional consumers keep t
 | `closing_buyer_refunds_owed_unclassified_legacy` | End of month | Part of `closing_buyer_refunds_owed` still booked by the pre-A2 test for captures with no classification row. It has no gross evidence. Expected to be `0.00`. |
 | `classified_allocation_policy` | Current | Allocation policy and version snapshotted on the classified captures in the row (for example `item_record nfc-v2.1`). |
 
+**Linked balance adjustments (A2).** A `manual_credit`, `manual_debit` or other cash adjustment linked to a classified never-fulfilled order or to a dispute on a classified payment (or the reversal of one) is in neither `other_adjustments` nor `non_custodial_settlement_bridge`. It is listed in `current_integrity_alerts.classified_payment_alerts` as `classified_linked_adjustment` for finance to disposition. Reserve holds and releases are booked as usual. Before A2 such an adjustment could appear in `other_adjustments` (order link) or in the bridge (dispute link); a month regenerated after A2 that held one differs by that amount, and the alert names it.
+
+**Payment-scope processing (A2).** Verified Stripe processing on a second payment, which A1 keeps without a fee component, is now booked in `stripe_processing_costs_informational` at `GREATEST(facts_recorded_at, capture recorded)` when HåfaPass bears it. `facts_recorded_at` is stamped by the database when the facts are first recorded. Facts recorded before the column existed stay in `classified_payment_alerts` as `processing_deferred` (with `facts_recorded_at: null`) until `bin/rails stripe_fee_evidence:stamp_facts DRY_RUN=0` dates them at the time it runs; they then enter that month as a current-period fact.
+
 **Bridge, exact on every row:**
 
 ```
