@@ -1,6 +1,6 @@
 # Never-fulfilled captures: release decisions, classification, buyer-owed ledger and repayment
 
-**Status:** design v2.1 (PR #248). v2 plus the amendments the v2 delta review requires before A1 (§0.1). v2.1 is the controlling input for A1. A1 is built in tranches (§10.1). Tranche 1 (the non-activating schema foundation), tranche 2 (lifecycle writers and payment-only boundaries, §4.6), tranche 3 (return postings and reconcile, §5.7) and tranche 4 (repayment operations, the evaluator, replay and the A1-R1 fences, §6.6) are in this branch. The release runbook is [NEVER_FULFILLED_RELEASE.md](../NEVER_FULFILLED_RELEASE.md).
+**Status:** design v2.1 (PR #248). v2 plus the amendments the v2 delta review requires before A1 (§0.1). v2.1 is the controlling input for A1. A1 is built in tranches (§10.1). Tranche 1 (the non-activating schema foundation), tranche 2 (lifecycle writers and payment-only boundaries, §4.6), tranche 3 (return postings and reconcile, §5.7) and tranche 4 (repayment operations, the evaluator, replay and the A1-R1 fences, §6.6) are in this branch. The release runbook is [NEVER_FULFILLED_RELEASE.md](../NEVER_FULFILLED_RELEASE.md). #248 merged as `a0b25ffe`. A2 is built on `fix/never-fulfilled-finance-readers`; §8.10 maps it.
 **Base:** `origin/main` `7bcd97c2` (#247, live in production) plus the #248 branch. v1 of this document is commit `846f808a`; the interim code it reviewed is `57de7f15`; v2 is `7098c31a`. All stay in the branch history.
 **Reviews this version answers:** the design review of `846f808a` (required changes 1–8 and its test-matrix additions), the code review of `57de7f15` (findings 1–5), #247 rounds R1–R3, including the still-open **R2-2**, and the v2 delta review of `7098c31a` (four A1 amendments, two A2 amendments, B/P4 corrections). Sections 0 and 0.1 map each point to the section, code boundary and tests that close it.
 **Decision owners:** every policy is one named switch or one documented rule (section 1). Each is marked **Default** (engineering ships it), **Leon** (Leon's decision; defaults in this brief applied) or **CPA** (needs the CPA's approval before the books are final). A default is never presented as CPA-approved.
@@ -27,6 +27,7 @@ PR A (sections 4–8) is required before Copa sales open on **Mon Jan 4, 2027** 
 | v2.2 | this branch | A1-R1 recheck fixes (§6.8): order refund totals from the sale's own payment, verified pre-hold transfer evidence for paid, overlap captures held and discovered, receipt identity kept through redaction. §10.5 makes drain evidence mandatory for A1-R2. |
 | v2.3 | this branch | A1-R1 boundary fixes (§6.9): overlap captures on marked never-fulfilled orders, a hold start that discovery cannot move later, and payout decisions serialized with captures on the event row. |
 | v2.4 | this branch | Upgrade cutoff fix (§6.10): a pre-cutover capture counts as the order's first competitor, the cutoff uses the discovery predicate's mode rule, and one payment's item no longer hides a later capture on a legacy order. |
+| v2.5 | `fix/never-fulfilled-finance-readers` | A2 tranche 1 (§8.10): the classified-payment finance projection, the CPA gross buyer columns as its first caller, the A2 reader and acceptance map, A1 gaps, and the frozen BPT custody sketch. |
 
 ---
 
@@ -735,6 +736,100 @@ v2's `:unknowns_only` is not shipped. It would release organizer payouts while a
 ### 8.9 Monitoring (A3)
 
 A weekly count of new classifications by code and flow; open owed balances older than 24 h; open excess; `released_unknown` count; stalled holds (§3.2); the replay backlog.
+
+### 8.10 A2 build map (tranche 1 as built, remaining slices, acceptance)
+
+A2 is one PR, built in local tranches on `fix/never-fulfilled-finance-readers` from merged #248 (`a0b25ffe`). No tranche is pushed until every reader below has switched. Then the readers switch together in one release (§10.1). Repayment stays inactive (A1-R2 is separate).
+
+#### 8.10.1 A1 interfaces A2 reads (verified at `a0b25ffe`)
+
+| Fact | Durable source | Timing | Notes |
+| --- | --- | --- | --- |
+| Classification, scope, K, bearers, P9 policy | `never_fulfilled_captures` (`UnfulfilledCapture`) | `capture_recorded_at`: database-stamped, or a backfill time frozen at classification and bounded by `a1_capture_recording` | Append-only. Payment scope: K = (C, 0, 0, 0) |
+| Returns | `buyer_return_postings` (`recognized` rows only) | `recognized_at = GREATEST(recorded_at, capture_recorded_at)` (CHECK) | Signed. A late win is one `dispute_loss_reversal` delta, recomputed over the survivors (§5.4). `pending_correction` is never written until `accounting_period_closes` exists |
+| Gross owed, excess, remaining K | `Commerce::BuyerReturnLedger.for(capture)` | — | Per capture, current. The projection below is the period form |
+| Fulfilling payment, sale ownership | `orders.fulfilled_by_payment_id`, `hafapass_sale_owner_payment`, `Refund.owned_by_sale`, `Order#sale_refunds`, `UnfulfilledCapture.excluding_isolated` | — | Sale readers already exclude payment-scope B's refunds and disputes through these |
+| Actual processing | `fee_components` (`processing`, `estimated: false`) linked by `stripe_fee_evidences.fee_component_id` to the exact payment | `fee_components.created_at` | Payment scope with HåfaPass bearer: verified facts on the evidence row (`payment_scope_processing_deferred`) and **no component and no durable recording time** |
+| Holds | `FinancialIntegrity::PAYOUT_BLOCKING_CODES`, `EVIDENCE_HOLD_CODES`, `hafapass_payout_block_start`, `Commerce::NeverFulfilledPayoutHold` | `hold_started_at` | Already guards payout creation, submission, hold release and paid recording in both releases |
+
+#### 8.10.2 Tranche 1 (as built): `Commerce::ClassifiedPaymentFinance`
+
+`app/services/commerce/classified_payment_finance.rb`. For a half-open period `[start, end)`, normally a Guam month, and a payment scope (default `Payment.live_agent_capture`, the shared live USD Stripe custody scope of §4.4), it returns per event:
+
+- `owed`: gross owed. Opening, captures (at capture recording time), applied returns (signed, at recognition time), closing.
+- `shares`: the same flow split into `ticket_proceeds`, `second_capture_principal` (payment scope, never organizer proceeds), `fee`, `organizer_fee` and `tax`. The bridge is exact (`bridge_difference_cents` = 0), because the database pins Σ K = C and each posting's components to its applied amount.
+- `returned_gross_cents` (applied + excess, signed), `excess_cents` and `excess_cumulative_cents` (platform excess, P4).
+- `processing_platform_cents` and `processing_organizer_cents`: actual processing attributed to the classified payment by its own evidence link. With no evidence row, it is attributed only when the order-scope order's sole captured payment is that one. The time is `GREATEST(fee_components.created_at, capture_recorded_at)`, and the snapshot bearer decides who bears it.
+
+`alerts` lists, as current-at-read facts (not period-stable): open ambiguity holds (classification and return quarantine, ambiguous ownership, backfill ambiguous and restatement, sale effects held); unclassified late-capture and overlap captures; unposted movements; postings pending correction; unattributed processing; and deferred payment-scope processing. Those rows are **neither organizer custody nor projected buyer liability** until evidence resolves them.
+
+It never reads `RefundItem`s, `refunds.amount_cents` or `orders.refund_amount_cents` for a classified payment (§6.6 item 12). A's fulfilled sale is outside it by construction.
+
+**First caller.** `CpaMonthlyReport` appends the six P3 gross columns after `currency` (§8.5) and adds `classified_payment_alerts` to `current_integrity_alerts`. Every existing column is unchanged in this tranche. The CPA guide documents the columns and their interim difference from the ticket-share columns.
+
+**Tests.** `spec/services/commerce/classified_payment_finance_spec.rb` (13 examples) covers:
+- the Guam month boundary at 23:59:59 and exactly 00:00 (half-open), and a return recorded before its capture;
+- partial and full returns with fee, organizer fee and tax, and the bridge;
+- excess at gross, and the 75¢ case under both P9 policies with identical gross;
+- a late win as a signed delta that leaves the earlier period unchanged;
+- payment-scope B projected alone, with A's sale, fee and processing out;
+- processing by verified evidence or sole capture, by bearer, with the unattributed and deferred alerts;
+- a backfilled pre-A1 capture at its frozen time, the ambiguity and unclassified alerts, the live filter, and the CPA columns.
+
+`spec/support/never_fulfilled_return_helpers.rb#align_recording_times!` re-stamps database recording times for `travel_to` fixtures. The CPA closed-month byte-identity example now covers the gross columns too.
+
+#### 8.10.3 Remaining slices and acceptance
+
+Each slice reads the projection, or one shared helper built on the same rows, and adds specs against E1–E16 (§9.1). **Acceptance for the PR:** every row below passes, the reader register CI (§8.1) is green, and on E15 the statement, calculator, summary, finance CSV, `PlatformRevenue`, payout balance, CPA and BPT agree to the cent.
+
+| Slice | Change | Acceptance |
+| --- | --- | --- |
+| **CPA** (`CpaMonthlyReport`) | Classification by table, not the exception window. `buyer_refund_captures`, `buyer_refunds_paid` and the owed columns become the projection's `ticket_proceeds` flow. Payment-scope principal becomes gross only, outside ticket share. Classified `fee_revenue_gross` and `fee_refunds` come from K and postings (fee + organizer fee). Classified processing comes from the projection. `custody` and `chargebacks` exclude every classified payment, including B's refunds and losses on A's order (today B's refund can reach `proceeds_refunded` and B's loss `chargebacks`, §4.6 item 9). §5.3 recognition applies to fulfilled refunds, losses, processing and the bridge, with audit fallbacks bounded by the A1 cutovers. `unallocated_refunds_exception` ignores classified payments. The bridge excludes classified order IDs (deferred residual 5). The returned-twice note reads excess from postings | E1–E4, E8, E10–E15. Closed-month byte identity for pre-existing columns against a 7bcd97c2 baseline, with like-for-like comparison of appended columns. Gross bridge asserted per row. The 1¢ "returned twice" residual (§6.7) is gone |
+| **BPT detail** (`TaxReports#bpt_event_rows`) | Classified fee refunds come from postings, and classified fees from K at capture recording time. The recognition helper applies to fulfilled `returned_fees`. Payout rows come from frozen custody (below) | E14 byte-identical January in both variants and its control. 75¢ per P9 |
+| **BPT months / organizers / annual** (`TaxReports#months`, `#organizers`) | `#organizers` excludes classified activity entirely (today `collected_orders` counts expired or cancelled captured orders as organizer receipts). `#months` recognizes classified fees at capture and reverses them by postings. Classified processing is a platform cost | F-01…F-11 rows for annual, monthly and organizer views. The annual total equals the sum of the months |
+| **Frozen payout custody (R2-2)** | `payout_custody_determinations` (below) | F-19…F-24, E14, the Clover January / Stripe February fixture, and a March classification of a February-funding capture |
+| **FinanceExports** | The orders CSV omits order-scope classified orders. Today a classified order in `refunded` or `partially_refunded` status passes `SETTLED_ORDER_STATUSES`. The statement CSV carries the `$0` line | F-row: E15 CSV has the fulfilled sale only, plus the info line |
+| **OrganizationFinanceSummary** | `item_sales`, `refunded_proceeds`, `buyer_fees` and `financial_events` exclude classified orders and B's refunds (same status leak as above) | E15 summary equals the calculator |
+| **Settlements::Calculator / PayoutStatement** | Already excludes order-scope orders and B's refunds and losses (A1-R1). Adds one `$0` `adjustment` item per classified capture, **"Payment received, order unfulfilled"**, with fixed metadata (§8.3), so later returns never change the digest. Removes the v1 `never_fulfilled_platform_processing?` path in favour of the projection's attribution. Excludes linked `BalanceAdjustment`s and their reversals, and lists them in alerts. `PayoutStatement` renders the live status from `BuyerReturnLedger` | E1, E9, E13, E15. The digest is stable across later returns and changes only when the bearer snapshot is `organizer`. F-14, F-15 |
+| **OrganizationPayoutBalance** | Pending refunds and open disputes on classified payments stop being organizer debits (`unresolved_refunds`, `unresolved_disputes`, cancellation `already_reserved`). Their exceptions still block | F-18. Strict holds unchanged otherwise |
+| **Platform processing, dispute cost and credits** | `Commerce::PlatformRevenue` uses a separate classified rule (fee share recognized minus returned, from the projection, not floored against organizer events; processing per the bearer). Actual dispute fees are recorded as a new attributable platform `FeeComponent` kind from verified Stripe balance transactions, with credits on a won or late-won dispute as signed components. Until that writer exists, dispute fees appear in no reader, and CPA uses Stripe's statement (§11). The payment-scope processing writer records a durable per-payment component (A1 §4.6 item 8 defers it), so the projection can book it | E9, E15 `PlatformRevenue` row. A deferred alert count of 0 after the writer runs |
+| **Linked adjustments** | `BalanceAdjustment` with `order_id` on a classified order or `dispute_id` on a classified payment, and its reversals, are excluded from organizer readers and alerted | F-14 |
+| **Cancellation** | `EventCancellationRefunds` already excludes fenced payments (A1 §6.6 item 6). `RefundReconciliationQueue` computes owed from the ledger, and its recovery excludes classified payments | E16. Zero cancellation POSTs. The queue's cancellation row balance excludes B |
+| **Payout confirmation, finalization, held release, stale digest** | `NeverFulfilledPayoutHold` and the fences already cover creation, submission, hold release and paid recording. A2 adds a refusal when a payout's finalized settlement version predates the reader switch for an event with a classified capture (stale digest at release, submission and confirmation, under the existing locks), and when a paid recording lacks a custody determination. A2's pre-deploy migration fences A1's `PayoutHoldRelease`, submission and confirmation during the overlap (M-09) | F-16, F-17, F-25, M-09 |
+| **P4 proof** | `never_fulfilled_buyer_overpaid` is exempt from holds only when the capture is **proven platform-only** (§8.7): lifecycle or clean backfill provenance, every movement posted, nothing pending correction, no linked adjustment, and no `stripe_custody` determination naming it. Today A1 exempts the code unconditionally | E2 and E10 not held. The same with a linked adjustment held |
+| **Reader register** | `config/never_fulfilled_readers.yml` and its CI spec over the 57 files under `app/` that currently match `partially_refunded\|:refunded\|"refunded"\|excluding_test_payments`, plus every payout entry point | CI fails on an unlisted file |
+
+#### 8.10.4 A1 gaps A2 must close or carry
+
+1. **Payment-scope processing has no recording time** (above). Until the writer records a component, the projection alerts it and books nothing.
+2. **Pre-A1 unclassified history.** Old exception-window orders without a classification row are alerted, not projected. The A2 preflight requires `never_fulfilled:verify` to report zero (§10.5). Any row left is dispositioned by finance, not booked by a heuristic.
+3. **No finance disposition action** for quarantine or ambiguous ownership (§6.7 and §6.10 residuals). Those events stay held. A2 or B adds the audited action.
+4. **`accounting_period_closes` does not exist.** Every posting is `recognized`. A2 adds the table and the `pending_correction` writer path before readers can honour closed periods (§5.3). The projection already excludes and alerts `pending_correction` rows.
+5. **The overpaid exemption is unproven** (P4 proof above).
+6. **Reader specs that use `travel_to`** must re-stamp database times (`align_recording_times!`) or drive the writers at real times. Fixtures that insert lost disputes directly bypass the posting writer, and the projection reports them as `unposted_return_movement`.
+7. **Late wins on fulfilled orders** stay `dispute_late_win` for finance. The organizer-side credit is outside A2 unless Leon asks.
+
+#### 8.10.5 Frozen BPT custody (R2-2) sketch
+
+`payout_custody_determinations` is append-only, financial retention, and triggered like §4.2:
+
+| Column | Rule |
+| --- | --- |
+| `payout_id` | Unique. One determination per payout, never updated |
+| `settlement_id` | The finalized settlement version the payout funds (`payouts.settlement_id`) |
+| `determination` | `stripe_custody`, `non_custodial` or `ambiguous` |
+| `funded_order_item_ids`, `qualifying_payment_ids` | From `PayoutLineAllocator` for that version. A funded line is custody only if its order has a capture in `Payment.live_agent_capture` that is **not classified** and has a `capture_recorded_at` (or a frozen pre-A1 time) at or before the settlement version's finalization |
+| `basis` | `recorded_at_paid` or `derived_history` |
+| `evidence`, `determined_at` | Database-stamped |
+
+- **New payouts.** Written inside paid recording (`PayoutReconciler`, `PayoutCreator` outcome) under organization → event → payout, the locks those writers already take (§6.9 item 3). The fence refuses `paid` without it.
+- **History.** Derived once by the A2 release task from each paid payout's finalized settlement and the payment evidence above. If any funded line's custody cannot be shown, the result is `ambiguous`, and BPT keeps the payout's published row from the baseline export until a finance correction.
+- **Readers.** BPT detail includes a payout row only when its determination is `stripe_custody`. A later capture, classification, backfill or redaction cannot change it. CPA keeps its broader "every live USD payout" coverage.
+- **Cases.** A Clover-only January payout followed by a February Stripe capture (never-fulfilled or fulfilled) stays non-custodial. A January 5 capture funding a January 20 payout, then a February or March classification of that capture, leaves January's determination unchanged (it was frozen when paid). Also covered: a backdated `paid_at` (month membership still uses `paid_at`, residual §11), a redacted or missing paid audit (the determination does not read audits), and a reversal or later check adjustment (a new row on the adjustment, never a rewrite).
+
+#### 8.10.6 Policy defaults in force (no implementation hold)
+
+HåfaPass bears processing and actual dispute fees (P1, P5, snapshotted). BPT fee and tax treatment stays the v1 working position pending CPA (P2). Gross is shown with the bridge (P3). Over-return on a proven platform-only capture is audited and alerted without a payout hold (P4). Allocation is versioned `item_record` (P9, `nfc-v2.1`). The 75¢ case is reproduced in the projection spec and needs CPA sign-off against `policy_version`. Strict holds apply otherwise (P10).
 
 ---
 
