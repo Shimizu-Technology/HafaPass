@@ -175,7 +175,7 @@ RSpec.describe "Commerce recovery regressions", type: :request, webmock: true do
     end
   end
 
-  it "F02 sends nothing for a late capture from the app in A1-R1" do
+  it "F02 sends nothing for a late capture from the app in A1-R1", repayment_submitter: :inactive do
     order, payment, = late_capture(:expired)
     allow(StripeService).to receive(:refund_payment)
     expect { Commerce::RefundCreator.call(order: order, payment: payment, idempotency_key: "late-repay") }

@@ -20,13 +20,11 @@ module Commerce
   # Locks: the order prefix is the caller's; operations are rank 3 rows locked
   # after the order and the refund (docs/LOCKING.md). No network call here.
   #
-  # Activation (§10.1, §10.5): A1-R1 ships SUBMITTER_ACTIVE = false. R1
-  # reserves nothing and never passes the gate for a fenced payment; it can
-  # only look up and record existing operations (RepaymentAdjudication).
-  # A1-R2 is a reviewed code release that changes this constant to true and
-  # nothing else; it is never a setting, environment variable or runtime flip.
+  # Activation (§10.1, §10.5): A1-R1 shipped SUBMITTER_ACTIVE = false while
+  # older release workers drained. A1-R2 activates SUBMITTER_ACTIVE = true so
+  # fenced payments submit through one locked RepaymentOperation at a time.
   class BuyerRepayment
-    SUBMITTER_ACTIVE = false
+    SUBMITTER_ACTIVE = true
 
     # Orphan provider evidence that may describe this payment (§7.2).
     ORPHAN_CODES = %w[refund_operation_not_found refunded_payment_not_found disputed_payment_not_found].freeze

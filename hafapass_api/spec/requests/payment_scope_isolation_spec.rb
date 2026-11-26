@@ -151,7 +151,7 @@ RSpec.describe "Payment-scope capture isolation", type: :request do
       .to contain_exactly("unfulfilled_second_capture", "stripe_fee_adjustment_review_required")
   end
 
-  it "never sends a refund for B in A1-R1, through any outbound path" do
+  it "never sends a refund for B in A1-R1, through any outbound path", repayment_submitter: :inactive do
     order, payment_a, payment_b = sale_with_second_capture
     admin = create(:user, :admin)
 

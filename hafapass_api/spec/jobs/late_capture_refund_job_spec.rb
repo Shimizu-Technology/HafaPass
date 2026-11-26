@@ -38,7 +38,7 @@ RSpec.describe LateCaptureRefundJob do
     [result.order.reload, result.payment.reload]
   end
 
-  it "sends nothing in A1-R1 and records why the repayment waits" do
+  it "sends nothing in A1-R1 and records why the repayment waits", repayment_submitter: :inactive do
     order, payment = late_capture
     issue = ReconciliationException.find_by!(order: order, code: "late_payment_success_after_inventory_release")
 
