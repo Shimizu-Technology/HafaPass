@@ -259,7 +259,8 @@ RSpec.describe "Refund reconciliation", type: :request do
     [order, payment, issue]
   end
 
-  it "sends nothing from the queue in A1-R1 for a late capture whose legacy refund failed" do
+  it "sends nothing from the queue in A1-R1 for a late capture whose legacy refund failed",
+    repayment_submitter: :inactive do
     _order, _payment, issue = classified_late_capture_with_failed_legacy_refund
     allow(StripeService).to receive(:refund_payment)
 

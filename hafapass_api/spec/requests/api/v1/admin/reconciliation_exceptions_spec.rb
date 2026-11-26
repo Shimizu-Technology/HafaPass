@@ -245,7 +245,8 @@ RSpec.describe "Admin reconciliation exceptions", type: :request do
       expect(refunds.size).to eq(1)
     end
 
-    it "explains the A1-R1 wait and settles an older release's refund by lookup only" do
+    it "explains the A1-R1 wait and settles an older release's refund by lookup only",
+      repayment_submitter: :inactive do
       order, payment = late_capture
       issue = ReconciliationException.find_by!(order: order, code: Commerce::LateCaptureRefund::CODES)
       legacy = before_repayment_fence do

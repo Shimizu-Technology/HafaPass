@@ -4,9 +4,10 @@ require "rails_helper"
 require "ostruct"
 
 # One repayment workflow through the real entry points (docs/design/
-# never-fulfilled-captures.md §6, §7; R-01…R-17, E-01…E-15). Examples marked
-# `repayment_submitter: :active` run as A1-R2; the rest as A1-R1. Every
-# provider POST is counted with its amount and key.
+# never-fulfilled-captures.md §6, §7; R-01…R-17, E-01…E-15). A1-R2 is the
+# default; examples marked `repayment_submitter: :inactive` test the A1-R1
+# inactive-submitter guard. Every provider POST is counted with its amount
+# and key.
 RSpec.describe Commerce::BuyerRepayment do
   include ActiveJob::TestHelper
   include ActiveSupport::Testing::TimeHelpers
@@ -46,7 +47,7 @@ RSpec.describe Commerce::BuyerRepayment do
     RepaymentOperation.where(payment_id: payment.id).in_sequence.pluck(:sequence, :state, :amount_cents, :submission_count)
   end
 
-  describe "A1-R1 (inactive submitter)" do
+  describe "A1-R1 (inactive submitter)", repayment_submitter: :inactive do
     it "reserves nothing, sends nothing and records the wait at every outbound entry point" do
       order, payment, capture, issue = late_capture
       attempts = [

@@ -205,7 +205,7 @@ RSpec.describe "Repayment identity and evidence" do
     end
   end
 
-  it "only counts the backlog in A1-R1" do
+  it "only counts the backlog in A1-R1", repayment_submitter: :inactive do
     late_capture
     expect { expect(Commerce::RepaymentBacklog.call(enqueue: true).enqueued).to eq(0) }.not_to have_enqueued_job(LateCaptureRefundJob)
   end
