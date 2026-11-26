@@ -100,6 +100,10 @@ echo "A1 ${OLD_SHA} and candidate $(git -C "$repo_dir" rev-parse HEAD) on databa
 (cd "$old_api" && bin/rails db:drop db:create db:schema:load >/dev/null 2>&1)
 run old u_a1_data
 run old exports EXPORT_TAG=baseline
+# A2 recheck finding 3 (8132fe22): the runbook's first preflight runs before
+# the migration, on A1's schema, read-only; it must exit 0 (FAIL gates are
+# printed, never an abort).
+task preflight_pre_migration.txt never_fulfilled:a2_preflight
 echo "== new db:migrate (upgrade from A1's schema; dump to the scratch directory)"
 (cd "$api_dir" && SCHEMA="$REHEARSAL_DIR/upgraded_schema.rb" bin/rails db:migrate) >>"$REHEARSAL_DIR/runner.log" 2>&1
 run new upgrade_state
@@ -171,6 +175,12 @@ run new n_acc_return
 run new n_acc_stale
 run old o_acc_stale_a1
 run new n_acc_stale_return
+# A2 recheck finding 2 (8132fe22): acceptances shown only by their audit
+# (synthetic), A1's generic outcomes, raw writes and fresh keys, A2's, and
+# an ordinary control.
+run new n_eo
+run old o_eo_a1
+run new n_eo_after
 run new n_plain
 run new n_ordinary
 run old o_a1_ordinary
@@ -208,7 +218,7 @@ puts "gateway submissions:"
 read.call("calls.jsonl").select { |call| call["kind"] == "payout_submit" }.each { |call| puts "  #{call['role']} payout #{call['payout_id']} #{call['amount_cents']}" }
 puts "outcomes:"
 read.call("outcomes.jsonl").each { |row| puts "  #{row['role']} #{row['step']} #{row.reject { |k, _| %w[role step].include?(k) }.to_json}" }
-%w[compare_upgrade.txt compare_r22_candidate.txt compare_r22_a1.txt preflight_before.txt preflight_after.txt derive_dry_run.txt derive_baseline.txt custody_verify.txt].each do |name|
+%w[compare_upgrade.txt compare_r22_candidate.txt compare_r22_a1.txt preflight_pre_migration.txt preflight_before.txt preflight_after.txt derive_dry_run.txt derive_baseline.txt custody_verify.txt].each do |name|
   puts "#{name}:"
   File.readlines(File.join(dir, name)).each { |line| puts "  #{line}" }
 end

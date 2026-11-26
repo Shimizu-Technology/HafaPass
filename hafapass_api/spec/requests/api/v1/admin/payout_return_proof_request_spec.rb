@@ -23,6 +23,9 @@ require "rails_helper"
 #   4705527061 an identical acceptance retry after the return is idempotent;
 #   4705527129 the successful reversal is bound to its own return fixture;
 #   4705527141 the check's funded allocations are unchanged by its return.
+# A2 recheck at 8132fe22, finding 1: PATCH carries the bank's transfer time
+# (transfer_sent_at) for a return that came back before HåfaPass observed
+# the provider's paid result.
 RSpec.describe "Admin payout return proof", type: :request do
   let(:admin) { create(:user, :admin) }
   let(:profile) { create(:organizer_profile, :verified) }
@@ -562,6 +565,80 @@ RSpec.describe "Admin payout return proof", type: :request do
       attach!(legacy, provider_payout_id: "BANK-REF-C", **exact, return_reference: "RET-SHARED-3")
       expect(response).to have_http_status(:ok)
       expect(PayoutReturnProof.where(payout: [first, second, legacy]).pluck(:return_reference_digest).uniq.size).to eq(3)
+    end
+  end
+
+  # A2 recheck finding 1 (8132fe22): the reviewer's case through the admin
+  # API. A held $10.00 transfer the provider accepted (observed only), which
+  # finance acknowledged, came back before HåfaPass observed the paid
+  # result. The PATCH used to drop transfer_sent_at: 422, still held, no
+  # proof.
+  describe "a bank return before HåfaPass observed the paid result (transfer_sent_at)" do
+    def accepted_held!
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      allow(PayoutGateway).to receive(:submit) do |_payout|
+        EventCancellationRefunds.hold_payouts!(event, actor: admin)
+        sleep 0.05 # the observation comes measurably after the submission request
+        PayoutGateway::Result.new(provider_payout_id: "BANK-OBS-API", status: :paid)
+      end
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      @before_payout = available
+      payout = payout!("observed-api", settlement: settlement)
+      expect(payout.reload).to have_attributes(status: "held", held_from_status: "processing",
+        provider_accepted_basis: "locally_observed", provider_payout_id: "BANK-OBS-API")
+      payout
+    end
+
+    it "records the exact return with the bank's transfer time, and refuses one outside its bounds" do
+      payout = accepted_held!
+      conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict")
+        .where("metadata->>'conflict_reason' = ?", PayoutCreator::PAID_REFUSED_REASON).sole
+      reconcile!(payout, "accepted_transfer", conflict_audit_id: conflict.id)
+      expect(response).to have_http_status(:ok)
+      observed = payout.reload.provider_accepted_at
+      submitted_at = AuditLog.where(auditable: payout, action: "payout.submission_requested").sole.occurred_at
+      bank_sent = (submitted_at + ((observed - submitted_at) / 3)).utc.floor(6)
+      returned_at = (bank_sent + ((observed - bank_sent) / 2)).utc.floor(6)
+      expect([submitted_at < bank_sent, bank_sent < returned_at, returned_at < observed]).to eq([true, true, true])
+      committed = available
+      returned = { conflict_audit_id: conflict.id, return_reference: "RET-OBS-API-1", returned_amount_cents: 1000,
+        returned_at: returned_at.iso8601(6) }
+      unchanged = lambda do
+        expect(payout.reload).to have_attributes(status: "held", held_from_status: "processing")
+        expect(payout.return_proof).to be_nil
+        expect(available).to eq(committed)
+      end
+
+      # Without the bank's time the return predates the observation.
+      reconcile!(payout, "reversed", **returned)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to match(/after the provider accepted the transfer/)
+      unchanged.call
+      # A bank time before the submission request or after the observation.
+      [submitted_at - 1.second, observed + 1.second].each do |outside|
+        reconcile!(payout, "reversed", **returned, transfer_sent_at: outside.utc.iso8601(6))
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq(PayoutReconciler::TRANSFER_SENT_AT_RANGE_MESSAGE)
+        unchanged.call
+      end
+      expect(AuditLog.where(auditable: payout, action: "payout.reconciled").where("after_data->>'status' = 'reversed'")).to be_empty
+
+      # Within its bounds the exact return reverses it, dated by the bank.
+      reconcile!(payout, "reversed", **returned, transfer_sent_at: bank_sent.iso8601(6))
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("status" => "reversed", "provider_payout_id" => "BANK-OBS-API")
+      # The deferred reversal check accepts it at commit.
+      expect { ActiveRecord::Base.connection.execute("SET CONSTRAINTS payouts_reversal_return_check IMMEDIATE") }
+        .not_to raise_error
+      expect(payout.reload).to be_status_reversed
+      expect(payout.return_proof).to have_attributes(kind: "accepted_transfer_return", returned_amount_cents: 1000,
+        sent_at: bank_sent, returned_at: returned_at,
+        return_reference_digest: PayoutReturnProof.reference_digest("RET-OBS-API-1"))
+      reversal = AuditLog.where(auditable: payout, action: "payout.reconciled").order(:id).last
+      expect(reversal.metadata["accepted_transfer_return"]).to include("accepted_at" => observed.utc.iso8601(6),
+        "accepted_basis" => "locally_observed", "transfer_sent_at" => bank_sent.iso8601(6), "sent_at" => bank_sent.iso8601(6))
+      expect(available).to eq(@before_payout)
+      expect(committed).to be <= @before_payout - 1000
     end
   end
 

@@ -130,6 +130,88 @@ RSpec.describe "never_fulfilled:a2_preflight" do
       "gate_evidence_only_zero" => "FAIL (escalate each to finance)")
   end
 
+  # A2 recheck finding 3 (8132fe22): the runbook's first run is before the
+  # migration, on A1's schema, where the task aborted at
+  # hafapass_overpaid_platform_only. A2's columns, tables and functions are
+  # renamed away here in a rolled-back transaction, so any reference to one
+  # fails the run (the overlap rehearsal runs it on A1's exact schema).
+  it "runs read-only on the A1 schema before the migration and names what only the migration provides" do
+    record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+    sent = PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pre-sent", amount_cents: 2000)
+    pending = PayoutCreator.new(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+      idempotency_key: "pre-pending", amount_cents: 1000).send(:reserve!).first
+    order, payment, = classified_capture(items: [[1200, 160, 0, 0]], event: event)
+    component = create(:fee_component, order: order, order_item: order.order_items.first, kind: "processing",
+      amount_cents: 69, estimated: false, provider_reference: "txn_pre_#{SecureRandom.hex(4)}")
+    create(:stripe_fee_evidence, :verified, payment: payment, fee_component: component,
+      provider_balance_transaction_id: component.provider_reference)
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: pending, actor: admin,
+      organization: organization, event: event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+    connection = ActiveRecord::Base.connection
+    output = nil
+    ActiveRecord::Base.transaction(requires_new: true) do
+      connection.execute(<<~SQL)
+        ALTER TABLE payouts RENAME COLUMN provider_accepted_at TO spec_a1_1;
+        ALTER TABLE payouts RENAME COLUMN provider_accepted_basis TO spec_a1_2;
+        ALTER TABLE payouts RENAME COLUMN accepted_transfer_recorded_at TO spec_a1_3;
+        ALTER TABLE settlements RENAME COLUMN finalized_reader TO spec_a1_4;
+        ALTER TABLE settlements RENAME COLUMN finalized_recorded_at TO spec_a1_5;
+        ALTER TABLE settlements RENAME COLUMN reader_digest TO spec_a1_6;
+        ALTER TABLE reconciliation_exceptions RENAME COLUMN proof_checked_at TO spec_a1_7;
+        ALTER TABLE stripe_fee_evidences RENAME COLUMN facts_recorded_at TO spec_a1_8;
+        ALTER TABLE payout_custody_determinations RENAME TO spec_a1_custody;
+        ALTER TABLE payout_return_proofs RENAME TO spec_a1_proofs;
+        ALTER FUNCTION hafapass_overpaid_platform_only(bigint) RENAME TO spec_a1_f1;
+        ALTER FUNCTION hafapass_settlement_restated_at(bigint) RENAME TO spec_a1_f2;
+        ALTER FUNCTION hafapass_event_has_classified_capture(bigint) RENAME TO spec_a1_f3;
+        ALTER FUNCTION hafapass_overpaid_proof_facts(bigint) RENAME TO spec_a1_f4;
+        ALTER FUNCTION hafapass_payout_acceptance_audited(bigint) RENAME TO spec_a1_f5;
+      SQL
+      connection.clear_cache!
+      output = run_task
+      raise ActiveRecord::Rollback
+    end
+    connection.clear_cache!
+
+    expect(lines(output, "snapshot").sole).to include("read_only" => "on")
+    expect(lines(output, "schema").sole).to include("state" => "pre_a2")
+    expect(lines(output, "schema").sole["missing"].split(",")).to include("payouts.provider_accepted_at",
+      "settlements.finalized_reader", "stripe_fee_evidences.facts_recorded_at", "payout_custody_determinations",
+      "hafapass_overpaid_platform_only()", "hafapass_settlement_restated_at()")
+    guards = lines(output, "guards").sole
+    expect(guards).to include("gate_guards" => "FAIL", "hafapass_settlement_restated_at" => "false", "reader_rule_current" => "true")
+    expect(guards["failing_guards"].split(",")).to include("hafapass_settlement_restated_at", "hafapass_payout_acceptance_audited")
+    expect(lines(output, "undisposed").sole).to include("gate_zero_undisposed" => "PASS")
+    expect(lines(output, "holds").sole).to include("overpaid_proven" => "after_migration")
+    # Before the migration every such audit is evidence-only (no marker column).
+    expect(lines(output, "accepted").sole).to include("marked" => "0", "evidence_only" => "1",
+      "evidence_only_payout_ids" => pending.id.to_s, "gate_evidence_only_zero" => "FAIL (escalate each to finance)")
+    expect(lines(output, "custody").sole).to include("undetermined_paid_payouts" => "after_migration",
+      "gate_custody_complete" => a_string_starting_with("FAIL (pre-migration"))
+    expect(lines(output, "event").sole).to include("event_id" => event.id.to_s, "latest_reader" => "pre_a2",
+      "needs_finalizing" => "yes", "reserved_cents" => "3000", "sent_cents" => "0", "current_payable_cents" => "after_migration",
+      "remaining_cents" => "after_migration", "over_committed" => "after_migration",
+      "organization_available_cents" => "after_migration")
+    rows = lines(output, "payout").index_by { |row| row["payout_id"] }
+    expect(rows.fetch(sent.id.to_s)).to include("current" => "false", "submitted" => "true", "restated_at" => "after_migration",
+      "settlement_reader" => "pre_a2", "action" => a_string_starting_with("record paid only with transfer evidence before"))
+    expect(rows.fetch(pending.id.to_s)).to include("current" => "false", "submitted" => "false",
+      "action" => "not sent: fail and reissue on a new version")
+
+    # After the migration (the real schema again) the same data reads with
+    # the A2 reader and every guard is inspected.
+    after = run_task
+    expect(lines(after, "schema").sole).to include("state" => "a2", "missing" => "none")
+    expect(lines(after, "guards").sole).to include("payouts_audited_acceptance_guard" => "true",
+      "hafapass_payout_acceptance_audited" => "true", "reader_rule_current" => "true")
+    expect(lines(after, "event").sole).to include("latest_reader" => "nfc-a2", "needs_finalizing" => "yes")
+    expect(lines(after, "event").sole["current_payable_cents"]).to match(/\A-?\d+\z/)
+    expect(lines(after, "payout").index_by { |row| row["payout_id"] }.fetch(sent.id.to_s)["restated_at"])
+      .to eq(payment.reload.capture_recorded_at.utc.iso8601(6))
+  end
+
   it "fails the guard gate when a required trigger exists but is disabled" do
     ActiveRecord::Base.connection.execute("INSERT INTO financial_cutovers (key) VALUES " \
       "('#{FinancialIntegrity::PAYOUT_ENTRY_CUTOVER}') ON CONFLICT (key) DO NOTHING")

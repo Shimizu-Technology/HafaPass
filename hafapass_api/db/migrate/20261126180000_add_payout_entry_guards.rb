@@ -36,7 +36,10 @@ require_relative "../../lib/financial_integrity"
 #     payouts.provider_accepted_at: on any event, by any writer, it stays
 #     committed (never paid, failed, pending, released or deleted) until
 #     finance recorded the acceptance and its exact return
-#     (payouts_accepted_transfer_guard, A2 recheck 758485ae finding 1);
+#     (payouts_accepted_transfer_guard, A2 recheck 758485ae finding 1), and
+#     one shown only by its conflict audit stays committed the same way and
+#     blocks new reservations for its organization while it is not
+#     (payouts_audited_acceptance_guard, A2 recheck 8132fe22 finding 2);
 #   - settlements.finalized_reader / finalized_recorded_at stamped by the
 #     database at finalization, and reader_digest (the statement without its
 #     payout lines) written by this release's Finalizer; all set once.
@@ -96,8 +99,11 @@ class AddPayoutEntryGuards < ActiveRecord::Migration[8.1]
   def down
     safety_assured do
       %w[payouts_accepted_transfer_guard payouts_accepted_transfer_guard_on_insert
-        payouts_accepted_transfer_guard_on_delete].each { |trigger| execute "DROP TRIGGER IF EXISTS #{trigger} ON payouts" }
+        payouts_accepted_transfer_guard_on_delete payouts_audited_acceptance_guard payouts_audited_acceptance_guard_on_delete
+        payouts_audited_acceptance_guard_on_insert].each { |trigger| execute "DROP TRIGGER IF EXISTS #{trigger} ON payouts" }
       execute "DROP FUNCTION IF EXISTS hafapass_guard_accepted_transfer()"
+      execute "DROP FUNCTION IF EXISTS hafapass_guard_audited_acceptance()"
+      execute "DROP FUNCTION IF EXISTS hafapass_payout_acceptance_audited(bigint)"
       execute "DROP TRIGGER IF EXISTS payouts_settlement_guard ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check ON payouts"
       execute "DROP TRIGGER IF EXISTS payouts_reversal_return_check_on_insert ON payouts"

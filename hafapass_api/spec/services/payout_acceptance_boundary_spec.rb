@@ -315,13 +315,114 @@ RSpec.describe "Provider acceptance boundaries (A2)" do
       expect(PayoutReconciler.classified_event?(payout)).to be(false)
       expect(raw(payout, accepted_transfer_recorded_at: Time.current)).to match(/only in flight/)
       expect(raw(payout, status: Payout.statuses[:reversed], failure_code: nil))
-        .to match(/acceptance recorded only in its audit trail; escalate/)
+        .to match(/acceptance recorded only in its audit trail/)
       # A later provider result never frees or completes it.
       PayoutCreator.new(settlement: payout.settlement, actor: admin, idempotency_key: payout.idempotency_key)
         .send(:record_submission_outcome!, payout, status: :failed, provider_payout_id: "BANK-EVIDENCE-ONLY",
           failure_code: "provider_returned", initiated_at: Time.current)
       expect(payout.reload).to have_attributes(status: "processing", failure_code: "provider_result_conflict")
       expect(available).to eq(reserved)
+    end
+
+    # A2 recheck finding 2 (8132fe22): A1's reconciler recorded such a
+    # payout failed on an ordinary event (its generic outcome, no marker to
+    # check), the balance rose by its amount and A2 reserved a fresh $10.00.
+    # The database now keeps it committed for every writer.
+    it "is never failed, reversed, paid, resubmitted, released, deleted or re-identified by any writer" do
+      payout = evidence_only!
+      reserved = available
+      guard = /Accepted transfer fence: payout #{payout.id} has a provider acceptance recorded only in its audit trail/
+      # A1's generic failed and reversed outcomes and raw downgrades write
+      # these columns straight to the row.
+      { "failed" => { status: Payout.statuses[:failed], failure_code: "reconciled_failure" },
+        "failed (kept code)" => { status: Payout.statuses[:failed] },
+        "reversed" => { status: Payout.statuses[:reversed], failure_code: nil },
+        "paid" => { status: Payout.statuses[:paid], paid_at: Time.current, failure_code: nil },
+        "pending" => { status: Payout.statuses[:pending] },
+        "transfer identifier" => { provider_payout_id: "OTHER-EO" },
+        "amount" => { amount_cents: 500 },
+        "key" => { idempotency_key: "evidence-only-2" } }.each do |label, columns|
+        expect([label, raw(payout, **columns)]).to match([label, guard])
+      end
+      expect(raw(payout) { Payout.where(id: payout.id).delete_all }).to match(/recorded only in its audit trail; it is never deleted/)
+      # No fresh-key reservation of its amount: it stays out of the balance.
+      expect(payout.reload).to have_attributes(status: "processing", provider_payout_id: "BANK-EVIDENCE-ONLY")
+      expect(available).to eq(reserved)
+      expect do
+        PayoutCreator.call(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+          idempotency_key: "evidence-only-fresh", amount_cents: reserved + 1000)
+      end.to raise_error(PayoutCreator::PayoutError, /exceeds the available balance/)
+      expect(@calls).to eq(1)
+      # A hold keeps it committed; leaving the hold does not.
+      EventCancellationRefunds.hold_payouts!(event, actor: admin)
+      expect(payout.reload).to have_attributes(status: "held", held_from_status: "processing",
+        failure_code: "provider_result_conflict")
+      expect(raw(payout, status: Payout.statuses[:processing], held_from_status: nil)).to match(guard)
+      expect(raw(payout, status: Payout.statuses[:failed], held_from_status: nil)).to match(guard)
+      expect(raw(payout, held_from_status: "pending")).to match(guard)
+      expect(payout.reload).to have_attributes(status: "held", provider_payout_id: "BANK-EVIDENCE-ONLY", amount_cents: 1000)
+    end
+
+    # On a pending payout too: never submitted (the resend), only held.
+    it "keeps a pending one unsent" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      payout = PayoutCreator.new(settlement: Settlements::Finalizer.call(event: event, actor: admin), actor: admin,
+        idempotency_key: "evidence-only-pending", amount_cents: 1000).send(:reserve!).first
+      AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout, actor: admin,
+        organization: organization, event: event, source: "provider", outcome: "unknown",
+        metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+      guard = /payout #{payout.id} has a provider acceptance recorded only in its audit trail/
+      expect(raw(payout, status: Payout.statuses[:processing], provider_payout_id: "manual_po_#{payout.id}")).to match(guard)
+      expect(raw(payout, status: Payout.statuses[:failed])).to match(guard)
+      # The same key returns it without a submission.
+      expect(PayoutCreator.call(settlement: payout.settlement, actor: admin, idempotency_key: "evidence-only-pending"))
+        .to eq(payout)
+      expect(@calls).to eq(0)
+      expect(payout.reload).to be_status_pending
+      expect(raw(payout, status: Payout.statuses[:held], held_from_status: "pending")).to eq(:accepted)
+    end
+
+    # However it got there (no released writer records one), a persisted
+    # recognized conflict on a payout that is no longer committed fails
+    # closed: no payout is reserved for its organization under any key. The
+    # ordinary failed payout before it (no acceptance) frees and reserves
+    # as always.
+    it "refuses every new reservation for its organization while one is no longer committed" do
+      record_card_sale!(event, ticket_type: ticket_type, quantity: 5)
+      settlement = Settlements::Finalizer.call(event: event, actor: admin)
+      before_payout = available
+      ordinary = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "ordinary-1", amount_cents: 1000)
+      PayoutReconciler.call(payout: ordinary.reload, actor: admin, status: "failed", provider_payout_id: ordinary.provider_payout_id,
+        evidence: evidence(reason: "Finance never sent the transfer"))
+      expect(ordinary.reload).to be_status_failed
+      expect(available).to eq(before_payout)
+      reissued = PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "ordinary-2", amount_cents: 1000)
+      expect(reissued.reload).to be_status_processing
+      PayoutReconciler.call(payout: reissued, actor: admin, status: "failed", provider_payout_id: reissued.provider_payout_id,
+        evidence: evidence(reason: "Finance never sent the transfer"))
+      expect(available).to eq(before_payout)
+
+      # The recognized conflict lands on the failed payout (history from
+      # before the guard, or a raw write).
+      AuditLogger.record!(action: "payout.provider_result_conflict", auditable: reissued, actor: admin,
+        organization: organization, event: event, source: "provider", outcome: "unknown",
+        metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON })
+      expect(PayoutCreator.uncommitted_evidence_only_acceptance?(organization)).to be(true)
+      calls = @calls
+      expect { PayoutCreator.call(settlement: settlement, actor: admin, idempotency_key: "after-eo", amount_cents: 1000) }
+        .to raise_error(PayoutCreator::PayoutError, PayoutCreator::EVIDENCE_ONLY_RESERVATION_MESSAGE)
+      expect(@calls).to eq(calls)
+      raw_insert = lambda do
+        FinancialIntegrity.with_settlement_reader do
+          Payout.create!(organization: organization, event: event, settlement: settlement,
+            connected_account: reissued.connected_account, provider: "manual", idempotency_key: "raw-after-eo",
+            amount_cents: 100, currency: "usd", status: :pending)
+        end
+      end
+      expect(raw(reissued, &raw_insert)).to match(/this organization has a provider acceptance recorded only in its audit trail/)
+      # It stays failed: never resurrected or resent either.
+      expect(raw(reissued, status: Payout.statuses[:pending])).to match(/payout #{reissued.id} has a provider acceptance/)
+      expect(Payout.where(organization: organization).count).to eq(2)
     end
   end
 end

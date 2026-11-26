@@ -2372,6 +2372,77 @@ module FinancialIntegrity
     CREATE TRIGGER payouts_accepted_transfer_guard_on_delete BEFORE DELETE ON payouts
       FOR EACH ROW WHEN (OLD.provider_accepted_at IS NOT NULL)
       EXECUTE FUNCTION hafapass_guard_accepted_transfer();
+
+    -- A2 recheck finding 2 (8132fe22): a provider acceptance shown only by
+    -- its conflict audit (the paid-refusal reason, no marker). No released
+    -- writer creates one (the marker and its audit share one transaction),
+    -- but any that persists fails closed for every writer and every event,
+    -- like a marked one: its money may be out with the organizer and there
+    -- is no marker time to compare a return with. It is never recorded
+    -- paid, failed, reversed or pending, never submitted (pending to
+    -- processing), released or deleted, and keeps its identity, amounts and
+    -- version; a hold (pending or processing to held, from that status)
+    -- keeps it committed and is allowed. A conflict audit is append-only,
+    -- so once recorded this holds for good; finance escalates it for an
+    -- approved disposition. While one sits failed or reversed (its amount
+    -- no longer committed: history from before this guard, or raw writes
+    -- before it), no new payout is reserved for its organization, under any
+    -- key, so the balance it released is never paid out again.
+    CREATE OR REPLACE FUNCTION hafapass_payout_acceptance_audited(target bigint) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+      SELECT EXISTS (SELECT 1 FROM audit_logs a WHERE a.auditable_type = 'Payout' AND a.auditable_id = target
+        AND a.action = 'payout.provider_result_conflict' AND a.metadata->>'conflict_reason' = '#{PAYOUT_PAID_REFUSED_REASON}')
+    $$;
+
+    CREATE OR REPLACE FUNCTION hafapass_guard_audited_acceptance() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF EXISTS (SELECT 1 FROM payouts p WHERE p.organization_id = NEW.organization_id
+            AND p.provider_accepted_at IS NULL
+            AND p.status NOT IN (#{PAYOUT_PENDING_STATUS}, #{PAYOUT_PROCESSING_STATUS}, #{PAYOUT_PAID_STATUS}, #{PAYOUT_HELD_STATUS})
+            AND hafapass_payout_acceptance_audited(p.id)) THEN
+          RAISE EXCEPTION 'Accepted transfer fence: this organization has a provider acceptance recorded only in its audit trail that is no longer committed; no payout is reserved until finance approves its disposition'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END IF;
+      IF NOT hafapass_payout_acceptance_audited(OLD.id) THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+      END IF;
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; it is never deleted', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      IF NEW.provider_payout_id IS DISTINCT FROM OLD.provider_payout_id OR NEW.provider IS DISTINCT FROM OLD.provider
+          OR NEW.amount_cents IS DISTINCT FROM OLD.amount_cents OR NEW.withheld_cents IS DISTINCT FROM OLD.withheld_cents
+          OR NEW.carried_withholding_cents IS DISTINCT FROM OLD.carried_withholding_cents
+          OR NEW.currency IS DISTINCT FROM OLD.currency OR NEW.settlement_id IS DISTINCT FROM OLD.settlement_id
+          OR NEW.event_id IS DISTINCT FROM OLD.event_id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
+          OR NEW.connected_account_id IS DISTINCT FROM OLD.connected_account_id
+          OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+          OR NEW.accepted_transfer_recorded_at IS NOT NULL
+          OR (NEW.status IS NOT DISTINCT FROM OLD.status AND NEW.held_from_status IS DISTINCT FROM OLD.held_from_status)
+          OR (NEW.status IS DISTINCT FROM OLD.status AND NOT (NEW.status = #{PAYOUT_HELD_STATUS}
+            AND ((OLD.status = #{PAYOUT_PENDING_STATUS} AND NEW.held_from_status = 'pending')
+              OR (OLD.status = #{PAYOUT_PROCESSING_STATUS} AND NEW.held_from_status = 'processing')))) THEN
+        RAISE EXCEPTION 'Accepted transfer fence: payout % has a provider acceptance recorded only in its audit trail; it stays committed (never paid, failed, reversed, pending, submitted or released) until finance approves its disposition', OLD.id
+          USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard ON payouts;
+    CREATE TRIGGER payouts_audited_acceptance_guard BEFORE UPDATE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL AND NEW.provider_accepted_at IS NULL)
+      EXECUTE FUNCTION hafapass_guard_audited_acceptance();
+    DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard_on_delete ON payouts;
+    CREATE TRIGGER payouts_audited_acceptance_guard_on_delete BEFORE DELETE ON payouts
+      FOR EACH ROW WHEN (OLD.provider_accepted_at IS NULL)
+      EXECUTE FUNCTION hafapass_guard_audited_acceptance();
+    DROP TRIGGER IF EXISTS payouts_audited_acceptance_guard_on_insert ON payouts;
+    CREATE TRIGGER payouts_audited_acceptance_guard_on_insert BEFORE INSERT ON payouts
+      FOR EACH ROW EXECUTE FUNCTION hafapass_guard_audited_acceptance();
   SQL
 
   # A2 recheck finding 2 (758485ae): every money guard the A2 release
@@ -2411,6 +2482,9 @@ module FinancialIntegrity
     "payouts_accepted_transfer_guard" => %w[payouts hafapass_guard_accepted_transfer],
     "payouts_accepted_transfer_guard_on_delete" => %w[payouts hafapass_guard_accepted_transfer],
     "payouts_accepted_transfer_guard_on_insert" => %w[payouts hafapass_guard_accepted_transfer],
+    "payouts_audited_acceptance_guard" => %w[payouts hafapass_guard_audited_acceptance],
+    "payouts_audited_acceptance_guard_on_delete" => %w[payouts hafapass_guard_audited_acceptance],
+    "payouts_audited_acceptance_guard_on_insert" => %w[payouts hafapass_guard_audited_acceptance],
     "payouts_repayment_fence" => %w[payouts hafapass_payout_repayment_fence],
     "payouts_require_custody" => %w[payouts hafapass_require_payout_custody],
     "payouts_require_custody_on_insert" => %w[payouts hafapass_require_inserted_payout_custody],
@@ -2436,7 +2510,7 @@ module FinancialIntegrity
   }.transform_values(&:freeze).freeze
   PREFLIGHT_FUNCTIONS = %w[hafapass_settlement_restated_at hafapass_overpaid_proof_facts hafapass_payout_return_verified
     hafapass_payout_amount_left hafapass_lock_payout_event hafapass_event_has_classified_capture
-    hafapass_settlement_reader_required].freeze
+    hafapass_settlement_reader_required hafapass_payout_acceptance_audited].freeze
 
   module SchemaDump
     private

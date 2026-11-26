@@ -26,6 +26,17 @@
 #   payout     each pending, processing or held payout on those events: its
 #              approved version, restatement time, whether it is current,
 #              and the finance action the guards leave open.
+#
+# The runbook runs it before the migration too (A2 recheck finding 3,
+# 8132fe22), on the A1 schema. The schema line says which schema it read
+# (state=a2, or state=pre_a2 with the missing A2 columns, table and
+# functions). On pre_a2 it never names an absent column or function: the
+# guard gate FAILs as expected, the undisposed and evidence-only gates run
+# on A1's own tables, the custody gate FAILs (no custody table before the
+# migration) and every value that only the A2 reader or its functions can
+# compute (P4 proof, payable, remaining, restatement time, the organization's
+# available balance) prints after_migration. Every payout on an affected
+# event is then on a version an older reader finalized, so none is current.
 namespace :never_fulfilled do
   desc "Read-only A2 payout-entry preflight and organizer payable audit"
   task a2_preflight: :environment do
@@ -59,11 +70,38 @@ namespace :never_fulfilled do
     # capture classified while the task runs can never be counted beside a
     # statement computed without it. Inside an already open transaction (a
     # test's fixture transaction) the task joins it and reports its level.
+    # The A2 schema this task reads beyond A1's, from the catalog (never
+    # from the model's cached columns). Absent before the migration.
+    column = lambda do |table, name|
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() " \
+        "AND table_name = #{connection.quote(table)} AND column_name = #{connection.quote(name)})")
+    end
+    table = lambda do |name|
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() " \
+        "AND table_name = #{connection.quote(name)})")
+    end
+    later = "after_migration"
+
     snapshot = connection.transaction_open? ? {} : { isolation: :repeatable_read }
     connection.transaction(**snapshot) do
       connection.execute("SET TRANSACTION READ ONLY")
       line.call("snapshot", isolation: connection.select_value("SHOW transaction_isolation").tr(" ", "_"),
         read_only: connection.select_value("SHOW transaction_read_only"))
+      required = {
+        "payouts.provider_accepted_at" => -> { column.call("payouts", "provider_accepted_at") },
+        "payouts.provider_accepted_basis" => -> { column.call("payouts", "provider_accepted_basis") },
+        "payouts.accepted_transfer_recorded_at" => -> { column.call("payouts", "accepted_transfer_recorded_at") },
+        "settlements.finalized_reader" => -> { column.call("settlements", "finalized_reader") },
+        "settlements.reader_digest" => -> { column.call("settlements", "reader_digest") },
+        "stripe_fee_evidences.facts_recorded_at" => -> { column.call("stripe_fee_evidences", "facts_recorded_at") },
+        "payout_custody_determinations" => -> { table.call("payout_custody_determinations") },
+        "payout_return_proofs" => -> { table.call("payout_return_proofs") },
+        **%w[hafapass_overpaid_platform_only hafapass_payout_block_start hafapass_settlement_restated_at
+          hafapass_event_has_classified_capture].to_h { |name| ["#{name}()", -> { function.call(name) }] }
+      }
+      missing = required.reject { |_name, present| present.call }.keys
+      a2 = missing.empty?
+      line.call("schema", state: a2 ? "a2" : "pre_a2", missing: a2 ? "none" : missing.join(","))
       enabled = enabled_triggers.call
       guards = FinancialIntegrity::PREFLIGHT_TRIGGERS.to_h do |name, (table, trigger_function)|
         [name.to_sym, enabled.include?([name, table, trigger_function])]
@@ -92,7 +130,7 @@ namespace :never_fulfilled do
       line.call("undisposed", **undisposed, gate_zero_undisposed: undisposed.values.all?(&:zero?) ? "PASS" : "FAIL")
       line.call("holds", **ReconciliationException.open.where(code: FinancialIntegrity::PAYOUT_BLOCKING_CODES +
         [FinancialIntegrity::OVERPAID_CODE]).group(:code).count.sort.to_h,
-        overpaid_proven: Commerce::NeverFulfilledPayoutHold.proven_platform_only_overpaid.count)
+        overpaid_proven: a2 ? Commerce::NeverFulfilledPayoutHold.proven_platform_only_overpaid.count : later)
 
       # Accepted transfers (CodeRabbit 4706251688): every acceptance carries
       # its durable marker. One shown only by its conflict audit has no time
@@ -100,40 +138,69 @@ namespace :never_fulfilled do
       # so the gate needs none (finance escalates any it names).
       refused_audits = AuditLog.where(auditable_type: "Payout", action: "payout.provider_result_conflict")
         .where("metadata->>'conflict_reason' = ?", FinancialIntegrity::PAYOUT_PAID_REFUSED_REASON)
-      evidence_only = Payout.where(provider_accepted_at: nil, id: refused_audits.select(:auditable_id)).order(:id).pluck(:id)
-      accepted = Payout.where.not(provider_accepted_at: nil)
-      line.call("accepted", marked: accepted.count, acknowledged: accepted.where.not(accepted_transfer_recorded_at: nil).count,
-        locally_observed: accepted.where(provider_accepted_basis: "locally_observed").count,
+      # Before the migration no payout has the marker column, so every such
+      # audit is evidence-only.
+      with_audit = Payout.where(id: refused_audits.select(:auditable_id))
+      evidence_only = (a2 ? with_audit.where(provider_accepted_at: nil) : with_audit).order(:id).pluck(:id)
+      accepted = Payout.where.not(provider_accepted_at: nil) if a2
+      line.call("accepted", marked: accepted&.count || 0,
+        acknowledged: accepted&.where&.not(accepted_transfer_recorded_at: nil)&.count || 0,
+        locally_observed: accepted&.where(provider_accepted_basis: "locally_observed")&.count || 0,
         evidence_only: evidence_only.size, evidence_only_payout_ids: evidence_only.empty? ? "none" : evidence_only.join(","),
         gate_evidence_only_zero: evidence_only.empty? ? "PASS" : "FAIL (escalate each to finance)")
 
-      paid = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
-      undetermined = PayoutCustody.undetermined(paid).count
-      line.call("custody", undetermined_paid_payouts: undetermined,
-        ambiguous: PayoutCustodyDetermination.where(determination: "ambiguous").count,
-        gate_custody_complete: undetermined.zero? ? "PASS" : "FAIL (run payout_custody:derive with authority)")
+      if a2
+        paid = Payout.where(status: %i[paid reversed]).where.not(paid_at: nil)
+        undetermined = PayoutCustody.undetermined(paid).count
+        line.call("custody", undetermined_paid_payouts: undetermined,
+          ambiguous: PayoutCustodyDetermination.where(determination: "ambiguous").count,
+          gate_custody_complete: undetermined.zero? ? "PASS" : "FAIL (run payout_custody:derive with authority)")
+      else
+        line.call("custody", undetermined_paid_payouts: later, ambiguous: later,
+          gate_custody_complete: "FAIL (pre-migration: no custody table; payout_custody:derive runs after drain)")
+      end
 
       affected = Event.where(id: Order.where(id: UnfulfilledCapture.select(:order_id)).select(:event_id)).order(:id)
       affected.find_each do |event|
-        calculation = Settlements::Calculator.call(event)
         latest = event.settlements.status_finalized.order(:version).last
         payouts = event.payouts.order(:id).to_a
         reserved = payouts.select { |payout| %w[pending processing held].include?(payout.status) }.sum(&:amount_cents)
         sent = payouts.select(&:status_paid?).sum(&:amount_cents)
+        common = { event_id: event.id, organization_id: event.organization_id,
+          classified_captures: UnfulfilledCapture.where(order_id: event.orders.select(:id)).count,
+          latest_version: latest&.version || "none" }
+        in_flight = payouts.select { |payout| %w[pending processing held].include?(payout.status) }
+        unless a2
+          # Pre-migration: every version here was finalized by an older
+          # reader, so the event needs finalizing again and no payout on it
+          # is current. The A2 reader's figures come after the migration.
+          line.call("event", **common, latest_reader: "pre_a2", latest_restated_at: later, needs_finalizing: "yes",
+            current_payable_cents: later, reserved_cents: reserved, sent_cents: sent, remaining_cents: later,
+            over_committed: later, organization_available_cents: later)
+          in_flight.each do |payout|
+            submitted = AuditLog.where(auditable: payout, action: "payout.submission_requested").exists?
+            line.call("payout", event_id: event.id, payout_id: payout.id, status: payout.status,
+              held_from: payout.held_from_status || "-", amount_cents: payout.amount_cents,
+              settlement_version: payout.settlement.version, settlement_reader: "pre_a2", restated_at: later,
+              current: false, submitted: submitted,
+              action: submitted ? "record paid only with transfer evidence before the restatement (its time after the migration); else fail and reissue" :
+                "not sent: fail and reissue on a new version")
+          end
+          next
+        end
+        calculation = Settlements::Calculator.call(event)
         payable = calculation.attributes[:payable_cents]
         current_digest = PayoutEntryGuard.reader_digest(calculation.items)
         latest_current = latest && latest.finalized_reader == FinancialIntegrity::SETTLEMENT_READER &&
           latest.reader_digest == current_digest
-        line.call("event", event_id: event.id, organization_id: event.organization_id,
-          classified_captures: UnfulfilledCapture.where(order_id: event.orders.select(:id)).count,
-          latest_version: latest&.version || "none", latest_reader: latest&.finalized_reader || "none",
+        line.call("event", **common, latest_reader: latest&.finalized_reader || "none",
           latest_restated_at: latest && PayoutEntryGuard.restated_at(latest)&.utc&.iso8601(6) || "none",
           needs_finalizing: latest_current ? "no" : "yes",
           current_payable_cents: payable, reserved_cents: reserved, sent_cents: sent,
           remaining_cents: payable - reserved - sent,
           over_committed: reserved + sent > payable ? "yes (keep held; finance reviews)" : "no",
           organization_available_cents: OrganizationPayoutBalance.available_cents(event.organization))
-        payouts.select { |payout| %w[pending processing held].include?(payout.status) }.each do |payout|
+        in_flight.each do |payout|
           stale = PayoutEntryGuard.staleness(payout, items: calculation.items)
           restated_at = stale&.fetch(:restated_at)
           submissions = AuditLog.where(auditable: payout, action: "payout.submission_requested")

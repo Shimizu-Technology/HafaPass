@@ -293,6 +293,22 @@ when "u_a1_data"
     S.save!(key => acc.id)
   end
 
+  # A2 recheck finding 2 (8132fe22): three more ordinary events, each in its
+  # own organization. acc_eo gets an acceptance shown only by its audit on an
+  # in-flight payout, acc_eo_hist one on a payout already failed (a persisted
+  # recognized conflict no longer committed), and acc_ctl an ordinary
+  # payout with no acceptance (the control).
+  %w[acc_eo acc_eo_hist acc_ctl].each_with_index do |key, index|
+    eo_owner = S.create(:user, :organizer, clerk_id: "clerk_a2_#{key}_owner", email: "rehearsal.a2.#{key.tr('_', '-')}@example.com")
+    eo_organization = S.create(:organization, name: "Rehearsal A2 Evidence #{key}")
+    eo_profile = S.create(:organizer_profile, :verified, user: eo_owner, organization: eo_organization)
+    S.approved_bank_account!(eo_organization, actor: eo_owner, admin: admin, last_four: "777#{index + 1}")
+    eo = S.completed_event!(eo_organization, eo_profile, "Rehearsal A2 Evidence #{key}")
+    eo_type = S.create(:ticket_type, event: eo, price_cents: 2000, quantity_available: 50, quantity_sold: 0)
+    S.record_card_sale!(eo, ticket_type: eo_type, quantity: 5, processing_fee_cents: 100)
+    S.save!(key => eo.id)
+  end
+
   Rehearsal.outcome!(step, action: "a1 data", value: %w[aff plain r22 adj race race2].to_h { |key| [key, S.payouts(key)] })
   S.save!(pre_upgrade_at: Time.current.utc.iso8601(6))
 
@@ -908,6 +924,116 @@ when "n_acc_stale_return"
     canonical_digest: proof&.return_reference_digest == Digest::SHA256.hexdigest("RETA2STALE1"),
     acceptance_recorded: payout.accepted_transfer_recorded_at.present? })
 
+# ---- A2 recheck finding 2 (8132fe22): acceptances shown only by audit ----
+when "n_eo"
+  # The only way such a state exists: a direct write (no release records a
+  # paid refusal without its marker). acc_eo: in flight with the provider's
+  # reference and conflict, committing the organization's whole balance (as
+  # the reviewer's fixture did). acc_eo_hist: the audit lands on such a
+  # payout already recorded failed. acc_ctl: an ordinary $10.00 in flight.
+  record_conflict = lambda do |payout|
+    AuditLogger.record!(action: "payout.provider_result_conflict", auditable: payout.reload, actor: S.admin,
+      organization: payout.organization, event: payout.event, source: "provider", outcome: "unknown",
+      metadata: { conflict_reason: PayoutCreator::PAID_REFUSED_REASON, provider_paid_at: 5.minutes.ago.utc.iso8601(6) })
+  end
+  %w[acc_eo acc_eo_hist acc_ctl].each do |key|
+    event = S.find(Event, key)
+    payout = S.submitted(event, key, key == "acc_ctl" ? 1000 : nil)
+    S.save!("#{key}_available_with_payout" => OrganizationPayoutBalance.available_cents(event.organization))
+    case key
+    when "acc_eo"
+      Payout.where(id: payout.id).update_all(provider_payout_id: "BANK-EO-#{payout.id}", failure_code: "provider_result_conflict",
+        failure_message: "Provider reported payment after a fence")
+      record_conflict.call(payout)
+    when "acc_eo_hist"
+      PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: "failed", provider_payout_id: payout.provider_payout_id,
+        evidence: S.evidence(Time.current, reason: "Finance never sent the transfer"))
+      record_conflict.call(payout)
+    end
+    payout.reload
+    Rehearsal.outcome!(step, action: "#{key} prepared", value: { status: payout.status, failure_code: payout.failure_code,
+      provider_payout_id: payout.provider_payout_id, marker: payout.provider_accepted_at.present?,
+      evidence_only: PayoutCreator.evidence_only_acceptance?(payout),
+      available_cents: OrganizationPayoutBalance.available_cents(event.organization) })
+  end
+
+when "o_eo_a1"
+  raise "A1's outcomes run in the previous release" if S.new_release?
+
+  conflict_of = ->(payout) { AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict").order(:id).last }
+  payout = S.find(Payout, "payout_acc_eo")
+  # The reviewer's reproduction: A1's reconciler records it failed (its
+  # generic outcome, with the conflict acknowledged), then reversed.
+  %w[failed reversed].each do |outcome|
+    S.attempt(step, "A1 PayoutReconciler #{outcome} payout_acc_eo") do
+      PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: outcome, provider_payout_id: payout.provider_payout_id,
+        evidence: S.evidence(Time.current, conflict_audit_id: conflict_of.call(payout).id, reason: "Generic bank confirmation")).reload
+    end
+  end
+  { "pending" => { status: Payout.statuses[:pending] },
+    "failed" => { status: Payout.statuses[:failed], failure_code: "reconciled_failure" },
+    "paid" => { status: Payout.statuses[:paid], paid_at: Time.current, failure_code: nil },
+    "reversed" => { status: Payout.statuses[:reversed], failure_code: nil },
+    "transfer identifier" => { provider_payout_id: "OTHER-EO" } }.each do |label, columns|
+    S.attempt(step, "A1 raw SQL #{label} payout_acc_eo") do
+      Payout.transaction do
+        Payout.where(id: payout.id).update_all(columns.merge(updated_at: Time.current))
+        ActiveRecord::Base.connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        raise ActiveRecord::Rollback
+      end
+      "accepted, rolled back"
+    end
+  end
+  S.attempt(step, "A1 raw SQL delete payout_acc_eo") do
+    Payout.transaction do
+      Payout.where(id: payout.id).delete_all
+      raise ActiveRecord::Rollback
+    end
+    "accepted, rolled back"
+  end
+  # Fresh keys from A1 (its reserve and submission).
+  %w[acc_eo acc_eo_hist acc_ctl].each do |key|
+    event = S.find(Event, key)
+    S.attempt(step, "A1 PayoutCreator.call #{key} fresh key for $10.00") do
+      settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+      PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-#{key}-a1-fresh", amount_cents: 1000)
+    end
+  end
+  # The control: A1's ordinary failed outcome on a payout with no acceptance.
+  control = S.find(Payout, "payout_acc_ctl")
+  S.attempt(step, "A1 PayoutReconciler failed payout_acc_ctl") do
+    PayoutReconciler.call(payout: control.reload, actor: S.admin, status: "failed", provider_payout_id: control.provider_payout_id,
+      evidence: S.evidence(Time.current, reason: "Finance never sent the transfer")).reload
+  end
+  payout.reload
+  Rehearsal.outcome!(step, action: "acc_eo after A1", value: { status: payout.status, failure_code: payout.failure_code,
+    provider_payout_id: payout.provider_payout_id,
+    available_cents: OrganizationPayoutBalance.available_cents(payout.organization) })
+
+when "n_eo_after"
+  payout = S.find(Payout, "payout_acc_eo")
+  conflict = AuditLog.where(auditable: payout, action: "payout.provider_result_conflict").order(:id).last
+  %w[accepted_transfer failed paid].each do |outcome|
+    S.attempt(step, "A2 PayoutReconciler #{outcome} payout_acc_eo") do
+      PayoutReconciler.call(payout: payout.reload, actor: S.admin, status: outcome, provider_payout_id: payout.provider_payout_id,
+        evidence: S.evidence(Time.current, conflict_audit_id: conflict.id)).reload
+    end
+  end
+  %w[acc_eo acc_eo_hist acc_ctl].each do |key|
+    event = S.find(Event, key)
+    S.attempt(step, "A2 PayoutCreator.call #{key} fresh key for $10.00") do
+      settlement = Settlements::Finalizer.call(event: event, actor: S.admin)
+      PayoutCreator.call(settlement: settlement, actor: S.admin, idempotency_key: "a2-#{key}-a2-fresh", amount_cents: 1000)
+    end
+  end
+  state = %w[acc_eo acc_eo_hist acc_ctl].to_h do |key|
+    event = S.find(Event, key)
+    [key, { payouts: event.payouts.order(:id).map { |p| [p.idempotency_key, p.status] },
+      available_cents: OrganizationPayoutBalance.available_cents(event.organization) }]
+  end
+  Rehearsal.outcome!(step, action: "evidence-only state", value: state.merge("acc_eo_status" => payout.reload.status,
+    "acc_eo_identifier" => payout.provider_payout_id))
+
 when "assertions"
   outcomes = File.readlines(File.join(Rehearsal::DIR, "outcomes.jsonl")).map { |line| JSON.parse(line) }
   calls = File.readlines(File.join(Rehearsal::DIR, "calls.jsonl")).map { |line| JSON.parse(line) }.select { |c| c["kind"] == "payout_submit" }
@@ -1218,6 +1344,90 @@ when "assertions"
   stale_event = id.call("acc_stale")
   check.call("gateway: one submission on the acc_stale event",
     calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == stale_event } == 1)
+
+  # A2 recheck finding 2 (8132fe22): acceptances shown only by their audit.
+  eo_id = id.call("payout_acc_eo")
+  prepared = %w[acc_eo acc_eo_hist acc_ctl].to_h { |key| [key, find_outcome.call("new", "n_eo", "#{key} prepared")&.fetch("value").to_h] }
+  check.call("acc_eo: the synthetic acceptance is in flight, evidence-only, with no marker",
+    prepared["acc_eo"].slice("status", "failure_code", "marker", "evidence_only") ==
+      { "status" => "processing", "failure_code" => "provider_result_conflict", "marker" => false, "evidence_only" => true })
+  check.call("acc_eo_hist: the recognized conflict sits on a failed payout",
+    prepared["acc_eo_hist"].slice("status", "evidence_only") == { "status" => "failed", "evidence_only" => true })
+  %w[failed reversed].each do |outcome|
+    check.call("acc_eo: A1's reconciler #{outcome} refused",
+      refused.call("old", "o_eo_a1", "A1 PayoutReconciler #{outcome} payout_acc_eo", /fence|Cannot|cannot|transition|reversed/))
+  end
+  check.call("acc_eo: A1's reconciler failed refused by the database (the reviewer's reproduction)",
+    refused.call("old", "o_eo_a1", "A1 PayoutReconciler failed payout_acc_eo",
+      /Accepted transfer fence: payout #{eo_id} has a provider acceptance recorded only in its audit trail/))
+  ["pending", "failed", "paid", "reversed", "transfer identifier", "delete"].each do |label|
+    check.call("acc_eo: A1-process raw SQL #{label} refused",
+      refused.call("old", "o_eo_a1", "A1 raw SQL #{label} payout_acc_eo", /payout #{eo_id} has a provider acceptance recorded only in its audit trail/))
+  end
+  after_eo = find_outcome.call("old", "o_eo_a1", "acc_eo after A1")&.fetch("value").to_h
+  check.call("acc_eo: after A1 still processing under its conflict with its identity, balance not released",
+    after_eo.slice("status", "failure_code", "provider_payout_id") ==
+      { "status" => "processing", "failure_code" => "provider_result_conflict", "provider_payout_id" => "BANK-EO-#{eo_id}" } &&
+      after_eo["available_cents"] == prepared["acc_eo"]["available_cents"])
+  check.call("acc_eo: A1's fresh key for $10.00 is refused",
+    refused.call("old", "o_eo_a1", "A1 PayoutCreator.call acc_eo fresh key for $10.00"))
+  check.call("acc_eo_hist: A1's fresh key for $10.00 is refused by the database",
+    refused.call("old", "o_eo_a1", "A1 PayoutCreator.call acc_eo_hist fresh key for $10.00",
+      /this organization has a provider acceptance recorded only in its audit trail/))
+  check.call("acc_ctl: A1's ordinary failed outcome and a fresh key on the control are allowed",
+    ok.call("old", "o_eo_a1", "A1 PayoutReconciler failed payout_acc_ctl") &&
+      ok.call("old", "o_eo_a1", "A1 PayoutCreator.call acc_ctl fresh key for $10.00"))
+  %w[accepted_transfer failed paid].each do |outcome|
+    check.call("acc_eo: A2's #{outcome} refused (escalate)",
+      refused.call("new", "n_eo_after", "A2 PayoutReconciler #{outcome} payout_acc_eo", /audit trail, without the durable acceptance marker/))
+  end
+  check.call("acc_eo: A2's fresh key for $10.00 is refused",
+    refused.call("new", "n_eo_after", "A2 PayoutCreator.call acc_eo fresh key for $10.00"))
+  check.call("acc_eo_hist: A2's fresh key for $10.00 is refused (no reservation for the organization)",
+    refused.call("new", "n_eo_after", "A2 PayoutCreator.call acc_eo_hist fresh key for $10.00", /no longer committed/))
+  check.call("acc_ctl: A2's fresh key on the control is allowed",
+    ok.call("new", "n_eo_after", "A2 PayoutCreator.call acc_ctl fresh key for $10.00"))
+  eo_state = find_outcome.call("new", "n_eo_after", "evidence-only state")&.fetch("value").to_h
+  check.call("acc_eo and acc_eo_hist: no payout beyond the prepared one; acc_eo still processing with its identity",
+    eo_state.dig("acc_eo", "payouts") == [["a2-acc_eo", "processing"]] && eo_state.dig("acc_eo_hist", "payouts") == [["a2-acc_eo_hist", "failed"]] &&
+      eo_state["acc_eo_status"] == "processing" && eo_state["acc_eo_identifier"] == "BANK-EO-#{eo_id}")
+  check.call("gateway: one submission each on acc_eo and acc_eo_hist, three on the control",
+    %w[acc_eo acc_eo_hist].all? { |key| calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call(key) } == 1 } &&
+      calls.count { |c| Payout.find_by(id: c["payout_id"])&.event_id == id.call("acc_ctl") } == 3)
+
+  # A2 recheck finding 3 (8132fe22): the runbook's first preflight, before
+  # the migration on A1's schema, against the one shared database.
+  parse = lambda do |name|
+    File.readlines(File.join(Rehearsal::DIR, name)).map { |line| line.strip.split("\t").to_h { |pair| pair.split("=", 2) } }
+  end
+  pre = parse.call("preflight_pre_migration.txt")
+  post = parse.call("preflight_before.txt")
+  section = ->(rows, name) { rows.select { |row| row["section"] == name } }
+  check.call("pre-migration preflight: one read-only repeatable-read snapshot on the A1 schema",
+    section.call(pre, "snapshot").sole.slice("isolation", "read_only") == { "isolation" => "repeatable_read", "read_only" => "on" } &&
+      section.call(pre, "schema").sole["state"] == "pre_a2")
+  check.call("pre-migration preflight: the guard gate fails as expected, naming A2's absent guards",
+    section.call(pre, "guards").sole["gate_guards"] == "FAIL" &&
+      section.call(pre, "guards").sole["failing_guards"].split(",").include?("payouts_audited_acceptance_guard") &&
+      section.call(pre, "guards").sole["a2_payout_entry_cutover"] == "missing")
+  check.call("pre-migration preflight: zero undisposed (PASS) and zero evidence-only acceptances (PASS)",
+    section.call(pre, "undisposed").sole["gate_zero_undisposed"] == "PASS" &&
+      section.call(pre, "accepted").sole["gate_evidence_only_zero"] == "PASS")
+  in_flight = ->(rows) { section.call(rows, "payout").to_h { |row| [row["payout_id"], row.slice("status", "submitted")] } }
+  check.call("pre-migration preflight: every in-flight payout on an affected event, not current, with its submission and action",
+    in_flight.call(pre).any? && in_flight.call(pre) == in_flight.call(post) &&
+      section.call(pre, "payout").all? { |row| row["current"] == "false" && row["restated_at"] == "after_migration" &&
+        row["action"] == (row["submitted"] == "true" ? "record paid only with transfer evidence before the restatement (its time after the migration); else fail and reissue" :
+          "not sent: fail and reissue on a new version") })
+  check.call("pre-migration preflight: events need finalizing, A2 figures after the migration",
+    section.call(pre, "event").any? && section.call(pre, "event").all? { |row| row["needs_finalizing"] == "yes" &&
+      row["current_payable_cents"] == "after_migration" && row["over_committed"] == "after_migration" } &&
+      section.call(pre, "event").map { |row| row["event_id"] } == section.call(post, "event").map { |row| row["event_id"] })
+  check.call("post-migration preflight: A2 schema, every guard (the audited-acceptance guard included) inspected and passing",
+    section.call(post, "schema").sole == { "section" => "schema", "state" => "a2", "missing" => "none" } &&
+      section.call(post, "guards").sole.values_at("gate_guards", "failing_guards", "payouts_audited_acceptance_guard",
+        "payouts_audited_acceptance_guard_on_insert", "hafapass_payout_acceptance_audited") == ["PASS", "none", "true", "true", "true"] &&
+      section.call(post, "event").none? { |row| row["current_payable_cents"] == "after_migration" })
 
   File.write(File.join(Rehearsal::DIR, "assertions.txt"), results.join("\n") + "\n")
   puts results

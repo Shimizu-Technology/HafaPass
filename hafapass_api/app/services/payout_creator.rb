@@ -52,6 +52,20 @@ class PayoutCreator
     payout.provider_accepted_at.nil? && paid_refused_audit?(payout)
   end
 
+  # A2 recheck finding 2 (8132fe22): an evidence-only acceptance that is no
+  # longer committed (failed or reversed) in the organization. Its amount is
+  # back in the balance, so no payout is reserved for the organization
+  # until finance approves its disposition; the database refuses the insert
+  # for every writer (payouts_audited_acceptance_guard_on_insert).
+  def self.uncommitted_evidence_only_acceptance?(organization)
+    Payout.where(organization_id: organization.id, provider_accepted_at: nil, status: %i[failed reversed])
+      .where(id: AuditLog.where(auditable_type: "Payout", action: "payout.provider_result_conflict")
+        .where("metadata->>'conflict_reason' = ?", PAID_REFUSED_REASON).select(:auditable_id)).exists?
+  end
+
+  EVIDENCE_ONLY_RESERVATION_MESSAGE = "This organization has a provider acceptance shown only in its audit trail that is " \
+    "no longer committed. No payout is reserved until finance approves its disposition."
+
   def self.paid_refused_audit?(payout)
     AuditLog.where(auditable_type: "Payout", auditable_id: payout.id, action: "payout.provider_result_conflict")
       .where("metadata->>'conflict_reason' = ?", PAID_REFUSED_REASON).exists?
@@ -371,6 +385,9 @@ class PayoutCreator
       return [validate_idempotent_replay!(existing), false] if existing
 
       raise PayoutError, "Settlement must be finalized" unless settlement.status_finalized?
+      if self.class.uncommitted_evidence_only_acceptance?(settlement.organization)
+        raise PayoutError, EVIDENCE_ONLY_RESERVATION_MESSAGE
+      end
       if EventCancellationRefunds.unresolved?(settlement.event)
         raise PayoutError, "Finish cancellation refunds before paying out this event"
       end
